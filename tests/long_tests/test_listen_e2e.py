@@ -23,6 +23,13 @@ import httpx
 import pytest
 import websockets
 
+from tests.test_settings import test_service_config
+
+pytestmark = pytest.mark.skipif(
+    not test_service_config.deep_testing,
+    reason="Skipping long tests when DEEP_TESTING is disabled",
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -181,9 +188,6 @@ async def test_listen_e2e_real_server_cli_subprocess(live_server):
             )
 
             # 5. Validate flow_data_msg on WebSocket
-            # There may be multiple messages (e.g. sniffer broadcast + agent_hook emit).
-            # Consume messages until we find the one with matching agent_hook_id,
-            # or time out after 10 seconds total.
             import time as _time
             deadline = _time.monotonic() + 10
             matched_msg = None
@@ -204,8 +208,6 @@ async def test_listen_e2e_real_server_cli_subprocess(live_server):
                     content = json.loads(content_raw)
                 except (json.JSONDecodeError, TypeError):
                     continue
-                # Match on both agent_hook_id AND our unique test event name
-                # to avoid picking up real hook events from Claude Code sessions.
                 hook_data = content.get("hook_data", {})
                 if (content.get("agent_hook_id") == sniffer_hook_id
                         and hook_data.get("hook_event_name") == "test_ping"):
@@ -218,7 +220,6 @@ async def test_listen_e2e_real_server_cli_subprocess(live_server):
 
             assert matched_msg["webhook_type"] == "agent_hook"
 
-            # Verify the hook_data carries our dummy event fields
             hook_data = matched_msg.get("hook_data", {})
             assert hook_data.get("hook_event_name") == "test_ping"
             assert hook_data.get("session_id") == "test-session-123"

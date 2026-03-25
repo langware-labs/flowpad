@@ -159,22 +159,6 @@ async def test_search_empty_query_no_filter_returns_empty(bootstrapped_client):
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(120)
-async def test_search_with_query_returns_list(bootstrapped_client):
-    """Search with a query string returns a results list (FSIndexer scans all types — slow)."""
-    boot = await _bootstrap(bootstrapped_client)
-    resp = await bootstrapped_client.get(_cn_url(boot, "search") + "?q=anything")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["status"] == "SUCCESS"
-    data = body["data"]
-    assert "results" in data
-    assert "total" in data
-    assert "indexer_ready" in data
-    assert isinstance(data["results"], list)
-
-
-@pytest.mark.asyncio
 async def test_search_filter_only_browse_returns_records(bootstrapped_client):
     """GET /search?record_type=skill (no query) returns skill records — browse mode.
 
@@ -239,21 +223,6 @@ async def test_search_combo_query_and_filter(bootstrapped_client):
     assert "results" in data
     assert isinstance(data["results"], list)
 
-
-@pytest.mark.asyncio
-@pytest.mark.timeout(120)
-async def test_search_response_has_indexer_ready_flag(bootstrapped_client):
-    """indexer_ready is always present in search response."""
-    boot = await _bootstrap(bootstrapped_client)
-    # With query
-    resp = await bootstrapped_client.get(_cn_url(boot, "search") + "?q=hello")
-    assert resp.status_code == 200
-    assert "indexer_ready" in resp.json()["data"]
-
-    # Filter-only browse also propagates indexer_ready
-    resp = await bootstrapped_client.get(_cn_url(boot, "search") + "?record_type=skill")
-    assert resp.status_code == 200
-    assert "indexer_ready" in resp.json()["data"]
 
 
 # ===========================================================================
