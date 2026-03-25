@@ -1,0 +1,18 @@
+test 1: Session resets after page refresh
+- navigate to {APP_URL}/
+- fill landing input with "refresh test"
+- press Enter
+- wait for URL to change to /dock/session/...
+- click "New Session" button
+- validate instruction input is visible and status is IDLE
+- fill instruction input with "Say hello"
+- press Enter
+- wait for DONE status
+- validate user message and AI response appear
+- refresh the page (F5 or browser reload)
+- wait 3 seconds
+- validate "No active session" message appears
+- validate previous chat messages are NOT visible
+- click "New Session" button
+- validate a fresh session loads with no messages
+- validate status is IDLE and instruction input is empty

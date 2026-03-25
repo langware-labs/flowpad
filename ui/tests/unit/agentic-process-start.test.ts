@@ -1,0 +1,61 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { AgenticProcess, dataManager } from '@sdk';
+
+/**
+ * Regression test for: AgenticProcess.open() crashes with
+ * "TypeError: dataManager.getEntityById is not a function"
+ *
+ * Root cause (commit 61e31865): `open()` previously called `dataManager.getEntityById()`
+ * which does not exist on DataManager. The correct method is
+ * `dataManager.getByTypeId()`.
+ *
+ * When open() throws, AgenticProcess.spawn() propagates the error,
+ * NavigationActions.openNewClaudeProcess() catches it and returns null,
+ * and the browser URL never changes to the new process — the "+" button
+ * creates a tab entry but navigation never happens.
+ */
+describe('AgenticProcess.start', () => {
+  let callActionSpy: ReturnType<typeof vi.spyOn>;
+  let updateEntitySpy: ReturnType<typeof vi.spyOn>;
+  let notifyChangedSpy: ReturnType<typeof vi.spyOn>;
+  let getByTypeIdSpy: ReturnType<typeof vi.spyOn>;
+
+  const fakeShell = { type: 'shell', id: '00000000-0000-4000-8000-000000000002', name: 'test-shell', connect: vi.fn().mockResolvedValue(undefined) };
+  const fakeActionResult = {
+    shell_id: '00000000-0000-4000-8000-000000000002',
+    worker_session_id: 'worker-session-xyz',
+    shell: fakeShell,
+  };
+
+  beforeEach(() => {
+    callActionSpy = vi.spyOn(dataManager, 'callAction').mockResolvedValue(fakeActionResult as any);
+    updateEntitySpy = vi.spyOn(dataManager, 'updateEntityFromJson').mockReturnValue(fakeShell as any);
+    notifyChangedSpy = vi.spyOn(dataManager, 'notifyEntityChanged').mockImplementation(() => {});
+    getByTypeIdSpy = vi.spyOn(dataManager, 'getByTypeId').mockResolvedValue(fakeShell as any);
+  });
+
+  afterEach(() => {
+    callActionSpy.mockRestore();
+    updateEntitySpy.mockRestore();
+    notifyChangedSpy.mockRestore();
+    getByTypeIdSpy.mockRestore();
+  });
+
+  it('resolves with shellId and workerSessionId without throwing', async () => {
+    const agenticProcess = new AgenticProcess({ id: '00000000-0000-4000-8000-000000000001', state: { status: 'idle' } });
+
+    // This call must not throw "dataManager.getEntityById is not a function".
+    // It should resolve successfully with the shell returned from the backend.
+    await expect(agenticProcess.open()).resolves.toMatchObject({
+      shellId: '00000000-0000-4000-8000-000000000002',
+      workerSessionId: 'worker-session-xyz',
+    });
+  });
+
+  it('dataManager does not have a getEntityById method (verifies the broken API)', () => {
+    // Explicitly assert the method that was incorrectly called does not exist.
+    // If this test ever fails (because someone adds getEntityById), the other
+    // test above will also need revisiting.
+    expect(typeof (dataManager as any).getEntityById).toBe('undefined');
+  });
+});

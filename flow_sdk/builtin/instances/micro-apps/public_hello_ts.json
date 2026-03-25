@@ -1,0 +1,10 @@
+{
+  "allowed_public_access": true,
+  "type": "micro_app",
+  "id": "2e745091-5e16-413c-b014-c4da8f0e71a3",
+  "name": "public-hello-ts",
+  "visitor_role": "viewer",
+  "location_type": "Builtin",
+  "location_root": "hello-ts",
+  "updated_date": "2025-09-18T13:54:09Z"
+}

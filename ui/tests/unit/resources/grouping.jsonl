@@ -1,0 +1,6 @@
+{"flow_value": "Let me think", "attributes": {"element-type": "reasoning", "data-type": "string"}, "index": 0, "created_time": "2025-01-01T10:00:00.000Z"}
+{"flow_value": " about this", "attributes": {"element-type": "reasoning", "data-type": "string"}, "index": 1, "created_time": "2025-01-01T10:00:00.100Z"}
+{"flow_value": " problem.", "attributes": {"element-type": "reasoning", "data-type": "string"}, "index": 2, "created_time": "2025-01-01T10:00:00.200Z"}
+{"flow_value": "The answer", "attributes": {"element-type": "chat", "data-type": "string"}, "index": 3, "created_time": "2025-01-01T10:00:01.000Z"}
+{"flow_value": " is 4.", "attributes": {"element-type": "chat", "data-type": "string"}, "index": 4, "created_time": "2025-01-01T10:00:01.100Z"}
+{"flow_value": "complete", "attributes": {"element-type": "status", "data-type": "string"}, "index": 5, "created_time": "2025-01-01T10:00:02.000Z"}

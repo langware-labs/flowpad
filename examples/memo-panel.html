@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<!--
+  Standalone FlowPad Memo Panel
+  ─────────────────────────────
+  Open this file from anywhere on your machine (file://, http://, doesn't matter).
+  It loads the FlowPad SDK from the local backend and gives you a live memo list
+  with create / delete and real-time WebSocket reactivity.
+
+  Prerequisites: backend running on http://localhost:9007
+    cd flow-cli && python -m flow_sdk.server.run
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FlowPad Memo Panel</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0; padding: 24px;
+      background: #f5f5f5; color: #1a1a1a;
+    }
+    h1 { font-size: 1.25rem; margin: 0 0 4px; font-weight: 600; }
+    .subtitle { color: #6b7280; font-size: 0.8rem; margin: 0 0 20px; }
+    .card {
+      background: white; border-radius: 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+      padding: 20px; max-width: 520px;
+    }
+    .create-row { display: flex; gap: 8px; margin-bottom: 16px; }
+    .create-row input {
+      flex: 1; padding: 8px 12px; border: 1px solid #d1d5db;
+      border-radius: 7px; font-size: 0.9rem; outline: none;
+    }
+    .create-row input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.15); }
+    .create-row button {
+      padding: 8px 18px; background: #6366f1; color: white;
+      border: none; border-radius: 7px; font-size: 0.9rem; cursor: pointer;
+      white-space: nowrap;
+    }
+    .create-row button:hover { background: #4f46e5; }
+    .create-row button:disabled { opacity: .5; cursor: default; }
+    .memo-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 12px; margin-bottom: 6px;
+      border: 1px solid #e5e7eb; border-radius: 7px;
+      background: #fafafa;
+    }
+    .memo-title { flex: 1; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .del-btn {
+      padding: 3px 10px; background: transparent;
+      border: 1px solid #e5e7eb; border-radius: 5px;
+      cursor: pointer; color: #9ca3af; font-size: 0.8rem;
+    }
+    .del-btn:hover { background: #fee2e2; border-color: #fca5a5; color: #dc2626; }
+    .empty { color: #9ca3af; text-align: center; padding: 28px 0; font-size: 0.9rem; }
+    .status {
+      margin-top: 14px; font-size: 0.72rem; color: #9ca3af;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #d1d5db; flex-shrink: 0; }
+    .dot.connected { background: #22c55e; }
+    .dot.error { background: #ef4444; }
+  </style>
+</head>
+<body>
+
+  <h1>Memo Panel</h1>
+  <p class="subtitle">Powered by the FlowPad SDK — standalone HTML, no build step needed</p>
+
+  <div class="card">
+    <div class="create-row">
+      <input id="title-input" data-testid="memo-input" placeholder="New memo…" />
+      <button id="add-btn" data-testid="create-btn">Add</button>
+    </div>
+    <div id="list"></div>
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <span id="status-text">Loading SDK…</span>
+    </div>
+  </div>
+
+  <!--
+    The SDK is served by the local backend.
+    Script tags bypass CORS — no special server config needed.
+    It creates the global window.FlowpadSdk with dataManager, connectionManager, etc.
+  -->
+  <script src="http://localhost:9007/sdk/flowpad-sdk.js"></script>
+
+  <script>
+    (function () {
+      var API_BASE = 'http://localhost:9007';
+      var WS_URL   = 'ws://localhost:9007/api/v1/connect/ws';
+
+      // ── DOM refs ──────────────────────────────────────────────────
+      var input     = document.getElementById('title-input');
+      var addBtn    = document.getElementById('add-btn');
+      var listEl    = document.getElementById('list');
+      var dot       = document.getElementById('dot');
+      var statusTxt = document.getElementById('status-text');
+
+      function setStatus(msg, state) {
+        statusTxt.textContent = msg;
+        dot.className = 'dot' + (state ? ' ' + state : '');
+      }
+
+      // ── Verify SDK loaded ─────────────────────────────────────────
+      if (typeof window.FlowpadSdk === 'undefined') {
+        setStatus('SDK failed to load — is the backend running on :9007?', 'error');
+        return;
+      }
+
+      var connectionManager = window.FlowpadSdk.connectionManager;
+
+      if (!connectionManager) {
+        setStatus('SDK loaded but connectionManager is missing', 'error');
+        return;
+      }
+
+      setStatus('Connecting…');
+
+      // ── REST helpers ──────────────────────────────────────────────
+      function apiFetch(path, opts) {
+        return fetch(API_BASE + path, opts).then(function (r) { return r.json(); });
+      }
+
+      // Fetch both memo and annotation entities and merge them
+      function fetchMemos() {
+        return Promise.all([
+          apiFetch('/api/v1/graph/memo').then(function (j) { return Array.isArray(j.data) ? j.data : []; }).catch(function () { return []; }),
+          apiFetch('/api/v1/graph/annotation').then(function (j) { return Array.isArray(j.data) ? j.data : []; }).catch(function () { return []; }),
+        ]).then(function (results) {
+          return results[0].concat(results[1]).sort(function (a, b) {
+            return (b.created_date || '').localeCompare(a.created_date || '');
+          });
+        });
+      }
+
+      function createMemo(title) {
+        // New entries created in the panel go to memo
+        return apiFetch('/api/v1/graph/memo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: title, memo_type: 'note', status: 'open' }),
+        });
+      }
+
+      function deleteMemo(id, type) {
+        var endpoint = type === 'annotation' ? '/api/v1/graph/annotation/' : '/api/v1/graph/memo/';
+        return apiFetch(endpoint + id, { method: 'DELETE' });
+      }
+
+      // ── Render ────────────────────────────────────────────────────
+      function render(memos) {
+        if (!memos.length) {
+          listEl.innerHTML = '<div class="empty" data-testid="empty-state">No memos yet — add one above</div>';
+          return;
+        }
+        listEl.innerHTML = memos.map(function (m) {
+          return (
+            '<div class="memo-item" data-testid="memo-item" data-id="' + m.id + '">' +
+            '<span class="memo-title">' + (m.content || m.title || m.id).replace(/</g, '&lt;') + '</span>' +
+            '<button class="del-btn" data-testid="delete-btn" data-id="' + m.id + '" data-type="' + (m.type || '') + '">&times;</button>' +
+            '</div>'
+          );
+        }).join('');
+        listEl.querySelectorAll('.del-btn').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            deleteMemo(btn.getAttribute('data-id'), btn.getAttribute('data-type')).then(refresh);
+          });
+        });
+      }
+
+      function refresh() {
+        fetchMemos().then(render);
+      }
+
+      // ── WebSocket reactivity via SDK connectionManager ────────────
+      var wsId = 'memo-panel-standalone-' + Date.now();
+
+      // Register listeners before connecting so we never miss on_open
+      connectionManager.on('on_open', function () {
+        setStatus('Connected to backend', 'connected');
+        refresh();
+      });
+
+      connectionManager.on('on_close', function () {
+        setStatus('Disconnected — retrying…', 'error');
+      });
+
+      connectionManager.on('on_reconnect_failed', function () {
+        setStatus('Connection error — polling', 'error');
+        refresh();
+      });
+
+      // Fires on any entity create/update/delete
+      connectionManager.on('on_data_op', function () {
+        refresh();
+      });
+
+      if (connectionManager.connected) {
+        // Singleton was already connected before this script ran — set status and load now
+        setStatus('Connected to backend', 'connected');
+        refresh();
+      } else {
+        connectionManager.connect();
+      }
+
+      // ── Create handler ────────────────────────────────────────────
+      addBtn.addEventListener('click', function () {
+        var title = input.value.trim();
+        if (!title) return;
+        addBtn.disabled = true;
+        addBtn.textContent = '…';
+        createMemo(title).then(function () {
+          input.value = '';
+          addBtn.disabled = false;
+          addBtn.textContent = 'Add';
+          refresh();
+        }).catch(function () {
+          addBtn.disabled = false;
+          addBtn.textContent = 'Add';
+        });
+      });
+
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') addBtn.click();
+      });
+    })();
+  </script>
+
+</body>
+</html>

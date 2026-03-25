@@ -1,0 +1,2 @@
+export const MAX_SECRET_VALUE_LENGTH = 8_000;
+export const MAX_ENV_VAR_VALUE_LENGTH = 8_000;

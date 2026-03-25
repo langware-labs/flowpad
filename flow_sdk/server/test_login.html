@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flowpad Test Login</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .info {
+            background: #f0f4ff;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .info strong {
+            color: #667eea;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 20px;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .countdown {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            color: #856404;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+            display: none;
+        }
+        .countdown.show {
+            display: block;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+            display: none;
+        }
+        .status.show {
+            display: block;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌊 Flowpad Test Login</h1>
+        <p class="subtitle">Test page for CLI authentication flow</p>
+
+        <div class="info">
+            <strong>How it works:</strong><br>
+            This test page simulates the Flowpad login page. When you click "Login with Test API Key",
+            it will redirect to the callback URL with a test API key, completing the authentication flow.
+        </div>
+
+        <div class="info" id="callbackInfo" style="display: none;">
+            <strong>Callback URL:</strong><br>
+            <code id="callbackUrl"></code>
+        </div>
+
+        <div class="countdown" id="countdown"></div>
+
+        <button onclick="login()" id="loginButton">Login with Test API Key</button>
+
+        <div class="status" id="status"></div>
+    </div>
+
+    <script>
+        // Get callback URL and delay from query parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const callbackUrl = urlParams.get('callback');
+        const delaySeconds = parseInt(urlParams.get('delay') || '0', 10);
+
+        if (callbackUrl) {
+            document.getElementById('callbackInfo').style.display = 'block';
+            document.getElementById('callbackUrl').textContent = callbackUrl;
+        }
+
+        // Handle delay countdown
+        let countdownTimer = null;
+        if (delaySeconds > 0) {
+            const loginButton = document.getElementById('loginButton');
+            const countdownEl = document.getElementById('countdown');
+
+            // Disable login button and show countdown
+            loginButton.disabled = true;
+            countdownEl.className = 'countdown show';
+
+            let remainingSeconds = delaySeconds;
+            countdownEl.textContent = `Login test in ${remainingSeconds} second${remainingSeconds !== 1 ? 's' : ''}...`;
+
+            countdownTimer = setInterval(() => {
+                remainingSeconds--;
+                if (remainingSeconds > 0) {
+                    countdownEl.textContent = `Login test in ${remainingSeconds} second${remainingSeconds !== 1 ? 's' : ''}...`;
+                } else {
+                    clearInterval(countdownTimer);
+                    countdownEl.textContent = 'Proceeding with login...';
+                    loginButton.disabled = false;
+
+                    // Auto-login after countdown completes
+                    setTimeout(() => {
+                        login();
+                    }, 500);
+                }
+            }, 1000);
+        }
+
+        function login() {
+            const statusEl = document.getElementById('status');
+
+            if (!callbackUrl) {
+                statusEl.className = 'status show';
+                statusEl.style.background = '#f8d7da';
+                statusEl.style.color = '#721c24';
+                statusEl.style.border = '1px solid #f5c6cb';
+                statusEl.textContent = '❌ No callback URL provided in query parameters';
+                return;
+            }
+
+            // Use the dummy test API key
+            const testApiKey = 'dummy_key_1234567890';
+
+            // Show success message
+            statusEl.className = 'status show success';
+            statusEl.textContent = '✓ Redirecting to callback with test API key...';
+
+            // Redirect to callback URL with API key
+            setTimeout(() => {
+                const separator = callbackUrl.includes('?') ? '&' : '?';
+                window.location.href = `${callbackUrl}${separator}flowpad-api-key=${testApiKey}`;
+            }, 1000);
+        }
+
+        // Auto-login if 'auto=true' is in query params (for automated testing)
+        if (urlParams.get('auto') === 'true') {
+            setTimeout(login, 500);
+        }
+    </script>
+</body>
+</html>

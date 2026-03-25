@@ -1,0 +1,13 @@
+{
+  "type": "system_job",
+  "job_type": "system",
+  "auto_deploy": true,
+  "job_name": "builtin_hello_system_job",
+  "updated_date": "2025-07-24T11:56:34.426477000Z",
+  "id": "858f87c7-1902-4739-8658-d37a957679fe",
+  "job_provider_type": "local",
+  "deployment_status": "deployed",
+  "allowed_api_execution": true,
+  "visitor_role": "viewer"
+}
+

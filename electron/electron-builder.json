@@ -1,0 +1,122 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "ai.flowpad.desktop",
+  "productName": "Flowpad",
+  "copyright": "Copyright © 2024 Langware Labs",
+  "directories": {
+    "output": "release",
+    "buildResources": "resources"
+  },
+  "files": [
+    "main.js",
+    "preload.js",
+    "uv-manager.js",
+    "loading.html",
+    "loading-renderer.js",
+    "loading-logo.png",
+    "!**/*.map",
+    "!dist/**",
+    "!build/**",
+    "!scripts/**",
+    "!*.md",
+    "!*.ts",
+    "!tsconfig.json",
+    "!**/__pycache__/**",
+    "!**/*.pyc",
+    "!**/*.pyo"
+  ],
+  "extraResources": [
+    {
+      "from": "resources/icons",
+      "to": "icons",
+      "filter": ["**/*"]
+    }
+  ],
+  "asar": true,
+  "compression": "maximum",
+  "mac": {
+    "category": "public.app-category.developer-tools",
+    "icon": "resources/icons/icon.icns",
+    "artifactName": "${productName}-${arch}.${ext}",
+    "hardenedRuntime": true,
+    "gatekeeperAssess": false,
+    "notarize": false,
+    "entitlements": "entitlements.mac.plist",
+    "entitlementsInherit": "entitlements.mac.plist",
+    "target": [
+      {
+        "target": "dmg"
+      },
+      {
+        "target": "zip"
+      }
+    ]
+  },
+  "afterAllArtifactBuild": "signing/notarize.js",
+  "dmg": {
+    "contents": [
+      {
+        "x": 130,
+        "y": 220
+      },
+      {
+        "x": 410,
+        "y": 220,
+        "type": "link",
+        "path": "/Applications"
+      }
+    ],
+    "window": {
+      "width": 540,
+      "height": 380
+    }
+  },
+  "win": {
+    "icon": "resources/icons/icon.ico",
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "azureSignOptions": {
+      "endpoint": "https://eus.codesigning.azure.net/",
+      "codeSigningAccountName": "",
+      "certificateProfileName": "",
+      "publisherName": "Your Company LTD"
+    }
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "artifactName": "${productName} Setup.${ext}",
+    "installerIcon": "resources/icons/icon.ico",
+    "uninstallerIcon": "resources/icons/icon.ico",
+    "installerHeaderIcon": "resources/icons/icon.ico",
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Flowpad"
+  },
+  "linux": {
+    "icon": "resources/icons",
+    "category": "Development",
+    "artifactName": "${productName}-${arch}.${ext}",
+    "maintainer": "Langware Labs <eran@langware.ai>",
+    "executableArgs": ["--no-sandbox"],
+    "target": [
+      {
+        "target": "AppImage",
+        "arch": ["x64"]
+      },
+      {
+        "target": "deb",
+        "arch": ["x64"]
+      },
+      {
+        "target": "rpm",
+        "arch": ["x64"]
+      }
+    ]
+  },
+  "publish": null
+}

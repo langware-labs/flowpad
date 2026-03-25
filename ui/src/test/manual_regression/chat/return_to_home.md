@@ -1,0 +1,16 @@
+test 1: Navigate back to home from active chat
+- navigate to {APP_URL}/
+- fill landing input with "return home test"
+- press Enter
+- wait for URL to change to /dock/session/...
+- click "New Session" button
+- validate instruction input is visible and status is IDLE
+- fill instruction input with "Say hello"
+- press Enter
+- wait for DONE status
+- validate user message and AI response appear
+- click home button (first button in sidebar nav)
+- validate URL changed to /
+- validate landing page heading "Hey" is visible
+- validate landing page input "What would you like to work on?" is visible
+- validate skills list is visible

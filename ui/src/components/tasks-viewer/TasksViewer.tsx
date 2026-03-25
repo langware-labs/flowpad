@@ -1,0 +1,237 @@
+/**
+ * TasksViewer - Full dock view for creating/editing tasks.
+ * Opened at dock/tasks/<task-id> or dock/tasks (new).
+ */
+
+import { useState, useCallback, useMemo } from 'react';
+import { Task, TypeId, isTypeId, dataManager, QueryRequest } from '@sdk';
+import { useEntity, useProject } from '@sdk/react/hooks';
+import { Button } from '@src/components/ui/button';
+import { Input } from '@src/components/ui/input';
+import { Label } from '@src/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
+import { Separator } from '@src/components/ui/separator';
+import { Textarea } from '@src/components/ui/textarea';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { ArrowLeft, Save, Trash2 } from 'lucide-react';
+import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
+
+export function TasksViewer() {
+  const { navigation, currentDock } = useDockNavigation();
+  const { project } = useProject();
+  const pointer = currentDock?.pointer;
+
+  // Load existing task if pointer is a valid typeId
+  const taskTypeId = useMemo(() => {
+    if (!pointer) return undefined;
+    if (isTypeId(pointer)) return new TypeId(pointer);
+    // Try constructing from task type + id
+    try {
+      return new TypeId(Task.type, pointer);
+    } catch {
+      return undefined;
+    }
+  }, [pointer]);
+
+  const { data: existingTask } = useEntity<Task>(taskTypeId ?? null, {
+    enabled: !!taskTypeId,
+  });
+
+  const isEditing = !!existingTask;
+
+  // Form state
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [status, setStatus] = useState('open');
+  const [priority, setPriority] = useState('medium');
+  const [dueDate, setDueDate] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [ttl, setTtl] = useState('');
+  const [targetEntity, setTargetEntity] = useState('');
+  const [initialized, setInitialized] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Sync form with loaded task
+  if (existingTask && !initialized) {
+    setTitle(existingTask.title || '');
+    setDescription(existingTask.descriptionPlainText || '');
+    setStatus(existingTask.status || 'open');
+    setPriority(existingTask.priority || 'medium');
+    setDueDate(existingTask.due_at ? new Date(existingTask.due_at).toISOString().split('T')[0] : '');
+    setStartDate(existingTask.start_date ? new Date(existingTask.start_date).toISOString().split('T')[0] : '');
+    setTtl(existingTask.ttl != null ? String(existingTask.ttl / (1000 * 60 * 60)) : '');
+    setTargetEntity(existingTask.target_entity || '');
+    setInitialized(true);
+  }
+
+  const handleSave = useCallback(async () => {
+    const scope = project?.typeId ? [project.typeId] : [];
+    if (scope.length === 0) return;
+
+    const task = existingTask || new Task({});
+    task.title = title;
+    task.descriptionPlainText = description;
+    task.status = status;
+    task.priority = priority;
+    task.due_at = dueDate ? new Date(dueDate) : undefined;
+    task.start_date = startDate || null;
+    task.ttl = ttl ? parseFloat(ttl) * 1000 * 60 * 60 : null;
+    task.target_entity = targetEntity || null;
+
+    await task.save(scope);
+    // Force-invalidate the task query cache so TaskBar gets fresh data on mount
+    await dataManager.query(new QueryRequest({ type: Task.type, scope }), true);
+    navigation.goBack();
+  }, [
+    existingTask,
+    title,
+    description,
+    status,
+    priority,
+    dueDate,
+    startDate,
+    ttl,
+    targetEntity,
+    project?.typeId,
+    navigation,
+  ]);
+
+  const handleDelete = useCallback(async () => {
+    if (!existingTask || !project?.typeId) return;
+    const scope = [project.typeId];
+    existingTask.status = 'archived';
+    existingTask.archived_at = new Date().toISOString();
+    await existingTask.save(scope);
+    await dataManager.query(new QueryRequest({ type: Task.type, scope }), true);
+    navigation.goBack();
+  }, [existingTask, project?.typeId, navigation]);
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div className="flex items-center gap-3 border-b px-4 py-3">
+        <button
+          onClick={() => navigation.goBack()}
+          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <h2 className="text-base font-semibold">{isEditing ? 'Edit Task' : 'New Task'}</h2>
+      </div>
+
+      {/* Form */}
+      <div className="flex-1 space-y-4 overflow-y-auto p-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="task-title">Title</Label>
+          <Input id="task-title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Task title" />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="task-desc">Description</Label>
+          <Textarea
+            id="task-desc"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Describe the task..."
+            rows={4}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label>Status</Label>
+            <Select value={status} onValueChange={setStatus}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="open">Open</SelectItem>
+                <SelectItem value="in_progress">In Progress</SelectItem>
+                <SelectItem value="done">Done</SelectItem>
+                <SelectItem value="archived">Archived</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Priority</Label>
+            <Select value={priority} onValueChange={setPriority}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="high">High</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="low">Low</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="task-due">Due date</Label>
+            <Input id="task-due" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="task-start">Start date</Label>
+            <Input id="task-start" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="task-ttl">TTL (hours)</Label>
+            <Input
+              id="task-ttl"
+              type="number"
+              min={0}
+              value={ttl}
+              onChange={(e) => setTtl(e.target.value)}
+              placeholder="Auto-archive after..."
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="task-target">Target entity</Label>
+            <Input
+              id="task-target"
+              value={targetEntity}
+              onChange={(e) => setTargetEntity(e.target.value)}
+              placeholder="TypeId string"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <Separator />
+      <div className="flex items-center justify-between px-4 py-3">
+        {isEditing ? (
+          <>
+            <Button variant="destructive" size="sm" onClick={() => setConfirmDelete(true)}>
+              <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              Archive
+            </Button>
+            <ConfirmDialog
+              open={confirmDelete}
+              onOpenChange={setConfirmDelete}
+              title="Archive task"
+              description={`Are you sure you want to archive "${title || 'Untitled'}"?`}
+              confirmLabel="Archive"
+              variant="destructive"
+              onConfirm={() => void handleDelete()}
+            />
+          </>
+        ) : (
+          <div />
+        )}
+        <Button size="sm" onClick={() => void handleSave()} disabled={!title.trim()}>
+          <Save className="mr-1.5 h-3.5 w-3.5" />
+          {isEditing ? 'Save' : 'Create'}
+        </Button>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,2 @@
+// FolderAssetEditor removed
+export {};

@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<!--
+  FlowPad MCP App Demo
+  ─────────────────────
+  Served via the MCP app action:
+    GET /api/v1/graph/memo/{id}/mcp_app/demo/?appContext=<json>
+
+  Also works as an MCPUIComponent (SEP-1865 / ext-apps spec):
+    manager.load('ui://mcp-app-demo', html)
+    manager.show('ui://mcp-app-demo', { entityId, entityType, appName })
+
+  Prerequisites: backend running on http://localhost:9007
+    cd flow-cli && python -m flow_sdk.server.run
+  Then run: python examples/mcp-app-setup.py
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FlowPad MCP App Demo</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0; padding: 24px;
+      background: #f5f5f5; color: #1a1a1a;
+    }
+    h1 { font-size: 1.25rem; margin: 0 0 4px; font-weight: 600; }
+    .subtitle { color: #6b7280; font-size: 0.8rem; margin: 0 0 20px; }
+    .card {
+      background: white; border-radius: 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.08);
+      padding: 20px; max-width: 520px; margin-bottom: 16px;
+    }
+    .card h2 { font-size: 0.9rem; font-weight: 600; margin: 0 0 12px; color: #374151; }
+    .ctx-field { display: flex; gap: 8px; margin-bottom: 6px; font-size: 0.85rem; }
+    .ctx-key { color: #6b7280; width: 90px; flex-shrink: 0; }
+    .ctx-val { color: #111827; font-weight: 500; word-break: break-all; }
+    .ctx-raw {
+      margin-top: 10px; padding: 10px 12px;
+      background: #f9fafb; border: 1px solid #e5e7eb;
+      border-radius: 6px; font-size: 0.75rem; color: #6b7280;
+      white-space: pre-wrap; word-break: break-all;
+    }
+    .create-row { display: flex; gap: 8px; margin-bottom: 16px; }
+    .create-row input {
+      flex: 1; padding: 8px 12px; border: 1px solid #d1d5db;
+      border-radius: 7px; font-size: 0.9rem; outline: none;
+    }
+    .create-row input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.15); }
+    .create-row button {
+      padding: 8px 18px; background: #6366f1; color: white;
+      border: none; border-radius: 7px; font-size: 0.9rem; cursor: pointer;
+      white-space: nowrap;
+    }
+    .create-row button:hover { background: #4f46e5; }
+    .create-row button:disabled { opacity: .5; cursor: default; }
+    .memo-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 12px; margin-bottom: 6px;
+      border: 1px solid #e5e7eb; border-radius: 7px;
+      background: #fafafa;
+    }
+    .memo-item.host-entity { border-color: #a5b4fc; background: #eef2ff; }
+    .memo-title { flex: 1; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .host-badge {
+      font-size: 0.7rem; padding: 1px 6px; background: #6366f1; color: white;
+      border-radius: 10px; flex-shrink: 0;
+    }
+    .del-btn {
+      padding: 3px 10px; background: transparent;
+      border: 1px solid #e5e7eb; border-radius: 5px;
+      cursor: pointer; color: #9ca3af; font-size: 0.8rem;
+    }
+    .del-btn:hover { background: #fee2e2; border-color: #fca5a5; color: #dc2626; }
+    .empty { color: #9ca3af; text-align: center; padding: 28px 0; font-size: 0.9rem; }
+    .status {
+      margin-top: 14px; font-size: 0.72rem; color: #9ca3af;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #d1d5db; flex-shrink: 0; }
+    .dot.connected { background: #22c55e; }
+    .dot.error { background: #ef4444; }
+  </style>
+</head>
+<body>
+
+  <h1>MCP App Demo</h1>
+  <p class="subtitle">Served by the FlowPad MCP app action — pure HTML, no build step</p>
+
+  <!-- App context card -->
+  <div class="card" id="ctx-card">
+    <h2>App Context</h2>
+    <div id="ctx-fields"><span style="color:#9ca3af;font-size:.85rem">No appContext received</span></div>
+    <pre class="ctx-raw" id="ctx-raw" style="display:none"></pre>
+  </div>
+
+  <!-- Connection card -->
+  <div class="card" id="conn-card">
+    <h2>Backend Connection</h2>
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <span id="status-text">Loading SDK…</span>
+    </div>
+  </div>
+
+  <!-- Memo CRUD card -->
+  <div class="card">
+    <h2>Memo List</h2>
+    <div class="create-row">
+      <input id="title-input" data-testid="memo-input" placeholder="New memo…" />
+      <button id="add-btn" data-testid="create-btn">Add</button>
+    </div>
+    <div id="list"></div>
+  </div>
+
+  <!--
+    MCP UI guest protocol (SEP-1865 / ext-apps spec)
+    Runs before the SDK script so the handshake fires as early as possible.
+    In standalone (URL) mode: window.parent === window, postMessage is a no-op.
+    In MCPUIComponent mode: host receives ui/initialize, completes handshake,
+    then delivers appContext via ui/notifications/tool-input.
+  -->
+  <script>
+    (function () {
+      var MCP_PROTOCOL_VERSION = '2025-11-25';
+      var msgId = 0;
+
+      function postToHost(msg) {
+        if (window.parent !== window) {
+          window.parent.postMessage(msg, '*');
+        }
+      }
+
+      function sendNotification(method, params) {
+        postToHost({ jsonrpc: '2.0', method: method, params: params || {} });
+      }
+
+      window.addEventListener('message', function (event) {
+        var msg = event.data;
+        if (!msg || msg.jsonrpc !== '2.0') return;
+
+        // Response to our ui/initialize request
+        if ('id' in msg && 'result' in msg && msg.id === 1 && msg.result) {
+          window._mcpHostCtx = msg.result.hostContext || {};
+          sendNotification('ui/notifications/initialized');
+        }
+
+        // Host → Guest notifications (no id field)
+        if (!('id' in msg) && msg.method) {
+          if (msg.method === 'ui/notifications/tool-input') {
+            // appContext fields delivered as tool-input arguments
+            var args = (msg.params && msg.params.arguments) || {};
+            window.dispatchEvent(new CustomEvent('mcp-tool-input', { detail: args }));
+          } else if (msg.method === 'ui/notifications/host-context-changed') {
+            window._mcpHostCtx = (msg.params && msg.params.hostContext) || {};
+            window.dispatchEvent(new CustomEvent('mcp-host-context', { detail: window._mcpHostCtx }));
+          }
+        }
+      });
+
+      // Send initialize request immediately
+      postToHost({
+        jsonrpc: '2.0',
+        id: ++msgId,
+        method: 'ui/initialize',
+        params: {
+          protocolVersion: MCP_PROTOCOL_VERSION,
+          appInfo: { name: 'MCP App Demo', version: '1.0.0' },
+          capabilities: { tools: false, resources: false, messages: false, openLink: false, appName: 'demo' },
+        },
+      });
+    })();
+  </script>
+
+  <script src="http://localhost:9007/sdk/flowpad-sdk.js"></script>
+
+  <script>
+    (function () {
+      var API_BASE = 'http://localhost:9007';
+
+      // ── DOM refs ──────────────────────────────────────────────────
+      var input     = document.getElementById('title-input');
+      var addBtn    = document.getElementById('add-btn');
+      var listEl    = document.getElementById('list');
+      var dot       = document.getElementById('dot');
+      var statusTxt = document.getElementById('status-text');
+      var ctxFields = document.getElementById('ctx-fields');
+      var ctxRaw    = document.getElementById('ctx-raw');
+
+      // ── appContext state ──────────────────────────────────────────
+      var appCtx = null;
+      var hostEntityId = null;
+
+      function applyAppCtx(ctx) {
+        appCtx = ctx;
+        hostEntityId = ctx.entityId || null;
+        var fields = ['entityId', 'entityType', 'appName'];
+        ctxFields.innerHTML = fields.map(function (k) {
+          var v = ctx[k];
+          return '<div class="ctx-field">' +
+            '<span class="ctx-key">' + k + '</span>' +
+            '<span class="ctx-val">' + (v != null ? String(v).replace(/</g, '&lt;') : '<em style="color:#9ca3af">—</em>') + '</span>' +
+            '</div>';
+        }).join('');
+        ctxRaw.textContent = JSON.stringify(ctx, null, 2);
+        ctxRaw.style.display = 'block';
+      }
+
+      // ── Parse appContext from URL (standalone / mcp_app action mode) ─
+      // URLSearchParams.get() already decodes percent-encoded values.
+      try {
+        var raw = new URLSearchParams(location.search).get('appContext');
+        if (raw) {
+          applyAppCtx(JSON.parse(raw));
+        }
+      } catch (e) {
+        ctxFields.innerHTML = '<span style="color:#ef4444;font-size:.85rem">Failed to parse appContext: ' + e.message + '</span>';
+      }
+
+      // ── MCPUIComponent mode: appContext arrives via tool-input ─────
+      window.addEventListener('mcp-tool-input', function (e) {
+        var args = e.detail || {};
+        if (args.entityId || args.entityType || args.appName) {
+          applyAppCtx(args);
+          refresh();
+        }
+      });
+
+      // ── Status helper ─────────────────────────────────────────────
+      function setStatus(msg, state) {
+        statusTxt.textContent = msg;
+        dot.className = 'dot' + (state ? ' ' + state : '');
+      }
+
+      // ── Verify SDK loaded ─────────────────────────────────────────
+      if (typeof window.FlowpadSdk === 'undefined') {
+        setStatus('SDK failed to load — is the backend running on :9007?', 'error');
+        return;
+      }
+
+      var connectionManager = window.FlowpadSdk.connectionManager;
+      if (!connectionManager) {
+        setStatus('SDK loaded but connectionManager is missing', 'error');
+        return;
+      }
+
+      setStatus('Connecting…');
+
+      // ── REST helpers ──────────────────────────────────────────────
+      function apiFetch(path, opts) {
+        return fetch(API_BASE + path, opts).then(function (r) { return r.json(); });
+      }
+
+      function fetchMemos() {
+        return Promise.all([
+          apiFetch('/api/v1/graph/memo').then(function (j) {
+            return (Array.isArray(j.data) ? j.data : []).filter(function (m) { return m.status === 'open'; });
+          }).catch(function () { return []; }),
+          apiFetch('/api/v1/graph/annotation').then(function (j) {
+            return (Array.isArray(j.data) ? j.data : []).filter(function (a) {
+              return Array.isArray(a.labels) && a.labels.some(function (l) { return String(l).indexOf('comment:') !== -1; });
+            });
+          }).catch(function () { return []; }),
+        ]).then(function (results) {
+          return results[0].concat(results[1]).sort(function (a, b) {
+            return (b.created_date || '').localeCompare(a.created_date || '');
+          });
+        });
+      }
+
+      function createMemo(title) {
+        return apiFetch('/api/v1/graph/memo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: title, memo_type: 'note', status: 'open' }),
+        });
+      }
+
+      function deleteMemo(id, type) {
+        var endpoint = type === 'annotation' ? '/api/v1/graph/annotation/' : '/api/v1/graph/memo/';
+        return apiFetch(endpoint + id, { method: 'DELETE' });
+      }
+
+      // ── Render ────────────────────────────────────────────────────
+      function render(memos) {
+        if (!memos.length) {
+          listEl.innerHTML = '<div class="empty" data-testid="empty-state">No memos yet — add one above</div>';
+          return;
+        }
+        listEl.innerHTML = memos.map(function (m) {
+          var isHost = hostEntityId && m.id === hostEntityId;
+          return (
+            '<div class="memo-item' + (isHost ? ' host-entity' : '') + '" data-testid="memo-item" data-id="' + m.id + '">' +
+            '<span class="memo-title">' + (m.content || m.title || m.id).replace(/</g, '&lt;') + '</span>' +
+            (isHost ? '<span class="host-badge">host</span>' : '') +
+            '<button class="del-btn" data-testid="delete-btn" data-id="' + m.id + '" data-type="' + (m.type || '') + '">&times;</button>' +
+            '</div>'
+          );
+        }).join('');
+        listEl.querySelectorAll('.del-btn').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            deleteMemo(btn.getAttribute('data-id'), btn.getAttribute('data-type')).then(refresh);
+          });
+        });
+      }
+
+      function refresh() {
+        fetchMemos().then(render);
+      }
+
+      // ── WebSocket reactivity via SDK connectionManager ────────────
+      connectionManager.on('on_open', function () {
+        setStatus('Connected to backend', 'connected');
+        refresh();
+      });
+
+      connectionManager.on('on_close', function () {
+        setStatus('Disconnected — retrying…', 'error');
+      });
+
+      connectionManager.on('on_reconnect_failed', function () {
+        setStatus('Connection error — polling', 'error');
+        refresh();
+      });
+
+      connectionManager.on('on_data_op', function () {
+        refresh();
+      });
+
+      if (connectionManager.connected) {
+        setStatus('Connected to backend', 'connected');
+        refresh();
+      } else {
+        connectionManager.connect();
+      }
+
+      // ── Create handler ────────────────────────────────────────────
+      addBtn.addEventListener('click', function () {
+        var title = input.value.trim();
+        if (!title) return;
+        addBtn.disabled = true;
+        addBtn.textContent = '…';
+        createMemo(title).then(function () {
+          input.value = '';
+          addBtn.disabled = false;
+          addBtn.textContent = 'Add';
+          refresh();
+        }).catch(function () {
+          addBtn.disabled = false;
+          addBtn.textContent = 'Add';
+        });
+      });
+
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') addBtn.click();
+      });
+    })();
+  </script>
+
+</body>
+</html>

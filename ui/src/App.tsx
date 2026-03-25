@@ -1,0 +1,209 @@
+import '@src/styles/highlightjs.css';
+import { trackEvent } from '@src/utils/analytics';
+import { config, dataContext, navigator } from '@sdk';
+import { useAuth, useGlobalEvents, useWarnings } from '@sdk/react/hooks';
+import { TooltipProvider } from '@src/components/ui/tooltip';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Toaster as Sonner } from 'sonner';
+import { Toaster } from '@src/components/ui/toaster';
+import { useEffect, useRef, useState } from 'react';
+import { DesktopSetupModal, DESKTOP_SETUP_REASON_AUTH_FAILURE } from '@src/components/desktop-setup-modal';
+import { initNotificationListener } from '@src/store/use-notification-store';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000, // 5 minutes
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
+
+// Component that handles desktop setup modal (must be inside QueryClientProvider)
+const DesktopSetupModalHandler = () => {
+  const { someone } = useAuth();
+  const [showDesktopSetup, setShowDesktopSetup] = useState(false);
+  const [authFailure, setAuthFailure] = useState(false);
+  const { isOAuthConfigured, isLlmConfigLoading } = useWarnings();
+
+  // Listen for custom event to open desktop setup modal
+  useEffect(() => {
+    const handleOpenDesktopSetup = (event: Event) => {
+      const detail = (event as CustomEvent<{ reason?: string }>).detail;
+      if (detail?.reason === DESKTOP_SETUP_REASON_AUTH_FAILURE) {
+        setAuthFailure(true);
+      }
+      setShowDesktopSetup(true);
+    };
+    window.addEventListener('open-desktop-setup', handleOpenDesktopSetup);
+    return () => {
+      window.removeEventListener('open-desktop-setup', handleOpenDesktopSetup);
+    };
+  }, []);
+
+  // Show desktop setup modal on first load if LLM is NOT configured
+  useEffect(() => {
+    if (!someone) return;
+
+    // Wait for LLM config query to complete before deciding to show modal
+    if (isLlmConfigLoading) return;
+
+    // Check if desktop_info exists in bootstrap data (indicates desktop mode)
+    const bootstrapInfo = dataContext.bootstrapInfo;
+    const desktopInfo = bootstrapInfo?.desktop_info;
+    const hasDesktopInfo = !!desktopInfo;
+
+    // Show modal on first launch if the user didn't do oauth or has API key. If he has oauth, we don't need the modal.
+    if (hasDesktopInfo && !showDesktopSetup && !isOAuthConfigured) {
+      const hasSeenModal = localStorage.getItem('llm-setup-modal-seen');
+      if (!hasSeenModal) {
+        setShowDesktopSetup(true);
+      }
+    }
+  }, [someone, showDesktopSetup, isOAuthConfigured, isLlmConfigLoading]);
+
+  return (
+    <DesktopSetupModal
+      isOpen={showDesktopSetup}
+      authFailure={authFailure}
+      onClose={() => {
+        setShowDesktopSetup(false);
+        setAuthFailure(false);
+        localStorage.setItem('llm-setup-modal-seen', 'true');
+      }}
+    />
+  );
+};
+
+// Simple error display component for bootstrap failures
+// Uses error.type: 'config' | 'network' | 'server' set by navigator.error()
+const BootstrapError = ({ message }: { message?: string }) => (
+  <div
+    style={{
+      display: 'flex',
+      minHeight: '100vh',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: '#f9fafb',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+    }}
+  >
+    <div
+      style={{
+        width: '100%',
+        maxWidth: '28rem',
+        borderRadius: '0.5rem',
+        background: 'white',
+        padding: '2rem',
+        textAlign: 'center',
+        boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
+      }}
+    >
+      <div
+        style={{
+          margin: '0 auto 1rem',
+          display: 'flex',
+          height: '4rem',
+          width: '4rem',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: '50%',
+          background: '#fed7aa',
+          fontSize: '2rem',
+        }}
+      >
+        ⚠️
+      </div>
+      <h1 style={{ marginBottom: '0.5rem', fontSize: '1.5rem', fontWeight: 'bold', color: '#111827' }}>
+        Connection Error
+      </h1>
+      <p style={{ marginBottom: '0.5rem', color: '#4b5563' }}>
+        {message || 'The FlowPad backend server is not responding.'}
+      </p>
+      <button
+        onClick={() => window.location.reload()}
+        style={{
+          padding: '0.5rem 1rem',
+          background: '#3b82f6',
+          color: 'white',
+          border: 'none',
+          borderRadius: '0.375rem',
+          cursor: 'pointer',
+          fontSize: '0.875rem',
+          marginTop: '1rem',
+        }}
+      >
+        Retry Connection
+      </button>
+    </div>
+  </div>
+);
+
+// Component that handles auth logic
+const AppContent = ({ children }: { children: React.ReactNode }) => {
+  const { user, someone, error } = useAuth();
+  const analyticsTrackingRef = useRef(false);
+
+  const GlobalEvents = () => {
+    void useGlobalEvents();
+    return null;
+  };
+
+  // Initialize notification listener (skills, hooks, etc.)
+  useEffect(() => {
+    const cleanup = initNotificationListener();
+    return cleanup;
+  }, []);
+
+  // Visitor is now handled by bootstrap - no need for ensureVisitor()
+
+  useEffect(() => {
+    if (analyticsTrackingRef.current || !someone) return;
+    analyticsTrackingRef.current = true;
+
+    let eventName = 'visit';
+    if (user) {
+      if (navigator.checkAndRemoveQueryParam && navigator.checkAndRemoveQueryParam(config.LOGIN_QUERY_PARAM)) {
+        eventName = 'login';
+      } else if (navigator.checkAndRemoveQueryParam && navigator.checkAndRemoveQueryParam(config.SIGNUP_QUERY_PARAM)) {
+        eventName = 'sign_up';
+      }
+    }
+
+    trackEvent({
+      user_id: user?.id ?? null,
+      event: eventName,
+    });
+  }, [someone, user]);
+
+  // Handle auth errors - log them for debugging
+  useEffect(() => {
+    if (error) {
+      console.log('Auth error:', error);
+    }
+  }, [error]);
+
+  // Show error screen if bootstrap failed
+  if (error) {
+    return <BootstrapError message={error.message} />;
+  }
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <GlobalEvents />
+        <DesktopSetupModalHandler />
+        {children}
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+};
+
+const App = ({ children }: { children: React.ReactNode }) => {
+  return <AppContent>{children}</AppContent>;
+};
+
+export default App;

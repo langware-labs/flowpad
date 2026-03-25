@@ -1,0 +1,123 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flowpad"
+dynamic = ["version"]
+description = "A local-first AI development environment powered by Claude Code"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    {name = "Langware Labs", email = "eran@langware.ai"},
+]
+
+[project.urls]
+Homepage = "https://flowpad.ai"
+Repository = "https://github.com/langware-labs/flowpad"
+dependencies = [
+    "platformdirs",
+    "requests",
+    "fastapi",
+    "uvicorn[standard]",
+    "httpx[http2]",
+    "dpath~=2.2.0",
+    "typer>=0.9.0",
+    "python-dotenv",
+    "keyring",
+    "fastmcp",
+    "httpx>=0.24.0,<1.0",
+    "websockets",
+    "sqlalchemy~=2.0.27",
+    "aiosqlite",
+    "aiohttp",
+    "greenlet",
+    "pydantic>=2.0.0",
+    "psutil",
+    "filelock",
+    "ptyprocess; sys_platform != 'win32'",
+    "pywinpty; sys_platform == 'win32'",
+    "nest-asyncio>=1.6.0",
+    "pybars3~=0.9.7",
+    "aiofiles",
+    "beautifulsoup4",
+    "dpath",
+    "tiktoken",
+    "usearch",
+    "numpy",
+    "bs4>=0.0.2",
+    "h2",
+    "groq",
+    "openai",
+    "anthropic",
+    "pydantic-ai-slim",
+    "distro",
+    "appdirs",
+    "colorama",
+    "apscheduler~=3.10",
+]
+
+[project.scripts]
+flow = "flow_sdk.cli:cli_main"
+flow-sdk-mcp = "flow_sdk.mcp_server:run"
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio==0.24.0",
+    "build",
+    "twine",
+    "ruff>=0.15.2",
+    "pyinstaller>=6.19.0",
+    "pytest-timeout>=2.4.0",
+    "pytest-env>=1.2.0",
+]
+
+[tool.setuptools.dynamic]
+version = {attr = "flow_sdk._version.__version__"}
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["flow_sdk*"]
+
+[tool.setuptools.package-data]
+"flow_sdk" = ["system_assets/**/*", "server/static/**/*"]
+
+[tool.ruff]
+line-length = 120
+extend-exclude = [
+    "**/claude_skills/**",
+    "**/claude_test_skills/**",
+    "**/.claude/skills/**",
+]
+
+[tool.ruff.lint]
+extend-select = [
+    "I",      # Import sorting
+    "F401",   # Unused import
+    "T20",    # Ban print statements
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["T20"]
+"flow_cli/**/*.py" = ["T20"]
+"flow_sdk/models/entities.py" = ["T20"]
+"flow_sdk/server/run.py" = ["T20"]
+"flow_sdk/server/app.py" = ["T20", "E402"]
+"examples/*" = ["T20"]
+"flow_sdk/db/drivers/sqlite/sqlite_driver.py" = ["E402"]
+"flow_sdk/fs_store/schema_registry.py" = ["F821"]
+
+[tool.pyright]
+typeCheckingMode = "basic"
+reportUnknownMemberType = "none"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.pytest_env]
+SQLITE_DATABASE_PATH = "/tmp/flowpad_test.db"
+TESTING = "true"
+
+[tool.uv]
+prerelease = "allow"

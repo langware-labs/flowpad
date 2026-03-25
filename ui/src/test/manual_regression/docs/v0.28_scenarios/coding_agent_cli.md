@@ -1,0 +1,4 @@
+- navigate to {APP_URL}
+- click “new coding agent cli” tab
+- wait 15 seconds
+- validate new tab with claude code running

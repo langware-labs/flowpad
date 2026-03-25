@@ -1,0 +1,6 @@
+{
+  "Endpoint": "https://eus.codesigning.azure.net/",
+  "CodeSigningAccountName": "",
+  "CertificateProfileName": "",
+  "CorrelationId": "flowpad-desktop"
+}

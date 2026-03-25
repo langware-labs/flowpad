@@ -1,0 +1,11 @@
+{
+  "env": "local",
+  "allowed_public_access": true,
+  "type": "micro_app",
+  "uname": "local",
+  "name": "Local Development",
+  "visitor_role": "reader",
+  "location_type": "Builtin",
+  "location_root": "app",
+  "updated_date": "2028-01-01T00:00:00Z"
+}

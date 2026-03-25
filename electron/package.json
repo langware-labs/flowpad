@@ -1,0 +1,36 @@
+{
+  "name": "flowpad",
+  "description": "Local Flowpad Server",
+  "author": "Langware Labs",
+  "homepage": "https://github.com/langware-labs/flowpad",
+  "private": true,
+  "version": "0.1.0",
+  "main": "main.js",
+  "scripts": {
+    "dev": "concurrently -k \"npm run dev:backend\" \"wait-on http://localhost:9007/api/v1/graph/bootstrap && npm run dev:electron\"",
+    "dev:backend": "cd .. && python -m server.run",
+    "dev:electron": "cross-env MINIHUB_DEV=true electron .",
+
+    "cleanup": "rimraf release",
+
+    "pack:mac": "npm run cleanup && electron-builder --mac --config electron-builder.config.cjs --publish never",
+    "pack:win": "npm run cleanup && electron-builder --win --config electron-builder.config.cjs --publish never",
+    "pack:linux": "npm run cleanup && electron-builder --linux --config electron-builder.config.cjs --publish never",
+
+    "pack:mac:full": "npm i && npm run pack:mac",
+    "pack:win:full": "npm i && npm run pack:win",
+    "pack:linux:full": "npm i && npm run pack:linux"
+  },
+  "dependencies": {
+    "electron-log": "^5.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "concurrently": "^9.0.0",
+    "cross-env": "^7.0.3",
+    "electron": "^40.0.0",
+    "electron-builder": "^26.7.0",
+    "rimraf": "^5.0.5",
+    "wait-on": "^7.2.0"
+  }
+}

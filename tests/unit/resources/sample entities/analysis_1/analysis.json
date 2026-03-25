@@ -1,0 +1,37 @@
+{
+  "session_id": "d7dd8377-c888-40e5-98ea-899ed95c7eeb",
+  "issues": [
+    {
+      "name": "acli-jira-incorrect-action-flag-syntax",
+      "title": "Used deprecated --action flag syntax instead of acli subcommand pattern",
+      "description": "The assistant ran `acli jira --action getIssueList --jql \"...\"` which immediately failed with 'unknown flag: --action'. The acli CLI uses a modern subcommand pattern: `acli jira workitem search --jql \"...\" --fields \"...\"`. This caused a command failure and required iterative help-command discovery before the correct syntax was found.",
+      "category": "mistake",
+      "occurrence": "uuid:fd934ef5-9f27-4250-a108-05dc183a350b",
+      "recommended_scope": "user"
+    },
+    {
+      "name": "browser-first-before-acli-cli-available",
+      "title": "Attempted browser automation before checking available CLI tools",
+      "description": "When asked 'show my jira tickets', the assistant first tried to use the Chrome browser extension (mcp__claude-in-chrome__tabs_context_mcp) which timed out after 13 seconds with 'No Chrome extension connected'. Only after that failure did the assistant pivot to using acli. The user had acli available and a CLI-focused approach should have been tried first.",
+      "category": "inefficiency",
+      "occurrence": "uuid:8732bbd8-d21a-415f-a8c5-25f1fc891bc4",
+      "recommended_scope": "user"
+    },
+    {
+      "name": "iterative-help-command-discovery-acli",
+      "title": "Three sequential --help calls required to discover correct acli syntax after failure",
+      "description": "After the --action flag error, the assistant ran three sequential help commands (acli jira --help, acli jira workitem --help, acli jira workitem search --help) to discover the correct syntax. This multi-step discovery could be avoided if the correct syntax were known upfront, saving 3 extra round trips and approximately 10 seconds.",
+      "category": "inefficiency",
+      "occurrence": "uuid:73b96007-d444-4c75-bbcf-f794542b1bf7",
+      "recommended_scope": "user"
+    },
+    {
+      "name": "jira-ticket-listing-automation",
+      "title": "Repeatable Jira ticket listing workflow can be automated with a direct skill",
+      "description": "The user's request 'show my jira tickets' is a clear, high-frequency task that requires no clarification and always maps to the same acli command pattern. A skill that directly executes `acli jira workitem search --jql \"assignee = currentUser() AND resolution = Unresolved ORDER BY priority DESC\" --fields \"key,summary,priority,status\"` would eliminate all the failed attempts and discovery steps.",
+      "category": "workflow_automation_opportunity",
+      "occurrence": "uuid:bc5a72d8-8b94-4bba-b13f-bf9f636f456e",
+      "recommended_scope": "user"
+    }
+  ]
+}

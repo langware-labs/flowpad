@@ -1,0 +1,622 @@
+import { MemoIframeModal } from '@src/components/memo-panel/MemoIframeModal';
+import { UsageBar } from '@src/components/cost-dashboard';
+import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
+import { NotificationFeed } from '@src/components/notification-feed';
+import { type ProjectResourceListItem } from '@src/components/project-resource-list';
+import { ProjectActivityStrip, BookmarkColumn } from '@src/components/project-activity-strip';
+import { WorkflowStrip } from '@src/components/workflows-view/WorkflowStrip';
+import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
+import { TerminalLineSessionInput } from '@src/components/session-input';
+import { isSkillCreationTask, TaskStatus } from '@src/components/task-bar/task-utils';
+import { useBookmarkMutations } from '@src/hooks/use-bookmark-mutations';
+import { useClaudeErrorRecords } from '@src/hooks/useClaudeErrorRecords';
+import { useAnnotations } from '@src/hooks/use-annotations';
+import { useProjectBookmarks } from '@src/hooks/use-project-bookmarks';
+import { useProjectTasks } from '@src/hooks/use-project-tasks';
+import { useTaskMutations } from '@src/hooks/use-task-mutations';
+import { useClaudeProjectList } from '@src/hooks/use-claude-projects';
+import { useHooksSniffer } from '@src/hooks/use-hooks-sniffer';
+import { useEventDrivenSessions } from '@src/hooks/use-event-driven-sessions';
+import { useProjects } from '@src/hooks/use-projects';
+import { useSessionClassify } from '@src/hooks/use-session-classify';
+import { useActAccordingToClassification } from '@src/hooks/use-act-according-to-classification';
+import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
+import { useForkInTerminal } from '@src/hooks/use-fork-in-terminal';
+import { Annotation, claudeSessionManager, ContextEntitiesEnum, dataContext, Project, QueryRequest } from '@sdk';
+import { useAuth, useProject } from '@sdk/react/hooks';
+import { useAgentContext } from '@src/contexts/agent-context';
+import { useToast } from '@src/hooks/use-toast';
+import { useSystemTools } from '@src/hooks/use-system-tools';
+import { ActivityProgressModal } from '@src/components/search-index/ActivityProgressModal';
+import { Button } from '@src/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import type React from 'react';
+import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
+import { navigateToResult } from '@src/navigation/record-type-nav';
+import { InlineSearchResults } from './InlineSearchResults';
+import { Hammer, Loader2, PackageSearch } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDevMode } from '@src/contexts/dev-mode-context';
+import { systemTools } from '@sdk/services/system-tools-service';
+
+const getSafeTimestamp = (value?: string | null): number => {
+  if (!value) return 0;
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+};
+
+const normalizePath = (value: string): string => {
+  const normalized = value.trim().replace(/\\/g, '/');
+  if (!normalized) return '';
+  if (normalized === '/') return '/';
+  return normalized.replace(/\/+$/, '');
+};
+
+/**
+ * HomeLanding - Welcome view with greeting and quick action buttons
+ *
+ * Layout:
+ * - Top row: Usage bar
+ * - Main row:
+ *   - Left column: Project list (full height)
+ *   - Right column: Greeting, session input, project buttons, and Quick Access
+ * URL: /dock/home
+ */
+export function HomeLanding() {
+  const { user } = useAuth();
+  const { navigation } = useDockNavigation();
+  useProjects();
+  const { projects: claudeProjects, isLoading: isLoadingClaudeProjects } = useClaudeProjectList();
+  const { project: currentProject } = useProject();
+  const { toast } = useToast();
+  const { events: snifferEvents } = useHooksSniffer();
+
+  // Per-session event counts for notification badges
+  const sessionEventCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const evt of snifferEvents) {
+      if (evt.session_id) {
+        counts.set(evt.session_id, (counts.get(evt.session_id) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [snifferEvents]);
+
+  // Skill creation tasks for the Learnings tab
+  const { data: allTasks, refetch: taskRefetch, excludeTasks } = useProjectTasks();
+  const { archiveTask } = useTaskMutations({ refetch: taskRefetch, excludeTasks });
+  const learningTasks = useMemo(
+    () => allTasks.filter((t) => t.status !== 'archived' && !t.archived_at),
+    [allTasks],
+  );
+
+  // Bookmarks for the Bookmarks tab
+  const { data: bookmarks, refetch: bookmarkRefetch, excludeBookmarks } = useProjectBookmarks();
+  const { openDisplayCount: errorCount } = useClaudeErrorRecords();
+  const { closeBookmark, deleteBookmark, remindBookmark } = useBookmarkMutations({ refetch: bookmarkRefetch, excludeBookmarks });
+
+  // Comment annotations for the current project
+  const { annotations: allAnnotations, refetch: annotationsRefetch } = useAnnotations(currentProject?.typeId ?? null);
+  const commentAnnotations = useMemo(
+    () => allAnnotations.filter((a) => a.labels?.includes('comment:')),
+    [allAnnotations],
+  );
+  const createComment = useCallback(
+    async (content: string) => {
+      if (!currentProject?.typeId) return;
+      const annotation = new Annotation({
+        labels: ['comment:'],
+        target_type: currentProject.typeId.type,
+        target_id: currentProject.typeId.id,
+        content,
+        iso_timestamp: new Date().toISOString(),
+      });
+      await annotation.save([]);
+      await annotationsRefetch();
+    },
+    [currentProject?.typeId, annotationsRefetch],
+  );
+
+  const { busy, resetAndRescan, currentActivity, activityProgress } = useSystemTools();
+  const devMode = useDevMode();
+  const [progressOpen, setProgressOpen] = useState(false);
+  const firstName = user?.name?.split(' ')[0] || 'there';
+
+  const [memoPanelOpen, setMemoPanelOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
+  const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
+
+  useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
+  const [showSessionInput, setShowSessionInput] = useState(false);
+  const sessionInputRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showSessionInput) return;
+    const handler = (e: MouseEvent) => {
+      if (sessionInputRef.current && !sessionInputRef.current.contains(e.target as Node)) {
+        setShowSessionInput(false);
+      }
+    };
+    const id = setTimeout(() => document.addEventListener('mousedown', handler), 0);
+    return () => {
+      clearTimeout(id);
+      document.removeEventListener('mousedown', handler);
+    };
+  }, [showSessionInput]);
+
+  const handleSearchSubmit = useCallback(() => {
+    if (searchQuery.trim()) {
+      navigation.openSearch(searchQuery, searchFilters);
+    } else {
+      navigation.openSearch(undefined, searchFilters);
+    }
+  }, [navigation, searchQuery, searchFilters]);
+
+  const handleSearchKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedResultIndex(0); }
+    if (e.key === 'Escape') { setSelectedResultIndex(-1); }
+  }, []);
+
+  const handleNavigateResult = useCallback((result: SearchResult) => {
+    void navigateToResult(result, navigation);
+  }, [navigation]);
+
+  const { resumeInTerminal } = useResumeInTerminal();
+  const { forkInTerminal } = useForkInTerminal();
+
+  // Get paths from desktop_info
+  const paths = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths, []);
+  const apiUrl = useMemo(() => {
+    // Derive API URL from the current window location or use default
+    const port = '9007';
+    return `http://${window.location.hostname}:${port}`;
+  }, []);
+  const currentProjectPath = useMemo(
+    () => normalizePath(currentProject?.fs_storage_mount_path || currentProject?.name || ''),
+    [currentProject?.fs_storage_mount_path, currentProject?.name],
+  );
+
+  const selectedClaudeProjectEncodedName = useMemo(() => {
+    if (!currentProject) return null;
+
+    const byId = claudeProjects.find((project) => project.id === currentProject.id);
+    if (byId?.encoded_name) return byId.encoded_name;
+
+    if (!currentProjectPath) return null;
+    const byPath = claudeProjects.find((project) => {
+      const scanPath = normalizePath(project.cwd || project.name || '');
+      return !!scanPath && scanPath === currentProjectPath;
+    });
+    return byPath?.encoded_name || null;
+  }, [claudeProjects, currentProject, currentProjectPath]);
+
+  const { classifySession, classifyingSessionIds } = useSessionClassify({
+    onStarted: () => {
+      void taskRefetch();
+    },
+    onCompleted: () => {
+      void taskRefetch();
+    },
+  });
+
+  const { actOnClassification, actingSessionId } = useActAccordingToClassification({
+    onStarted: () => {
+      void taskRefetch();
+    },
+    onCompleted: () => {
+      void taskRefetch();
+    },
+  });
+
+  const handleSessionSubmit = (message: string) => {
+    if (!currentProject?.typeId) {
+      toast({
+        title: 'Project Required',
+        description: 'Please select or create a project first.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const workdir = currentProject.fs_storage_mount_path || currentProject.name || paths?.workspace || undefined;
+
+    void (async () => {
+      try {
+        const agenticProcess = await claudeSessionManager.createAndStartSession({ workdir }, { instruction: message });
+        void navigation.openShellProcess(agenticProcess.id);
+      } catch (error) {
+        console.error('[HomeLanding] Failed to create session:', error);
+      }
+    })();
+  };
+
+  const resourceNavigationOptions = useMemo(
+    () =>
+      selectedClaudeProjectEncodedName
+        ? {
+            scope: 'project',
+            project: selectedClaudeProjectEncodedName,
+          }
+        : undefined,
+    [selectedClaudeProjectEncodedName],
+  );
+
+  const { items: activityItems } = useEventDrivenSessions({
+    snifferEvents,
+    seedItems: [],
+    fetchProject: async () => null,
+  });
+
+  const selectedClaudeProjectCwd = useMemo(() => {
+    if (!selectedClaudeProjectEncodedName) return undefined;
+    const match = claudeProjects.find((p) => p.encoded_name === selectedClaudeProjectEncodedName);
+    return match?.cwd || undefined;
+  }, [claudeProjects, selectedClaudeProjectEncodedName]);
+
+  /**
+   * Switch the current project context to match the given cwd.
+   * Finds an existing Project entity by path or creates a new one,
+   * then sets it as the active project so the terminal spawns there
+   * and the footer path updates accordingly.
+   */
+  const switchProjectByCwd = useCallback(
+    async (cwd: string) => {
+      if (!dataContext.someone) return;
+      const targetPath = normalizePath(cwd);
+      if (!targetPath) return;
+
+      // Skip if already on this project
+      if (currentProjectPath && currentProjectPath === targetPath) return;
+
+      const pathKey = targetPath.toLowerCase();
+      const getPath = (p: Project) => normalizePath(p.fs_storage_mount_path || p.name || '').toLowerCase();
+
+      const freshProjects = await Project.query(
+        new QueryRequest({
+          type: Project.type,
+          query: null,
+          scope: [],
+          name: 'home-landing-switch-project',
+        }),
+      );
+      let target = freshProjects.find((p) => getPath(p) === pathKey) || null;
+
+      if (!target) {
+        target = new Project({ name: targetPath });
+        await target.save([dataContext.someone]);
+      }
+      await target.setupForDesktop();
+      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, target.typeId);
+      await dataContext.refreshProject();
+    },
+    [currentProjectPath],
+  );
+
+  /** Switch project context and resume a Claude session in the terminal. */
+  const switchAndResume = useCallback(
+    (sessionId: string, resource: ProjectResourceListItem) => {
+      const sessionCwd = resource.path || selectedClaudeProjectCwd;
+      const doSwitch = sessionCwd ? switchProjectByCwd(sessionCwd) : Promise.resolve();
+      doSwitch
+        .then(() => resumeInTerminal(sessionId, sessionCwd))
+        .catch((err) => console.error('[HomeLanding] Failed to switch project for resume:', err));
+    },
+    [resumeInTerminal, selectedClaudeProjectCwd, switchProjectByCwd],
+  );
+
+  const handleSessionResume = useCallback(
+    (resource: ProjectResourceListItem) => {
+      if (!resource.sessionId) return;
+      switchAndResume(resource.sessionId, resource);
+    },
+    [switchAndResume],
+  );
+
+  const handleResourceClick = useCallback(
+    (resource: ProjectResourceListItem) => {
+      if (resource.type === 'skill') {
+        navigation.openDock(DockPointer.forSkills(resource.skillDockPath));
+        return;
+      }
+
+      switch (resource.type) {
+        case 'claude_session': {
+          // Same behavior as the resume icon — switch project and open terminal
+          handleSessionResume(resource);
+          break;
+        }
+        case 'hook':
+          navigation.openSystemProfile('hooks', resource.itemId, resourceNavigationOptions);
+          break;
+        case 'command':
+          navigation.openSystemProfile('commands', resource.itemId, resourceNavigationOptions);
+          break;
+        case 'agent':
+          navigation.openSystemProfile('agents', resource.itemId, resourceNavigationOptions);
+          break;
+        case 'todo':
+          navigation.openSystemProfile('todos', resource.itemId, resourceNavigationOptions);
+          break;
+        case 'plugin':
+          navigation.openSystemProfile('plugins', resource.itemId, resourceNavigationOptions);
+          break;
+        case 'mcp_server':
+          navigation.openSystemProfile('projects', undefined, {
+            project: selectedClaudeProjectEncodedName ?? undefined,
+          });
+          break;
+        case 'claude_md':
+          navigation.openSystemProfile('summary', undefined, resourceNavigationOptions);
+          break;
+        default:
+          navigation.openSystemProfile();
+      }
+    },
+    [navigation, resourceNavigationOptions, selectedClaudeProjectEncodedName, handleSessionResume],
+  );
+
+  const handleSessionTasks = useCallback(
+    (resource: ProjectResourceListItem) => {
+      if (resource.sessionId) {
+        navigation.openLens('claude', 'tasks', resource.sessionId);
+      }
+    },
+    [navigation],
+  );
+
+  const handleSessionClassify = useCallback(
+    async (resource: ProjectResourceListItem) => {
+      const cwd = resource.path || selectedClaudeProjectCwd;
+      if (!resource.sessionId || !cwd) {
+        toast({
+          title: 'Session unavailable',
+          description: 'No session ID or working directory found.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      await classifySession(resource.sessionId, cwd);
+    },
+    [classifySession, toast, selectedClaudeProjectCwd],
+  );
+
+  const handleActAccordingToClassification = useCallback(
+    async (resource: ProjectResourceListItem, command: string) => {
+      const cwd = resource.path || selectedClaudeProjectCwd;
+      if (!resource.sessionId || !cwd) {
+        toast({
+          title: 'Session unavailable',
+          description: 'No session ID or working directory found.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      await actOnClassification(resource.sessionId, cwd, command);
+    },
+    [actOnClassification, toast, selectedClaudeProjectCwd],
+  );
+
+  return (
+    <div className="flex h-full flex-col overflow-hidden">
+      {/* Top row: UsageBar */}
+      <div className="flex shrink-0 items-center gap-2 p-4">
+        <div className="w-72 shrink-0">
+          <UsageBar />
+        </div>
+        <button
+          onClick={() => setMemoPanelOpen(true)}
+          className="ml-auto px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+          data-testid="open-memo-panel-btn"
+        >
+          Memo Panel
+        </button>
+      </div>
+
+      {/* Main row: Sidebar + Content */}
+      <div className="flex min-h-0 flex-1 gap-6 px-4 pb-4">
+        {/* Left column: Bookmarks */}
+        <div className="w-72 shrink-0">
+          <BookmarkColumn
+            learningTasks={learningTasks}
+            bookmarks={bookmarks}
+            annotations={commentAnnotations}
+            errorCount={errorCount}
+            onErrorClick={() => navigation.openLens('heartbeat', 'errors', 'open')}
+            onAddComment={createComment}
+            onArchiveLearning={(task) => void archiveTask(task)}
+            onCloseBookmark={(m) => void closeBookmark(m)}
+            onDeleteBookmark={(m) => void deleteBookmark(m)}
+            onRemindBookmark={(m, mins) => void remindBookmark(m, mins)}
+            onOpenSession={(m) => m.session_id && resumeInTerminal(m.session_id, undefined, m.created_date ?? undefined)}
+            onForkSession={(m) => forkInTerminal(m.work_dir ?? undefined)}
+            sessionEventCounts={sessionEventCounts}
+            snifferEvents={snifferEvents}
+          />
+        </div>
+
+        {/* Middle column: Main content + Quick Access */}
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          {/* Main content area - shrink-0 so it never collapses */}
+          <div className="flex shrink-0 flex-col items-center gap-6 pb-6 text-center">
+            <h1 className="text-4xl font-bold tracking-tight">
+              Hey{' '}
+              <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
+            </h1>
+
+            {showSessionInput ? (
+              <div className="w-full max-w-3xl" ref={sessionInputRef}>
+                <TerminalLineSessionInput
+                  placeholder="Start new Claude Code session..."
+                  onSubmit={(msg) => void handleSessionSubmit(msg)}
+                />
+              </div>
+            ) : (
+              <button
+                className="cursor-pointer text-lg text-muted-foreground transition-colors hover:text-foreground"
+                onClick={() => setShowSessionInput(true)}
+              >
+                What would you like to work on today?
+              </button>
+            )}
+
+            <div className="w-full max-w-3xl flex items-start gap-2">
+              <div className="flex-1">
+                <RecordSearchBar
+                  query={searchQuery}
+                  filters={searchFilters}
+                  onQueryChange={setSearchQuery}
+                  onFiltersChange={setSearchFilters}
+                  onSubmit={handleSearchSubmit}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder="Search anything across your Claude Code projects"
+                />
+              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 shrink-0"
+                    onClick={() => void resetAndRescan()}
+                    disabled={busy}
+                  >
+                    <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Refresh search data</TooltipContent>
+              </Tooltip>
+              {devMode && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10 animate-pulse hover:animate-none"
+                      onClick={() => void systemTools.clearIndex()}
+                      disabled={busy}
+                    >
+                      <Hammer className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>[DEV] Reset database</TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+
+            {/* Activity strip — shown while any system activity is running */}
+            {currentActivity && (
+              <button
+                onClick={() => setProgressOpen(true)}
+                className="w-full max-w-3xl flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-xs hover:bg-muted/60 transition-colors text-left"
+              >
+                <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0 text-primary" />
+                <span className="text-muted-foreground shrink-0">
+                  {currentActivity === 'archive' ? 'Archiving…'
+                    : currentActivity === 'clear' ? 'Clearing index…'
+                    : currentActivity === 'load_from_archive' ? 'Restoring…'
+                    : currentActivity === 'scan' ? 'Scanning'
+                    : 'Indexing'}
+                </span>
+                {activityProgress?.current && (
+                  <span className="font-mono text-foreground truncate max-w-[180px]">
+                    {activityProgress.current}
+                  </span>
+                )}
+                {activityProgress?.current && activityProgress.counts?.[activityProgress.current] !== undefined && (
+                  <span className="text-muted-foreground shrink-0 tabular-nums">
+                    {activityProgress.counts[activityProgress.current].toLocaleString()} recs
+                  </span>
+                )}
+                {activityProgress?.recordsDone != null && activityProgress.recordsTotal != null && (
+                  <span className="text-muted-foreground shrink-0 tabular-nums">
+                    {activityProgress.recordsDone.toLocaleString()}/{activityProgress.recordsTotal.toLocaleString()} recs
+                  </span>
+                )}
+                {activityProgress && (
+                  <>
+                    <span className="ml-auto text-muted-foreground shrink-0 tabular-nums">
+                      {activityProgress.jobDone != null && activityProgress.jobTotal != null
+                        ? `${activityProgress.jobDone}/${activityProgress.jobTotal}`
+                        : `${activityProgress.done.length}/${activityProgress.total}`}
+                    </span>
+                    <div className="h-1 w-20 rounded-full bg-muted overflow-hidden shrink-0">
+                      <div
+                        className="h-full bg-primary rounded-full transition-all"
+                        style={{
+                          width: `${activityProgress.recordsDone != null && activityProgress.recordsTotal
+                            ? (activityProgress.recordsDone / activityProgress.recordsTotal) * 100
+                            : activityProgress.jobDone != null && activityProgress.jobTotal
+                            ? (activityProgress.jobDone / activityProgress.jobTotal) * 100
+                            : (activityProgress.done.length / activityProgress.total) * 100}%`
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+
+          {/* Inline search results */}
+          <div className="w-full max-w-3xl self-center min-h-0 flex-1 overflow-hidden">
+            <InlineSearchResults
+              query={searchQuery}
+              filters={searchFilters}
+              selectedIndex={selectedResultIndex}
+              onSelectedIndexChange={setSelectedResultIndex}
+              onOpenFullSearch={handleSearchSubmit}
+              onNavigateResult={handleNavigateResult}
+            />
+          </div>
+
+          {/* Notifications section */}
+          <div className="w-full max-w-3xl shrink-0 self-center">
+            <NotificationFeed />
+          </div>
+
+          {/* Event Sniffer chip - aligned to bottom of side columns */}
+          <div className="mt-auto w-full max-w-3xl shrink-0 self-center">
+            <EventSnifferChip />
+          </div>
+        </div>
+
+        {/* Right column: Workflows strip + Session list */}
+        <div className="w-72 shrink-0 flex flex-col gap-2">
+          <WorkflowStrip />
+          <ProjectActivityStrip
+            items={activityItems}
+            isLoading={isLoadingClaudeProjects}
+            onItemClick={handleResourceClick}
+            onSessionResume={handleSessionResume}
+            onSessionTasks={handleSessionTasks}
+            onSessionClassify={(item) => void handleSessionClassify(item)}
+            onActAccordingToClassification={(item, cmd) => void handleActAccordingToClassification(item, cmd)}
+            actingSessionId={actingSessionId}
+            sessionEventCounts={sessionEventCounts}
+            snifferEvents={snifferEvents}
+            learningTasks={learningTasks}
+          />
+        </div>
+
+      </div>
+
+      {/* Activity progress detail modal */}
+      <ActivityProgressModal
+        open={progressOpen}
+        onOpenChange={setProgressOpen}
+        progress={activityProgress}
+        title={currentActivity ? (
+          currentActivity === 'archive' ? 'Archiving…'
+          : currentActivity === 'clear' ? 'Clearing index…'
+          : currentActivity === 'load_from_archive' ? 'Restoring…'
+          : currentActivity === 'scan' ? `Scanning… ${activityProgress?.done.length ?? 0}/${activityProgress?.total ?? 0}`
+          : `Indexing… ${activityProgress?.done.length ?? 0}/${activityProgress?.total ?? 0}`
+        ) : 'Activity'}
+      />
+    </div>
+  );
+}
+
+export default HomeLanding;

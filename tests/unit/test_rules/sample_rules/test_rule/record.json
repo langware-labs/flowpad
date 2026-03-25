@@ -1,0 +1,8 @@
+{
+  "name": "test_rule",
+  "type": "rule",
+  "description": "Test rule for unit testing trigger execution",
+  "hook_events": ["UserPromptSubmit", "PreToolUse", "PostToolUse", "SessionStart", "Stop", "Notification", "SubagentStop"],
+  "actions": ["add_context", "block"],
+  "if_condition": "prompt or command contains 'test_keyword'"
+}

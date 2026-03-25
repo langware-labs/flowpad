@@ -1,0 +1,260 @@
+.project-resource-list {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.project-resource-list-header {
+  padding: 0.5rem 0.55rem 0.45rem;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.project-resource-list-header-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.project-resource-list-project-trigger {
+  height: 1.75rem;
+  flex: 1;
+  min-width: 0;
+  font-size: 0.75rem;
+}
+
+.project-resource-list-manage-button {
+  height: 1.75rem;
+  width: 1.75rem;
+  flex: 0 0 1.75rem;
+}
+
+.project-resource-list-search {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.5rem 0.55rem;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.project-resource-list-search-field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.project-resource-list-search-icon {
+  position: absolute;
+  left: 0.4rem;
+  top: 50%;
+  height: 0.72rem;
+  width: 0.72rem;
+  transform: translateY(-50%);
+  color: hsl(var(--muted-foreground));
+}
+
+.project-resource-list-search-input {
+  width: 100%;
+  height: 1.72rem;
+  border-radius: 0.5rem;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--background));
+  padding: 0 0.6rem 0 1.6rem;
+  font-size: 0.69rem;
+  color: hsl(var(--foreground));
+}
+
+.project-resource-list-search-input::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+
+.project-resource-list-search-input:focus {
+  outline: none;
+  border-color: hsl(var(--primary) / 0.5);
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.15);
+}
+
+.project-resource-filter-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.72rem;
+  width: 1.72rem;
+  flex: 0 0 1.72rem;
+  border-radius: 0.5rem;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--background));
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    color 0.15s ease,
+    background-color 0.15s ease;
+}
+
+.project-resource-filter-button:hover {
+  border-color: hsl(var(--primary) / 0.4);
+  color: hsl(var(--foreground));
+}
+
+.project-resource-filter-button.project-resource-filter-active {
+  border-color: hsl(var(--primary) / 0.5);
+  color: hsl(var(--primary));
+  background: hsl(var(--primary) / 0.08);
+  position: relative;
+}
+
+.project-resource-filter-button.project-resource-filter-active::after {
+  content: '';
+  position: absolute;
+  top: 0.15rem;
+  right: 0.15rem;
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 50%;
+  background: hsl(var(--primary));
+}
+
+.project-resource-filter-popover {
+  width: 11rem;
+  padding: 0.4rem;
+}
+
+.project-resource-filter-option {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.3rem;
+  border-radius: 0.3rem;
+  font-size: 0.68rem;
+  color: hsl(var(--foreground));
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+
+.project-resource-filter-option:hover {
+  background: hsl(var(--accent));
+}
+
+.project-resource-filter-option input[type='checkbox'] {
+  width: 0.8rem;
+  height: 0.8rem;
+  accent-color: hsl(var(--primary));
+  cursor: pointer;
+}
+
+.project-resource-filter-separator {
+  height: 1px;
+  margin: 0.3rem 0;
+  background: hsl(var(--border));
+}
+
+.project-resource-list-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.35rem;
+}
+
+.project-resource-list-loading,
+.project-resource-list-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 2rem 1rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.project-resource-list-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+}
+
+.project-resource-item {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  padding: 0.35rem 0.45rem;
+  text-align: left;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.project-resource-item:hover {
+  background: hsl(var(--accent));
+  border-color: hsl(var(--border));
+}
+
+.project-resource-item:focus-visible {
+  outline: 2px solid hsl(var(--primary) / 0.4);
+  outline-offset: 2px;
+}
+
+.project-resource-item-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.project-resource-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.74rem;
+  color: hsl(var(--foreground));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-resource-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.18rem;
+  font-size: 0.52rem;
+  text-transform: uppercase;
+  letter-spacing: 0.045em;
+}
+
+.project-resource-resume-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-left: 0.25rem;
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+  transition:
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.project-resource-resume-button:hover {
+  background: hsl(var(--primary) / 0.15);
+  color: hsl(var(--primary));
+}
+
+.project-resource-subtitle {
+  font-size: 0.63rem;
+  color: hsl(var(--muted-foreground));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
