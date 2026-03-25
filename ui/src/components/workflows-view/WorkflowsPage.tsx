@@ -14,11 +14,12 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ActionInfo, AgenticProcess, dataContext, dataManager, fsManager, ProcessorStatus, QueryRequest, type TypeId, Workflow } from '@sdk';
 import { ComputeNode, openExternalFromComputeNode } from '@sdk/entities/compute-node';
-import { ExternalLink, FilePlus, Loader2, Play, Save, Trash2, Workflow as WorkflowIcon, Zap } from 'lucide-react';
+import { ExternalLink, FilePlus, GitFork, Loader2, Play, Save, Trash2, Workflow as WorkflowIcon, Zap } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState, KeyboardEvent } from 'react';
 import { WorkflowTraceGutter } from './WorkflowTraceGutter';
 import type { ClaudeTraceEvent } from '@src/types/trace-event';
 import { useClaudeSessionTrace } from '@src/hooks/use-claude-session-trace';
+import { PipelineViewer } from '@src/components/pipeline-viewer';
 
 async function isMcpAvailable(serverName: string): Promise<boolean> {
   try {
@@ -64,8 +65,8 @@ function WorkflowEditor({
   const [isPreparing, setIsPreparing] = useState(false);
   const [showMcpModal, setShowMcpModal] = useState(false);
   const [mcpEnabling, setMcpEnabling] = useState(false);
-  // 'source' | 'prepared' — which file to show in the editor
-  const [viewMode, setViewMode] = useState<'source' | 'prepared'>('source');
+  // 'source' | 'prepared' | 'pipeline' — which view to show
+  const [viewMode, setViewMode] = useState<'source' | 'prepared' | 'pipeline'>('source');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Annotation state
@@ -130,6 +131,8 @@ function WorkflowEditor({
   useEffect(() => {
     setViewMode('source');
   }, [workflow.id]);
+
+  const [isPipelinePreparing, setIsPipelinePreparing] = useState(false);
 
   useEffect(() => {
     if (!path || !fsTypeId) return;
@@ -238,6 +241,20 @@ function WorkflowEditor({
     }
   }, [workflow, doPrepare, toast]);
 
+  const handleGeneratePipeline = useCallback(async () => {
+    if (!workflow.source_vfs_path) return;
+    setIsPipelinePreparing(true);
+    try {
+      await workflow.prepare();
+      toast({ title: 'Pipeline generated' });
+    } catch (err) {
+      console.error('[WorkflowEditor] Failed to generate pipeline:', err);
+      toast({ title: 'Failed to generate pipeline', variant: 'destructive' });
+    } finally {
+      setIsPipelinePreparing(false);
+    }
+  }, [workflow, toast]);
+
   const handleRun = useCallback(async () => {
     if (!workflow.source_vfs_path) return;
     setIsStarting(true);
@@ -306,16 +323,52 @@ function WorkflowEditor({
               {isSaving ? 'Saving...' : 'Save'}
             </Button>
           )}
-          {workflow.isPrepared && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setViewMode((m) => (m === 'prepared' ? 'source' : 'prepared'))}
-              title={viewMode === 'prepared' ? 'Switch to source view' : 'Switch to prepared view'}
-            >
-              {viewMode === 'prepared' ? 'Source' : 'Prepared'}
-            </Button>
+          {(workflow.isPrepared || workflow.hasPipeline) && (
+            <div className="flex items-center rounded-md border bg-background">
+              <Button
+                variant={viewMode === 'source' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="rounded-r-none border-0 h-8 px-3 text-xs"
+                onClick={() => setViewMode('source')}
+              >
+                Source
+              </Button>
+              {workflow.isPrepared && (
+                <Button
+                  variant={viewMode === 'prepared' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="rounded-none border-x h-8 px-3 text-xs"
+                  onClick={() => setViewMode('prepared')}
+                >
+                  Prepared
+                </Button>
+              )}
+              {workflow.hasPipeline && (
+                <Button
+                  variant={viewMode === 'pipeline' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className="rounded-l-none border-0 h-8 px-3 text-xs"
+                  onClick={() => setViewMode('pipeline')}
+                >
+                  Pipeline
+                </Button>
+              )}
+            </div>
           )}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => void handleGeneratePipeline()}
+            disabled={isPipelinePreparing || !workflow.source_vfs_path}
+            title="Generate pipeline view from workflow markdown"
+          >
+            {isPipelinePreparing ? (
+              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+            ) : (
+              <GitFork className="mr-1 h-4 w-4" />
+            )}
+            {isPipelinePreparing ? 'Generating…' : 'Pipeline'}
+          </Button>
           <Button
             size="sm"
             variant="secondary"
@@ -349,8 +402,12 @@ function WorkflowEditor({
         </div>
       </div>
 
-      {/* Editor */}
-      {isLoading ? (
+      {/* Editor / Pipeline view */}
+      {viewMode === 'pipeline' && workflow.hasPipeline && fsTypeId ? (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <PipelineViewer pipelinePath={workflow.pipelinePath!} fsTypeId={fsTypeId} />
+        </div>
+      ) : isLoading ? (
         <div className="flex min-h-0 flex-1 items-center justify-center">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>

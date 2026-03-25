@@ -922,7 +922,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             return ApiFailResponse(message="No WebSocket connection available", data=response_msg.model_dump())
 
         working_dir = body.get("working_dir")
-        initial_command = body.get("initial_command")
 
         # Delegate to start_machine_pty_session for the actual work
         try:
@@ -933,7 +932,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 cols=cols,
                 name=name,
                 working_dir=working_dir,
-                initial_command=initial_command,
             )
         except Exception as e:
             logging.error(f"[PTY] Failed to create PTY session: {e}", exc_info=True)
@@ -993,7 +991,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         cols: int = 80,
         name: str | None = None,
         working_dir: str | None = None,
-        initial_command: str | None = None,
         on_exit: Callable[[int | None], None] | None = None,
     ) -> bool:
         """Start a PTY session for machine use with proper output routing.
@@ -1011,7 +1008,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             cols: Terminal columns (default 80)
             name: Optional display name for the session
             working_dir: Optional working directory for the PTY session.
-            initial_command: Optional command to inject after shell prompt.
             on_exit: Optional callback fired when the PTY process exits (receives exit code).
 
         Returns:
@@ -1107,7 +1103,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 rows=rows,
                 cols=cols,
                 working_dir=working_dir,
-                initial_command=initial_command,
                 on_exit=on_exit,
             )
             logging.info(f"[PTY] Machine PTY session created: {pty_key}")

@@ -8,7 +8,7 @@ Bug scenario
 3. User refreshes page → loader calls process.open().
 4. BEFORE FIX: open() (formerly start()) returns "Shell session already active"
    (shell.status=="running"). Claude is never resumed.
-5. AFTER FIX: open() detects stale PTY via Shell.connect()'s alive-check,
+5. AFTER FIX: open() detects stale PTY via Shell.start_pty()'s alive-check,
    cleans up, and restarts with `claude --resume <session_id>`.
 
 These tests reproduce the entity-state and server-side aspects of the bug
@@ -148,7 +148,7 @@ async def test_loader_sees_no_error_signal_after_restart(bootstrapped_client):
 
     # BUG: Neither entity signals 'needs resume'.
     # The loader sets dataContext.activeShellId = shell_id and returns.
-    # InteractiveTerminal then calls shell.connect() which hits terminal-command/attach
+    # InteractiveTerminal then calls shell.startPty() which hits terminal-command/attach
     # → not_found → terminal-command/start → plain PTY (no Claude).
 
 
@@ -245,7 +245,7 @@ async def test_open_is_idempotent_when_pty_alive(bootstrapped_client):
 
     This is the normal case (no server restart) and must work after the fix.
 
-    After fix: open() detects alive PTY via Shell.connect() and returns SUCCESS (no-op).
+    After fix: open() detects alive PTY via Shell.start_pty() and returns SUCCESS (no-op).
     """
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     cn_id = _compute_node_id(bootstrap)

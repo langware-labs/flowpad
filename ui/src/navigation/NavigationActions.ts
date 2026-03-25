@@ -164,15 +164,10 @@ export class NavigationActions {
     this.openDock(pointer, options);
   }
 
-  /** Open an AgenticProcess in a terminal tab. Ensures shell is live + visible. */
+  /** Open an AgenticProcess in a terminal tab. Route loader calls open(). */
   async openProcessTab(processId: string, options?: Record<string, string>): Promise<void> {
     const process = AgenticProcess.getByIdFromCache(processId) ?? await AgenticProcess.getById(processId);
     if (!process) return;
-    try {
-      await process.start({ visible: true });
-    } catch {
-      // Shell already active — that's fine, visible was still set on the backend
-    }
     this.openDock(process.dockPointer, options);
   }
 
@@ -243,7 +238,7 @@ export class NavigationActions {
       const newShell = Shell.create(cn, { name });
       await newShell.save(cn.typeId);
       const cwd = options?.cwd || dataContext.project?.fs_storage_mount_path || undefined;
-      await newShell.connect({ cols: 80, rows: 24, workdir: cwd });
+      await newShell.startPty({ cols: 80, rows: 24, workdir: cwd });
       const openedShell = await this.openShell(newShell.id, options);
       return { shellId: openedShell?.id ?? newShell.id };
     } catch (error) {

@@ -177,28 +177,29 @@ class Shell(Entity):
         if self.id in active:
             compute_node.active_pty_sessions.remove(self.id)
 
-    async def connect(
-        self, cmd: str | None = None, rows: int = 24, cols: int = 80, on_exit=None, connection_id: str | None = None
-    ) -> ApiResponse:
-        """Start or restart the PTY. Single public method for PTY lifecycle.
+    async def start_pty(
+        self, rows: int = 24, cols: int = 80, on_exit=None, connection_id: str | None = None
+    ) -> bool:
+        """Start or restart the PTY.
 
-        - status == "running" AND PTY alive  →  no-op, return success
-        - status == "running" AND PTY dead   →  cleanup stale session, spawn new PTY
-        - status in (idle, closed, None)     →  spawn new PTY
-        - cmd: if provided, injected as initial_command
+        Returns True if a new PTY was spawned, False if one was already running (no-op).
+        Raises RuntimeError on failure.
+
+        - status == "running" AND PTY alive  →  no-op, returns False
+        - status == "running" AND PTY dead   →  cleanup stale session, spawn new PTY, returns True
+        - status in (idle, closed, None)     →  spawn new PTY, returns True
         - connection_id: WebSocket connection to route PTY output to
-        - Sets status = "running" on success.
         """
         from flow_sdk.builtin.faas.compute_node import ComputeNode
 
         if self.status not in (None, "idle", "closed", "running"):
-            return ApiFailResponse(message=f"Cannot open session in status: {self.status}")
+            raise RuntimeError(f"Cannot open session in status: {self.status}")
         if not self.compute_node_id:
-            return ApiFailResponse(message="compute_node_id is required")
+            raise RuntimeError("compute_node_id is required")
 
         compute_node = await ComputeNode.get_by_id(self.compute_node_id)
         if not compute_node:
-            return ApiFailResponse(message=f"ComputeNode {self.compute_node_id} not found")
+            raise RuntimeError(f"ComputeNode {self.compute_node_id} not found")
 
         # If already running, check whether PTY is actually alive.
         if self.status == "running":
@@ -211,15 +212,7 @@ class Shell(Entity):
 
                     pty_key = (compute_node.id, compute_node.node_provider_id, self.id)
                     await session_manager.attach_session(pty_key, connection_id)
-                # If a command was requested but Claude hasn't taken over the shell yet
-                # (status is "running" not "elevated"), inject the command into the live PTY.
-                # This handles the case where a bare shell was spawned on server-restart
-                # reconnect, and agentic_process.open() now needs to start Claude in it.
-                if cmd and self.status != ShellStatus.ELEVATED.value:
-                    await compute_node.compute_provider.send_pty_input(
-                        compute_node.node_provider_id, self.id, f"{cmd}\r".encode(), cols, rows
-                    )
-                return ApiSuccessResponse(data=self.model_dump(mode="json"))
+                return False
 
         # Cleanup stale session state before spawning.
         if self.status in ("running", "closed"):
@@ -232,34 +225,35 @@ class Shell(Entity):
             cols=cols,
             name=self.name,
             working_dir=self.workdir,
-            initial_command=cmd,
             on_exit=on_exit,
         )
 
         if not success:
-            return ApiFailResponse(message="Failed to start PTY session")
+            raise RuntimeError("Failed to start PTY session")
 
         self.status = "running"
         self.pty_pid = self.id
         self.last_active_at = datetime.now(timezone.utc).isoformat()
         await self.save()
-        return ApiSuccessResponse(data=self.model_dump(mode="json"))
+        return True
 
     @action.post(action_name="open")
     async def open(self) -> ApiResponse:
         """Start PTY and set status=running.
 
-        POST body: {connection_id?, cols?, rows?, initial_command?}
-        Validates: status in (created, idle, None, closed), compute_node_id is set.
+        POST body: {connection_id?, cols?, rows?}
         """
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
-        return await self.connect(
-            cmd=body.get("initial_command"),
-            rows=body.get("rows", 24),
-            cols=body.get("cols", 80),
-            connection_id=body.get("connection_id"),
-        )
+        try:
+            await self.start_pty(
+                rows=body.get("rows", 24),
+                cols=body.get("cols", 80),
+                connection_id=body.get("connection_id"),
+            )
+        except RuntimeError as e:
+            return ApiFailResponse(message=str(e))
+        return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
     @action.post(action_name="close")
     async def close(self) -> ApiResponse:

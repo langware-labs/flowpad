@@ -21,6 +21,9 @@ class WorkflowRecord(Record):
     _user_asset: ClassVar[bool] = True
     index_fields: ClassVar[list[str]] = ["name", "description"]
 
+    # VFS path of the generated pipeline.json (set by the prepare action)
+    pipeline_ref: str | None = None
+
     def __init__(self, file_path: Path | str, **kwargs: Any):
         file_path = Path(file_path)
         kwargs.setdefault("type", RecordType.WORKFLOW)

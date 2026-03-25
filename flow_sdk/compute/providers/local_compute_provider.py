@@ -557,7 +557,6 @@ class LocalComputeProvider(ComputeProvider):
         rows: int = 24,
         cols: int = 80,
         working_dir: str | None = None,
-        initial_command: str | None = None,
         on_exit: Callable[[int | None], None] | None = None,
     ) -> dict[str, Any]:
         """Get or create a PTY session for the given provider node and session ID.
@@ -570,7 +569,6 @@ class LocalComputeProvider(ComputeProvider):
             cols: Number of columns for the PTY
             working_dir: Optional working directory for the PTY session.
                         If not provided, uses self.default_working_dir.
-            initial_command: Optional command to inject into the PTY after shell prompt.
             on_exit: Optional callback fired when the PTY process exits.
                      Receives the exit code (int or None). Called from the daemon
                      read thread — use asyncio.run_coroutine_threadsafe if you
@@ -717,37 +715,6 @@ class LocalComputeProvider(ComputeProvider):
                                 on_exit(exit_code)
                             except Exception as e:
                                 logger.warning(f"Error in PTY on_exit callback: {e}")
-
-                # If initial_command is provided, wrap on_output to detect when the
-                # shell prompt appears, then write the command directly to PTY stdin.
-                # This is far more reliable than frontend-side timing over WebSocket.
-                if initial_command:
-                    prompt_ready = threading.Event()
-
-                    _original_on_output = on_output
-
-                    def _wrapped_on_output(data: bytes, _evt=prompt_ready, _orig=_original_on_output):
-                        if not _evt.is_set():
-                            _evt.set()
-                        _orig(data)
-
-                    on_output = _wrapped_on_output
-
-                    def _send_initial_cmd(proc=pty_process, cmd=initial_command, evt=prompt_ready):
-                        evt.wait(timeout=5.0)
-                        import time
-                        time.sleep(0.1)  # brief grace after prompt for raw mode switch
-                        try:
-                            # winpty expects a string; ptyprocess expects bytes
-                            payload = f"{cmd}\r"
-                            if sys.platform == PLATFORM_WIN32:
-                                proc.write(payload)
-                            else:
-                                proc.write(payload.encode())
-                        except Exception as e:
-                            logger.warning(f"[PTY] Failed to send initial command: {e}")
-
-                    threading.Thread(target=_send_initial_cmd, daemon=True).start()
 
                 read_thread = threading.Thread(target=read_pty_output, daemon=True)
                 read_thread.start()

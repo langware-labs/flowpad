@@ -257,7 +257,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     }
 
     // Connect all 5 concurrently — this is the actual stress target
-    await Promise.all(shells.map((s) => s.connect({ cols: 80, rows: 24 })));
+    await Promise.all(shells.map((s) => s.startPty({ cols: 80, rows: 24 })));
 
     // All should have replayDone=true and at least 1 replay chunk
     for (const shell of shells) {
@@ -278,7 +278,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     for (let cycle = 0; cycle < 4; cycle++) {
       const shell = await spawnShell(computeNode, manager.id, 600);
 
-      await shell.connect({ cols: 80, rows: 24 });
+      await shell.startPty({ cols: 80, rows: 24 });
 
       expect(shell.getSnapshot().replayDone).toBe(true);
       expect(shell.getPtyChunks().length).toBeGreaterThan(0);
@@ -302,7 +302,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     const shell = await spawnShell(computeNode, manager.id, 600);
 
     // Initial connect
-    await shell.connect({ cols: 80, rows: 24 });
+    await shell.startPty({ cols: 80, rows: 24 });
     expect(shell.getSnapshot().replayDone).toBe(true);
     expect(shell.getPtyChunks().length).toBeGreaterThan(0);
 
@@ -317,7 +317,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
 
     // Force re-attach by clearing pty.started
     if ((shell as any)._pty) (shell as any)._pty.started = false;
-    await shell.connect({ cols: 80, rows: 24 });
+    await shell.startPty({ cols: 80, rows: 24 });
 
     expect(shell.getSnapshot().replayDone).toBe(true);
     expect(shell.getPtyChunks().length).toBeGreaterThan(0);
@@ -333,13 +333,13 @@ describe('Shell / PTY lifecycle stress — integration', () => {
 
     // Shell 1: open, connect, close PTY
     const shell1 = await spawnShell(computeNode, manager.id, 500);
-    await shell1.connect({ cols: 80, rows: 24 });
+    await shell1.startPty({ cols: 80, rows: 24 });
     expect(shell1.getSnapshot().replayDone).toBe(true);
     await closePtyRaw(computeNode.id, shell1.id);
 
     // Shell 2: fresh shell, no state from shell1
     const shell2 = await spawnShell(computeNode, manager.id, 600);
-    await shell2.connect({ cols: 80, rows: 24 });
+    await shell2.startPty({ cols: 80, rows: 24 });
 
     expect(shell2.getSnapshot().replayDone).toBe(true);
     expect(shell2.getPtyChunks().length).toBeGreaterThan(0);
@@ -366,7 +366,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     await computeNode.setup();
 
     const shell = await spawnShell(computeNode, manager.id, 500);
-    await shell.connect({ cols: 80, rows: 24 });
+    await shell.startPty({ cols: 80, rows: 24 });
     expect(shell.getSnapshot().replayDone).toBe(true);
 
     // Fire several resizes rapidly while bash is live
@@ -424,7 +424,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     const shell = Object.assign(new Shell(), { id: shellId, compute_node_id: computeNode.id });
     registerShell(shell);
 
-    await shell.connect({ cols: 80, rows: 24 });
+    await shell.startPty({ cols: 80, rows: 24 });
     expect(shell.getSnapshot().replayDone).toBe(true);
 
     const seqs = shell.getPtyChunks().map((c) => c.seq);
@@ -447,8 +447,8 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     const shellA = await spawnShell(computeNode, manager.id, 600);
     const shellB = await spawnShell(computeNode, manager.id, 600);
 
-    await shellA.connect({ cols: 80, rows: 24 });
-    await shellB.connect({ cols: 80, rows: 24 });
+    await shellA.startPty({ cols: 80, rows: 24 });
+    await shellB.startPty({ cols: 80, rows: 24 });
 
     const bEvents: string[] = [];
     const unsubB = shellB.onOutput((d) => bEvents.push(d));

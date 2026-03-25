@@ -127,7 +127,7 @@ async function loadShell(pointer: string | undefined): Promise<void> {
     const newShell = Shell.create(cn, { name });
     await newShell.save(cn.typeId);
     const cwd = dataContext.project?.fs_storage_mount_path ?? undefined;
-    await newShell.connect({ cols: 80, rows: 24, workdir: cwd });
+    await newShell.startPty({ cols: 80, rows: 24, workdir: cwd });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw redirect(`/dock/shell/${newShell.dockPointer.pointer}`);
   }
@@ -197,7 +197,7 @@ async function loadShell(pointer: string | undefined): Promise<void> {
     }
 
     // Plain shell — no linked process
-    await shell.connect({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: shell.workdir ?? undefined });
+    await shell.startPty({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: shell.workdir ?? undefined });
     dataContext.setActiveShellId(shell.id);
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
     await resolveProjectContext(shell.workdir ?? undefined);

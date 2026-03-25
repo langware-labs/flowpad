@@ -141,7 +141,7 @@ describe('PTY output corruption — integration test with real PTY', () => {
     const liveData: string[] = [];
 
     // Fire connect — pty is created synchronously, then reattach() yields
-    const connectPromise = shell.connect({ cols: 80, rows: 24 });
+    const connectPromise = shell.startPty({ cols: 80, rows: 24 });
 
     // Attempt to subscribe during the race window.
     // replayDone is false → onOutput() returns undefined → NOT subscribed.
