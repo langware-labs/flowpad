@@ -224,7 +224,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const { shellId, workerSessionId, shell } = await process.open(
       workerOptions?.instruction ? { instruction: workerOptions.instruction } : undefined,
     );
-    await shell.connect({ cols: 80, rows: 24, workdir: options?.workdir });
+    await shell.startPty({ cols: 80, rows: 24, workdir: options?.workdir });
     return { process, shell, shellId, workerSessionId };
   }
 
@@ -1030,7 +1030,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     dataManager.notifyEntityChanged(this);
     const shell = await dataManager.getByTypeId<Shell>(new TypeId(Shell.type, result.shell_id));
     if (!shell) throw new Error(`Shell ${result.shell_id} not found after start()`);
-    await shell.connect({ cols: 80, rows: 24 });
+    await shell.startPty({ cols: 80, rows: 24 });
     return { shellId: result.shell_id, workerSessionId: result.worker_session_id, shell };
   }
 

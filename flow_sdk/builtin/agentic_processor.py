@@ -906,15 +906,14 @@ class AgenticProcess(Entity):
 
         Covers all cases:
         - Fresh open (no previous session): spawns Claude with --session-id.
-        - Reopen after server restart (stale shell, dead PTY): Shell.connect() detects
+        - Reopen after server restart (stale shell, dead PTY): Shell.start_pty() detects
           the dead PTY, cleans up, and spawns Claude with --resume.
-        - Idempotent call on live process: Shell.connect() detects alive PTY and returns
+        - Idempotent call on live process: Shell.start_pty() detects alive PTY and returns
           ApiSuccessResponse without re-spawning.
 
         The frontend calls open() on every navigation to an agentic-process URL;
         the backend decides whether to start fresh, resume, or do nothing.
         """
-        from flow_sdk.responses.response import ApiSuccessResponse as _SuccessResp
 
         state = self._get_process_state()
         if state.get("status") == ProcessorStatus.TERMINATED.value:
@@ -1001,11 +1000,12 @@ class AgenticProcess(Entity):
                 self.worker_session_id,
             )
 
-            result = await shell.connect(cmd=command, on_exit=on_exit)
+            started = await shell.start_pty(on_exit=on_exit)
 
-            if not isinstance(result, _SuccessResp):
-                self.shell_id = None
-                return ApiFailResponse(message=getattr(result, "message", None) or "Failed to create PTY session")
+            if started:
+                await compute_node.compute_provider.send_pty_input(
+                    compute_node.node_provider_id, shell.id, f"{command}\r".encode(), None, None
+                )
 
             self._set_process_state(status=ProcessorStatus.RUNNING.value, error=None)
             if visible is not None:

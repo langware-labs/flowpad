@@ -2,7 +2,7 @@
  * Regression test: navigating to a shell-X URL with no linked agentic process
  * must load the terminal silently — no redirect, no toast, xterm.js connects.
  *
- * Fix 2026-03-22: shell.connect() is now called in the loader (plain shell path)
+ * Fix 2026-03-22: shell.startPty() is now called in the loader (plain shell path)
  * after the InteractiveTerminal.tsx effect was removed (TSX = pure UI rule).
  */
 import { test, expect } from '@playwright/test';

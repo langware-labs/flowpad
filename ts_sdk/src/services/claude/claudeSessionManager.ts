@@ -84,10 +84,10 @@ export class ClaudeSessionManager extends EventEmitter {
     try {
       const shell = await Shell.getById<Shell>(result.shellId);
       if (shell) {
-        await shell.connect({ cols: 80, rows: 24, force: true });
+        await shell.startPty({ cols: 80, rows: 24, force: true });
       }
     } catch (err) {
-      console.warn('[ClaudeSessionManager] shell.connect() failed after restart — terminal may need manual refresh', err);
+      console.warn('[ClaudeSessionManager] shell.startPty() failed after restart — terminal may need manual refresh', err);
     }
   
     return result;

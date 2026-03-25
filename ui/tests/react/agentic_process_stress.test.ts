@@ -130,7 +130,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
     expect(shell).not.toBeNull();
 
     // Connect shell to start receiving PTY output
-    await shell!.connect({ cols: 80, rows: 24 });
+    await shell!.startPty({ cols: 80, rows: 24 });
     await waitForShellReady(shell!, 15000);
 
     // Wait for Claude Code to start up before sending prompt
@@ -156,7 +156,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
     const shell = await dataManager.getByTypeId<Shell>(typeId);
     expect(shell).not.toBeNull();
 
-    await shell!.connect({ cols: 80, rows: 24 });
+    await shell!.startPty({ cols: 80, rows: 24 });
     await waitForShellReady(shell!, 15000);
     await new Promise((r) => setTimeout(r, 3000));
 
@@ -234,7 +234,7 @@ describe.skip('AgenticProcess restore from DB — integration', () => {
     const newShell = await dataManager.getByTypeId<Shell>(newShellTypeId);
     expect(newShell).not.toBeNull();
 
-    await newShell!.connect({ cols: 80, rows: 24 });
+    await newShell!.startPty({ cols: 80, rows: 24 });
     await waitForShellReady(newShell!, 15000);
     await new Promise((r) => setTimeout(r, 3000));
 

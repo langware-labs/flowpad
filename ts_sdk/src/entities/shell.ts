@@ -53,7 +53,6 @@ export interface IShellConnectionOptions {
   rows: number;
   isActive?: boolean;       // deferred activation gate (default: true)
   workdir?: string;
-  initialCommand?: string;
   force?: boolean;          // reset seq + replayDone and re-attach (absorbs restart())
 }
 
@@ -229,8 +228,8 @@ export class Shell extends APIEntity<Shell> implements IShell {
    * _bump({ replayDone: true }) signals React to read getPtyChunks() for the
    * replay write, then subscribe onOutput() for live output.
    */
-  async connect(opts: IShellConnectionOptions): Promise<void> {
-    const { cols, rows, isActive = true, workdir, initialCommand, force = false } = opts;
+  async startPty(opts: IShellConnectionOptions): Promise<void> {
+    const { cols, rows, isActive = true, workdir, force = false } = opts;
 
     if (isActive) this._hasEverBeenActive = true;
     if (!this._hasEverBeenActive) return;          // still deferred
@@ -247,7 +246,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
         cm.on('on_reconnected', () => {
           if (this.status === ShellStatus.CLOSED || this.status === ShellStatus.ERROR) return;
           if (!this._hasEverBeenActive) return;
-          void this.connect({ cols: 80, rows: 24 });
+          void this.startPty({ cols: 80, rows: 24 });
         });
       });
     }
@@ -286,18 +285,18 @@ export class Shell extends APIEntity<Shell> implements IShell {
       });
     }
 
-    await this._ensurePty(cols, rows, workdir, initialCommand);
+    await this._ensurePty(cols, rows, workdir);
 
     // ONLY NOW flip replayDone — React re-renders, TSX reads getPtyChunks()
     // for the replay write and subscribes onOutput() for live output.
     const _t0 = (typeof window !== 'undefined' ? window : globalThis) as Record<string, unknown>;
-    if (_t0.__shellNavT0 !== undefined) console.log(`[PERF] +${(performance.now() - (_t0.__shellNavT0 as number)).toFixed(0)}ms shell.connect() replayDone=true (shell=${this.id.slice(0,8)})`);
+    if (_t0.__shellNavT0 !== undefined) console.log(`[PERF] +${(performance.now() - (_t0.__shellNavT0 as number)).toFixed(0)}ms shell.startPty() replayDone=true (shell=${this.id.slice(0,8)})`);
     this._bump({ connected: true, replayDone: true, status: 'live' });
   }
 
   // ── Private PTY lifecycle ─────────────────────────────────────────────────
 
-  private async _startPty(cols: number, rows: number, workingDir?: string, initialCommand?: string): Promise<void> {
+  private async _startPty(cols: number, rows: number, workingDir?: string): Promise<void> {
     if (!this.compute_node_id) throw new Error('Shell has no compute_node_id');
     this._pty = new PtyConnection();
     this._pty.computeNodeId = this.compute_node_id;
@@ -313,7 +312,6 @@ export class Shell extends APIEntity<Shell> implements IShell {
       connection_id,
       ...(this.name && { name: this.name }),
       ...(workingDir && { working_dir: workingDir }),
-      ...(initialCommand && { initial_command: initialCommand }),
     };
     await dataManager.callAction<any, any>(action);
     this._pty.started = true;
@@ -352,9 +350,9 @@ export class Shell extends APIEntity<Shell> implements IShell {
   }
 
   /** Start PTY if not already running; recover silently if server-side PTY is dead. */
-  private async _ensurePty(cols: number, rows: number, workingDir?: string, initialCommand?: string): Promise<void> {
+  private async _ensurePty(cols: number, rows: number, workingDir?: string): Promise<void> {
     if (!this._pty?.started) {
-      await this._startPty(cols, rows, workingDir, initialCommand);
+      await this._startPty(cols, rows, workingDir);
     }
     // If started but server-side PTY has died, sendInput will auto-recover on first keystroke.
   }
@@ -363,7 +361,6 @@ export class Shell extends APIEntity<Shell> implements IShell {
     connection_id?: string;
     cols?: number;
     rows?: number;
-    initial_command?: string;
   }): Promise<void> {
     const action = new ActionInfo('open', Shell.type, this.id, 'POST');
     action.bodyParameters = opts ?? {};
@@ -484,7 +481,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     if (!computeNodeId) throw new Error('[Shell.newLiveShell] No compute node');
     const shell = new Shell({ name: opts?.name ?? 'shell', workdir: opts?.workdir, compute_node_id: computeNodeId });
     await shell.save();
-    await shell.connect({ cols: opts?.cols ?? 80, rows: opts?.rows ?? 24 });
+    await shell.startPty({ cols: opts?.cols ?? 80, rows: opts?.rows ?? 24 });
     return shell;
   }
 

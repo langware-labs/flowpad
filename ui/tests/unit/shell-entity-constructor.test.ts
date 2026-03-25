@@ -81,7 +81,7 @@ describe('Shell entity constructor', () => {
     vi.spyOn(dataManager, 'callActionOverWS').mockResolvedValue({ status: 'not_found' });
     const callActionSpy = vi.spyOn(dataManager, 'callAction').mockResolvedValue({});
 
-    await shell.connect({ cols: 80, rows: 24, workdir: '/tmp', initialCommand: 'pwd' });
+    await shell.startPty({ cols: 80, rows: 24, workdir: '/tmp' });
 
     expect(callActionSpy).toHaveBeenCalledTimes(1);
     expect(callActionSpy.mock.calls[0]?.[0].bodyParameters).toMatchObject({
@@ -91,7 +91,6 @@ describe('Shell entity constructor', () => {
       connection_id: 'ws-connection-id',
       name: 'Terminal 1',
       working_dir: '/tmp',
-      initial_command: 'pwd',
     });
   });
 });

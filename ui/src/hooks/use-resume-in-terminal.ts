@@ -19,11 +19,6 @@ export function useResumeInTerminal() {
       void (async () => {
         try {
           const p = await AgenticProcess.fromClaudeSession(sessionId);
-          try {
-            await p.start({ visible: true });
-          } catch {
-            // Shell already active — visible was still set on the backend
-          }
           navigation.openDockPointer(p.dockPointer, timestamp ? { t: timestamp } : undefined);
         } catch (error) {
           console.error('[useResumeInTerminal] Failed to resume process:', error);
