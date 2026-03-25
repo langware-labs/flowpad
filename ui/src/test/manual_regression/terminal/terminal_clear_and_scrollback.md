@@ -1,0 +1,13 @@
+test 1: Clear command clears terminal and scrollback is preserved
+- navigate to the Shell view via sidebar
+- validate terminal is visible and ready
+- type "echo line one" and press Enter
+- validate "line one" appears in output
+- type "echo line two" and press Enter
+- validate "line two" appears in output
+- type "echo line three" and press Enter
+- validate "line three" appears in output
+- type "clear" and press Enter
+- validate the visible terminal area no longer shows the previous output
+- scroll up in the terminal (if scrollback is supported)
+- validate scrollback buffer still contains previous output

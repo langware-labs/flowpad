@@ -1,0 +1,11 @@
+{
+  "id": "skill-creator",
+  "name": "skill-creator",
+  "status": "active",
+  "type": "agent",
+  "description": "Creates a skill record in the output directory.",
+  "model": "sonnet",
+  "permission_mode": "bypassPermissions",
+  "max_turns": 10,
+  "prompt": "# Skill Creator Agent\n\nYou create skill records. When given an instruction to create a skill:\n1. Create a directory named after the skill in the output directory\n2. Write a SKILL.md file with YAML frontmatter (name, description, tags)\n3. Write any supporting files the skill needs"
+}

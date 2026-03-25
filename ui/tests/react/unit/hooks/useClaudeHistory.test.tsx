@@ -1,0 +1,98 @@
+import { ComputeNode, ContextEntitiesEnum, dataContext } from '@sdk';
+import { useClaudeHistory } from '@src/hooks/useClaudeHistory';
+import { renderHook, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { apiTestSetup, getTestSignupInfo } from '../../../utils/test-utils';
+
+describe('useClaudeHistory hook (end-to-end)', () => {
+  const signupInfo = getTestSignupInfo();
+
+  beforeEach(async (context: any) => {
+    await apiTestSetup(signupInfo, context.task.name);
+
+    // apiTestSetup does bootstrap but doesn't set up the compute node context.
+    // Replicate what initSdk/refreshProject does: read the default_compute_node
+    // from bootstrap and set it in dataContext.
+    const cnData = dataContext.bootstrapInfo?.default_compute_node;
+    if (cnData) {
+      const cn = new ComputeNode(cnData);
+      cn.markAsExpanded();
+      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentComputeNodeTypeId, cn.typeId);
+    }
+  }, 15000);
+
+  it('should fetch history entries sorted descending with embedded sessions', async () => {
+    expect(dataContext.computeNode).toBeTruthy();
+
+    const { result } = renderHook(() => useClaudeHistory(5));
+
+    // Wait for fetch to complete
+    await waitFor(
+      () => {
+        expect(result.current.isLoading).toBe(false);
+      },
+      { timeout: 10000 },
+    );
+
+    const { entries } = result.current;
+    expect(Array.isArray(entries)).toBe(true);
+
+    // No history on this machine → nothing else to verify
+    if (entries.length === 0) return;
+
+    // --- Entry shape ---
+    const first = entries[0];
+    expect(typeof first.display).toBe('string');
+    expect(typeof first.timestamp_ms).toBe('number');
+    expect(first.timestamp_ms).toBeGreaterThan(0);
+    expect(first).toHaveProperty('session_id');
+
+    // --- Sort order: newest first ---
+    for (let i = 1; i < entries.length; i++) {
+      expect(entries[i - 1].timestamp_ms).toBeGreaterThanOrEqual(entries[i].timestamp_ms);
+    }
+
+    // --- Limit respected ---
+    expect(entries.length).toBeLessThanOrEqual(5);
+
+    // --- Embedded session (_session) ---
+    const withSession = entries.find((e) => e._session != null);
+    if (withSession) {
+      const s = withSession._session!;
+      expect(typeof s.message_count).toBe('number');
+      expect(Array.isArray(s.tools_used)).toBe(true);
+      expect(typeof s.input_tokens).toBe('number');
+    }
+
+    // --- session_ref ---
+    const withRef = entries.find((e) => e.session_ref != null);
+    if (withRef) {
+      expect(withRef.session_ref!.id).toBeTruthy();
+      expect(withRef.session_ref!.type).toBe('session');
+    }
+  }, 15000);
+
+  it('should refetch and return stable data', async () => {
+    expect(dataContext.computeNode).toBeTruthy();
+
+    const { result } = renderHook(() => useClaudeHistory(2));
+
+    await waitFor(
+      () => expect(result.current.isLoading).toBe(false),
+      { timeout: 10000 },
+    );
+
+    const countBefore = result.current.entries.length;
+
+    // Refetch should not throw
+    await result.current.refetch();
+
+    await waitFor(
+      () => expect(result.current.isLoading).toBe(false),
+      { timeout: 10000 },
+    );
+
+    // Same count — data hasn't changed between fetches
+    expect(result.current.entries.length).toBe(countBefore);
+  }, 15000);
+});

@@ -1,0 +1,33 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: Ruff
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+        exclude: '(claude_skills|claude_test_skills|\.claude/skills)/'
+      - id: ruff-format
+        name: Ruff Format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+        exclude: '(claude_skills|claude_test_skills|\.claude/skills)/'
+      - id: prettier-console
+        name: Prettier Console
+        entry: bash -c 'cd minihub/ui && npx prettier --write "${@#minihub/ui/}"' --
+        language: system
+        files: '^minihub/ui/'
+        types_or: [javascript, ts, tsx, json, css, html]
+      - id: tsc-sdk
+        name: TypeScript Check SDK
+        entry: bash -c 'cd minihub/ui/sdk && npx tsc -p tsconfig.json --incremental --noEmit'
+        language: system
+        types_or: [ts, tsx]
+        files: '^minihub/ui/sdk/'
+      - id: eslint-console
+        name: ESLint Console
+        entry: bash -c 'cd minihub/ui && npx eslint --fix "${@#minihub/ui/}"' --
+        language: system
+        types_or: [javascript, ts, tsx, json, css, html]
+        files: '^minihub/ui/'

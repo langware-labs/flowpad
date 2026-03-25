@@ -1,0 +1,40 @@
+{
+  "prompt": "Say hello world",
+  "recorded_text": "Hello, world!",
+  "parts": [
+    {
+      "type": "ThinkingPart",
+      "content": "The user wants me to say hello world."
+    },
+    {
+      "type": "TextPart",
+      "content": "Hello, world!"
+    },
+    {
+      "type": "ToolCallInvocationPart",
+      "tool_name": "write_file",
+      "args": {"path": "hello.txt", "content": "Hello, world!"},
+      "tool_call_id": "call_001"
+    },
+    {
+      "type": "ToolReturnPart",
+      "tool_call_id": "call_001",
+      "content": "File written successfully"
+    },
+    {
+      "type": "WorkerResponse",
+      "status": "COMPLETED",
+      "new_messages_count": 2,
+      "run_usage": {
+        "input_tokens": 100,
+        "output_tokens": 50
+      }
+    }
+  ],
+  "metadata": {
+    "recorded_at": "2024-01-01T00:00:00",
+    "total_parts": 5,
+    "total_chars": 13,
+    "client_stream": "<flow-text>Hello, world!</flow-text>"
+  }
+}

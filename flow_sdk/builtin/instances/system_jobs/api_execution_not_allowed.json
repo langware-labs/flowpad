@@ -1,0 +1,11 @@
+{
+  "job_name": "api_execution_not_allowed",
+  "deployment_status": "deployed",
+  "job_type": "system",
+  "auto_deploy": false,
+  "allowed_api_execution": false,
+  "updated_date": "2025-07-24T13:54:21.217876000Z",
+  "id": "2e01721d-a121-41d7-8c57-0161dec085ed",
+  "timeout_seconds": 300,
+  "type": "system_job"
+}

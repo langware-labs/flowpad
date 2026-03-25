@@ -1,0 +1,2 @@
+// BaseAssetEditor removed
+export {};

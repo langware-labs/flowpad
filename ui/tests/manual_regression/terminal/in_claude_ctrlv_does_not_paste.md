@@ -1,0 +1,12 @@
+test 1: Ctrl+V in Claude terminal input does not paste from clipboard (FLOWPAD-1618)
+- [browser] navigate to {APP_URL}/dock/shell/new_terminal
+- wait for terminal to be ready (element with data-terminal-id is visible)
+- [browser] run javascript: await navigator.clipboard.writeText('CLIPBOARD_PASTE_TEST')
+- click the Start Claude button (data-testid="start-claude-button")
+- wait up to 45 seconds for the Claude CLI banner to appear in the terminal
+- [browser] click the terminal input (aria-label="Terminal Input")
+- [browser] press Ctrl+V
+- wait 1 second
+- [browser] run javascript: const text = await navigator.clipboard.readText(); return text;
+- validate clipboard still contains "CLIPBOARD_PASTE_TEST" (Ctrl+V did not consume/clear clipboard)
+- validate the terminal input did not insert "CLIPBOARD_PASTE_TEST" as visible DOM text (terminal handles Ctrl+V differently)

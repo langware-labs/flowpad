@@ -1,0 +1,12 @@
+test 1: Terminal PTY output is clean (no duplicated lines or escape artifacts)
+- navigate to a fresh terminal via /dock/shell/new_terminal
+- validate terminal is visible and ready with a prompt
+- type "echo MARKER_START" and press Enter
+- validate "MARKER_START" appears in output
+- type "echo MARKER_END" and press Enter
+- validate "MARKER_END" appears in output
+- read the full terminal text content
+- validate there are NO raw escape sequence artifacts (^[, ^[[I, ^[[O, etc.)
+- validate there are NO duplicated consecutive non-empty lines
+- validate the command "echo MARKER_START" appears exactly once in the output
+- validate the command "echo MARKER_END" appears exactly once in the output

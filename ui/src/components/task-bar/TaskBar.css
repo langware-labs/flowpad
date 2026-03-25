@@ -1,0 +1,302 @@
+/* ─── Slider track (same 200%/50% pattern as QuickAccessSideBar) ─── */
+
+.task-bar-slider-track {
+  display: flex;
+  width: 200%;
+  height: 100%;
+  transition: transform 0.2s ease;
+}
+
+.task-bar-panel {
+  width: 50%;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ─── Task card ─── */
+
+.task-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  padding-right: 4.5rem;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  text-align: left;
+}
+
+.task-card:hover {
+  background: hsl(var(--accent));
+}
+
+/* ─── Task card wrapper (for hover actions) ─── */
+
+.task-card-wrapper:hover .task-card-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ─── Hover action bar ─── */
+
+.task-card-actions {
+  position: absolute;
+  right: 0.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.task-card-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--background));
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: hsl(var(--muted-foreground));
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.task-card-action:hover {
+  background: hsl(var(--accent));
+  color: hsl(var(--foreground));
+}
+
+.task-card-action-archive:hover {
+  background: hsl(var(--destructive) / 0.1);
+  color: hsl(var(--destructive));
+}
+
+/* ─── Search ─── */
+
+.task-bar-search {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.5rem;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.task-bar-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 0.75rem;
+  color: hsl(var(--foreground));
+}
+
+.task-bar-search-input::placeholder {
+  color: hsl(var(--muted-foreground));
+}
+
+/* ─── Bulk select toolbar ─── */
+
+.task-bar-bulk-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.task-bar-bulk-toolbar .task-card-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ─── Bulk select toggle button (next to search) ─── */
+
+.task-bar-bulk-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.125rem;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: hsl(var(--muted-foreground));
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.task-bar-bulk-toggle:hover {
+  color: hsl(var(--foreground));
+}
+
+.task-bar-bulk-toggle.active {
+  color: hsl(var(--primary));
+}
+
+/* ─── Bulk checkbox (round) ─── */
+
+.task-card-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  border: 1.5px solid hsl(var(--muted-foreground));
+  border-radius: 50%;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.task-card-checkbox.checked {
+  background: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+}
+
+/* ─── Activation card (deprecated — use automation-card) ─── */
+
+.activation-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  text-align: left;
+}
+
+.activation-card:hover {
+  background: hsl(var(--accent));
+}
+
+.activation-usage-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.375rem;
+  border-radius: 9999px;
+  background: hsl(var(--primary) / 0.15);
+  color: hsl(var(--primary));
+  font-size: 0.625rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* ─── Automation card ─── */
+
+.automation-card-wrapper {
+  position: relative;
+}
+
+.automation-card-wrapper:hover .automation-card-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.automation-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  padding-right: 2.5rem;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  text-align: left;
+}
+
+.automation-card:hover {
+  background: hsl(var(--accent));
+}
+
+.automation-usage-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.375rem;
+  border-radius: 9999px;
+  background: hsl(var(--primary) / 0.15);
+  color: hsl(var(--primary));
+  font-size: 0.625rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.automation-card-actions {
+  position: absolute;
+  right: 0.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.automation-card-archive {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--background));
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: hsl(var(--muted-foreground));
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.automation-card-archive:hover {
+  background: hsl(var(--destructive) / 0.1);
+  color: hsl(var(--destructive));
+}
+
+/* ─── Empty state ─── */
+
+.task-bar-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 2rem 1rem;
+  color: hsl(var(--muted-foreground));
+  font-size: 0.8125rem;
+  text-align: center;
+}

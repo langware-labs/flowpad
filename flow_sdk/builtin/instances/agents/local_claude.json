@@ -1,0 +1,15 @@
+{
+  "env": "local",
+  "allowed_public_access": true,
+  "visitor_role": "reader",
+  "type": "agent",
+  "uname": "local",
+  "name": "Local Claude CLI",
+  "agent_config": {
+    "worker_type": "claude_code_cli",
+    "checkpoint_mode": "off",
+    "planning_enabled": false,
+    "execution_enabled": true
+  },
+  "updated_date": "2026-01-05T00:00:00Z"
+}

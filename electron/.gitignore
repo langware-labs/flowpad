@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+out/
+dist/
+release/
+resources/flowpad-venv/
+
+# TypeScript output
+scripts/*.js
+scripts/*.js.map
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

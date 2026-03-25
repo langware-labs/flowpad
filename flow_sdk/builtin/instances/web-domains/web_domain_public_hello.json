@@ -1,0 +1,9 @@
+{
+  "allowed_public_access": true,
+  "type": "web_domain",
+  "id": "61fe78eb-a723-4d09-aedf-d0d96ae70740",
+  "domain": "dev.microapp.flowpad.app",
+  "verified": true,
+  "micro_app_id": "cd15bf08-fb57-48f5-a657-0f9f89b5a635",
+  "updated_date": "2025-09-18T13:58:09Z"
+}

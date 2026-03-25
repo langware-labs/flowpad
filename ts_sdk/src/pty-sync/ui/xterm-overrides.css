@@ -1,0 +1,18 @@
+/*
+ * xterm.js places .xterm-viewport (scrollable) and .xterm-screen (canvas) as
+ * siblings that both fill 100% of the terminal div. A non-zero-width layout
+ * scrollbar is unclickable (xterm-screen canvas is on top) and bleeds into the
+ * rightmost text column. Hide it with width:0 so Chrome/Safari use the native
+ * overlay scrollbar (appears on hover, takes no layout space).
+ */
+
+/* Firefox — thin overlay scrollbar */
+.xterm .xterm-viewport {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+}
+
+/* Chrome / Safari / Edge — hide layout scrollbar; rely on OS overlay */
+.xterm .xterm-viewport::-webkit-scrollbar {
+  width: 0;
+}

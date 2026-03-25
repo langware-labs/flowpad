@@ -1,0 +1,11 @@
+{
+  "allowed_public_access": true,
+  "type": "micro_app",
+  "id": "a8c8c89a-d0ef-44ec-93a3-7b6df9bccb33",
+  "name": "chatdbg",
+  "visitor_role": "viewer",
+  "location_type": "Builtin",
+  "location_root": "chatdbg",
+  "updated_date": "2025-09-28T11:54:09Z",
+  "domains": ["chatdbg.com"]
+}

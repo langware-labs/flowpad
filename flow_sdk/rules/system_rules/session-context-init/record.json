@@ -1,0 +1,8 @@
+{
+  "name": "session-context-init",
+  "type": "rule",
+  "description": "Injects session_id into flow_context on session start",
+  "hook_events": ["SessionStart"],
+  "actions": ["add_context"],
+  "scope": "system"
+}

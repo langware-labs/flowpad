@@ -1,0 +1,11 @@
+{
+  "allowed_public_access": true,
+  "type": "micro_app",
+  "id": "cd15bf08-fb57-48f5-a657-0f9f89b5a635",
+  "name": "public-hello",
+  "visitor_role": "viewer",
+  "location_type": "Builtin",
+  "location_root": "hello",
+  "updated_date": "2025-09-18T15:54:09Z",
+  "domains": ["dev.microapp.flowpad.app"]
+}

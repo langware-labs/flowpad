@@ -1,0 +1,40 @@
+import { APIEntity, registerEntity } from '../APIEntity';
+import { DockPointerData } from '../models/DockPointer';
+import { ViewType } from '../utils/ui/view-types';
+
+/**
+ * Skill entity — backed by a SkillRecord on disk (~/.claude/skills/<name>/).
+ *
+ * Create via:  const skill = new Skill({ name: 'my-skill' }); await skill.save();
+ * This calls POST /api/v1/graph/skill which creates the skill folder + SKILL.md server-side.
+ */
+@registerEntity
+export class Skill extends APIEntity<Skill> {
+  static type: string = 'skill';
+  static override icon = 'Sparkles';
+
+  name: string = '';
+  description: string = '';
+  source_path?: string;
+
+  constructor(entity: Partial<Skill> = {}) {
+    super(entity);
+    this.name = entity.name ?? '';
+    this.description = entity.description ?? '';
+    this.source_path = entity.source_path;
+  }
+
+  get displayName(): string {
+    return this.name || 'Untitled Skill';
+  }
+
+  override get editorDockPointer(): DockPointerData {
+    const path = this.source_path ?? this.id;
+    return new DockPointerData(ViewType.ASSETS, `editor/skill/${path}`);
+  }
+
+  static async create(name: string, description?: string): Promise<Skill> {
+    const skill = new Skill({ name: name.trim(), description: description?.trim() ?? '' });
+    return skill.save();
+  }
+}

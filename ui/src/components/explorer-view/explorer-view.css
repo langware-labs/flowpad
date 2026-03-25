@@ -1,0 +1,146 @@
+/**
+ * Explorer View Styles
+ * Custom styles and overrides for SVAR FileManager integration
+ */
+
+.explorer-view-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.explorer-view-loading,
+.explorer-view-empty,
+.explorer-view-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+/* SVAR FileManager overrides to match FlowPad design system */
+.explorer-view-container .wx-filemanager {
+  height: 100%;
+  border: none;
+  border-radius: 0;
+  overflow: hidden;
+}
+
+/* Toolbar styling */
+.explorer-view-container .wx-toolbar {
+  background: hsl(var(--background));
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+/* File list styling */
+.explorer-view-container .wx-list {
+  background: hsl(var(--background));
+}
+
+.explorer-view-container .wx-list-item:hover {
+  background: hsl(var(--accent));
+}
+
+.explorer-view-container .wx-list-item.selected {
+  background: hsl(var(--accent));
+}
+
+/* Smaller icons and compact layout via CSS variables */
+.explorer-view-container {
+  --wx-icon-size: 14px;
+  --wx-button-icon-size: 14px;
+  --wx-input-icon-size: 14px;
+  --wx-font-size: 12px;
+  --wx-font-size-sm: 11px;
+  --wx-line-height: 1.3;
+  --wx-line-height-sm: 1.2;
+  --wx-input-height: 28px;
+  --wx-button-padding: 4px 8px;
+  --wx-input-padding: 4px 8px;
+}
+
+/* Tree view styling */
+.explorer-view-container .wx-tree {
+  background: hsl(var(--muted));
+  border-right: 1px solid hsl(var(--border));
+}
+
+/* Context menu styling */
+.explorer-view-container .wx-menu {
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  background: hsl(var(--popover));
+  border: 1px solid hsl(var(--border));
+}
+
+/* Breadcrumb styling */
+.explorer-view-container .wx-breadcrumbs {
+  padding: 8px 12px;
+  background: hsl(var(--muted));
+}
+
+/* Upload dropzone styling */
+.explorer-view-container .wx-dropzone {
+  border: 2px dashed hsl(var(--primary));
+  background: hsl(var(--primary) / 0.1);
+}
+
+/* Scrollbar styling */
+.explorer-view-container ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.explorer-view-container ::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+}
+
+.explorer-view-container ::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 4px;
+}
+
+.explorer-view-container ::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Card/Grid view - smaller cards and icons */
+.explorer-view-container .wx-item {
+  width: 120px !important;
+  height: 110px !important;
+  margin: 0 10px 10px 0 !important;
+}
+
+/* Cards container - tighter grid */
+.explorer-view-container .wx-cards {
+  padding: 12px 10px 8px !important;
+  gap: 8px !important;
+}
+
+/* Smaller card preview area (the icon container) */
+.explorer-view-container .wx-item > div:first-child {
+  height: 70px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* File icon SVG sizing */
+.explorer-view-container .wx-item svg {
+  width: 48px !important;
+  height: 48px !important;
+}
+
+/* Card title/name styling */
+.explorer-view-container .wx-item > div:last-child {
+  font-size: 11px !important;
+  padding: 4px 6px !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}

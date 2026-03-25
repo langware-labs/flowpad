@@ -1,0 +1,16 @@
+test 1: Switch between sidebar dock views from a session
+- navigate to {APP_URL}/
+- fill landing input with "tab switching test"
+- press Enter
+- wait for URL to change to /dock/session/...
+- click "New Session" button
+- validate instruction input is visible and status is IDLE
+- hover over the sidebar chevron to expand secondary nav items
+- click Shell icon in sidebar
+- validate URL changed to /dock/shell/...
+- hover over the sidebar chevron again
+- click Editor icon in sidebar
+- validate URL changed to /dock/editor
+- click Home button (first sidebar item)
+- validate URL changed to /
+- validate landing page heading "Hey" is visible

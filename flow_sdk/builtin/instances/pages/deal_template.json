@@ -1,0 +1,83 @@
+{
+  "allowed_public_access": true,
+  "type": "page",
+  "id": "7596f228-a7e5-4448-8cf3-347f673dbe4c",
+  "title": "Deal",
+  "updated_date": "2025-04-27T13:51:09Z",
+  "tags": ["template"],
+  "raw_content": {
+    "root": {
+      "children": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "children": [
+                        {
+                          "detail": 0,
+                          "format": 0,
+                          "mode": "normal",
+                          "style": "",
+                          "text": "Tasks",
+                          "type": "text",
+                          "version": 1
+                        }
+                      ],
+                      "direction": "ltr",
+                      "format": "",
+                      "indent": 0,
+                      "type": "heading",
+                      "version": 1,
+                      "tag": "h2"
+                    }
+                  ],
+                  "direction": "ltr",
+                  "format": "",
+                  "indent": 0,
+                  "type": "collapsible-title",
+                  "version": 1
+                },
+                {
+                  "children": [
+                    {
+                      "info": "Task View",
+                      "type": "fence",
+                      "version": 1
+                    }
+                  ],
+                  "direction": "ltr",
+                  "format": "",
+                  "indent": 0,
+                  "type": "collapsible-content",
+                  "version": 1
+                }
+              ],
+              "direction": "ltr",
+              "format": "",
+              "indent": 0,
+              "type": "collapsible-container",
+              "version": 1,
+              "open": true
+            }
+          ],
+          "direction": null,
+          "format": "",
+          "indent": 0,
+          "type": "paragraph",
+          "version": 1,
+          "textFormat": 0,
+          "textStyle": ""
+        }
+      ],
+      "direction": null,
+      "format": "",
+      "indent": 0,
+      "type": "root",
+      "version": 1
+    }
+  },
+  "version": "6"
+}
