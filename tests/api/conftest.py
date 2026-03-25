@@ -42,10 +42,24 @@ def clean_db():
 
 def _reset_db_state():
     """Clear all cached DB state so the next access creates a fresh event-loop-bound session."""
+    import asyncio
+
     import flow_sdk.db.database as db_mod
     import flow_sdk.db.drivers.db_driver as db_driver_mod
     from flow_sdk.db.db_entity import DBEntity
     from flow_sdk.db.drivers.db_driver import LazyDBDriver
+
+    # Close the SQLite driver's own engine before dropping the reference.
+    # Without this, the orphaned engine holds the DB file open, causing
+    # "disk I/O error" when the next test opens a new connection to the same file.
+    driver = db_driver_mod._driver_instances.get("sqlite")
+    if driver is not None:
+        try:
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(driver.close())
+            loop.close()
+        except Exception:
+            pass
 
     db_mod._session_factory = None
     db_mod._engine = None

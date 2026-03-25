@@ -32,12 +32,9 @@ class RequestTransactionMiddleware:
 
         # Get or set the local user
         if not req_info.user:
-            try:
-                local_user = await User.get_one({"uname": "local"})
-                if local_user:
-                    req_info.user = local_user
-            except Exception as e:
-                logging.debug(f"[Middleware] Failed to get local user: {e}")
+            local_user = await User.get_one({"uname": "local"})
+            if local_user:
+                req_info.user = local_user
 
         # Load the target entity if specified
         target_entity = None
