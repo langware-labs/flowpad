@@ -11,10 +11,6 @@ requires-python = ">=3.10"
 authors = [
     {name = "Langware Labs", email = "eran@langware.ai"},
 ]
-
-[project.urls]
-Homepage = "https://flowpad.ai"
-Repository = "https://github.com/langware-labs/flowpad"
 dependencies = [
     "platformdirs",
     "requests",
@@ -56,6 +52,10 @@ dependencies = [
     "colorama",
     "apscheduler~=3.10",
 ]
+
+[project.urls]
+Homepage = "https://flowpad.ai"
+Repository = "https://github.com/langware-labs/flowpad"
 
 [project.scripts]
 flow = "flow_sdk.cli:cli_main"
