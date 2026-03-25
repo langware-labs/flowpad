@@ -705,32 +705,52 @@ class SchemaRegistry:
             if hasattr(driver, "delete_entities_by_type"):
                 await driver.delete_entities_by_type(type_name)
 
+        _CONCURRENT_INDEX_BATCH = 32
+
         indexed = 0
         skipped = 0
         fresh_count = 0
         errors_count = 0
-        fts_batch: list = []
         t0 = time.perf_counter()
+
+        # collect all records up front (RecordList is a generator)
+        all_records: list = []
         for rec in RecordList(record_class=record_cls):
-            if limit is not None and (indexed + skipped) >= limit:
+            if limit is not None and len(all_records) >= limit:
                 break
             if skip_fresh and not rec.index_required:
                 fresh_count += 1
                 skipped += 1
                 continue
-            try:
-                await rec.sync_to_db(fts_batch=fts_batch)
-                indexed += 1
-            except Exception:
-                # RecordError is created and saved inside rec.sync_to_db() before re-raising.
-                errors_count += 1
-                skipped += 1
-        # Flush all FTS entries in one connection — avoids NullPool overhead per record.
-        if fts_batch:
-            from flow_sdk.db import get_db_driver
-            driver = get_db_driver()
-            if hasattr(driver, "fts_upsert"):
-                await driver.fts_upsert(fts_batch)
+            all_records.append(rec)
+
+        # process in concurrent batches
+        for batch_start in range(0, len(all_records), _CONCURRENT_INDEX_BATCH):
+            batch = all_records[batch_start:batch_start + _CONCURRENT_INDEX_BATCH]
+            batch_fts: list = []
+
+            async def _index_one(rec, _fts=batch_fts):
+                await rec.sync_to_db(fts_batch=_fts)
+
+            results = await asyncio.gather(
+                *[_index_one(r) for r in batch],
+                return_exceptions=True,
+            )
+            for r in results:
+                if isinstance(r, Exception):
+                    errors_count += 1
+                    skipped += 1
+                else:
+                    indexed += 1
+
+            if batch_fts:
+                from flow_sdk.db import get_db_driver
+                driver = get_db_driver()
+                if hasattr(driver, "fts_upsert"):
+                    await driver.fts_upsert(batch_fts)
+
+            await asyncio.sleep(0)
+
         duration_ms = round((time.perf_counter() - t0) * 1000, 1)
         return IndexResult(
             type_name=type_name,

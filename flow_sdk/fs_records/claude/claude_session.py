@@ -337,72 +337,31 @@ class ClaudeSessionRecord(Record):
     @property
     def search_title(self) -> str | None:
         """Last user prompt, used as FTS title for BM25 name-weight boost."""
-        msg = getattr(self, "last_user_message", None)
-        return str(msg)[:120] if msg else None
+        d = object.__getattribute__(self, "__dict__")
+        cached = d.get("_session_batch_stats")
+        if cached is not None:
+            msg = cached.get("last_user_message")
+            return str(msg)[:120] if msg else None
+        return None
 
     @property
     def search_content(self) -> str | None:
         """FTS content: slug/cwd metadata + one line per user/assistant turn.
 
-        Format::
+        Uses ``_session_batch_stats`` cache if already populated (avoids a
+        second full JSONL parse when stats were loaded for another reason).
+        Falls back to a lightweight no-file-read path using fields already
+        set at construction time (slug, cwd).
 
-            user: <user message text>
-            assistant: <assistant response text, truncated at 500 chars>
-
-        Returns None if the JSONL file cannot be read.
+        Returns None if no content is available.
         """
         d = object.__getattribute__(self, "__dict__")
-        path = d.get("jsonl_path") or d.get("source_file_field") or ""
-        if not path or not Path(path).is_file():
-            return None
-
-        lines: list[str] = []
-        slug = d.get("slug", "")
-        cwd = d.get("cwd", "")
-        if slug:
-            lines.append(slug)
-        if cwd:
-            lines.append(cwd)
-
-        with open(path, encoding="utf-8") as fh:
-            for raw_line in fh:
-                raw_line = raw_line.strip()
-                if not raw_line:
-                    continue
-                try:
-                    raw = json.loads(raw_line)
-                except json.JSONDecodeError:
-                    continue
-
-                entry_type = raw.get("type", "")
-                if entry_type == "user":
-                    msg = raw.get("message", {}) or {}
-                    content = msg.get("content", "") if isinstance(msg, dict) else ""
-                    if isinstance(content, str):
-                        text = content.strip()
-                    elif isinstance(content, list):
-                        text = next(
-                            (b.get("text", "").strip() for b in content
-                             if isinstance(b, dict) and b.get("type") == "text"),
-                            "",
-                        )
-                    else:
-                        text = ""
-                    if text:
-                        lines.append(f"user: {text}")
-
-                elif entry_type == "assistant":
-                    msg = raw.get("message", {}) or {}
-                    for block in msg.get("content", []) or []:
-                        if isinstance(block, dict) and block.get("type") == "text":
-                            text = block.get("text", "").strip()
-                            if text:
-                                if len(text) > 500:
-                                    text = text[:500] + "…"
-                                lines.append(f"assistant: {text}")
-                            break
-
-        return "\n".join(lines) if lines else None
+        cached = d.get("_session_batch_stats")
+        if cached is not None:
+            return cached.get("search_content")
+        # Lightweight fallback: no file read — use fields already in __dict__
+        parts = [d.get("slug", ""), d.get("cwd", "")]
+        return " ".join(p for p in parts if p) or None
 
     @classmethod
     def discovery_items_count(cls, limit: int | None = None) -> int:

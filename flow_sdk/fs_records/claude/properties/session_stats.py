@@ -93,6 +93,7 @@ def _parse_jsonl_stats(path: Path) -> dict:
 
     models_used_counts: dict[str, int] = {}
     last_user_message: str | None = None
+    fts_lines: list[str] = []
 
     try:
         with open(path, encoding="utf-8") as fh:
@@ -131,12 +132,14 @@ def _parse_jsonl_stats(path: Path) -> dict:
                         text = content.strip()
                         if text and not text.startswith("<"):
                             last_user_message = text[:200]
+                            fts_lines.append(f"user: {text}")
                     elif isinstance(content, list):
                         for block in content:
                             if isinstance(block, dict) and block.get("type") == "text":
                                 text = block.get("text", "").strip()
                                 if text and not text.startswith("<"):
                                     last_user_message = text[:200]
+                                    fts_lines.append(f"user: {text}")
                                 break
 
                 elif entry_type == "assistant":
@@ -157,12 +160,25 @@ def _parse_jsonl_stats(path: Path) -> dict:
                     for block in msg.get("content") or []:
                         if isinstance(block, dict) and block.get("type") == "tool_use":
                             tools.add(block.get("name", ""))
+                        elif isinstance(block, dict) and block.get("type") == "text":
+                            text = block.get("text", "").strip()
+                            if text:
+                                fts_lines.append(f"assistant: {text[:500]}")
+                            break
 
                 elif entry_type == "system" and raw.get("subtype") == "turn_duration":
                     duration_ms += raw.get("durationMs", 0)
 
     except OSError:
         pass
+
+    # Prepend envelope fields to FTS content
+    envelope_prefix: list[str] = []
+    if slug:
+        envelope_prefix.append(slug)
+    if cwd:
+        envelope_prefix.append(cwd)
+    search_content: str | None = "\n".join(envelope_prefix + fts_lines) or None
 
     primary_model: str | None = (
         max(models_used_counts.items(), key=lambda x: x[1])[0]
@@ -210,6 +226,7 @@ def _parse_jsonl_stats(path: Path) -> dict:
         "models_used": sorted(models_used_counts.keys()),
         "primary_model": primary_model,
         "created_at": first_timestamp,
+        "search_content": search_content,
     }
 
 

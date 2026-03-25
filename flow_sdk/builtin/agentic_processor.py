@@ -1003,7 +1003,7 @@ class AgenticProcess(Entity):
             started = await shell.start_pty(on_exit=on_exit)
 
             if started:
-                await asyncio.sleep(0.5)  # let shell initialize and write prompt before injecting
+                await asyncio.sleep(1.0)  # let shell initialize and write prompt before injecting
                 await compute_node.compute_provider.send_pty_input(
                     compute_node.node_provider_id, shell.id, f"{command}\r".encode(), None, None
                 )
