@@ -230,6 +230,14 @@ class ClaudeSessionRecord(Record):
         if mc is not None:
             result["message_count"] = mc
 
+        # slug and cwd: set cheaply by from_jsonl() via first-line scan.
+        slug = inst.get("slug")
+        if slug:
+            result["slug"] = slug
+        cwd = inst.get("cwd")
+        if cwd:
+            result["cwd"] = cwd
+
         return result
 
     def to_transcript_dicts(self, include_raw_json: bool = False) -> list[dict]:
@@ -494,7 +502,8 @@ class ClaudeSessionRecord(Record):
         session_id = path.stem  # fallback
         slug = ""
 
-        # Quick first-entry scan for session_id and slug
+        # Quick first-entry scan for session_id, slug, and cwd
+        cwd = ""
         try:
             with open(path, encoding="utf-8") as fh:
                 for line in fh:
@@ -509,6 +518,8 @@ class ClaudeSessionRecord(Record):
                         session_id = raw["sessionId"]
                     if raw.get("slug"):
                         slug = raw["slug"]
+                    if not cwd and raw.get("cwd"):
+                        cwd = raw["cwd"]
                     if session_id != path.stem and slug:
                         break  # have both — stop reading
         except OSError:
@@ -526,6 +537,7 @@ class ClaudeSessionRecord(Record):
         return cls(
             session_id=session_id,
             slug=slug,
+            cwd=cwd,
             message_count=message_count,
             jsonl_path=str(path),
             source_file=str(path),

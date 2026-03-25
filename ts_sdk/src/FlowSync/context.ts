@@ -242,6 +242,8 @@ class DataContext extends EventEmitter {
     runInAction(() => {
       this.activeShellId = sessionId;
     });
+    const shell = dataManager.getByTypeIdFromCache<Shell>(new TypeId(EntityTypes.Shell, sessionId));
+    defineGlobal('shell', shell ?? null);
     this.emit(ContextEventType.CONTEXT_CHANGED);
   }
 
@@ -460,6 +462,7 @@ class DataContext extends EventEmitter {
     }
     // Load history for process entities when added to context
     if (_entityKey === ContextEntitiesEnum.CurrentProcessTypeId && entity instanceof AgenticProcess) {
+      defineGlobal('process', entity);
       await entity.loadHistory();
     }
   }
