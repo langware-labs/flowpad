@@ -341,7 +341,7 @@ Layer processors run on every filtered event set and produce **synthetic events*
 | Layer | Color | What it produces |
 |-------|-------|-----------------|
 | `debug` | muted | All raw `agent_hook` / `hook_op` events (default) |
-| `info` | cyan | Derived highlights: `TaskStart` (Task tool), `SkillUsed` (Skill tool), `SessionStart`, `SessionEnd`, `AgentComplete` (Stop), `SubagentStart`, `TaskCompleted`, `PostToolUseFailure` |
+| `info` | cyan | Derived highlights: `TaskStart` (Task tool), `SkillUsed` (Skill tool), `SessionStart`, `SessionEnd`, `AgentComplete` (Stop), `SubagentStart`, `TaskCreated`, `TaskCompleted`, `PostToolUseFailure` |
 | `raw_notifications` | emerald | `PlanReady` — fires when a `Write` tool targets `.claude/plans/*.md` |
 | `resource` | green | One entry per `hook_op` event (CRUD/event/invoke/log operations) |
 

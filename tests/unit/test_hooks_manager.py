@@ -168,6 +168,7 @@ def test_hook_event_types():
 
     # Agent teams
     assert HookEventType.TEAMMATE_IDLE == "TeammateIdle"
+    assert HookEventType.TASK_CREATED == "TaskCreated"
     assert HookEventType.TASK_COMPLETED == "TaskCompleted"
 
     # Configuration
