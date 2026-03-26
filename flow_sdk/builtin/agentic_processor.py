@@ -1017,9 +1017,7 @@ class AgenticProcess(Entity):
 
             if started:
                 await asyncio.sleep(1.0)  # let shell initialize and write prompt before injecting
-                await compute_node.compute_provider.send_pty_input(
-                    compute_node.node_provider_id, shell.id, f"{command}\r".encode(), None, None
-                )
+                await shell.send_input(command, bracketed=True)
 
             self._set_process_state(status=ProcessorStatus.RUNNING.value, error=None)
             if visible is not None:
