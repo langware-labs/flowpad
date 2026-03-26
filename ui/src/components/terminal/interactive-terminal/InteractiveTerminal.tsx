@@ -42,6 +42,7 @@ import {
   InputFilesPanel,
   QueuePanel,
 } from './side-windows';
+import { useSettings } from '@src/hooks/use-settings';
 
 export interface TraceFilters {
   events: boolean;
@@ -236,6 +237,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const [bufferFlushCount, setBufferFlushCount] = useState(0);
   const anchorsResolvedRef = useRef(false);
 
+  const { settings } = useSettings();
   const { shell, replayDone } = useShell(sessionId);
   // Keep shellRef in sync so callbacks and hooks that capture shellRef still work.
   shellRef.current = shell;
@@ -856,16 +858,25 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   useEffect(() => {
     if (!replayDone || !shell) return;
 
-    const handlePtyData = (data: string, seq?: number) => {
-      if (seq !== undefined) {
-        const chunk = shell.getPtyChunk(seq);
-        if (chunk) ptySyncRef.current.processChunk(chunk);
-      }
+    const bufferEnabled = settings.bufferSyncUpdates;
+
+    // DEC 2026 synchronized output buffering.
+    // CC wraps TUI redraws in BSU (\x1b[?2026h) ... ESU (\x1b[?2026l).
+    // Between these markers CC clears the screen and rewrites everything.
+    // Without buffering each WS message renders individually — you see
+    // the clear then the progressive refill. With buffering we hold all
+    // data until ESU arrives and write it atomically in one term.write().
+    const BSU = '\x1b[?2026h';
+    const ESU = '\x1b[?2026l';
+    let syncBuf = '';
+    let inSync = false;
+    let syncTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const writeToTerm = (data: string) => {
       const term = terminalRef.current;
       if (!term) return;
       try {
         term.write(data, () => {
-          // Bump flush count until anchors resolve so the segment effect retries.
           if (!anchorsResolvedRef.current) {
             ptySyncRef.current.notifyBufferReady();
             setBufferFlushCount(c => c + 1);
@@ -876,8 +887,80 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       }
     };
 
-    return shell.onOutput(handlePtyData);
-  }, [shell, replayDone]);
+    // Persistent scrollTop watcher — logs scroll resets
+    const vp2 = terminalRef.current?.element?.querySelector('.xterm-viewport') as HTMLElement | null;
+    let prevST2 = vp2?.scrollTop ?? 0;
+    const scrollInterval = setInterval(() => {
+      if (!vp2) return;
+      const st = vp2.scrollTop;
+      if (prevST2 > 500 && st < 50) {
+        console.log('[SCROLL] scrollTop reset!', prevST2, '→', st, 'scrollH:', vp2.scrollHeight);
+      }
+      prevST2 = st;
+    }, 16);
+
+    const handlePtyData = (data: string, seq?: number) => {
+      if (data.includes('\x1b[3J')) console.log('[PTY] ESC[3J (clear scrollback) received, seq:', seq, 'size:', data.length);
+      if (data.includes('\x1b[2J')) console.log('[PTY] ESC[2J (clear screen) received, seq:', seq);
+      if (data.includes('\x1b[H')) console.log('[PTY] ESC[H (cursor home) received, seq:', seq);
+      if (seq !== undefined) {
+        const chunk = shell.getPtyChunk(seq);
+        if (chunk) ptySyncRef.current.processChunk(chunk);
+      }
+
+      if (!bufferEnabled) {
+        writeToTerm(data);
+        return;
+      }
+
+      console.log("############### applying buffering from BSU to ESU")
+      if (!inSync) {
+        const bsuIdx = data.indexOf(BSU);
+        if (bsuIdx >= 0) {
+          if (bsuIdx > 0) writeToTerm(data.slice(0, bsuIdx));
+          inSync = true;
+          syncBuf = data.slice(bsuIdx);
+          syncTimer = setTimeout(() => {
+            if (inSync && syncBuf) {
+              writeToTerm(syncBuf);
+              syncBuf = '';
+              inSync = false;
+            }
+          }, 2000);
+        } else {
+          writeToTerm(data);
+        }
+      } else {
+        syncBuf += data;
+      }
+
+      if (inSync) {
+        const esuIdx = syncBuf.indexOf(ESU);
+        if (esuIdx >= 0) {
+          if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+          const endIdx = esuIdx + ESU.length;
+          const syncData = syncBuf.slice(0, endIdx);
+          const remainder = syncBuf.slice(endIdx);
+          syncBuf = '';
+          inSync = false;
+          writeToTerm(syncData);
+          if (remainder) handlePtyData(remainder);
+        }
+      }
+    };
+
+    const unsub = shell.onOutput(handlePtyData);
+    return () => {
+      unsub();
+      clearInterval(scrollInterval);
+      if (syncTimer) clearTimeout(syncTimer);
+      if (syncBuf && terminalRef.current) {
+        try { terminalRef.current.write(syncBuf); } catch {}
+        syncBuf = '';
+        inSync = false;
+      }
+    };
+  }, [shell, replayDone, settings.bufferSyncUpdates]);
 
   // On session restart: clear terminal, reset pty-sync, and re-fit so the
   // resumed session starts on a clean, full-size canvas.

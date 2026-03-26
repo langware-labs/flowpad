@@ -91,6 +91,19 @@ export function SettingsSection() {
         </Button>
       </div>
 
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id="buffer-sync-updates"
+          checked={settings.bufferSyncUpdates}
+          onCheckedChange={(checked) => {
+            settings.bufferSyncUpdates = checked === true;
+          }}
+        />
+        <Label htmlFor="buffer-sync-updates" className="cursor-pointer text-sm">
+          Buffer terminal sync updates (prevents scroll jumps)
+        </Label>
+      </div>
+
       <div>
         <Label className="mb-2 block text-sm font-medium">CLI Log Level</Label>
         <Select value={cliLogLevel} onValueChange={handleLevelChange}>

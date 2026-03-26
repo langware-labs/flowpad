@@ -922,6 +922,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             return ApiFailResponse(message="No WebSocket connection available", data=response_msg.model_dump())
 
         working_dir = body.get("working_dir")
+        initial_command = body.get("initial_command")
 
         # Delegate to start_machine_pty_session for the actual work
         try:
@@ -932,6 +933,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 cols=cols,
                 name=name,
                 working_dir=working_dir,
+                initial_command=initial_command,
             )
         except Exception as e:
             logging.error(f"[PTY] Failed to create PTY session: {e}", exc_info=True)
@@ -991,6 +993,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         cols: int = 80,
         name: str | None = None,
         working_dir: str | None = None,
+        initial_command: str | None = None,
         on_exit: Callable[[int | None], None] | None = None,
     ) -> bool:
         """Start a PTY session for machine use with proper output routing.
@@ -1008,6 +1011,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             cols: Terminal columns (default 80)
             name: Optional display name for the session
             working_dir: Optional working directory for the PTY session.
+            initial_command: Optional command to inject after shell prompt.
             on_exit: Optional callback fired when the PTY process exits (receives exit code).
 
         Returns:
@@ -1103,6 +1107,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 rows=rows,
                 cols=cols,
                 working_dir=working_dir,
+                initial_command=initial_command,
                 on_exit=on_exit,
             )
             logging.info(f"[PTY] Machine PTY session created: {pty_key}")
@@ -1256,7 +1261,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         if cls is None:
             # Lazy-import well-known record types that aren't loaded at startup.
             # Importing the module triggers __init_subclass__ → SchemaRegistry registration.
-            if record_type in ("session", "claude_session"):
+            if record_type == "claude_session":
                 from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord  # noqa: PLC0415
 
                 cls = ClaudeSessionRecord
@@ -1279,12 +1284,12 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                     # during normal startup (race condition), so this is not an error.
                     return ApiSuccessResponse(data=None)
                 await loop.run_in_executor(None, lambda: record.discovery(force=True))
-                return ApiSuccessResponse(data=record.to_dict())
+                return ApiSuccessResponse(data=record.meta_dict())
             else:
                 records = await loop.run_in_executor(None, lambda: cls.discover())
                 for rec in records:
                     await loop.run_in_executor(None, lambda r=rec: r.discovery(force=True))
-                return ApiSuccessResponse(data=[r.to_dict() for r in records])
+                return ApiSuccessResponse(data=[r.meta_dict() for r in records])
         except Exception as exc:
             logging.warning("discovery action error for %r uuid=%r: %s", record_type, uuid, exc)
             return ApiSuccessResponse(data=None)
@@ -1362,7 +1367,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         except Exception as e:
             logging.warning(f"[PTY] Failed to update Shell entity: {e}")
 
-        return ApiSuccessResponse(data=record.to_dict())
+        return ApiSuccessResponse(data=record.meta_dict())
 
     @action.post(action_name="elevate-shell-session")
     async def _elevate_shell_session(self) -> ApiResponse:
@@ -2556,58 +2561,79 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             workdir = body.get("workdir")
             project_id = body.get("projectId")
 
-            from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
-
             # Try to find existing process by worker_session_id
             existing = await AgenticProcess.get_all(
                 entities_filter=QueryFilter(match=ExpressionNode(worker_session_id=session_id))
             )
             if existing:
                 process = existing[0]
-                created = False
-            else:
-                # Create new processor + process
-                processor = AgenticProcessor()
-                owner = request_info.someone_typeid if request_info else None
-                await processor.save(owner=owner)
-
-                context_data = {"compute_node_id": f"{self.type}-{self.id}"}
-                if project_id:
-                    context_data["project_id"] = project_id
-
-                process = AgenticProcess(
-                    processor_id=processor.id,
-                    worker_session_id=session_id,
-                    use_worker_history=True,
-                    context_data=context_data,
-                    workdir=workdir,
-                    compute_node_id=str(self.typeid),
-                )
-                await process.save(owner=owner)
-                created = True
-
-                logging.info(
-                    f"ComputeNode {self.id} upserted AgenticProcess {process.id} for session {session_id} (created). "
-                    f"worker_session_id on saved object={process.worker_session_id}"
+                return ApiSuccessResponse(
+                    data={
+                        "id": process.id,
+                        "type": process.type,
+                        "processor_id": process.processor_id,
+                        "worker_session_id": process.worker_session_id,
+                        "created": False,
+                    }
                 )
 
-            # Set resume flag if transcript exists on disk (O(1) with workdir, O(P) fallback).
-            # Once resume=True is stored we skip this check on subsequent calls.
-            if not process.cli_config.get("resume"):
-                record = ClaudeSessionRecord.discover_one(session_id, project=process.workdir)
-                if record:
-                    process.cli_config = {**process.cli_config, "resume": True}
-                    if not process.workdir and record.cwd:
-                        process.workdir = record.cwd
-                    await process.save()
+            # Resolve workdir + project + project_encoded_name from ClaudeSessionRecord
+            project_encoded_name = None
+            try:
+                from flow_sdk.builtin.project import Project
+                from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+
+                session_rec = ClaudeSessionRecord.discover_one(session_id)
+                if session_rec:
+                    if session_rec.cwd and not workdir:
+                        workdir = session_rec.cwd
+                    project_encoded_name = getattr(session_rec, "project_encoded_name", None)
+                if workdir and not project_id:
+                    projects = await Project.get_all()
+                    best, best_len = None, 0
+                    for p in projects:
+                        mp = getattr(p, "fs_storage_mount_path", None)
+                        if mp and workdir.startswith(str(mp)) and len(mp) > best_len:
+                            best, best_len = p, len(mp)
+                    if best:
+                        project_id = best.id
+            except Exception:
+                pass
+
+            # Create new processor + process
+            processor = AgenticProcessor()
+            owner = request_info.someone_typeid if request_info else None
+            await processor.save(owner=owner)
+
+            context_data = {"compute_node_id": f"{self.type}-{self.id}"}
+            if workdir:
+                context_data["workdir"] = workdir
+            if project_id:
+                context_data["project_id"] = project_id
+
+            process = AgenticProcess(
+                processor_id=processor.id,
+                worker_session_id=session_id,
+                use_worker_history=True,
+                context_data=context_data,
+                compute_node_id=str(self.typeid),
+                project_id=project_id or None,
+                project_encoded_name=project_encoded_name or None,
+            )
+            await process.save(owner=owner)
+
+            logging.info(
+                f"ComputeNode {self.id} upserted AgenticProcess {process.id} for session {session_id} (created). "
+                f"worker_session_id on saved object={process.worker_session_id}"
+            )
 
             return ApiSuccessResponse(
                 data={
                     "id": process.id,
                     "type": process.type,
-                    "processor_id": process.processor_id,
+                    "processor_id": processor.id,
                     "worker_session_id": session_id,
-                    "created": created,
+                    "created": True,
                 }
             )
 
@@ -2748,16 +2774,12 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         col_weights_raw = qp.get("col_weights")
         recency_boost_raw = qp.get("recency_boost")
-        recency_factor_raw = qp.get("recency_factor")
-        overfetch_raw = qp.get("overfetch")
         type_scores_raw = qp.get("type_scores")
         cal = None
-        if col_weights_raw or recency_boost_raw or recency_factor_raw or overfetch_raw or type_scores_raw:
+        if col_weights_raw or recency_boost_raw or type_scores_raw:
             cal = SearchCalibration(
                 col_weights=[float(x) for x in col_weights_raw.split(",")] if col_weights_raw else None,
                 recency_boost=float(recency_boost_raw) if recency_boost_raw else None,
-                recency_factor=float(recency_factor_raw) if recency_factor_raw else None,
-                overfetch=int(overfetch_raw) if overfetch_raw else None,
                 type_scores=json.loads(type_scores_raw) if type_scores_raw else None,
             )
 
@@ -2783,7 +2805,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                     "source_path": getattr(ent, "source_file", "")
                     or (ent.asset_ref.path if getattr(ent, "asset_ref", None) else "")
                     or "",
-                    "message_count": getattr(ent, "message_count", None),
                 }
             )
         return ApiSuccessResponse(data={"results": results, "query": q, "total": len(results), "indexer_ready": True})
@@ -2810,6 +2831,12 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         limit_types_raw = qp.get("limit_types", "").strip()
         limit_types = int(limit_types_raw) if limit_types_raw.isdigit() else None
         trigger = qp.get("trigger", "auto").strip() or "auto"
+
+        # Sync claude_error records from debug logs before scanning.
+        from flow_sdk.fs_records.claude.claude_error import sync_from_debug_logs  # noqa: PLC0415
+        from flow_sdk.fs_store.record import get_default_records_root  # noqa: PLC0415
+
+        await asyncio.to_thread(sync_from_debug_logs, get_default_records_root() / "claude_error")
 
         if filter_type:
             record_cls = _SR.get_record_cls(filter_type)
@@ -3291,14 +3318,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 pass  # if probe fails, fall through and let the real call raise
 
         try:
-            # For claude_error GETs, sync from debug logs first so new errors appear immediately.
-            if method == "get" and record_type == "claude_error":
-                from flow_sdk.fs_records.claude.claude_error import sync_from_debug_logs  # noqa: PLC0415
-                from flow_sdk.fs_store.record import get_default_records_root  # noqa: PLC0415
-
-                error_path = get_default_records_root() / "claude_error"
-                await asyncio.to_thread(sync_from_debug_logs, error_path)
-
             if method == "get":
                 # Parse query params into RecordQuery
                 qp = request_info.request.query_params
@@ -3309,7 +3328,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                     rec = await asyncio.to_thread(record_list.get, uid)
                     if rec is None:
                         return ApiFailResponse(message=f"Record '{uid}' not found", status_code=404)
-                    item = rec.to_dict()
+                    item = rec.meta_dict()
                     if include_set:
                         self._embed_includes(item, rec, include_set)
                     return ApiSuccessResponse(data=item)
@@ -3319,7 +3338,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 else:
                     results = await asyncio.to_thread(list, record_list)
 
-                data_list = [r.to_dict() for r in results]
+                data_list = [r.meta_dict() for r in results]
                 if include_set:
                     cache: dict = {}
                     for item, rec in zip(data_list, results):
@@ -3338,8 +3357,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                     await rec.sync_to_db()
                 except Exception as e:
                     logging.debug(f"[fs-records] sync_to_db skipped on create: {e}")
-                await self._broadcast_fs_record_op("create", record_type, rec.id, rec.to_dict())
-                return ApiSuccessResponse(data=rec.to_dict())
+                await self._broadcast_fs_record_op("create", record_type, rec.id, rec.meta_dict())
+                return ApiSuccessResponse(data=rec.meta_dict())
 
             if method == "put":
                 if not uid:
@@ -3355,8 +3374,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                     await rec.sync_to_db()
                 except Exception as e:
                     logging.debug(f"[fs-records] sync_to_db skipped on update: {e}")
-                await self._broadcast_fs_record_op("update", record_type, uid, rec.to_dict())
-                return ApiSuccessResponse(data=rec.to_dict())
+                await self._broadcast_fs_record_op("update", record_type, uid, rec.meta_dict())
+                return ApiSuccessResponse(data=rec.meta_dict())
 
             if method == "delete":
                 if not uid:
@@ -3393,31 +3412,122 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         result = clear_debug_errors()
         return ApiSuccessResponse(data=result)
 
-    @action.get(action_name="get-cwd")
-    async def get_cwd_action(self) -> "ApiResponse":
-        """Return the current working directory."""
-        cmd = await self.run_command("pwd", background=False)
-        cwd = (cmd.all_stdout or "").strip()
-        return ApiSuccessResponse(data={"cwd": cwd})
+    @action.get(action_name="git-status")
+    async def git_status_action(self) -> "ApiResponse":
+        """Return git status for a working directory.
 
-    @action.get(action_name="git-ops")
-    async def git_ops_action(self) -> "ApiResponse":
-        """Unified gateway for git operations. Delegates to GitRepo.dispatch().
+        Query params:
+            workdir: Absolute path to the working directory
 
-        Routing (via sub_path):
-            GET /git-ops/status              ?workdir=...  → git status
-            GET /git-ops/branch              ?workdir=...  → current branch
-            GET /git-ops/is-init             ?workdir=...  → is git repo
-            GET /git-ops/is-linked-worktree  ?workdir=...  → is linked worktree
+        Returns:
+            ApiResponse with branch, ahead/behind counts, and file list
         """
         request_info = get_current_request_info()
-        segments = [s for s in (request_info.sub_path or "").strip("/").split("/") if s]
         workdir = request_info.get_param("workdir") if request_info else None
         if not workdir:
             return ApiFailResponse(message="workdir parameter is required")
 
-        from flow_sdk.builtin.faas.git_repo import GitRepo
-        return await GitRepo(workdir, self).dispatch(segments[0] if segments else "")
+        async def run_git(*args: str) -> tuple[str, int]:
+            try:
+                cmd = await self.run_command(
+                    f"git -C '{workdir}' " + " ".join(args),
+                    background=False,
+                )
+                return (cmd.all_stdout or "").rstrip(), cmd.exit_code or 0
+            except Exception:
+                return "", 1
+
+        # Check if it's a git repo
+        _, rc = await run_git("rev-parse", "--is-inside-work-tree")
+        if rc != 0:
+            return ApiSuccessResponse(
+                data={"error": "not a git repository", "branch": None, "ahead": 0, "behind": 0, "files": []}
+            )
+
+        # Branch name
+        branch_out, _ = await run_git("branch", "--show-current")
+        branch = branch_out.strip() or None
+
+        # Ahead/behind
+        ahead, behind = 0, 0
+        ab_out, ab_rc = await run_git("rev-list", "--left-right", "--count", "HEAD...@{upstream}")
+        if ab_rc == 0 and ab_out:
+            parts = ab_out.split()
+            if len(parts) == 2:
+                try:
+                    ahead, behind = int(parts[0]), int(parts[1])
+                except ValueError:
+                    pass
+
+        # Numstat for unstaged and staged changes
+        def parse_numstat(output: str) -> dict[str, tuple[int, int]]:
+            result: dict[str, tuple[int, int]] = {}
+            for line in output.splitlines():
+                parts = line.split("\t", 2)
+                if len(parts) == 3:
+                    try:
+                        ins = int(parts[0]) if parts[0] != "-" else 0
+                        dels = int(parts[1]) if parts[1] != "-" else 0
+                        result[parts[2]] = (ins, dels)
+                    except ValueError:
+                        pass
+            return result
+
+        numstat_unstaged_out, _ = await run_git("diff", "--numstat")
+        numstat_staged_out, _ = await run_git("diff", "--numstat", "--staged")
+        numstat_unstaged = parse_numstat(numstat_unstaged_out)
+        numstat_staged = parse_numstat(numstat_staged_out)
+
+        # Porcelain status
+        porcelain_out, _ = await run_git("status", "--porcelain=v1")
+        files: list[dict] = []
+        for line in porcelain_out.splitlines():
+            if len(line) < 4:
+                continue
+            x = line[0]  # staged status
+            y = line[1]  # unstaged status
+            path_part = line[3:]
+
+            # Handle renames: "old -> new" or "old\0new"
+            display_path = path_part
+            lookup_path = path_part
+            if " -> " in path_part:
+                parts = path_part.split(" -> ", 1)
+                display_path = f"{parts[0]} → {parts[1]}"
+                lookup_path = parts[1]
+
+            # Determine display status: staged takes priority
+            if x in ("A", "M", "D", "R", "C") and x != " ":
+                status = x
+                ins, dels = numstat_staged.get(lookup_path, (None, None))
+            elif y in ("M", "D") and y != " ":
+                status = y
+                ins, dels = numstat_unstaged.get(lookup_path, (None, None))
+            elif x == "?" and y == "?":
+                status = "?"
+                ins, dels = None, None
+            else:
+                status = (x if x != " " else y) or "?"
+                ins, dels = None, None
+
+            files.append(
+                {
+                    "status": status,
+                    "path": display_path,
+                    "insertions": ins,
+                    "deletions": dels,
+                }
+            )
+
+        return ApiSuccessResponse(
+            data={
+                "error": None,
+                "branch": branch,
+                "ahead": ahead,
+                "behind": behind,
+                "files": files,
+            }
+        )
 
     @staticmethod
     def _embed_includes(
@@ -3430,7 +3540,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         *cache* deduplicates session lookups when embedding across a list.
         """
-        if "session" in include_set:
+        if "claude_session" in include_set:
             ref = rec.session_ref if hasattr(rec, "session_ref") else None
             if ref and ref.id:
                 if cache is not None and ref.id in cache:
@@ -3440,7 +3550,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
                     project = rec.data.get("project", "") if rec.data else ""
                     session = ClaudeSessionRecord.discover_one(ref.id, project=project)
-                    session_dict = session.to_dict() if session else None
+                    session_dict = session.meta_dict() if session else None
                     if cache is not None:
                         cache[ref.id] = session_dict
                 if session_dict:
@@ -3529,14 +3639,14 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                             message=f"No record at json_path '{json_path}'",
                             status_code=404,
                         )
-                    d = rec.to_dict()
+                    d = rec.meta_dict()
                     d["source_file"] = expanded_path
                     d["json_path"] = rec.json_path
                     return ApiSuccessResponse(data=d)
                 # List all records from the file
                 results = []
                 for rec in record_list:
-                    d = rec.to_dict()
+                    d = rec.meta_dict()
                     d["source_file"] = expanded_path
                     d["json_path"] = rec.json_path
                     results.append(d)
@@ -3564,7 +3674,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                     await updated.sync_to_db()
                 except Exception as e:
                     logging.debug(f"[fs-records] sync_to_db skipped on source-file update: {e}")
-                result_data = updated.to_dict()
+                result_data = updated.meta_dict()
                 result_data["source_file"] = expanded_path
                 result_data["json_path"] = updated.json_path
                 await self._broadcast_fs_record_op(
