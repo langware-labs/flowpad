@@ -19,7 +19,7 @@ from typing import Any, AsyncIterator, Callable, Literal
 import anyio
 import psutil
 
-from flow_sdk.config import PLATFORM_WIN32
+from flow_sdk.config import PLATFORM_DARWIN, PLATFORM_WIN32
 
 from .compute_provider import (
     ComputeProvider,
@@ -895,6 +895,49 @@ class LocalComputeProvider(ComputeProvider):
             return False
         pid = self._pty_sessions[pty_key].get("pid")
         return self._is_process_alive(pid) if pid else False
+
+    async def pick_folder(self, provider_node_id: str) -> str | None:
+        """Open a native OS folder-picker dialog on the local machine."""
+        import subprocess
+
+        if sys.platform == PLATFORM_DARWIN:
+            apple_script = 'set theFolder to choose folder\nreturn POSIX path of theFolder'
+            result = subprocess.run(
+                ["osascript", "-e", apple_script],
+                capture_output=True, text=True, timeout=120,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                return result.stdout.strip().rstrip("/")
+            return None
+
+        elif sys.platform == PLATFORM_WIN32:
+            ps_script = (
+                "Add-Type -AssemblyName System.Windows.Forms; "
+                "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                "if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath } else { '' }"
+            )
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps_script],
+                capture_output=True, text=True, timeout=120,
+            )
+            output = result.stdout.strip()
+            return output or None
+
+        else:
+            # Linux — try zenity, then kdialog
+            for args in (
+                ["zenity", "--file-selection", "--directory"],
+                ["kdialog", "--getexistingdirectory", "."],
+            ):
+                try:
+                    result = subprocess.run(args, capture_output=True, text=True, timeout=120)
+                    if result.returncode == 0 and result.stdout.strip():
+                        return result.stdout.strip()
+                    return None  # dialog ran but user cancelled
+                except FileNotFoundError:
+                    continue
+
+            raise RuntimeError("No supported file dialog found (install zenity or kdialog)")
 
     async def close_pty_session(self, provider_node_id: str, session_id: str) -> None:
         """Close a PTY session.
