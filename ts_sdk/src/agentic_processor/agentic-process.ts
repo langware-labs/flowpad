@@ -80,6 +80,7 @@ export interface IAgenticProcess extends IEntity {
   processor_id?: string;
   instruction_content?: string;
   source_vfs_path?: string;
+  workdir?: string | null;
   context?: Record<string, unknown>;
   context_data?: Record<string, unknown>;
   favorite_index?: number | null;

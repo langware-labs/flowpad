@@ -2,7 +2,7 @@
 
 from .exceptions import ReadOnlyProviderError as ReadOnlyProviderError
 from .exceptions import ReadOnlyRecordError as ReadOnlyRecordError
-from .factory import type_registry as type_registry
+from .factory.type_registry import type_registry as type_registry
 from .fs_ref import BinaryFsRef as BinaryFsRef
 from .fs_ref import FSRef as FSRef
 from .fs_ref import JSONFsRef as JSONFsRef

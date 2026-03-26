@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 from typing import Any, ClassVar
 
 from flow_sdk.fs_store import Record, RecordType

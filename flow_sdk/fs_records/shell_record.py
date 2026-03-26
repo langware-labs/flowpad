@@ -10,7 +10,7 @@ recover running sessions after a server restart.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 

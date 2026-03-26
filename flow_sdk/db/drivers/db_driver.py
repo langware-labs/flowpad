@@ -1,5 +1,6 @@
 import warnings
-from datetime import UTC, datetime
+from datetime import datetime
+from flow_sdk._compat import UTC
 from typing import Callable, Generic, List, Optional, Tuple
 from flow_sdk.settings import is_desktop
 from pydantic import BaseModel

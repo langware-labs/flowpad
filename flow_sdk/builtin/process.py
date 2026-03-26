@@ -4,7 +4,7 @@ import os
 import tempfile
 import textwrap
 from datetime import datetime
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import ClassVar, Literal, Optional, TypeGuard, TypeVar
 from xml.etree import ElementTree as ET

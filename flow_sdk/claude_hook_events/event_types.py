@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 
 
 class HookEventType(StrEnum):

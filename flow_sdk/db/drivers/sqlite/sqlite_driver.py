@@ -7,8 +7,10 @@ import os
 logger = logging.getLogger(__name__)
 import re
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+
+from flow_sdk._compat import UTC
 
 from fastapi import HTTPException
 from sqlalchemy import and_, asc, delete, desc, func, or_, select, text, update
@@ -514,7 +516,7 @@ class SQLiteDBDriver(DBDriver):
 
         # Python-side recency blend: blended = bm25 / (1 + days_old * k)
         if cal.recency_factor and entities_with_score:
-            from datetime import UTC, datetime  # noqa: PLC0415
+            from datetime import datetime  # noqa: PLC0415
             k = cal.recency_factor
             now = datetime.now(UTC)
 

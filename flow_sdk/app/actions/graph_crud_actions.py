@@ -166,7 +166,7 @@ async def handle_record_action():
         if getattr(entity, "uname", None):
             rec = rec_cls.discover_one(entity.uname)
     if rec is None:
-        return ApiFailResponse(message="Record not found")
+        return ApiFailResponse(message="Record not found", status_code=404)
 
     type_id_str = str(request_info.target_entity_typeid)
 

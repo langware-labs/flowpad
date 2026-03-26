@@ -11,7 +11,8 @@ import re
 import string
 import sys
 import tempfile
-from enum import Enum, StrEnum
+from enum import Enum
+from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import Literal, Optional
 

@@ -422,7 +422,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * ```
    */
   async executeCommand(input: ShellInputFlowData): Promise<ShellOutputFlowData> {
-    const action = new ActionInfo('ops', ComputeNode.type, this.id, 'POST');
+    const action = new ActionInfo('ops', ComputeNode.type, this.id, 'POST', true);
     action.subpath = 'command';
     action.bodyParameters = {
       command: input.command,

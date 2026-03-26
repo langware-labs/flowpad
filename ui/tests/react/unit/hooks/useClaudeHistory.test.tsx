@@ -68,7 +68,7 @@ describe('useClaudeHistory hook (end-to-end)', () => {
     const withRef = entries.find((e) => e.session_ref != null);
     if (withRef) {
       expect(withRef.session_ref!.id).toBeTruthy();
-      expect(withRef.session_ref!.type).toBe('session');
+      expect(withRef.session_ref!.type).toBe('claude_session');
     }
   }, 15000);
 

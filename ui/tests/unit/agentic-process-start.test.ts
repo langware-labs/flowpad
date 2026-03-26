@@ -20,7 +20,7 @@ describe('AgenticProcess.start', () => {
   let notifyChangedSpy: ReturnType<typeof vi.spyOn>;
   let getByTypeIdSpy: ReturnType<typeof vi.spyOn>;
 
-  const fakeShell = { type: 'shell', id: '00000000-0000-4000-8000-000000000002', name: 'test-shell', connect: vi.fn().mockResolvedValue(undefined) };
+  const fakeShell = { type: 'shell', id: '00000000-0000-4000-8000-000000000002', name: 'test-shell', startPty: vi.fn().mockResolvedValue(undefined) };
   const fakeActionResult = {
     shell_id: '00000000-0000-4000-8000-000000000002',
     worker_session_id: 'worker-session-xyz',

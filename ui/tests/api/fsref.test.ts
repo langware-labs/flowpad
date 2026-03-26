@@ -211,8 +211,8 @@ describe('entity.record()', () => {
         `${GRAPH_API_PREFIX}/compute_node/@local/fs-records/scan?type=skill`,
       );
       const data = ((res as any)?.data ?? res) as Record<string, unknown>;
-      const records = (data.records as Array<{ uid: string }>) ?? [];
-      skillId = records[0]?.uid ?? null;
+      const records = (data.records as Array<{ id: string }>) ?? [];
+      skillId = records[0]?.id ?? null;
     }
   });
 

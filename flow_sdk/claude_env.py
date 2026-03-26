@@ -30,7 +30,7 @@ import time
 import uuid
 from contextlib import redirect_stdout
 from dataclasses import dataclass, field
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -67,6 +67,16 @@ def _rmtree_onexc(func, path, exc):
         func(path)
     except OSError:
         pass  # still locked or reserved device name – skip so cleanup proceeds
+
+
+def _rmtree_safe(path) -> None:
+    """rmtree with error handler, compatible with Python 3.10–3.12+."""
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=_rmtree_onexc)
+    else:
+        def _onerror(func, p, excinfo):
+            _rmtree_onexc(func, p, excinfo[1])
+        shutil.rmtree(path, onerror=_onerror)
 
 
 def open_terminal(
@@ -322,7 +332,7 @@ class ClaudeProjectEnvManager:
     def _setup(self) -> None:
         """Create a clean project folder."""
         if self._root.exists() and self._clean:
-            shutil.rmtree(self._root, onexc=_rmtree_onexc)
+            _rmtree_safe(self._root)
         self._root.mkdir(parents=True, exist_ok=True)
         self.agents_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -1034,6 +1044,6 @@ class ClaudeProjectEnvManager:
         """Remove the entire project directory."""
         if self._root.exists():
             if _current_platform() == "win32":
-                shutil.rmtree(self._root, onexc=_rmtree_onexc)
+                _rmtree_safe(self._root)
             else:
                 shutil.rmtree(self._root)

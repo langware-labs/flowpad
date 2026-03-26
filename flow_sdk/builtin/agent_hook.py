@@ -1,5 +1,5 @@
 import logging
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import Any, ClassVar, Optional, Union
 

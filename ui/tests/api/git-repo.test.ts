@@ -12,9 +12,9 @@ describe('GitRepo (live server)', () => {
   afterAll(async () => {});
 
   function getComputeNode(): ComputeNode {
-    const cn = dataContext.bootstrapInfo?.default_compute_node;
-    if (!cn) throw new Error('No default_compute_node in bootstrapInfo');
-    return cn as unknown as ComputeNode;
+    const cn = dataContext.computeNode;
+    if (!cn) throw new Error('No compute node in context');
+    return cn;
   }
 
   async function shell(cn: ComputeNode, cmd: string): Promise<string> {

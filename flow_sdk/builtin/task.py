@@ -1,5 +1,5 @@
 from datetime import datetime
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 from typing import Any, ClassVar, Dict, List, Optional
 
 from flow_sdk.api.api_types.api_field import APIField

@@ -1,5 +1,6 @@
 import uuid
-from enum import Enum, StrEnum
+from enum import Enum
+from flow_sdk._compat import StrEnum
 from typing import Any, ClassVar, Optional
 
 from pydantic import BaseModel, ConfigDict, Field

@@ -92,9 +92,9 @@ describe('fs-records scan', () => {
     expect(Array.isArray(data.records)).toBe(true);
 
     // Each record should have expected shape
-    const records = data.records as Array<{ uid: string; name: string; size_bytes: number; status: string }>;
+    const records = data.records as Array<{ id: string; name: string; size_bytes: number; status: string }>;
     expect(records.length).toBeGreaterThanOrEqual(1);
-    expect(records.every((r) => r.uid && r.name && typeof r.size_bytes === 'number')).toBe(true);
+    expect(records.every((r) => r.id && r.name && typeof r.size_bytes === 'number')).toBe(true);
   });
 
   it('GET /fs-records/scan?type=skill includes byte stats', async () => {

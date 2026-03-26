@@ -27,7 +27,7 @@ interface TypeStats {
 }
 
 interface RecordEntry {
-  uid: string;
+  id: string;
   name: string;
   size_bytes: number;
   modified_at?: string;
@@ -174,8 +174,8 @@ function TypeRow({
                     </thead>
                     <tbody>
                       {detail.records.map((r) => (
-                        <tr key={r.uid} className="border-b last:border-0 hover:bg-accent/20">
-                          <td className="max-w-[10rem] truncate py-1 pl-3 pr-4 font-mono">{r.uid}</td>
+                        <tr key={r.id} className="border-b last:border-0 hover:bg-accent/20">
+                          <td className="max-w-[10rem] truncate py-1 pl-3 pr-4 font-mono">{r.id}</td>
                           <td className="max-w-[14rem] truncate py-1 pr-4">{r.name || '(unnamed)'}</td>
                           <td className="py-1 pr-4 text-right tabular-nums">{fmtBytes(r.size_bytes)}</td>
                           <td className="py-1 pr-3 text-right text-muted-foreground">{r.status ?? '—'}</td>

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar
+from flow_sdk._compat import Self
 
 from flow_sdk.fs_store import RecordType
 
