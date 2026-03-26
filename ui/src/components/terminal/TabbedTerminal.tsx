@@ -426,10 +426,16 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
     };
   }, [visibleSessions]);
 
-  // Intercept Alt+W (close tab), Alt+T (new terminal), Alt+C (new Claude), Alt+PgUp/PgDn (cycle tabs)
+  // Use Ctrl key on Mac, Win key on Windows, Alt key on Linux
+  const osPlatform: string = (navigator as Navigator & { userAgentData?: { platform: string } }).userAgentData?.platform ?? navigator.userAgent;
+  const modKey = /Mac/i.test(osPlatform) ? 'Ctrl' : /Win/i.test(osPlatform) ? 'Meta' : 'Alt';
+  const modLabel = /Mac/i.test(osPlatform) ? 'Ctrl' : /Win/i.test(osPlatform) ? 'Win' : 'Alt';
+
+  // Intercept mod+W (close tab), mod+T (new terminal), mod+C (new Claude), mod+PgUp/PgDn (cycle tabs)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!e.altKey) return;
+      const modPressed = modKey === 'Ctrl' ? e.ctrlKey : modKey === 'Meta' ? e.metaKey : e.altKey;
+      if (!modPressed) return;
       if (e.key === 'w' || e.key === 'W') {
         e.preventDefault();
         void handleCloseTab(activeShellId);
@@ -451,7 +457,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
     };
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
-  }, [activeShellId, handleStartTerminal, handleStartClaude, visibleSessions, selectTab, handleCloseTab]);
+  }, [activeShellId, handleStartTerminal, handleStartClaude, visibleSessions, selectTab, handleCloseTab, modKey]);
 
   const isTabCreationPending = pendingTabCreation !== null;
   const isClaudeCreationPending = pendingTabCreation?.kind === 'claude';
@@ -468,7 +474,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
         aria-label={isClaudeCreationPending ? 'Starting Claude session' : 'Start Claude'}
         data-testid="start-claude-button"
         data-state={isClaudeCreationPending ? 'waiting' : 'idle'}
-        title={isClaudeCreationPending ? 'Starting Claude session...' : 'Start Claude (Alt+C)'}
+        title={isClaudeCreationPending ? 'Starting Claude session...' : `Start Claude (${modLabel}+C)`}
       >
         {isClaudeCreationPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClaudeIcon className="h-4 w-4 text-orange-500" />}
       </Button>
@@ -482,7 +488,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
         aria-label={isTerminalCreationPending ? 'Opening terminal' : 'Open terminal'}
         data-testid="open-terminal-tab-button"
         data-state={isTerminalCreationPending ? 'waiting' : 'idle'}
-        title={isTerminalCreationPending ? 'Opening terminal...' : 'Open terminal (Alt+T)'}
+        title={isTerminalCreationPending ? 'Opening terminal...' : `Open terminal (${modLabel}+T)`}
       >
         {isTerminalCreationPending ? (
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -629,14 +635,14 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
                     <ContextMenuItem onSelect={() => handleTabDoubleClick(session.shellId, displayName)}>Rename</ContextMenuItem>
                     <ContextMenuSeparator />
                     <ContextMenuItem onSelect={() => void handleStartClaude()}>
-                      New Claude Session <span className="ml-auto pl-4 text-xs text-muted-foreground">Alt+C</span>
+                      New Claude Session <span className="ml-auto pl-4 text-xs text-muted-foreground">{modLabel}+C</span>
                     </ContextMenuItem>
                     <ContextMenuItem onSelect={() => void handleStartTerminal()}>
-                      New Terminal <span className="ml-auto pl-4 text-xs text-muted-foreground">Alt+T</span>
+                      New Terminal <span className="ml-auto pl-4 text-xs text-muted-foreground">{modLabel}+T</span>
                     </ContextMenuItem>
                     <ContextMenuSeparator />
                     <ContextMenuItem onSelect={() => handleCloseTab(session.shellId)}>
-                      Close <span className="ml-auto pl-4 text-xs text-muted-foreground">Alt+W</span>
+                      Close <span className="ml-auto pl-4 text-xs text-muted-foreground">{modLabel}+W</span>
                     </ContextMenuItem>
                     <ContextMenuItem onSelect={handleCloseAll}>Close All</ContextMenuItem>
                     <ContextMenuItem
