@@ -363,11 +363,55 @@ class SQLiteDBDriver(DBDriver):
 
     # ==================== FTS5 Full-Text Search ====================
 
-    async def fts_upsert(self, entry: "FtsEntry | list[FtsEntry]") -> None:
+    async def _fts_delete_batch(self, session, entity_ids: list, batch_size: int) -> None:
+        """DELETE FTS rows for ``entity_ids``, chunked to stay under SQLite param limit."""
+        for i in range(0, len(entity_ids), batch_size):
+            chunk = entity_ids[i : i + batch_size]
+            placeholders = ", ".join(f":id_{j}" for j in range(len(chunk)))
+            params = {f"id_{j}": eid for j, eid in enumerate(chunk)}
+            await session.execute(
+                text(f"DELETE FROM entities_fts WHERE entity_id IN ({placeholders})"),
+                params,
+            )
+
+    async def _fts_insert_batch(self, session, entries: list, batch_size: int) -> None:
+        """Multi-row INSERT into FTS, chunked so total params stay under SQLite limit.
+
+        Each entry occupies 6 bind parameters, so the effective chunk size is
+        ``batch_size // 6``.
+        """
+        entries_per_chunk = max(1, batch_size // 6)
+        for i in range(0, len(entries), entries_per_chunk):
+            chunk = entries[i : i + entries_per_chunk]
+            value_rows = []
+            params: dict = {}
+            for j, e in enumerate(chunk):
+                p = e.as_params()
+                value_rows.append(
+                    f"(:entity_id_{j}, :type_{j}, :name_{j}, :title_{j}, :description_{j}, :content_{j})"
+                )
+                params[f"entity_id_{j}"] = p["entity_id"]
+                params[f"type_{j}"] = p["type"]
+                params[f"name_{j}"] = p["name"]
+                params[f"title_{j}"] = p["title"]
+                params[f"description_{j}"] = p["description"]
+                params[f"content_{j}"] = p["content"]
+            await session.execute(
+                text(
+                    "INSERT INTO entities_fts(entity_id, type, name, title, description, content) VALUES "
+                    + ", ".join(value_rows)
+                ),
+                params,
+            )
+
+    async def fts_upsert(self, entry: "FtsEntry | list[FtsEntry]", batch_size: int = 500) -> None:
         """Insert or replace one or more rows in the FTS5 ``entities_fts`` table.
 
         Accepts a single FtsEntry or a list. All entries share one connection
         open/close cycle. No-op when the list is empty or all entries lack content.
+
+        ``batch_size`` controls the maximum number of bind parameters per SQL
+        statement — kept well below SQLite's default limit of 999.
         """
         if not self.session_factory:
             return
@@ -378,18 +422,8 @@ class SQLiteDBDriver(DBDriver):
             return
 
         async with self.session_factory() as session:
-            for e in entries:
-                await session.execute(
-                    text("DELETE FROM entities_fts WHERE entity_id = :entity_id"),
-                    {"entity_id": e.entity_id},
-                )
-                await session.execute(
-                    text(
-                        "INSERT INTO entities_fts(entity_id, type, name, title, description, content) "
-                        "VALUES (:entity_id, :type, :name, :title, :description, :content)"
-                    ),
-                    e.as_params(),
-                )
+            await self._fts_delete_batch(session, [e.entity_id for e in entries], batch_size)
+            await self._fts_insert_batch(session, entries, batch_size)
             await session.commit()
 
     async def fts_search(
@@ -746,6 +780,77 @@ class SQLiteDBDriver(DBDriver):
         except Exception as e:
             logger.error(f"sqllite Error updating entity {entity.id}: {e}")
             raise
+
+    async def _bulk_fetch_existing_ids(self, session, ids: list, batch_size: int) -> set:
+        """Return the subset of ``ids`` that already exist in the DB.
+
+        Chunked to stay under SQLite's bind-parameter limit.
+        """
+        from sqlalchemy import select as _select  # noqa: PLC0415
+
+        existing: set = set()
+        for i in range(0, len(ids), batch_size):
+            chunk = ids[i : i + batch_size]
+            result = await session.execute(
+                _select(EntitySchema.id).where(EntitySchema.id.in_(chunk))
+            )
+            existing.update(row[0] for row in result)
+        return existing
+
+    async def _bulk_update_entity(self, session, entity) -> None:
+        """UPDATE a single entity row inside an open session."""
+        self.apply_update_fields(entity)
+        data_dict = self._get_entity_data_dict(entity)
+        entity_type = (entity.type or entity.get_type()).lower()
+        await session.execute(
+            update(EntitySchema)
+            .where(EntitySchema.id == entity.id)
+            .values(
+                type=entity_type,
+                namespace=entity.namespace,
+                key=entity.key,
+                uname=entity.uname,
+                type_uname=self._compute_type_uname(entity_type, entity.uname),
+                created_by=entity.created_by,
+                created_date=entity.created_date,
+                updated_by=entity.updated_by,
+                updated_date=entity.updated_date,
+                created_through=entity.created_through,
+                updated_through=entity.updated_through,
+                data=json.dumps(data_dict, cls=SafeJSONEncoder) if data_dict else None,
+            )
+        )
+
+    async def bulk_save(self, entities: list, owner=None, batch_size: int = 500) -> None:
+        """Save multiple entities in a single transaction.
+
+        Much faster than calling save() per entity because it opens only ONE
+        connection and commits once for all entities.
+
+        ``batch_size`` controls the maximum number of IDs per SELECT IN query —
+        kept well below SQLite's default bind-parameter limit of 999.
+        Duplicates in ``entities`` (same id) are deduplicated — last entry wins.
+        """
+        if not entities:
+            return
+        # Deduplicate by id — last write wins (same id from different sources)
+        by_id: dict = {}
+        for e in entities:
+            by_id[e.id] = e
+        entities = list(by_id.values())
+
+        async with await self._get_session() as session:
+            existing_ids = await self._bulk_fetch_existing_ids(
+                session, list(by_id.keys()), batch_size
+            )
+            for entity in entities:
+                if entity.id in existing_ids:
+                    await self._bulk_update_entity(session, entity)
+                else:
+                    self.apply_create_fields(entity)
+                    schema = self._entity_to_schema(entity)
+                    session.add(schema)
+            await session.commit()
 
     async def create(self, entity: DBBaseRecord, owner: TypeId | None = None) -> DBBaseRecord:
         """Create new entity (explicit create)."""

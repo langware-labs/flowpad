@@ -713,10 +713,52 @@ class SchemaRegistry:
         errors_count = 0
         t0 = time.perf_counter()
 
-        # collect all records up front (RecordList is a generator)
+        # Use discover_iter directly (with limit) when the record class provides
+        # its own override — avoids discovering ALL records when only a subset is
+        # needed (RecordList.discover() has no limit parameter).
+        # Fall back to RecordList for classes that rely on the base Record.discover_iter
+        # so that test mocks patching RecordList.__iter__ still work.
+        from flow_sdk.fs_store.record import Record as _BaseRecord  # noqa: PLC0415
+        _has_custom_iter = (
+            "discover_iter" in record_cls.__dict__
+            or any(
+                "discover_iter" in base.__dict__
+                for base in record_cls.__mro__[1:]
+                if base is not _BaseRecord and base is not object
+                and "discover_iter" in base.__dict__
+            )
+        )
+        if _has_custom_iter and hasattr(record_cls, "discover_paths_iter"):
+            # Parallel discovery: collect paths (fast, no I/O), then load records concurrently
+            import concurrent.futures as _cf  # noqa: PLC0415
+            _paths = list(record_cls.discover_paths_iter(limit=limit))
+            _DISCOVERY_WORKERS = 16
+            with _cf.ThreadPoolExecutor(max_workers=_DISCOVERY_WORKERS) as _pool:
+                _load = getattr(record_cls, "from_jsonl", None) or record_cls
+                if _load is not None and hasattr(record_cls, "from_jsonl"):
+                    _futures = [_pool.submit(record_cls.from_jsonl, p) for p in _paths]
+                    _raw_items = []
+                    for _fut in _cf.as_completed(_futures):
+                        try:
+                            _raw_items.append(_fut.result())
+                        except Exception:
+                            pass
+                else:
+                    _raw_items = await asyncio.to_thread(
+                        lambda: list(record_cls.discover_iter(limit=limit))
+                    )
+            _raw_iter = iter(_raw_items)
+        elif _has_custom_iter:
+            _raw_iter = iter(await asyncio.to_thread(
+                lambda: list(record_cls.discover_iter(limit=limit))
+            ))
+        else:
+            _raw_iter = iter(RecordList(record_class=record_cls))
+
+        # collect all records up front
         all_records: list = []
-        for rec in RecordList(record_class=record_cls):
-            if limit is not None and len(all_records) >= limit:
+        for rec in _raw_iter:
+            if limit is not None and len(all_records) + skipped >= limit:
                 break
             if skip_fresh and not rec.index_required:
                 fresh_count += 1
@@ -724,32 +766,41 @@ class SchemaRegistry:
                 continue
             all_records.append(rec)
 
-        # process in concurrent batches
-        for batch_start in range(0, len(all_records), _CONCURRENT_INDEX_BATCH):
-            batch = all_records[batch_start:batch_start + _CONCURRENT_INDEX_BATCH]
-            batch_fts: list = []
+        # Use bulk path (single transaction) when driver supports it and there are enough records
+        from flow_sdk.db import get_db_driver as _get_db_driver  # noqa: PLC0415
+        _driver = _get_db_driver()
+        if len(all_records) > 5 and hasattr(_driver, "bulk_save"):
+            _indexed, _skipped, _errors = await cls.bulk_index_records(all_records, type_name)
+            indexed += _indexed
+            skipped += _skipped
+            errors_count += _errors
+        else:
+            # process in concurrent batches (fallback for small sets or unsupported drivers)
+            for batch_start in range(0, len(all_records), _CONCURRENT_INDEX_BATCH):
+                batch = all_records[batch_start:batch_start + _CONCURRENT_INDEX_BATCH]
+                batch_fts: list = []
 
-            async def _index_one(rec, _fts=batch_fts):
-                await rec.sync_to_db(fts_batch=_fts)
+                async def _index_one(rec, _fts=batch_fts):
+                    await rec.sync_to_db(fts_batch=_fts)
 
-            results = await asyncio.gather(
-                *[_index_one(r) for r in batch],
-                return_exceptions=True,
-            )
-            for r in results:
-                if isinstance(r, Exception):
-                    errors_count += 1
-                    skipped += 1
-                else:
-                    indexed += 1
+                results = await asyncio.gather(
+                    *[_index_one(r) for r in batch],
+                    return_exceptions=True,
+                )
+                for r in results:
+                    if isinstance(r, Exception):
+                        errors_count += 1
+                        skipped += 1
+                    else:
+                        indexed += 1
 
-            if batch_fts:
-                from flow_sdk.db import get_db_driver
-                driver = get_db_driver()
-                if hasattr(driver, "fts_upsert"):
-                    await driver.fts_upsert(batch_fts)
+                if batch_fts:
+                    from flow_sdk.db import get_db_driver
+                    driver = get_db_driver()
+                    if hasattr(driver, "fts_upsert"):
+                        await driver.fts_upsert(batch_fts)
 
-            await asyncio.sleep(0)
+                await asyncio.sleep(0)
 
         duration_ms = round((time.perf_counter() - t0) * 1000, 1)
         return IndexResult(
@@ -760,6 +811,57 @@ class SchemaRegistry:
             errors=errors_count,
             fresh=fresh_count,
         )
+
+    @classmethod
+    async def bulk_index_records(
+        cls,
+        records: list,
+        type_name: str,
+    ) -> tuple[int, int, int]:
+        """Index a pre-collected list of records in bulk (one DB transaction).
+
+        Returns (indexed, skipped, errors).
+        """
+        from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+        from flow_sdk.db import get_db_driver  # noqa: PLC0415
+        from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry  # noqa: PLC0415
+
+        entity_cls = cls.get_entity_cls(type_name) or Entity
+        driver = get_db_driver()
+
+        entities = []
+        fts_entries = []
+        errors = 0
+
+        for rec in records:
+            try:
+                data = rec.meta_dict()
+                entity_id = entity_cls.allocate_id(data)
+                create_kwargs = {"id": entity_id, "type": type_name}
+                create_kwargs.update({k: v for k, v in data.items() if k not in ("id", "type")})
+                try:
+                    entity = entity_cls(**create_kwargs)
+                except Exception:
+                    entity = Entity(type=type_name, **create_kwargs)
+                entities.append(entity)
+                fts_entries.append(FtsEntry(
+                    entity_id=entity_id,
+                    entity_type=type_name,
+                    name=rec.name or None,
+                    title=getattr(rec, "search_title", None),
+                    description=getattr(rec, "search_description", None),
+                    content=getattr(rec, "search_content", None),
+                ))
+            except Exception:
+                errors += 1
+
+        if entities and hasattr(driver, "bulk_save"):
+            await driver.bulk_save(entities)
+
+        if fts_entries and hasattr(driver, "fts_upsert"):
+            await driver.fts_upsert(fts_entries)
+
+        return len(entities), 0, errors
 
     @classmethod
     async def scan_type_progress(
