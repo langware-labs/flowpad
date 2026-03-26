@@ -368,8 +368,7 @@ export function useClaudeErrorRecords() {
           const shell = Shell.create(cn, { name: `Fix: ${error.error_msg.slice(0, 30)}` });
           (shell as any).id = shellSessionId;
           await shell.save(cn.typeId);
-          await shell.startPty({ cols: 120, rows: 30, workdir });
-          // TODO: inject startCommand separately once PTY is live
+          await shell.connect({ cols: 120, rows: 30, workdir, initialCommand: startCommand });
         }
 
         if (taskId) {

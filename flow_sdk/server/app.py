@@ -75,16 +75,6 @@ async def _on_server_startup():
 
     threading.Thread(target=run_old_record_cleanup, daemon=True, name="old-record-cleanup").start()
 
-    from flow_sdk.fs_records.claude.claude_error import sync_from_debug_logs
-    from flow_sdk.fs_store.record import get_default_records_root
-
-    threading.Thread(
-        target=sync_from_debug_logs,
-        args=(get_default_records_root() / "claude_error",),
-        daemon=True,
-        name="startup-error-sync",
-    ).start()
-
     # Search uses FTS5 (built into SQLite) — no external indexer needed.
     print("  Search indexer: FTS5 (SQLite built-in)")
 
@@ -117,7 +107,7 @@ async def _shutdown_extras():
     except Exception:
         pass
 
-    print("Shutting down Flowpad server...")
+    print("Shutting down minihub server...")
     clear_server_info()
     print("Shutdown complete.")
 
@@ -283,5 +273,5 @@ def wait_for_post_login(timeout_sec: int = None):
 if __name__ == "__main__":
     setup_defaults()
     port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
-    print(f"Starting Flowpad server on http://127.0.0.1:{port}")
+    print(f"Starting minihub server on http://127.0.0.1:{port}")
     start_server(port)
