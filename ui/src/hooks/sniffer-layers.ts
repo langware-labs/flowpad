@@ -50,6 +50,9 @@ const INFO_LAYER: LayerProcessor = {
       } else if (event.event_type === 'SubagentStart') {
         const agentType = hookData?.raw_hook_data?.agent_type || 'agent';
         infoEvents.push(makeInfoEvent(event, 'SubagentStart', `Subagent started: ${agentType}`));
+      } else if (event.event_type === 'TaskCreated') {
+        const subject = hookData?.raw_hook_data?.task_subject || 'task';
+        infoEvents.push(makeInfoEvent(event, 'TaskCreated', `Created: ${subject}`));
       } else if (event.event_type === 'TaskCompleted') {
         const subject = hookData?.raw_hook_data?.task_subject || 'task';
         infoEvents.push(makeInfoEvent(event, 'TaskCompleted', `Completed: ${subject}`));
