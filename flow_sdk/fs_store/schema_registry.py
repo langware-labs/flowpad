@@ -126,7 +126,7 @@ class ScanProgress:
     type_name: str
     done: int
     total: int
-    uid: str
+    id: str
     size_bytes: int = 0
 
 
@@ -137,7 +137,7 @@ class IndexProgress:
     type_name: str
     done: int
     total: int
-    uid: str
+    id: str
     indexed: int
     skipped: int
     errors: int
@@ -917,7 +917,7 @@ class SchemaRegistry:
                     type_name=type_name,
                     done=done,
                     total=emit_total,
-                    uid=rec.id,
+                    id=rec.id,
                     size_bytes=size,
                 )
             if done % batch_size == 0:
@@ -991,7 +991,7 @@ class SchemaRegistry:
                     type_name=type_name,
                     done=done,
                     total=emit_total,
-                    uid=rec.id,
+                    id=rec.id,
                     indexed=indexed,
                     skipped=skipped,
                     errors=errors,
@@ -1195,7 +1195,8 @@ class SchemaRegistry:
 
     @classmethod
     def get_index_status(cls, types: list[str] | None = None) -> IndexStatus:
-        from datetime import UTC, timedelta  # noqa: PLC0415
+        from datetime import timedelta  # noqa: PLC0415
+        from flow_sdk._compat import UTC
 
         last_indexed_at = cls.get_last_global_index_at()
         never_indexed = last_indexed_at is None

@@ -1,4 +1,4 @@
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 
 
 class RelationshipDirection(StrEnum):

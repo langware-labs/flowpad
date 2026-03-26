@@ -1,6 +1,6 @@
 """Models for hook_op webhook payloads — unified CRUD + event + invoke + log dispatch."""
 
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, model_validator

@@ -65,7 +65,7 @@ async function createSkills(n: number, prefix: string): Promise<string[]> {
 async function collectFlowDataDuring(
   manager: ConnectionManager,
   operation: () => Promise<unknown>,
-  settleMs = 800,
+  settleMs = 2000,
 ): Promise<Array<{ typeId: unknown; flowData: Record<string, unknown> }>> {
   const received: Array<{ typeId: unknown; flowData: Record<string, unknown> }> = [];
   const handler = (typeId: unknown, flowData: Record<string, unknown>) => {

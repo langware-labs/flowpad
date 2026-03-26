@@ -2,7 +2,8 @@ import hashlib
 import logging
 import random
 import string
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
+from flow_sdk._compat import UTC
 from typing import TYPE_CHECKING, ClassVar, Optional
 
 if TYPE_CHECKING:

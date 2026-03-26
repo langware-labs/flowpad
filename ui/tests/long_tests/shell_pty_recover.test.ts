@@ -167,10 +167,10 @@ describe('shell_pty_recover', () => {
   beforeEach(async (context: any) => {
     // Fail fast with a clear message if the server is not running
     try {
-      await fetch('http://localhost:9007/health/status', { signal: AbortSignal.timeout(2000) });
+      await fetch('window.location.origin + "/health/status"', { signal: AbortSignal.timeout(2000) });
     } catch {
       throw new Error(
-        'Server not running at localhost:9007 — start it with: uv run -m flow_sdk.server.run',
+        'Server not running — start it with: uv run -m flow_sdk.server.run',
       );
     }
 

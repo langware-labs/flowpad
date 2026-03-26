@@ -15,7 +15,7 @@ import os
 import platform
 import subprocess
 import time
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import List, Optional
 

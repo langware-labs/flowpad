@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
+from flow_sdk._compat import UTC
 from typing import List, Optional
 
 from pydantic import BaseModel

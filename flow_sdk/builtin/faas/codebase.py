@@ -3,7 +3,8 @@ import logging
 import os
 import platform
 import subprocess
-from datetime import UTC, datetime
+from datetime import datetime
+from flow_sdk._compat import UTC
 from pathlib import Path
 from typing import Optional
 

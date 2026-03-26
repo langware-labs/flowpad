@@ -1,4 +1,4 @@
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 from typing import List, Literal
 
 from pydantic import BaseModel

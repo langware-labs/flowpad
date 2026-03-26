@@ -272,6 +272,14 @@ class SkillRecord(Record):
                     continue
 
     @classmethod
+    def _external_source_find_one(cls, uid: str) -> "SkillRecord | None":
+        """Find a skill by its uuid5-derived ID from the .claude/skills directories."""
+        for rec in cls.discover_iter():
+            if rec.id == uid:
+                return rec
+        return None
+
+    @classmethod
     def discover(cls, scope: Scope | None = None, **kwargs: Any) -> list["SkillRecord"]:
         """Discover all skill directories from user and project .claude/skills/ folders."""
         return list(cls.discover_iter(scope=scope, **kwargs))

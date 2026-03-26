@@ -1,4 +1,5 @@
-from enum import StrEnum, auto
+from enum import auto
+from flow_sdk._compat import StrEnum
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote
 

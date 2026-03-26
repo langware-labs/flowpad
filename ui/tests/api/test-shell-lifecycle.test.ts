@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 
 describe('Shell lifecycle (API)', () => {
-  const API = 'http://localhost:9007/api/v1/graph';
+  const API = `${window.location.origin}/api/v1/graph`;
 
   it('create -> entity exists with status=created', async () => {
     const resp = await fetch(`${API}/shell`, {

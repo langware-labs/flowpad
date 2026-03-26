@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, ClassVar, Self
+from typing import TYPE_CHECKING, ClassVar
+from flow_sdk._compat import Self
 
 from flow_sdk.fs_store import Record, RecordRef, RecordType
 

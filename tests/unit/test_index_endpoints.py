@@ -93,7 +93,8 @@ class TestIndexEndpoints:
 
     def test_get_index_status_after_index(self):
         """get_index_status returns timestamps after indexing."""
-        from datetime import UTC, datetime, timedelta
+        from datetime import datetime, timedelta
+        from flow_sdk._compat import UTC
         ts = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
         with patch.object(SchemaRecord, "get_last_global_index_at", return_value=ts), \
              patch.object(SchemaRecord, "get_last_index_at", return_value=ts), \

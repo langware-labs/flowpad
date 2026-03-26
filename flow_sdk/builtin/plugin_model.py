@@ -5,7 +5,8 @@ import logging
 import os
 import sys
 import traceback
-from enum import Enum, StrEnum
+from enum import Enum
+from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Union, get_type_hints
 

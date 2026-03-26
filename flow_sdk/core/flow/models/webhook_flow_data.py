@@ -5,7 +5,7 @@ Consolidated to 2 webhook types:
 - hook_op: everything else (entity CRUD, events, logs, invocations)
 """
 
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 from typing import Literal, Optional
 
 from pydantic import BaseModel
