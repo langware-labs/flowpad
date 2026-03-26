@@ -1013,8 +1013,17 @@ class AgenticProcess(Entity):
 
             started = await shell.start_pty(on_exit=on_exit)
 
-            if started:
-                await asyncio.sleep(1.0)  # let shell initialize and write prompt before injecting
+            # Also run_process when the PTY was already alive (start_pty returns False)
+            # but the worker (Claude) is dead — i.e. server restart killed Claude but left zsh running.
+            worker_is_dead = not started and not await shell.worker_alive()
+            if started or worker_is_dead:
+                if not started:
+                    logger.info(
+                        "AgenticProcess %s: PTY alive but worker dead — re-injecting process into existing shell",
+                        self.id,
+                    )
+                else:
+                    await asyncio.sleep(1.0)  # let shell initialize and write prompt before injecting
                 execution_info = await shell.run_process(cmd, instruction=instruction)
                 logger.info(
                     "AgenticProcess %s worker launched: pid=%s name=%r",
