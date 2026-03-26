@@ -101,23 +101,23 @@ describe('AgenticProcess.fromClaudeSession', () => {
       throw e;
     }
 
-    // Deserialize server's cli_config via cliCmd getter
-    const cliCmd = proc.cliCmd as ClaudeCliOptions;
-    expect(cliCmd.resume).toBe(true);  // set by fromClaudeSession
+    // Deserialize server's cli_config via cliOptions getter
+    const cliOptions = proc.cliOptions as ClaudeCliOptions;
+    expect(cliOptions.resume).toBe(true);  // set by fromClaudeSession
 
     // Override a flag and save back to server
-    cliCmd.debug = false;
-    proc.cli_config = cliCmd.toJson();
+    cliOptions.debug = false;
+    proc.cli_config = cliOptions.toJson();
     await proc.save();
 
     // Re-fetch from server — verify flag persisted
     const proc2 = await AgenticProcess.getById(proc.id!);
     expect(proc2).not.toBeNull();
 
-    const cliCmd2 = proc2!.cliCmd as ClaudeCliOptions;
-    expect(cliCmd2.debug).toBe(false);           // override survived round-trip
-    expect(cliCmd2.resume).toBe(true);            // original intent preserved
-    expect(cliCmd2.toShellString()).not.toContain('--debug');
-    expect(cliCmd2.toShellString()).toContain('--resume');
+    const cliOptions2 = proc2!.cliOptions as ClaudeCliOptions;
+    expect(cliOptions2.debug).toBe(false);           // override survived round-trip
+    expect(cliOptions2.resume).toBe(true);            // original intent preserved
+    expect(cliOptions2.toShellString()).not.toContain('--debug');
+    expect(cliOptions2.toShellString()).toContain('--resume');
   }, 15000);
 });

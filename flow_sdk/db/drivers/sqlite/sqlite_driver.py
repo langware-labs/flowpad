@@ -424,6 +424,12 @@ class SQLiteDBDriver(DBDriver):
             return
 
         async with self.session_factory() as session:
+            await session.execute(text("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
+                    entity_id, type, name, title, description, content,
+                    tokenize='porter unicode61'
+                )
+            """))
             await self._fts_delete_batch(session, [e.entity_id for e in entries], batch_size)
             await self._fts_insert_batch(session, entries, batch_size)
             await session.commit()
@@ -456,6 +462,12 @@ class SQLiteDBDriver(DBDriver):
 
         fts_query = " ".join(_fts_term(t) for t in query.split())
         async with self.session_factory() as session:
+            await session.execute(text("""
+                CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
+                    entity_id, type, name, title, description, content,
+                    tokenize='porter unicode61'
+                )
+            """))
             # Build the SQL — snippet() on title (col 3) and content (col 5)
             # Columns: 0=entity_id, 1=type, 2=name, 3=title, 4=description, 5=content
             cal = calibration or SearchCalibration()

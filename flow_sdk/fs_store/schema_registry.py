@@ -835,7 +835,6 @@ class SchemaRegistry:
 
         for rec in records:
             try:
-                rec.load_fts_content()
                 data = rec.meta_dict()
                 entity_id = entity_cls.allocate_id(data)
                 create_kwargs = {"id": entity_id, "type": type_name}

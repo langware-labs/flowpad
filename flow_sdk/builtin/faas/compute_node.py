@@ -2596,7 +2596,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             if not process.cli_config.get("resume"):
                 record = ClaudeSessionRecord.discover_one(session_id, project=process.workdir)
                 if record:
-                    process.cli_config = {**process.cli_config, "resume": True}
+                    from flow_sdk.builtin.cli_workers import factory as _cli_factory
+                    _cmd = _cli_factory(process.cli_config, worker_type="claude")
+                    _cmd.resume = True
+                    process.cli_config = _cmd.to_json()
                     if not process.workdir and record.cwd:
                         process.workdir = record.cwd
                     await process.save()

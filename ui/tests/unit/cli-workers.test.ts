@@ -133,14 +133,14 @@ describe('factory()', () => {
   })
 })
 
-describe('proc.cliCmd — frontend override of server cli_config', () => {
+describe('proc.cliOptions — frontend override of server cli_config', () => {
   it('deserializes server config then overrides debug + env', () => {
-    const cliCmd = factory(BACKEND_CLI_CONFIG, 'claude') as ClaudeCliOptions
+    const cliOptions = factory(BACKEND_CLI_CONFIG, 'claude') as ClaudeCliOptions
 
-    cliCmd.debug = false
-    cliCmd.addEnv('ENV_KEY', 'ENV_VAL')
+    cliOptions.debug = false
+    cliOptions.addEnv('ENV_KEY', 'ENV_VAL')
 
-    const out = cliCmd.toShellString()
+    const out = cliOptions.toShellString()
 
     expect(out).toContain('SOME_SERVER_VAR=server_value')
     expect(out).not.toContain('--debug')
@@ -149,26 +149,26 @@ describe('proc.cliCmd — frontend override of server cli_config', () => {
   })
 
   it('server CLAUDE_PROJECT_DIR is preserved from workdir auto-inject', () => {
-    const cliCmd = factory(BACKEND_CLI_CONFIG, 'claude') as ClaudeCliOptions
-    expect(cliCmd.envVars['CLAUDE_PROJECT_DIR']).toBe('/home/user/myproject')
+    const cliOptions = factory(BACKEND_CLI_CONFIG, 'claude') as ClaudeCliOptions
+    expect(cliOptions.envVars['CLAUDE_PROJECT_DIR']).toBe('/home/user/myproject')
   })
 
   it('shell.sendInput flow — toShellString + newline is valid PTY input', () => {
-    const cliCmd = factory(BACKEND_CLI_CONFIG, 'claude') as ClaudeCliOptions
-    const inputToShell = cliCmd.toShellString() + '\n'
+    const cliOptions = factory(BACKEND_CLI_CONFIG, 'claude') as ClaudeCliOptions
+    const inputToShell = cliOptions.toShellString() + '\n'
     expect(inputToShell.endsWith('\n')).toBe(true)
     expect(inputToShell).toContain('claude')
     expect(inputToShell).toContain('--resume')
   })
 
-  it('cliCmd uses entity workdir, not cd . — the fromClaudeSession case', () => {
+  it('cliOptions uses entity workdir, not cd . — the fromClaudeSession case', () => {
     // Simulate: cli_config has no workdir (as stored by backend), workdir is on entity
     const proc = Object.assign(new AgenticProcess({}), {
       cli_config: { worker_type: 'claude', resume: true },
       worker_session_id: '7a63c18b-1111-2222-3333-444444444444',
       workdir: '/home/user/myproject',
     })
-    expect(proc.cliCmd.toShellString()).toMatch(/^cd \/home\/user\/myproject/)
-    expect(proc.cliCmd.toShellString()).not.toContain('cd .')
+    expect(proc.cliOptions.toShellString()).toMatch(/^cd \/home\/user\/myproject/)
+    expect(proc.cliOptions.toShellString()).not.toContain('cd .')
   })
 })

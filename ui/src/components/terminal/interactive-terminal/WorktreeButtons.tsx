@@ -52,7 +52,7 @@ export function CommitMergeButton({ process, onInjectPrompt }: CommitMergeButton
     setAwaitingCompletion(true);
   }, [onInjectPrompt]);
 
-  if (!process.context_data?.worktree)
+  if (!process.cliOptions.worktree)
     return null;
 
   return (
@@ -88,7 +88,7 @@ interface OpenInWorktreeButtonProps {
 export function OpenInWorktreeButton({ process }: OpenInWorktreeButtonProps) {
   const { computeNode } = useContext() as { computeNode: ComputeNode };
   const { navigation } = useDockNavigation();
-  const workdir = process.context_data?.workdir as string | undefined;
+  const workdir = process.workdir ?? undefined;
 
   const [loading, setLoading] = useState(true);
   const [isGitRepoHasCommit, setIsGitRepoHasCommit] = useState(false);
@@ -117,12 +117,11 @@ export function OpenInWorktreeButton({ process }: OpenInWorktreeButtonProps) {
   const handleOpenWorktreeClick = useCallback(async () => {
     setLoading(true);
     try {
-      const ctx = process.context_data ?? {};
       const { process: newProcess } = await AgenticProcess.spawn(
         {
           worktree: true,
           workdir,
-          permissionMode: (ctx.permission_mode as 'bypassPermissions' | 'askUser') ?? 'askUser',
+          permissionMode: (process.cliOptions.permission_mode as 'bypassPermissions' | 'askUser') ?? 'askUser',
         },
         { visible: true },
       );

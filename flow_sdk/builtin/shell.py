@@ -58,12 +58,16 @@ class Shell(Entity):
 
     _api_visible: ClassVar[bool] = True
 
-    async def send_input(self, cmd: str) -> None:
+    async def send_input(self, cmd: str, bracketed: bool = False) -> None:
         """Send a command string to the PTY session.
 
-        Wraps the command in bracketed-paste markers (ESC[200~ / ESC[201~) so
-        any interactive line editor (zsh ZLE, bash readline, fish, PSReadLine)
-        echoes the full command as one clean unit without per-character repaints.
+        Args:
+            cmd: Command text to send (without trailing newline).
+            bracketed: Wrap with bracketed-paste markers (ESC[200~ / ESC[201~).
+                       Use True when injecting programmatic commands so any
+                       interactive line editor (zsh ZLE, bash readline, fish,
+                       PSReadLine) echoes the command as one clean unit instead
+                       of repainting the line on every character.
         """
         from flow_sdk.builtin.faas.compute_node import ComputeNode
 
@@ -72,8 +76,9 @@ class Shell(Entity):
         compute_node = await ComputeNode.get_by_id(self.compute_node_id)
         if not compute_node or not compute_node.node_provider_id:
             raise ValueError(f"ComputeNode {self.compute_node_id} not found or has no provider")
+        data = f"\x1b[200~{cmd}\x1b[201~\r".encode() if bracketed else f"{cmd}\r".encode()
         await compute_node.compute_provider.send_pty_input(
-            compute_node.node_provider_id, self.id, f"\x1b[200~{cmd}\x1b[201~\r".encode(), None, None
+            compute_node.node_provider_id, self.id, data, None, None
         )
 
     def is_running(self, pid: int | None = None) -> bool:
@@ -132,7 +137,7 @@ class Shell(Entity):
         executable = worker_cli._build_worker_args()[0]  # e.g. "claude"
         command = worker_cli.to_shell_string(instruction=instruction)
 
-        await self.send_input(command)
+        await self.send_input(command, bracketed=True)
 
         worker_pid = await self._poll_for_worker_pid(shell_pid, executable, timeout=1.0)
 

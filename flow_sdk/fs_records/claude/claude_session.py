@@ -42,6 +42,19 @@ if TYPE_CHECKING:
 # Re-export for external callers that imported _session_estimated_cost from
 # this module (e.g. session_stats.py itself doesn't import it back).
 # ---------------------------------------------------------------------------
+def _extract_text(content: object) -> str | None:
+    """Extract plain text from a message content field (str or list of blocks)."""
+    if isinstance(content, str):
+        text = content.strip()
+        return text if text and not text.startswith("<") else None
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text = block.get("text", "").strip()
+                return text if text and not text.startswith("<") else None
+    return None
+
+
 def _session_estimated_cost(
     input_tokens: int,
     output_tokens: int,
@@ -335,53 +348,71 @@ class ClaudeSessionRecord(Record):
             f"[{i:4d}]  {e.summary}" for i, e in enumerate(self.filtered_entries, 1)
         )
 
+    def _parse_fts(self) -> tuple[str | None, str | None]:
+        """Parse JSONL transcript and return (title, content) for FTS indexing.
+
+        title   = last user message, truncated to 120 chars
+        content = one line per user/assistant turn
+
+        Result is cached in ``_fts_cache`` so both ``search_title`` and
+        ``search_content`` only trigger one file read. Returns (None, None)
+        when the JSONL file is unavailable or unreadable.
+        """
+        cache = object.__getattribute__(self, "__dict__").get("_fts_cache")
+        if cache is not None:
+            return cache
+        path_str = object.__getattribute__(self, "__dict__").get("jsonl_path")
+        if not path_str:
+            result: tuple[str | None, str | None] = (None, None)
+            object.__setattr__(self, "_fts_cache", result)
+            return result
+        p = Path(path_str)
+        if not p.is_file():
+            result = (None, None)
+            object.__setattr__(self, "_fts_cache", result)
+            return result
+        lines: list[str] = []
+        last_user: str | None = None
+        try:
+            with open(p, encoding="utf-8") as fh:
+                for raw_line in fh:
+                    raw_line = raw_line.strip()
+                    if not raw_line:
+                        continue
+                    try:
+                        entry = json.loads(raw_line)
+                    except json.JSONDecodeError:
+                        continue
+                    etype = entry.get("type")
+                    if etype not in ("user", "assistant"):
+                        continue
+                    msg = entry.get("message") or {}
+                    content = msg.get("content") if isinstance(msg, dict) else None
+                    text = _extract_text(content)
+                    if not text:
+                        continue
+                    if etype == "user":
+                        last_user = text[:200]
+                        lines.append(f"user: {text}")
+                    else:
+                        lines.append(f"assistant: {text[:500]}")
+        except OSError:
+            result = (None, None)
+            object.__setattr__(self, "_fts_cache", result)
+            return result
+        result = (last_user[:120] if last_user else None, "\n".join(lines) or None)
+        object.__setattr__(self, "_fts_cache", result)
+        return result
+
     @property
     def search_title(self) -> str | None:
         """Last user prompt, used as FTS title for BM25 name-weight boost."""
-        d = object.__getattribute__(self, "__dict__")
-        cached = d.get("_session_batch_stats")
-        if cached is not None:
-            msg = cached.get("last_user_message")
-            return str(msg)[:120] if msg else None
-        return None
+        return self._parse_fts()[0]
 
     @property
     def search_content(self) -> str | None:
-        """FTS content: slug/cwd metadata + one line per user/assistant turn.
-
-        Uses ``_session_batch_stats`` cache if already populated (avoids a
-        second full JSONL parse when stats were loaded for another reason).
-        Falls back to a lightweight no-file-read path using fields already
-        set at construction time (slug, cwd).
-
-        Returns None if no content is available.
-        """
-        d = object.__getattribute__(self, "__dict__")
-        cached = d.get("_session_batch_stats")
-        if cached is not None:
-            return cached.get("search_content")
-        # Lightweight fallback: no file read — use fields already in __dict__
-        parts = [d.get("slug", ""), d.get("cwd", "")]
-        return " ".join(p for p in parts if p) or None
-
-    def load_fts_content(self) -> None:
-        """Trigger the full JSONL parse so search_title and search_content return real data.
-
-        Calls ``_get_session_batch_stats()`` directly to populate
-        ``_session_batch_stats`` on this instance. Subsequent reads of
-        ``search_title`` and ``search_content`` will see the populated cache.
-
-        Note: accessing ``self.message_count`` would NOT work here because
-        ``from_jsonl()`` sets it as a plain instance attribute in the
-        constructor, shadowing the ``_SessionStatsProp`` descriptor.
-
-        No-op if ``_session_batch_stats`` is already cached.
-        """
-        inst = object.__getattribute__(self, "__dict__")
-        if "_session_batch_stats" in inst:
-            return
-        from flow_sdk.fs_records.claude.properties.session_stats import _get_session_batch_stats  # noqa: PLC0415
-        _get_session_batch_stats(self)
+        """One line per user/assistant turn from the JSONL transcript."""
+        return self._parse_fts()[1]
 
     @classmethod
     def discovery_items_count(cls, limit: int | None = None) -> int:

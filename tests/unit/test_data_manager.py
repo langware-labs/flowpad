@@ -3,10 +3,6 @@
 Uses tmp_path for JSONL files and an isolated SQLite driver. No HTTP layer.
 The key regression test verifies that Entity.search() finds terms from
 session transcripts after the 3-phase DataManager pipeline runs.
-
-This test would FAIL without the load_fts_content() fix because
-ClaudeSessionRecord.search_content would return only "slug cwd" (the fast
-fallback), and transcript terms would never reach the FTS index.
 """
 from __future__ import annotations
 
@@ -125,32 +121,11 @@ async def dm_env(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# load_fts_content() unit tests
+# search_title / search_content unit tests
 # ---------------------------------------------------------------------------
 
-def test_load_fts_content_base_record_noop():
-    """Record.load_fts_content() is a no-op for the base class."""
-    from flow_sdk.fs_store.record import Record
-    rec = Record.__new__(Record)
-    rec.load_fts_content()  # must not raise
-
-
-def test_load_fts_content_noop_when_cached(tmp_path):
-    """load_fts_content() is a no-op when _session_batch_stats is already set."""
-    from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
-
-    sid = str(uuid.uuid4())
-    p = tmp_path / f"{sid}.jsonl"
-    _write_session_jsonl(p, sid, ["hello world"])
-
-    rec = ClaudeSessionRecord.from_jsonl(p)
-    object.__setattr__(rec, "_session_batch_stats", {"message_count": 99})
-    rec.load_fts_content()
-    assert object.__getattribute__(rec, "__dict__")["_session_batch_stats"]["message_count"] == 99
-
-
-def test_load_fts_content_triggers_parse(tmp_path):
-    """load_fts_content() populates _session_batch_stats from JSONL."""
+def test_search_title_reads_jsonl(tmp_path):
+    """search_title returns last user message directly from JSONL."""
     from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 
     sid = str(uuid.uuid4())
@@ -158,16 +133,12 @@ def test_load_fts_content_triggers_parse(tmp_path):
     _write_session_jsonl(p, sid, ["explain the v0.2.3 release", "sure, here is the summary"])
 
     rec = ClaudeSessionRecord.from_jsonl(p)
-    assert rec.search_title is None  # not yet parsed
-
-    rec.load_fts_content()
-
     assert rec.search_title is not None
     assert "v0.2.3" in rec.search_title or "explain" in rec.search_title
 
 
-def test_load_fts_content_search_content_after_load(tmp_path):
-    """search_content contains transcript lines after load_fts_content()."""
+def test_search_content_reads_jsonl(tmp_path):
+    """search_content contains transcript lines directly from JSONL."""
     from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 
     sid = str(uuid.uuid4())
@@ -176,13 +147,17 @@ def test_load_fts_content_search_content_after_load(tmp_path):
     _write_session_jsonl(p, sid, [f"user asks about {unique}", "assistant answers"])
 
     rec = ClaudeSessionRecord.from_jsonl(p)
-    assert rec.search_content is None or unique not in (rec.search_content or "")
-
-    rec.load_fts_content()
-
     content = rec.search_content
     assert content is not None
     assert unique in content, f"Expected '{unique}' in search_content, got: {content[:200]}"
+
+
+def test_search_content_returns_none_when_no_path(tmp_path):
+    """search_content returns None when no JSONL path is set."""
+    from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+    rec = ClaudeSessionRecord.__new__(ClaudeSessionRecord)
+    assert rec.search_content is None
+    assert rec.search_title is None
 
 
 # ---------------------------------------------------------------------------
@@ -319,8 +294,7 @@ async def test_search_finds_transcript_term(dm_env):
 
     results = await Entity.search(unique)
     assert len(results) >= 1, (
-        f"Entity.search('{unique}') returned no results after index_search(). "
-        "load_fts_content() may not be triggering the JSONL parse."
+        f"Entity.search('{unique}') returned no results after index_search()."
     )
     assert sid in [r.id for r in results], f"Expected session id={sid} in results"
 
@@ -345,7 +319,6 @@ async def test_search_content_is_not_just_slug_cwd(dm_env):
     await dm.index_search(discovery.records, IndexSearchOptions())
 
     rec = discovery.records[0]
-    rec.load_fts_content()
     content = rec.search_content
     assert content is not None
     assert len(content) > 50, f"search_content looks like the slug/cwd fallback: {content!r}"

@@ -447,15 +447,14 @@ class AgenticProcess(Entity):
     queue: dict | None = APIField(default=None)
 
     @property
-    def cli_cmd(self):
-        """Build a WorkerCLIOptions from stored cli_config + entity fields.
+    def cli_options(self) -> "ClaudeCliOptions":
+        """Deserialize cli_config into a live ClaudeCliOptions.
 
-        The returned command object has session_id and workdir injected from
-        the entity. Callers add runtime env vars via add_env() before calling
-        to_shell_string().
+        session_id and workdir are injected from entity fields (not stored in cli_config).
+        Callers add runtime env vars via add_env() before calling to_shell_string().
         """
-        from flow_sdk.builtin.cli_workers import factory as _cli_factory
-        cmd = _cli_factory(self.cli_config, worker_type="claude")
+        from flow_sdk.builtin.cli_workers import ClaudeCliOptions
+        cmd = ClaudeCliOptions.from_json(self.cli_config)
         cmd.session_id = self.worker_session_id
         cmd.workdir = self.workdir
         if cmd.workdir:
@@ -966,7 +965,7 @@ class AgenticProcess(Entity):
                         self.project_encoded_name = project.project_encoded_name
 
             # Build the CLI command from cli_config + entity fields
-            cmd = self.cli_cmd
+            cmd = self.cli_options
 
             # Server-restart resume: process had a shell but cli_config didn't encode resume
             if not cmd.resume and self.shell_id:
@@ -992,7 +991,6 @@ class AgenticProcess(Entity):
 
             is_resume = cmd.resume
             is_fork = bool(cmd.fork_session_id)
-            command = cmd.to_shell_string(instruction=instruction)
 
             workdir = self.workdir
             session_name = f"Claude - {self.worker_session_id[:8]} ({'fork' if is_fork else 'resume' if is_resume else 'new'})"
@@ -1017,7 +1015,11 @@ class AgenticProcess(Entity):
 
             if started:
                 await asyncio.sleep(1.0)  # let shell initialize and write prompt before injecting
-                await shell.send_input(command)
+                execution_info = await shell.run_process(cmd, instruction=instruction)
+                logger.info(
+                    "AgenticProcess %s worker launched: pid=%s name=%r",
+                    self.id, execution_info.pid, execution_info.name,
+                )
 
             self._set_process_state(status=ProcessorStatus.RUNNING.value, error=None)
             if visible is not None:
@@ -1033,6 +1035,7 @@ class AgenticProcess(Entity):
                     "compute_node_id": self.compute_node_id,
                     "shell": shell.model_dump(mode="json"),
                     "is_resume": is_resume,
+                    "worker_pid": shell.worker_pid,
                 }
             )
 
@@ -1898,8 +1901,35 @@ class AgenticProcessor(Entity):
             request_info = get_current_request_info()
             owner = request_info.someone_typeid if request_info else None
 
+            from flow_sdk.builtin.cli_workers.claude_cli import ClaudeCliOptions
+
             context_data = dict(context or {})
             workdir = context_data.pop("workdir", None)
+
+            # Extract CLI-relevant flags into ClaudeCliOptions → cli_config.
+            # This makes ClaudeCliOptions the single source of truth: context_data
+            # retains only non-CLI fields (project_id, env_vars, instructions, etc.).
+            fork_session = bool(context_data.pop("fork_session", False))
+            resume_session_id = context_data.pop("resume_session_id", None)
+
+            cli_opts = ClaudeCliOptions(
+                model=context_data.pop("model", None) or None,
+                permission_mode=context_data.pop("permission_mode", "bypassPermissions"),
+                chrome=bool(context_data.pop("chrome", False)),
+                debug=bool(context_data.pop("debug", True)),
+                worktree=bool(context_data.pop("worktree", False)),
+                agents_json=context_data.pop("agents_json", None),
+            )
+
+            # Wire resume / fork into the options.
+            # session_id and workdir are injected at open()-time via cli_options.
+            if fork_session and resume_session_id:
+                # Fork: resume the source session, spawn a new session forked from it.
+                cli_opts.resume = True
+                cli_opts.fork_session_id = resume_session_id
+            elif resume_session_id:
+                # Plain resume: session_id == resume_session_id (injected via worker_session_id).
+                cli_opts.resume = True
 
             # Create process in IDLE state
             idle_state = _default_processor_state()
@@ -1908,11 +1938,15 @@ class AgenticProcessor(Entity):
             process = AgenticProcess(
                 processor_id=self.id,
                 instruction_content="",
+                cli_config=cli_opts.to_json(),
                 context_data=context_data,
                 workdir=workdir,
                 state=idle_state,
                 visible=visible,
             )
+            # For plain resume the worker_session_id IS the session being resumed.
+            if resume_session_id and not fork_session:
+                process.worker_session_id = resume_session_id
             await process.save(owner)
 
             # Handle ProcessResult creation if requested
