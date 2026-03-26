@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Test Result",
+  "description": "Result of executing a single test scenario from a markdown file",
+  "type": "object",
+  "required": ["scenario_path", "category", "timestamp", "duration_ms", "status", "tests", "environment"],
+  "properties": {
+    "scenario_path": {
+      "type": "string",
+      "description": "Relative path to the .md scenario file",
+      "examples": ["ui/tests/manual_regression/chat/chat_input_controls.md"]
+    },
+    "category": {
+      "type": "string",
+      "enum": ["chat", "terminal", "editor", "general", "skills", "setup"],
+      "description": "Test category"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of execution start"
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total execution duration in milliseconds"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pass", "fail", "skip", "error", "test-issue"],
+      "description": "Overall scenario status. test-issue means the scenario itself is wrong, not the app."
+    },
+    "execution_method": {
+      "type": "string",
+      "enum": ["playwright", "fast-path", "mcp-browser", "skipped"],
+      "description": "Which execution method produced the result"
+    },
+    "known_bug": {
+      "type": "boolean",
+      "default": false,
+      "description": "True if the .md scenario contains a KNOWN BUG section"
+    },
+    "skip_reason": {
+      "type": ["string", "null"],
+      "description": "When status is skip, explains why (clipboard, live-claude, platform)"
+    },
+    "tests": {
+      "type": "array",
+      "description": "Individual test blocks within the scenario",
+      "items": {
+        "type": "object",
+        "required": ["test_number", "title", "status", "duration_ms", "steps"],
+        "properties": {
+          "test_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Test number as declared in the markdown"
+          },
+          "title": {
+            "type": "string",
+            "description": "Test title from the markdown header"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pass", "fail", "skip", "error", "test-issue"],
+            "description": "test-issue means the test logic/steps are incorrect, not the app under test"
+          },
+          "reason": {
+            "type": ["string", "null"],
+            "description": "When status is test-issue, explains why the scenario step is wrong"
+          },
+          "duration_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "fast_path_used": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether the fast-path script was used instead of full execution"
+          },
+          "fast_path_stale": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether the fast-path script failed but full execution passed"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["step_number", "instruction", "type", "status"],
+              "properties": {
+                "step_number": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "instruction": {
+                  "type": "string",
+                  "description": "The step instruction text from the markdown"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": ["browser", "bash"],
+                  "description": "Step execution type"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": ["pass", "fail", "skip", "error", "test-issue"]
+                },
+                "duration_ms": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "error_message": {
+                  "type": ["string", "null"],
+                  "description": "Error details if step failed"
+                },
+                "console_errors": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "Browser console errors captured during this step"
+                },
+                "screenshot_path": {
+                  "type": ["string", "null"],
+                  "description": "Path to screenshot captured on failure"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "required": ["backend_url", "frontend_url", "browser", "platform"],
+      "properties": {
+        "backend_url": { "type": "string" },
+        "frontend_url": { "type": "string" },
+        "browser": { "type": "string" },
+        "platform": { "type": "string" }
+      }
+    }
+  }
+}

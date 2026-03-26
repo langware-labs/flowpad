@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>E2E QA Report</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg-secondary: #f8f9fa;
+    --bg-tertiary: #e9ecef;
+    --text: #212529;
+    --text-secondary: #6c757d;
+    --border: #dee2e6;
+    --pass: #198754;
+    --pass-bg: #d1e7dd;
+    --fail: #dc3545;
+    --fail-bg: #f8d7da;
+    --skip: #ffc107;
+    --skip-bg: #fff3cd;
+    --error: #dc3545;
+    --error-bg: #f8d7da;
+    --accent: #0d6efd;
+    --accent-bg: #cfe2ff;
+    --radius: 8px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a2e;
+      --bg-secondary: #16213e;
+      --bg-tertiary: #0f3460;
+      --text: #e0e0e0;
+      --text-secondary: #a0a0a0;
+      --border: #333;
+      --pass: #4caf50;
+      --pass-bg: #1b3a1b;
+      --fail: #f44336;
+      --fail-bg: #3a1b1b;
+      --skip: #ff9800;
+      --skip-bg: #3a2e1b;
+      --error: #f44336;
+      --error-bg: #3a1b1b;
+      --accent: #64b5f6;
+      --accent-bg: #1b2a3a;
+      --shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 1.5rem; margin-bottom: 4px; }
+  h2 { font-size: 1.2rem; margin-bottom: 12px; color: var(--text); }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 2px solid var(--border);
+  }
+  .header-info { flex: 1; }
+  .header-meta { font-size: 0.85rem; color: var(--text-secondary); }
+  .pass-rate {
+    font-size: 2.5rem;
+    font-weight: 700;
+    padding: 8px 20px;
+    border-radius: var(--radius);
+    text-align: center;
+    min-width: 120px;
+  }
+  .pass-rate.good { color: var(--pass); background: var(--pass-bg); }
+  .pass-rate.bad { color: var(--fail); background: var(--fail-bg); }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    text-align: center;
+    box-shadow: var(--shadow);
+  }
+  .card-value { font-size: 1.8rem; font-weight: 700; }
+  .card-label { font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px; }
+  .card-value.pass { color: var(--pass); }
+  .card-value.fail { color: var(--fail); }
+  .card-value.skip { color: var(--skip); }
+  .card-value.error { color: var(--error); }
+
+  table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { background: var(--bg-secondary); font-weight: 600; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; }
+  .progress-bar {
+    height: 8px;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
+    min-width: 120px;
+  }
+  .progress-bar .pass-seg { background: var(--pass); }
+  .progress-bar .fail-seg { background: var(--fail); }
+  .progress-bar .skip-seg { background: var(--skip); }
+  .progress-bar .error-seg { background: var(--error); }
+
+  .details { margin-bottom: 24px; }
+  details {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 8px;
+    box-shadow: var(--shadow);
+  }
+  details + details { margin-top: 0; }
+  summary {
+    padding: 12px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg-secondary);
+    border-radius: var(--radius);
+    font-weight: 500;
+    user-select: none;
+  }
+  details[open] > summary { border-bottom: 1px solid var(--border); border-radius: var(--radius) var(--radius) 0 0; }
+  .detail-body { padding: 12px 16px; }
+
+  .status-icon { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .status-icon.pass { background: var(--pass); }
+  .status-icon.fail { background: var(--fail); }
+  .status-icon.skip { background: var(--skip); }
+  .status-icon.error { background: var(--error); }
+
+  .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 0;
+    font-size: 0.9rem;
+    border-bottom: 1px solid var(--bg-tertiary);
+  }
+  .step:last-child { border-bottom: none; }
+  .step-num { color: var(--text-secondary); min-width: 24px; text-align: right; }
+  .step-instruction { flex: 1; }
+  .step-type { font-size: 0.75rem; padding: 1px 6px; border-radius: 3px; background: var(--bg-tertiary); color: var(--text-secondary); }
+  .step-duration { color: var(--text-secondary); font-size: 0.8rem; min-width: 60px; text-align: right; }
+  .step-error { color: var(--fail); font-size: 0.85rem; margin-top: 4px; padding-left: 32px; }
+  .console-errors { color: var(--skip); font-size: 0.8rem; margin-top: 2px; padding-left: 32px; }
+
+  .test-block { margin-bottom: 8px; }
+  .test-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    font-weight: 500;
+    border-bottom: 1px solid var(--bg-tertiary);
+  }
+  .test-meta { color: var(--text-secondary); font-size: 0.8rem; margin-left: auto; }
+  .badge { font-size: 0.7rem; padding: 2px 6px; border-radius: 3px; font-weight: 600; }
+  .badge.fast-path { background: var(--accent-bg); color: var(--accent); }
+  .badge.stale { background: var(--skip-bg); color: var(--skip); }
+
+  .stale-section { margin-bottom: 24px; }
+  .stale-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--skip-bg);
+    border: 1px solid var(--skip);
+    border-radius: var(--radius);
+    margin-bottom: 4px;
+    font-size: 0.9rem;
+  }
+
+  .footer {
+    text-align: center;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+  }
+
+  .scenario-meta {
+    display: flex;
+    gap: 16px;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-left: auto;
+  }
+</style>
+</head>
+<body>
+<!-- REPORT_DATA -->
+
+<script>
+(function() {
+  const data = typeof REPORT_DATA !== 'undefined' ? REPORT_DATA : null;
+  if (!data) {
+    document.body.innerHTML = '<p style="text-align:center;padding:40px;color:#999;">No report data found. Inject data by replacing &lt;!-- REPORT_DATA --&gt; with &lt;script&gt;const REPORT_DATA = {...};&lt;/script&gt;</p>';
+    return;
+  }
+
+  function formatDuration(ms) {
+    if (ms < 1000) return ms + 'ms';
+    if (ms < 60000) return (ms / 1000).toFixed(1) + 's';
+    return Math.floor(ms / 60000) + 'm ' + Math.round((ms % 60000) / 1000) + 's';
+  }
+
+  function statusIcon(status) {
+    return '<span class="status-icon ' + status + '"></span>';
+  }
+
+  const s = data.summary;
+  const passRate = s.pass_rate;
+  const rateClass = passRate >= 80 ? 'good' : 'bad';
+
+  let html = '';
+
+  // Header
+  html += '<div class="header">';
+  html += '<div class="header-info">';
+  html += '<h1>E2E QA Report</h1>';
+  html += '<div class="header-meta">';
+  html += 'Cycle: ' + data.cycle_id + '<br>';
+  html += 'Date: ' + new Date(data.timestamp).toLocaleString() + '<br>';
+  html += 'Duration: ' + formatDuration(data.duration_ms);
+  html += '</div></div>';
+  html += '<div class="pass-rate ' + rateClass + '">' + passRate.toFixed(1) + '%</div>';
+  html += '</div>';
+
+  // Summary cards
+  html += '<div class="cards">';
+  html += '<div class="card"><div class="card-value">' + s.total_scenarios + '</div><div class="card-label">Scenarios</div></div>';
+  html += '<div class="card"><div class="card-value">' + s.total_tests + '</div><div class="card-label">Tests</div></div>';
+  html += '<div class="card"><div class="card-value pass">' + s.passed + '</div><div class="card-label">Passed</div></div>';
+  html += '<div class="card"><div class="card-value fail">' + s.failed + '</div><div class="card-label">Failed</div></div>';
+  html += '<div class="card"><div class="card-value skip">' + s.skipped + '</div><div class="card-label">Skipped</div></div>';
+  html += '<div class="card"><div class="card-value error">' + s.error + '</div><div class="card-label">Errors</div></div>';
+  if (s.fast_path_hit_rate !== undefined) {
+    html += '<div class="card"><div class="card-value" style="color:var(--accent)">' + s.fast_path_hit_rate.toFixed(0) + '%</div><div class="card-label">Fast Path</div></div>';
+  }
+  html += '</div>';
+
+  // Category breakdown
+  html += '<h2>Categories</h2>';
+  html += '<table><thead><tr><th>Category</th><th>Total</th><th>Passed</th><th>Failed</th><th>Skipped</th><th>Progress</th></tr></thead><tbody>';
+  for (const [cat, counts] of Object.entries(data.categories).sort()) {
+    const total = counts.total || 1;
+    const passW = (counts.passed / total * 100).toFixed(1);
+    const failW = (counts.failed / total * 100).toFixed(1);
+    const skipW = (counts.skipped / total * 100).toFixed(1);
+    const errW = (counts.error / total * 100).toFixed(1);
+    html += '<tr>';
+    html += '<td><strong>' + cat + '</strong></td>';
+    html += '<td>' + counts.total + '</td>';
+    html += '<td style="color:var(--pass)">' + counts.passed + '</td>';
+    html += '<td style="color:var(--fail)">' + counts.failed + '</td>';
+    html += '<td style="color:var(--skip)">' + counts.skipped + '</td>';
+    html += '<td><div class="progress-bar">';
+    html += '<div class="pass-seg" style="width:' + passW + '%"></div>';
+    html += '<div class="fail-seg" style="width:' + failW + '%"></div>';
+    html += '<div class="skip-seg" style="width:' + skipW + '%"></div>';
+    html += '<div class="error-seg" style="width:' + errW + '%"></div>';
+    html += '</div></td>';
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+
+  // Detailed results
+  html += '<h2>Detailed Results</h2>';
+  html += '<div class="details">';
+  for (const result of data.results) {
+    const scenarioName = result.scenario_path.split('/').pop().replace('.md', '');
+    html += '<details' + (result.status === 'fail' || result.status === 'error' ? ' open' : '') + '>';
+    html += '<summary>';
+    html += statusIcon(result.status);
+    html += '<span>' + result.category + '/' + scenarioName + '</span>';
+    html += '<span class="scenario-meta">';
+    html += '<span>' + result.tests.length + ' test' + (result.tests.length !== 1 ? 's' : '') + '</span>';
+    html += '<span>' + formatDuration(result.duration_ms) + '</span>';
+    html += '</span>';
+    html += '</summary>';
+    html += '<div class="detail-body">';
+
+    for (const test of result.tests) {
+      html += '<div class="test-block">';
+      html += '<div class="test-header">';
+      html += statusIcon(test.status);
+      html += '<span>Test ' + test.test_number + ': ' + test.title + '</span>';
+      if (test.fast_path_used) html += '<span class="badge fast-path">FAST PATH</span>';
+      if (test.fast_path_stale) html += '<span class="badge stale">STALE</span>';
+      html += '<span class="test-meta">' + formatDuration(test.duration_ms) + '</span>';
+      html += '</div>';
+
+      if (test.steps && test.steps.length > 0) {
+        for (const step of test.steps) {
+          html += '<div class="step">';
+          html += '<span class="step-num">' + step.step_number + '</span>';
+          html += statusIcon(step.status);
+          html += '<span class="step-instruction">' + escapeHtml(step.instruction) + '</span>';
+          html += '<span class="step-type">' + step.type + '</span>';
+          if (step.duration_ms !== undefined) {
+            html += '<span class="step-duration">' + formatDuration(step.duration_ms) + '</span>';
+          }
+          html += '</div>';
+          if (step.error_message) {
+            html += '<div class="step-error">' + escapeHtml(step.error_message) + '</div>';
+          }
+          if (step.console_errors && step.console_errors.length > 0) {
+            html += '<div class="console-errors">Console: ' + step.console_errors.map(escapeHtml).join(', ') + '</div>';
+          }
+        }
+      }
+      html += '</div>';
+    }
+    html += '</div></details>';
+  }
+  html += '</div>';
+
+  // Stale fast paths
+  if (data.stale_fast_paths && data.stale_fast_paths.length > 0) {
+    html += '<h2>Stale Fast Paths</h2>';
+    html += '<div class="stale-section">';
+    for (const stale of data.stale_fast_paths) {
+      html += '<div class="stale-item">';
+      html += '<span class="status-icon skip"></span>';
+      html += '<span>' + stale.scenario_path + '</span>';
+      if (stale.error_message) {
+        html += '<span style="margin-left:auto;font-size:0.8rem;color:var(--text-secondary)">' + escapeHtml(stale.error_message) + '</span>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  // Footer
+  html += '<div class="footer">Generated by E2E QA Skill &middot; ' + new Date().toLocaleString() + '</div>';
+
+  document.body.innerHTML = html;
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+})();
+</script>
+</body>
+</html>

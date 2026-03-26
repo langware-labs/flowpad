@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cycle Report",
+  "description": "Aggregated results from a full QA test cycle",
+  "type": "object",
+  "required": ["cycle_id", "timestamp", "duration_ms", "summary", "categories", "results"],
+  "properties": {
+    "cycle_id": {
+      "type": "string",
+      "description": "Unique identifier for this test cycle (timestamp-based)"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of cycle start"
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total cycle duration in milliseconds"
+    },
+    "summary": {
+      "type": "object",
+      "required": ["total_scenarios", "total_tests", "passed", "failed", "skipped", "error", "test_issues", "pass_rate"],
+      "properties": {
+        "total_scenarios": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of scenario files executed"
+        },
+        "total_tests": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of test blocks across all scenarios"
+        },
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0, "description": "App failures — the app did not behave as expected" },
+        "skipped": { "type": "integer", "minimum": 0 },
+        "error": { "type": "integer", "minimum": 0 },
+        "test_issues": { "type": "integer", "minimum": 0, "description": "Scenario authoring issues — the test steps are wrong, not the app" },
+        "pass_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Percentage of passed tests"
+        },
+        "fast_path_hit_rate": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Percentage of scenarios that had fast paths available"
+        }
+      }
+    },
+    "categories": {
+      "type": "object",
+      "description": "Per-category result counts",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["total", "passed", "failed", "skipped", "error", "test_issues"],
+        "properties": {
+          "total": { "type": "integer", "minimum": 0 },
+          "passed": { "type": "integer", "minimum": 0 },
+          "failed": { "type": "integer", "minimum": 0 },
+          "skipped": { "type": "integer", "minimum": 0 },
+          "error": { "type": "integer", "minimum": 0 },
+          "test_issues": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "results": {
+      "type": "array",
+      "description": "Individual test result objects",
+      "items": { "$ref": "test-result.schema.json" }
+    },
+    "stale_fast_paths": {
+      "type": "array",
+      "description": "Scenarios where fast-path scripts need updating",
+      "items": {
+        "type": "object",
+        "required": ["scenario_path", "fast_path_script"],
+        "properties": {
+          "scenario_path": { "type": "string" },
+          "fast_path_script": { "type": "string" },
+          "error_message": { "type": "string" }
+        }
+      }
+    }
+  }
+}
