@@ -187,8 +187,8 @@ export function ProjectSetupScreen({
   );
 
   const saveProject = useCallback(async (path: string) => {
-    const newProject = new Project({ name: path });
-    await newProject.save([dataContext.someone!]);
+    let newProject = new Project({ name: path });
+    newProject = await newProject.save([dataContext.someone!]);
     await newProject.setupForDesktop();
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, newProject.typeId);
     await dataContext.refreshProject();

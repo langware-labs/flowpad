@@ -901,7 +901,17 @@ class LocalComputeProvider(ComputeProvider):
         import subprocess
 
         if sys.platform == PLATFORM_DARWIN:
-            apple_script = 'set theFolder to choose folder\nreturn POSIX path of theFolder'
+            # Activate Finder to bring the dialog in front, close any Finder
+            # windows so only the picker is visible, then choose folder.
+            apple_script = (
+                'tell application "Finder"\n'
+                "    activate\n"
+                "    close every window\n"
+                "end tell\n"
+                "delay 0.1\n"
+                "set theFolder to choose folder\n"
+                "return POSIX path of theFolder"
+            )
             result = subprocess.run(
                 ["osascript", "-e", apple_script],
                 capture_output=True, text=True, timeout=120,

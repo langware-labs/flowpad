@@ -708,7 +708,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   async openPathDialog(): Promise<string | null> {
     const action = new ActionInfo('pick-folder', ComputeNode.type, this.id, 'POST');
     const response = await dataManager.callAction<void, { path: string | null }>(action);
-    return (response as any)?.data?.path ?? null;
+    return (response as any)?.path ?? null;
   }
 
   /**
