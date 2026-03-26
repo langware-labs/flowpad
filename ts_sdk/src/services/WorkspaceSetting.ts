@@ -9,6 +9,7 @@ import { TerminalType } from './shell/builtInShells';
 export interface WorkspaceSettings {
   show_system_skills: boolean;
   default_terminal: TerminalType;
+  buffer_sync_updates: boolean;
 }
 
 /**
@@ -22,6 +23,7 @@ export enum WorkspaceSettingEvent {
 const DEFAULT_SETTINGS: WorkspaceSettings = {
   show_system_skills: true,
   default_terminal: TerminalType.BUILTIN_XTERM,
+  buffer_sync_updates: false,
 };
 
 const DEBOUNCE_MS = 500;
@@ -86,6 +88,21 @@ export class WorkspaceSetting extends EventEmitter {
   set defaultTerminal(value: TerminalType) {
     if (this._settings.default_terminal !== value) {
       this._settings.default_terminal = value;
+      this._handleUpdate();
+    }
+  }
+
+  /**
+   * Buffer PTY writes between DEC 2026 BSU/ESU markers to prevent
+   * visible scroll jumps during Claude Code's TUI redraws.
+   */
+  get bufferSyncUpdates(): boolean {
+    return this._settings.buffer_sync_updates;
+  }
+
+  set bufferSyncUpdates(value: boolean) {
+    if (this._settings.buffer_sync_updates !== value) {
+      this._settings.buffer_sync_updates = value;
       this._handleUpdate();
     }
   }

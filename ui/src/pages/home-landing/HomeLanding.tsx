@@ -28,6 +28,7 @@ import { useAgentContext } from '@src/contexts/agent-context';
 import { useToast } from '@src/hooks/use-toast';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityProgressModal } from '@src/components/search-index/ActivityProgressModal';
+import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -36,10 +37,8 @@ import type React from 'react';
 import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
-import { Hammer, Loader2, PackageSearch } from 'lucide-react';
+import { Loader2, PackageSearch } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useDevMode } from '@src/contexts/dev-mode-context';
-import { systemTools } from '@sdk/services/system-tools-service';
 
 const getSafeTimestamp = (value?: string | null): number => {
   if (!value) return 0;
@@ -64,6 +63,8 @@ const normalizePath = (value: string): string => {
  *   - Right column: Greeting, session input, project buttons, and Quick Access
  * URL: /dock/home
  */
+let _welcomeChecked = false;
+
 export function HomeLanding() {
   const { user } = useAuth();
   const { navigation } = useDockNavigation();
@@ -119,9 +120,16 @@ export function HomeLanding() {
     [currentProject?.typeId, annotationsRefetch],
   );
 
-  const { busy, resetAndRescan, currentActivity, activityProgress } = useSystemTools();
-  const devMode = useDevMode();
+  const { busy, resetAndRescan, currentActivity, activityProgress, scanInfo } = useSystemTools();
   const [progressOpen, setProgressOpen] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
+
+  // Show welcome modal once per app session when scanInfo first arrives as never_indexed.
+  useEffect(() => {
+    if (_welcomeChecked || !scanInfo) return;
+    _welcomeChecked = true;
+    if (scanInfo.never_indexed) setShowWelcome(true);
+  }, [scanInfo]);
   const firstName = user?.name?.split(' ')[0] || 'there';
 
   const [memoPanelOpen, setMemoPanelOpen] = useState(false);
@@ -487,22 +495,6 @@ export function HomeLanding() {
                 </TooltipTrigger>
                 <TooltipContent>Refresh search data</TooltipContent>
               </Tooltip>
-              {devMode && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 text-amber-500 hover:text-amber-600 hover:bg-amber-500/10 animate-pulse hover:animate-none"
-                      onClick={() => void systemTools.clearIndex()}
-                      disabled={busy}
-                    >
-                      <Hammer className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>[DEV] Reset database</TooltipContent>
-                </Tooltip>
-              )}
             </div>
 
             {/* Activity strip — shown while any system activity is running */}
@@ -601,6 +593,16 @@ export function HomeLanding() {
         </div>
 
       </div>
+
+      {/* Welcome modal for first-time / not-yet-indexed users */}
+      <WelcomeModal
+        open={showWelcome}
+        onStart={() => {
+          setShowWelcome(false);
+          void resetAndRescan();
+        }}
+        onSkip={() => setShowWelcome(false)}
+      />
 
       {/* Activity progress detail modal */}
       <ActivityProgressModal

@@ -1,12 +1,8 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { type ProjectResourceListItem } from '@src/components/project-resource-list';
-import { QuickAccessSideBar } from '@src/components/quick-access-sidebar';
-import { useClaudeProjectList } from '@src/hooks/use-claude-projects';
-import { useHooksSniffer } from '@src/hooks/use-hooks-sniffer';
+import { useClaudeProjectList, getProjectDisplayName } from '@src/hooks/use-claude-projects';
 import {
   ContextEntitiesEnum,
   dataContext,
-  openTerminalFromComputeNode,
   type ProjectListItem,
   Project,
   QueryRequest,
@@ -17,12 +13,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { useToast } from '@src/hooks/use-toast';
-import { DockPointer } from '@src/navigation/DockPointer';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { FolderOpen, FolderPlus, Loader2 } from 'lucide-react';
+import { Check, FolderOpen, FolderPlus, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-
-const isDirectoryPickerSupported = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
 
 const normalizePath = (path: string): string => {
   const normalized = path.trim().replace(/\\/g, '/');
@@ -33,170 +25,43 @@ const normalizePath = (path: string): string => {
 
 const canonicalPathKey = (path: string): string => normalizePath(path).replace(/^\/+/, '');
 
-const joinPath = (basePath: string, childSegment: string): string => {
-  const base = normalizePath(basePath);
-  const child = childSegment.trim().replace(/^\/+|\/+$/g, '');
-  if (!base) return child;
-  if (base === '/') return `/${child}`;
-  return `${base}/${child}`;
-};
-
 const getProjectPath = (project: Project): string => normalizePath(project.fs_storage_mount_path || project.name || '');
-
-export type OpenProjectMode = 'open' | 'create';
 
 interface OpenProjectComponentProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  initialMode?: OpenProjectMode;
   onProjectChanged?: () => void;
 }
 
-interface FolderInputProps {
-  id: string;
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  placeholder: string;
-  helperText: string;
-  showBrowse: boolean;
-  onBrowse: () => void;
-  autoFocus?: boolean;
-}
-
-function FolderInput({
-  id,
-  label,
-  value,
-  onChange,
-  placeholder,
-  helperText,
-  showBrowse,
-  onBrowse,
-  autoFocus = false,
-}: FolderInputProps) {
-  const handleInputRef = (el: HTMLInputElement | null) => {
-    if (el && value) {
-      el.scrollLeft = el.scrollWidth;
-    }
-  };
-
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={id}>{label}</Label>
-      <div className="flex gap-2">
-        <Input
-          ref={handleInputRef}
-          id={id}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          className="flex-1 font-mono text-sm"
-          dir="ltr"
-          autoFocus={autoFocus}
-        />
-        {showBrowse && (
-          <Button variant="outline" onClick={onBrowse} title="Browse for folder" type="button">
-            <FolderOpen className="h-4 w-4" />
-          </Button>
-        )}
-      </div>
-      <p className="text-xs text-muted-foreground">{helperText}</p>
-    </div>
-  );
-}
-
-export function OpenProjectComponent({
-  open,
-  onOpenChange,
-  initialMode = 'open',
-  onProjectChanged,
-}: OpenProjectComponentProps) {
+export function OpenProjectComponent({ open, onOpenChange, onProjectChanged }: OpenProjectComponentProps) {
   const { project: currentProject } = useProject();
   const { toast } = useToast();
   const { projects: scanProjects, isLoading: isLoadingScanProjects } = useClaudeProjectList({ enabled: open });
-  const [mode, setMode] = useState<OpenProjectMode>(initialMode);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [openingProjectId, setOpeningProjectId] = useState<string | null>(null);
+  const { computeNode } = useAgentContext();
+
+  const [showCreateForm, setShowCreateForm] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [parentFolderPath, setParentFolderPath] = useState('');
-  const [selectedFolderPath, setSelectedFolderPath] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [openingProjectId, setOpeningProjectId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [expandedProjectEncodedName, setExpandedProjectEncodedName] = useState<string | null>(null);
 
-  const { navigation } = useDockNavigation();
-  const { computeNode } = useAgentContext();
-  const { projectFlowDataCounts } = useHooksSniffer();
-
-  // Derive current project's encoded name from the scan list
-  const currentProjectEncodedName = useMemo(() => {
-    if (!currentProject) return null;
-    const currentPath = normalizePath(currentProject.fs_storage_mount_path || currentProject.name || '');
-    const byId = scanProjects.find((p) => p.id === currentProject.id);
-    if (byId?.encoded_name) return byId.encoded_name;
-    if (!currentPath) return null;
-    const byPath = scanProjects.find((p) => {
-      const scanPath = normalizePath(p.cwd || p.name || '');
-      return !!scanPath && scanPath === currentPath;
-    });
-    return byPath?.encoded_name || null;
-  }, [scanProjects, currentProject]);
-
-  const isDesktop = useMemo(() => dataContext.isDesktop, []);
   const defaultWorkspacePath = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '', []);
 
+  // Reset state when dialog opens
   useEffect(() => {
     if (!open) return;
-    const currentProjectPath = currentProject?.fs_storage_mount_path || '';
-    setMode(initialMode);
+    setShowCreateForm(false);
     setNewProjectName('');
     setParentFolderPath(defaultWorkspacePath);
-    setSelectedFolderPath(currentProjectPath || defaultWorkspacePath);
     setError(null);
     setIsSubmitting(false);
     setOpeningProjectId(null);
-    setExpandedProjectEncodedName(null);
-  }, [open, initialMode, defaultWorkspacePath, currentProject?.fs_storage_mount_path]);
+  }, [open, defaultWorkspacePath]);
 
-  const handleBrowseFolder = useCallback(
-    async (setter: (path: string) => void, currentPath: string) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const electronAPI = (window as any).electronAPI;
-      if (electronAPI?.pickFolder) {
-        const selected = await electronAPI.pickFolder(currentPath.trim());
-        if (selected) {
-          setter(selected);
-          setError(null);
-        }
-        return;
-      }
-
-      if (!isDirectoryPickerSupported) {
-        setError('Folder picker is not supported in this browser');
-        return;
-      }
-
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const dirHandle = await (window as any).showDirectoryPicker({ mode: 'read' });
-        const folderName = dirHandle.name;
-
-        if (isDesktop) {
-          const basePath = currentPath.trim() || defaultWorkspacePath;
-          const newPath = basePath ? `${normalizePath(basePath)}/${folderName}` : folderName;
-          setter(newPath);
-          setError('Browser cannot access full path. Please verify the path is correct.');
-        } else {
-          setter(`${normalizePath(defaultWorkspacePath)}/${folderName}`);
-          setError(null);
-        }
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') return;
-        console.error('Failed to open folder picker:', err);
-        setError('Failed to open folder picker');
-      }
-    },
-    [defaultWorkspacePath, isDesktop],
+  const currentProjectPath = useMemo(
+    () => normalizePath(currentProject?.fs_storage_mount_path || currentProject?.name || ''),
+    [currentProject],
   );
 
   const setCurrentProjectContext = useCallback(
@@ -210,33 +75,21 @@ export function OpenProjectComponent({
 
   const ensureProjectAndSetContext = useCallback(
     async (path: string) => {
-      if (!dataContext.someone) {
-        throw new Error('You must be logged in');
-      }
+      if (!dataContext.someone) throw new Error('You must be logged in');
 
       const normalizedPath = normalizePath(path);
-      if (!normalizedPath) {
-        throw new Error('Please provide a valid project path');
-      }
+      if (!normalizedPath) throw new Error('Please provide a valid project path');
+
       const pathKey = canonicalPathKey(normalizedPath);
-
-      const findByPath = (projectList: Project[]) =>
-        projectList.find((project) => canonicalPathKey(getProjectPath(project)) === pathKey) || null;
-
       const freshProjects = await Project.query(
-        new QueryRequest({
-          type: Project.type,
-          query: null,
-          scope: [],
-          name: 'open-project-component-dedup-query',
-        }),
+        new QueryRequest({ type: Project.type, query: null, scope: [], name: 'open-project-dedup' }),
       );
-      let targetProject = findByPath(freshProjects);
+      let targetProject = freshProjects.find((p) => canonicalPathKey(getProjectPath(p)) === pathKey) || null;
       const openedExisting = !!targetProject;
 
       if (!targetProject) {
         targetProject = new Project({ name: normalizedPath });
-        await targetProject.save([dataContext.someone]);
+        targetProject = await targetProject.save([dataContext.someone]);
       }
 
       await targetProject.setupForDesktop();
@@ -246,16 +99,18 @@ export function OpenProjectComponent({
     [setCurrentProjectContext],
   );
 
-  const handleProjectFromList = useCallback(
-    async (projectPath: string, projectId: string) => {
-      setOpeningProjectId(projectId);
-      setError(null);
+  // Click a project from the list
+  const handleProjectClick = useCallback(
+    async (project: ProjectListItem) => {
+      const path = normalizePath(project.cwd || project.name || '');
+      if (!path) return;
 
+      setOpeningProjectId(project.id);
+      setError(null);
       try {
-        await ensureProjectAndSetContext(projectPath);
+        await ensureProjectAndSetContext(path);
         onOpenChange(false);
       } catch (err) {
-        console.error('Failed to open project:', err);
         setError(err instanceof Error ? err.message : 'Failed to open project');
       } finally {
         setOpeningProjectId(null);
@@ -264,166 +119,152 @@ export function OpenProjectComponent({
     [ensureProjectAndSetContext, onOpenChange],
   );
 
-  const handleSidebarProjectClick = useCallback(
-    (project: ProjectListItem) => {
-      const path = normalizePath(project.cwd || project.name || '');
-      if (path) void handleProjectFromList(path, project.id);
-    },
-    [handleProjectFromList],
-  );
-
-  const handleExpandProject = useCallback(
-    (project: ProjectListItem) => setExpandedProjectEncodedName(project.encoded_name),
-    [],
-  );
-
-  const handleCollapseProject = useCallback(() => setExpandedProjectEncodedName(null), []);
-
-  const handleNewSession = useCallback(
-    (project: ProjectListItem) => {
-      if (!computeNode?.id) return;
-      const cwd = project.cwd || undefined;
-      onOpenChange(false);
-      openTerminalFromComputeNode(computeNode.id, 'claude', cwd).catch((err) => {
-        console.error('[OpenProject] Failed to open new session:', err);
-        toast({
-          title: 'New Session Failed',
-          description: `Could not open terminal: ${err instanceof Error ? err.message : 'Unknown error'}`,
-          variant: 'destructive',
-        });
-      });
-    },
-    [computeNode?.id, onOpenChange, toast],
-  );
-
-  const handleResourceClick = useCallback(
-    (resource: ProjectResourceListItem) => {
-      onOpenChange(false);
-      const navOptions = expandedProjectEncodedName
-        ? { scope: 'project', project: expandedProjectEncodedName }
-        : undefined;
-
-      if (resource.type === 'skill') {
-        navigation.openDock(DockPointer.forSkills(resource.skillDockPath));
-        return;
-      }
-
-      switch (resource.type) {
-        case 'claude_session':
-          navigation.openSystemProfile('sessions', resource.itemId, navOptions);
-          break;
-        case 'hook':
-          navigation.openSystemProfile('hooks', resource.itemId, navOptions);
-          break;
-        case 'command':
-          navigation.openSystemProfile('commands', resource.itemId, navOptions);
-          break;
-        case 'agent':
-          navigation.openSystemProfile('agents', resource.itemId, navOptions);
-          break;
-        case 'todo':
-          navigation.openSystemProfile('todos', resource.itemId, navOptions);
-          break;
-        case 'plugin':
-          navigation.openSystemProfile('plugins', resource.itemId, navOptions);
-          break;
-        case 'mcp_server':
-          navigation.openSystemProfile('projects', undefined, {
-            project: expandedProjectEncodedName ?? undefined,
-          });
-          break;
-        case 'claude_md':
-          navigation.openSystemProfile('summary', undefined, navOptions);
-          break;
-        default:
-          navigation.openSystemProfile();
-      }
-    },
-    [navigation, expandedProjectEncodedName, onOpenChange],
-  );
-
-  const handleSubmit = useCallback(async () => {
-    const isCreate = mode === 'create';
-
-    if (isCreate && !newProjectName.trim()) {
-      setError('Please enter a project name');
-      return;
+  // Pick a folder via the backend compute node dialog.
+  // The dialog must open as part of the app (not a separate dock icon).
+  const pickFolder = useCallback(async (): Promise<string | null> => {
+    if (!computeNode) {
+      setError('No compute node available');
+      return null;
     }
-
-    const path = isCreate ? joinPath(parentFolderPath, newProjectName) : selectedFolderPath.trim();
-    if (!path) {
-      setError(isCreate ? 'Please select a parent folder' : 'Please select or enter a project folder');
-      return;
+    try {
+      return await computeNode.openPathDialog();
+    } catch (err) {
+      setError('Failed to open folder picker');
+      return null;
     }
+  }, [computeNode]);
+
+  // Open folder via picker
+  const handleOpenFolder = useCallback(async () => {
+    const selected = await pickFolder();
+    if (!selected) return;
 
     setIsSubmitting(true);
     setError(null);
-
     try {
-      const result = await ensureProjectAndSetContext(path);
+      const result = await ensureProjectAndSetContext(selected);
       if (result.openedExisting) {
-        toast({
-          title: 'Opened existing project',
-          description: result.project.displayName,
-        });
+        toast({ title: 'Opened existing project', description: result.project.displayName });
       }
       onOpenChange(false);
     } catch (err) {
-      console.error(`Failed to ${isCreate ? 'create' : 'open'} project:`, err);
-      setError(err instanceof Error ? err.message : `Failed to ${isCreate ? 'create' : 'open'} project`);
+      setError(err instanceof Error ? err.message : 'Failed to open project');
     } finally {
       setIsSubmitting(false);
     }
-  }, [mode, newProjectName, parentFolderPath, selectedFolderPath, ensureProjectAndSetContext, onOpenChange, toast]);
+  }, [pickFolder, ensureProjectAndSetContext, onOpenChange, toast]);
+
+  // Browse for parent folder in create mode
+  const handleBrowseParent = useCallback(async () => {
+    const selected = await pickFolder();
+    if (selected) {
+      setParentFolderPath(selected);
+      setError(null);
+    }
+  }, [pickFolder]);
+
+  // Create new project
+  const handleCreate = useCallback(async () => {
+    if (!newProjectName.trim() || !parentFolderPath.trim()) {
+      setError('Please fill in both fields');
+      return;
+    }
+
+    const fullPath = `${normalizePath(parentFolderPath)}/${newProjectName.trim()}`;
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await ensureProjectAndSetContext(fullPath);
+      onOpenChange(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create project');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [newProjectName, parentFolderPath, ensureProjectAndSetContext, onOpenChange]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-2xl">
+      <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{mode === 'create' ? 'Create Project' : 'Open Project'}</DialogTitle>
-          <DialogDescription>Select an existing project or choose a folder to open or create.</DialogDescription>
+          <DialogTitle>Projects</DialogTitle>
+          <DialogDescription>Select a project or open a new folder.</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 overflow-y-auto pr-1">
-          <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm">
-            <span className="text-muted-foreground">Current project:</span>{' '}
-            <span className="font-medium">{currentProject?.displayName || 'None selected'}</span>
+        <div className="space-y-3 overflow-y-auto pr-1">
+          {/* Project list */}
+          <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-card">
+            {isLoadingScanProjects ? (
+              <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Loading projects...
+              </div>
+            ) : scanProjects.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">No projects found</div>
+            ) : (
+              <div className="divide-y divide-border">
+                {scanProjects.map((project) => {
+                  const projectPath = normalizePath(project.cwd || project.name || '');
+                  const isCurrent = !!currentProjectPath && canonicalPathKey(projectPath) === canonicalPathKey(currentProjectPath);
+                  const isOpening = openingProjectId === project.id;
+
+                  return (
+                    <button
+                      key={project.id}
+                      onClick={() => void handleProjectClick(project)}
+                      disabled={!!openingProjectId || isSubmitting}
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50 disabled:opacity-50 ${isCurrent ? 'bg-accent/30' : ''}`}
+                    >
+                      {isOpening ? (
+                        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+                      ) : isCurrent ? (
+                        <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+                      ) : (
+                        <div className="h-3.5 w-3.5 shrink-0" />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium">{getProjectDisplayName(project)}</div>
+                        {project.cwd && (
+                          <div className="truncate font-mono text-xs text-muted-foreground">{project.cwd}</div>
+                        )}
+                      </div>
+                      {project.session_count > 0 && (
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {project.session_count} session{project.session_count !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          <div className="h-64 overflow-hidden rounded-lg border border-border bg-card">
-            <QuickAccessSideBar
-              projects={scanProjects}
-              isLoading={isLoadingScanProjects}
-              onProjectClick={handleSidebarProjectClick}
-              onNewProject={() => setMode('create')}
-              onOpenProject={() => setMode('open')}
-              currentProjectEncodedName={currentProjectEncodedName}
-              onResourceClick={handleResourceClick}
-              expandedProjectEncodedName={expandedProjectEncodedName}
-              onExpandProject={handleExpandProject}
-              onCollapseProject={handleCollapseProject}
-              onNewSession={handleNewSession}
-              projectFlowDataCounts={projectFlowDataCounts}
-            />
-          </div>
-
+          {/* Action buttons */}
           <div className="flex items-center gap-2">
-            <Button variant={mode === 'open' ? 'default' : 'outline'} onClick={() => setMode('open')} className="gap-2">
+            <Button
+              variant="outline"
+              className="flex-1 gap-2"
+              onClick={() => void handleOpenFolder()}
+              disabled={!computeNode || isSubmitting || !!openingProjectId}
+            >
               <FolderOpen className="h-4 w-4" />
               Open Folder
             </Button>
             <Button
-              variant={mode === 'create' ? 'default' : 'outline'}
-              onClick={() => setMode('create')}
-              className="gap-2"
+              variant={showCreateForm ? 'default' : 'outline'}
+              className="flex-1 gap-2"
+              onClick={() => setShowCreateForm(!showCreateForm)}
+              disabled={isSubmitting || !!openingProjectId}
             >
               <FolderPlus className="h-4 w-4" />
               Create New
             </Button>
           </div>
 
-          {mode === 'create' ? (
-            <div className="space-y-3 rounded-lg border bg-card p-4">
+          {/* Inline create form */}
+          {showCreateForm && (
+            <div className="space-y-3 rounded-lg border bg-card p-3">
               <div className="space-y-2">
                 <Label htmlFor="project-name">Project name</Label>
                 <Input
@@ -434,67 +275,42 @@ export function OpenProjectComponent({
                   autoFocus
                 />
               </div>
-              <FolderInput
-                id="parent-folder"
-                label="Parent folder"
-                value={parentFolderPath}
-                onChange={setParentFolderPath}
-                onBrowse={() => void handleBrowseFolder(setParentFolderPath, parentFolderPath)}
-                showBrowse={isDesktop}
-                placeholder={defaultWorkspacePath || 'Select parent folder'}
-                helperText={
-                  isDesktop
-                    ? 'Full path where your project folder will be created.'
-                    : 'In browser mode, projects must be inside the workspace folder.'
-                }
-              />
-            </div>
-          ) : (
-            <div className="space-y-3 rounded-lg border bg-card p-4">
-              <FolderInput
-                id="project-path"
-                label="Project folder"
-                value={selectedFolderPath}
-                onChange={setSelectedFolderPath}
-                onBrowse={() => void handleBrowseFolder(setSelectedFolderPath, selectedFolderPath)}
-                showBrowse={isDesktop}
-                placeholder={defaultWorkspacePath ? `${defaultWorkspacePath}/my-project` : 'Enter folder path'}
-                helperText={
-                  isDesktop
-                    ? 'Click the folder icon to browse, or enter the full path.'
-                    : 'In browser mode, projects must be inside the workspace folder.'
-                }
-                autoFocus
-              />
+              <div className="space-y-2">
+                <Label htmlFor="parent-folder">Parent folder</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="parent-folder"
+                    value={parentFolderPath}
+                    onChange={(e) => setParentFolderPath(e.target.value)}
+                    placeholder={defaultWorkspacePath || 'Select parent folder'}
+                    className="flex-1 font-mono text-sm"
+                    dir="ltr"
+                  />
+                  {computeNode && (
+                    <Button variant="outline" onClick={() => void handleBrowseParent()} type="button" title="Browse">
+                      <FolderOpen className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <Button
+                className="w-full"
+                onClick={() => void handleCreate()}
+                disabled={isSubmitting || !newProjectName.trim() || !parentFolderPath.trim()}
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  'Create Project'
+                )}
+              </Button>
             </div>
           )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
-
-          <div className="flex items-center justify-end gap-2">
-            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting || !!openingProjectId}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => void handleSubmit()}
-              disabled={
-                isSubmitting ||
-                !!openingProjectId ||
-                (mode === 'create' ? !newProjectName.trim() || !parentFolderPath.trim() : !selectedFolderPath.trim())
-              }
-            >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  {mode === 'create' ? 'Creating...' : 'Opening...'}
-                </>
-              ) : mode === 'create' ? (
-                'Create Project'
-              ) : (
-                'Open Project'
-              )}
-            </Button>
-          </div>
         </div>
       </DialogContent>
     </Dialog>

@@ -702,6 +702,16 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   }
 
   /**
+   * Open a native OS folder-picker dialog and return the selected path.
+   * Returns null if the user cancelled.
+   */
+  async openPathDialog(): Promise<string | null> {
+    const action = new ActionInfo('pick-folder', ComputeNode.type, this.id, 'POST');
+    const response = await dataManager.callAction<void, { path: string | null }>(action);
+    return (response as any)?.path ?? null;
+  }
+
+  /**
    * Create a GitRepo helper bound to this compute node and the given directory.
    * @param workDir - Absolute path to the working directory
    */

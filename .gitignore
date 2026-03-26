@@ -286,3 +286,4 @@ ui/tests/manual_regression/_results/*
 # Claude Code worktrees
 .claude/worktrees/
 flow_sdk/server/static/
+.mcp.json
