@@ -1,6 +1,6 @@
-"""ClaudeCLICommand — builds Claude Code CLI shell command strings.
+"""ClaudeCliOptions — builds Claude Code CLI shell command strings.
 
-Extends WorkerCLICommand with all Claude-specific switches:
+Extends WorkerCLIOptions with all Claude-specific switches:
 session/resume, fork, model, debug, permissions, chrome, worktree, agents.
 
 Auto-injects CLAUDE_PROJECT_DIR from workdir.
@@ -11,10 +11,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from flow_sdk.builtin.cli_workers.base import WorkerCLICommand
+from flow_sdk.builtin.cli_workers.base import WorkerCLIOptions
 
 
-class ClaudeCLICommand(WorkerCLICommand):
+class ClaudeCliOptions(WorkerCLIOptions):
     """Builds a ``claude`` CLI shell command string for PTY injection.
 
     All fields map 1-to-1 to CLI flags. The command object is constructed
@@ -24,7 +24,7 @@ class ClaudeCLICommand(WorkerCLICommand):
 
     Example::
 
-        cmd = ClaudeCLICommand(session_id="abc-123", resume=True, workdir="/proj")
+        cmd = ClaudeCliOptions(session_id="abc-123", resume=True, workdir="/proj")
         cmd.add_env("FLOWPAD_EXECUTION_SCOPE", scope_json)
         shell_str = cmd.to_shell_string()
         # → cd '/proj' && CLAUDE_PROJECT_DIR='/proj' FLOWPAD_EXECUTION_SCOPE='...'
@@ -32,7 +32,7 @@ class ClaudeCLICommand(WorkerCLICommand):
 
     Fork example::
 
-        cmd = ClaudeCLICommand(
+        cmd = ClaudeCliOptions(
             session_id="new-uuid",      # new worker_session_id
             resume=True,
             fork_session_id="src-uuid", # the session being forked from
@@ -53,6 +53,7 @@ class ClaudeCLICommand(WorkerCLICommand):
         agents_json: dict | None = None,
         workdir: str | None = None,
         env_vars: dict[str, str] | None = None,
+        print_mode: bool = False,
     ) -> None:
         super().__init__(workdir=workdir, env_vars=env_vars)
         self.session_id = session_id
@@ -64,13 +65,14 @@ class ClaudeCLICommand(WorkerCLICommand):
         self.chrome = chrome
         self.worktree = worktree
         self.agents_json = agents_json
+        self.print_mode = print_mode
 
         # Auto-inject CLAUDE_PROJECT_DIR from workdir
         if workdir:
             self.env_vars.setdefault("CLAUDE_PROJECT_DIR", workdir)
 
     # ------------------------------------------------------------------
-    # WorkerCLICommand contract
+    # WorkerCLIOptions contract
     # ------------------------------------------------------------------
 
     def _build_worker_args(self) -> list[str]:
@@ -100,6 +102,9 @@ class ClaudeCLICommand(WorkerCLICommand):
         if self.agents_json:
             args.append(f"--agents {shlex.quote(json.dumps(self.agents_json))}")
 
+        if self.print_mode:
+            args.append("-p")
+
         return args
 
     # ------------------------------------------------------------------
@@ -119,11 +124,12 @@ class ClaudeCLICommand(WorkerCLICommand):
             "chrome": self.chrome,
             "worktree": self.worktree,
             "agents_json": self.agents_json,
+            "print_mode": self.print_mode,
         })
         return d
 
     @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "ClaudeCLICommand":
+    def from_json(cls, data: dict[str, Any]) -> "ClaudeCliOptions":
         return cls(
             session_id=data.get("session_id"),
             resume=bool(data.get("resume", False)),
@@ -136,4 +142,5 @@ class ClaudeCLICommand(WorkerCLICommand):
             agents_json=data.get("agents_json"),
             workdir=data.get("workdir"),
             env_vars=data.get("env_vars") or {},
+            print_mode=bool(data.get("print_mode", False)),
         )

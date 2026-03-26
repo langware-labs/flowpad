@@ -315,6 +315,7 @@ EVENTS_NO_MATCHER: List[str] = [
     "UserPromptSubmit",
     "Stop",
     "TeammateIdle",
+    "TaskCreated",
     "TaskCompleted",
     "WorktreeCreate",
     "WorktreeRemove",

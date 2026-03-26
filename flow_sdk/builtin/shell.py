@@ -27,6 +27,7 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 if TYPE_CHECKING:
+    from flow_sdk.builtin.cli_workers.base import WorkerCLIOptions, WorkerExecutionInfo
     from flow_sdk.fs_records.shell_record import ShellRecord
 
 logger = logging.getLogger(__name__)
@@ -52,8 +53,33 @@ class Shell(Entity):
     created_at: str | None = APIField(default=None, description="ISO creation timestamp")
     last_active_at: str | None = APIField(default=None, description="ISO last activity timestamp")
     error_message: str | None = APIField(default=None, description="Error message when status=error")
+    worker_pid: int | None = APIField(default=None, description="OS PID of the running worker process")
+    worker_name: str | None = APIField(default=None, description="Worker executable name, e.g. 'claude'")
 
     _api_visible: ClassVar[bool] = True
+
+    async def send_input(self, cmd: str, bracketed: bool = False) -> None:
+        """Send a command string to the PTY session.
+
+        Args:
+            cmd: Command text to send (without trailing newline).
+            bracketed: Wrap with bracketed-paste markers (ESC[200~ / ESC[201~).
+                       Use True when injecting programmatic commands so any
+                       interactive line editor (zsh ZLE, bash readline, fish,
+                       PSReadLine) echoes the command as one clean unit instead
+                       of repainting the line on every character.
+        """
+        from flow_sdk.builtin.faas.compute_node import ComputeNode
+
+        if not self.compute_node_id:
+            raise ValueError("Shell has no compute_node_id")
+        compute_node = await ComputeNode.get_by_id(self.compute_node_id)
+        if not compute_node or not compute_node.node_provider_id:
+            raise ValueError(f"ComputeNode {self.compute_node_id} not found or has no provider")
+        data = f"\x1b[200~{cmd}\x1b[201~\r".encode() if bracketed else f"{cmd}\r".encode()
+        await compute_node.compute_provider.send_pty_input(
+            compute_node.node_provider_id, self.id, data, None, None
+        )
 
     def is_running(self, pid: int | None = None) -> bool:
         """Return True if the shell has a foreground process running.
@@ -73,6 +99,105 @@ class Shell(Entity):
             return len(children) > 0
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             return False
+
+    async def run_process(
+        self,
+        worker_cli: "WorkerCLIOptions",
+        instruction: str | None = None,
+    ) -> "WorkerExecutionInfo":
+        """Launch a WorkerCLIOptions inside this PTY shell and track its PID.
+
+        Sends the command to the shell, polls up to 1 s for the worker child
+        process to appear, then persists the PID + name on the entity.
+
+        Args:
+            worker_cli: The CLI command to run (e.g. ClaudeCLICommand).
+            instruction: Optional prompt/instruction passed to to_shell_string().
+
+        Returns:
+            WorkerExecutionInfo with pid (or None if not found within 1 s), name, cmd, started_at.
+
+        Raises:
+            ValueError: Shell has no compute_node_id.
+            RuntimeError: PTY session is not alive.
+        """
+        from flow_sdk.builtin.cli_workers.base import WorkerExecutionInfo
+        from flow_sdk.builtin.faas.compute_node import ComputeNode
+
+        if not self.compute_node_id:
+            raise ValueError("Shell has no compute_node_id")
+        compute_node = await ComputeNode.get_by_id(self.compute_node_id)
+        if not compute_node or not compute_node.node_provider_id:
+            raise ValueError(f"ComputeNode {self.compute_node_id} not found or has no provider")
+
+        if not compute_node.compute_provider.is_pty_alive(compute_node.node_provider_id, self.id):
+            raise RuntimeError("PTY session is not alive")
+
+        shell_pid = compute_node.compute_provider.get_pty_shell_pid(compute_node.node_provider_id, self.id)
+        executable = worker_cli._build_worker_args()[0]  # e.g. "claude"
+        command = worker_cli.to_shell_string(instruction=instruction)
+
+        await self.send_input(command, bracketed=True)
+
+        worker_pid = await self._poll_for_worker_pid(shell_pid, executable, timeout=1.0)
+
+        self.worker_pid = worker_pid
+        self.worker_name = executable
+        await self.save()
+
+        return WorkerExecutionInfo(
+            pid=worker_pid,
+            name=executable,
+            cmd=command[:200],
+            started_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+    async def _poll_for_worker_pid(
+        self, shell_pid: int | None, executable: str, timeout: float = 1.0
+    ) -> int | None:
+        """Poll for a child process of shell_pid whose argv[0] matches executable.
+
+        On macOS the claude binary (Bun bundle) reports its version as the
+        process name — name() is unreliable. We match against cmdline[0] instead.
+        """
+        import os as _os
+
+        if shell_pid is None:
+            return None
+        deadline = asyncio.get_event_loop().time() + timeout
+        while asyncio.get_event_loop().time() < deadline:
+            try:
+                children = psutil.Process(shell_pid).children(recursive=True)
+                for child in children:
+                    try:
+                        cmdline = child.cmdline()
+                        if cmdline and _os.path.basename(cmdline[0]) == executable:
+                            return child.pid
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                break
+            await asyncio.sleep(0.1)
+        return None
+
+    async def worker_alive(self) -> bool:
+        """Return True if the tracked worker process (worker_pid) is still alive.
+
+        Raises:
+            RuntimeError: If the PTY session itself is dead.
+        """
+        from flow_sdk.builtin.faas.compute_node import ComputeNode
+
+        if not self.worker_pid:
+            return False
+
+        if self.compute_node_id:
+            compute_node = await ComputeNode.get_by_id(self.compute_node_id)
+            if compute_node and compute_node.node_provider_id:
+                if not compute_node.compute_provider.is_pty_alive(compute_node.node_provider_id, self.id):
+                    raise RuntimeError("PTY session is not alive")
+
+        return psutil.pid_exists(self.worker_pid)
 
     @classmethod
     async def next_tab_order(cls) -> int:

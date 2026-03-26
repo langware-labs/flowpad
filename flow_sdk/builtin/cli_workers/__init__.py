@@ -2,7 +2,7 @@
 
 Usage::
 
-    from flow_sdk.builtin.cli_workers import factory, ClaudeCLICommand
+    from flow_sdk.builtin.cli_workers import factory, ClaudeCliOptions
 
     cmd = factory({"resume": True}, worker_type="claude")
     cmd.session_id = process.worker_session_id
@@ -11,25 +11,25 @@ Usage::
     shell_str = cmd.to_shell_string(instruction="fix the bug")
 """
 
-from flow_sdk.builtin.cli_workers.base import WorkerCLICommand
-from flow_sdk.builtin.cli_workers.claude_cli import ClaudeCLICommand
+from flow_sdk.builtin.cli_workers.base import WorkerCLIOptions
+from flow_sdk.builtin.cli_workers.claude_cli import ClaudeCliOptions
 
-__all__ = ["WorkerCLICommand", "ClaudeCLICommand", "factory"]
+__all__ = ["WorkerCLIOptions", "ClaudeCliOptions", "factory"]
 
 
-def factory(cli_json: dict, worker_type: str) -> WorkerCLICommand:
-    """Return the correct WorkerCLICommand subclass for the given worker_type.
+def factory(cli_json: dict, worker_type: str) -> WorkerCLIOptions:
+    """Return the correct WorkerCLIOptions subclass for the given worker_type.
 
     Args:
         cli_json: Serialised CLI config (from AgenticProcess.cli_config).
         worker_type: Worker type string from AgenticProcessor.worker_type.
 
     Returns:
-        A WorkerCLICommand instance ready for add_env() / to_shell_string().
+        A WorkerCLIOptions instance ready for add_env() / to_shell_string().
 
     Raises:
         ValueError: If worker_type is not recognised.
     """
     if worker_type == "claude":
-        return ClaudeCLICommand.from_json(cli_json)
+        return ClaudeCliOptions.from_json(cli_json)
     raise ValueError(f"Unknown worker_type: {worker_type!r}")

@@ -53,7 +53,7 @@ export interface HookEventData {
   last_assistant_message?: string;
   stop_hook_active?: boolean;
 
-  // TeammateIdle / TaskCompleted
+  // TeammateIdle / TaskCreated / TaskCompleted
   teammate_name?: string;
   team_name?: string;
   task_id?: string;

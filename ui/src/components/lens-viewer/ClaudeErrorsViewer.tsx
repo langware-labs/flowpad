@@ -43,6 +43,7 @@ import {
   Terminal,
   Trash2,
   Webhook,
+  Wrench,
 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import {
@@ -232,10 +233,14 @@ function ErrorCard({
   const [expanded, setExpanded] = useState(false);
   const isHook = error.error_category === ErrorCategory.HOOK;
   const Icon = isHook ? AlertTriangle : OctagonAlert;
-  const iconColor = isHook ? 'text-destructive' : 'text-orange-500';
+  const iconColor = isHook ? 'text-amber-400' : 'text-orange-400';
 
   return (
-    <div className="rounded-md border border-border bg-card p-3">
+    <div className={cn(
+      'rounded-md border border-border bg-card p-3',
+      'border-l-2',
+      isHook ? 'border-l-amber-500' : 'border-l-orange-500',
+    )}>
       <div className="flex gap-2">
         <Icon className={cn('mt-1.5 h-4 w-4 shrink-0', iconColor)} />
         {/* Occurrence counter in grouped mode */}
@@ -265,7 +270,7 @@ function ErrorCard({
           </div>
 
           {/* Error message (root cause) */}
-          <p className={cn('mt-1 font-mono text-xs', isHook ? 'text-destructive' : 'text-muted-foreground')}>
+          <p className={cn('mt-1 font-mono text-xs', isHook ? 'text-amber-400/90' : 'text-foreground/75')}>
             {error.error_msg}
           </p>
 
@@ -370,9 +375,10 @@ function ErrorCard({
             <Button
               variant="default"
               size="sm"
-              className="h-12 w-28 text-base font-bold"
+              className="h-8 w-24 gap-1.5 border-0 bg-green-600 text-sm font-semibold text-white shadow-sm hover:bg-green-500 active:bg-green-700"
               onClick={() => onCreateTask(error)}
             >
+              <Wrench className="h-3.5 w-3.5" />
               Fix It
             </Button>
           )}
@@ -410,10 +416,14 @@ function OccurrenceCard({
   const [expanded, setExpanded] = useState(false);
   const isHook = parentError.error_category === ErrorCategory.HOOK;
   const Icon = isHook ? AlertTriangle : OctagonAlert;
-  const iconColor = isHook ? 'text-destructive' : 'text-orange-500';
+  const iconColor = isHook ? 'text-amber-400' : 'text-orange-400';
 
   return (
-    <div className="rounded-md border border-border bg-card p-2.5">
+    <div className={cn(
+      'rounded-md border border-border bg-card p-2.5',
+      'border-l-2',
+      isHook ? 'border-l-amber-500' : 'border-l-orange-500',
+    )}>
       <div className="flex gap-2">
         <Icon className={cn('mt-1.5 h-3.5 w-3.5 shrink-0', iconColor)} />
 
@@ -425,7 +435,7 @@ function OccurrenceCard({
           </div>
 
           {/* Error message (root cause) first */}
-          <p className={cn('mt-1 font-mono text-xs', isHook ? 'text-destructive' : 'text-muted-foreground')}>
+          <p className={cn('mt-1 font-mono text-xs', isHook ? 'text-amber-400/90' : 'text-foreground/75')}>
             {occurrence.error_msg}
           </p>
 
@@ -498,9 +508,10 @@ function OccurrenceCard({
             <Button
               variant="default"
               size="sm"
-              className="h-12 w-28 text-base font-bold"
+              className="h-8 w-24 gap-1.5 border-0 bg-green-600 text-sm font-semibold text-white shadow-sm hover:bg-green-500 active:bg-green-700"
               onClick={() => onCreateTask(parentError)}
             >
+              <Wrench className="h-3.5 w-3.5" />
               Fix It
             </Button>
           )}

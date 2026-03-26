@@ -63,6 +63,9 @@ class HookEventType(StrEnum):
     TEAMMATE_IDLE = "TeammateIdle"
     """Triggered when a teammate is idle."""
 
+    TASK_CREATED = "TaskCreated"
+    """Triggered when a task is created."""
+
     TASK_COMPLETED = "TaskCompleted"
     """Triggered when a task is completed."""
 
