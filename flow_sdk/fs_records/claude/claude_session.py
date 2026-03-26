@@ -378,8 +378,8 @@ class ClaudeSessionRecord(Record):
         return min(count, limit) if limit is not None else count
 
     @classmethod
-    def discover_iter(cls, limit: int | None = None, scope=None, **kwargs):
-        """Lazy generator — yields one ClaudeSessionRecord per JSONL file."""
+    def discover_paths_iter(cls, limit: int | None = None, **kwargs):
+        """Lazy generator — yields Path objects for each JSONL file (no file reads)."""
         projects_dir = Path.home() / ".claude" / "projects"
         if not projects_dir.is_dir():
             return
@@ -388,13 +388,19 @@ class ClaudeSessionRecord(Record):
             if not project_dir.is_dir():
                 continue
             for jsonl_file in sorted(project_dir.glob("*.jsonl")):
-                try:
-                    yield cls.from_jsonl(jsonl_file)
-                    count += 1
-                    if limit is not None and count >= limit:
-                        return
-                except (json.JSONDecodeError, OSError):
-                    continue
+                yield jsonl_file
+                count += 1
+                if limit is not None and count >= limit:
+                    return
+
+    @classmethod
+    def discover_iter(cls, limit: int | None = None, scope=None, **kwargs):
+        """Lazy generator — yields one ClaudeSessionRecord per JSONL file."""
+        for jsonl_file in cls.discover_paths_iter(limit=limit):
+            try:
+                yield cls.from_jsonl(jsonl_file)
+            except (json.JSONDecodeError, OSError):
+                continue
 
     @classmethod
     def discover(cls, scope=None, **kwargs) -> list[ClaudeSessionRecord]:
@@ -461,7 +467,10 @@ class ClaudeSessionRecord(Record):
         session_id = path.stem  # fallback
         slug = ""
 
-        # Quick first-entry scan for session_id, slug, and cwd
+        # Quick first-entry scan for session_id, slug, and cwd.
+        # Stop as soon as slug is found (session_id falls back to path.stem, which
+        # always matches the sessionId stored in the file, so the old
+        # ``session_id != path.stem`` guard was never True and caused full-file scans).
         cwd = ""
         try:
             with open(path, encoding="utf-8") as fh:
@@ -479,8 +488,13 @@ class ClaudeSessionRecord(Record):
                         slug = raw["slug"]
                     if not cwd and raw.get("cwd"):
                         cwd = raw["cwd"]
+                    # Stop once we have both slug and cwd (or after finding sessionId
+                    # if it differs from the stem — belt-and-suspenders for any future
+                    # format change).
+                    if slug and cwd:
+                        break
                     if session_id != path.stem and slug:
-                        break  # have both — stop reading
+                        break
         except OSError:
             pass
 
