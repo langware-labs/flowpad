@@ -413,13 +413,6 @@ export function HomeLanding() {
         <div className="w-72 shrink-0">
           <UsageBar />
         </div>
-        <button
-          onClick={() => setMemoPanelOpen(true)}
-          className="ml-auto px-3 py-1.5 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
-          data-testid="open-memo-panel-btn"
-        >
-          Memo Panel
-        </button>
       </div>
 
       {/* Main row: Sidebar + Content */}
