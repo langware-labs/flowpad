@@ -48,7 +48,7 @@ describe('classify_session', () => {
   beforeEach(async (ctx: any) => {
     // Fail fast with a clear message if the server is not running
     try {
-      await fetch('window.location.origin + "/health/status"', { signal: AbortSignal.timeout(2000) });
+      await fetch(`${window.location.origin}/health/status`, { signal: AbortSignal.timeout(2000) });
     } catch {
       throw new Error(
         'Server not running — start it with: uv run -m flow_sdk.server.run',
@@ -75,7 +75,7 @@ describe('classify_session', () => {
 
     // ── 1. Fetch the most recent Claude session ─────────────────────────────
     const sessionsRaw = await apiClient.get<any>(
-      `${GRAPH_API_PREFIX}/${ComputeNode.type}/@local/fs-records/session?limit=1`,
+      `${GRAPH_API_PREFIX}/${ComputeNode.type}/@local/fs-records/claude_session?limit=1`,
     );
     const sessions: any[] = Array.isArray(sessionsRaw)
       ? sessionsRaw

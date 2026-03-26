@@ -91,6 +91,16 @@ class ClaudeMemoryRecord(Record):
         return min(count, limit) if limit is not None else count
 
     @classmethod
+    def discovery_items_count(cls, limit: int | None = None) -> int:
+        # discover_iter deduplicates: external records already on disk are skipped.
+        # The unique count is max(disk, ext), not disk + ext.
+        ext = cls._external_source_count()
+        base = super().discovery_items_count()  # type: ignore[misc]  # disk + ext (no limit)
+        disk = max(0, base - ext)
+        count = max(disk, ext)
+        return min(count, limit) if limit is not None else count
+
+    @classmethod
     def _external_source_find_one(cls, uid: str) -> "ClaudeMemoryRecord | None":
         for rec in cls._external_source_iter():
             if rec.id == uid:
