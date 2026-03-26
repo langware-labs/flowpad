@@ -112,7 +112,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   }
 
   const tabCreationLockRef = useRef(false);
-  const [, bumpLocalShellVersion] = useState(0);
   const [editingShellId, setEditingShellId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [pendingTabCreation, setPendingTabCreation] = useState<{
@@ -271,25 +270,14 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   // --- Context menu handlers ---
 
   const closeShell = useCallback(
-    async (shellId: string): Promise<boolean> => {
+    async (shellId: string): Promise<void> => {
       const session = sessions.find((s) => s.shellId === shellId);
-      if (!session?.shell) return false;
-      if (session.shell.status === ShellStatus.CLOSING) return false;
-
+      if (!session?.shell || ([ShellStatus.CLOSING, ShellStatus.CLOSED] as string[]).includes(session.shell.status)) return;
       try {
-        if (session.agenticProcess) {
-          await session.agenticProcess.exit();
-        }
-
-        const closePromise = session.shell.close();
-        bumpLocalShellVersion((version) => version + 1);
-        await closePromise;
-        bumpLocalShellVersion((version) => version + 1);
-        return true;
+        await session.agenticProcess?.exit();
+        await session.shell.close();
       } catch (error) {
         console.error('[TabbedTerminal] Failed to close shell session:', shellId, error);
-        bumpLocalShellVersion((version) => version + 1);
-        return false;
       }
     },
     [sessions],

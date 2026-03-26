@@ -715,45 +715,58 @@ class AgenticProcess(Entity):
             await self.save()
             return ApiFailResponse(message=str(e))
 
-    @action.all(action_name="exit")
-    async def exit_action(self):
-        """Terminate this process.
+    async def close(self) -> bool:
+        """Terminate this process and close its linked shell.
 
-        Ported from FlowPad: flowpad/hub/core/agentic_processor/process.py
-        Sets status to TERMINATED. After exit, the process cannot accept
-        new instructions.  Also cleans up the linked shell so it doesn't
-        linger as an orphan tab.
-
-        Returns:
-            ApiSuccessResponse confirming termination
+        Returns True on success, False if already terminated or on error.
         """
-        state = self._get_process_state()
-        if state.get("status") == ProcessorStatus.TERMINATED.value:
-            return ApiFailResponse(message="Process already terminated")
+        if self._get_process_state().get("status") == ProcessorStatus.TERMINATED.value:
+            logger.debug("[AgenticProcess] close() skipped for %s: already terminated", self.id)
+            return False
 
-        logger.info(f"AgenticProcess {self.id}: exit action")
+        logger.info(f"AgenticProcess {self.id}: close")
 
         try:
-            # Detach from the shell but do NOT delete it — the frontend calls
-            # shell.close() right after exit(), and that handles the deletion.
-            if self.shell_id:
+            shell_id = self.shell_id
+            if shell_id:
                 self.shell_id = None
                 self.sidecar_shell_id = None
 
             self._set_process_state(status=ProcessorStatus.TERMINATED.value)
             await self.save()
 
-            return ApiSuccessResponse(
-                data={
-                    "id": self.id,
-                    "status": ProcessorStatus.TERMINATED.value,
-                    "terminated": True,
-                }
-            )
+            if shell_id:
+                from flow_sdk.builtin.shell import Shell
+                shell = await Shell.get_by_id(shell_id)
+                if shell:
+                    await shell.close()
+
+            return True
 
         except Exception as e:
-            logger.exception(f"AgenticProcess {self.id} exit error: {e}")
-            return ApiFailResponse(message=str(e))
+            logger.exception(f"AgenticProcess {self.id} close error: {e}")
+            return False
+
+    @action.all(action_name="exit")
+    async def exit_action(self):
+        """Terminate this process.
+
+        Ported from FlowPad: flowpad/hub/core/agentic_processor/process.py
+        Delegates to close(), then returns an ApiResponse for the HTTP layer.
+
+        Returns:
+            ApiSuccessResponse confirming termination
+        """
+        if not await self.close():
+            return ApiFailResponse(message="Process already terminated or close failed")
+
+        return ApiSuccessResponse(
+            data={
+                "id": self.id,
+                "status": ProcessorStatus.TERMINATED.value,
+                "terminated": True,
+            }
+        )
 
     # ============ PTY Lifecycle ============
 

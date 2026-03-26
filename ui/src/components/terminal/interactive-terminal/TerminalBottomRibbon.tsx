@@ -41,7 +41,6 @@ const QueueNextLabel: React.FC<{ queue: QueueState }> = ({ queue }) => {
 
 const RIBBON_TABS: SideTabIdType[] = [
   SideTabId.Shell,
-  SideTabId.Worktree,
   SideTabId.Git,
   SideTabId.Prompts,
   SideTabId.Queue,
