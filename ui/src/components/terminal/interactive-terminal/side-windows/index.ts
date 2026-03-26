@@ -6,4 +6,3 @@ export { PromptIndexPanel } from './PromptIndexPanel';
 export type { PromptEntry } from './PromptIndexPanel';
 export { InputFilesPanel } from './InputFilesPanel';
 export { QueuePanel } from './QueuePanel';
-export { WorktreePanel } from './WorktreePanel';
