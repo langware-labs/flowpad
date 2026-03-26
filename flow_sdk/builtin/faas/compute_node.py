@@ -2981,6 +2981,94 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             }
         )
 
+    # ------------------------------------------------------------------
+    # DataManager phase endpoints
+    # ------------------------------------------------------------------
+
+    def _parse_dm_opts(self, request_info) -> dict:
+        """Parse common DataManager options from query params / request body."""
+        params = request_info.query_params or {}
+        body = request_info.body or {}
+        types_raw = params.get("types") or body.get("types")
+        if isinstance(types_raw, str):
+            types_raw = [t.strip() for t in types_raw.split(",") if t.strip()]
+        limit_raw = params.get("limit") or body.get("limit")
+        limit = int(limit_raw) if limit_raw is not None else None
+        skip_fresh_raw = params.get("skip_fresh") or body.get("skip_fresh", False)
+        skip_fresh = str(skip_fresh_raw).lower() in ("true", "1", "yes")
+        return {"types": types_raw or None, "limit": limit, "skip_fresh": skip_fresh}
+
+    async def _handle_fs_records_index_scan(self, request_info) -> ApiResponse:
+        """POST /fs-records/index/scan — filesystem discovery only, no DB writes."""
+        from flow_sdk.fs_store.data_manager import DataManager, ScanOptions  # noqa: PLC0415
+
+        opts_kwargs = self._parse_dm_opts(request_info)
+        opts = ScanOptions(types=opts_kwargs["types"], limit=opts_kwargs["limit"])
+        dm = DataManager()
+        result = await dm.scan(opts)
+        by_type_counts = {t: len(recs) for t, recs in result.by_type.items()}
+        return ApiSuccessResponse(data={
+            "total": result.total,
+            "by_type": by_type_counts,
+            "duration_ms": result.duration_ms,
+        })
+
+    async def _handle_fs_records_index_meta(self, request_info) -> ApiResponse:
+        """POST /fs-records/index/meta — scan then write Entity rows."""
+        from flow_sdk.fs_store.data_manager import DataManager, ScanOptions, IndexMetaOptions  # noqa: PLC0415
+
+        opts_kwargs = self._parse_dm_opts(request_info)
+        dm = DataManager()
+        discovery = await dm.scan(ScanOptions(types=opts_kwargs["types"], limit=opts_kwargs["limit"]))
+        result = await dm.index_meta(
+            discovery.records,
+            IndexMetaOptions(skip_fresh=opts_kwargs["skip_fresh"]),
+        )
+        return ApiSuccessResponse(data={
+            "indexed": result.indexed,
+            "skipped": result.skipped,
+            "errors": result.errors,
+            "duration_ms": result.duration_ms,
+        })
+
+    async def _handle_fs_records_index_search(self, request_info) -> ApiResponse:
+        """POST /fs-records/index/search — scan then write FTS entries."""
+        from flow_sdk.fs_store.data_manager import DataManager, ScanOptions, IndexSearchOptions  # noqa: PLC0415
+
+        opts_kwargs = self._parse_dm_opts(request_info)
+        dm = DataManager()
+        discovery = await dm.scan(ScanOptions(types=opts_kwargs["types"], limit=opts_kwargs["limit"]))
+        result = await dm.index_search(
+            discovery.records,
+            IndexSearchOptions(),
+        )
+        return ApiSuccessResponse(data={
+            "indexed": result.indexed,
+            "errors": result.errors,
+            "duration_ms": result.duration_ms,
+        })
+
+    async def _handle_fs_records_index_all(self, request_info) -> ApiResponse:
+        """POST /fs-records/index/all — full scan → meta → search pipeline."""
+        from flow_sdk.fs_store.data_manager import DataManager, IndexAllOptions  # noqa: PLC0415
+
+        opts_kwargs = self._parse_dm_opts(request_info)
+        opts = IndexAllOptions(
+            types=opts_kwargs["types"],
+            limit=opts_kwargs["limit"],
+            skip_fresh=opts_kwargs["skip_fresh"],
+        )
+        dm = DataManager()
+        result = await dm.index_all(opts)
+        return ApiSuccessResponse(data={
+            "total_discovered": result.discovery.total,
+            "indexed": result.meta.indexed,
+            "skipped": result.meta.skipped,
+            "fts_indexed": result.search.indexed,
+            "errors": result.meta.errors + result.search.errors,
+            "duration_ms": result.duration_ms,
+        })
+
     async def _handle_fs_records_index(self, request_info) -> ApiResponse:
         """Index fs_records into the Entity DB via Record.sync_to_db().
 
@@ -3243,7 +3331,19 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         if segments and segments[0] == "scan" and method == "get":
             return await self._handle_fs_records_scan(request_info)
 
-        # Index: POST /fs-records/index or /fs-records/index?type=X
+        # Phase-specific index endpoints (DataManager): POST /fs-records/index/{phase}
+        if len(segments) >= 2 and segments[0] == "index" and method == "post":
+            phase = segments[1]
+            if phase == "scan":
+                return await self._handle_fs_records_index_scan(request_info)
+            if phase == "meta":
+                return await self._handle_fs_records_index_meta(request_info)
+            if phase == "search":
+                return await self._handle_fs_records_index_search(request_info)
+            if phase == "all":
+                return await self._handle_fs_records_index_all(request_info)
+
+        # Index: POST /fs-records/index or /fs-records/index?type=X (backward compat)
         if segments and segments[0] == "index" and method == "post":
             return await self._handle_fs_records_index(request_info)
 

@@ -1,14 +1,14 @@
-"""Tests for WorkerCLICommand base class — cross-platform shell string building."""
+"""Tests for WorkerCLIOptions base class — cross-platform shell string building."""
 
 import sys
 import pytest
 from unittest.mock import patch
 
-from flow_sdk.builtin.cli_workers.base import WorkerCLICommand
+from flow_sdk.builtin.cli_workers.base import WorkerCLIOptions
 
 
 # Minimal concrete subclass for testing the base
-class _EchoCmd(WorkerCLICommand):
+class _EchoCmd(WorkerCLIOptions):
     def _build_worker_args(self) -> list[str]:
         return ["myworker", "--flag"]
 

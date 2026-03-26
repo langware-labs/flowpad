@@ -16,7 +16,8 @@ from pydantic_ai.usage import RunUsage
 from flow_sdk.core.flow.models.state.flow_state import FlowModelMessage, FlowModelRequest
 from flow_sdk.flowpad_types.enums import WorkerTaskStatus
 
-from flow_sdk.builtin.cli_workers.claude_cli import ClaudeCLICommand
+from flow_sdk.builtin.cli_workers import ClaudeCliOptions
+from flow_sdk.builtin.shell import Shell
 
 from .worker import BaseWorker, WorkerRequest, WorkerResponse, WorkerStreamEvent
 
@@ -173,8 +174,18 @@ class ClaudeCodeCLIWorker(BaseWorker):
             await deps.flow.update()
             logger.info(f"[ClaudeCodeCLIWorker] Updated flow with terminal ID: {self._machine_session_id}")
 
-            # Build and send Claude CLI command to PTY session
-            cmd = ClaudeCLICommand(
+            # Create Shell entity for this session so worker tracking is recorded
+            shell = Shell(
+                id=self._machine_session_id,
+                name=f"Claude - {self._worker_session_id[:8]}",
+                status="running",
+                workdir=self._project_dir,
+                compute_node_id=compute_node.id,
+            )
+            await shell.save()
+
+            # Build command and launch via Shell — tracks worker PID automatically
+            cmd = ClaudeCliOptions(
                 session_id=self._worker_session_id,
                 chrome=True,
                 workdir=self._project_dir,
@@ -182,25 +193,13 @@ class ClaudeCodeCLIWorker(BaseWorker):
             )
             if scope := os.environ.get("FLOWPAD_EXECUTION_SCOPE"):
                 cmd.add_env("FLOWPAD_EXECUTION_SCOPE", scope)
-            command = cmd.to_shell_string(instruction=prompt_content)
-            command_bytes = (command + os.linesep).encode("utf-8")
 
-            pty_key = (compute_node.node_provider_id, self._machine_session_id)
             logger.info(
-                f"[ClaudeCodeCLIWorker] Sending command to PTY session: {self._machine_session_id} (key: {pty_key})"
+                f"[ClaudeCodeCLIWorker] Launching worker via shell {self._machine_session_id}"
             )
-
-            await compute_node.compute_provider.send_pty_input(
-                provider_node_id=compute_node.verified_node_provider_id,
-                session_id=self._machine_session_id,
-                data=command_bytes,
-                cols=self.PTY_COLS,
-                rows=self.PTY_ROWS,
-            )
-            logger.info(f"[ClaudeCodeCLIWorker] Successfully sent command to PTY: {command[:100]}...")
+            execution_info = await shell.run_process(cmd, instruction=prompt_content)
             logger.info(
-                f"[ClaudeCodeCLIWorker] Claude is now running in terminal. "
-                f"Output should appear in the '{self._machine_session_id}' terminal session."
+                f"[ClaudeCodeCLIWorker] Worker launched: pid={execution_info.pid}, name={execution_info.name!r}"
             )
 
             yield WorkerResponse(

@@ -1,5 +1,5 @@
 /**
- * WorkerCLICommand — cross-platform base for building shell command strings.
+ * WorkerCliOptions — cross-platform base for building shell command strings.
  *
  * Mirrors Python flow_sdk/builtin/cli_workers/base.py exactly.
  * Subclasses implement _buildWorkerArgs() to produce the executable + its flags.
@@ -18,7 +18,7 @@ export function shellQuote(s: string): string {
   return "'" + s.replace(/'/g, "'\\''") + "'"
 }
 
-export abstract class WorkerCLICommand {
+export abstract class WorkerCliOptions {
   workdir?: string
   envVars: Record<string, string>
 

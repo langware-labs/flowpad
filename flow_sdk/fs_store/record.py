@@ -1862,6 +1862,16 @@ class Record:
         """One-line description for FTS indexing."""
         return None
 
+    def load_fts_content(self) -> None:
+        """Pre-load any data needed for FTS fields before bulk indexing.
+
+        Base implementation is a no-op. Subclasses override when their
+        ``search_title`` / ``search_content`` properties depend on expensive
+        I/O that is not performed during discovery (e.g. full JSONL parse for
+        session records). Call this on every record before reading FTS fields
+        in bulk-index paths.
+        """
+
     _META_FIELD_KEYS: ClassVar[frozenset[str]] = frozenset({
         "id", "type", "name", "status",
         "created_date", "updated_date", "scope",

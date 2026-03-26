@@ -8,7 +8,7 @@
  * Requires a running backend (localhost:9007) with at least one indexed claude_session.
  */
 
-import { AgenticProcess, ClaudeCLICommand, GRAPH_API_PREFIX, ComputeNode, apiClient, dataContext, dataManager } from '@sdk';
+import { AgenticProcess, ClaudeCliOptions, GRAPH_API_PREFIX, ComputeNode, apiClient, dataContext, dataManager } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
@@ -102,7 +102,7 @@ describe('AgenticProcess.fromClaudeSession', () => {
     }
 
     // Deserialize server's cli_config via cliCmd getter
-    const cliCmd = proc.cliCmd as ClaudeCLICommand;
+    const cliCmd = proc.cliCmd as ClaudeCliOptions;
     expect(cliCmd.resume).toBe(true);  // set by fromClaudeSession
 
     // Override a flag and save back to server
@@ -114,7 +114,7 @@ describe('AgenticProcess.fromClaudeSession', () => {
     const proc2 = await AgenticProcess.getById(proc.id!);
     expect(proc2).not.toBeNull();
 
-    const cliCmd2 = proc2!.cliCmd as ClaudeCLICommand;
+    const cliCmd2 = proc2!.cliCmd as ClaudeCliOptions;
     expect(cliCmd2.debug).toBe(false);           // override survived round-trip
     expect(cliCmd2.resume).toBe(true);            // original intent preserved
     expect(cliCmd2.toShellString()).not.toContain('--debug');
