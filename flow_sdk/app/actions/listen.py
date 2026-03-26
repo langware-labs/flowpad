@@ -233,36 +233,17 @@ def _extract_agentic_process_id(execution_scope: list) -> str | None:
 
 
 async def _close_worktree_process(agentic_process_id: str) -> None:
-    """Close the tab for a worktree agentic process after ExitWorktree completes.
-
-    Mirrors the frontend closeShell sequence: exit the process first (which
-    detaches shell_id), then close the shell so it disappears from the tab list.
-    """
-    try:
-        from flow_sdk.builtin.agentic_processor import AgenticProcess
-        from flow_sdk.builtin.shell import Shell
-
-        process = await AgenticProcess.get_by_id(agentic_process_id)
-        if not process:
-            logger.debug("[ExitWorktree] Process %s not found", agentic_process_id)
-            return
-
-        # Snapshot shell_id before exit_action() clears it
-        shell_id = process.shell_id
-
-        result = await process.exit_action()
-        if not isinstance(result, ApiSuccessResponse):
-            logger.debug("[ExitWorktree] Process %s exit skipped: %s", agentic_process_id, result.message)
-            return
-        logger.info("[ExitWorktree] Terminated process %s", agentic_process_id)
-
-        if shell_id:
-            shell = await Shell.get_by_id(shell_id)
-            if shell:
-                await shell.close()
-                logger.info("[ExitWorktree] Closed shell %s for process %s", shell_id, agentic_process_id)
-    except Exception as exc:
-        logger.warning("[ExitWorktree] Failed to close process %s: %s", agentic_process_id, exc)
+    """Close the tab for a worktree agentic process after ExitWorktree completes."""
+    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    process = await AgenticProcess.get_by_id(agentic_process_id)
+    if not process:
+        logger.warning("[ExitWorktree] Process %s not found", agentic_process_id)
+        return
+    is_closed = await process.close()
+    if not is_closed:
+        logger.warning("[ExitWorktree] Failed to close process %s", agentic_process_id)
+        return
+    logger.info("[ExitWorktree] Closed process %s", agentic_process_id)
 
 
 def set_plan_auto_approve(agentic_process_id: str | None) -> None:
@@ -370,10 +351,7 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
         if hook_session_id:
             await _create_plan_annotation(hook_tool_input or {}, hook_session_id)
 
-    try:
-        from flow_sdk.builtin.agent_hook import AgentHook
-    except ImportError:
-        return ApiFailResponse(message="AgentHook entity not available")
+    from flow_sdk.builtin.agent_hook import AgentHook
 
     # Load the AgentHook entity
     agent_hook = await AgentHook.get_by_id(agent_hook_id)

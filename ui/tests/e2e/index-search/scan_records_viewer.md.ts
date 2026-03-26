@@ -65,10 +65,10 @@ test.describe('Records Scanner Viewer', () => {
     expect(Array.isArray(body.data.records)).toBe(true);
 
     // Each record has expected shape
-    const records = body.data.records as Array<{ uid: string; name: string; size_bytes: number }>;
+    const records = body.data.records as Array<{ id: string; name: string; size_bytes: number }>;
     expect(records.length).toBeGreaterThanOrEqual(1);
     for (const r of records) {
-      expect(r.uid).toBeTruthy();
+      expect(r.id).toBeTruthy();
       expect(typeof r.size_bytes).toBe('number');
     }
   });

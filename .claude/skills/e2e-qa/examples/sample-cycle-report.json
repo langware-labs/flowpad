@@ -1,0 +1,71 @@
+{
+  "cycle_id": "2026-03-04T10-30-00",
+  "timestamp": "2026-03-04T10:30:00Z",
+  "duration_ms": 125000,
+  "summary": {
+    "total_scenarios": 5,
+    "total_tests": 12,
+    "passed": 10,
+    "failed": 1,
+    "skipped": 0,
+    "error": 1,
+    "pass_rate": 83.3,
+    "fast_path_hit_rate": 20.0
+  },
+  "categories": {
+    "chat": {
+      "total": 3,
+      "passed": 2,
+      "failed": 1,
+      "skipped": 0,
+      "error": 0
+    },
+    "terminal": {
+      "total": 5,
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "error": 0
+    },
+    "editor": {
+      "total": 4,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "error": 1
+    }
+  },
+  "results": [
+    {
+      "scenario_path": "ui/tests/manual_regression/terminal/run_basic_command.md",
+      "category": "terminal",
+      "timestamp": "2026-03-04T10:30:00Z",
+      "duration_ms": 8500,
+      "status": "pass",
+      "tests": [
+        {
+          "test_number": 1,
+          "title": "Type a command and validate output",
+          "status": "pass",
+          "duration_ms": 8500,
+          "fast_path_used": false,
+          "fast_path_stale": false,
+          "steps": []
+        }
+      ],
+      "environment": {
+        "backend_url": "http://localhost:9007",
+        "frontend_url": "http://localhost:4097",
+        "browser": "chromium",
+        "platform": "darwin"
+      }
+    }
+  ],
+  "stale_fast_paths": [
+    {
+      "scenario_path": "ui/tests/manual_regression/chat/chat_input_controls.md",
+      "fast_path_script": "ui/tests/manual_regression/_fast_paths/chat/chat_input_controls.fast.ts",
+      "error_message": "Fast path exited with code 1: selector .input-field not found"
+    }
+  ]
+}

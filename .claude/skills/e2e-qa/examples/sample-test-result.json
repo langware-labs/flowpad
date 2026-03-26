@@ -1,0 +1,95 @@
+{
+  "scenario_path": "ui/tests/manual_regression/terminal/run_basic_command.md",
+  "category": "terminal",
+  "timestamp": "2026-03-04T10:30:00Z",
+  "duration_ms": 8500,
+  "status": "pass",
+  "tests": [
+    {
+      "test_number": 1,
+      "title": "Type a command and validate output",
+      "status": "pass",
+      "duration_ms": 8500,
+      "fast_path_used": false,
+      "fast_path_stale": false,
+      "steps": [
+        {
+          "step_number": 1,
+          "instruction": "navigate to the Shell view via sidebar",
+          "type": "browser",
+          "status": "pass",
+          "duration_ms": 2000,
+          "error_message": null,
+          "console_errors": [],
+          "screenshot_path": null
+        },
+        {
+          "step_number": 2,
+          "instruction": "validate terminal is visible and ready",
+          "type": "browser",
+          "status": "pass",
+          "duration_ms": 500,
+          "error_message": null,
+          "console_errors": [],
+          "screenshot_path": null
+        },
+        {
+          "step_number": 3,
+          "instruction": "click the terminal area to focus it",
+          "type": "browser",
+          "status": "pass",
+          "duration_ms": 300,
+          "error_message": null,
+          "console_errors": [],
+          "screenshot_path": null
+        },
+        {
+          "step_number": 4,
+          "instruction": "type \"echo hello world\" and press Enter",
+          "type": "browser",
+          "status": "pass",
+          "duration_ms": 1500,
+          "error_message": null,
+          "console_errors": [],
+          "screenshot_path": null
+        },
+        {
+          "step_number": 5,
+          "instruction": "validate \"hello world\" appears in the terminal output",
+          "type": "browser",
+          "status": "pass",
+          "duration_ms": 1200,
+          "error_message": null,
+          "console_errors": [],
+          "screenshot_path": null
+        },
+        {
+          "step_number": 6,
+          "instruction": "type \"pwd\" and press Enter",
+          "type": "browser",
+          "status": "pass",
+          "duration_ms": 1000,
+          "error_message": null,
+          "console_errors": [],
+          "screenshot_path": null
+        },
+        {
+          "step_number": 7,
+          "instruction": "validate a directory path (starting with /) appears in the terminal output",
+          "type": "browser",
+          "status": "pass",
+          "duration_ms": 2000,
+          "error_message": null,
+          "console_errors": [],
+          "screenshot_path": null
+        }
+      ]
+    }
+  ],
+  "environment": {
+    "backend_url": "http://localhost:9007",
+    "frontend_url": "http://localhost:4097",
+    "browser": "chromium",
+    "platform": "darwin"
+  }
+}

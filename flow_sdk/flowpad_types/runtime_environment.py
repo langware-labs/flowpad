@@ -1,7 +1,8 @@
 """Runtime environment types for compute nodes."""
 
 import platform
-from enum import Enum, StrEnum
+from enum import Enum
+from flow_sdk._compat import StrEnum
 from typing import Optional
 
 from pydantic import BaseModel

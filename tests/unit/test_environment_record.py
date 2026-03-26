@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 
 from flow_sdk.fs_records.environment_record import EnvironmentRecord
-from flow_sdk.fs_store.factory import type_registry
+from flow_sdk.fs_store.factory.type_registry import type_registry
 
 
 class TestEnvironmentRecord:

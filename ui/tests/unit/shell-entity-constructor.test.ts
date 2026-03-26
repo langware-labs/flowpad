@@ -76,7 +76,7 @@ describe('Shell entity constructor', () => {
       compute_node_id: 'c9ed243c-a3be-4985-9858-7a0821ec9e9f',
       name: 'Terminal 1',
     });
-    vi.spyOn(ConnectionManager, 'getInstance').mockReturnValue({ id: 'ws-connection-id' } as any);
+    vi.spyOn(ConnectionManager, 'getInstance').mockReturnValue({ id: 'ws-connection-id', on: vi.fn() } as any);
     // _reattach() uses callActionOverWS; return not_found so _startPty is called
     vi.spyOn(dataManager, 'callActionOverWS').mockResolvedValue({ status: 'not_found' });
     const callActionSpy = vi.spyOn(dataManager, 'callAction').mockResolvedValue({});

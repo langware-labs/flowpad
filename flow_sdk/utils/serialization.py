@@ -17,6 +17,9 @@ def type_safe_json_dumps(jsonable_object, indent=0, **kwargs):
 def iso_to_datetime(iso: datetime | str) -> datetime:
     if isinstance(iso, datetime):
         return iso
+    # Python 3.10 doesn't support the 'Z' UTC suffix in fromisoformat
+    if isinstance(iso, str) and iso.endswith("Z"):
+        iso = iso[:-1] + "+00:00"
     return datetime.fromisoformat(iso)
 
 

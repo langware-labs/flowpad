@@ -5,8 +5,6 @@ import { Label } from '@src/components/ui/label';
 import { FolderOpen, FolderPlus, Loader2, LucideIcon } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-const isDirectoryPickerSupported = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
-
 interface ProjectFormHeaderProps {
   icon: LucideIcon;
   title: string;
@@ -166,55 +164,31 @@ export function ProjectSetupScreen({
     }
   }, [externalMode, defaultWorkspacePath, currentProjectPath]);
 
+  const computeNode = useMemo(() => dataContext.computeNode, []);
+
   const handleBrowseFolder = useCallback(
-    async (setter: (path: string) => void, currentPath: string) => {
-      // Electron: use native dialog via preload bridge (returns full absolute path)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const electronAPI = (window as any).electronAPI;
-      if (electronAPI?.pickFolder) {
-        console.log('[FolderPicker] Electron detected, using native dialog');
-        const selected = await electronAPI.pickFolder(currentPath.trim());
+    async (setter: (path: string) => void) => {
+      if (!computeNode) {
+        setError('No compute node available');
+        return;
+      }
+      try {
+        const selected = await computeNode.openPathDialog();
         if (selected) {
           setter(selected);
           setError(null);
         }
-        return;
-      }
-
-      console.log('[FolderPicker] Not in Electron, using browser showDirectoryPicker');
-
-      // Browser mode: File System Access API (only returns folder name, not full path)
-      if (!isDirectoryPickerSupported) {
-        setError('Folder picker is not supported in this browser');
-        return;
-      }
-
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const dirHandle = await (window as any).showDirectoryPicker({ mode: 'read' });
-        const folderName = dirHandle.name;
-
-        if (isDesktop) {
-          const basePath = currentPath.trim() || defaultWorkspacePath;
-          const newPath = basePath ? `${basePath.replace(/\/+$/, '')}/${folderName}` : folderName;
-          setter(newPath);
-          setError('Browser cannot access full path. Please verify the path is correct.');
-        } else {
-          setter(`${defaultWorkspacePath}/${folderName}`);
-          setError(null);
-        }
       } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') return;
         console.error('Failed to open folder picker:', err);
         setError('Failed to open folder picker');
       }
     },
-    [defaultWorkspacePath, isDesktop],
+    [computeNode],
   );
 
   const saveProject = useCallback(async (path: string) => {
-    const newProject = new Project({ name: path });
-    await newProject.save([dataContext.someone!]);
+    let newProject = new Project({ name: path });
+    newProject = await newProject.save([dataContext.someone!]);
     await newProject.setupForDesktop();
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, newProject.typeId);
     await dataContext.refreshProject();
@@ -296,8 +270,8 @@ export function ProjectSetupScreen({
           label="Parent Folder"
           value={parentFolderPath}
           onChange={setParentFolderPath}
-          onBrowse={() => void handleBrowseFolder(setParentFolderPath, parentFolderPath)}
-          showBrowse={isDesktop}
+          onBrowse={() => void handleBrowseFolder(setParentFolderPath)}
+          showBrowse={!!computeNode}
           placeholder={defaultWorkspacePath || 'Select parent folder'}
           helperText={
             isDesktop
@@ -332,8 +306,8 @@ export function ProjectSetupScreen({
           label="Project Folder"
           value={selectedFolderPath}
           onChange={setSelectedFolderPath}
-          onBrowse={() => void handleBrowseFolder(setSelectedFolderPath, selectedFolderPath)}
-          showBrowse={isDesktop}
+          onBrowse={() => void handleBrowseFolder(setSelectedFolderPath)}
+          showBrowse={!!computeNode}
           placeholder={defaultWorkspacePath ? `${defaultWorkspacePath}/my-project` : 'Enter folder path'}
           helperText={
             isDesktop

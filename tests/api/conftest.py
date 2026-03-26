@@ -18,10 +18,11 @@ from flow_sdk.responses.response import ApiResponse
 
 @pytest.fixture(scope="session", autouse=True)
 def clean_db():
-    """Delete the test SQLite DB file before the session to prevent state leaking between runs."""
+    """Delete the test SQLite DB file (and WAL/SHM files) before the session to prevent state leaking between runs."""
     db_path = os.environ["SQLITE_DATABASE_PATH"]
-    if os.path.exists(db_path):
-        os.remove(db_path)
+    for path in [db_path, db_path + "-wal", db_path + "-shm"]:
+        if os.path.exists(path):
+            os.remove(path)
     yield
     # Dispose the DB engine so aiosqlite threads terminate and the process exits cleanly.
     import asyncio

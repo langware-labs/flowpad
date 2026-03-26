@@ -6,7 +6,8 @@ This module contains all TypedDict definitions for Lexical editor node types.
 
 from __future__ import annotations
 
-from typing import Literal, NotRequired, TypeAlias, TypedDict
+from typing import Literal, TypeAlias, TypedDict
+from flow_sdk._compat import NotRequired
 
 
 class LexicalTextNode(TypedDict):

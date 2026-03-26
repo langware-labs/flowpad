@@ -1,5 +1,5 @@
 import logging
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import Any, ClassVar, Optional, Union
 
@@ -69,6 +69,7 @@ class HookEventType(StrEnum):
 
     # Agent teams events
     TEAMMATE_IDLE = "TeammateIdle"
+    TASK_CREATED = "TaskCreated"
     TASK_COMPLETED = "TaskCompleted"
 
     # Configuration events

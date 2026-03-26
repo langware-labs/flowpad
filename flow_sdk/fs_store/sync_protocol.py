@@ -1,6 +1,6 @@
 """Sync protocol types for resource notifications."""
 
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 
 
 class ResourceType(StrEnum):

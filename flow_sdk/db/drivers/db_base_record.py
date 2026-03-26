@@ -10,12 +10,12 @@ from typing import (
     Optional,
     TypeVar,
     Union,
-    Unpack,
     cast,
     get_args,
     get_origin,
     get_type_hints,
 )
+from flow_sdk._compat import Unpack
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.fields import FieldInfo

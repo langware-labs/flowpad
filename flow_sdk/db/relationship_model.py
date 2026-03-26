@@ -1,4 +1,5 @@
-from typing import TypeVar, Unpack
+from typing import TypeVar
+from flow_sdk._compat import Unpack
 
 from pydantic import ConfigDict
 

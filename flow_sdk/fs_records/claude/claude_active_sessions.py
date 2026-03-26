@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import ClassVar, Self
+from typing import ClassVar
+from flow_sdk._compat import Self
 
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.utils.claude_paths import get_user_home_path
