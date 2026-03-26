@@ -249,6 +249,21 @@ function TeammateIdleOneLiner({ event }: EventPartProps) {
   );
 }
 
+function TaskCreatedOneLiner({ event }: EventPartProps) {
+  const taskSubject = event.hook_data?.raw_hook_data?.task_subject || '';
+  const teammateName = event.hook_data?.raw_hook_data?.teammate_name || '';
+  return (
+    <>
+      {teammateName && (
+        <Badge variant="outline" className={`${CHIP} opacity-60`}>
+          {teammateName}
+        </Badge>
+      )}
+      {taskSubject && <span>{truncate(taskSubject, 50)}</span>}
+    </>
+  );
+}
+
 function TaskCompletedOneLiner({ event }: EventPartProps) {
   const taskSubject = event.hook_data?.raw_hook_data?.task_subject || '';
   const teammateName = event.hook_data?.raw_hook_data?.teammate_name || '';
@@ -409,6 +424,7 @@ const EVENT_TYPE_CONFIGS: Record<string, EventSummaryConfig> = {
   SubagentStart: { oneLiner: SubagentStartOneLiner },
   SubagentStop: { oneLiner: SubagentStopOneLiner },
   TeammateIdle: { oneLiner: TeammateIdleOneLiner },
+  TaskCreated: { oneLiner: TaskCreatedOneLiner },
   TaskCompleted: { oneLiner: TaskCompletedOneLiner },
   Notification: { oneLiner: NotificationOneLiner },
   ConfigChange: { oneLiner: ConfigChangeOneLiner },

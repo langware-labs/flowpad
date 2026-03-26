@@ -69,6 +69,7 @@ class HookEventType(StrEnum):
 
     # Agent teams events
     TEAMMATE_IDLE = "TeammateIdle"
+    TASK_CREATED = "TaskCreated"
     TASK_COMPLETED = "TaskCompleted"
 
     # Configuration events

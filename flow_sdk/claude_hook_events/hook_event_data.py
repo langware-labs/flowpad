@@ -51,7 +51,7 @@ class HookEventData(BaseModel):
     last_assistant_message: Optional[str] = None
     stop_hook_active: Optional[bool] = None
 
-    # TeammateIdle / TaskCompleted
+    # TeammateIdle / TaskCreated / TaskCompleted
     teammate_name: Optional[str] = None
     team_name: Optional[str] = None
     task_id: Optional[str] = None
