@@ -439,8 +439,22 @@ class SQLiteDBDriver(DBDriver):
         """Execute FTS5 MATCH query and return hydrated Entity objects."""
         if not query or not self.session_factory:
             return []
-        # Append * to each term for prefix matching (so "poin" matches "pointer")
-        fts_query = " ".join(t if t.endswith("*") else t + "*" for t in query.split())
+        # Append * to each term for prefix matching (so "poin" matches "pointer").
+        # Terms with FTS5 special chars (. + ^ : etc.) must be double-quoted so the
+        # tokenizer sees them as phrase searches rather than syntax errors.
+        _FTS5_SPECIAL = frozenset('.+^(){}[]~?\\/:!-')
+
+        def _fts_term(t: str) -> str:
+            already_prefix = t.endswith("*")
+            bare = t.rstrip("*")
+            if any(c in bare for c in _FTS5_SPECIAL):
+                # Escape any embedded double-quotes in the term, then quote it.
+                # Don't add * — prefix search on a dotted version string is not useful.
+                escaped = bare.replace('"', '""')
+                return f'"{escaped}"'
+            return t if already_prefix else t + "*"
+
+        fts_query = " ".join(_fts_term(t) for t in query.split())
         async with self.session_factory() as session:
             # Build the SQL — snippet() on title (col 3) and content (col 5)
             # Columns: 0=entity_id, 1=type, 2=name, 3=title, 4=description, 5=content

@@ -55,6 +55,32 @@ class Shell(Entity):
 
     _api_visible: ClassVar[bool] = True
 
+    async def send_input(self, cmd: str, bracketed: bool = False) -> None:
+        """Send a command string to the PTY session.
+
+        Args:
+            cmd: Command text to send (without trailing newline).
+            bracketed: Wrap with bracketed-paste markers (``ESC[200~`` / ``ESC[201~``).
+                       Use ``True`` when injecting programmatic commands so any
+                       interactive line editor (zsh ZLE, bash readline, fish,
+                       PSReadLine) echoes the command as one clean unit instead
+                       of repainting the line on every character.
+        """
+        from flow_sdk.builtin.faas.compute_node import ComputeNode
+
+        if not self.compute_node_id:
+            raise ValueError("Shell has no compute_node_id")
+        compute_node = await ComputeNode.get_by_id(self.compute_node_id)
+        if not compute_node or not compute_node.node_provider_id:
+            raise ValueError(f"ComputeNode {self.compute_node_id} not found or has no provider")
+        if bracketed:
+            data = f"\x1b[200~{cmd}\x1b[201~\r".encode()
+        else:
+            data = f"{cmd}\r".encode()
+        await compute_node.compute_provider.send_pty_input(
+            compute_node.node_provider_id, self.id, data, None, None
+        )
+
     def is_running(self, pid: int | None = None) -> bool:
         """Return True if the shell has a foreground process running.
 

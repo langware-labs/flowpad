@@ -7,8 +7,6 @@ Worker that executes Claude CLI via PTY session.
 import json
 import logging
 import os
-import shlex
-import sys
 import uuid
 from typing import TYPE_CHECKING, AsyncIterator
 
@@ -17,6 +15,8 @@ from pydantic_ai.usage import RunUsage
 
 from flow_sdk.core.flow.models.state.flow_state import FlowModelMessage, FlowModelRequest
 from flow_sdk.flowpad_types.enums import WorkerTaskStatus
+
+from flow_sdk.builtin.cli_workers.claude_cli import ClaudeCLICommand
 
 from .worker import BaseWorker, WorkerRequest, WorkerResponse, WorkerStreamEvent
 
@@ -174,7 +174,15 @@ class ClaudeCodeCLIWorker(BaseWorker):
             logger.info(f"[ClaudeCodeCLIWorker] Updated flow with terminal ID: {self._machine_session_id}")
 
             # Build and send Claude CLI command to PTY session
-            command = self._build_claude_command(prompt_content)
+            cmd = ClaudeCLICommand(
+                session_id=self._worker_session_id,
+                chrome=True,
+                workdir=self._project_dir,
+                print_mode=True,
+            )
+            if scope := os.environ.get("FLOWPAD_EXECUTION_SCOPE"):
+                cmd.add_env("FLOWPAD_EXECUTION_SCOPE", scope)
+            command = cmd.to_shell_string(instruction=prompt_content)
             command_bytes = (command + os.linesep).encode("utf-8")
 
             pty_key = (compute_node.node_provider_id, self._machine_session_id)
@@ -207,49 +215,3 @@ class ClaudeCodeCLIWorker(BaseWorker):
                 run_usage=RunUsage(),
                 status=WorkerTaskStatus.FAILED,
             )
-
-    def _build_claude_command(self, prompt: str) -> str:
-        """Build Claude CLI command with worker session ID and prompt.
-
-        Args:
-            prompt: The prompt to send to Claude CLI
-
-        Returns:
-            Shell command string to execute Claude CLI with worker session ID and prompt
-        """
-        assert self._project_dir is not None, "project_dir must be set before building command"
-
-        # Collect environment variables to set
-        env_vars = {"CLAUDE_PROJECT_DIR": self._project_dir}
-        process_env_var_names = ["FLOWPAD_EXECUTION_SCOPE"]
-        for var in process_env_var_names:
-            value = os.environ.get(var)
-            if value:
-                env_vars[var] = value
-
-        if sys.platform == "win32":
-            # PowerShell command with Base64-encoded prompt to handle multi-line and special chars
-            # This avoids issues with here-strings not being parsed correctly in PTY
-            import base64
-
-            def ps_quote(s: str) -> str:
-                return "'" + s.replace("'", "''") + "'"
-
-            # Use $env:VAR = 'value' syntax for environment variables
-            env_commands = [f"$env:{k} = {ps_quote(v)}" for k, v in env_vars.items()]
-            env_prefix = "; ".join(env_commands) + "; " if env_commands else ""
-
-            # Base64 encode the prompt, then decode in PowerShell
-            prompt_bytes = prompt.encode("utf-8")
-            prompt_b64 = base64.b64encode(prompt_bytes).decode("ascii")
-
-            # PowerShell command to decode Base64 and pass to claude
-            decode_cmd = f"[System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{prompt_b64}'))"
-            return f"cd {ps_quote(self._project_dir)}; {env_prefix}claude --dangerously-skip-permissions --chrome --debug --session-id {self._worker_session_id} -p ({decode_cmd})"
-        else:
-            # POSIX shell command with heredoc for multi-line prompt
-            # Using cat with heredoc and command substitution to pass as argument
-            # The 'EOF' (quoted) makes it a literal heredoc (no variable expansion)
-            env_prefix = " ".join(f"{k}={shlex.quote(v)}" for k, v in env_vars.items())
-
-            return f"cd {shlex.quote(self._project_dir)} && {env_prefix} claude --dangerously-skip-permissions --chrome --debug --session-id {self._worker_session_id} -p \"$(cat <<'EOF'\n{prompt}\nEOF\n)\""

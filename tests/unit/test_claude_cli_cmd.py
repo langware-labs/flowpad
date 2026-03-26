@@ -173,6 +173,18 @@ def test_no_instruction_on_resume():
     assert "None" not in result
 
 
+def test_print_mode_adds_p_flag():
+    cmd = ClaudeCLICommand(session_id="s", workdir="/p", print_mode=True)
+    result = cmd.to_shell_string(instruction="fix the bug")
+    assert " -p " in result
+
+
+def test_no_print_mode_no_p_flag():
+    cmd = ClaudeCLICommand(session_id="s", workdir="/p", print_mode=False)
+    result = cmd.to_shell_string(instruction="fix the bug")
+    assert " -p " not in result
+
+
 # ─── CLAUDE_PROJECT_DIR ──────────────────────────────────────────────────────
 
 
