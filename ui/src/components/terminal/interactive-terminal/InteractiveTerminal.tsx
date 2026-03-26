@@ -41,7 +41,6 @@ import {
   type PromptEntry,
   InputFilesPanel,
   QueuePanel,
-  WorktreePanel,
 } from './side-windows';
 
 export interface TraceFilters {
@@ -292,11 +291,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
   // Sidecar shell state derived from entity
   const sidecarShellId = process?.sidecar_shell_id ?? null;
-
-  // Inject a text prompt into the main Claude PTY (as if the user typed it)
-  const handleInjectPrompt = useCallback((text: string) => {
-    void shellRef.current?.sendInput(text + '\r');
-  }, []);
 
   const handleKillSidecar = useCallback(async () => {
     if (!process) return;
@@ -1195,12 +1189,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                     })()}
                     workdir={shellRef.current?.workdir ?? process?.workdir ?? ''}
                     sidecarShellId={sidecarShellId}
-                  />
-                )}
-                {activeSideTab === SideTabId.Worktree && process && (
-                  <WorktreePanel
-                    process={process}
-                    onInjectPrompt={handleInjectPrompt}
                   />
                 )}
                 {activeSideTab === SideTabId.Prompts && (
