@@ -20,7 +20,7 @@ import os
 import re
 import time
 from datetime import datetime, timezone
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import Any, ClassVar
 

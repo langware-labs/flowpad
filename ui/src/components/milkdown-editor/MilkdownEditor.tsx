@@ -6,6 +6,7 @@ import {
   toggleEmphasisCommand,
   toggleInlineCodeCommand,
   wrapInHeadingCommand,
+  turnIntoTextCommand,
   wrapInBulletListCommand,
   wrapInOrderedListCommand,
   createCodeBlockCommand,
@@ -20,7 +21,7 @@ import type { MilkdownPlugin } from '@milkdown/ctx';
 import type { Ctx } from '@milkdown/ctx';
 import {
   Bold, Italic, Code, Heading1, Heading2, Heading3,
-  List, ListOrdered, SquareCode,
+  List, ListOrdered, SquareCode, Pilcrow,
 } from 'lucide-react';
 
 // Prism core must be imported before language components
@@ -83,6 +84,7 @@ function MilkdownToolbar() {
       {btn('Italic', <Italic className="h-3.5 w-3.5" />, callCommand(toggleEmphasisCommand.key))}
       {btn('Inline code', <Code className="h-3.5 w-3.5" />, callCommand(toggleInlineCodeCommand.key))}
       <div className="mx-1.5 h-4 w-px bg-border" />
+      {btn('Normal text', <Pilcrow className="h-3.5 w-3.5" />, callCommand(turnIntoTextCommand.key))}
       {btn('Heading 1', <Heading1 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 1))}
       {btn('Heading 2', <Heading2 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 2))}
       {btn('Heading 3', <Heading3 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 3))}

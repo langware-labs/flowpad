@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 
 
 class HookEventType(StrEnum):
@@ -62,6 +62,9 @@ class HookEventType(StrEnum):
     # Agent teams events
     TEAMMATE_IDLE = "TeammateIdle"
     """Triggered when a teammate is idle."""
+
+    TASK_CREATED = "TaskCreated"
+    """Triggered when a task is created."""
 
     TASK_COMPLETED = "TaskCompleted"
     """Triggered when a task is completed."""

@@ -1,6 +1,7 @@
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { useProjects } from '@src/hooks/use-projects';
-import { dataContext, fsManager } from '@sdk';
+import { useContext } from '@src/hooks/useContext';
+import { fsManager } from '@sdk';
 import { ExternalLink, ArrowLeftRight } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 
@@ -9,9 +10,8 @@ interface StatusBarProps {
 }
 
 export function StatusBar({ className = '' }: StatusBarProps) {
-  const project = dataContext.project;
-  const computeNode = dataContext.computeNode;
-  const workspacePath = dataContext.bootstrapInfo?.desktop_info?.paths?.workspace;
+  const { project, computeNode, bootstrapInfo } = useContext();
+  const workspacePath = bootstrapInfo?.desktop_info?.paths?.workspace;
   const { refetch: refetchProjects } = useProjects();
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
 

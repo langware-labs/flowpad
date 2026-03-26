@@ -1,7 +1,7 @@
 """Desktop DB management action — thin HTTP wrappers over flow_sdk.system_tools."""
 
 import logging
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 
 from flow_sdk.core import action
 from flow_sdk.request_context.methods import get_current_request_info

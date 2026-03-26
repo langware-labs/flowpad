@@ -23,7 +23,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, Literal, Self
+from typing import TYPE_CHECKING, ClassVar, Literal
+from flow_sdk._compat import Self
 
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.fs_ref import FSRef
@@ -41,6 +42,19 @@ if TYPE_CHECKING:
 # Re-export for external callers that imported _session_estimated_cost from
 # this module (e.g. session_stats.py itself doesn't import it back).
 # ---------------------------------------------------------------------------
+def _extract_text(content: object) -> str | None:
+    """Extract plain text from a message content field (str or list of blocks)."""
+    if isinstance(content, str):
+        text = content.strip()
+        return text if text and not text.startswith("<") else None
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                text = block.get("text", "").strip()
+                return text if text and not text.startswith("<") else None
+    return None
+
+
 def _session_estimated_cost(
     input_tokens: int,
     output_tokens: int,
@@ -334,34 +348,71 @@ class ClaudeSessionRecord(Record):
             f"[{i:4d}]  {e.summary}" for i, e in enumerate(self.filtered_entries, 1)
         )
 
+    def _parse_fts(self) -> tuple[str | None, str | None]:
+        """Parse JSONL transcript and return (title, content) for FTS indexing.
+
+        title   = last user message, truncated to 120 chars
+        content = one line per user/assistant turn
+
+        Result is cached in ``_fts_cache`` so both ``search_title`` and
+        ``search_content`` only trigger one file read. Returns (None, None)
+        when the JSONL file is unavailable or unreadable.
+        """
+        cache = object.__getattribute__(self, "__dict__").get("_fts_cache")
+        if cache is not None:
+            return cache
+        path_str = object.__getattribute__(self, "__dict__").get("jsonl_path")
+        if not path_str:
+            result: tuple[str | None, str | None] = (None, None)
+            object.__setattr__(self, "_fts_cache", result)
+            return result
+        p = Path(path_str)
+        if not p.is_file():
+            result = (None, None)
+            object.__setattr__(self, "_fts_cache", result)
+            return result
+        lines: list[str] = []
+        last_user: str | None = None
+        try:
+            with open(p, encoding="utf-8") as fh:
+                for raw_line in fh:
+                    raw_line = raw_line.strip()
+                    if not raw_line:
+                        continue
+                    try:
+                        entry = json.loads(raw_line)
+                    except json.JSONDecodeError:
+                        continue
+                    etype = entry.get("type")
+                    if etype not in ("user", "assistant"):
+                        continue
+                    msg = entry.get("message") or {}
+                    content = msg.get("content") if isinstance(msg, dict) else None
+                    text = _extract_text(content)
+                    if not text:
+                        continue
+                    if etype == "user":
+                        last_user = text[:200]
+                        lines.append(f"user: {text}")
+                    else:
+                        lines.append(f"assistant: {text[:500]}")
+        except OSError:
+            result = (None, None)
+            object.__setattr__(self, "_fts_cache", result)
+            return result
+        result = (last_user[:120] if last_user else None, "\n".join(lines) or None)
+        object.__setattr__(self, "_fts_cache", result)
+        return result
+
     @property
     def search_title(self) -> str | None:
         """Last user prompt, used as FTS title for BM25 name-weight boost."""
-        d = object.__getattribute__(self, "__dict__")
-        cached = d.get("_session_batch_stats")
-        if cached is not None:
-            msg = cached.get("last_user_message")
-            return str(msg)[:120] if msg else None
-        return None
+        return self._parse_fts()[0]
 
     @property
     def search_content(self) -> str | None:
-        """FTS content: slug/cwd metadata + one line per user/assistant turn.
-
-        Uses ``_session_batch_stats`` cache if already populated (avoids a
-        second full JSONL parse when stats were loaded for another reason).
-        Falls back to a lightweight no-file-read path using fields already
-        set at construction time (slug, cwd).
-
-        Returns None if no content is available.
-        """
-        d = object.__getattribute__(self, "__dict__")
-        cached = d.get("_session_batch_stats")
-        if cached is not None:
-            return cached.get("search_content")
-        # Lightweight fallback: no file read — use fields already in __dict__
-        parts = [d.get("slug", ""), d.get("cwd", "")]
-        return " ".join(p for p in parts if p) or None
+        """One line per user/assistant turn from the JSONL transcript."""
+        return self._parse_fts()[1]
 
     @classmethod
     def discovery_items_count(cls, limit: int | None = None) -> int:
@@ -378,8 +429,8 @@ class ClaudeSessionRecord(Record):
         return min(count, limit) if limit is not None else count
 
     @classmethod
-    def discover_iter(cls, limit: int | None = None, scope=None, **kwargs):
-        """Lazy generator — yields one ClaudeSessionRecord per JSONL file."""
+    def discover_paths_iter(cls, limit: int | None = None, **kwargs):
+        """Lazy generator — yields Path objects for each JSONL file (no file reads)."""
         projects_dir = Path.home() / ".claude" / "projects"
         if not projects_dir.is_dir():
             return
@@ -388,13 +439,19 @@ class ClaudeSessionRecord(Record):
             if not project_dir.is_dir():
                 continue
             for jsonl_file in sorted(project_dir.glob("*.jsonl")):
-                try:
-                    yield cls.from_jsonl(jsonl_file)
-                    count += 1
-                    if limit is not None and count >= limit:
-                        return
-                except (json.JSONDecodeError, OSError):
-                    continue
+                yield jsonl_file
+                count += 1
+                if limit is not None and count >= limit:
+                    return
+
+    @classmethod
+    def discover_iter(cls, limit: int | None = None, scope=None, **kwargs):
+        """Lazy generator — yields one ClaudeSessionRecord per JSONL file."""
+        for jsonl_file in cls.discover_paths_iter(limit=limit):
+            try:
+                yield cls.from_jsonl(jsonl_file)
+            except (json.JSONDecodeError, OSError):
+                continue
 
     @classmethod
     def discover(cls, scope=None, **kwargs) -> list[ClaudeSessionRecord]:
@@ -457,30 +514,55 @@ class ClaudeSessionRecord(Record):
             project_encoded_name: Encoded project directory name. If not
                 provided it is derived from ``path.parent.name``.
         """
+        import time as _time
+
         path = Path(path)
         session_id = path.stem  # fallback
         slug = ""
 
-        # Quick first-entry scan for session_id, slug, and cwd
+        # Quick first-entry scan for session_id, slug, and cwd.
+        # Stop as soon as slug is found (session_id falls back to path.stem, which
+        # always matches the sessionId stored in the file, so the old
+        # ``session_id != path.stem`` guard was never True and caused full-file scans).
         cwd = ""
         try:
             with open(path, encoding="utf-8") as fh:
-                for line in fh:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        raw = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if raw.get("sessionId"):
-                        session_id = raw["sessionId"]
-                    if raw.get("slug"):
-                        slug = raw["slug"]
-                    if not cwd and raw.get("cwd"):
-                        cwd = raw["cwd"]
-                    if session_id != path.stem and slug:
-                        break  # have both — stop reading
+                lines = fh.readlines()
+
+            # Find the index of the last non-empty line to detect mid-write truncation.
+            last_nonempty_idx = -1
+            for i in range(len(lines) - 1, -1, -1):
+                if lines[i].strip():
+                    last_nonempty_idx = i
+                    break
+
+            # Only excuse a parse error on the last non-empty line, and only when
+            # the file was modified within the last second (actively being written).
+            file_age = _time.time() - path.stat().st_mtime
+
+            for i, raw_line in enumerate(lines):
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                except json.JSONDecodeError:
+                    if i == last_nonempty_idx and file_age < 1.0:
+                        continue  # mid-write last line — excuse it
+                    raise
+                if raw.get("sessionId"):
+                    session_id = raw["sessionId"]
+                if raw.get("slug"):
+                    slug = raw["slug"]
+                if not cwd and raw.get("cwd"):
+                    cwd = raw["cwd"]
+                # Stop once we have both slug and cwd (or after finding sessionId
+                # if it differs from the stem — belt-and-suspenders for any future
+                # format change).
+                if slug and cwd:
+                    break
+                if session_id != path.stem and slug:
+                    break
         except OSError:
             pass
 

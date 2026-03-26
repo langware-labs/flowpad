@@ -1,4 +1,5 @@
-from enum import Enum, StrEnum
+from enum import Enum
+from flow_sdk._compat import StrEnum
 
 
 class BuiltInConstant(StrEnum):

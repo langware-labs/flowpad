@@ -1,4 +1,5 @@
-from typing import Generic, List, TypeVar, Unpack
+from typing import Generic, List, TypeVar
+from flow_sdk._compat import Unpack
 
 from pydantic import BaseModel, ConfigDict
 

@@ -6,7 +6,8 @@ Dynamic properties expose the data fields based on ``progress_type``.
 
 from __future__ import annotations
 
-from typing import Any, Self
+from typing import Any
+from flow_sdk._compat import Self
 
 from flow_sdk.fs_store import RecordType
 

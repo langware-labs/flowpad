@@ -32,12 +32,6 @@ export class PtyConnection {
     }
     // Store OutputChunk for VirtualTerminal timestamp tracking
     if (seq !== undefined) {
-      // Full redraw detected: CC sends \x1b[3J (clear scrollback) when rewriting
-      // the entire screen. All previous chunks are obsolete — clear them to cap
-      // memory usage at ~80KB (one redraw) instead of growing forever.
-      if (this._containsClearScrollback(bytes)) {
-        this.chunks.clear();
-      }
       this.chunks.set(seq, { seq, data: bytes, timestamp: timestamp_ms ?? Date.now() });
     }
     for (const listener of this.listeners) {
@@ -83,17 +77,6 @@ export class PtyConnection {
     } catch {
       return false;
     }
-  }
-
-  /** Check if bytes contain ESC[3J (clear scrollback) — signals a full TUI redraw. */
-  private _containsClearScrollback(bytes: Uint8Array): boolean {
-    // \x1b[3J = [0x1b, 0x5b, 0x33, 0x4a]
-    for (let i = 0; i <= bytes.length - 4; i++) {
-      if (bytes[i] === 0x1b && bytes[i + 1] === 0x5b && bytes[i + 2] === 0x33 && bytes[i + 3] === 0x4a) {
-        return true;
-      }
-    }
-    return false;
   }
 
   dispose(): void {

@@ -31,7 +31,8 @@ function makeProcess(overrides: Partial<AgenticProcess> = {}): AgenticProcess {
     id: 'proc-1',
     worker_session_id: 'session-1',
     pty_pid: 'pty-1',
-    context_data: { workdir: '/home/user/project', chrome: false, permission_mode: 'askUser' },
+    workdir: '/home/user/project',
+    context_data: { chrome: false, permission_mode: 'askUser' },
     state: { status: 'running' },
     save: vi.fn(),
     ...overrides,
@@ -71,7 +72,7 @@ describe('ProcessToolbar "Open terminal" button', () => {
   });
 
   it('opens a new terminal without cwd when workdir is empty', () => {
-    const process = makeProcess({ context_data: {} });
+    const process = makeProcess({ workdir: undefined });
     const { container } = render(
       <ProcessToolbar
         process={process}

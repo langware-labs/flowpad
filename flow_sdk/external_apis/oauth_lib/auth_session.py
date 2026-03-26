@@ -1,5 +1,6 @@
 import asyncio
-from enum import StrEnum, auto
+from enum import auto
+from flow_sdk._compat import StrEnum
 from typing import Any, Optional
 from uuid import uuid4
 

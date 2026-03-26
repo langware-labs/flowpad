@@ -1,5 +1,5 @@
 import fnmatch
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 from typing import Any, Dict, List, Optional, TypeAlias
 
 from pydantic import BaseModel

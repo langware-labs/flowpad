@@ -40,7 +40,8 @@ async def driver_with_data():
 
     # Insert test entities and FTS rows
     async with session_factory() as session:
-        from datetime import UTC, datetime
+        from datetime import datetime
+        from flow_sdk._compat import UTC
 
         now = datetime.now(UTC).isoformat()
         old_date = "2024-01-01T00:00:00+00:00"

@@ -335,26 +335,23 @@ export function useAllSkills(options: { enabled?: boolean } = {}) {
  * Converts encoded names like "-Users-shlom-Documents-dev-test" to "~/Documents/dev/test"
  */
 export function getProjectDisplayName(project: ProjectListItem): string {
+  // Use the last folder name from cwd
+  if (project.cwd) {
+    const trimmed = project.cwd.replace(/\/+$/, '');
+    const lastSlash = trimmed.lastIndexOf('/');
+    if (lastSlash >= 0) {
+      return trimmed.substring(lastSlash + 1);
+    }
+    return trimmed;
+  }
+
   // Use the name field if available and not just the encoded name
   if (project.name && project.name !== project.encoded_name) {
     return project.name;
   }
 
-  // Convert cwd to display format
-  if (project.cwd) {
-    // Replace home directory with ~
-    const home = '/Users/';
-    if (project.cwd.startsWith(home)) {
-      const afterHome = project.cwd.substring(home.length);
-      const slashIndex = afterHome.indexOf('/');
-      if (slashIndex > 0) {
-        return '~' + afterHome.substring(slashIndex);
-      }
-      return '~';
-    }
-    return project.cwd;
-  }
-
-  // Fallback: decode the encoded name
-  return project.encoded_name.replace(/-/g, '/').replace(/^\//, '');
+  // Fallback: decode the encoded name and take last segment
+  const decoded = project.encoded_name.replace(/-/g, '/').replace(/^\/+/, '');
+  const lastSlash = decoded.lastIndexOf('/');
+  return lastSlash >= 0 ? decoded.substring(lastSlash + 1) : decoded;
 }

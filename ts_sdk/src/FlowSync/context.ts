@@ -242,8 +242,15 @@ class DataContext extends EventEmitter {
     runInAction(() => {
       this.activeShellId = sessionId;
     });
-    const shell = dataManager.getByTypeIdFromCache<Shell>(new TypeId(EntityTypes.Shell, sessionId));
-    defineGlobal('shell', shell ?? null);
+    let shell: Shell | null = null;
+    if (sessionId) {
+      try {
+        shell = dataManager.getByTypeIdFromCache<Shell>(new TypeId(EntityTypes.Shell, sessionId)) ?? null;
+      } catch {
+        // sessionId may not yet be a valid TypeId (e.g. during init)
+      }
+    }
+    defineGlobal('shell', shell);
     this.emit(ContextEventType.CONTEXT_CHANGED);
   }
 

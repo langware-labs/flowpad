@@ -1,7 +1,7 @@
 import hashlib
 import mimetypes
 import os
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import ClassVar, List, Optional
 

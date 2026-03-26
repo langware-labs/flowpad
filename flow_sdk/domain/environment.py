@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from typing_extensions import Self
+from flow_sdk._compat import Self
 
 from flow_sdk.fs_records.environment_record import EnvironmentRecord
 

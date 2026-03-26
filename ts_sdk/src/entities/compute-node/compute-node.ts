@@ -422,7 +422,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * ```
    */
   async executeCommand(input: ShellInputFlowData): Promise<ShellOutputFlowData> {
-    const action = new ActionInfo('ops', ComputeNode.type, this.id, 'POST');
+    const action = new ActionInfo('ops', ComputeNode.type, this.id, 'POST', true);
     action.subpath = 'command';
     action.bodyParameters = {
       command: input.command,
@@ -699,6 +699,16 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     const action = new ActionInfo('get-cwd', ComputeNode.type, this.id);
     const response = await dataManager.callAction<void, { cwd: string }>(action);
     return response?.cwd ?? '';
+  }
+
+  /**
+   * Open a native OS folder-picker dialog and return the selected path.
+   * Returns null if the user cancelled.
+   */
+  async openPathDialog(): Promise<string | null> {
+    const action = new ActionInfo('pick-folder', ComputeNode.type, this.id, 'POST');
+    const response = await dataManager.callAction<void, { path: string | null }>(action);
+    return (response as any)?.path ?? null;
   }
 
   /**

@@ -8,7 +8,7 @@ Format inspired by n8n (nodes + edges arrays) with typed ports from CWL.
 
 from __future__ import annotations
 
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field

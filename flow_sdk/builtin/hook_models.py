@@ -5,7 +5,7 @@ to avoid circular imports.
 """
 
 from abc import ABC, abstractmethod
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 from typing import Any, Optional
 
 from pydantic import BaseModel

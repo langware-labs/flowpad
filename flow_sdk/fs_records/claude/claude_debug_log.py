@@ -20,7 +20,8 @@ import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar, Iterator, Self
+from typing import Any, ClassVar, Iterator
+from flow_sdk._compat import Self
 
 from flow_sdk.fs_store import PropertyRecord, Record, RecordType
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from enum import StrEnum
+from flow_sdk._compat import StrEnum
 from typing import Generic, List, Optional, TypeVar
 
 from pydantic import BaseModel, Field
