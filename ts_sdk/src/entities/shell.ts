@@ -418,6 +418,8 @@ export class Shell extends APIEntity<Shell> implements IShell {
     } catch (error) {
       // 404 means the shell entity is already gone — treat as already closed
       if (isApiError(error) && error.response?.status === 404) {
+        this._pty?.dispose();
+        this._pty = null;
         this.status = ShellStatus.CLOSED;
         dataManager.removeEntityFromCache(this.typeId);
         return;
