@@ -24,6 +24,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar, TypeVar
 
+from .record_field import MISSING as _RF_MISSING
+from .record_field import RecordField
 from .record_ref import RecordRef
 from .scope import Scope
 
@@ -185,8 +187,10 @@ class Record:
     _scan_limit: ClassVar[int | None] = None
     # Extra field names concatenated into the embedding text.
     index_fields: ClassVar[list[str]] = []
-    # Map of property key → PropertyRecord subclass. Defined by subclasses.
+    # Map of property key → RecordField (computed mode). Defined by subclasses.
     _property_types: ClassVar[dict[str, type["Any"]]] = {}
+    # Map of field name → RecordField (stored mode). Populated by RecordField.__set_name__.
+    _field_defs: ClassVar[dict[str, "Any"]] = {}
     # Names of keys managed via named FSRef children in the data/ subfolder.
     _domain_fsref_keys: ClassVar[list[str]] = []
 
@@ -203,6 +207,28 @@ class Record:
                     break
 
             try:
+                # Collect RecordField(index=True) from this class's own _field_defs
+                # and merge into index_fields.
+                own_field_defs = cls.__dict__.get("_field_defs", {})
+                field_index_names = [
+                    n for n, fd in own_field_defs.items()
+                    if isinstance(fd, RecordField) and fd._index and fd._is_stored
+                ]
+                if field_index_names:
+                    own_index = list(cls.__dict__.get("index_fields", []))
+                    inherited_index = list(getattr(cls, "index_fields", []))
+                    cls.index_fields = list(dict.fromkeys(own_index + inherited_index + field_index_names))
+
+                # Merge RecordField scalar defaults into _DATA_DEFAULTS.
+                # Explicit _DATA_DEFAULTS wins (existing takes priority).
+                field_defaults = {
+                    n: fd._default for n, fd in own_field_defs.items()
+                    if isinstance(fd, RecordField) and fd._is_stored and fd._default is not _RF_MISSING
+                }
+                if field_defaults:
+                    existing_defaults = dict(getattr(cls, "_DATA_DEFAULTS", {}))
+                    cls._DATA_DEFAULTS = {**field_defaults, **existing_defaults}
+
                 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo  # noqa: PLC0415
                 SchemaRegistry.register(TypeInfo(
                     type_name=rt,
@@ -282,6 +308,18 @@ class Record:
             rt = getattr(type(self), "_record_type", "")
             if rt:
                 _d["type"] = rt
+
+        # Apply RecordField stored-mode defaults for fields not already set by kwargs/_data.
+        _all_field_defs: dict = {}
+        for _c in type(self).__mro__:
+            for _n, _fd in _c.__dict__.get("_field_defs", {}).items():
+                _all_field_defs.setdefault(_n, _fd)
+        for _fname, _fdef in _all_field_defs.items():
+            if _fname not in _d:
+                if _fdef._default_factory is not None:
+                    _d[_fname] = _fdef._default_factory()
+                elif _fdef._default is not _RF_MISSING:
+                    _d[_fname] = _fdef._default
 
     def __getattr__(self, name: str) -> Any:
         """Fallback attribute access — only called when normal lookup fails."""
@@ -897,6 +935,18 @@ class Record:
             rt = getattr(cls, "_record_type", "")
             if rt:
                 _rd["type"] = rt
+
+        # Apply RecordField stored-mode defaults for fields absent in the serialised data.
+        _all_field_defs: dict = {}
+        for _c in type(rec).__mro__:
+            for _n, _fd in _c.__dict__.get("_field_defs", {}).items():
+                _all_field_defs.setdefault(_n, _fd)
+        for _fname, _fdef in _all_field_defs.items():
+            if _fname not in _rd:
+                if _fdef._default_factory is not None:
+                    _rd[_fname] = _fdef._default_factory()
+                elif _fdef._default is not _RF_MISSING:
+                    _rd[_fname] = _fdef._default
 
         return rec
 
