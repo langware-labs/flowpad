@@ -448,7 +448,7 @@ class AgenticProcess(Entity):
 
     @property
     def cli_cmd(self):
-        """Build a WorkerCLICommand from stored cli_config + entity fields.
+        """Build a WorkerCLIOptions from stored cli_config + entity fields.
 
         The returned command object has session_id and workdir injected from
         the entity. Callers add runtime env vars via add_env() before calling
@@ -1017,7 +1017,7 @@ class AgenticProcess(Entity):
 
             if started:
                 await asyncio.sleep(1.0)  # let shell initialize and write prompt before injecting
-                await shell.send_input(command, bracketed=True)
+                await shell.send_input(command)
 
             self._set_process_state(status=ProcessorStatus.RUNNING.value, error=None)
             if visible is not None:

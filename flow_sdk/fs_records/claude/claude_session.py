@@ -364,6 +364,25 @@ class ClaudeSessionRecord(Record):
         parts = [d.get("slug", ""), d.get("cwd", "")]
         return " ".join(p for p in parts if p) or None
 
+    def load_fts_content(self) -> None:
+        """Trigger the full JSONL parse so search_title and search_content return real data.
+
+        Calls ``_get_session_batch_stats()`` directly to populate
+        ``_session_batch_stats`` on this instance. Subsequent reads of
+        ``search_title`` and ``search_content`` will see the populated cache.
+
+        Note: accessing ``self.message_count`` would NOT work here because
+        ``from_jsonl()`` sets it as a plain instance attribute in the
+        constructor, shadowing the ``_SessionStatsProp`` descriptor.
+
+        No-op if ``_session_batch_stats`` is already cached.
+        """
+        inst = object.__getattribute__(self, "__dict__")
+        if "_session_batch_stats" in inst:
+            return
+        from flow_sdk.fs_records.claude.properties.session_stats import _get_session_batch_stats  # noqa: PLC0415
+        _get_session_batch_stats(self)
+
     @classmethod
     def discovery_items_count(cls, limit: int | None = None) -> int:
         """Count JSONL session files across ~/.claude/projects/ dirs (fast, no file reads)."""

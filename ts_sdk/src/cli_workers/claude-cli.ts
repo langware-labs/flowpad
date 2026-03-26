@@ -1,14 +1,14 @@
 /**
- * ClaudeCLICommand — builds Claude Code CLI shell command strings.
+ * ClaudeCliOptions — builds Claude Code CLI shell command strings.
  *
  * Mirrors Python flow_sdk/builtin/cli_workers/claude_cli.py exactly.
  * All fields map 1-to-1 to CLI flags. Snake_case field names match
  * the serialized cli_config dict from the backend.
  */
 
-import { WorkerCLICommand, shellQuote } from './base'
+import { WorkerCliOptions, shellQuote } from './base'
 
-export interface ClaudeCLICommandOptions {
+export interface ClaudeCliOptionsOptions {
   session_id?: string | null
   resume?: boolean
   fork_session_id?: string | null
@@ -22,7 +22,7 @@ export interface ClaudeCLICommandOptions {
   env_vars?: Record<string, string>
 }
 
-export class ClaudeCLICommand extends WorkerCLICommand {
+export class ClaudeCliOptions extends WorkerCliOptions {
   session_id?: string | null
   resume: boolean
   fork_session_id?: string | null
@@ -33,7 +33,7 @@ export class ClaudeCLICommand extends WorkerCLICommand {
   worktree: boolean
   agents_json?: Record<string, any> | null
 
-  constructor(opts: ClaudeCLICommandOptions = {}) {
+  constructor(opts: ClaudeCliOptionsOptions = {}) {
     super(opts.workdir ?? undefined, opts.env_vars)
     this.session_id = opts.session_id ?? undefined
     this.resume = opts.resume ?? false
@@ -93,8 +93,8 @@ export class ClaudeCLICommand extends WorkerCLICommand {
     }
   }
 
-  static fromJson(data: Record<string, any>): ClaudeCLICommand {
-    return new ClaudeCLICommand({
+  static fromJson(data: Record<string, any>): ClaudeCliOptions {
+    return new ClaudeCliOptions({
       session_id: data['session_id'] ?? undefined,
       resume: Boolean(data['resume'] ?? false),
       fork_session_id: data['fork_session_id'] ?? undefined,

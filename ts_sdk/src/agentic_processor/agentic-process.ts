@@ -22,7 +22,7 @@ import { ProcessorState, ProcessorStatus, StackFrame } from './agentic-types';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
 import { InstructionFile } from '../models/workflow/InstructionFile';
 import { Shell, ShellStatus } from '../entities/shell';
-import { type WorkerCLICommand, factory } from '../cli_workers';
+import { type WorkerCliOptions, factory } from '../cli_workers';
 
 /**
  * Result returned by AgenticProcess.spawn().
@@ -95,7 +95,7 @@ export interface IAgenticProcess extends IEntity {
   sidecar_shell_id?: string | null;
   /** Backend TTL live field: true if a PTY session is actually alive (30s TTL) */
   is_active?: boolean;
-  /** Serialized CLI command config (WorkerCLICommand.toJson()) */
+  /** Serialized CLI command config (WorkerCliOptions.toJson()) */
   cli_config?: Record<string, any>;
 }
 
@@ -437,12 +437,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Backend TTL live field: true if a PTY session is actually alive (30s TTL) */
   is_active: boolean = false;
 
-  /** Deserialize cli_config into a live WorkerCLICommand instance.
+  /** Deserialize cli_config into a live WorkerCliOptions instance.
    *
    * Mirrors Python AgenticProcess.cli_cmd property exactly:
    * workdir and session_id are injected from entity fields (not stored in cli_config).
    */
-  get cliCmd(): WorkerCLICommand {
+  get cliCmd(): WorkerCliOptions {
     const cmd = factory(this.cli_config ?? {}, (this.cli_config as any)?.worker_type ?? 'claude');
     (cmd as any).session_id = this.worker_session_id;
     const wd = this.workdir;

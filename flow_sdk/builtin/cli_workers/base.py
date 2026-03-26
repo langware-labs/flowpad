@@ -1,4 +1,4 @@
-"""WorkerCLICommand — cross-platform base for building shell command strings.
+"""WorkerCLIOptions — cross-platform base for building shell command strings.
 
 Subclasses implement _build_worker_args() to produce the executable + its flags.
 The base handles workdir (cd prefix), env vars prefix, and instruction injection,
@@ -11,8 +11,19 @@ import shlex
 import sys
 from typing import Any
 
+from pydantic import BaseModel
 
-class WorkerCLICommand:
+
+class WorkerExecutionInfo(BaseModel):
+    """Info about a worker process launched via Shell.run_process()."""
+
+    pid: int | None          # OS PID of the worker (None if not detected within timeout)
+    name: str                # executable name, e.g. "claude"
+    cmd: str | None          # first 200 chars of the shell command string
+    started_at: str          # ISO timestamp
+
+
+class WorkerCLIOptions:
     """Base class for worker CLI commands.
 
     Converts a structured configuration into a shell command string suitable
@@ -61,7 +72,7 @@ class WorkerCLICommand:
         }
 
     @classmethod
-    def from_json(cls, data: dict[str, Any]) -> "WorkerCLICommand":
+    def from_json(cls, data: dict[str, Any]) -> "WorkerCLIOptions":
         """Deserialise from a plain dict."""
         return cls(
             workdir=data.get("workdir"),
@@ -69,7 +80,7 @@ class WorkerCLICommand:
         )
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, WorkerCLICommand):
+        if not isinstance(other, WorkerCLIOptions):
             return NotImplemented
         return self.to_json() == other.to_json()
 

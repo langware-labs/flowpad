@@ -733,6 +733,11 @@ class LocalComputeProvider(ComputeProvider):
 
         return self._pty_sessions[pty_key]
 
+    def get_pty_shell_pid(self, provider_node_id: str, session_id: str) -> int | None:
+        """Return the OS PID of the shell process for this PTY session, or None."""
+        session = self._pty_sessions.get((provider_node_id, session_id))
+        return session["pid"] if session else None
+
     @staticmethod
     def _is_process_alive(pid: int) -> bool:
         """Check if a process is alive (cross-platform)."""
