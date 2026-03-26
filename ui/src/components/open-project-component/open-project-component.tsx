@@ -22,8 +22,6 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { FolderOpen, FolderPlus, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-const isDirectoryPickerSupported = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
-
 const normalizePath = (path: string): string => {
   const normalized = path.trim().replace(/\\/g, '/');
   if (!normalized) return '';
@@ -159,44 +157,23 @@ export function OpenProjectComponent({
   }, [open, initialMode, defaultWorkspacePath, currentProject?.fs_storage_mount_path]);
 
   const handleBrowseFolder = useCallback(
-    async (setter: (path: string) => void, currentPath: string) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const electronAPI = (window as any).electronAPI;
-      if (electronAPI?.pickFolder) {
-        const selected = await electronAPI.pickFolder(currentPath.trim());
+    async (setter: (path: string) => void) => {
+      if (!computeNode) {
+        setError('No compute node available');
+        return;
+      }
+      try {
+        const selected = await computeNode.openPathDialog();
         if (selected) {
           setter(selected);
           setError(null);
         }
-        return;
-      }
-
-      if (!isDirectoryPickerSupported) {
-        setError('Folder picker is not supported in this browser');
-        return;
-      }
-
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const dirHandle = await (window as any).showDirectoryPicker({ mode: 'read' });
-        const folderName = dirHandle.name;
-
-        if (isDesktop) {
-          const basePath = currentPath.trim() || defaultWorkspacePath;
-          const newPath = basePath ? `${normalizePath(basePath)}/${folderName}` : folderName;
-          setter(newPath);
-          setError('Browser cannot access full path. Please verify the path is correct.');
-        } else {
-          setter(`${normalizePath(defaultWorkspacePath)}/${folderName}`);
-          setError(null);
-        }
       } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') return;
         console.error('Failed to open folder picker:', err);
         setError('Failed to open folder picker');
       }
     },
-    [defaultWorkspacePath, isDesktop],
+    [computeNode],
   );
 
   const setCurrentProjectContext = useCallback(
@@ -439,8 +416,8 @@ export function OpenProjectComponent({
                 label="Parent folder"
                 value={parentFolderPath}
                 onChange={setParentFolderPath}
-                onBrowse={() => void handleBrowseFolder(setParentFolderPath, parentFolderPath)}
-                showBrowse={isDesktop}
+                onBrowse={() => void handleBrowseFolder(setParentFolderPath)}
+                showBrowse={!!computeNode}
                 placeholder={defaultWorkspacePath || 'Select parent folder'}
                 helperText={
                   isDesktop
@@ -456,8 +433,8 @@ export function OpenProjectComponent({
                 label="Project folder"
                 value={selectedFolderPath}
                 onChange={setSelectedFolderPath}
-                onBrowse={() => void handleBrowseFolder(setSelectedFolderPath, selectedFolderPath)}
-                showBrowse={isDesktop}
+                onBrowse={() => void handleBrowseFolder(setSelectedFolderPath)}
+                showBrowse={!!computeNode}
                 placeholder={defaultWorkspacePath ? `${defaultWorkspacePath}/my-project` : 'Enter folder path'}
                 helperText={
                   isDesktop
