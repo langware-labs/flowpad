@@ -514,6 +514,8 @@ class ClaudeSessionRecord(Record):
             project_encoded_name: Encoded project directory name. If not
                 provided it is derived from ``path.parent.name``.
         """
+        import time as _time
+
         path = Path(path)
         session_id = path.stem  # fallback
         slug = ""
@@ -525,27 +527,42 @@ class ClaudeSessionRecord(Record):
         cwd = ""
         try:
             with open(path, encoding="utf-8") as fh:
-                for line in fh:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        raw = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if raw.get("sessionId"):
-                        session_id = raw["sessionId"]
-                    if raw.get("slug"):
-                        slug = raw["slug"]
-                    if not cwd and raw.get("cwd"):
-                        cwd = raw["cwd"]
-                    # Stop once we have both slug and cwd (or after finding sessionId
-                    # if it differs from the stem — belt-and-suspenders for any future
-                    # format change).
-                    if slug and cwd:
-                        break
-                    if session_id != path.stem and slug:
-                        break
+                lines = fh.readlines()
+
+            # Find the index of the last non-empty line to detect mid-write truncation.
+            last_nonempty_idx = -1
+            for i in range(len(lines) - 1, -1, -1):
+                if lines[i].strip():
+                    last_nonempty_idx = i
+                    break
+
+            # Only excuse a parse error on the last non-empty line, and only when
+            # the file was modified within the last second (actively being written).
+            file_age = _time.time() - path.stat().st_mtime
+
+            for i, raw_line in enumerate(lines):
+                line = raw_line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                except json.JSONDecodeError:
+                    if i == last_nonempty_idx and file_age < 1.0:
+                        continue  # mid-write last line — excuse it
+                    raise
+                if raw.get("sessionId"):
+                    session_id = raw["sessionId"]
+                if raw.get("slug"):
+                    slug = raw["slug"]
+                if not cwd and raw.get("cwd"):
+                    cwd = raw["cwd"]
+                # Stop once we have both slug and cwd (or after finding sessionId
+                # if it differs from the stem — belt-and-suspenders for any future
+                # format change).
+                if slug and cwd:
+                    break
+                if session_id != path.stem and slug:
+                    break
         except OSError:
             pass
 
