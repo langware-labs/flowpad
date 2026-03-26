@@ -3,7 +3,7 @@
 Phases:
   1. scan()         — filesystem discovery → list[Record], no DB writes
   2. index_meta()   — write Entity rows to DB + hash sentinel files
-  3. index_search() — write FTS entries to DB (calls rec.load_fts_content() first)
+  3. index_search() — write FTS entries to DB
   4. index_all()    — convenience wrapper: scan → index_meta → index_search
 
 All SDK imports are lazy (inside methods) to avoid circular-import chains.
@@ -272,11 +272,6 @@ class DataManager:
 
             for rec in type_records:
                 try:
-                    # THE FIX: explicitly trigger expensive content loading
-                    # (e.g. full JSONL parse for ClaudeSessionRecord) before
-                    # reading search_title / search_content.
-                    rec.load_fts_content()
-
                     # Re-derive entity_id deterministically (same as index_meta)
                     data = rec.meta_dict()
                     entity_id = entity_cls.allocate_id(data)

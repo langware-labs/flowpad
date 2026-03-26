@@ -59,10 +59,10 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const canToggle = hasSession;
   const workdir = process.workdir ?? '';
 
-  // Read current flags from entity
-  const currentChrome = (process.context_data?.chrome as boolean) ?? false;
-  const currentDanger = (process.context_data?.permission_mode as string) === 'bypassPermissions';
-  const currentDebug = (process.context_data?.debug as boolean) ?? true; // default on
+  const _cliOpts = process.cliOptions;
+  const currentChrome = _cliOpts.chrome;
+  const currentDanger = _cliOpts.permission_mode === 'bypassPermissions';
+  const currentDebug = _cliOpts.debug;
 
   // Local pending state
   const [pendingChrome, setPendingChrome] = useState(currentChrome);
@@ -85,11 +85,11 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const handleApply = async () => {
     setIsApplying(true);
     try {
-      const updatedContext = { ...(process.context_data ?? {}) };
-      updatedContext.chrome = pendingChrome;
-      updatedContext.permission_mode = pendingDanger ? 'bypassPermissions' : 'askUser';
-      updatedContext.debug = pendingDebug;
-      process.context_data = updatedContext;
+      const updatedCli = process.cliOptions;
+      updatedCli.chrome = pendingChrome;
+      updatedCli.permission_mode = pendingDanger ? 'bypassPermissions' : 'askUser';
+      updatedCli.debug = pendingDebug;
+      process.cli_config = updatedCli.toJson();
       await process.save();
       await claudeSessionManager.restartSession(process);
     } finally {
@@ -486,13 +486,13 @@ function useTimeDisplay(iso: string | null | undefined): string {
 }
 
 function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { process: AgenticProcess; sessionStartTime?: string | null; lastMessageTime?: string | null }) {
-  const ctx = process.context_data ?? {};
-  const workdir = (ctx.workdir as string) || '(not set)';
-  const model = (ctx.model as string) || '(default)';
-  const permMode = (ctx.permission_mode as string) || 'bypassPermissions';
-  const chrome = (ctx.chrome as boolean) ?? false;
-  const debug = (ctx.debug as boolean) ?? true;
-  const worktree = (ctx.worktree as boolean) ?? false;
+  const cliOpts = process.cliOptions;
+  const workdir = process.workdir || '(not set)';
+  const model = cliOpts.model || '(default)';
+  const permMode = cliOpts.permission_mode;
+  const chrome = cliOpts.chrome;
+  const debug = cliOpts.debug;
+  const worktree = cliOpts.worktree;
 
   const startDisplay = useTimeDisplay(sessionStartTime);
   const lastDisplay = useTimeDisplay(lastMessageTime);

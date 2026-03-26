@@ -1184,7 +1184,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                     computeNodeId={(() => {
                       const fromShell = shellRef.current?.compute_node_id;
                       if (fromShell) return fromShell;
-                      const fullId = process?.context_data?.compute_node_id as string | undefined;
+                      const fullId = process?.compute_node_id ?? undefined;
                       return fullId ? fullId.replace(/^compute_node-/, '') : '';
                     })()}
                     workdir={shellRef.current?.workdir ?? process?.workdir ?? ''}

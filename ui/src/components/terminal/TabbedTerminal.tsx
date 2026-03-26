@@ -518,7 +518,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
                       isClosing ? 'bg-amber-500/70' : isDisabled ? 'bg-red-500/70' : 'bg-green-500/70'
                     }`}
                   />
-                  {Boolean(session.agenticProcess?.context_data?.worktree) && (
+                  {Boolean(session.agenticProcess?.cliOptions?.worktree) && (
                     <FolderGit2 className="h-3 w-3 shrink-0 text-amber-500" />
                   )}
                   {editingShellId === session.shellId ? (
