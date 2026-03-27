@@ -407,24 +407,29 @@ async def test_proc_recovery_after_server_restart(recovery_server):
 
 # ---------------------------------------------------------------------------
 # Scenario D — pure object-level: prompt → kill PTY → re-open recovers context
+# No HTTP. No server. Direct object calls only.
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(120)
-async def test_agentic_process_recovery_no_http(bootstrapped_client):
+async def test_agentic_process_recovery_no_http():
     """AgenticProcess: open → prompt → kill PTY → re-open recalls prior context.
 
-    No HTTP after bootstrap. The ClaudeSessionRecord written to disk during
-    the first session is the recovery anchor — open() finds it and passes
-    --resume to Claude.
+    Zero HTTP. Uses the @local ComputeNode directly.
+    The ClaudeSessionRecord written to disk during the first session is the
+    recovery anchor — open() detects the dead PTY and passes --resume to Claude.
     """
-    resp = await bootstrapped_client.get("/api/v1/graph/bootstrap")
-    cn_id = resp.json()["data"]["default_compute_node"]["id"]
-
+    from flow_sdk.db.database import init_db
     from flow_sdk.builtin.agentic_processor import AgenticProcess
+    from flow_sdk.builtin.faas.compute_node import ComputeNode
     from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+    from flow_sdk.server.routes.bootstrap import get_or_create_local_compute_node
 
-    proc = AgenticProcess(compute_node_id=f"compute_node-{cn_id}")
+    await init_db()
+    cn = await get_or_create_local_compute_node()
+    workdir = tempfile.mkdtemp(prefix="flow_recovery_test_")
+
+    proc = AgenticProcess(compute_node_id=str(cn.typeid), workdir=workdir)
     await proc.save()
 
     # Phase 1: open fresh, send prompt
@@ -433,18 +438,18 @@ async def test_agentic_process_recovery_no_http(bootstrapped_client):
 
     await proc.send_input("Remember the number 3422455\r")
 
-    # Wait up to 10s for Claude to write the session transcript to disk.
+    # Wait up to 30s for Claude to write the session transcript to disk.
     # The transcript file is the recovery anchor for --resume.
     worker_session_id = proc.worker_session_id
-    deadline = time.monotonic() + 10.0
+    deadline = time.monotonic() + 30.0
     session_rec = None
     while time.monotonic() < deadline:
         session_rec = ClaudeSessionRecord.discover_one(worker_session_id)
         if session_rec:
             break
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.5)
     assert session_rec is not None, (
-        f"ClaudeSessionRecord not found after 10s for session {worker_session_id}. "
+        f"ClaudeSessionRecord not found after 30s for session {worker_session_id}. "
         "Claude must write the transcript before recovery is possible."
     )
 

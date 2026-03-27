@@ -158,7 +158,7 @@ class Shell(Entity):
         executable = worker_cli._build_worker_args()[0]  # e.g. "claude"
         command = worker_cli.to_shell_string(instruction=instruction)
 
-        await self.send_input(command, bracketed=True)
+        await self.send_input(command)
 
         worker_pid = await self._poll_for_worker_pid(shell_pid, executable, timeout=1.0)
 
