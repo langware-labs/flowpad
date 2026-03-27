@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity, action
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+
+if TYPE_CHECKING:
+    from flow_sdk.builtin.agentic_process import AgenticProcess
 
 
 class Workflow(Entity):
@@ -37,6 +40,32 @@ class Workflow(Entity):
         default=None, description="VFS path to the generated pipeline.json"
     )
     _api_visible: ClassVar[bool] = True
+
+    async def run(self) -> "AgenticProcess":
+        """Execute the workflow by running its source content as an agentic process.
+
+        Reads source_vfs_path and runs it via AgenticProcess.
+        No HTTP API calls — uses the Claude CLI directly.
+
+        Returns:
+            AgenticProcess. Use process.output_folder or process.outputs
+            to access files written by Claude.
+        """
+        from flow_sdk.builtin.agentic_process import AgenticProcess, WorkerType
+
+        if not self.source_vfs_path:
+            raise ValueError("No source file linked to this workflow")
+
+        abs_path = Path("/" + self.source_vfs_path.lstrip("/"))
+        if not abs_path.exists():
+            raise FileNotFoundError(f"Workflow file not found: {abs_path}")
+
+        content = abs_path.read_text(encoding="utf-8")
+
+        process = AgenticProcess(workerType=WorkerType.CLAUDE)
+        process.start()
+        process.prompt(content)
+        return process
 
     @action.post(action_name="prepare")
     async def prepare(self) -> ApiSuccessResponse | ApiFailResponse:

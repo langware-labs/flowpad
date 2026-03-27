@@ -11,7 +11,7 @@ These tests reproduce the exact failure sequence observed in production.
 
 import pytest
 
-from flow_sdk.builtin.faas.pty_session_manager import PtySessionManager
+from flow_sdk.compute.providers.local.pty_session_manager import PtySessionManager
 from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
 from flow_sdk.fs_store.record import get_default_records_root, set_default_records_root
 

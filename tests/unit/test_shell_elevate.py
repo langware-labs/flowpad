@@ -35,28 +35,22 @@ def _create_running_record(session_id: str = "test-session") -> ShellRecord:
 
 def _make_mock_compute_node(session_id: str = "test-session"):
     """Create a mock ComputeNode with necessary attributes."""
-    from flow_sdk.builtin.faas.pty_session_manager import PtySessionState
-
     cn = MagicMock()
     cn.id = "cn-1"
     cn.node_provider_id = "provider-1"
-    cn.compute_provider = MagicMock()
-    cn.compute_provider.send_pty_input = AsyncMock()
 
-    # Session state
-    session_state = PtySessionState(
-        pty_key=("cn-1", "provider-1", session_id),
-        cols=120,
-        rows=40,
-    )
-    return cn, session_state
+    mock_pty = MagicMock()
+    mock_pty.send = AsyncMock()
+    cn.get_pty = MagicMock(return_value=mock_pty)
+
+    return cn, mock_pty
 
 
 @pytest.mark.asyncio
 async def test_elevate_shell_session_action_success():
     """Verify record transitions to elevated, claude_session_id set, response fields correct."""
     _create_running_record("elevate-test-1")
-    cn, session_state = _make_mock_compute_node("elevate-test-1")
+    cn, mock_pty = _make_mock_compute_node("elevate-test-1")
 
     mock_request_info = MagicMock()
     mock_request_info.get_post_data = AsyncMock(
@@ -66,13 +60,10 @@ async def test_elevate_shell_session_action_success():
     )
 
     with patch("flow_sdk.builtin.faas.compute_node.get_current_request_info", return_value=mock_request_info):
-        with patch("flow_sdk.builtin.faas.compute_node.session_manager") as mock_sm:
-            mock_sm.get_session = AsyncMock(return_value=session_state)
+        from flow_sdk.builtin.faas.compute_node import ComputeNode
 
-            from flow_sdk.builtin.faas.compute_node import ComputeNode
-
-            handler = ComputeNode._elevate_shell_session
-            response = await handler(cn)
+        handler = ComputeNode._elevate_shell_session
+        response = await handler(cn)
 
     assert response.status == "SUCCESS"
     assert response.data["status"] == "elevated"
@@ -84,12 +75,9 @@ async def test_elevate_shell_session_action_success():
     assert reloaded.status == ShellStatus.ELEVATED
     assert reloaded.data.get("claude_session_id") == response.data["claude_session_id"]
 
-    # Verify send_pty_input was called
-    cn.compute_provider.send_pty_input.assert_called_once()
-    call_args = cn.compute_provider.send_pty_input.call_args
-    assert call_args[0][0] == "provider-1"  # provider_node_id
-    assert call_args[0][1] == "elevate-test-1"  # session_id
-    sent_cmd = call_args[0][2].decode()
+    # Verify pty.send was called with the correct command
+    mock_pty.send.assert_called_once()
+    sent_cmd = mock_pty.send.call_args[0][0].decode()
     assert "claude" in sent_cmd
     assert "--session-id" in sent_cmd
     assert sent_cmd.endswith("\n")
@@ -148,7 +136,7 @@ async def test_elevate_shell_session_wrong_status():
 async def test_elevate_builds_correct_command():
     """Verify the command string includes model and permission flags."""
     _create_running_record("cmd-test")
-    cn, session_state = _make_mock_compute_node("cmd-test")
+    cn, mock_pty = _make_mock_compute_node("cmd-test")
 
     mock_request_info = MagicMock()
     mock_request_info.get_post_data = AsyncMock(
@@ -160,15 +148,13 @@ async def test_elevate_builds_correct_command():
     )
 
     with patch("flow_sdk.builtin.faas.compute_node.get_current_request_info", return_value=mock_request_info):
-        with patch("flow_sdk.builtin.faas.compute_node.session_manager") as mock_sm:
-            mock_sm.get_session = AsyncMock(return_value=session_state)
-            from flow_sdk.builtin.faas.compute_node import ComputeNode
+        from flow_sdk.builtin.faas.compute_node import ComputeNode
 
-            response = await ComputeNode._elevate_shell_session(cn)
+        response = await ComputeNode._elevate_shell_session(cn)
 
     assert response.status == "SUCCESS"
 
-    sent_cmd = cn.compute_provider.send_pty_input.call_args[0][2].decode()
+    sent_cmd = mock_pty.send.call_args[0][0].decode()
     assert "--model claude-sonnet-4-6" in sent_cmd
     assert "--dangerously-skip-permissions" in sent_cmd
 
@@ -177,7 +163,7 @@ async def test_elevate_builds_correct_command():
 async def test_elevate_with_resume():
     """resume_session_id produces --resume <id> in command."""
     _create_running_record("resume-test")
-    cn, session_state = _make_mock_compute_node("resume-test")
+    cn, mock_pty = _make_mock_compute_node("resume-test")
 
     mock_request_info = MagicMock()
     mock_request_info.get_post_data = AsyncMock(
@@ -188,13 +174,11 @@ async def test_elevate_with_resume():
     )
 
     with patch("flow_sdk.builtin.faas.compute_node.get_current_request_info", return_value=mock_request_info):
-        with patch("flow_sdk.builtin.faas.compute_node.session_manager") as mock_sm:
-            mock_sm.get_session = AsyncMock(return_value=session_state)
-            from flow_sdk.builtin.faas.compute_node import ComputeNode
+        from flow_sdk.builtin.faas.compute_node import ComputeNode
 
-            response = await ComputeNode._elevate_shell_session(cn)
+        response = await ComputeNode._elevate_shell_session(cn)
 
     assert response.status == "SUCCESS"
 
-    sent_cmd = cn.compute_provider.send_pty_input.call_args[0][2].decode()
+    sent_cmd = mock_pty.send.call_args[0][0].decode()
     assert "--resume prev-claude-session-123" in sent_cmd

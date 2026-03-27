@@ -93,7 +93,3 @@ def test_pty_stream_path_raises_without_pty_pid():
         _ = record.pty_stream_path
 
 
-def test_shell_runner_alias():
-    from flow_sdk.domain import Shell, ShellRunner
-
-    assert Shell is ShellRunner

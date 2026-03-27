@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from flow_sdk.builtin.faas.pty_session_manager import PtySessionManager, PtySessionState
+from flow_sdk.compute.providers.local.pty_session_manager import PtySessionManager, PtySessionState
 from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
 from flow_sdk.fs_store.record import get_default_records_root, set_default_records_root
 
@@ -83,7 +83,7 @@ async def test_close_session_transitions_record(session_manager, use_tmp_records
     session_manager.sessions[pty_key] = session_state
 
     # Mock the compute node lookup to avoid DB access
-    with patch("flow_sdk.builtin.faas.pty_session_manager.ComputeNode", create=True):
+    with patch("flow_sdk.compute.providers.local.pty_session_manager.ComputeNode", create=True):
         with patch(
             "flow_sdk.builtin.faas.compute_node.ComputeNode.get_by_id", new_callable=AsyncMock, return_value=None
         ):
@@ -189,15 +189,19 @@ def test_shell_session_status_default_idle():
 
 
 @pytest.mark.asyncio
-async def test_shell_session_open_rejects_running_status():
-    """open() on a running session with invalid compute node returns FAIL."""
+async def test_shell_session_open_recovers_dead_running_session():
+    """open() on a running shell with no live PTY spawns a new PTY (recovery path)."""
     from flow_sdk.builtin.shell import Shell
 
     entity = Shell()
     entity.status = "running"
     entity.compute_node_id = "00000000-0000-0000-0000-000000000099"
 
+    # No existing PTY → compute_node.get_pty() returns None → create_pty() spawns a new one.
     result = await entity.open()
-    assert result.status == "FAIL"
-    # Running sessions are allowed (cleanup + reopen), but compute node won't be found
-    assert "not found" in result.message
+    assert result.status == "SUCCESS"
+    assert entity.connected is True
+    # Cleanup
+    pty = entity.compute_node.get_pty(entity.id)
+    if pty:
+        await pty.kill()

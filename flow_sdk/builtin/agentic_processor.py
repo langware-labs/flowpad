@@ -31,10 +31,10 @@ import shlex
 import shutil
 import sys
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 from uuid import uuid4
 
-from pydantic import BaseModel, SerializationInfo, model_serializer
+from pydantic import BaseModel, PrivateAttr, SerializationInfo, model_serializer
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.app.actions.listen import set_plan_auto_approve
@@ -44,6 +44,9 @@ from flow_sdk.fs_records.agentic_process_record import ProcessorStatus
 from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+
+if TYPE_CHECKING:
+    from flow_sdk.builtin.faas.compute_node import ComputeNode
 
 logger = logging.getLogger(__name__)
 
@@ -867,46 +870,29 @@ class AgenticProcess(Entity):
 
         return _on_pty_exit
 
-    async def _resolve_compute_node(self):
-        """Resolve the ComputeNode for this process.
+    @property
+    def compute_node(self) -> "ComputeNode":
+        """The local ComputeNode backing this process's PTY sessions.
 
-        Uses compute_node_id if set, otherwise falls back to @local node.
+        compute_node_id is stored as the full typeid string ``compute_node-<uuid>``.
         """
         from flow_sdk.builtin.faas.compute_node import ComputeNode
-
         if self.compute_node_id:
-            # compute_node_id is stored as "compute_node-<id>"
             parts = self.compute_node_id.split("-", 1)
-            if len(parts) == 2:
-                node = await ComputeNode.get_by_id(parts[1])
-                if node:
-                    return node
-
-        # Desktop fallback: always @local
-        return await ComputeNode.get_by_uname("local")
+            node_id = parts[1] if len(parts) == 2 else self.compute_node_id
+        else:
+            node_id = ""
+        return ComputeNode(id=node_id, node_provider_id="local", node_provider_type="local_machine")
 
     async def _send_pty_raw(self, compute_node, data: bytes) -> None:
         """Send raw bytes into an already-running PTY session."""
-        from flow_sdk.builtin.faas.pty_session_manager import session_manager
-
         shell_id = self.shell_id
         if not shell_id:
             raise RuntimeError("PTY session has no shell_id")
-        if not compute_node.node_provider_id:
-            raise RuntimeError("Compute node provider ID not set")
-
-        pty_key = (compute_node.id, compute_node.node_provider_id, shell_id)
-        session_state = await session_manager.get_session(pty_key)
-        cols = session_state.cols if session_state else 80
-        rows = session_state.rows if session_state else 24
-
-        await compute_node.compute_provider.send_pty_input(
-            compute_node.node_provider_id,
-            shell_id,
-            data,
-            cols,
-            rows,
-        )
+        pty = compute_node.get_pty(shell_id)
+        if pty is None:
+            raise RuntimeError(f"PTY session not found for shell_id {shell_id}")
+        await pty.send(data)
 
     async def _send_command_to_pty(self, compute_node, command: str) -> None:
         """Send a command into an already-running PTY session."""
@@ -936,9 +922,7 @@ class AgenticProcess(Entity):
         # Captured before _open_shell so it reflects the pre-call state.
         had_previous_session = bool(self.shell_id)
 
-        compute_node = await self._resolve_compute_node()
-        if not compute_node:
-            return ApiFailResponse(message="No compute node available")
+        compute_node = self.compute_node
 
         try:
             self.worker_session_id = worker_session_id or self.worker_session_id or str(uuid4())
@@ -1108,6 +1092,47 @@ class AgenticProcess(Entity):
             logger.exception(f"AgenticProcess {self.id} stop error: {e}")
             return ApiFailResponse(message=str(e))
 
+    async def get_shell(self) -> "Shell | None":
+        """Resolve shell_id to the linked Shell entity.
+
+        Returns None if no shell is currently linked (process not open).
+        Mirrors TS AgenticProcess.getShell().
+        """
+        if not self.shell_id:
+            return None
+        from flow_sdk.builtin.shell import Shell
+
+        return await Shell.get_by_id(self.shell_id)
+
+    async def send_input(self, text: str) -> None:
+        """Write raw text to the live PTY stdin.
+
+        Requires open() to have been called first.
+        Mirrors TS AgenticProcess.sendInput().
+        """
+        shell = await self.get_shell()
+        if not shell:
+            raise ValueError("No shell linked — call open() first")
+        await shell.send_input(text)
+
+    async def sync_status(self) -> None:
+        """Correct state.status from actual PTY liveness. Persists if changed.
+
+        Eliminates ghost-running: if state says running but the linked shell's
+        PTY is dead, status is corrected to idle and saved. Call this on WS
+        reconnect (server restart recovery) or after shell.pty.destruct() in tests.
+
+        Replaces the need for a derived resolved_status property — state.status
+        is always the authoritative value after this call.
+        """
+        current = self._get_process_state().get("status")
+        if current != ProcessorStatus.RUNNING.value:
+            return
+        shell = await self.get_shell()
+        if shell is None or not shell.connected:
+            self._set_process_state(status=ProcessorStatus.IDLE.value)
+            await self.save()
+
     @action.post(action_name="execute-plan")
     async def execute_plan(
         self,
@@ -1174,10 +1199,7 @@ class AgenticProcess(Entity):
             logger.warning("AgenticProcess %s: no active shell, cannot inject message", self.id)
             return
 
-        compute_node = await self._resolve_compute_node()
-        if not compute_node:
-            logger.warning("AgenticProcess %s: no compute node, cannot inject message", self.id)
-            return
+        compute_node = self.compute_node
 
         # Dismiss any active numeric prompt before injecting.
         # Terminal input parsers (Node.js libuv, readline, etc.) treat a lone

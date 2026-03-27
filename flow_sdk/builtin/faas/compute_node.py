@@ -17,8 +17,6 @@ from starlette.responses import RedirectResponse, StreamingResponse
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.messages import PtyOutputMessage, PtySessionStatusMessage, ResponseMessage
 from flow_sdk.api.type_id import TypeId
-from flow_sdk.builtin.faas.pty_replay_buffer import replay_buffer
-from flow_sdk.builtin.faas.pty_session_manager import session_manager
 from flow_sdk.compute.providers import ComputeProvider, get_compute_provider
 from flow_sdk.compute.providers.compute_provider import ListDirItem
 from flow_sdk.config import AGENT_MOUNT_FOLDER, ComputeProviderType, StorageProvider
@@ -1015,6 +1013,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         """
         import uuid
 
+        from flow_sdk.compute.providers.local.pty_replay_buffer import replay_buffer
+        from flow_sdk.compute.providers.local.pty_session_manager import session_manager
+
         if not self.node_provider_id:
             logging.error("[PTY] No node_provider_id set for machine PTY session")
             return False
@@ -1118,7 +1119,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         # Create or update ShellRecord and wire PtyStreamFile
         try:
-            from flow_sdk.builtin.faas.pty_stream_file import PtyStreamFile
+            from flow_sdk.compute.providers.local.pty_stream_file import PtyStreamFile
             from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
 
             existing_record = ShellRecord.discover_one(shell_id)
@@ -1170,6 +1171,40 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         logging.info(f"[PTY] Machine PTY session fully initialized: {shell_id}")
 
         return True
+
+    def get_pty(self, shell_id: str) -> "PtySession | None":
+        """Return a PtySession handle if an active session exists for shell_id."""
+        return self.compute_provider.get_pty_session(self.id, shell_id)
+
+    async def create_pty(
+        self,
+        shell_id: str,
+        rows: int = 24,
+        cols: int = 80,
+        connection_id: str | None = None,
+        name: str | None = None,
+        working_dir: str | None = None,
+        on_exit=None,
+    ) -> "PtySession":
+        """Create a new PTY session and return its handle.
+
+        Raises RuntimeError if creation fails.
+        """
+        success = await self.start_machine_pty_session(
+            shell_id=shell_id,
+            connection_id=connection_id,
+            rows=rows,
+            cols=cols,
+            name=name,
+            working_dir=working_dir,
+            on_exit=on_exit,
+        )
+        if not success:
+            raise RuntimeError(f"Failed to create PTY session for shell {shell_id}")
+        pty = self.get_pty(shell_id)
+        if pty is None:
+            raise RuntimeError(f"PTY session not found after creation for shell {shell_id}")
+        return pty
 
     @action.get(action_name="list-shell-sessions")
     async def _list_shell_sessions(self) -> ApiResponse:
@@ -1302,24 +1337,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         Shell entities in the DB retain their status; _open_shell will detect
         the dead PTY via is_pty_alive() and reset them on the next resume().
         """
-        node_keys = [k for k in session_manager.sessions if k[0] == self.id]
-        for key in node_keys:
-            replay_buffer.clear(key)
-            del session_manager.sessions[key]
-
-        if self.node_provider_id:
-            provider_keys = [k for k in self.compute_provider._pty_sessions if k[0] == self.node_provider_id]
-            for key in provider_keys:
-                del self.compute_provider._pty_sessions[key]
-
+        cleared = self.compute_provider.reset_all_sessions(self.id, self.node_provider_id)
         self.active_pty_sessions.clear()
-
-        logging.info(
-            "[reset_pty] Cleared %d session(s) for compute node %s",
-            len(node_keys),
-            self.id,
-        )
-        return ApiSuccessResponse(data={"cleared": len(node_keys)})
+        logging.info("[reset_pty] Cleared %d session(s) for compute node %s", cleared, self.id)
+        return ApiSuccessResponse(data={"cleared": cleared})
 
     @action.post(action_name="update-shell-session")
     async def _update_shell_session(self) -> ApiResponse:
@@ -1364,81 +1385,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         return ApiSuccessResponse(data=record.meta_dict())
 
-    @action.post(action_name="elevate-shell-session")
-    async def _elevate_shell_session(self) -> ApiResponse:
-        """Elevate a running shell session to a Claude CLI session.
-
-        This is the shell-session-based elevation path. It differs from the
-        existing `elevate-pty` action which promotes a PTY into an AgenticProcess.
-        This action instead:
-        1. Generates a claude_session_id
-        2. Updates the ShellRecord to ELEVATED status
-        3. Sends a `claude` CLI command to the PTY's stdin
-
-        POST body:
-            shell_id: str - The shell session to elevate
-            model: str | None - Claude model to use
-            permission_mode: str - "bypassPermissions" (default) or other
-            resume_session_id: str | None - Session to resume instead of starting new
-        """
-        from uuid import uuid4
-
-        from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
-
-        request_info = get_current_request_info()
-        if not request_info or not request_info.request:
-            return ApiFailResponse(message="No request info available")
-
-        body = await request_info.get_post_data()
-        shell_id = body.get("shell_id")
-        if not shell_id:
-            return ApiFailResponse(message="shell_id is required")
-
-        record = ShellRecord.discover_one(shell_id)
-        if not record:
-            return ApiFailResponse(message="Shell session not found")
-
-        if record.status != ShellStatus.RUNNING:
-            return ApiFailResponse(message=f"Shell session is not running (status: {record.status})")
-
-        # Generate claude session ID and elevate the record
-        claude_session_id = str(uuid4())
-        record.elevate(claude_session_id)
-
-        # Build claude CLI command
-        model = body.get("model")
-        permission_mode = body.get("permission_mode", "bypassPermissions")
-        resume_session_id = body.get("resume_session_id")
-
-        parts = ["claude", f"--session-id {claude_session_id}"]
-        if model:
-            parts.append(f"--model {model}")
-        if permission_mode == "bypassPermissions":
-            parts.append("--dangerously-skip-permissions")
-        if resume_session_id:
-            parts.append(f"--resume {resume_session_id}")
-        command = " ".join(parts) + "\n"
-
-        # Send command to PTY
-        try:
-            pty_key = (self.id, self.node_provider_id, shell_id)
-            pty_session = await session_manager.get_session(pty_key)
-            cols = pty_session.cols if pty_session else 80
-            rows = pty_session.rows if pty_session else 24
-
-            await self.compute_provider.send_pty_input(self.node_provider_id, shell_id, command.encode(), cols, rows)
-        except Exception as e:
-            logging.warning(f"[PTY] Error sending claude command to PTY: {e}")
-            return ApiFailResponse(message=f"Failed to send command to PTY: {e}")
-
-        return ApiSuccessResponse(
-            data={
-                "shell_id": shell_id,
-                "claude_session_id": claude_session_id,
-                "status": "elevated",
-            }
-        )
-
     async def _attach_pty_session(self, body: dict) -> ApiResponse:
         """Reattach to existing PTY session with output replay."""
         logging.info(f"[PTY] _attach_pty_session called with body: {body}")
@@ -1450,13 +1396,13 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         shell_id = body.get("shell_id")
         since_seq = body.get("since_seq")
 
-        if not self.node_provider_id or not shell_id:
+        if not shell_id:
             logging.error("[PTY] Missing required parameters")
             response_msg = ResponseMessage(
                 session_id=shell_id,
                 message_id=request_message_id,
                 response_message_id=request_message_id,
-                error="Missing required parameters (node_provider_id or shell_id)",
+                error="Missing required parameters (shell_id)",
             )
             return ApiFailResponse(message="Missing required parameters", data=response_msg.model_dump())
 
@@ -1474,13 +1420,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         request_connection_id = request_info.request_connection_id
         logging.info(f"[PTY] Attaching with connection_id: {request_connection_id}")
 
-        pty_key = (self.id, self.node_provider_id, shell_id)
-
-        # Get or check session from manager (authorization via existing middleware)
-        session = await session_manager.get_session(pty_key)
-        if not session:
+        pty_handle = self.get_pty(shell_id)
+        if not pty_handle:
             # Session not found or expired (expected after server restart)
-            logging.debug(f"[PTY] Session {pty_key} not found")
+            logging.debug(f"[PTY] Session {shell_id} not found")
             status_msg = PtySessionStatusMessage(
                 shell_id=shell_id,
                 status="not_found",
@@ -1500,18 +1443,14 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         # seq), which would cause the client's dedup to reject the replay.
         replay_chunks = []
         if since_seq is not None:
-            logging.info(f"[PTY] Snapshotting replay buffer from seq {since_seq}, pty_key={pty_key}")
-            buffer_stats = replay_buffer.get_buffer_stats()
-            logging.info(f"[PTY] Global buffer stats: {buffer_stats}")
-            latest_seq = replay_buffer.get_latest_seq(pty_key)
-            logging.info(f"[PTY] Latest seq for key {pty_key}: {latest_seq}")
-            replay_chunks = replay_buffer.get_replay(pty_key, since_seq)
-            logging.info(f"[PTY] Snapshotted {len(replay_chunks)} chunks for key {pty_key}")
+            logging.info(f"[PTY] Snapshotting replay buffer from seq {since_seq}, shell_id={shell_id}")
+            replay_chunks = pty_handle.get_replay(since_seq)
+            logging.info(f"[PTY] Snapshotted {len(replay_chunks)} chunks for shell_id={shell_id}")
 
         # Attach to session (updates connection_id — live output starts flowing)
         try:
-            await session_manager.attach_session(pty_key, request_connection_id)
-            logging.info(f"[PTY] Attached to session {pty_key} with connection_id {request_connection_id}")
+            await pty_handle.attach(request_connection_id)
+            logging.info(f"[PTY] Attached to session {shell_id} with connection_id {request_connection_id}")
 
         except Exception as e:
             logging.error(f"[PTY] Failed to attach to session: {e}", exc_info=True)
@@ -1552,14 +1491,14 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                         logging.warn(f"[PTY] Failed to send replay chunk {i + 1}: {e}")
 
         # Send status message
-        latest_seq = replay_buffer.get_latest_seq(pty_key)
+        latest_seq = pty_handle.latest_seq
         status_msg = PtySessionStatusMessage(
             shell_id=shell_id,
             status="reattached",
             latest_seq=latest_seq,
         )
 
-        logging.info(f"[PTY] Session {pty_key} reattached successfully")
+        logging.info(f"[PTY] Session {shell_id} reattached successfully")
         response_msg = ResponseMessage(
             session_id=shell_id,
             message_id=request_message_id,
@@ -1626,15 +1565,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         except (TypeError, ValueError):
             cols = 80
 
-        if not self.node_provider_id:
-            response_msg = ResponseMessage(
-                session_id=shell_id,
-                message_id=request_message_id,
-                response_message_id=request_message_id,
-                error="Compute node provider ID not set",
-            )
-            return ApiFailResponse(message="Compute node provider ID not set", data=response_msg.model_dump())
-
         if not shell_id:
             response_msg = ResponseMessage(
                 session_id=shell_id,
@@ -1644,10 +1574,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             )
             return ApiFailResponse(message="shell_id required", data=response_msg.model_dump())
 
-        pty_key = (self.id, self.node_provider_id, shell_id)
-
-        session = await session_manager.get_session(pty_key)
-        if not session:
+        pty = self.get_pty(shell_id)
+        if not pty:
             response_msg = ResponseMessage(
                 session_id=shell_id,
                 message_id=request_message_id,
@@ -1659,7 +1587,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         try:
             # Convert string to bytes
             data_bytes = data.encode("utf-8")
-            await self.compute_provider.send_pty_input(self.node_provider_id, shell_id, data_bytes, cols, rows)
+            await pty.send(data_bytes)
             response_msg = ResponseMessage(
                 session_id=shell_id,
                 message_id=request_message_id,
@@ -1686,7 +1614,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         shell_id = body.get("shell_id")
         try:
-            cols = int(body.get("cols", 24))
+            cols = int(body.get("cols", 80))
         except (TypeError, ValueError):
             cols = 80
         try:
@@ -1712,10 +1640,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             )
             return ApiFailResponse(message="shell_id, cols, and rows required", data=response_msg.model_dump())
 
-        pty_key = (self.id, self.node_provider_id, shell_id)
-
-        session = await session_manager.get_session(pty_key)
-        if not session:
+        pty = self.get_pty(shell_id)
+        if not pty:
             response_msg = ResponseMessage(
                 session_id=shell_id,
                 message_id=request_message_id,
@@ -1724,21 +1650,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             )
             return ApiFailResponse(message=f"PTY session not found: {shell_id}", data=response_msg.model_dump())
 
-        # Skip resize if dimensions haven't changed — avoids unnecessary SIGWINCH
-        # which causes zsh to redraw and produce duplicate content / '%' artifacts on reattach
-        if session.cols == cols and session.rows == rows:
-            response_msg = ResponseMessage(
-                session_id=shell_id,
-                message_id=request_message_id,
-                response_message_id=request_message_id,
-                content="[PTY] Size unchanged, skipped",
-            )
-            return ApiSuccessResponse(data=response_msg.model_dump())
-
         try:
-            await self.compute_provider.resize_pty(self.node_provider_id, shell_id, cols, rows)
-            session.cols = cols
-            session.rows = rows
+            await pty.resize(cols, rows)
             response_msg = ResponseMessage(
                 session_id=shell_id,
                 message_id=request_message_id,
@@ -1769,8 +1682,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         if not shell_id:
             return ApiFailResponse(message="shell_id required")
-
-        pty_key = (self.id, self.node_provider_id, shell_id)
 
         # Close via Shell entity first, fallback to direct record manipulation
         try:
@@ -1806,8 +1717,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         except Exception as e:
             logging.warning(f"[PTY] Failed to update Shell entity on close: {e}")
 
-        session = await session_manager.get_session(pty_key)
-        if not session:
+        pty = self.get_pty(shell_id)
+        if not pty:
             # Idempotent — record already marked closed above
             if request_message_id:
                 return ApiSuccessResponse(
@@ -1825,14 +1736,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             # connections remain.  This prevents one browser tab's close from
             # killing the PTY for all other tabs.
             connection_id = request_info.request_connection_id if request_info else None
-            await session_manager.close_for_connection(pty_key, connection_id)
+            await pty.close_for_connection(connection_id)
 
-            # Only clear replay buffer if session was fully destroyed
-            remaining = await session_manager.get_session(pty_key)
-            if not remaining:
-                replay_buffer.clear(pty_key)
-
-            logging.info(f"[PTY] Session close requested: {pty_key}, destroyed={remaining is None}")
+            logging.info(f"[PTY] Session close requested: {shell_id}, connection={connection_id}")
             if request_message_id:
                 return ApiSuccessResponse(
                     data=ResponseMessage(
@@ -1868,17 +1774,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             return ApiFailResponse(message="Compute node provider ID not set")
 
         # Find all sessions for this compute node
-        active_sessions = []
-        for (compute_node_id, node_provider_id, shell_id), session_state in session_manager.sessions.items():
-            if compute_node_id == self.id and node_provider_id == self.node_provider_id:
-                active_sessions.append(
-                    {
-                        "shell_id": shell_id,
-                        "connection_id": session_state.connection_id,
-                        "compute_node_id": compute_node_id,
-                        "name": session_state.name or shell_id,  # Use stored name or fallback to shell_id
-                    }
-                )
+        active_sessions = self.compute_provider.list_pty_sessions(self.id)
 
         # Enrich sessions with agentic_process_id when an AgenticProcess owns the PTY
         if active_sessions:
@@ -1916,12 +1812,11 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         if not self.node_provider_id or not shell_id or not name:
             return ApiFailResponse(message="Missing shell_id or name")
 
-        pty_key = (self.id, self.node_provider_id, shell_id)
-        session_state = await session_manager.get_session(pty_key)
-        if not session_state:
+        pty = self.get_pty(shell_id)
+        if not pty:
             return ApiFailResponse(message=f"Session not found: {shell_id}")
 
-        session_state.name = name
+        pty.set_name(name)
         response_msg = ResponseMessage(
             message_id=request_message_id,
             response_message_id=request_message_id,
@@ -2663,88 +2558,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             logging.exception(f"ComputeNode {self.id} upsertSessionProcess error: {e}")
             return ApiFailResponse(message=str(e))
 
-    @action.post(action_name="elevate-pty")
-    async def elevate_pty(self) -> ApiResponse:
-        """Elevate a pure PTY session into an AgenticProcess.
-
-        Called when a user starts claude manually in a terminal and hooks/MCP
-        detect FLOWPAD_PTY_SESSION_ID, or when the frontend wants to promote
-        a raw shell session into a tracked process.
-
-        POST body:
-            pty_pid: str - The PTY session ID to elevate
-            claude_session_id: str | None - Claude --session-id (if known)
-
-        Returns:
-            {agentic_process_id, pty_pid, worker_session_id}
-        """
-        from flow_sdk.builtin.agentic_processor import AgenticProcess, AgenticProcessor
-        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
-
-        request_info = get_current_request_info()
-        if not request_info or not request_info.request:
-            return ApiFailResponse(message="No request info available")
-
-        try:
-            body = await request_info.get_post_data()
-            if not isinstance(body, dict):
-                return ApiFailResponse(message="Invalid request body (expected JSON object)")
-
-            pty_pid = body.get("pty_pid")
-            if not pty_pid:
-                return ApiFailResponse(message="pty_pid is required")
-
-            claude_session_id = body.get("claude_session_id")
-
-            # Verify the PTY session exists
-            if pty_pid not in self.active_pty_sessions:
-                return ApiFailResponse(message=f"PTY session {pty_pid} not found on this compute node")
-
-            # Check if an AgenticProcess already has this pty_pid
-            existing = await AgenticProcess.get_all(entities_filter=QueryFilter(match=ExpressionNode(pty_pid=pty_pid)))
-            if existing:
-                proc = existing[0]
-                return ApiSuccessResponse(
-                    data={
-                        "agentic_process_id": proc.id,
-                        "pty_pid": proc.pty_pid,
-                        "worker_session_id": proc.worker_session_id,
-                        "created": False,
-                    }
-                )
-
-            # Create new processor + process linked to this PTY
-            processor = AgenticProcessor()
-            owner = request_info.someone_typeid if request_info else None
-            await processor.save(owner=owner)
-
-            process = AgenticProcess(
-                processor_id=processor.id,
-                pty_pid=pty_pid,
-                worker_session_id=claude_session_id,
-                compute_node_id=str(self.typeid),
-                context_data={"compute_node_id": f"{self.type}-{self.id}"},
-            )
-            from flow_sdk.builtin.agentic_processor import ProcessorStatus
-
-            process._set_process_state(status=ProcessorStatus.RUNNING.value)
-            await process.save(owner=owner)
-
-            logging.info(f"ComputeNode {self.id} elevated PTY {pty_pid} into AgenticProcess {process.id}")
-
-            return ApiSuccessResponse(
-                data={
-                    "agentic_process_id": process.id,
-                    "pty_pid": pty_pid,
-                    "worker_session_id": claude_session_id,
-                    "created": True,
-                }
-            )
-
-        except Exception as e:
-            logging.exception(f"ComputeNode {self.id} elevate-pty error: {e}")
-            return ApiFailResponse(message=str(e))
-
     # -- fs-records search helper ------------------------------------------------
 
     async def _handle_fs_records_search(self, request_info) -> ApiResponse:
@@ -3322,14 +3135,11 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         command = " ".join(cmd_parts) + "\n"
 
-        # Get PTY session state for cols/rows
-        pty_key = (self.id, self.node_provider_id, shell_id)
-        session_state = await session_manager.get_session(pty_key)
-        cols = session_state.cols if session_state else 80
-        rows = session_state.rows if session_state else 24
-
         # Send command to PTY
-        await self.compute_provider.send_pty_input(self.node_provider_id, shell_id, command.encode(), cols, rows)
+        pty = self.get_pty(shell_id)
+        if not pty:
+            return ApiFailResponse(message=f"PTY session not found: {shell_id}")
+        await pty.send(command.encode())
 
         return ApiSuccessResponse(
             data={

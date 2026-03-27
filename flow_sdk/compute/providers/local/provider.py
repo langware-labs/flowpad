@@ -14,14 +14,17 @@ import tempfile
 import threading
 import uuid
 from io import BytesIO
-from typing import Any, AsyncIterator, Callable, Literal
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Literal
+
+if TYPE_CHECKING:
+    from flow_sdk.builtin.faas.pty_session import PtySession
 
 import anyio
 import psutil
 
 from flow_sdk.config import PLATFORM_DARWIN, PLATFORM_WIN32
 
-from .compute_provider import (
+from ..compute_provider import (
     ComputeProvider,
     ListDirItem,
     get_remote_paths_and_data_for_files,
@@ -975,3 +978,41 @@ class LocalComputeProvider(ComputeProvider):
                     logger.warning(f"Error terminating PTY process: {str(e)}")
 
             del self._pty_sessions[pty_key]
+
+    def list_pty_sessions(self, cn_id: str) -> list[dict]:
+        """Return [{shell_id, connection_id, name}] for all active sessions on this node."""
+        from .pty_session_manager import session_manager
+        result = []
+        for (compute_node_id, _pn_id, shell_id), state in session_manager.sessions.items():
+            if compute_node_id == cn_id:
+                result.append({
+                    "shell_id": shell_id,
+                    "connection_id": state.connection_id,
+                    "compute_node_id": compute_node_id,
+                    "name": state.name or shell_id,
+                })
+        return result
+
+    def reset_all_sessions(self, cn_id: str, pn_id: str | None = None) -> int:
+        """Clear all in-memory PTY state for a node. Returns count of sessions cleared."""
+        from .pty_replay_buffer import replay_buffer
+        from .pty_session_manager import session_manager
+        node_keys = [k for k in session_manager.sessions if k[0] == cn_id]
+        for key in node_keys:
+            replay_buffer.clear(key)
+            del session_manager.sessions[key]
+        if pn_id:
+            provider_keys = [k for k in self._pty_sessions if k[0] == pn_id]
+            for key in provider_keys:
+                del self._pty_sessions[key]
+        return len(node_keys)
+
+    def get_pty_session(self, cn_id: str, shell_id: str) -> "PtySession | None":
+        """Return a LocalPtySession handle if an active session exists."""
+        from .local_pty_session import LocalPtySession
+        from .pty_replay_buffer import replay_buffer
+        from .pty_session_manager import session_manager
+        for key in session_manager.sessions:
+            if key[0] == cn_id and key[2] == shell_id:
+                return LocalPtySession(key[0], key[1], key[2], self, session_manager, replay_buffer)
+        return None

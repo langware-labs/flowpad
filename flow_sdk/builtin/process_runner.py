@@ -135,5 +135,5 @@ def run_process_domain(
         Tuple of (AgenticProcess, Popen).
     """
     record, proc = run_process(config, workdir, session_id)
-    from flow_sdk.domain.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agentic_process import AgenticProcess
     return AgenticProcess.fromRecord(record), proc
