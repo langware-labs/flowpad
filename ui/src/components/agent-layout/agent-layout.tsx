@@ -12,7 +12,7 @@ import {
 } from '@sdk';
 import { useAuth, useProcess } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Outlet, useParams } from 'react-router';
 import LoadingScreen from './loading-screen/loading-screen';
 import ServiceUnavailableScreen from './service-unavailable-screen/service-unavailable-screen';
@@ -58,15 +58,21 @@ const AgentLayout = () => {
   // Check for bootstrap errors (backend unavailable)
   const bootstrapStatus =
     (bootstrapError as any)?.response?.status || (bootstrapError as any)?.statusCode || (bootstrapError ? 'xxx' : null);
-  if (
+  const isServiceUnavailable =
     bootstrapStatus &&
-    (bootstrapStatus === 'xxx' || (typeof bootstrapStatus === 'number' && bootstrapStatus >= 500))
-  ) {
-    return <ServiceUnavailableScreen statusCode={bootstrapStatus} />;
-  }
+    (bootstrapStatus === 'xxx' || (typeof bootstrapStatus === 'number' && bootstrapStatus >= 500));
+
+  const [errorDismissed, setErrorDismissed] = useState(false);
 
   if (!someone || isBootstrapping) {
-    return <LoadingScreen />;
+    return (
+      <>
+        <LoadingScreen />
+        {isServiceUnavailable && !errorDismissed && (
+          <ServiceUnavailableScreen statusCode={bootstrapStatus} onClose={() => setErrorDismissed(true)} />
+        )}
+      </>
+    );
   }
 
   return (
@@ -77,6 +83,9 @@ const AgentLayout = () => {
           { agent: undefined, flow, computeNode: contextValues.computeNode, project: contextValues.project } satisfies AgentContext
         }
       />
+      {isServiceUnavailable && !errorDismissed && (
+        <ServiceUnavailableScreen statusCode={bootstrapStatus} onClose={() => setErrorDismissed(true)} />
+      )}
     </div>
   );
 };

@@ -287,6 +287,22 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
     await this._ensurePty(cols, rows, workdir);
 
+    // If the first attach returned not_found (server restarted, PTY was gone),
+    // _ensurePty created a fresh PTY — reattach now to fetch its replay buffer.
+    if (latestSeq === undefined) {
+      const newLatestSeq = await this._reattach(0);
+      if (newLatestSeq !== undefined && newLatestSeq > 0 && this._pty!.lastSeq < newLatestSeq) {
+        await new Promise<void>((resolve) => {
+          const deadline = Date.now() + 2000;
+          const check = () => {
+            if (this._pty!.lastSeq >= newLatestSeq || Date.now() >= deadline) resolve();
+            else setTimeout(check, 5);
+          };
+          setTimeout(check, 0);
+        });
+      }
+    }
+
     // ONLY NOW flip replayDone — React re-renders, TSX reads getPtyChunks()
     // for the replay write and subscribes onOutput() for live output.
     const _t0 = (typeof window !== 'undefined' ? window : globalThis) as Record<string, unknown>;
