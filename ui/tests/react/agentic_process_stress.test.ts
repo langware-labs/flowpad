@@ -39,12 +39,12 @@ function registerProcess(process: AgenticProcess): void {
 }
 
 /**
- * Wait until the shell has replayDone=true (i.e. connect() has completed).
+ * Wait until the shell has replayDone=true (i.e. startPty() has completed).
  */
 async function waitForShellReady(shell: Shell, timeoutMs = 15000): Promise<void> {
   await vi.waitFor(
     () => {
-      if (!shell.getSnapshot().replayDone) throw new Error('Shell not ready');
+      if (!shell.replayDone) throw new Error('Shell not ready');
     },
     { timeout: timeoutMs, interval: 200 },
   );

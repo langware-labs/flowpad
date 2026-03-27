@@ -1,18 +1,15 @@
-import { Shell, type ShellSnapshot } from '@sdk';
+import { Shell } from '@sdk';
 import { useCallback, useEffect, useSyncExternalStore, useState } from 'react';
 
-const defaultSnapshot: ShellSnapshot = { replayDone: false };
-
 /**
- * Resolves a Shell entity by ID and exposes its reactive store snapshot.
+ * Resolves a Shell entity by ID and exposes its reactive connected state.
  *
- * Returns { shell, connected, replayDone } where replayDone comes from
- * Shell's snapshot store and connected is read directly from shell.connected.
+ * `connected` is driven by Shell 'status' events ('connected' | 'disconnected')
+ * and kept in sync via useSyncExternalStore for tearing-free concurrent React.
  */
 export function useShell(shellId: string | null | undefined): {
   shell: Shell | null;
   connected: boolean;
-  replayDone: boolean;
 } {
   const [shell, setShell] = useState<Shell | null>(null);
 
@@ -32,16 +29,17 @@ export function useShell(shellId: string | null | undefined): {
     return () => { cancelled = true; };
   }, [shellId]);
 
+  // Subscribe to Shell 'status' events so useSyncExternalStore re-reads shell.connected
   const subscribe = useCallback(
-    (cb: () => void) => shell?.subscribe(cb) ?? (() => {}),
+    (cb: () => void) => shell?.on('status', () => cb()) ?? (() => {}),
     [shell],
   );
   const getSnapshot = useCallback(
-    () => shell?.getSnapshot() ?? defaultSnapshot,
+    () => shell?.connected ?? false,
     [shell],
   );
 
-  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const connected = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  return { shell, connected: shell?.connected ?? false, ...snapshot };
+  return { shell, connected };
 }

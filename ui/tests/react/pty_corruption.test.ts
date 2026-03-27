@@ -53,8 +53,8 @@ describe('PTY onOutput() gate — unit tests', () => {
     const shell = new Shell({ id: uuidv4(), compute_node_id: uuidv4() });
     (shell as any)._pty = new PtyConnection();
 
-    // Before connect() completes, replayDone is false
-    expect(shell.getSnapshot().replayDone).toBe(false);
+    // Before startPty() completes, replayDone is false
+    expect(shell.replayDone).toBe(false);
 
     const received: string[] = [];
     const unsub = shell.onOutput((d) => received.push(d));
@@ -77,9 +77,10 @@ describe('PTY onOutput() gate — unit tests', () => {
     const shell = new Shell({ id: uuidv4(), compute_node_id: uuidv4() });
     (shell as any)._pty = new PtyConnection();
 
-    // Simulate connect() completing
-    (shell as any)._bump({ connected: true, replayDone: true, status: 'live' });
-    expect(shell.getSnapshot().replayDone).toBe(true);
+    // Simulate startPty() completing
+    (shell as any)._replayDone = true;
+    (shell as any).emit('status', 'connected');
+    expect(shell.replayDone).toBe(true);
 
     const received: string[] = [];
     const unsub = shell.onOutput((d) => received.push(d));

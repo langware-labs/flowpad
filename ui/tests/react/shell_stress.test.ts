@@ -81,26 +81,27 @@ async function spawnShell(
 describe('Shell SDK lifecycle — unit tests', () => {
   // ── restart() state machine ────────────────────────────────────────────────
 
-  it('connect({ force }) resets replayDone to false and fires listeners', () => {
+  it('connect({ force }) resets replayDone to false and fires status event', () => {
     const shell = new Shell({ id: uuidv4(), compute_node_id: uuidv4() });
     (shell as any)._pty = new PtyConnection();
-    (shell as any)._bump({ connected: true, replayDone: true, status: 'live' });
+    (shell as any)._replayDone = true;
+    (shell as any).emit('status', 'connected');
 
-    const events: boolean[] = [];
-    shell.subscribe(() => events.push(shell.getSnapshot().replayDone));
+    const events: string[] = [];
+    shell.on('status', (s: string) => events.push(s));
 
-    // _restart() is the private method called by connect({ force: true })
+    // _restart() is the private method called by startPty({ force: true })
     (shell as any)._restart();
 
-    expect(shell.getSnapshot().replayDone).toBe(false);
-    expect(events).toContain(false);
+    expect(shell.replayDone).toBe(false);
+    expect(events).toContain('disconnected');
   });
 
   it('connect({ force }) resets seq to 0 (ensures full replay on next connect)', () => {
     const shell = new Shell({ id: uuidv4(), compute_node_id: uuidv4() });
     (shell as any)._pty = new PtyConnection();
     (shell as any)._pty.lastSeq = 42;
-    (shell as any)._bump({ replayDone: true });
+    (shell as any)._replayDone = true;
 
     (shell as any)._restart();
 
@@ -117,7 +118,8 @@ describe('Shell SDK lifecycle — unit tests', () => {
     expect(shell.onOutput(() => {})).toBeUndefined();
 
     // Gate opens after connect
-    (shell as any)._bump({ connected: true, replayDone: true, status: 'live' });
+    (shell as any)._replayDone = true;
+    (shell as any).emit('status', 'connected');
     const received: string[] = [];
     const unsub = shell.onOutput((d) => received.push(d));
     expect(unsub).not.toBeUndefined();
@@ -135,17 +137,19 @@ describe('Shell SDK lifecycle — unit tests', () => {
   it('onOutput gate works across a full restart cycle', () => {
     const shell = new Shell({ id: uuidv4(), compute_node_id: uuidv4() });
     (shell as any)._pty = new PtyConnection();
-    (shell as any)._bump({ connected: true, replayDone: true, status: 'live' });
+    (shell as any)._replayDone = true;
+    (shell as any).emit('status', 'connected');
 
     const unsub = shell.onOutput(() => {});
     expect(unsub).not.toBeUndefined();
 
-    // _restart() closes the gate (called internally by connect({ force: true }))
+    // _restart() closes the gate (called internally by startPty({ force: true }))
     (shell as any)._restart();
     expect(shell.onOutput(() => {})).toBeUndefined();
 
-    // Re-open gate (simulates next connect() completing)
-    (shell as any)._bump({ connected: true, replayDone: true, status: 'live' });
+    // Re-open gate (simulates next startPty() completing)
+    (shell as any)._replayDone = true;
+    (shell as any).emit('status', 'connected');
 
     const live: string[] = [];
     const unsub2 = shell.onOutput((d) => live.push(d));
@@ -160,21 +164,21 @@ describe('Shell SDK lifecycle — unit tests', () => {
 
   // ── Multiple subscribe() listeners ────────────────────────────────────────
 
-  it('multiple subscribe() listeners all notified on _bump, unsub stops one', () => {
+  it('multiple on() listeners all notified on emit, unsub stops one', () => {
     const shell = new Shell({ id: uuidv4(), compute_node_id: uuidv4() });
     const counts = [0, 0, 0];
     const unsubs = [
-      shell.subscribe(() => counts[0]++),
-      shell.subscribe(() => counts[1]++),
-      shell.subscribe(() => counts[2]++),
+      shell.on('status', () => counts[0]++),
+      shell.on('status', () => counts[1]++),
+      shell.on('status', () => counts[2]++),
     ];
 
-    (shell as any)._bump({ status: 'live' });
+    (shell as any).emit('status', 'connected');
     expect(counts).toEqual([1, 1, 1]);
 
     unsubs[1]();  // remove middle listener
 
-    (shell as any)._bump({ replayDone: true });
+    (shell as any).emit('status', 'connected');
     expect(counts).toEqual([2, 1, 2]);  // index 1 stopped
 
     unsubs[0]();
@@ -261,7 +265,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
 
     // All should have replayDone=true and at least 1 replay chunk
     for (const shell of shells) {
-      expect(shell.getSnapshot().replayDone).toBe(true);
+      expect(shell.replayDone).toBe(true);
       expect(shell.getPtyChunks().length).toBeGreaterThan(0);
     }
 
@@ -280,7 +284,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
 
       await shell.startPty({ cols: 80, rows: 24 });
 
-      expect(shell.getSnapshot().replayDone).toBe(true);
+      expect(shell.replayDone).toBe(true);
       expect(shell.getPtyChunks().length).toBeGreaterThan(0);
 
       // No live-output bleed: gate is open, subscribe, then close
@@ -303,12 +307,12 @@ describe('Shell / PTY lifecycle stress — integration', () => {
 
     // Initial connect
     await shell.startPty({ cols: 80, rows: 24 });
-    expect(shell.getSnapshot().replayDone).toBe(true);
+    expect(shell.replayDone).toBe(true);
     expect(shell.getPtyChunks().length).toBeGreaterThan(0);
 
     // Restart — replayDone goes false, seq resets
     (shell as any)._restart();
-    expect(shell.getSnapshot().replayDone).toBe(false);
+    expect(shell.replayDone).toBe(false);
     expect((shell as any)._pty!.lastSeq).toBe(0);
 
     // More output so there's something new to replay
@@ -319,7 +323,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     if ((shell as any)._pty) (shell as any)._pty.started = false;
     await shell.startPty({ cols: 80, rows: 24 });
 
-    expect(shell.getSnapshot().replayDone).toBe(true);
+    expect(shell.replayDone).toBe(true);
     expect(shell.getPtyChunks().length).toBeGreaterThan(0);
 
     await closePtyRaw(computeNode.id, shell.id);
@@ -367,7 +371,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
 
     const shell = await spawnShell(computeNode, manager.id, 500);
     await shell.startPty({ cols: 80, rows: 24 });
-    expect(shell.getSnapshot().replayDone).toBe(true);
+    expect(shell.replayDone).toBe(true);
 
     // Fire several resizes rapidly while bash is live
     await Promise.all([
@@ -425,7 +429,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     registerShell(shell);
 
     await shell.startPty({ cols: 80, rows: 24 });
-    expect(shell.getSnapshot().replayDone).toBe(true);
+    expect(shell.replayDone).toBe(true);
 
     const seqs = shell.getPtyChunks().map((c) => c.seq);
     expect(seqs.length).toBeGreaterThan(0);
