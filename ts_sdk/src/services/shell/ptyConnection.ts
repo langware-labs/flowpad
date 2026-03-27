@@ -1,5 +1,6 @@
 import type { OrphanEntry } from './ptyOrphanBuffer';
 import type { OutputChunk } from '../../pty-sync/types.js';
+import { dataContext } from '../../FlowSync/context';
 
 export type PtyOutputListener = (data: string, seq?: number) => void;
 export type PtyConnectionStatus = 'idle' | 'connecting' | 'live' | 'restarting' | 'closed';
@@ -55,7 +56,7 @@ export class PtyConnection {
     }
   }
 
-  get isLive(): boolean { return this.started && !this.restarting; }
+  get isLive(): boolean { return this.started && !this.restarting && dataContext.isConnected; }
 
   get status(): PtyConnectionStatus {
     if (!this.started) return this.restarting ? 'restarting' : 'idle';
