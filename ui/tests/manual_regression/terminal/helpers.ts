@@ -17,10 +17,17 @@ export async function dismissSetupModal(page: Page) {
 export async function gotoShell(page: Page) {
   await page.goto('/dock/shell/new_terminal');
 
-  // Handle setup modal if it appears
+  // Handle setup modal (DesktopSetupModal) if it appears
   const skipButton = page.getByRole('button', { name: 'Skip' });
   if (await skipButton.isVisible({ timeout: 2_000 }).catch(() => false)) {
     await skipButton.click();
+  }
+
+  // Handle WelcomeModal ("Set up Flowpad" / "Welcome to Flowpad!") which appears
+  // after a DB reset when scanInfo.never_indexed=true.
+  const skipForNow = page.getByRole('button', { name: 'Skip for now' });
+  if (await skipForNow.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await skipForNow.click();
   }
 
   // Wait for URL to settle (new_terminal redirects to /dock/shell/<sessionId>).

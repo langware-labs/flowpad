@@ -16,9 +16,9 @@
  *   - Tab strip: first .border-b inside the side window
  *   - Prompts tab × close button: button[aria-label="Close Prompts"]
  *   - PromptIndexPanel inner header has NO close button — closing is via tab strip ×
- *   - Ribbon .ml-auto button order: 0=Shell, 1=Worktree, 2=Git, 3=Prompts, 4=Queue, 5=Files
+ *   - Ribbon .ml-auto button order: 0=Shell, 1=Git, 2=Prompts, 3=Queue, 4=Files
  *   - Buttons have NO title attribute — they use tooltips on hover
- *   - Prompt count badge is a lime pill on the Prompts button (index 3)
+ *   - Prompt count badge is a lime pill on the Prompts button (index 2)
  *
  * Tests 1–4 and 10 are fully automatable (no live Claude needed).
  * Tests 5–9, 11–12 require live Claude data or visual inspection.
@@ -98,15 +98,15 @@ test.describe('Prompt Index Panel', () => {
     const mlAuto = activePanel.locator('.border-t .ml-auto');
     await expect(mlAuto).toBeVisible({ timeout: 15_000 });
 
-    // Prompts button is at index 3 in .ml-auto:
-    // Shell(0), Worktree(1), Git(2), Prompts(3), Queue(4), Files(5)
-    await expect(mlAuto.locator('button').nth(3)).toBeVisible({ timeout: 15_000 });
+    // Prompts button is at index 2 in .ml-auto:
+    // Shell(0), Git(1), Prompts(2), Queue(3), Files(4)
+    await expect(mlAuto.locator('button').nth(2)).toBeVisible({ timeout: 15_000 });
 
-    // Validate all 6 buttons are present
-    await expect(mlAuto.locator('button')).toHaveCount(6, { timeout: 5_000 });
+    // Validate all 5 buttons are present
+    await expect(mlAuto.locator('button')).toHaveCount(5, { timeout: 5_000 });
 
-    // Files button should also be visible (index 5)
-    await expect(mlAuto.locator('button').nth(5)).toBeVisible({ timeout: 5_000 });
+    // Files button should also be visible (index 4)
+    await expect(mlAuto.locator('button').nth(4)).toBeVisible({ timeout: 5_000 });
   });
 
   // ---------------------------------------------------------------------------
@@ -117,9 +117,9 @@ test.describe('Prompt Index Panel', () => {
 
     await gotoAgenticProcess(page);
 
-    // Click the Prompts button (index 3 in .ml-auto)
+    // Click the Prompts button (index 2 in .ml-auto)
     const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-    await activePanel.locator('.border-t .ml-auto button').nth(3).click();
+    await activePanel.locator('.border-t .ml-auto button').nth(2).click();
 
     // Side window should appear
     const sideWindow = getSideWindow(page);
@@ -154,7 +154,7 @@ test.describe('Prompt Index Panel', () => {
 
     // Open the panel
     const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-    await activePanel.locator('.border-t .ml-auto button').nth(3).click();
+    await activePanel.locator('.border-t .ml-auto button').nth(2).click();
 
     const sideWindow = getSideWindow(page);
     await expect(sideWindow).toBeVisible({ timeout: 5_000 });
@@ -175,7 +175,7 @@ test.describe('Prompt Index Panel', () => {
     await gotoAgenticProcess(page);
 
     const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-    const promptsBtn = activePanel.locator('.border-t .ml-auto button').nth(3);
+    const promptsBtn = activePanel.locator('.border-t .ml-auto button').nth(2);
 
     // First click — opens
     await promptsBtn.click();
@@ -232,16 +232,16 @@ test.describe('Prompt Index Panel', () => {
     const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
     const mlAuto = activePanel.locator('.border-t .ml-auto');
 
-    // Open Files (index 5)
-    await mlAuto.locator('button').nth(5).click();
+    // Open Files (index 4)
+    await mlAuto.locator('button').nth(4).click();
     const sideWindow = getSideWindow(page);
     await expect(sideWindow).toBeVisible({ timeout: 5_000 });
     // Use tab strip + exact match to avoid strict-mode violation (other elements contain 'Files')
     const tabStrip = sideWindow.locator('.border-b').first();
     await expect(tabStrip.getByText('Files', { exact: true })).toBeVisible({ timeout: 3_000 });
 
-    // Open Prompts (index 3) — should add to the same side window
-    await mlAuto.locator('button').nth(3).click();
+    // Open Prompts (index 2) — should add to the same side window
+    await mlAuto.locator('button').nth(2).click();
     await expect(tabStrip.getByText('Prompts', { exact: true })).toBeVisible({ timeout: 3_000 });
 
     // Both tabs should be in the same tab strip

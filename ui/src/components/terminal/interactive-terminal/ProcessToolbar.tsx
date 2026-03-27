@@ -259,14 +259,10 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
             <DropdownMenuCheckboxItem checked={traceFilters.refTime} onSelect={(e) => e.preventDefault()} onCheckedChange={setTrace('refTime')}>
               Anchor time range
             </DropdownMenuCheckboxItem>
-            {devMode && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => setShowPtyViewer(true)}>
-                  <span className="text-amber-400 text-xs font-medium">PTY Viewer</span>
-                </DropdownMenuItem>
-              </>
-            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => setShowPtyViewer(true)}>
+              <span className="text-amber-400 text-xs font-medium">PTY Viewer</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 

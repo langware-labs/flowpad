@@ -20,12 +20,6 @@ export const ShellStatus = {
 
 export type ShellStatus = (typeof ShellStatus)[keyof typeof ShellStatus];
 
-export interface ShellSnapshot {
-  connected: boolean;
-  replayDone: boolean;  // true once connect() has finished its replay phase
-  status: string;
-}
-
 export interface ShellResult {
   stdout: string;
   stderr: string;
@@ -99,9 +93,8 @@ export class Shell extends APIEntity<Shell> implements IShell {
   /** Guard: WS reconnect listeners registered at most once per shell instance. */
   private _reconnectListenersRegistered = false;
 
-  // ── Observable store (useSyncExternalStore-compatible) ────────────────────
-  private _listeners = new Set<() => void>();
-  private _snapshot: ShellSnapshot = { connected: false, replayDone: false, status: 'idle' };
+  /** True once startPty() has finished its replay phase and the output gate is open. */
+  private _replayDone = false;
 
   get dockPointer(): DockPointerData {
     return new DockPointerData(ViewType.SHELL, this.typeId?.toString());
@@ -118,9 +111,9 @@ export class Shell extends APIEntity<Shell> implements IShell {
     return this._pty?.isLive ?? false;
   }
 
-  /** True once connect() has finished its replay phase and the output gate is open. */
+  /** True once startPty() has finished its replay phase and the output gate is open. */
   get replayDone(): boolean {
-    return this._snapshot.replayDone;
+    return this._replayDone;
   }
 
   /** True if the PTY process has been started on the compute node. */
@@ -135,23 +128,8 @@ export class Shell extends APIEntity<Shell> implements IShell {
     if (!this._pty) return 'Not connected';
     if (this._pty.restarting) return 'Restarting...';
     if (!this._pty.started) return 'Connecting...';
+    if (!this._pty.isLive) return 'Disconnected';
     return 'Live';
-  }
-
-  // ── Observable store (useSyncExternalStore-compatible) ────────────────────
-
-  subscribe(cb: () => void): () => void {
-    this._listeners.add(cb);
-    return () => this._listeners.delete(cb);
-  }
-
-  getSnapshot(): ShellSnapshot {
-    return this._snapshot;
-  }
-
-  private _bump(patch: Partial<ShellSnapshot>): void {
-    this._snapshot = { ...this._snapshot, ...patch };
-    for (const cb of this._listeners) cb();
   }
 
   // ── Private PTY state accessors ───────────────────────────────────────────
@@ -164,11 +142,12 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
   /**
    * Reset PTY sequence and mark replay as incomplete.
-   * Used internally by connect({ force: true }).
+   * Used internally by startPty({ force: true }).
    */
   private _restart(): void {
     this._resetPtySeq();
-    this._bump({ replayDone: false });
+    this._replayDone = false;
+    this.emit('status', 'disconnected');
   }
 
   // ── Public accessors ──────────────────────────────────────────────────────
@@ -209,7 +188,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
    * getPtyChunks() after connect() completes.
    */
   onOutput(fn: import('../services/shell/ptyConnection.js').PtyOutputListener): (() => void) | undefined {
-    if (!this._snapshot.replayDone) return undefined;
+    if (!this._replayDone) return undefined;
     return this._pty?.onOutput(fn);
   }
 
@@ -239,8 +218,9 @@ export class Shell extends APIEntity<Shell> implements IShell {
       void import('../websocket').then(({ ConnectionManager }) => {
         const cm = ConnectionManager.getInstance();
         cm.on('on_close', () => {
-          if (this._snapshot.replayDone || this._snapshot.connected) {
-            this._bump({ connected: false, replayDone: false });
+          if (this._replayDone || this._pty?.started) {
+            this._replayDone = false;
+            this.emit('status', 'disconnected');
           }
         });
         cm.on('on_reconnected', () => {
@@ -253,10 +233,11 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
     if (force) {
       this._resetPtySeq();
-      this._bump({ replayDone: false });
+      this._replayDone = false;
+      this.emit('status', 'disconnected');
     }
 
-    if (this._pty?.started && this._snapshot.replayDone) return;  // already fully connected
+    if (this._pty?.started && this._replayDone) return;  // already fully connected
 
     if (!this.compute_node_id) return;
 
@@ -287,11 +268,28 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
     await this._ensurePty(cols, rows, workdir);
 
-    // ONLY NOW flip replayDone — React re-renders, TSX reads getPtyChunks()
-    // for the replay write and subscribes onOutput() for live output.
+    // If the first attach returned not_found (server restarted, PTY was gone),
+    // _ensurePty created a fresh PTY — reattach now to fetch its replay buffer.
+    if (latestSeq === undefined) {
+      const newLatestSeq = await this._reattach(0);
+      if (newLatestSeq !== undefined && newLatestSeq > 0 && this._pty!.lastSeq < newLatestSeq) {
+        await new Promise<void>((resolve) => {
+          const deadline = Date.now() + 2000;
+          const check = () => {
+            if (this._pty!.lastSeq >= newLatestSeq || Date.now() >= deadline) resolve();
+            else setTimeout(check, 5);
+          };
+          setTimeout(check, 0);
+        });
+      }
+    }
+
+    // ONLY NOW flip replayDone — InteractiveTerminal's 'connected' event handler
+    // resets xterm, writes getPtyChunks() for the replay, and subscribes onOutput().
     const _t0 = (typeof window !== 'undefined' ? window : globalThis) as Record<string, unknown>;
     if (_t0.__shellNavT0 !== undefined) console.log(`[PERF] +${(performance.now() - (_t0.__shellNavT0 as number)).toFixed(0)}ms shell.startPty() replayDone=true (shell=${this.id.slice(0,8)})`);
-    this._bump({ connected: true, replayDone: true, status: 'live' });
+    this._replayDone = true;
+    this.emit('status', 'connected');
   }
 
   // ── Private PTY lifecycle ─────────────────────────────────────────────────
@@ -332,6 +330,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
     // Server returns status="not_found" when the PTY session no longer exists
     if (result?.status === 'not_found') {
+      this._pty.started = false;
       return undefined;
     }
 

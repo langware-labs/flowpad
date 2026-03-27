@@ -17,8 +17,14 @@ def _cleanup_records(record_type: str, max_keep: int) -> int:
     if len(dirs) <= max_keep:
         return 0
 
-    # Sort by folder mtime (oldest first)
-    dirs.sort(key=lambda d: d.stat().st_mtime)
+    # Sort by folder mtime (oldest first); skip dirs that vanished since iterdir()
+    def _safe_mtime(d):
+        try:
+            return d.stat().st_mtime
+        except FileNotFoundError:
+            return float("inf")  # treat gone dirs as newest so they're not deleted again
+
+    dirs.sort(key=_safe_mtime)
     to_delete = dirs[: len(dirs) - max_keep]
 
     deleted = 0
