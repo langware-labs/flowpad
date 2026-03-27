@@ -1,23 +1,18 @@
 import { Shell, type ShellSnapshot } from '@sdk';
 import { useCallback, useEffect, useSyncExternalStore, useState } from 'react';
 
-const defaultSnapshot: ShellSnapshot = { connected: false, replayDone: false, status: 'idle' };
+const defaultSnapshot: ShellSnapshot = { replayDone: false };
 
 /**
  * Resolves a Shell entity by ID and exposes its reactive store snapshot.
  *
- * Pattern mirrors useProcessState: external store → useSyncExternalStore.
- *
- * Returns { shell, connected, replayDone, status } where shell is the entity
- * and the rest come from Shell's observable snapshot. The connect effect in
- * InteractiveTerminal gates on replayDone to sequence replay-write and
- * live-output subscription without races.
+ * Returns { shell, connected, replayDone } where replayDone comes from
+ * Shell's snapshot store and connected is read directly from shell.connected.
  */
 export function useShell(shellId: string | null | undefined): {
   shell: Shell | null;
   connected: boolean;
   replayDone: boolean;
-  status: string;
 } {
   const [shell, setShell] = useState<Shell | null>(null);
 
@@ -48,5 +43,5 @@ export function useShell(shellId: string | null | undefined): {
 
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
-  return { shell, ...snapshot };
+  return { shell, connected: shell?.connected ?? false, ...snapshot };
 }

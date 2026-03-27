@@ -21,9 +21,7 @@ export const ShellStatus = {
 export type ShellStatus = (typeof ShellStatus)[keyof typeof ShellStatus];
 
 export interface ShellSnapshot {
-  connected: boolean;
   replayDone: boolean;  // true once connect() has finished its replay phase
-  status: string;
 }
 
 export interface ShellResult {
@@ -101,7 +99,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
   // ── Observable store (useSyncExternalStore-compatible) ────────────────────
   private _listeners = new Set<() => void>();
-  private _snapshot: ShellSnapshot = { connected: false, replayDone: false, status: 'idle' };
+  private _snapshot: ShellSnapshot = { replayDone: false };
 
   get dockPointer(): DockPointerData {
     return new DockPointerData(ViewType.SHELL, this.typeId?.toString());
@@ -239,8 +237,8 @@ export class Shell extends APIEntity<Shell> implements IShell {
       void import('../websocket').then(({ ConnectionManager }) => {
         const cm = ConnectionManager.getInstance();
         cm.on('on_close', () => {
-          if (this._snapshot.replayDone || this._snapshot.connected) {
-            this._bump({ connected: false, replayDone: false });
+          if (this._snapshot.replayDone || this._pty?.isLive) {
+            this._bump({ replayDone: false });
           }
         });
         cm.on('on_reconnected', () => {
@@ -307,7 +305,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     // for the replay write and subscribes onOutput() for live output.
     const _t0 = (typeof window !== 'undefined' ? window : globalThis) as Record<string, unknown>;
     if (_t0.__shellNavT0 !== undefined) console.log(`[PERF] +${(performance.now() - (_t0.__shellNavT0 as number)).toFixed(0)}ms shell.startPty() replayDone=true (shell=${this.id.slice(0,8)})`);
-    this._bump({ connected: true, replayDone: true, status: 'live' });
+    this._bump({ replayDone: true });
   }
 
   // ── Private PTY lifecycle ─────────────────────────────────────────────────
@@ -348,6 +346,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
     // Server returns status="not_found" when the PTY session no longer exists
     if (result?.status === 'not_found') {
+      this._pty.started = false;
       return undefined;
     }
 
