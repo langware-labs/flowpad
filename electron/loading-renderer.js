@@ -20,8 +20,14 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
 
   if (!btn || !panel || !window.electronAPI || !window.electronAPI.getStartupLogs) return;
 
-  let logsData = [];
+  let logsData = [];   // [{ name, path, content }]
   let activeTab = 0;
+  let isOpen = false;
+
+  function showActiveTab() {
+    const activeLog = logsData[activeTab];
+    content.textContent = (activeLog && activeLog.content) || 'No logs available';
+  }
 
   function renderTabs() {
     tabs.innerHTML = '';
@@ -32,17 +38,66 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
       tab.addEventListener('click', () => {
         activeTab = i;
         renderTabs();
-        content.textContent = logsData[i].content || 'No logs available';
+        showActiveTab();
+        content.scrollTop = content.scrollHeight;
       });
       tabs.appendChild(tab);
     });
   }
 
+  function openPanel() {
+    panel.classList.add('visible');
+    document.body.classList.add('logs-open');
+    btn.textContent = 'Hide Logs';
+    isOpen = true;
+
+    // Start live tailing
+    if (window.electronAPI.watchStartupLogs) {
+      window.electronAPI.watchStartupLogs();
+    }
+  }
+
+  function closePanel() {
+    panel.classList.remove('visible');
+    document.body.classList.remove('logs-open');
+    btn.textContent = 'Show Logs';
+    isOpen = false;
+
+    // Stop live tailing
+    if (window.electronAPI.unwatchStartupLogs) {
+      window.electronAPI.unwatchStartupLogs();
+    }
+  }
+
+  // Listen for live log updates
+  if (window.electronAPI.onStartupLogsUpdate) {
+    window.electronAPI.onStartupLogsUpdate((updates) => {
+      if (!isOpen) return;
+
+      for (const update of updates) {
+        const existing = logsData.find((l) => l.name === update.name);
+        if (existing) {
+          existing.content += update.content;
+        } else {
+          logsData.push({ name: update.name, content: update.content });
+          renderTabs();
+        }
+      }
+
+      // Update the visible content if the active tab received new data
+      if (logsData[activeTab]) {
+        const isAtBottom = content.scrollHeight - content.scrollTop - content.clientHeight < 40;
+        showActiveTab();
+        if (isAtBottom) {
+          content.scrollTop = content.scrollHeight;
+        }
+      }
+    });
+  }
+
   btn.addEventListener('click', async () => {
-    if (panel.classList.contains('visible')) {
-      panel.classList.remove('visible');
-      document.body.classList.remove('logs-open');
-      btn.textContent = 'Show Logs';
+    if (isOpen) {
+      closePanel();
       return;
     }
 
@@ -54,20 +109,13 @@ if (window.electronAPI && window.electronAPI.onStartupStatus) {
       }
       activeTab = 0;
       renderTabs();
-      content.textContent = logsData[0].content || 'No logs available';
-      panel.classList.add('visible');
-      document.body.classList.add('logs-open');
-      btn.textContent = 'Hide Logs';
-      // Scroll to bottom
+      showActiveTab();
+      openPanel();
       content.scrollTop = content.scrollHeight;
     } catch {
       btn.textContent = 'Show Logs';
     }
   });
 
-  closeBtn.addEventListener('click', () => {
-    panel.classList.remove('visible');
-    document.body.classList.remove('logs-open');
-    btn.textContent = 'Show Logs';
-  });
+  closeBtn.addEventListener('click', closePanel);
 })();
