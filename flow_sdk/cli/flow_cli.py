@@ -184,21 +184,9 @@ def upgrade(
     typer.echo("flowpad upgraded successfully.")
 
 
-@app.command()
-def start():
-    """
-    Start the Flow server in background with health monitoring.
-
-    Launches a background monitor that keeps the server alive and
-    restarts it if it crashes.  The CLI exits immediately.
-
-    Example: flow start
-    """
-    import webbrowser
-
+def _start_service(port: int) -> None:
+    """Start the Flow server and monitor. Shared by `flow start` and `flow start service`."""
     from flow_sdk.server.launch import check_server_health, start_monitor_detached, wait_for_server_health
-
-    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
 
     if check_server_health(port):
         typer.echo(f"Server already running on port {port}")
@@ -210,11 +198,46 @@ def start():
         else:
             typer.echo("Server may still be starting...")
 
+
+start_app = typer.Typer(help="Start the Flow server.", invoke_without_command=True, add_completion=False)
+app.add_typer(start_app, name="start")
+
+
+@start_app.callback(invoke_without_command=True)
+def start(ctx: typer.Context):
+    """
+    Start the Flow server and open the UI in the browser.
+
+    Launches a background monitor that keeps the server alive and
+    restarts it if it crashes.  The CLI exits immediately.
+
+    Example: flow start
+    """
+    if ctx.invoked_subcommand is not None:
+        return
+
+    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    _start_service(port)
+
     # Skip browser open when launched from Electron (it has its own BrowserWindow)
     if not os.environ.get("FLOWPAD_NO_BROWSER"):
         import webbrowser
 
         webbrowser.open(f"http://127.0.0.1:{port}")
+
+
+@start_app.command()
+def service():
+    """
+    Start the Flow server in headless mode (no browser).
+
+    Launches a background monitor that keeps the server alive and
+    restarts it if it crashes.  The CLI exits immediately.
+
+    Example: flow start service
+    """
+    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    _start_service(port)
 
 
 @app.command()

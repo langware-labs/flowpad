@@ -338,14 +338,14 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     // Shell 1: open, connect, close PTY
     const shell1 = await spawnShell(computeNode, manager.id, 500);
     await shell1.startPty({ cols: 80, rows: 24 });
-    expect(shell1.getSnapshot().replayDone).toBe(true);
+    expect(shell1.replayDone).toBe(true);
     await closePtyRaw(computeNode.id, shell1.id);
 
     // Shell 2: fresh shell, no state from shell1
     const shell2 = await spawnShell(computeNode, manager.id, 600);
     await shell2.startPty({ cols: 80, rows: 24 });
 
-    expect(shell2.getSnapshot().replayDone).toBe(true);
+    expect(shell2.replayDone).toBe(true);
     expect(shell2.getPtyChunks().length).toBeGreaterThan(0);
 
     // Subscribe after connect — live listener receives NO replay bytes
