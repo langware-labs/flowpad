@@ -3534,122 +3534,31 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         result = clear_debug_errors()
         return ApiSuccessResponse(data=result)
 
-    @action.get(action_name="git-status")
-    async def git_status_action(self) -> "ApiResponse":
-        """Return git status for a working directory.
+    @action.get(action_name="get-cwd")
+    async def get_cwd_action(self) -> "ApiResponse":
+        """Return the current working directory."""
+        cmd = await self.run_command("pwd", background=False)
+        cwd = (cmd.all_stdout or "").strip()
+        return ApiSuccessResponse(data={"cwd": cwd})
 
-        Query params:
-            workdir: Absolute path to the working directory
+    @action.get(action_name="git-ops")
+    async def git_ops_action(self) -> "ApiResponse":
+        """Unified gateway for git operations. Delegates to GitRepo.dispatch().
 
-        Returns:
-            ApiResponse with branch, ahead/behind counts, and file list
+        Routing (via sub_path):
+            GET /git-ops/status              ?workdir=...  → git status
+            GET /git-ops/branch              ?workdir=...  → current branch
+            GET /git-ops/is-init             ?workdir=...  → is git repo
+            GET /git-ops/is-linked-worktree  ?workdir=...  → is linked worktree
         """
         request_info = get_current_request_info()
+        segments = [s for s in (request_info.sub_path or "").strip("/").split("/") if s]
         workdir = request_info.get_param("workdir") if request_info else None
         if not workdir:
             return ApiFailResponse(message="workdir parameter is required")
 
-        async def run_git(*args: str) -> tuple[str, int]:
-            try:
-                cmd = await self.run_command(
-                    f"git -C '{workdir}' " + " ".join(args),
-                    background=False,
-                )
-                return (cmd.all_stdout or "").rstrip(), cmd.exit_code or 0
-            except Exception:
-                return "", 1
-
-        # Check if it's a git repo
-        _, rc = await run_git("rev-parse", "--is-inside-work-tree")
-        if rc != 0:
-            return ApiSuccessResponse(
-                data={"error": "not a git repository", "branch": None, "ahead": 0, "behind": 0, "files": []}
-            )
-
-        # Branch name
-        branch_out, _ = await run_git("branch", "--show-current")
-        branch = branch_out.strip() or None
-
-        # Ahead/behind
-        ahead, behind = 0, 0
-        ab_out, ab_rc = await run_git("rev-list", "--left-right", "--count", "HEAD...@{upstream}")
-        if ab_rc == 0 and ab_out:
-            parts = ab_out.split()
-            if len(parts) == 2:
-                try:
-                    ahead, behind = int(parts[0]), int(parts[1])
-                except ValueError:
-                    pass
-
-        # Numstat for unstaged and staged changes
-        def parse_numstat(output: str) -> dict[str, tuple[int, int]]:
-            result: dict[str, tuple[int, int]] = {}
-            for line in output.splitlines():
-                parts = line.split("\t", 2)
-                if len(parts) == 3:
-                    try:
-                        ins = int(parts[0]) if parts[0] != "-" else 0
-                        dels = int(parts[1]) if parts[1] != "-" else 0
-                        result[parts[2]] = (ins, dels)
-                    except ValueError:
-                        pass
-            return result
-
-        numstat_unstaged_out, _ = await run_git("diff", "--numstat")
-        numstat_staged_out, _ = await run_git("diff", "--numstat", "--staged")
-        numstat_unstaged = parse_numstat(numstat_unstaged_out)
-        numstat_staged = parse_numstat(numstat_staged_out)
-
-        # Porcelain status
-        porcelain_out, _ = await run_git("status", "--porcelain=v1")
-        files: list[dict] = []
-        for line in porcelain_out.splitlines():
-            if len(line) < 4:
-                continue
-            x = line[0]  # staged status
-            y = line[1]  # unstaged status
-            path_part = line[3:]
-
-            # Handle renames: "old -> new" or "old\0new"
-            display_path = path_part
-            lookup_path = path_part
-            if " -> " in path_part:
-                parts = path_part.split(" -> ", 1)
-                display_path = f"{parts[0]} → {parts[1]}"
-                lookup_path = parts[1]
-
-            # Determine display status: staged takes priority
-            if x in ("A", "M", "D", "R", "C") and x != " ":
-                status = x
-                ins, dels = numstat_staged.get(lookup_path, (None, None))
-            elif y in ("M", "D") and y != " ":
-                status = y
-                ins, dels = numstat_unstaged.get(lookup_path, (None, None))
-            elif x == "?" and y == "?":
-                status = "?"
-                ins, dels = None, None
-            else:
-                status = (x if x != " " else y) or "?"
-                ins, dels = None, None
-
-            files.append(
-                {
-                    "status": status,
-                    "path": display_path,
-                    "insertions": ins,
-                    "deletions": dels,
-                }
-            )
-
-        return ApiSuccessResponse(
-            data={
-                "error": None,
-                "branch": branch,
-                "ahead": ahead,
-                "behind": behind,
-                "files": files,
-            }
-        )
+        from flow_sdk.builtin.faas.git_repo import GitRepo
+        return await GitRepo(workdir, self).dispatch(segments[0] if segments else "")
 
     @staticmethod
     def _embed_includes(
