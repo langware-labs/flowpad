@@ -3,7 +3,12 @@ const path = require('path');
 const log = require('electron-log');
 const UvManager = require('./uv-manager');
 
-// Configure logging
+// Configure logging — store all logs under ~/.flow/
+const FLOW_HOME = path.join(require('os').homedir(), '.flow');
+const MAIN_LOG_PATH = path.join(FLOW_HOME, 'main.log');
+require('fs').mkdirSync(FLOW_HOME, { recursive: true });
+try { require('fs').writeFileSync(MAIN_LOG_PATH, ''); } catch { /* ignore */ }
+log.transports.file.resolvePathFn = () => MAIN_LOG_PATH;
 log.transports.file.level = 'info';
 log.transports.console.level = 'debug';
 log.info('Flowpad starting...');
@@ -269,17 +274,128 @@ ipcMain.handle('get-startup-logs', () => {
   try {
     const electronLogPath = log.transports.file.getFile().path;
     const content = fs.readFileSync(electronLogPath, 'utf8');
-    logs.push({ name: 'Electron', content: content.split('\n').slice(-50).join('\n') });
+    logs.push({ name: 'Electron', path: electronLogPath, content });
   } catch { /* ignore */ }
 
   // Monitor log
   try {
     const monitorLog = path.join(home, '.flow', 'monitor.log');
     const content = fs.readFileSync(monitorLog, 'utf8');
-    logs.push({ name: 'Monitor', content: content.split('\n').slice(-50).join('\n') });
+    logs.push({ name: 'Monitor', path: monitorLog, content });
+  } catch { /* ignore */ }
+
+  // Server log
+  try {
+    const serverLog = path.join(home, '.flow', 'server.log');
+    const content = fs.readFileSync(serverLog, 'utf8');
+    logs.push({ name: 'Server', path: serverLog, content });
   } catch { /* ignore */ }
 
   return logs;
+});
+
+// ---------------------------------------------------------------------------
+// Live log tailing — pushes new log lines to the renderer every second
+// ---------------------------------------------------------------------------
+let _logWatchInterval = null;
+const _logFileOffsets = {};  // { filePath: bytesReadSoFar }
+
+function _getLogFiles() {
+  const fs = require('fs');
+  const home = require('os').homedir();
+  const files = [];
+
+  try {
+    files.push({ name: 'Electron', path: log.transports.file.getFile().path });
+  } catch { /* ignore */ }
+
+  const monitorLog = path.join(home, '.flow', 'monitor.log');
+  if (fs.existsSync(monitorLog)) {
+    files.push({ name: 'Monitor', path: monitorLog });
+  }
+
+  const serverLog = path.join(home, '.flow', 'server.log');
+  if (fs.existsSync(serverLog)) {
+    files.push({ name: 'Server', path: serverLog });
+  }
+
+  return files;
+}
+
+function _readNewContent(filePath) {
+  const fs = require('fs');
+  try {
+    const stat = fs.statSync(filePath);
+    const prev = _logFileOffsets[filePath] || 0;
+
+    // File was truncated / rotated — reset
+    if (stat.size < prev) {
+      _logFileOffsets[filePath] = 0;
+    }
+
+    const offset = _logFileOffsets[filePath] || 0;
+    if (stat.size <= offset) return '';
+
+    const fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(stat.size - offset);
+    fs.readSync(fd, buf, 0, buf.length, offset);
+    fs.closeSync(fd);
+
+    _logFileOffsets[filePath] = stat.size;
+    return buf.toString('utf8');
+  } catch {
+    return '';
+  }
+}
+
+ipcMain.on('watch-startup-logs', (event) => {
+  // Initialise offsets to current file sizes so we only stream NEW content
+  const fs = require('fs');
+  const initialFiles = _getLogFiles();
+  for (const f of initialFiles) {
+    try {
+      _logFileOffsets[f.path] = fs.statSync(f.path).size;
+    } catch {
+      _logFileOffsets[f.path] = 0;
+    }
+  }
+
+  if (_logWatchInterval) clearInterval(_logWatchInterval);
+
+  _logWatchInterval = setInterval(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      clearInterval(_logWatchInterval);
+      _logWatchInterval = null;
+      return;
+    }
+    // Re-discover log files each tick — server.log / monitor.log may appear later
+    const logFiles = _getLogFiles();
+    const updates = [];
+    for (const f of logFiles) {
+      // First time seeing this file — start tailing from current position
+      if (_logFileOffsets[f.path] === undefined) {
+        try {
+          _logFileOffsets[f.path] = fs.statSync(f.path).size;
+        } catch {
+          _logFileOffsets[f.path] = 0;
+        }
+      }
+      const newContent = _readNewContent(f.path);
+      if (newContent) {
+        updates.push({ name: f.name, content: newContent });
+      }
+    }
+    if (updates.length) {
+      mainWindow.webContents.send('startup-logs-update', updates);
+    }
+  }, 1000);
+});
+
+ipcMain.on('unwatch-startup-logs', () => {
+  if (_logWatchInterval) {
+    clearInterval(_logWatchInterval);
+    _logWatchInterval = null;
+  }
 });
 
 ipcMain.handle('restart-backend', async () => {

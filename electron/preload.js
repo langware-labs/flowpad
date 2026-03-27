@@ -29,6 +29,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Startup logs
   getStartupLogs: () => ipcRenderer.invoke('get-startup-logs'),
+  watchStartupLogs: () => ipcRenderer.send('watch-startup-logs'),
+  unwatchStartupLogs: () => ipcRenderer.send('unwatch-startup-logs'),
+  onStartupLogsUpdate: (callback) => ipcRenderer.on('startup-logs-update', (_event, updates) => callback(updates)),
 
   // Update management
   onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (_event, data) => callback(data)),
