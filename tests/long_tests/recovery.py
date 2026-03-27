@@ -403,3 +403,67 @@ async def test_proc_recovery_after_server_restart(recovery_server):
         except subprocess.TimeoutExpired:
             new_srv.kill()
             new_srv.wait(timeout=3)
+
+
+# ---------------------------------------------------------------------------
+# Scenario D — pure object-level: prompt → kill PTY → re-open recovers context
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(120)
+async def test_agentic_process_recovery_no_http(bootstrapped_client):
+    """AgenticProcess: open → prompt → kill PTY → re-open recalls prior context.
+
+    No HTTP after bootstrap. The ClaudeSessionRecord written to disk during
+    the first session is the recovery anchor — open() finds it and passes
+    --resume to Claude.
+    """
+    resp = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+    cn_id = resp.json()["data"]["default_compute_node"]["id"]
+
+    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+
+    proc = AgenticProcess(compute_node_id=f"compute_node-{cn_id}")
+    await proc.save()
+
+    # Phase 1: open fresh, send prompt
+    await proc.open()
+    assert proc.shell_id is not None, "open() must set shell_id"
+
+    await proc.send_input("Remember the number 3422455\r")
+
+    # Wait up to 10s for Claude to write the session transcript to disk.
+    # The transcript file is the recovery anchor for --resume.
+    worker_session_id = proc.worker_session_id
+    deadline = time.monotonic() + 10.0
+    session_rec = None
+    while time.monotonic() < deadline:
+        session_rec = ClaudeSessionRecord.discover_one(worker_session_id)
+        if session_rec:
+            break
+        await asyncio.sleep(0.3)
+    assert session_rec is not None, (
+        f"ClaudeSessionRecord not found after 10s for session {worker_session_id}. "
+        "Claude must write the transcript before recovery is possible."
+    )
+
+    # Phase 2: kill PTY — evicts RAM, disk (transcript + stream file) survives
+    shell = await proc.get_shell()
+    pty = shell.compute_node.get_pty(shell.id)
+    assert pty is not None, "PTY must be alive after open()"
+    await pty.kill()
+    assert not shell.connected, "Shell must be disconnected after pty.kill()"
+
+    # Phase 3: re-open — detects dead PTY, finds ClaudeSessionRecord → --resume
+    await proc.open()
+    assert proc.shell_id is not None, "re-open() must set shell_id"
+
+    await proc.send_input("What is the number I told you to remember? Reply with just the number.\r")
+
+    # Phase 4: Claude resumes with full context and recalls the number
+    shell2 = await proc.get_shell()
+    output = await _poll_output(shell2, b"3422455", timeout=30.0)
+    assert b"3422455" in output, (
+        f"Claude did not recall the number after recovery.\nOutput: {output[-500:]!r}"
+    )
