@@ -257,6 +257,10 @@ class DataContext extends EventEmitter {
   // WebSocket connection - only set when connected
   connection: WebSocket | null = null;
 
+  get isConnected(): boolean {
+    return this.connection !== null;
+  }
+
   // Active shell session ID - persisted across refreshes via URL
   activeShellId: string = '';
 
@@ -309,6 +313,7 @@ class DataContext extends EventEmitter {
       isBootstrapping: observable,
       bootstrapInfo: observable,
       connection: observable,
+      isConnected: computed,
       activeShellId: observable,
       envName: computed,
       cloudApiUrl: computed,

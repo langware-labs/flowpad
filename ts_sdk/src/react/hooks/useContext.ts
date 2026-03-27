@@ -75,6 +75,7 @@ export function useContext() {
     agenticProcessTypeId: typeof dataContext.agenticProcessTypeId;
     activeShellId: typeof dataContext.activeShellId;
     snifferEnabled: typeof dataContext.snifferEnabled;
+    isConnected: typeof dataContext.isConnected;
   }>({
     user: dataContext.user,
     workspace: dataContext.workspace,
@@ -108,6 +109,7 @@ export function useContext() {
     agenticProcessTypeId: dataContext.agenticProcessTypeId,
     activeShellId: dataContext.activeShellId,
     snifferEnabled: dataContext.snifferEnabled,
+    isConnected: dataContext.isConnected,
   });
 
   // Subscribe to dataContext changes using the shared subscription manager
@@ -151,6 +153,7 @@ export function useContext() {
       agenticProcessTypeId: dataContext.agenticProcessTypeId,
       activeShellId: dataContext.activeShellId,
       snifferEnabled: dataContext.snifferEnabled,
+      isConnected: dataContext.isConnected,
     };
 
     // Only update snapshot if values have changed (to maintain stable reference)
@@ -191,7 +194,8 @@ export function useContext() {
       prev.agenticProcess !== current.agenticProcess ||
       typeIdChanged(prev.agenticProcessTypeId, current.agenticProcessTypeId) ||
       prev.activeShellId !== current.activeShellId ||
-      prev.snifferEnabled !== current.snifferEnabled
+      prev.snifferEnabled !== current.snifferEnabled ||
+      prev.isConnected !== current.isConnected
     ) {
       snapshotRef.current = current;
     }

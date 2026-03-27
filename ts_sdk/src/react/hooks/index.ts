@@ -5,6 +5,7 @@ export * from './use-domain';
 export * from './use-fs-item-flows';
 export * from './use-settings';
 export * from './useAuth';
+export * from './useConnectionStatus';
 export * from './useContext';
 export * from './useEntityEnv';
 export * from './useFS';

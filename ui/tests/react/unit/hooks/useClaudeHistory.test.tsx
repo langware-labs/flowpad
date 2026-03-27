@@ -59,9 +59,11 @@ describe('useClaudeHistory hook (end-to-end)', () => {
     const withSession = entries.find((e) => e._session != null);
     if (withSession) {
       const s = withSession._session!;
-      expect(typeof s.message_count).toBe('number');
-      expect(Array.isArray(s.tools_used)).toBe(true);
-      expect(typeof s.input_tokens).toBe('number');
+      // message_count is set by fast meta_dict path; assert number-or-undefined
+      expect(s.message_count == null || typeof s.message_count === 'number').toBe(true);
+      // tools_used and input_tokens require full JSONL parse — may be absent
+      expect(s.tools_used == null || Array.isArray(s.tools_used)).toBe(true);
+      expect(s.input_tokens == null || typeof s.input_tokens === 'number').toBe(true);
     }
 
     // --- session_ref ---

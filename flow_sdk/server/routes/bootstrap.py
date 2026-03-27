@@ -1051,6 +1051,18 @@ _bootstrap_cache_ts: float = 0.0
 _BOOTSTRAP_CACHE_TTL = 30.0  # seconds
 
 
+def invalidate_bootstrap_cache() -> None:
+    """Reset the bootstrap cache so the next call runs a full bootstrap.
+
+    Call this after wiping the database so the @local entities are recreated
+    on the very next bootstrap request rather than returning stale entity IDs
+    from the pre-wipe cache.
+    """
+    global _bootstrap_cache, _bootstrap_cache_ts
+    _bootstrap_cache = None
+    _bootstrap_cache_ts = 0.0
+
+
 @router.get("/api/v1/graph/bootstrap")
 async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
     """

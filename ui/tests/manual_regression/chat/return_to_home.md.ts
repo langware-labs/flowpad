@@ -24,10 +24,13 @@ test.describe('Return to Home', () => {
     await goHome(page);
 
     // validate landing page is visible
-    await expect(page.getByRole('heading', { name: /hey /i })).toBeVisible();
+    // Use CSS selector instead of getByRole — Radix UI AlertDialog sets aria-hidden on
+    // the page behind it, causing getByRole('heading') to fail when WelcomeModal is open.
+    await expect(page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first()).toBeVisible();
     expect(page.url()).toMatch(/\/dock\/home/);
 
     // validate landing page session input trigger button is ready (new UI: input is hidden behind a button)
-    await expect(page.getByRole('button', { name: /what would you like to work on today\?/i })).toBeVisible();
+    // Use CSS text filter instead of getByRole to avoid aria-hidden issues from WelcomeModal.
+    await expect(page.locator('button').filter({ hasText: /what would you like to work on today\?/i }).first()).toBeVisible();
   });
 });

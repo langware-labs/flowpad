@@ -238,7 +238,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const anchorsResolvedRef = useRef(false);
 
   const { settings } = useSettings();
-  const { shell, replayDone } = useShell(sessionId);
+  const { shell } = useShell(sessionId);
+  const [shellReady, setShellReady] = useState(false);
   // Keep shellRef in sync so callbacks and hooks that capture shellRef still work.
   shellRef.current = shell;
   const processIsActive = process?.is_active ?? false;
@@ -384,7 +385,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     process?.worker_session_id,
     terminalReady,
     ptySyncRef.current,
-    replayDone,
+    shellReady,
     ptySyncSnapshot.version,
   );
   const lastMessageTime = useMemo(() => {
@@ -409,7 +410,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       ptySyncSnapshot.adapter,
       ptySyncRef.current,
       targetTimestamp,
-      replayDone,
+      shellReady,
       ptySyncSnapshot.version,
     );
   const annotationElements = useMemo(
@@ -485,7 +486,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // bufferFlushCount is bumped by the output handler on each write until anchors resolve,
   // re-triggering this effect as content streams in (e.g. after page refresh).
   useEffect(() => {
-    if (!terminalReady || !replayDone || !bufferFlushCount || !ptySyncSnapshot.adapter) return;
+    if (!terminalReady || !shellReady || !bufferFlushCount || !ptySyncSnapshot.adapter) return;
     const anchors = getAnchors(sessionAnnotations);
     if (anchors.length > 0) {
       ptySyncRef.current.buildSegmentsFromAnchors(anchors);
@@ -499,7 +500,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionAnnotations, terminalReady, replayDone, ptySyncSnapshot.adapter, sessionStartTime, allTraceEvents, bufferFlushCount]);
+  }, [sessionAnnotations, terminalReady, shellReady, ptySyncSnapshot.adapter, sessionStartTime, allTraceEvents, bufferFlushCount]);
 
   // Refit terminal when annotation gutter or file panel appears/disappears
   useEffect(() => {
@@ -808,69 +809,25 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // PTY connect and WS reconnect are handled by process.open() (called in loader)
   // and Shell's built-in auto-reconnect (ConnectionManager on_reconnected listener).
 
-  // Write replay chunks to xterm once the terminal is ready and connected.
-  // Gates on terminalReady so the terminal has been fitted to correct dimensions
-  // before replay writes (otherwise writes at default 80x24).
+  // Ref so the output handler always reads the latest bufferSyncUpdates without
+  // requiring the effect to re-subscribe when the setting changes.
+  const bufferSyncUpdatesRef = useRef(settings.bufferSyncUpdates);
+  bufferSyncUpdatesRef.current = settings.bufferSyncUpdates;
+
+  // Unified PTY lifecycle effect driven by Shell 'status' events.
+  // On 'connected': reset xterm to a clean slate, write replay chunks,
+  // subscribe live output. On 'disconnected': cleanup output subscription.
+  // Gates on terminalReady so xterm is fitted to correct dimensions before
+  // replay writes (otherwise writes at default 80x24).
   useEffect(() => {
-    if (!replayDone || !shell || !terminalReady) return;
-    const term = terminalRef.current;
-    if (!term) return;
+    if (!shell || !terminalReady) return;
 
-    const chunks = shell.getPtyChunks();
-    for (const chunk of chunks) {
-      ptySyncRef.current.processChunk(chunk);
-      term.write(chunk.data);
-    }
-
-    // Signal buffer ready after xterm processes replay writes.
-    if (chunks.length > 0) {
-      term.write('', () => {
-        anchorsResolvedRef.current = false;
-        ptySyncRef.current.notifyBufferReady();
-        setBufferFlushCount(c => c + 1);
-      });
-    }
-
-    // Send resize so the process redraws for current dimensions.
-    if (shell.connected) {
-      void shell.resize(term.cols, term.rows);
-    }
-  }, [replayDone, shell, terminalReady]);
-
-  // Input handler
-  useEffect(() => {
-    if (!sessionId || !terminalReady || !terminalRef.current) return;
-
-    const term = terminalRef.current;
-    const disp = term.onData(async (data: string) => {
-      // eslint-disable-next-line no-control-regex
-      if (/^\x1b\[\?[0-9;]*c$/.test(data)) return;
-      const shell = shellRef.current;
-      if (shell?.connected) await shell.sendInput(data);
-    });
-
-    return () => disp.dispose();
-  }, [terminalReady, sessionId]);
-
-  // Output handler — subscribes only after replay is done (replayDone: true).
-  // onOutput() itself gates on replayDone at the SDK level, but we also gate
-  // here so the effect cleanly unsubscribes/resubscribes on restart.
-  useEffect(() => {
-    if (!replayDone || !shell) return;
-
-    const bufferEnabled = settings.bufferSyncUpdates;
-
-    // DEC 2026 synchronized output buffering.
-    // CC wraps TUI redraws in BSU (\x1b[?2026h) ... ESU (\x1b[?2026l).
-    // Between these markers CC clears the screen and rewrites everything.
-    // Without buffering each WS message renders individually — you see
-    // the clear then the progressive refill. With buffering we hold all
-    // data until ESU arrives and write it atomically in one term.write().
     const BSU = '\x1b[?2026h';
     const ESU = '\x1b[?2026l';
     let syncBuf = '';
     let inSync = false;
     let syncTimer: ReturnType<typeof setTimeout> | null = null;
+    let unsubOutput: (() => void) | undefined;
 
     const writeToTerm = (data: string) => {
       const term = terminalRef.current;
@@ -908,7 +865,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         if (chunk) ptySyncRef.current.processChunk(chunk);
       }
 
-      if (!bufferEnabled) {
+      if (!bufferSyncUpdatesRef.current) {
         writeToTerm(data);
         return;
       }
@@ -949,9 +906,62 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       }
     };
 
-    const unsub = shell.onOutput(handlePtyData);
+    const onConnected = () => {
+      const term = terminalRef.current;
+      if (!term) return;
+
+      // Reset xterm to a clean slate for this session.
+      term.reset();
+
+      // Replay buffered chunks from the SDK into xterm.
+      const chunks = shell.getPtyChunks();
+      for (const chunk of chunks) {
+        ptySyncRef.current.processChunk(chunk);
+        term.write(chunk.data);
+      }
+
+      // Signal buffer ready after xterm processes replay writes.
+      if (chunks.length > 0) {
+        term.write('', () => {
+          anchorsResolvedRef.current = false;
+          ptySyncRef.current.notifyBufferReady();
+          setBufferFlushCount(c => c + 1);
+        });
+      }
+
+      // Send resize so the process redraws for current dimensions.
+      if (shell.connected) void shell.resize(term.cols, term.rows);
+
+      // Subscribe to live output (unsubscribe any prior subscription first).
+      unsubOutput?.();
+      unsubOutput = shell.onOutput(handlePtyData);
+
+      setShellReady(true);
+    };
+
+    const onDisconnected = () => {
+      unsubOutput?.();
+      unsubOutput = undefined;
+      setShellReady(false);
+      if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+      if (syncBuf && terminalRef.current) {
+        try { terminalRef.current.write(syncBuf); } catch {}
+        syncBuf = '';
+        inSync = false;
+      }
+    };
+
+    const unsubStatus = shell.on('status', (s: string) => {
+      if (s === 'connected') onConnected();
+      if (s === 'disconnected') onDisconnected();
+    });
+
+    // Fire immediately if already connected on mount (e.g. navigation to existing terminal).
+    if (shell.connected) onConnected();
+
     return () => {
-      unsub();
+      unsubStatus();
+      unsubOutput?.();
       clearInterval(scrollInterval);
       if (syncTimer) clearTimeout(syncTimer);
       if (syncBuf && terminalRef.current) {
@@ -959,8 +969,24 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         syncBuf = '';
         inSync = false;
       }
+      setShellReady(false);
     };
-  }, [shell, replayDone, settings.bufferSyncUpdates]);
+  }, [shell, terminalReady]);
+
+  // Input handler
+  useEffect(() => {
+    if (!sessionId || !terminalReady || !terminalRef.current) return;
+
+    const term = terminalRef.current;
+    const disp = term.onData(async (data: string) => {
+      // eslint-disable-next-line no-control-regex
+      if (/^\x1b\[\?[0-9;]*c$/.test(data)) return;
+      const shell = shellRef.current;
+      if (shell?.connected) await shell.sendInput(data);
+    });
+
+    return () => disp.dispose();
+  }, [terminalReady, sessionId]);
 
   // On session restart: clear terminal, reset pty-sync, and re-fit so the
   // resumed session starts on a clean, full-size canvas.
@@ -980,7 +1006,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       // connect({ force: true }) resets seq + replayDone, then re-attaches
       // and re-subscribes the output handler once replayDone flips true again.
       const shell = shellRef.current;
-      void shell?.connect({ cols: term?.cols ?? 80, rows: term?.rows ?? 24, force: true });
+      void shell?.startPty({ cols: term?.cols ?? 80, rows: term?.rows ?? 24, force: true });
 
       // Re-fit after a frame so xterm recalculates row/col geometry
       requestAnimationFrame(() => {

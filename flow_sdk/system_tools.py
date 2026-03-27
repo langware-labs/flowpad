@@ -195,6 +195,11 @@ async def clear_all_data() -> ClearAllResult:
     if sqlite_driver is not None:
         await sqlite_driver.open()
 
+    # Invalidate bootstrap cache so the next bootstrap call recreates @local
+    # entities in the fresh DB rather than returning stale entity IDs.
+    from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache  # noqa: PLC0415
+    invalidate_bootstrap_cache()
+
     return ClearAllResult(
         backup_path=backup.backup_path,
         message="All data has been cleared. A backup was created.",
