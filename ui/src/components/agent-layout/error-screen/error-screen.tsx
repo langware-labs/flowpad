@@ -13,33 +13,45 @@ const ErrorScreen = () => {
 
   // 1. Check if service is unavailable (backend not responding)
   const errorAny = error as any;
+  const errorStatus = errorAny?.status ?? errorAny?.response?.status;
   const isServiceUnavailable =
     errorAny?.isServiceUnavailable ||
-    errorAny?.status === 503 ||
+    (typeof errorStatus === 'number' && errorStatus >= 500) ||
     errorAny?.code === 'ERR_NETWORK' ||
     errorAny?.code === 'ERR_CONNECTION_REFUSED' ||
     errorAny?.message?.includes('Failed to fetch') ||
     errorAny?.message?.includes('Network request failed');
 
-  if (isServiceUnavailable) {
+  const [dismissed, setDismissed] = useState(false);
+
+  if (isServiceUnavailable && !dismissed) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="w-full max-w-md rounded-lg border bg-background p-8 text-center shadow-md">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+        <div className="w-full max-w-md rounded-lg bg-background/95 p-8 text-center shadow-xl">
           <div className="mb-6">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
-              <svg className="h-8 w-8 text-destructive" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-orange-100">
+              <svg className="h-8 w-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                />
               </svg>
             </div>
-            <h1 className="mb-2 text-2xl font-bold text-foreground">Service Unavailable</h1>
+            <h1 className="mb-2 text-2xl font-bold">Service Unavailable</h1>
             <p className="text-muted-foreground">Backend server is not responding. Please try again later.</p>
           </div>
-          <Button onClick={() => window.location.reload()} className="w-full">
-            Retry
+          <Button onClick={() => setDismissed(true)} className="w-full" variant="outline">
+            OK
           </Button>
         </div>
       </div>
     );
+  }
+
+  if (isServiceUnavailable && dismissed) {
+    return null;
   }
 
   // 2. No agent ID handling is intentionally ignored

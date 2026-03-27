@@ -15,7 +15,7 @@ import { AccountInfo } from '@src/components/account/account-info';
 import { trackEvent } from '@src/utils/analytics';
 import { redirectToConsole } from '@src/utils/navigation';
 import { Agent, ExpansionRequest, navigator, Page, PAGE_TYPE, QueryFilter, QueryRequest, TypeId } from '@sdk';
-import { useAuth, useEntitiesQuery, useEntity, useWatch } from '@sdk/react/hooks';
+import { useAuth, useConnectionStatus, useEntitiesQuery, useEntity, useWatch } from '@sdk/react/hooks';
 import { SerializedElementNode, SerializedLexicalNode, SerializedTextNode } from 'lexical';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
@@ -104,6 +104,7 @@ const instructionsQueryFilter = new QueryFilter({
 export function UserDropdown() {
   const { agentId } = useParams();
   const { user } = useAuth();
+  const { isConnected } = useConnectionStatus();
   const agentTypeId = useMemo(() => (agentId ? new TypeId(Agent.type, agentId) : null), [agentId]);
   const { data: agent } = useEntity<Agent>(agentTypeId, {
     query: user ? agentQuery : new ExpansionRequest({}),
@@ -230,7 +231,8 @@ export function UserDropdown() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Avatar
-                  className="h-8 w-8 cursor-pointer transition-opacity hover:opacity-80"
+                  className={`h-8 w-8 cursor-pointer transition-opacity hover:opacity-80${!isConnected ? ' ring-2 ring-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] animate-pulse' : ''}`}
+                  title={!isConnected ? 'Service unavailable' : undefined}
                   data-testid="agent-page-user-avatar"
                 >
                   <AvatarFallback>
