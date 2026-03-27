@@ -62,7 +62,7 @@ from .claude_project import ClaudeProjectFsRecord as ClaudeProjectFsRecord
 from .claude_root import ClaudeRootFsRecord as ClaudeRootFsRecord
 from .claude_session import ClaudeSessionRecord as ClaudeSessionRecord
 from .claude_session import ClaudeSessionFsRecord as ClaudeSessionFsRecord  # backward compat
-import flow_sdk.domain.claude_session  # noqa: F401 — trigger ClaudeSession entity registration
+import flow_sdk.builtin.claude_session  # noqa: F401 — trigger ClaudeSession entity registration
 from .claude_settings import (
     ClaudeFeatureFlagsFsRecord as ClaudeFeatureFlagsFsRecord,
 )

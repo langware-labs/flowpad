@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from flow_sdk.domain.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord, ProcessorStatus
 
 

@@ -411,11 +411,9 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
         try:
             import asyncio
 
-            from flow_sdk.builtin.faas.pty_session_manager import session_manager as pty_mgr
+            from flow_sdk.compute.providers.local.pty_session_manager import session_manager as pty_mgr
 
-            for pty_key, session_state in list(pty_mgr.sessions.items()):
-                if connection_id in session_state.connection_ids:
-                    asyncio.ensure_future(pty_mgr.detach_session(pty_key, connection_id))
+            asyncio.ensure_future(pty_mgr.detach_all_for_connection(connection_id))
         except Exception as e:
             logger.warning(f"Error detaching PTY sessions for {connection_id}: {e}")
 

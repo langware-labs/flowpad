@@ -5,7 +5,7 @@ import pytest
 from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 from flow_sdk.fs_records.claude.claude_session import ClaudeSessionFsRecord
 from flow_sdk.fs_store.factory.type_registry import type_registry
-from flow_sdk.domain.claude_session import ClaudeSession
+from flow_sdk.builtin.claude_session import ClaudeSession
 
 
 class TestClaudeSessionRename:

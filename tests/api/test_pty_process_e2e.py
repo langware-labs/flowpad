@@ -124,23 +124,6 @@ async def test_upsert_session_process(bootstrapped_client):
     assert result2.data["id"] == process_id
 
 
-@pytest.mark.asyncio
-async def test_elevate_pty_rejects_unknown_session(bootstrapped_client):
-    """elevate-pty should fail for a PTY session that doesn't exist on the compute node."""
-    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
-    assert bootstrap.status_code == 200
-    compute_node_id = _get_default_compute_node_id(bootstrap.json())
-
-    response = await bootstrapped_client.post(
-        f"/api/v1/graph/compute_node/{compute_node_id}/elevate-pty",
-        json={"pty_pid": "nonexistent-session-id"},
-    )
-    # Graph catch-all returns 500 for ApiFailResponse
-    result = ApiResponse(**response.json())
-    assert result.status == "FAIL"
-    assert "not found" in result.message.lower()
-
-
 def test_flowpad_pty_pid_in_env():
     """Verify that FLOWPAD_PTY_SESSION_ID is set in the PTY environment.
 
@@ -149,7 +132,7 @@ def test_flowpad_pty_pid_in_env():
     """
     import inspect
 
-    from flow_sdk.compute.providers.local_compute_provider import LocalComputeProvider
+    from flow_sdk.compute.providers.local.provider import LocalComputeProvider
 
     source = inspect.getsource(LocalComputeProvider.get_or_create_pty_session)
     assert "FLOWPAD_PTY_SESSION_ID" in source, "FLOWPAD_PTY_SESSION_ID should be set in get_or_create_pty_session"

@@ -28,7 +28,7 @@ pytestmark = pytest.mark.skipif(
     reason="Skipping long tests when DEEP_TESTING is disabled",
 )
 
-from flow_sdk.domain.agentic_process import AgenticProcess, WorkerType
+from flow_sdk.builtin.agentic_process import AgenticProcess, WorkerType
 
 SERVER_URL = "http://localhost:9007"
 UI_URL = "http://localhost:4097"

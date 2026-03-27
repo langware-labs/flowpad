@@ -127,7 +127,6 @@ class PtySessionManager:
         logger.info(
             f"PTY session created: pty_key={pty_key} connection_id={connection_id} total_sessions={len(self.sessions)}"
         )
-        logger.info(f"[PtySessionManager] Created session {pty_key}, total sessions: {len(self.sessions)}")
 
         return session
 
@@ -176,9 +175,6 @@ class PtySessionManager:
             f" total_connections={len(session.connection_ids)}"
             f" detached_duration_seconds={time.time() - session.last_detached_at if session.last_detached_at else 0}"
         )
-        logger.info(
-            f"[PtySessionManager] Attached to session {pty_key} (total connections: {len(session.connection_ids)})"
-        )
 
         return session
 
@@ -205,8 +201,7 @@ class PtySessionManager:
         if len(session.connection_ids) == 0:
             session.last_detached_at = time.time()
 
-        logger.info(f"PTY session detached: pty_key={pty_key}")
-        logger.info(f"[PtySessionManager] Detached session {pty_key}")
+        logger.info(f"PTY session detached: pty_key={pty_key} remaining_connections={len(session.connection_ids)}")
 
     async def close_for_connection(self, pty_key: Tuple[str, str, str], connection_id: str) -> None:
         """Remove a connection and only destroy the session if no connections remain.
@@ -228,6 +223,16 @@ class PtySessionManager:
 
         if len(session.connection_ids) == 0:
             await self.close_session(pty_key)
+
+    async def detach_all_for_connection(self, connection_id: str) -> None:
+        """Remove connection_id from every session it belongs to.
+
+        Used by the WebSocket disconnect handler to clean up stale connection
+        references without closing any PTY processes.
+        """
+        for pty_key, session_state in list(self.sessions.items()):
+            if connection_id in session_state.connection_ids:
+                await self.detach_session(pty_key, connection_id)
 
     async def close_session(self, pty_key: Tuple[str, str, str]) -> None:
         """Close and remove PTY session.
@@ -271,7 +276,6 @@ class PtySessionManager:
             logger.warning(f"[PtySessionManager] Error closing PTY {pty_key}: {e}")
 
         logger.info(f"PTY session closed: pty_key={pty_key} total_sessions={len(self.sessions)}")
-        logger.info(f"[PtySessionManager] Closed session {pty_key}, remaining sessions: {len(self.sessions)}")
 
     def is_expired(self, session: PtySessionState, ttl_seconds: int) -> bool:
         """Check if session has been detached for longer than TTL.
@@ -312,9 +316,6 @@ class PtySessionManager:
         if expired_count > 0:
             logger.info(
                 f"PTY cleanup completed: expired_count={expired_count} total_sessions={len(self.sessions)} ttl_seconds={ttl_seconds}"
-            )
-            logger.info(
-                f"[PtySessionManager] Cleaned up {expired_count} expired sessions, remaining: {len(self.sessions)}"
             )
 
         return expired_count

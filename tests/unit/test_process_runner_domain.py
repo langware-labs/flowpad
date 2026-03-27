@@ -3,7 +3,7 @@
 from unittest.mock import patch, MagicMock
 
 from flow_sdk.builtin.process_runner import ProcessConfig, run_process_domain
-from flow_sdk.domain.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process import AgenticProcess
 
 
 class TestRunProcessDomain:

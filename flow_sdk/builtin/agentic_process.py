@@ -11,9 +11,7 @@ from typing import TYPE_CHECKING, AsyncGenerator, Callable
 from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord, ProcessorStatus
 
 if TYPE_CHECKING:
-    from .shell import ShellRunner
-    from .agent import Agent
-    from .watcher import Watcher
+    from flow_sdk.builtin.agent_runner import AgentRunner
     from flow_sdk.fs_records.text_file_record import TextFileRecord
 
 
@@ -35,12 +33,10 @@ class AgenticProcess:
         record: AgenticProcessRecord | None = None,
         *,
         workerType: WorkerType | None = None,
-        shell: ShellRunner | None = None,
     ) -> None:
         if record is None:
             record = AgenticProcessRecord(workerType=workerType or WorkerType.CLAUDE)
         self._record = record
-        self._shell = shell
         self._handlers: dict[str, list[Callable]] = {}
         self._popen: subprocess.Popen | None = None
         self._launched: bool = False
@@ -67,12 +63,8 @@ class AgenticProcess:
     # Lifecycle API
     # ------------------------------------------------------------------
 
-    def start(self, workdir: str | None = None, watcher: Watcher | None = None) -> None:
-        """Prepare the process: create workdir, persist record. No Claude launched yet.
-
-        If ``watcher`` is provided it is attached to the workdir and started so
-        that it begins watching before ``prompt()`` is called.
-        """
+    def start(self, workdir: str | None = None) -> None:
+        """Prepare the process: create workdir, persist record. No Claude launched yet."""
         self._workdir = Path(workdir) if workdir else Path(tempfile.mkdtemp(prefix="flow-process-"))
         self._workdir.mkdir(parents=True, exist_ok=True)
         self._start_time = time.time()
@@ -80,9 +72,6 @@ class AgenticProcess:
         records_dir.mkdir(exist_ok=True)
         record_path = records_dir / f"{self.record.id}.json"
         self.record.save_record_json(record_path)
-        if watcher is not None:
-            watcher.attach(self._workdir)
-            watcher.start()
 
     @property
     def idle(self) -> bool:
@@ -95,7 +84,7 @@ class AgenticProcess:
             return True
         return False
 
-    def prompt(self, instruction: str, agent: Agent | None = None) -> None:
+    def prompt(self, instruction: str, agent: "AgentRunner | None" = None) -> None:
         """Launch Claude with the given instruction. Sets idle=False.
 
         If ``agent`` is provided, installs it as a sub-agent in the workdir
@@ -145,7 +134,12 @@ class AgenticProcess:
             await asyncio.sleep(2.0)
 
     @property
-    def outputs(self) -> list[TextFileRecord]:
+    def output_folder(self) -> Path | None:
+        """The working directory where Claude writes output files."""
+        return self._workdir
+
+    @property
+    def outputs(self) -> list["TextFileRecord"]:
         """Files created in workdir at or after start() was called."""
         from flow_sdk.fs_records.text_file_record import TextFileRecord
         if self._workdir is None or self._start_time is None:

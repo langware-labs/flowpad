@@ -102,7 +102,7 @@ class BasePTYWorker(BaseWorker):
         return await self.cancel_pty_session(self._deps.flow)
 
     async def execute_task(self, request: WorkerRequest) -> AsyncIterator[WorkerStreamEvent]:
-        """PTY lifecycle: start session → create Shell → run_process → yield RUNNING."""
+        """PTY lifecycle: start session → run_process → yield RUNNING."""
         deps = request.ctx.deps
         self._deps = deps
 
@@ -137,7 +137,7 @@ class BasePTYWorker(BaseWorker):
             logger.info(f"[BasePTYWorker] project_dir={self._project_dir}")
 
             session_started = await compute_node.start_machine_pty_session(
-                session_id=self._machine_session_id,
+                shell_id=self._machine_session_id,
                 rows=self.PTY_ROWS,
                 cols=self.PTY_COLS,
                 name=f"Worker - {self._worker_session_id[:8]}",
@@ -148,14 +148,9 @@ class BasePTYWorker(BaseWorker):
             deps.flow.current_terminal_id = self._machine_session_id
             await deps.flow.update()
 
-            shell = Shell(
-                id=self._machine_session_id,
-                name=f"Worker - {self._worker_session_id[:8]}",
-                status="running",
-                workdir=self._project_dir,
-                compute_node_id=compute_node.id,
-            )
-            await shell.save()
+            shell = await Shell.get_by_id(self._machine_session_id)
+            if not shell:
+                raise RuntimeError(f"Shell entity not found after PTY session creation: {self._machine_session_id}")
 
             cmd = self._build_cli_options(self._worker_session_id, self._project_dir)
 

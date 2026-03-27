@@ -17,6 +17,7 @@ import { ComputeNode, openExternalFromComputeNode } from '@sdk/entities/compute-
 import { ExternalLink, FilePlus, GitFork, Loader2, Play, Save, Trash2, Workflow as WorkflowIcon, Zap } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState, KeyboardEvent } from 'react';
 import { WorkflowTraceGutter } from './WorkflowTraceGutter';
+import { WorkflowRunsList } from './WorkflowRunsList';
 import type { ClaudeTraceEvent } from '@src/types/trace-event';
 import { useClaudeSessionTrace } from '@src/hooks/use-claude-session-trace';
 import { PipelineViewer } from '@src/components/pipeline-viewer';
@@ -48,6 +49,7 @@ function WorkflowEditor({
   onProcessChange,
   prepareEntry,
   onPrepareChange,
+  runHistory,
 }: {
   workflow: Workflow;
   fsTypeId: TypeId | undefined;
@@ -55,6 +57,7 @@ function WorkflowEditor({
   onProcessChange: (entry: ProcessEntry | null) => void;
   prepareEntry: ProcessEntry | null;
   onPrepareChange: (entry: ProcessEntry | null) => void;
+  runHistory: ProcessEntry[];
 }) {
   const { toast } = useToast();
   const [content, setContent] = useState('');
@@ -402,56 +405,70 @@ function WorkflowEditor({
         </div>
       </div>
 
-      {/* Editor / Pipeline view */}
-      {viewMode === 'pipeline' && workflow.hasPipeline && fsTypeId ? (
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <PipelineViewer pipelinePath={workflow.pipelinePath!} fsTypeId={fsTypeId} />
-        </div>
-      ) : isLoading ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : activeEntry ? (
-        <ResizablePanelGroup direction="vertical" className="min-h-0 flex-1">
-          <ResizablePanel defaultSize={70} minSize={20}>
-            <div className="flex h-full overflow-hidden">
-              <div className="min-w-0 flex-1 overflow-auto" ref={editorContainerRef}>
-                <MilkdownEditor content={content} onChange={handleChange} />
-              </div>
-              {processEntry && (
-                <WorkflowTraceGutter
-                  workerSessionId={workerSessionId}
-                  editorContainerRef={editorContainerRef as React.RefObject<HTMLDivElement>}
-                  displayEvents={
-                    selectedHistoryIdx !== null
-                      ? (traceHistory[selectedHistoryIdx]?.events ?? [])
-                      : currentTraceEvents
-                  }
-                  traceHistory={traceHistory}
-                  selectedHistoryIdx={selectedHistoryIdx}
-                  onSelectHistory={setSelectedHistoryIdx}
-                />
-              )}
+      {/* Editor / Pipeline view + Runs list */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* Main editor area */}
+        <div className="min-w-0 flex-1 overflow-hidden">
+          {viewMode === 'pipeline' && workflow.hasPipeline && fsTypeId ? (
+            <div className="h-full overflow-hidden">
+              <PipelineViewer pipelinePath={workflow.pipelinePath!} fsTypeId={fsTypeId} />
             </div>
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={30} minSize={10}>
-            <InteractiveTerminal
-              sessionId={activeEntry.shellId}
-              process={activeEntry.process}
-              active
-              embedded
-              onClose={() => void handleClose()}
-              onWorkerSessionId={setWorkerSessionId}
-              className="h-full"
-            />
-          </ResizablePanel>
-        </ResizablePanelGroup>
-      ) : (
-        <div className="min-h-0 flex-1 overflow-auto">
-          <MilkdownEditor content={content} onChange={handleChange} />
+          ) : isLoading ? (
+            <div className="flex h-full items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : activeEntry ? (
+            <ResizablePanelGroup direction="vertical" className="h-full">
+              <ResizablePanel defaultSize={70} minSize={20}>
+                <div className="flex h-full overflow-hidden">
+                  <div className="min-w-0 flex-1 overflow-auto" ref={editorContainerRef}>
+                    <MilkdownEditor content={content} onChange={handleChange} />
+                  </div>
+                  {processEntry && (
+                    <WorkflowTraceGutter
+                      workerSessionId={workerSessionId}
+                      editorContainerRef={editorContainerRef as React.RefObject<HTMLDivElement>}
+                      displayEvents={
+                        selectedHistoryIdx !== null
+                          ? (traceHistory[selectedHistoryIdx]?.events ?? [])
+                          : currentTraceEvents
+                      }
+                      traceHistory={traceHistory}
+                      selectedHistoryIdx={selectedHistoryIdx}
+                      onSelectHistory={setSelectedHistoryIdx}
+                    />
+                  )}
+                </div>
+              </ResizablePanel>
+              <ResizableHandle withHandle />
+              <ResizablePanel defaultSize={30} minSize={10}>
+                <InteractiveTerminal
+                  sessionId={activeEntry.shellId}
+                  process={activeEntry.process}
+                  active
+                  embedded
+                  onClose={() => void handleClose()}
+                  onWorkerSessionId={setWorkerSessionId}
+                  className="h-full"
+                />
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          ) : (
+            <div className="h-full overflow-auto">
+              <MilkdownEditor content={content} onChange={handleChange} />
+            </div>
+          )}
         </div>
-      )}
+
+        {/* Runs list panel */}
+        {runHistory.length > 0 && (
+          <WorkflowRunsList
+            entries={runHistory}
+            currentEntry={processEntry}
+            computeNodeId={fsTypeId?.id}
+          />
+        )}
+      </div>
 
       <AlertDialog open={showMcpModal} onOpenChange={setShowMcpModal}>
         <AlertDialogContent>
@@ -496,6 +513,7 @@ export function WorkflowsPage() {
   // Per-workflow process state — survives workflow list navigation
   const [processMap, setProcessMap] = useState<Map<string, ProcessEntry>>(new Map());
   const [prepareMap, setPrepareMap] = useState<Map<string, ProcessEntry>>(new Map());
+  const [runHistoryMap, setRunHistoryMap] = useState<Map<string, ProcessEntry[]>>(new Map());
 
   const setWorkflowProcess = useCallback((workflowId: string, entry: ProcessEntry | null) => {
     setProcessMap((prev) => {
@@ -504,6 +522,14 @@ export function WorkflowsPage() {
       else next.delete(workflowId);
       return next;
     });
+    if (entry) {
+      setRunHistoryMap((prev) => {
+        const next = new Map(prev);
+        const hist = next.get(workflowId) ?? [];
+        next.set(workflowId, [entry, ...hist]);
+        return next;
+      });
+    }
   }, []);
 
   const setWorkflowPrepare = useCallback((workflowId: string, entry: ProcessEntry | null) => {
@@ -664,6 +690,7 @@ export function WorkflowsPage() {
             onProcessChange={(entry) => setWorkflowProcess(selectedWorkflow.id, entry)}
             prepareEntry={prepareMap.get(selectedWorkflow.id) ?? null}
             onPrepareChange={(entry) => setWorkflowPrepare(selectedWorkflow.id, entry)}
+            runHistory={runHistoryMap.get(selectedWorkflow.id) ?? []}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-muted-foreground">
