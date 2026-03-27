@@ -196,7 +196,7 @@ def test_hook_event_types():
     assert HookEventType.CWD_CHANGED == "CwdChanged"
     assert HookEventType.FILE_CHANGED == "FileChanged"
 
-    assert len(HookEventType) == 24
+    assert len(HookEventType) == 25
 
 
 def test_hook_scope_values():

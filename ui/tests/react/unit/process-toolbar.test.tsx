@@ -32,7 +32,7 @@ function makeProcess(overrides: Partial<AgenticProcess> = {}): AgenticProcess {
     worker_session_id: 'session-1',
     pty_pid: 'pty-1',
     workdir: '/home/user/project',
-    context_data: { chrome: false, permission_mode: 'askUser' },
+    cliOptions: { chrome: false, permission_mode: 'askUser', debug: false },
     state: { status: 'running' },
     save: vi.fn(),
     ...overrides,

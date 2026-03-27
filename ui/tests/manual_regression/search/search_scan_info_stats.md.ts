@@ -1,6 +1,36 @@
 import { expect, test } from '@playwright/test';
+import * as fs from 'fs';
+import * as path from 'path';
+import { fileURLToPath } from 'url';
 
-const API_URL = process.env.API_URL ?? 'http://localhost:9007';
+// Resolve the API URL: prefer process.env.API_URL, then read LOCAL_SERVER_PORT from
+// ui/.env.local, then fall back to 9008. We read .env.local directly here because
+// in Playwright ESM mode, process.env mutations made in playwright.config.ts do not
+// propagate to worker processes that run the test files.
+function resolveApiUrl(): string {
+  if (process.env.API_URL) return process.env.API_URL;
+  // Try multiple candidate paths for .env.local.
+  // Build candidates safely — import.meta.url may not be available in all worker contexts.
+  const candidates: string[] = [];
+  try { candidates.push(path.resolve(path.dirname(fileURLToPath(new URL(import.meta.url))), '../../../.env.local')); } catch (_) {}
+  try { candidates.push(path.resolve(process.cwd(), '.env.local')); } catch (_) {}
+  for (const envPath of candidates) {
+    try {
+      if (fs.existsSync(envPath)) {
+        for (const line of fs.readFileSync(envPath, 'utf-8').split('\n')) {
+          const eq = line.indexOf('=');
+          if (eq < 1) continue;
+          if (line.slice(0, eq).trim() === 'LOCAL_SERVER_PORT') {
+            return `http://localhost:${line.slice(eq + 1).trim()}`;
+          }
+        }
+      }
+    } catch (_) { /* ignore */ }
+  }
+  return 'http://localhost:9008';
+}
+
+const API_URL = resolveApiUrl();
 
 async function dismissSetupModal(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
@@ -59,6 +89,13 @@ test.describe('Search Scan Info Stats', () => {
     await dismissSetupModal(page);
     await page.goto('/dock/home');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+
+    // Dismiss WelcomeModal if shown (appears after DB reset when scanInfo.never_indexed=true).
+    // When open, the AlertDialog sets aria-hidden on the rest of the page, blocking pointer events.
+    const skipForNow = page.getByRole('button', { name: 'Skip for now' });
+    if (await skipForNow.isVisible({ timeout: 12_000 }).catch(() => false)) {
+      await skipForNow.click();
+    }
 
     const input = page.locator('[data-testid="search-input"]').first();
     await expect(input).toBeVisible({ timeout: 10_000 });
