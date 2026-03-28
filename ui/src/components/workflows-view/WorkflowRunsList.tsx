@@ -31,10 +31,10 @@ export function WorkflowRunsList({ entries, currentEntry, computeNodeId }: Workf
       <div className="flex-1 overflow-y-auto py-1">
         {entries.map((entry, idx) => (
           <WorkflowRunItem
-            key={entry.process.id ?? entry.shell.id}
+            key={entry.process.id}
             entry={entry}
             label={`Run ${entries.length - idx}`}
-            isCurrent={currentEntry?.shell.id === entry.shell.id}
+            isCurrent={currentEntry?.process.id === entry.process.id}
             computeNodeId={computeNodeId}
           />
         ))}

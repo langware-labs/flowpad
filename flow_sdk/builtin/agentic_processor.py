@@ -875,13 +875,16 @@ class AgenticProcess(Entity):
         """The local ComputeNode backing this process's PTY sessions.
 
         compute_node_id is stored as the full typeid string ``compute_node-<uuid>``.
+        Raises ValueError if compute_node_id is not set — call open() which resolves it first.
         """
+        if not self.compute_node_id:
+            raise ValueError(
+                f"AgenticProcess {self.id!r} has no compute_node_id. "
+                "Call open() to resolve and assign the compute node."
+            )
         from flow_sdk.builtin.faas.compute_node import ComputeNode
-        if self.compute_node_id:
-            parts = self.compute_node_id.split("-", 1)
-            node_id = parts[1] if len(parts) == 2 else self.compute_node_id
-        else:
-            node_id = ""
+        parts = self.compute_node_id.split("-", 1)
+        node_id = parts[1] if len(parts) == 2 else self.compute_node_id
         return ComputeNode(id=node_id, node_provider_id="local", node_provider_type="local_machine")
 
     async def _send_pty_raw(self, compute_node, data: bytes) -> None:
@@ -921,6 +924,17 @@ class AgenticProcess(Entity):
         # Detect restart: process previously had a shell session.
         # Captured before _open_shell so it reflects the pre-call state.
         had_previous_session = bool(self.shell_id)
+
+        # Resolve compute node: if not yet assigned, look up the @local node (desktop only).
+        if not self.compute_node_id:
+            from flow_sdk.builtin.faas.compute_node import ComputeNode
+            local_node = await ComputeNode.get_one({"uname": "local"})
+            if not local_node:
+                return ApiFailResponse(
+                    message="No compute node assigned and no @local compute node found. "
+                    "This environment does not support local process execution."
+                )
+            self.compute_node_id = str(local_node.typeid)
 
         compute_node = self.compute_node
 

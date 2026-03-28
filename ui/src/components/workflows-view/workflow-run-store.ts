@@ -3,7 +3,7 @@ import type { Shell } from '@sdk/entities/shell';
 
 export interface ProcessEntry {
   process: AgenticProcess;
-  shell: Shell;
+  shell?: Shell;
 }
 
 // Module-level cache: survives component unmount/remount

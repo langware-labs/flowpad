@@ -23,6 +23,7 @@ async def test_execute_plan_injects_to_pty(bootstrapped_client, user):
         name="test-pty-inject-execute",
         worker_session_id=str(uuid.uuid4()),
         shell_id=str(uuid.uuid4()),
+        compute_node_id=f"compute_node-{uuid.uuid4()}",
     )
     await process.save(user.typeid)
 
@@ -59,6 +60,7 @@ async def test_execute_plan_clear_context_injects_clear_then_plan(bootstrapped_c
         name="test-pty-inject-clear",
         worker_session_id=str(uuid.uuid4()),
         shell_id=str(uuid.uuid4()),
+        compute_node_id=f"compute_node-{uuid.uuid4()}",
     )
     await process.save(user.typeid)
 
@@ -96,6 +98,7 @@ async def test_update_plan_injects_to_pty(bootstrapped_client, user):
         name="test-pty-inject-update",
         worker_session_id=str(uuid.uuid4()),
         shell_id=str(uuid.uuid4()),
+        compute_node_id=f"compute_node-{uuid.uuid4()}",
     )
     await process.save(user.typeid)
 

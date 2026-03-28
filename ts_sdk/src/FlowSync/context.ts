@@ -745,28 +745,13 @@ class DataContext extends EventEmitter {
     await this.setContextEntityTypeId(ContextEntitiesEnum.CurrentComputeNodeTypeId, computeNode?.typeId ?? null);
   }
 
-  async refreshProject(timeout: number = 10000) {
+  async refreshProject() {
     if (!this.project) {
       await this.setComputeNode(null);
       return;
     }
-    // Skip fetch if compute node is already available (e.g. set from bootstrap data)
-    if (this.computeNode) {
-      defineGlobal('project', this.project);
-      return;
-    }
-    const computeNode = await this.project.getComputeNode();
-    if (computeNode) {
-      await this.setComputeNode(computeNode);
-    } else {
-      await this.setComputeNode(null);
-      if (timeout <= 0) {
-        return;
-      }
-      setTimeout(async () => {
-        await this.refreshProject(timeout - 1000);
-      }, 1000);
-    }
+    // Compute node is always set from bootstrap — never fetch it separately.
+    defineGlobal('project', this.project);
     defineGlobal('project', this.project);
   }
   async loadContextEntity(typeId: TypeId) {
