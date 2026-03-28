@@ -76,35 +76,22 @@ async def test_close():
 
 
 @pytest.mark.asyncio
-async def test_elevate():
-    """Call elevate(id), verify status=ELEVATED + claude_session_id."""
-    shell = Shell(id=str(uuid.uuid4()), status=ShellStatus.RUNNING.value)
-    await shell.save()
-
-    await shell.elevate("claude-456")
-
-    retrieved = await Shell.get_one({"id": shell.id})
-    assert retrieved.status == ShellStatus.ELEVATED.value
-    assert retrieved.claude_session_id == "claude-456"
-
-
-@pytest.mark.asyncio
 async def test_get_active_sessions():
-    """Mix of RUNNING/CLOSED/ELEVATED, verify only active returned in tab_order."""
-    running = Shell(id=str(uuid.uuid4()), status=ShellStatus.RUNNING.value, tab_order=2)
-    await running.save()
+    """RUNNING shells are active; CLOSED shells are not."""
+    running1 = Shell(id=str(uuid.uuid4()), status=ShellStatus.RUNNING.value, tab_order=2)
+    await running1.save()
+
+    running2 = Shell(id=str(uuid.uuid4()), status=ShellStatus.RUNNING.value, tab_order=1)
+    await running2.save()
 
     closed = Shell(id=str(uuid.uuid4()), status=ShellStatus.CLOSED.value, tab_order=0)
     await closed.save()
 
-    elevated = Shell(id=str(uuid.uuid4()), status=ShellStatus.ELEVATED.value, tab_order=1)
-    await elevated.save()
-
     active = await Shell.get_active_sessions()
     active_ids = [s.id for s in active]
 
-    assert running.id in active_ids
-    assert elevated.id in active_ids
+    assert running1.id in active_ids
+    assert running2.id in active_ids
     assert closed.id not in active_ids
 
     # Verify order by tab_order

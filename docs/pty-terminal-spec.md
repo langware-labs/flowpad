@@ -738,9 +738,6 @@ close_session()
   → PtyStreamFile.delete()
   → Remove PtySessionState from session_manager
 
-elevate_shell_session()
-  → Record state → ELEVATED
-  → Record claude_session_id = <generated>
 ```
 
 ### 12.2 API Endpoints

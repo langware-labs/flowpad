@@ -474,7 +474,6 @@ session = ShellSession.fromRecord(record)  # hydrate
 
 session.status       # delegates to record.status
 session.close()      # transitions status, deletes .pty file, saves record
-session.elevate(claude_session_id)  # ELEVATED + claude_session_id stored on record
 ```
 
 ### Domain Objects (`flow_sdk/domain/`)
@@ -486,7 +485,7 @@ session.elevate(claude_session_id)  # ELEVATED + claude_session_id stored on rec
 | `ClaudeSession` | `session` | Claude JSONL session, transcript access |
 | `Environment` | `environment` | Env var management, variable resolution |
 | `Shell` / `ShellRunner` | -- | Command execution, result capture (`Shell` is an alias for `ShellRunner`) |
-| `ShellSession` | `shell_session` | Lifecycle (close, elevate), `.pty` stream path computation |
+| `ShellSession` | `shell_session` | Lifecycle (close), `.pty` stream path computation |
 | `ProcessMonitor` | -- | Background process health monitoring |
 
 **Note**: `Shell`/`ShellRunner` and `ProcessMonitor` do not wrap `Record`s — they are domain service objects that follow the module's pattern without the `DomainObject` base class.

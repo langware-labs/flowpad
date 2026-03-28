@@ -1,4 +1,4 @@
-"""Tests for ShellRecord lifecycle methods (close, elevate, pty_stream_path)."""
+"""Tests for ShellRecord lifecycle methods (close, pty_stream_path)."""
 
 import pytest
 
@@ -66,19 +66,6 @@ def test_close_idempotent():
     record = _make_record(state=ShellStatus.CLOSED)
     record.close()
     assert record.status == ShellStatus.CLOSED
-
-
-def test_elevate():
-    record = _make_record()
-    record.elevate("claude-123")
-
-    assert record.status == ShellStatus.ELEVATED
-    assert record.data.get("claude_session_id") == "claude-123"
-
-    reloaded = ShellRecord.discover_one("test-session-1")
-    assert reloaded is not None
-    assert reloaded.status == ShellStatus.ELEVATED
-    assert reloaded.data.get("claude_session_id") == "claude-123"
 
 
 def test_pty_stream_path(use_tmp_records_root):

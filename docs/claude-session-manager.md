@@ -166,24 +166,17 @@ When flags change, `RestartRequiredOverlay` appears and calls `restartSession` o
 
 ## Shell Session Elevation
 
-In addition to the AgenticProcess-based elevation flow (`elevate-pty`), there is a `ShellSessionRecord`-based elevation flow (`elevate-shell-session`).
-
-### Two Elevation Paths
-
-| Action | Input | What it creates | Record updated |
-|--------|-------|----------------|---------------|
-| `elevate-pty` | Raw PTY session ID | `AgenticProcess` + `AgenticProcessor` entities | None (entity-based) |
-| `elevate-shell-session` | Shell session record ID | Claude CLI command in existing PTY | `ShellSessionRecord` state -> ELEVATED |
+The `elevate-shell-session` action promotes a running plain shell tab into a Claude session by creating an `AgenticProcess` bound to the existing shell and calling `open()` on it.
 
 ### elevate-shell-session Flow
 
-1. Frontend calls `POST /api/v1/graph/compute_node/{id}/elevate-shell-session` with `{session_id, model?, permission_mode?, resume_session_id?}`
-2. Backend validates the `ShellSessionRecord` exists and has `status == RUNNING`
-3. Generates a `claude_session_id` (UUID)
-4. Calls `ShellSession.elevate(claude_session_id)` which transitions the record to `ELEVATED` and stores the `claude_session_id`
-5. Builds a `claude` CLI command string with the appropriate flags
-6. Sends the command to the PTY via `compute_provider.send_pty_input()`
-7. Returns `{session_id, claude_session_id, status: "elevated"}`
+1. Frontend calls `POST /api/v1/graph/compute_node/{id}/elevate-shell-session` with `{shell_id, model?, permission_mode?, resume_session_id?}`
+2. Backend creates an `AgenticProcess` with `shell_id` pre-set and `ClaudeCliOptions` built from the request params
+3. Calls `AgenticProcess.open()` — detects the PTY is already alive, worker is not running, and injects the `claude` CLI command into the existing terminal
+4. `open()` writes `agentic_process_id` back to the `ShellRecord` so the shell knows its owning process
+5. Returns standard `AgenticProcess.open()` response: `{id, status, shell_id, worker_session_id, ...}`
+
+`ShellStatus` has three values: `IDLE`, `RUNNING`, `CLOSED`. There is no `ELEVATED` state — a shell with `agentic_process_id` set on its `ShellRecord` is considered owned by a process.
 
 ---
 
