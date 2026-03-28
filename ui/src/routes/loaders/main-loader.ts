@@ -163,9 +163,9 @@ async function loadShell(pointer: string | undefined): Promise<void> {
       throw redirect('/dock/shell');
     }
 
-    const { shellId } = await process.open({ visible: true });
+    const { shell } = await process.open({ visible: true });
 
-    dataContext.setActiveShellId(shellId);
+    dataContext.setActiveShellId(shell.id);
     await dataContext.setContextEntityTypeId(
       ContextEntitiesEnum.CurrentProcessTypeId,
       new TypeId(AgenticProcess.type, processId),

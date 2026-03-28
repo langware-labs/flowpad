@@ -93,6 +93,8 @@ export interface ISpawnWorkerOptions {
   /** Forwarded to createProcess(). Default: true. */
   watchProcessor?: boolean;
   watchProcess?: boolean;
+  /** WS request timeout ms for shell.startPty() (default: 30 000). */
+  ptyTimeout?: number;
 }
 
 /**
