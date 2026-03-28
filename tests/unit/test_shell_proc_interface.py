@@ -6,7 +6,7 @@ and call shell.open_pty() — no DB, no server, cross-platform.
 The compute_node sync property constructs a local ComputeNode on the fly, so
 no injection or DB lookup is needed.
 
-Tests that require a full DB + entity lifecycle live in
+Tests stop eih require a full DB + entity lifecycle live in
 tests/api/test_shell_proc_interface.py.
 """
 

@@ -201,11 +201,11 @@ function WorkflowEditor({
     const runPath = workflow.preparedPath ?? workflow.source_vfs_path;
     const instruction = `Run workflow at /${runPath} using the flow skill located at: ${flowSkillPath}`;
     const workdir = dataContext.project?.fs_storage_mount_path;
-    const { process, shellId } = await AgenticProcess.spawn(
+    const { process, shell } = await AgenticProcess.spawn(
       { permissionMode: 'bypassPermissions', workdir },
       { instruction },
     );
-    onProcessChange({ process, shellId: shellId! });
+    onProcessChange({ process, shell: shell! });
   }, [workflow, onProcessChange]);
 
   const doPrepare = useCallback(async () => {
@@ -216,14 +216,14 @@ function WorkflowEditor({
     const derived = Workflow.derivePreparedPath(workflow.source_vfs_path!);
     const instruction = `Prepare workflow at /${workflow.source_vfs_path}, write prepared steps to /${derived}, using the compile-workflow skill at: ${compileSkillPath}`;
     const workdir = dataContext.project?.fs_storage_mount_path;
-    const { process, shellId } = await AgenticProcess.spawn(
+    const { process, shell } = await AgenticProcess.spawn(
       { permissionMode: 'bypassPermissions', workdir },
       { instruction },
     );
     // Optimistically persist the prepared path on the entity
     workflow.prepared_vfs_path = derived;
     await workflow.save();
-    onPrepareChange({ process, shellId: shellId! });
+    onPrepareChange({ process, shell: shell! });
   }, [workflow, onPrepareChange]);
 
   const handlePrepare = useCallback(async () => {
@@ -443,7 +443,7 @@ function WorkflowEditor({
               <ResizableHandle withHandle />
               <ResizablePanel defaultSize={30} minSize={10}>
                 <InteractiveTerminal
-                  sessionId={activeEntry.shellId}
+                  sessionId={activeEntry.shell.id}
                   process={activeEntry.process}
                   active
                   embedded

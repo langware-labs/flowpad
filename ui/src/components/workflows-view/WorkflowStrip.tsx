@@ -32,7 +32,7 @@ export function WorkflowStrip() {
       console.log('[WorkflowStrip] handleRun fired for', workflow.id, workflow.displayName);
       try {
         const entry = await workflow.run();
-        console.log('[WorkflowStrip] run() succeeded, shellId:', entry.shellId);
+        console.log('[WorkflowStrip] run() succeeded, shell.id:', entry.shell.id);
         workflowRunStore.set(workflow.id, entry);
         navigation.openDock(workflow.dockPointer);
       } catch (err) {

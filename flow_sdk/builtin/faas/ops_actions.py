@@ -26,6 +26,7 @@ class OpsActionsMixin:
 
     async def _setup_op(self) -> ApiResponse:
         """Setup the compute node."""
+        from flow_sdk.builtin.compute_node import ComputeNode
         try:
             # Reload the node from DB to ensure all fields are hydrated
             hydrated: ComputeNode = await ComputeNode.get_by_id(self.id)
@@ -80,6 +81,7 @@ class OpsActionsMixin:
 
     async def _setup_lm_proxy_op(self) -> ApiResponse:
         """Setup LM proxy access for the compute node."""
+        from flow_sdk.builtin.compute_node import ComputeNode
         try:
             # Reload the node from DB to ensure all fields are hydrated
             hydrated: ComputeNode = await ComputeNode.get_by_id(self.id)
