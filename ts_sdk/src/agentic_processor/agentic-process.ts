@@ -223,7 +223,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       },
       workdir: options.workdir,
       visible: workerOptions?.visible,
-    }).save();
+    }).save(options.scope ?? []);
 
     if (workerOptions?.headless) {
       await process.watch();
@@ -236,9 +236,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       return { process, workerSessionId: workerOptions.workerSessionId };
     }
 
-    const { workerSessionId, shell } = await process.open(
-      workerOptions?.instruction ? { instruction: workerOptions.instruction } : undefined,
-    );
+    const { workerSessionId, shell } = await process.open({
+      instruction: workerOptions?.instruction,
+      ptyTimeout: workerOptions?.ptyTimeout,
+    });
     return { process, shell, workerSessionId };
   }
 
@@ -1030,21 +1031,22 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @param options - Optional instruction to execute
    * @returns Shell session ID and worker session ID
    */
-  async open(options?: { instruction?: string; visible?: boolean }): Promise<{ workerSessionId: string; shell: Shell }> {
+  async open(options?: { instruction?: string; visible?: boolean; ptyTimeout?: number }): Promise<{ workerSessionId: string; shell: Shell }> {
     const { Shell } = await import('../entities/shell');
     const actionInfo = new ActionInfo('open', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = options ?? {};
     const result = await dataManager.callAction<
       unknown,
-      { shell_id: string; worker_session_id: string; shell: Record<string, unknown> }
+      { shell_id: string; worker_session_id: string; shell: Record<string, unknown> } | null
     >(actionInfo);
+    if (!result) throw new Error('Process could not be opened (process may be terminated)');
     this.shell_id = result.shell_id;
     this.worker_session_id = result.worker_session_id;
     dataManager.updateEntityFromJson(result.shell);
     dataManager.notifyEntityChanged(this);
     const shell = await dataManager.getByTypeId<Shell>(new TypeId(Shell.type, result.shell_id));
     if (!shell) throw new Error(`Shell ${result.shell_id} not found after start()`);
-    await shell.startPty({ cols: 80, rows: 24 });
+    await shell.startPty({ cols: 80, rows: 24, timeout: options?.ptyTimeout });
     return { workerSessionId: result.worker_session_id, shell };
   }
 

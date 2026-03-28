@@ -202,7 +202,7 @@ function WorkflowEditor({
     const instruction = `Run workflow at /${runPath} using the flow skill located at: ${flowSkillPath}`;
     const workdir = dataContext.project?.fs_storage_mount_path;
     const { process, shell } = await AgenticProcess.spawn(
-      { permissionMode: 'bypassPermissions', workdir },
+      { permissionMode: 'bypassPermissions', workdir, scope: [workflow.typeId] },
       { instruction },
     );
     onProcessChange({ process, shell: shell! });
@@ -526,7 +526,9 @@ export function WorkflowsPage() {
       setRunHistoryMap((prev) => {
         const next = new Map(prev);
         const hist = next.get(workflowId) ?? [];
-        next.set(workflowId, [entry, ...hist]);
+        // Deduplicate: new live entry replaces any existing entry with same process.id
+        const filtered = hist.filter((e) => e.process.id !== entry.process.id);
+        next.set(workflowId, [entry, ...filtered]);
         return next;
       });
     }
@@ -551,6 +553,23 @@ export function WorkflowsPage() {
       workflowRunStore.delete(selectedId);
     }
   }, [selectedId, setWorkflowProcess]);
+
+  // Load child processes from DB when workflow is selected
+  useEffect(() => {
+    if (!selectedWorkflow?.id) return;
+    void AgenticProcess.query(new QueryRequest({ type: AgenticProcess.type, scope: [selectedWorkflow.typeId] }), true)
+      .then((processes) => {
+        const sorted = [...processes].sort(
+          (a, b) => (b.created_date?.getTime() ?? 0) - (a.created_date?.getTime() ?? 0),
+        );
+        setRunHistoryMap((prev) => {
+          const next = new Map(prev);
+          const liveMap = new Map((prev.get(selectedWorkflow.id) ?? []).map((e) => [e.process.id!, e]));
+          next.set(selectedWorkflow.id, sorted.map((p) => liveMap.get(p.id!) ?? { process: p }));
+          return next;
+        });
+      });
+  }, [selectedWorkflow?.id]);
 
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Workflow | null>(null);

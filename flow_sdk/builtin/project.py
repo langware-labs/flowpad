@@ -22,7 +22,7 @@ from flow_sdk.request_context.methods import (
     get_current_request_info,
     get_current_service,
 )
-from flow_sdk.responses.response import ApiSuccessResponse
+from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
 
 class ProjectInitializeOptions(ComputeSourceControlInitializeOptions):
@@ -120,11 +120,6 @@ class Project(Entity):
 
         # In desktop/local mode, always use the @local compute node
         if default_service_config.is_local:
-            project_compute_nodes = await ComputeNode.get_all(source_entity=self.typeid)
-            if project_compute_nodes:
-                logging.warning(
-                    f"Found {len(project_compute_nodes)} compute nodes on desktop env"
-                )
             return await ComputeNode.get_by_uname("local")
 
         project_compute_nodes = await ComputeNode.get_all(source_entity=self.typeid)
@@ -208,8 +203,8 @@ class Project(Entity):
         agent_id: str | None = None,
         source_vfs_path: str | None = None,
     ):
-        raise NotImplementedError(
-            "_create_process_impl is a cloud-only path and is not supported in the desktop environment."
+        return ApiFailResponse(
+            message="_create_process_impl is a cloud-only path and is not supported in the desktop environment."
         )
 
     @action.post(action_name="create-process")
@@ -273,7 +268,6 @@ class Project(Entity):
 
     @action.get(action_name="get-compute-node")
     async def get_compute_node_action(self):
-        # Use the same query as the entity method (source_entity relationship)
         compute_node = await self.get_compute_node()
         return ApiSuccessResponse(
             data={"compute_node": compute_node.model_dump() if compute_node else None}
