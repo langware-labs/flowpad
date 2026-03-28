@@ -986,6 +986,16 @@ class AgenticProcess(Entity):
             )
             self.shell_id = shell.id
             on_exit = self._make_pty_exit_callback()
+            # Write process ID back to ShellRecord so the shell knows its owning process
+            try:
+                from flow_sdk.fs_records.shell_record import ShellRecord
+                _shell_rec = ShellRecord.discover_one(shell.id)
+                if _shell_rec:
+                    object.__setattr__(_shell_rec, "agentic_process_id", self.id)
+                    object.__getattribute__(_shell_rec, "_dirty_keys").add("agentic_process_id")
+                    _shell_rec.save()
+            except Exception as _e:
+                logger.debug("AgenticProcess %s: failed to update ShellRecord.agentic_process_id: %s", self.id, _e)
 
             logger.info(
                 "AgenticProcess %s: %s shell %s (worker=%s)",

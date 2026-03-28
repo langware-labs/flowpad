@@ -37,6 +37,11 @@ interface BaseMessage {
   message_id: string;
 }
 
+export interface IWSRestOptions {
+  /** Request timeout in milliseconds. Defaults to ConnectionManager.requestTimeoutMs (30 000). */
+  timeout?: number;
+}
+
 // interface EchoMessage extends BaseMessage {
 //   messageType: "echo";
 //   text: string;
@@ -432,17 +437,18 @@ export class ConnectionManager extends EventEmitter {
     }
   }
 
-  sendRestApiMessage<T>(message: RestApiMessage): Promise<T> {
+  sendRestApiMessage<T>(message: RestApiMessage, options?: IWSRestOptions): Promise<T> {
     return new Promise((resolve, reject) => {
       if (!this.socket || !this.connected) {
         reject(new Error('WebSocket not connected'));
         return;
       }
 
+      const timeoutMs = options?.timeout ?? this.requestTimeoutMs;
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(message.message_id);
         reject(new Error(`Request timeout for message_id: ${message.message_id}`));
-      }, this.requestTimeoutMs);
+      }, timeoutMs);
 
       this.pendingRequests.set(message.message_id, {
         resolve: resolve as (value: unknown) => void,

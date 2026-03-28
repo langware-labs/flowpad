@@ -25,7 +25,6 @@ class ShellStatus(StrEnum):
     IDLE = "idle"
     RUNNING = "running"
     CLOSED = "closed"
-    ELEVATED = "elevated"
 
 
 # Backward-compat alias
@@ -66,7 +65,6 @@ class ShellRecord(Record):
         kwargs.setdefault("workdir", None)
         kwargs.setdefault("name", None)
         kwargs.setdefault("tab_order", 0)
-        kwargs.setdefault("claude_session_id", None)
         kwargs.setdefault("entity_id", None)
         kwargs.setdefault("created_at", datetime.now(timezone.utc).isoformat())
         kwargs.setdefault("last_active_at", datetime.now(timezone.utc).isoformat())
@@ -109,15 +107,6 @@ class ShellRecord(Record):
                     pty_path.unlink()
             except (OSError, ValueError):
                 pass
-        self.save()
-
-    def elevate(self, claude_session_id: str) -> None:
-        """Set status to ELEVATED and store the claude_session_id, then save."""
-        object.__setattr__(self, "status", ShellStatus.ELEVATED)
-        object.__setattr__(self, "claude_session_id", claude_session_id)
-        dirty = object.__getattribute__(self, "_dirty_keys")
-        dirty.add("status")
-        dirty.add("claude_session_id")
         self.save()
 
     def sync_from_entity(self, entity) -> bool:

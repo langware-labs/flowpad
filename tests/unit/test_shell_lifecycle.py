@@ -110,7 +110,6 @@ def test_shell_session_entity_defaults():
     assert entity.pty_pid is None
     assert entity.compute_node_id is None
     assert entity.tab_order == 0
-    assert entity.claude_session_id is None
     assert entity.created_at is None
     assert entity.last_active_at is None
 
@@ -128,7 +127,6 @@ def test_shell_session_entity_has_all_api_fields():
         "pty_pid",
         "compute_node_id",
         "tab_order",
-        "claude_session_id",
         "created_at",
         "last_active_at",
     ]

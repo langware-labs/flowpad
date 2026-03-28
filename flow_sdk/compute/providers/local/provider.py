@@ -651,8 +651,9 @@ class LocalComputeProvider(ComputeProvider):
             else:
                 # Unix: configure based on shell type
                 if shell_cmd.endswith("zsh"):
-                    # zsh: use login shell but suppress new user messages
-                    spawn_args = [shell_cmd, "-l"]
+                    # zsh: interactive shell (no -l to avoid .zprofile/.zlogin blocking)
+                    # The parent env already carries PATH and user settings.
+                    spawn_args = [shell_cmd]
                     env["ZSH_DISABLE_COMPFIX"] = "true"
                     env["ZDOTDIR"] = os.path.expanduser("~")
                 elif shell_cmd.endswith("bash"):

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-import flow_sdk.builtin.faas.compute_node as compute_node_module
+import flow_sdk.builtin.faas.desktop_actions as compute_node_module
 
 
 def _capture_open_calls(monkeypatch: pytest.MonkeyPatch) -> dict:

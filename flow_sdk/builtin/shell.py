@@ -50,7 +50,6 @@ class Shell(Entity):
     pty_pid: str | None = APIField(default=None, description="PTY session ID")
     compute_node_id: str | None = APIField(default=None, description="Owning compute node")
     tab_order: int = APIField(default=0)
-    claude_session_id: str | None = APIField(default=None)
     created_at: str | None = APIField(default=None, description="ISO creation timestamp")
     last_active_at: str | None = APIField(default=None, description="ISO last activity timestamp")
     error_message: str | None = APIField(default=None, description="Error message when status=error")
@@ -265,7 +264,6 @@ class Shell(Entity):
             name=record.data.get("name"),
             workdir=record.data.get("workdir"),
             tab_order=record.data.get("tab_order") or await cls.next_tab_order(),
-            claude_session_id=record.data.get("claude_session_id"),
             pty_pid=record.data.get("pty_pid"),
             created_at=record.data.get("created_at"),
             last_active_at=record.data.get("last_active_at"),
@@ -292,7 +290,6 @@ class Shell(Entity):
         self.name = record.data.get("name")
         self.workdir = record.data.get("workdir")
         self.tab_order = record.data.get("tab_order", 0)
-        self.claude_session_id = record.data.get("claude_session_id")
         self.pty_pid = record.data.get("pty_pid")
         self.created_at = record.data.get("created_at")
         self.last_active_at = record.data.get("last_active_at")
@@ -560,12 +557,6 @@ class Shell(Entity):
                 "pty_file_b64": pty_file_b64,
             }
         )
-
-    async def elevate(self, claude_session_id: str) -> None:
-        """Elevate to a Claude session."""
-        self.status = ShellStatus.ELEVATED.value
-        self.claude_session_id = claude_session_id
-        await self.save()
 
     @classmethod
     async def get_active_sessions(cls, compute_node_typeid: str | None = None) -> list[Shell]:
