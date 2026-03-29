@@ -48,6 +48,7 @@ export interface IShellConnectionOptions {
   isActive?: boolean;       // deferred activation gate (default: true)
   workdir?: string;
   force?: boolean;          // reset seq + replayDone and re-attach (absorbs restart())
+  timeout?: number;         // WS request timeout ms (default: 30 000)
 }
 
 export interface IShell extends IEntity {
@@ -208,7 +209,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
    * replay write, then subscribe onOutput() for live output.
    */
   async startPty(opts: IShellConnectionOptions): Promise<void> {
-    const { cols, rows, isActive = true, workdir, force = false } = opts;
+    const { cols, rows, isActive = true, workdir, force = false, timeout } = opts;
 
     if (isActive) this._hasEverBeenActive = true;
     if (!this._hasEverBeenActive) return;          // still deferred
@@ -246,7 +247,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
     // _reattach() sends replay WS messages → appendOutput() stores each chunk
     // in _pty.chunks — no external subscriber exists yet (onOutput() is gated)
-    const latestSeq = await this._reattach(this._lastPtySeq);
+    const latestSeq = await this._reattach(this._lastPtySeq, timeout);
 
     // Drain replay: the server streams pty_output_msg messages before the
     // attach response, but they may arrive as separate macrotasks that haven't
@@ -271,7 +272,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     // If the first attach returned not_found (server restarted, PTY was gone),
     // _ensurePty created a fresh PTY — reattach now to fetch its replay buffer.
     if (latestSeq === undefined) {
-      const newLatestSeq = await this._reattach(0);
+      const newLatestSeq = await this._reattach(0, timeout);
       if (newLatestSeq !== undefined && newLatestSeq > 0 && this._pty!.lastSeq < newLatestSeq) {
         await new Promise<void>((resolve) => {
           const deadline = Date.now() + 2000;
@@ -316,7 +317,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     ptyOrphanBuffer.flush(this.id, this._pty);
   }
 
-  private async _reattach(sinceSeq = 0): Promise<number | undefined> {
+  private async _reattach(sinceSeq = 0, timeout?: number): Promise<number | undefined> {
     if (!this.compute_node_id) return;
     if (!this._pty) this._pty = new PtyConnection();
     this._pty.computeNodeId = this.compute_node_id;
@@ -326,7 +327,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     const action = new ActionInfo('terminal-command', 'compute_node', this.compute_node_id, 'POST');
     action.subpath = 'attach';
     action.bodyParameters = { shell_id: this.id, since_seq: sinceSeq, connection_id };
-    const result = await dataManager.callActionOverWS<any, any>(action);
+    const result = await dataManager.callActionOverWS<any, any>(action, timeout !== undefined ? { timeout } : undefined);
 
     // Server returns status="not_found" when the PTY session no longer exists
     if (result?.status === 'not_found') {

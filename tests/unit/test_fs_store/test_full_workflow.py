@@ -96,12 +96,13 @@ class TestFullWorkflow:
         )
         assert rl.list_path == tmp_path / "flow_records" / "task"
 
-    def test_delete_cleans_up(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_delete_cleans_up(self, tmp_path):
         """Create a record, delete it, verify it's gone."""
         folder = tmp_path / "entity"
         rec = Record.init_record({"id": "del1", "type": "test"}, folder)
         assert folder.exists()
 
-        rec.delete()
+        await rec.delete()
         assert not folder.exists()
         assert rec.source_file is None

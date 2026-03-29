@@ -31,19 +31,22 @@ import shlex
 import shutil
 import sys
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 from uuid import uuid4
 
-from pydantic import BaseModel, SerializationInfo, model_serializer
+from pydantic import BaseModel, PrivateAttr, SerializationInfo, model_serializer
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.app.actions.listen import set_plan_auto_approve
 from flow_sdk.core import Entity, action
 from flow_sdk.core.entity.entity_model import EntityExpansion
-from flow_sdk.fs_records.agentic_process_record import ProcessorStatus
+from flow_sdk.fs_records.agentic_process_record import AgenticProcessStatus
 from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+
+if TYPE_CHECKING:
+    from flow_sdk.builtin.faas.compute_node import ComputeNode
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +70,7 @@ class DebugState(BaseModel):
 
 
 class ProcessorState(BaseModel):
-    status: str = ProcessorStatus.IDLE.value
+    status: str = AgenticProcessStatus.IDLE.value
     index: int = 0
     total_instructions: int = 0
     current_instruction_id: str | None = None
@@ -296,7 +299,7 @@ async def _run_claude_subprocess(
             logger.error("AgenticProcess %s: claude binary not found in PATH", agentic_process_id)
             process = await AgenticProcess.get_by_id(agentic_process_id)
             if process:
-                process._set_process_state(status=ProcessorStatus.ERROR.value, error="claude binary not found")
+                process._set_process_state(status=AgenticProcessStatus.ERROR.value, error="claude binary not found")
                 await process.save()
             return
 
@@ -377,9 +380,9 @@ async def _run_claude_subprocess(
         if process:
             if proc.returncode != 0:
                 err_msg = error_output or f"claude exited with code {proc.returncode}"
-                process._set_process_state(status=ProcessorStatus.ERROR.value, error=err_msg)
+                process._set_process_state(status=AgenticProcessStatus.ERROR.value, error=err_msg)
             else:
-                process._set_process_state(status=ProcessorStatus.COMPLETE.value)
+                process._set_process_state(status=AgenticProcessStatus.COMPLETE.value)
             await process.save()
 
         # Always send completion status FlowData so the frontend output() generator terminates
@@ -389,7 +392,7 @@ async def _run_claude_subprocess(
             agentic_process_id,
             {
                 "element_type": "status",
-                "flow_value": {"status": ProcessorStatus.COMPLETE.value if is_success else ProcessorStatus.ERROR.value},
+                "flow_value": {"status": AgenticProcessStatus.COMPLETE.value if is_success else AgenticProcessStatus.ERROR.value},
                 "attributes": {
                     "element-type": "status",
                     "complete": "true",
@@ -403,14 +406,14 @@ async def _run_claude_subprocess(
         try:
             process = await AgenticProcess.get_by_id(agentic_process_id)
             if process:
-                process._set_process_state(status=ProcessorStatus.ERROR.value, error=str(exc))
+                process._set_process_state(status=AgenticProcessStatus.ERROR.value, error=str(exc))
                 await process.save()
             await _send_flow_data_message(
                 process_type,
                 agentic_process_id,
                 {
                     "element_type": "status",
-                    "flow_value": {"status": ProcessorStatus.ERROR.value},
+                    "flow_value": {"status": AgenticProcessStatus.ERROR.value},
                     "attributes": {
                         "element-type": "status",
                         "complete": "true",
@@ -553,16 +556,16 @@ class AgenticProcess(Entity):
     async def _control_pause(self):
         """Pause message processing."""
         logger.info(f"AgenticProcess {self.id}: control/pause")
-        self._set_process_state(status=ProcessorStatus.PAUSED.value)
+        self._set_process_state(status=AgenticProcessStatus.PAUSED.value)
         await self.save()
-        return ApiSuccessResponse(data={"status": ProcessorStatus.PAUSED.value})
+        return ApiSuccessResponse(data={"status": AgenticProcessStatus.PAUSED.value})
 
     async def _control_resume(self):
         """Resume message processing after pause."""
         logger.info(f"AgenticProcess {self.id}: control/resume")
-        self._set_process_state(status=ProcessorStatus.RUNNING.value)
+        self._set_process_state(status=AgenticProcessStatus.RUNNING.value)
         await self.save()
-        return ApiSuccessResponse(data={"status": ProcessorStatus.RUNNING.value})
+        return ApiSuccessResponse(data={"status": AgenticProcessStatus.RUNNING.value})
 
     async def _control_inject(self, request_info):
         """Inject a new message into the worker's input queue."""
@@ -687,17 +690,17 @@ class AgenticProcess(Entity):
         """
         state = self._get_process_state()
 
-        if state.get("status") == ProcessorStatus.TERMINATED.value:
+        if state.get("status") == AgenticProcessStatus.TERMINATED.value:
             return ApiFailResponse(message="Process has been terminated")
 
-        if state.get("status") == ProcessorStatus.RUNNING.value:
+        if state.get("status") == AgenticProcessStatus.RUNNING.value:
             return ApiFailResponse(message="Process is already running")
 
         logger.info(f"AgenticProcess {self.id}: step action")
 
         try:
             # Desktop mode: set status back to idle (no real instruction execution)
-            self._set_process_state(status=ProcessorStatus.IDLE.value)
+            self._set_process_state(status=AgenticProcessStatus.IDLE.value)
             await self.save()
 
             return ApiSuccessResponse(
@@ -710,7 +713,7 @@ class AgenticProcess(Entity):
 
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} step error: {e}")
-            self._set_process_state(status=ProcessorStatus.ERROR.value, error=str(e))
+            self._set_process_state(status=AgenticProcessStatus.ERROR.value, error=str(e))
             await self.save()
             return ApiFailResponse(message=str(e))
 
@@ -719,7 +722,7 @@ class AgenticProcess(Entity):
 
         Returns True on success, False if already terminated or on error.
         """
-        if self._get_process_state().get("status") == ProcessorStatus.TERMINATED.value:
+        if self._get_process_state().get("status") == AgenticProcessStatus.TERMINATED.value:
             logger.debug("[AgenticProcess] close() skipped for %s: already terminated", self.id)
             return False
 
@@ -731,7 +734,7 @@ class AgenticProcess(Entity):
                 self.shell_id = None
                 self.sidecar_shell_id = None
 
-            self._set_process_state(status=ProcessorStatus.TERMINATED.value)
+            self._set_process_state(status=AgenticProcessStatus.TERMINATED.value)
             await self.save()
 
             if shell_id:
@@ -762,7 +765,7 @@ class AgenticProcess(Entity):
         return ApiSuccessResponse(
             data={
                 "id": self.id,
-                "status": ProcessorStatus.TERMINATED.value,
+                "status": AgenticProcessStatus.TERMINATED.value,
                 "terminated": True,
             }
         )
@@ -852,7 +855,7 @@ class AgenticProcess(Entity):
                         )
                     else:
                         # Clean exit (code 0): transition back to idle
-                        proc._set_process_state(status=ProcessorStatus.IDLE.value)
+                        proc._set_process_state(status=AgenticProcessStatus.IDLE.value)
                     await proc.save()
 
                     logger.info(
@@ -867,46 +870,32 @@ class AgenticProcess(Entity):
 
         return _on_pty_exit
 
-    async def _resolve_compute_node(self):
-        """Resolve the ComputeNode for this process.
+    @property
+    def compute_node(self) -> "ComputeNode":
+        """The local ComputeNode backing this process's PTY sessions.
 
-        Uses compute_node_id if set, otherwise falls back to @local node.
+        compute_node_id is stored as the full typeid string ``compute_node-<uuid>``.
+        Raises ValueError if compute_node_id is not set — call open() which resolves it first.
         """
+        if not self.compute_node_id:
+            raise ValueError(
+                f"AgenticProcess {self.id!r} has no compute_node_id. "
+                "Call open() to resolve and assign the compute node."
+            )
         from flow_sdk.builtin.faas.compute_node import ComputeNode
-
-        if self.compute_node_id:
-            # compute_node_id is stored as "compute_node-<id>"
-            parts = self.compute_node_id.split("-", 1)
-            if len(parts) == 2:
-                node = await ComputeNode.get_by_id(parts[1])
-                if node:
-                    return node
-
-        # Desktop fallback: always @local
-        return await ComputeNode.get_by_uname("local")
+        parts = self.compute_node_id.split("-", 1)
+        node_id = parts[1] if len(parts) == 2 else self.compute_node_id
+        return ComputeNode(id=node_id, node_provider_id="local", node_provider_type="local_machine")
 
     async def _send_pty_raw(self, compute_node, data: bytes) -> None:
         """Send raw bytes into an already-running PTY session."""
-        from flow_sdk.builtin.faas.pty_session_manager import session_manager
-
         shell_id = self.shell_id
         if not shell_id:
             raise RuntimeError("PTY session has no shell_id")
-        if not compute_node.node_provider_id:
-            raise RuntimeError("Compute node provider ID not set")
-
-        pty_key = (compute_node.id, compute_node.node_provider_id, shell_id)
-        session_state = await session_manager.get_session(pty_key)
-        cols = session_state.cols if session_state else 80
-        rows = session_state.rows if session_state else 24
-
-        await compute_node.compute_provider.send_pty_input(
-            compute_node.node_provider_id,
-            shell_id,
-            data,
-            cols,
-            rows,
-        )
+        pty = compute_node.get_pty(shell_id)
+        if pty is None:
+            raise RuntimeError(f"PTY session not found for shell_id {shell_id}")
+        await pty.send(data)
 
     async def _send_command_to_pty(self, compute_node, command: str) -> None:
         """Send a command into an already-running PTY session."""
@@ -928,7 +917,7 @@ class AgenticProcess(Entity):
         """
 
         state = self._get_process_state()
-        if state.get("status") == ProcessorStatus.TERMINATED.value:
+        if state.get("status") == AgenticProcessStatus.TERMINATED.value:
             return ApiFailResponse(message="Process has been terminated")
 
 
@@ -936,9 +925,18 @@ class AgenticProcess(Entity):
         # Captured before _open_shell so it reflects the pre-call state.
         had_previous_session = bool(self.shell_id)
 
-        compute_node = await self._resolve_compute_node()
-        if not compute_node:
-            return ApiFailResponse(message="No compute node available")
+        # Resolve compute node: if not yet assigned, look up the @local node (desktop only).
+        if not self.compute_node_id:
+            from flow_sdk.builtin.faas.compute_node import ComputeNode
+            local_node = await ComputeNode.get_one({"uname": "local"})
+            if not local_node:
+                return ApiFailResponse(
+                    message="No compute node assigned and no @local compute node found. "
+                    "This environment does not support local process execution."
+                )
+            self.compute_node_id = str(local_node.typeid)
+
+        compute_node = self.compute_node
 
         try:
             self.worker_session_id = worker_session_id or self.worker_session_id or str(uuid4())
@@ -1002,6 +1000,16 @@ class AgenticProcess(Entity):
             )
             self.shell_id = shell.id
             on_exit = self._make_pty_exit_callback()
+            # Write process ID back to ShellRecord so the shell knows its owning process
+            try:
+                from flow_sdk.fs_records.shell_record import ShellRecord
+                _shell_rec = ShellRecord.discover_one(shell.id)
+                if _shell_rec:
+                    object.__setattr__(_shell_rec, "agentic_process_id", self.id)
+                    object.__getattribute__(_shell_rec, "_dirty_keys").add("agentic_process_id")
+                    _shell_rec.save()
+            except Exception as _e:
+                logger.debug("AgenticProcess %s: failed to update ShellRecord.agentic_process_id: %s", self.id, _e)
 
             logger.info(
                 "AgenticProcess %s: %s shell %s (worker=%s)",
@@ -1030,7 +1038,7 @@ class AgenticProcess(Entity):
                     self.id, execution_info.pid, execution_info.name,
                 )
 
-            self._set_process_state(status=ProcessorStatus.RUNNING.value, error=None)
+            self._set_process_state(status=AgenticProcessStatus.RUNNING.value, error=None)
             if visible is not None:
                 self.visible = visible
             await self.save()
@@ -1038,7 +1046,7 @@ class AgenticProcess(Entity):
             return ApiSuccessResponse(
                 data={
                     "id": self.id,
-                    "status": ProcessorStatus.RUNNING.value,
+                    "status": AgenticProcessStatus.RUNNING.value,
                     "shell_id": self.shell_id,
                     "worker_session_id": self.worker_session_id,
                     "compute_node_id": self.compute_node_id,
@@ -1051,7 +1059,7 @@ class AgenticProcess(Entity):
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} open error: {e}")
             self.shell_id = None
-            self._set_process_state(status=ProcessorStatus.ERROR.value, error=str(e))
+            self._set_process_state(status=AgenticProcessStatus.ERROR.value, error=str(e))
             await self.save()
             return ApiFailResponse(message=str(e))
 
@@ -1098,7 +1106,7 @@ class AgenticProcess(Entity):
             return ApiSuccessResponse(
                 data={
                     "id": self.id,
-                    "status": ProcessorStatus.IDLE.value,
+                    "status": AgenticProcessStatus.IDLE.value,
                     "shell_id": None,
                     "worker_session_id": self.worker_session_id,
                 }
@@ -1107,6 +1115,47 @@ class AgenticProcess(Entity):
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} stop error: {e}")
             return ApiFailResponse(message=str(e))
+
+    async def get_shell(self) -> "Shell | None":
+        """Resolve shell_id to the linked Shell entity.
+
+        Returns None if no shell is currently linked (process not open).
+        Mirrors TS AgenticProcess.getShell().
+        """
+        if not self.shell_id:
+            return None
+        from flow_sdk.builtin.shell import Shell
+
+        return await Shell.get_by_id(self.shell_id)
+
+    async def send_input(self, text: str) -> None:
+        """Write raw text to the live PTY stdin.
+
+        Requires open() to have been called first.
+        Mirrors TS AgenticProcess.sendInput().
+        """
+        shell = await self.get_shell()
+        if not shell:
+            raise ValueError("No shell linked — call open() first")
+        await shell.send_input(text)
+
+    async def sync_status(self) -> None:
+        """Correct state.status from actual PTY liveness. Persists if changed.
+
+        Eliminates ghost-running: if state says running but the linked shell's
+        PTY is dead, status is corrected to idle and saved. Call this on WS
+        reconnect (server restart recovery) or after shell.pty.destruct() in tests.
+
+        Replaces the need for a derived resolved_status property — state.status
+        is always the authoritative value after this call.
+        """
+        current = self._get_process_state().get("status")
+        if current != AgenticProcessStatus.RUNNING.value:
+            return
+        shell = await self.get_shell()
+        if shell is None or not shell.connected:
+            self._set_process_state(status=AgenticProcessStatus.IDLE.value)
+            await self.save()
 
     @action.post(action_name="execute-plan")
     async def execute_plan(
@@ -1174,10 +1223,7 @@ class AgenticProcess(Entity):
             logger.warning("AgenticProcess %s: no active shell, cannot inject message", self.id)
             return
 
-        compute_node = await self._resolve_compute_node()
-        if not compute_node:
-            logger.warning("AgenticProcess %s: no compute node, cannot inject message", self.id)
-            return
+        compute_node = self.compute_node
 
         # Dismiss any active numeric prompt before injecting.
         # Terminal input parsers (Node.js libuv, readline, etc.) treat a lone
@@ -1213,10 +1259,10 @@ class AgenticProcess(Entity):
             return ApiFailResponse(message="instruction is required")
 
         state = self._get_process_state()
-        if state.get("status") == ProcessorStatus.TERMINATED.value:
+        if state.get("status") == AgenticProcessStatus.TERMINATED.value:
             return ApiFailResponse(message="Process has been terminated")
 
-        if state.get("status") == ProcessorStatus.RUNNING.value:
+        if state.get("status") == AgenticProcessStatus.RUNNING.value:
             return ApiFailResponse(message="Process is already running")
 
         try:
@@ -1228,7 +1274,7 @@ class AgenticProcess(Entity):
                 f"processor={self.processor_id} session={worker_session_id}: "
                 f"{instruction[:80]}..."
             )
-            self._set_process_state(status=ProcessorStatus.RUNNING.value)
+            self._set_process_state(status=AgenticProcessStatus.RUNNING.value)
             await self.save()
 
             asyncio.create_task(
@@ -1244,7 +1290,7 @@ class AgenticProcess(Entity):
             return ApiSuccessResponse(
                 data={
                     "id": self.id,
-                    "status": ProcessorStatus.RUNNING.value,
+                    "status": AgenticProcessStatus.RUNNING.value,
                     "worker_session_id": worker_session_id,
                     "instruction_executed": True,
                 }
@@ -1252,7 +1298,7 @@ class AgenticProcess(Entity):
 
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} execute error: {e}")
-            self._set_process_state(status=ProcessorStatus.ERROR.value, error=str(e))
+            self._set_process_state(status=AgenticProcessStatus.ERROR.value, error=str(e))
             await self.save()
             return ApiFailResponse(message=str(e))
 
@@ -1332,7 +1378,7 @@ class AgenticProcessor(Entity):
 
             if ui_item.get("blocking", True):
                 self._set_state(
-                    status=ProcessorStatus.PAUSED.value,
+                    status=AgenticProcessStatus.PAUSED.value,
                     waiting_for_input=True,
                     input_id=ui_item["ui_id"],
                     index=self.next_ui_index,
@@ -1343,7 +1389,7 @@ class AgenticProcessor(Entity):
                 return
 
         self._set_state(
-            status=ProcessorStatus.COMPLETE.value,
+            status=AgenticProcessStatus.COMPLETE.value,
             waiting_for_input=False,
             input_id=None,
             index=self.next_ui_index,
@@ -1367,7 +1413,7 @@ class AgenticProcessor(Entity):
         self.next_ui_index = 0
         self.process_seq = 0
         self._set_state(
-            status=ProcessorStatus.IDLE.value,
+            status=AgenticProcessStatus.IDLE.value,
             index=0,
             waiting_for_input=False,
             input_id=None,
@@ -1407,7 +1453,7 @@ class AgenticProcessor(Entity):
         resolved_instruction_id = instruction_id or f"instr_{uuid4().hex[:10]}"
 
         self._set_state(
-            status=ProcessorStatus.RUNNING.value,
+            status=AgenticProcessStatus.RUNNING.value,
             total_instructions=total_instructions,
             current_instruction_id=resolved_instruction_id,
             waiting_for_input=False,
@@ -1443,7 +1489,7 @@ class AgenticProcessor(Entity):
             state_variables["last_input_id"] = input_id
 
         self._set_state(
-            status=ProcessorStatus.RUNNING.value,
+            status=AgenticProcessStatus.RUNNING.value,
             waiting_for_input=False,
             input_id=None,
             variables=state_variables,
@@ -1460,7 +1506,7 @@ class AgenticProcessor(Entity):
         self.next_ui_index = 0
         self.process_seq = 0
         self._set_state(
-            status=ProcessorStatus.IDLE.value,
+            status=AgenticProcessStatus.IDLE.value,
             waiting_for_input=False,
             input_id=None,
             error=None,
@@ -1484,13 +1530,13 @@ class AgenticProcessor(Entity):
         if not debug.get("enabled", False):
             return ApiFailResponse(message="Debug mode not enabled")
 
-        if state.get("status") != ProcessorStatus.STEPPING.value:
+        if state.get("status") != AgenticProcessStatus.STEPPING.value:
             return ApiFailResponse(message="Processor not paused at breakpoint")
 
         try:
             debug["step_mode"] = step_mode
             self._set_state(
-                status=ProcessorStatus.RUNNING.value,
+                status=AgenticProcessStatus.RUNNING.value,
                 debug=debug,
             )
             await self.save()
@@ -1503,7 +1549,7 @@ class AgenticProcessor(Entity):
 
         except Exception as e:
             logger.exception(f"AgenticProcessor {self.id} step error: {e}")
-            self._set_state(status=ProcessorStatus.ERROR.value, error=str(e))
+            self._set_state(status=AgenticProcessStatus.ERROR.value, error=str(e))
             await self.save()
             return ApiFailResponse(message=str(e))
 
@@ -1530,7 +1576,7 @@ class AgenticProcessor(Entity):
             AgenticProcess data with updated state
         """
         state = self._get_state()
-        if state.get("status") == ProcessorStatus.RUNNING.value:
+        if state.get("status") == AgenticProcessStatus.RUNNING.value:
             return ApiFailResponse(message="Processor is already running")
 
         if not agentic_process_id:
@@ -1552,7 +1598,7 @@ class AgenticProcessor(Entity):
 
             # Reset state for new execution
             self._set_state(
-                status=ProcessorStatus.RUNNING.value,
+                status=AgenticProcessStatus.RUNNING.value,
                 mdo_content=mdo_content,
                 debug={
                     "enabled": bool(debug),
@@ -1591,7 +1637,7 @@ class AgenticProcessor(Entity):
 
         except Exception as e:
             logger.exception(f"AgenticProcessor {self.id} controlContinue error: {e}")
-            self._set_state(status=ProcessorStatus.ERROR.value, error=str(e))
+            self._set_state(status=AgenticProcessStatus.ERROR.value, error=str(e))
             await self.save()
             return ApiFailResponse(message=str(e))
 
@@ -1616,7 +1662,7 @@ class AgenticProcessor(Entity):
             AgenticProcess entity data
         """
         state = self._get_state()
-        if state.get("status") == ProcessorStatus.RUNNING.value:
+        if state.get("status") == AgenticProcessStatus.RUNNING.value:
             return ApiFailResponse(message="Processor is already running")
 
         if not vfs_path:
@@ -1652,7 +1698,7 @@ class AgenticProcessor(Entity):
             self.process_seq = 0
 
             self._set_state(
-                status=ProcessorStatus.RUNNING.value,
+                status=AgenticProcessStatus.RUNNING.value,
                 mdo_content=file_content or "",
                 debug={
                     "enabled": bool(debug),
@@ -1697,7 +1743,7 @@ class AgenticProcessor(Entity):
 
         except Exception as e:
             logger.exception(f"AgenticProcessor {self.id} runFile error: {e}")
-            self._set_state(status=ProcessorStatus.ERROR.value, error=str(e))
+            self._set_state(status=AgenticProcessStatus.ERROR.value, error=str(e))
             await self.save()
             return ApiFailResponse(message=str(e))
 
@@ -1724,7 +1770,7 @@ class AgenticProcessor(Entity):
             AgenticProcess data (id, type, state, etc.)
         """
         state = self._get_state()
-        if state.get("status") == ProcessorStatus.RUNNING.value:
+        if state.get("status") == AgenticProcessStatus.RUNNING.value:
             return ApiFailResponse(message="Processor is already running")
 
         if not instruction_content:
@@ -1744,7 +1790,7 @@ class AgenticProcessor(Entity):
             self.process_seq = 0
 
             self._set_state(
-                status=ProcessorStatus.RUNNING.value,
+                status=AgenticProcessStatus.RUNNING.value,
                 mdo_content=instruction_content,
                 debug={
                     "enabled": bool(debug),
@@ -1789,7 +1835,7 @@ class AgenticProcessor(Entity):
 
         except Exception as e:
             logger.exception(f"AgenticProcessor {self.id} run error: {e}")
-            self._set_state(status=ProcessorStatus.ERROR.value, error=str(e))
+            self._set_state(status=AgenticProcessStatus.ERROR.value, error=str(e))
             await self.save()
             return ApiFailResponse(message=str(e))
 
@@ -1815,7 +1861,7 @@ class AgenticProcessor(Entity):
             AgenticProcess data (id, type, state, etc.)
         """
         state = self._get_state()
-        if state.get("status") == ProcessorStatus.RUNNING.value:
+        if state.get("status") == AgenticProcessStatus.RUNNING.value:
             return ApiFailResponse(message="Processor is already running")
 
         if not instruction_content:
@@ -1837,7 +1883,7 @@ class AgenticProcessor(Entity):
             self.process_seq = 0
 
             self._set_state(
-                status=ProcessorStatus.RUNNING.value,
+                status=AgenticProcessStatus.RUNNING.value,
                 mdo_content=instruction_content,
                 debug={
                     "enabled": bool(debug),
@@ -1882,7 +1928,7 @@ class AgenticProcessor(Entity):
 
         except Exception as e:
             logger.exception(f"AgenticProcessor {self.id} execute error: {e}")
-            self._set_state(status=ProcessorStatus.ERROR.value, error=str(e))
+            self._set_state(status=AgenticProcessStatus.ERROR.value, error=str(e))
             await self.save()
             return ApiFailResponse(message=str(e))
 
@@ -1942,7 +1988,7 @@ class AgenticProcessor(Entity):
 
             # Create process in IDLE state
             idle_state = _default_processor_state()
-            idle_state["status"] = ProcessorStatus.IDLE.value
+            idle_state["status"] = AgenticProcessStatus.IDLE.value
 
             process = AgenticProcess(
                 processor_id=self.id,
@@ -2025,7 +2071,7 @@ class APU(Entity):
 
 
 __all__ = [
-    "ProcessorStatus",
+    "AgenticProcessStatus",
     "StackFrame",
     "DebugState",
     "ProcessorState",

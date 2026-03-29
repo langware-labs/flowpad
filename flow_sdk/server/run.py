@@ -101,7 +101,7 @@ def _release_singleton_lock() -> None:
         logging.info("[singleton] Lock released: pid=%d", os.getpid())
 
 
-import flow_sdk.domain  # noqa: F401
+import flow_sdk.builtin.agentic_process  # noqa: F401
 
 # Load environment variables (guard against PyInstaller bundle where find_dotenv fails)
 try:

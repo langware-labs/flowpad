@@ -55,12 +55,13 @@ def test_save_existing_record_bumps_update(tmp_records_root):
         mock_instance.bump.assert_called_once_with("update")
 
 
-def test_delete_bumps_manifest(tmp_records_root):
+@pytest.mark.asyncio
+async def test_delete_bumps_manifest(tmp_records_root):
     """delete() should call CollectionManifest.bump('remove')."""
     record = _make_record(tmp_records_root)
     with mock.patch("flow_sdk.fs_store.manifest.CollectionManifest") as MockManifest:
         mock_instance = MockManifest.return_value
-        record.delete()
+        await record.delete()
         MockManifest.assert_called_once_with("skill")
         mock_instance.bump.assert_called_once_with("remove")
 
@@ -80,11 +81,12 @@ def test_save_outside_records_root_no_bump(tmp_records_root, tmp_path):
         mock_bump.assert_not_called()
 
 
-def test_delete_removes_record(tmp_records_root):
+@pytest.mark.asyncio
+async def test_delete_removes_record(tmp_records_root):
     """delete() should remove the record from disk."""
     record = _make_record(tmp_records_root)
     record_dir = Path(record.path)
     assert record_dir.exists()
-    record.delete()
+    await record.delete()
     assert not record_dir.exists()
     assert record.source_file is None

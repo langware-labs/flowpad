@@ -163,9 +163,17 @@ async function loadShell(pointer: string | undefined): Promise<void> {
       throw redirect('/dock/shell');
     }
 
-    const { shellId } = await process.open({ visible: true });
+    let shell: import('@sdk/entities/shell').Shell;
+    try {
+      await process.open({ visible: true });
+      shell = (await process.getShell())!;
+    } catch {
+      toast({ title: 'Session unavailable', description: 'This process has been terminated.', variant: 'destructive' });
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw redirect('/dock/shell');
+    }
 
-    dataContext.setActiveShellId(shellId);
+    dataContext.setActiveShellId(shell.id);
     await dataContext.setContextEntityTypeId(
       ContextEntitiesEnum.CurrentProcessTypeId,
       new TypeId(AgenticProcess.type, processId),

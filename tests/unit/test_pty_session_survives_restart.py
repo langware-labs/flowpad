@@ -11,7 +11,7 @@ These tests reproduce the exact failure sequence observed in production.
 
 import pytest
 
-from flow_sdk.builtin.faas.pty_session_manager import PtySessionManager
+from flow_sdk.compute.providers.desktop.pty_session_manager import PtySessionManager
 from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
 from flow_sdk.fs_store.record import get_default_records_root, set_default_records_root
 
@@ -145,11 +145,8 @@ def use_tmp_records(tmp_path):
     set_default_records_root(original)
 
 
-def test_plain_running_session_has_no_claude_session(use_tmp_records):
-    """A plain RUNNING shell (no Claude) should have no claude_session_id.
-
-    Only ELEVATED sessions have a claude_session_id.
-    """
+def test_plain_running_session_has_no_process(use_tmp_records):
+    """A plain RUNNING shell (no Claude) should have no agentic_process_id."""
     record = ShellRecord(
         id="plain-1",
         pty_pid="plain-1",
@@ -157,5 +154,4 @@ def test_plain_running_session_has_no_claude_session(use_tmp_records):
     )
     record.save()
 
-    assert record.data.get("claude_session_id") is None
-    assert record.status != ShellStatus.ELEVATED
+    assert record.data.get("agentic_process_id") is None

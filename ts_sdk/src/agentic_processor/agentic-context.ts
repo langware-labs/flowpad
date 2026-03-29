@@ -72,7 +72,10 @@ export interface AgenticContext {
 /**
  * Named alias for AgenticContext — typed entrypoint for AgenticProcess.spawn().
  */
-export interface IAgenticProcessOptions extends AgenticContext {}
+export interface IAgenticProcessOptions extends AgenticContext {
+  /** Parent entities to scope this process under (e.g. a Workflow TypeId) */
+  scope?: import('../models/TypeId').TypeId[];
+}
 
 /**
  * Controls how AgenticProcess.spawn() activates the process after creation.
@@ -93,6 +96,8 @@ export interface ISpawnWorkerOptions {
   /** Forwarded to createProcess(). Default: true. */
   watchProcessor?: boolean;
   watchProcess?: boolean;
+  /** WS request timeout ms for shell.startPty() (default: 30 000). */
+  ptyTimeout?: number;
 }
 
 /**

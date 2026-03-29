@@ -17,7 +17,6 @@ import {
   Maximize2,
   Plug,
   RefreshCw,
-  ScanSearch,
   Search,
   Settings,
   Sparkles,
@@ -107,7 +106,6 @@ interface SessionRowProps {
   item: ProjectResourceListItem;
   classificationTask: Task | null;
   actionTask: Task | null;
-  isWorkerSession: boolean;
   eventCount: number;
   latestEvent: SnifferEvent | null;
   isLoading: boolean;
@@ -115,7 +113,6 @@ interface SessionRowProps {
   onItemClick?: (item: ProjectResourceListItem) => void;
   onSessionResume?: (item: ProjectResourceListItem) => void;
   onSessionTasks?: (item: ProjectResourceListItem) => void;
-  onSessionClassify?: (item: ProjectResourceListItem) => void;
   onActAccordingToClassification?: (item: ProjectResourceListItem, command: string) => void;
   onOpenEventDialog?: (sessionId: string, name: string) => void;
 }
@@ -124,7 +121,6 @@ function SessionRow({
   item,
   classificationTask,
   actionTask,
-  isWorkerSession,
   eventCount,
   latestEvent,
   isLoading,
@@ -132,56 +128,15 @@ function SessionRow({
   onItemClick,
   onSessionResume,
   onSessionTasks,
-  onSessionClassify,
   onActAccordingToClassification,
   onOpenEventDialog,
 }: SessionRowProps) {
-  const { isRunning: isClassifyRunning } = useAnalysisTaskProgress(classificationTask);
   const { isRunning: isActionRunning, isComplete: isActionComplete } = useAnalysisTaskProgress(actionTask);
   const classificationInfo = useClassificationResult(classificationTask);
   const { navigation } = useDockNavigation();
   const timeAgo = formatTimeAgo(item.modifiedAt);
   const actionArtifacts = actionTask ? getArtifactPaths(actionTask) : [];
   const projectLabel = item.path?.split('/').filter(Boolean).pop() ?? null;
-
-  function renderClassifyButton() {
-    // Worker sessions (spawned to run classifications) should not show a classify button
-    if (isWorkerSession) return null;
-
-    const isRunning = isClassifyRunning;
-    // A session is classified if we have classification results (from task metadata or classification.json file)
-    const isClassified = !!classificationInfo;
-    const isDisabled = isRunning || isClassified;
-
-    let title = 'Classify session';
-    if (isRunning) {
-      title = 'Classifying...';
-    } else if (isClassified) {
-      title = 'Already classified';
-    }
-
-    return (
-      <button
-        type="button"
-        className="activity-resume-button"
-        data-testid="classify-button"
-        title={title}
-        disabled={isDisabled}
-        onClick={(e) => {
-          e.stopPropagation();
-          if (!isDisabled) {
-            onSessionClassify?.(item);
-          }
-        }}
-      >
-        {isRunning ? (
-          <Loader2 className="h-4 w-4 animate-spin text-amber-500" />
-        ) : (
-          <ScanSearch className={`h-4 w-4${isClassified ? ' opacity-40' : ''}`} />
-        )}
-      </button>
-    );
-  }
 
   return (
     <div
@@ -194,10 +149,7 @@ function SessionRow({
         <span className="activity-name-text">
           {item.name.split('\n').find((l) => l.trim()) ?? item.name}
         </span>
-        {isClassifyRunning && (
-          <span className="activity-name-subtitle">Classifying...</span>
-        )}
-        {!isClassifyRunning && classificationInfo && (() => {
+        {classificationInfo && (() => {
           const isActing = isActionRunning || actingSessionId === item.sessionId;
 
           if (isActionComplete && actionArtifacts.length > 0) {
@@ -255,7 +207,7 @@ function SessionRow({
 
           return null;
         })()}
-        {!isClassifyRunning && !classificationInfo && item.subtitle && (
+        {!classificationInfo && item.subtitle && (
           <span className="activity-name-subtitle">{item.subtitle.split('\n').find((l) => l.trim()) ?? item.subtitle}</span>
         )}
         {renderEventIndicator(latestEvent, eventCount, item.sessionId ?? '', item.name, onOpenEventDialog)}
@@ -283,7 +235,6 @@ function SessionRow({
                 <CheckSquare className="h-4 w-4" />
               </button>
             )}
-            {item.type === 'claude_session' && onSessionClassify && renderClassifyButton()}
             <button
               type="button"
               className="activity-resume-button"
@@ -315,8 +266,6 @@ export interface ProjectActivityStripProps {
   onSessionResume?: (item: ProjectResourceListItem) => void;
   /** Open session tasks in lens viewer */
   onSessionTasks?: (item: ProjectResourceListItem) => void;
-  /** Run classification on the session */
-  onSessionClassify?: (item: ProjectResourceListItem) => void;
   /** Execute the action from a completed classification */
   onActAccordingToClassification?: (item: ProjectResourceListItem, command: string) => void;
   /** Map of session ID → event count for notification badges */
@@ -341,7 +290,6 @@ export function ProjectActivityStrip({
   onItemClick,
   onSessionResume,
   onSessionTasks,
-  onSessionClassify,
   onActAccordingToClassification,
   sessionEventCounts,
   snifferEvents,
@@ -371,12 +319,11 @@ export function ProjectActivityStrip({
       .slice(0, maxItems);
   }, [items, search, maxItems]);
 
-  // Build sessionId → classification/action Task lookups AND worker session IDs in a single pass.
+  // Build sessionId → classification/action Task lookups in a single pass.
   // Prefer the most recently updated task.
-  const { sessionClassificationMap, sessionActionMap, workerSessionIds } = useMemo(() => {
+  const { sessionClassificationMap, sessionActionMap } = useMemo(() => {
     const classMap = new Map<string, Task>();
     const actionMap = new Map<string, Task>();
-    const workers = new Set<string>();
 
     const upsert = (map: Map<string, Task>, sid: string, t: Task) => {
       const existing = map.get(sid);
@@ -386,16 +333,13 @@ export function ProjectActivityStrip({
     };
 
     for (const t of learningTasks) {
-      const wid = t.metadata?.workerSessionId;
-      if (typeof wid === 'string' && (isClassificationTask(t) || isActionTask(t))) workers.add(wid);
-
       const sid = t.metadata?.sessionId;
       if (typeof sid !== 'string') continue;
 
       if (isClassificationTask(t)) upsert(classMap, sid, t);
       if (isActionTask(t)) upsert(actionMap, sid, t);
     }
-    return { sessionClassificationMap: classMap, sessionActionMap: actionMap, workerSessionIds: workers };
+    return { sessionClassificationMap: classMap, sessionActionMap: actionMap };
   }, [learningTasks]);
 
   // Map each session ID to its most recent sniffer event
@@ -474,7 +418,6 @@ export function ProjectActivityStrip({
               item={item}
               classificationTask={item.sessionId ? sessionClassificationMap.get(item.sessionId) ?? null : null}
               actionTask={item.sessionId ? sessionActionMap.get(item.sessionId) ?? null : null}
-              isWorkerSession={!!item.sessionId && workerSessionIds.has(item.sessionId)}
               eventCount={item.sessionId ? (sessionEventCounts?.get(item.sessionId) ?? 0) : 0}
               latestEvent={item.sessionId ? (sessionLatestEvent.get(item.sessionId) ?? null) : null}
               isLoading={!!loadingSessionId && loadingSessionId === item.sessionId}
@@ -482,7 +425,6 @@ export function ProjectActivityStrip({
               onItemClick={onItemClick}
               onSessionResume={onSessionResume}
               onSessionTasks={onSessionTasks}
-              onSessionClassify={onSessionClassify}
               onActAccordingToClassification={onActAccordingToClassification}
               onOpenEventDialog={(sid, name) => {
                 setDialogSessionId(sid);

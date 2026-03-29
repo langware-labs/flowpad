@@ -5,7 +5,12 @@ from flow_sdk.fs_store.schema_registry import SchemaRegistry as SchemaRegistry  
 from .agent_record import AgentRecord as AgentRecord
 from .agentic_process_record import AgenticProcessRecord as AgenticProcess  # noqa: F401 — backward compat alias
 from .agentic_process_record import AgenticProcessRecord as AgenticProcessRecord
-from .agentic_process_record import ProcessorStatus as ProcessorStatus
+from .agent_status import AgenticProcessStatus as AgenticProcessStatus
+from .agent_status import is_running as is_running
+from .agent_status import is_busy as is_busy
+from .agent_status import is_idle as is_idle
+from .agent_status import is_terminal as is_terminal
+from .agentic_process_record import AgenticProcessStatus as ProcessorStatus  # backward compat
 from .artifact import Artifact as Artifact
 from .markdown_record import MarkdownRecord as MarkdownRecord
 from .markdown_record import MarkdownRecord as AssetRecord  # noqa: F401 — backward compat alias

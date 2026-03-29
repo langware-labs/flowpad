@@ -89,12 +89,12 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
     // Before open: no shell
     expect(process.shell_id).toBeFalsy();
 
-    const { shellId } = await process.open();
+    await process.open();
+    const shellId = process.shell_id;
     expect(shellId).toBeTruthy();
-    expect(process.shell_id).toBe(shellId);
 
     // Shell entity should be accessible via dataManager
-    const typeId = new TypeId(Shell.type, shellId);
+    const typeId = new TypeId(Shell.type, shellId!);
     const shell = await dataManager.getByTypeId<Shell>(typeId);
     expect(shell).not.toBeNull();
   }, 30000);
@@ -123,9 +123,10 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
       model: 'claude-haiku-4-5-20251001',
     });
     const process = await createIdleProcess();
-    const { shellId } = await process.open();
+    await process.open();
+    const shellId = process.shell_id;
 
-    const typeId = new TypeId(Shell.type, shellId);
+    const typeId = new TypeId(Shell.type, shellId!);
     const shell = await dataManager.getByTypeId<Shell>(typeId);
     expect(shell).not.toBeNull();
 
@@ -150,9 +151,10 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
       model: 'claude-haiku-4-5-20251001',
     });
     const process = await createIdleProcess();
-    const { shellId } = await process.open();
+    await process.open();
+    const shellId = process.shell_id;
 
-    const typeId = new TypeId(Shell.type, shellId);
+    const typeId = new TypeId(Shell.type, shellId!);
     const shell = await dataManager.getByTypeId<Shell>(typeId);
     expect(shell).not.toBeNull();
 
@@ -209,7 +211,9 @@ describe.skip('AgenticProcess restore from DB — integration', () => {
       model: 'claude-haiku-4-5-20251001',
     });
     const process = await createIdleProcess();
-    const { shellId, workerSessionId } = await process.open();
+    await process.open();
+    const shellId = process.shell_id;
+    const workerSessionId = process.worker_session_id;
     const processId = process.id;
 
     expect(shellId).toBeTruthy();
@@ -226,11 +230,12 @@ describe.skip('AgenticProcess restore from DB — integration', () => {
     expect(restoredProcess!.worker_session_id).toBe(workerSessionId);
 
     // 4. Reopen on restored process — open() resumes the Claude session
-    const { shellId: newShellId } = await restoredProcess!.open();
+    await restoredProcess!.open();
+    const newShellId = restoredProcess!.shell_id;
     expect(newShellId).toBeTruthy();
 
     // 5. Connect new shell
-    const newShellTypeId = new TypeId(Shell.type, newShellId);
+    const newShellTypeId = new TypeId(Shell.type, newShellId!);
     const newShell = await dataManager.getByTypeId<Shell>(newShellTypeId);
     expect(newShell).not.toBeNull();
 

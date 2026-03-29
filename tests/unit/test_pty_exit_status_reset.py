@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from flow_sdk.fs_records.agentic_process_record import ProcessorStatus
+from flow_sdk.fs_records.agentic_process_record import AgenticProcessStatus
 
 
 class TestPtyExitStatusReset:
@@ -23,7 +23,7 @@ class TestPtyExitStatusReset:
             shell_id="some-shell-id",
         )
         # Manually set state to 'running' (as start does)
-        proc._set_process_state(status=ProcessorStatus.RUNNING.value, error=None)
+        proc._set_process_state(status=AgenticProcessStatus.RUNNING.value, error=None)
 
         with (
             patch.object(AgenticProcess, "get_by_id", new=AsyncMock(return_value=proc)),
@@ -39,6 +39,6 @@ class TestPtyExitStatusReset:
 
         # After clean exit, status MUST be 'idle' (not 'running')
         final_status = proc.state.get("status")
-        assert final_status == ProcessorStatus.IDLE.value, (
+        assert final_status == AgenticProcessStatus.IDLE.value, (
             f"Expected status='idle' after clean PTY exit, got status='{final_status}'."
         )

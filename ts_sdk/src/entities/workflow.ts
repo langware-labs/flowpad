@@ -177,22 +177,22 @@ export class Workflow extends APIEntity<Workflow> {
    * Start an agentic process for this workflow and return the process + shellId.
    * Mirrors the doRun logic in WorkflowEditor.
    */
-  async run(): Promise<{ process: import('../agentic_processor/agentic-process').AgenticProcess; shellId: string }> {
+  async run(): Promise<{ process: import('../agentic_processor/agentic-process').AgenticProcess; shell: import('./shell').Shell }> {
+    const { AgenticProcess } = await import('../agentic_processor/agentic-process');
     const { dataContext } = await import('../FlowSync/context');
-
-    const computeNode = dataContext.computeNode;
-    if (!computeNode) throw new Error('[Workflow.run] No local compute node');
-    const processor = await computeNode.createAgenticProcessor();
-    const process = await processor.createProcess({ permissionMode: 'bypassPermissions' });
 
     const systemSkills = dataContext.bootstrapInfo?.desktop_info?.paths?.system_skills;
     const flowSkillPath = systemSkills
       ? `/${systemSkills}/flow/SKILL.md`
       : '~/.flow/system_assets/skills/flow/SKILL.md';
     const instruction = `Run workflow at /${this.source_vfs_path} using the flow skill located at: ${flowSkillPath}`;
+    const workdir = dataContext.project?.fs_storage_mount_path;
 
-    const { shellId } = await process.start({ instruction });
-    return { process, shellId };
+    const { process, shell } = await AgenticProcess.spawn(
+      { permissionMode: 'bypassPermissions', workdir, scope: [this.typeId] },
+      { instruction },
+    );
+    return { process, shell: shell! };
   }
 
   /**

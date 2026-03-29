@@ -3,11 +3,16 @@ import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
 import { Button } from '@src/components/ui/button';
 import { FsRef } from '@src/hooks/use-fs-ref-content';
 import { useMarkdownContent } from '@src/hooks/use-markdown-content';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { fsManager, VFSPath } from '@sdk';
+import Editor from '@monaco-editor/react';
 import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, RefreshCw } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { useCallback, useMemo, useRef, useState } from 'react';
+
+type ViewMode = 'editor' | 'markdown';
 
 interface MarkdownAssetEditorProps {
   /** Absolute machine path to the .md file */
@@ -58,7 +63,8 @@ export function MarkdownAssetEditor({ sourcePath }: MarkdownAssetEditorProps) {
 // ── Editor content ────────────────────────────────────────────────────────────
 
 function MarkdownEditorContent({ fsRef, sourcePath }: { fsRef: FsRef; sourcePath: string }) {
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
+  const [viewMode, setViewMode] = useState<ViewMode>('editor');
 
   const {
     fields,
@@ -88,6 +94,14 @@ function MarkdownEditorContent({ fsRef, sourcePath }: { fsRef: FsRef; sourcePath
     navigator.clipboard.writeText(sourcePath).catch(() => {});
   }, [sourcePath]);
 
+  const handleLinkClick = useCallback((href: string) => {
+    const dir = sourcePath.slice(0, sourcePath.lastIndexOf('/'));
+    const resolvedPath = href.startsWith('/') ? href : `${dir}/${href}`;
+    // Preserve the current asset type (e.g. "claude_memory") for sibling files
+    const assetType = currentDock?.pointer?.split('/')?.[1] ?? 'claude_memory';
+    navigation.openDock(DockPointer.forAssetEditor(assetType, resolvedPath));
+  }, [sourcePath, currentDock, navigation]);
+
   // ── Loading ────────────────────────────────────────────────────────────────
   if (isLoading) {
     return (
@@ -96,6 +110,8 @@ function MarkdownEditorContent({ fsRef, sourcePath }: { fsRef: FsRef; sourcePath
           fileName={fileName}
           dirPath={dirPath}
           dirty={false}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
           onBack={() => navigation.openTab(ViewType.ASSETS)}
           onOpenExternal={handleOpenExternal}
         />
@@ -114,6 +130,8 @@ function MarkdownEditorContent({ fsRef, sourcePath }: { fsRef: FsRef; sourcePath
           fileName={fileName}
           dirPath={dirPath}
           dirty={false}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
           onBack={() => navigation.openTab(ViewType.ASSETS)}
           onOpenExternal={handleOpenExternal}
         />
@@ -135,6 +153,8 @@ function MarkdownEditorContent({ fsRef, sourcePath }: { fsRef: FsRef; sourcePath
         fileName={fileName}
         dirPath={dirPath}
         dirty={dirty}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
         onBack={() => navigation.openTab(ViewType.ASSETS)}
         onOpenExternal={handleOpenExternal}
       />
@@ -170,10 +190,40 @@ function MarkdownEditorContent({ fsRef, sourcePath }: { fsRef: FsRef; sourcePath
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-auto p-4">
-        <MilkdownEditor content={body} onChange={handleBodyChange} />
-      </div>
+      {viewMode === 'editor' ? (
+        <div className="min-h-0 flex-1 overflow-auto p-4">
+          <MilkdownEditor content={body} onChange={handleBodyChange} onLinkClick={handleLinkClick} />
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <MonacoMarkdownEditor value={body} onChange={handleBodyChange} />
+        </div>
+      )}
     </div>
+  );
+}
+
+// ── Monaco markdown editor ────────────────────────────────────────────────────
+
+function MonacoMarkdownEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { resolvedTheme } = useTheme();
+  return (
+    <Editor
+      height="100%"
+      language="markdown"
+      value={value}
+      onChange={(v) => onChange(v ?? '')}
+      theme={resolvedTheme === 'dark' ? 'vs-dark' : 'vs'}
+      options={{
+        minimap: { enabled: false },
+        wordWrap: 'on',
+        lineNumbers: 'off',
+        folding: false,
+        fontSize: 13,
+        scrollBeyondLastLine: false,
+        padding: { top: 12, bottom: 12 },
+      }}
+    />
   );
 }
 
@@ -183,11 +233,13 @@ interface EditorHeaderProps {
   fileName: string;
   dirPath: string;
   dirty: boolean;
+  viewMode: ViewMode;
+  onViewModeChange: (mode: ViewMode) => void;
   onBack: () => void;
   onOpenExternal: () => void;
 }
 
-function EditorHeader({ fileName, dirPath, dirty, onBack, onOpenExternal }: EditorHeaderProps) {
+function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, onBack, onOpenExternal }: EditorHeaderProps) {
   return (
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
       <Button variant="ghost" size="sm" onClick={onBack} className="-ml-1 flex-shrink-0">
@@ -203,6 +255,22 @@ function EditorHeader({ fileName, dirPath, dirty, onBack, onOpenExternal }: Edit
         {dirPath && (
           <div className="truncate text-[11px] text-muted-foreground">{dirPath}</div>
         )}
+      </div>
+
+      <div className="flex flex-shrink-0 items-center rounded-md border bg-muted/40 p-0.5">
+        {(['editor', 'markdown'] as ViewMode[]).map((mode) => (
+          <button
+            key={mode}
+            onClick={() => onViewModeChange(mode)}
+            className={`rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors ${
+              viewMode === mode
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {mode}
+          </button>
+        ))}
       </div>
 
       <button

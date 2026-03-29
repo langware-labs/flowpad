@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from flow_sdk.builtin.faas.pty_stream_file import PtyStreamFile
+from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
 
 
 def test_write_and_read(tmp_path: Path):

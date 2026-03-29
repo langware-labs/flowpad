@@ -328,22 +328,24 @@ class TestNoData:
         finally:
             set_default_records_root(old)
 
-    def test_record_error_clear_all_on_empty(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_record_error_clear_all_on_empty(self, tmp_path):
         """RecordError.clear_all() returns 0 when there are no error records."""
         old = get_default_records_root()
         set_default_records_root(tmp_path)
         try:
-            count = RecordError.clear_all()
+            count = await RecordError.clear_all()
             assert count == 0
         finally:
             set_default_records_root(old)
 
-    def test_record_error_clear_for_type_on_empty(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_record_error_clear_for_type_on_empty(self, tmp_path):
         """RecordError.clear_for_type() returns 0 when there are no errors for that type."""
         old = get_default_records_root()
         set_default_records_root(tmp_path)
         try:
-            count = RecordError.clear_for_type("skill")
+            count = await RecordError.clear_for_type("skill")
             assert count == 0
         finally:
             set_default_records_root(old)

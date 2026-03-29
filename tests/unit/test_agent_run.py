@@ -247,32 +247,6 @@ def test_pipeline_agent_to_worker_args(tmp_path):
     assert (env.agents_dir / "skill-creator.md").exists()
 
 
-def test_pipeline_agent_domain_context(tmp_path):
-    """Agent.run() produces compatible context via Agent DomainObject."""
-    from flow_sdk.domain.agent import Agent
-    from flow_sdk.domain.environment import Environment
-
-    agent_record = AgentRecord.from_file(FIXTURE_AGENT)
-    agent_do = Agent.fromRecord(agent_record)
-    env = Environment.load(str(tmp_path))
-
-    # Verify the Agent DomainObject provides the same data
-    agents_json = agent_record.to_agents_json()
-    assert "skill-creator" in agents_json
-    assert agent_do.prompt == agent_record.prompt
-    assert agent_do.model == "sonnet"
-
-    # Build AgenticContext from Agent properties (what Agent.run() will do)
-    ctx = AgenticContext(
-        workdir=env.work_dir,
-        model=agent_do.model,
-        permission_mode=agent_record.data.get("permission_mode", "bypassPermissions"),
-    )
-    args = ClaudeCLIWorker.build_args("claude", "Run it", "s1", ctx, agents_json=agents_json)
-    assert "--agents" in args
-    assert "--dangerously-skip-permissions" in args
-
-
 # ---------------------------------------------------------------------------
 # Skill output validation (no mocks needed — just filesystem)
 # ---------------------------------------------------------------------------
@@ -289,31 +263,6 @@ def test_agent_output_skill_loadable(tmp_path):
     skill = SkillRecord.load_record(skill_dir)
     assert skill is not None
     assert skill.name == "greeting-skill"
-
-
-def test_agent_domain_run_creates_process(tmp_path):
-    """Agent.run() creates an AgenticProcess via process_runner."""
-    from flow_sdk.domain.agent import Agent
-    from flow_sdk.domain.agentic_process import AgenticProcess
-    from flow_sdk.domain.environment import Environment
-    from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
-
-    agent_record = AgentRecord.from_file(FIXTURE_AGENT)
-    agent_do = Agent.fromRecord(agent_record)
-    env = Environment.load(str(tmp_path))
-
-    mock_record = AgenticProcessRecord(id="test-proc", name="test")
-    mock_proc = mock.MagicMock()
-
-    with mock.patch(
-        "flow_sdk.builtin.process_runner.run_process",
-        return_value=(mock_record, mock_proc),
-    ) as mock_rp:
-        result = agent_do.run("Create a test skill", env)
-
-    assert isinstance(result, AgenticProcess)
-    assert result.id == "test-proc"
-    mock_rp.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

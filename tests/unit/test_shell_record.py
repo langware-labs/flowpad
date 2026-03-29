@@ -22,7 +22,6 @@ def test_create_with_defaults():
     # pty_pid defaults to the record's id (same UUID)
     assert record.data.get("pty_pid") == record.id
     assert record.data.get("tab_order") == 0
-    assert record.data.get("claude_session_id") is None
 
 
 def test_create_with_kwargs():
@@ -76,16 +75,6 @@ def test_status_transitions():
 
     record.status = ShellStatus.CLOSED
     assert record.status == ShellStatus.CLOSED
-
-    # Also test elevated path
-    record2 = ShellRecord(id="transition-test-2")
-    assert record2.status == ShellStatus.IDLE
-    record2.status = ShellStatus.RUNNING
-    assert record2.status == ShellStatus.RUNNING
-    record2.status = ShellStatus.ELEVATED
-    assert record2.status == ShellStatus.ELEVATED
-    record2.status = ShellStatus.CLOSED
-    assert record2.status == ShellStatus.CLOSED
 
 
 def test_claude_session_id_field():

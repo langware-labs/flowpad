@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
-import { AgenticProcess, ProcessState, ProcessorStatus } from '@sdk';
+import { AgenticProcess, ProcessState, ProcessorStatus, isProcessorRunning } from '@sdk';
 
 /**
  * Default ProcessState when no process is available
@@ -150,7 +150,7 @@ export function useProcessProgressInfo(state: ProcessState | null) {
   const isError = state.status === ProcessorStatus.ERROR;
 
   return {
-    isRunning: state.status === ProcessorStatus.RUNNING || state.status === ProcessorStatus.STEPPING,
+    isRunning: isProcessorRunning(state.status),
     isPaused: state.status === ProcessorStatus.PAUSED,
     isComplete,
     isError,

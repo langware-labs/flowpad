@@ -17,8 +17,8 @@ pytestmark = pytest.mark.skipif(
     reason="Skipping long tests when DEEP_TESTING is disabled",
 )
 
-from flow_sdk.domain.agent import Agent
-from flow_sdk.domain.agentic_process import AgenticProcess, WorkerType
+from flow_sdk.builtin.agent_runner import AgentRunner as Agent
+from flow_sdk.builtin.agentic_process import AgenticProcess, WorkerType
 
 SAMPLE_SESSION = (
     "Session description: The user asked Claude to fix a bug where the wrong variable "
