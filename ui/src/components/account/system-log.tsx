@@ -35,42 +35,54 @@ function parseLogFilename(filename: string): Date | null {
   return new Date(parseInt(year), monthNum, parseInt(day), parseInt(hour), parseInt(minute), parseInt(second));
 }
 
+// Subdirectories to scan for log files
+const LOG_SUBDIRS = ['server', 'monitor', 'main_desktop'] as const;
+
+// Find the newest log file across all subdirectories
+async function findNewestLogFile(
+  typeId: string,
+  logsPath: string,
+): Promise<{ path: string; name: string; date: Date } | null> {
+  let newest: { path: string; name: string; date: Date } | null = null;
+
+  for (const subdir of LOG_SUBDIRS) {
+    const subdirPath = `${logsPath}/${subdir}`;
+    try {
+      const result = await fsManager.listDirectory(typeId, subdirPath);
+      for (const item of result.items) {
+        const fname = item.name?.split('/').pop() || '';
+        const date = parseLogFilename(fname);
+        if (date && (!newest || date.getTime() > newest.date.getTime())) {
+          newest = { path: `${subdirPath}/${fname}`, name: `${subdir}/${fname}`, date };
+        }
+      }
+    } catch {
+      // Subdirectory may not exist yet
+    }
+  }
+
+  return newest;
+}
+
 export function SystemLog() {
   const [isOpen, setIsOpen] = useState(false);
-  const [currentLogFile, setCurrentLogFile] = useState<string | null>(null);
+  const [currentLogFile, setCurrentLogFile] = useState<{ path: string; name: string } | null>(null);
   const { toast } = useToast();
 
   const computeNode = dataContext.computeNode;
   const desktopInfo = dataContext.bootstrapInfo?.desktop_info;
 
-  // Construct full path to logs folder (needs leading / for VFS)
-  const logsPath =
-    desktopInfo?.home && desktopInfo?.workspace && desktopInfo?.logs
-      ? `/${desktopInfo.home}/${desktopInfo.workspace}/${desktopInfo.logs}`
-      : null;
+  // Use paths.logs from bootstrap (already points to ~/.flow/logs as VFS-relative)
+  const logsPath = desktopInfo?.paths?.logs ? `/${desktopInfo.paths.logs}` : null;
 
   useEffect(() => {
-    // Fetch log files to get the current (newest) one
     if (computeNode?.typeId && logsPath) {
-      fsManager
-        .listDirectory(computeNode.typeId, logsPath)
-        .then((result) => {
-          const logFiles = result.items
-            .filter((f) => f.name?.endsWith('.log'))
-            .sort((a, b) => {
-              // Sort by parsed filename timestamp (newest first)
-              const dateA = parseLogFilename(a.name || '');
-              const dateB = parseLogFilename(b.name || '');
-              if (!dateA && !dateB) return 0;
-              if (!dateA) return 1;
-              if (!dateB) return -1;
-              return dateB.getTime() - dateA.getTime();
-            });
-          if (logFiles.length > 0) {
-            // Extract just the filename from the full path
-            const fullName = logFiles[0].name || '';
-            const fileName = fullName.split('/').pop() || fullName;
-            setCurrentLogFile(fileName);
+      findNewestLogFile(computeNode.typeId, logsPath)
+        .then((newest) => {
+          if (newest) {
+            setCurrentLogFile({ path: newest.path, name: newest.name });
+          } else {
+            setCurrentLogFile(null);
           }
         })
         .catch(() => setCurrentLogFile(null));
@@ -78,9 +90,9 @@ export function SystemLog() {
   }, [computeNode?.typeId, logsPath]);
 
   const handleOpenLogFile = async () => {
-    if (!computeNode?.typeId || !logsPath || !currentLogFile) return;
+    if (!computeNode?.typeId || !currentLogFile) return;
     try {
-      await fsManager.open(computeNode.typeId, `${logsPath}/${currentLogFile}`);
+      await fsManager.open(computeNode.typeId, currentLogFile.path);
     } catch (error) {
       console.error('Failed to open log file:', error);
       toast({
@@ -122,7 +134,7 @@ export function SystemLog() {
         <CollapsibleContent className="pt-4">
           <div className="flex flex-col gap-3 p-4">
             <div className="text-sm text-muted-foreground">
-              {currentLogFile ? `Active log: ${currentLogFile}` : 'No log file found'}
+              {currentLogFile ? `Active log: ${currentLogFile.name}` : 'No log file found'}
             </div>
             <div className="flex gap-2">
               <Button

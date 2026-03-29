@@ -3,11 +3,52 @@ const path = require('path');
 const log = require('electron-log');
 const UvManager = require('./uv-manager');
 
-// Configure logging — store all logs under ~/.flow/
-const FLOW_HOME = path.join(require('os').homedir(), '.flow');
-const MAIN_LOG_PATH = path.join(FLOW_HOME, 'main.log');
-require('fs').mkdirSync(FLOW_HOME, { recursive: true });
-try { require('fs').writeFileSync(MAIN_LOG_PATH, ''); } catch { /* ignore */ }
+// Configure logging — store all logs under ~/.flow/logs/
+const fs = require('fs');
+const os = require('os');
+const FLOW_HOME = path.join(os.homedir(), '.flow');
+const LOGS_BASE = path.join(FLOW_HOME, 'logs');
+const MAIN_DESKTOP_LOG_DIR = path.join(LOGS_BASE, 'main_desktop');
+
+function generateTimestampedFilename() {
+  const now = new Date();
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const day = now.getDate();
+  const mon = months[now.getMonth()];
+  const year = now.getFullYear();
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mm = String(now.getMinutes()).padStart(2, '0');
+  const ss = String(now.getSeconds()).padStart(2, '0');
+  return `${day}${mon}${year}_${hh}_${mm}_${ss}.log`;
+}
+
+function cleanupOldLogs(dir, maxAgeDays = 7) {
+  if (!fs.existsSync(dir)) return;
+  const files = fs.readdirSync(dir)
+    .filter(f => f.endsWith('.log'))
+    .map(f => ({ name: f, path: path.join(dir, f), mtime: fs.statSync(path.join(dir, f)).mtimeMs }))
+    .sort((a, b) => a.mtime - b.mtime);
+  if (files.length <= 1) return;
+  const cutoff = Date.now() - maxAgeDays * 86400000;
+  for (const f of files.slice(0, -1)) {  // never delete the newest
+    if (f.mtime < cutoff) {
+      try { fs.unlinkSync(f.path); } catch { /* ignore */ }
+    }
+  }
+}
+
+function getNewestLogFile(dir) {
+  if (!fs.existsSync(dir)) return null;
+  const files = fs.readdirSync(dir)
+    .filter(f => f.endsWith('.log'))
+    .map(f => ({ name: f, path: path.join(dir, f), mtime: fs.statSync(path.join(dir, f)).mtimeMs }))
+    .sort((a, b) => b.mtime - a.mtime);
+  return files.length > 0 ? files[0] : null;
+}
+
+fs.mkdirSync(MAIN_DESKTOP_LOG_DIR, { recursive: true });
+cleanupOldLogs(MAIN_DESKTOP_LOG_DIR);
+const MAIN_LOG_PATH = path.join(MAIN_DESKTOP_LOG_DIR, generateTimestampedFilename());
 log.transports.file.resolvePathFn = () => MAIN_LOG_PATH;
 log.transports.file.level = 'info';
 log.transports.console.level = 'debug';
@@ -144,8 +185,6 @@ async function startApp() {
     } catch (error) {
       log.error('Failed to start Python backend:', error);
 
-      const os = require('os');
-
       const details = [
         error?.message || String(error),
         `HOME=${process.env.HOME || ''}`,
@@ -177,11 +216,14 @@ async function startApp() {
     // Try to gather diagnostics for the error dialog
     let detail = 'Backend server failed to respond within 30 seconds.';
     try {
-      const home = require('os').homedir();
-      const logPath = path.join(home, '.flow', 'monitor.log');
-      const logContent = require('fs').readFileSync(logPath, 'utf8');
-      const lastLines = logContent.split('\n').slice(-15).join('\n');
-      detail += `\n\nMonitor log (${logPath}):\n${lastLines}`;
+      const newest = getNewestLogFile(path.join(LOGS_BASE, 'monitor'));
+      if (newest) {
+        const logContent = fs.readFileSync(newest.path, 'utf8');
+        const lastLines = logContent.split('\n').slice(-15).join('\n');
+        detail += `\n\nMonitor log (${newest.path}):\n${lastLines}`;
+      } else {
+        detail += '\n\nNo monitor log found.';
+      }
     } catch {
       detail += '\n\nNo monitor log found.';
     }
@@ -266,29 +308,33 @@ ipcMain.handle('get-backend-url', () => BACKEND_URL);
 ipcMain.handle('get-app-version', () => app.getVersion());
 
 ipcMain.handle('get-startup-logs', () => {
-  const fs = require('fs');
-  const home = require('os').homedir();
   const logs = [];
 
-  // Electron log
+  // Electron log (newest in main_desktop/)
   try {
-    const electronLogPath = log.transports.file.getFile().path;
-    const content = fs.readFileSync(electronLogPath, 'utf8');
-    logs.push({ name: 'Electron', path: electronLogPath, content });
+    const newest = getNewestLogFile(path.join(LOGS_BASE, 'main_desktop'));
+    if (newest) {
+      const content = fs.readFileSync(newest.path, 'utf8');
+      logs.push({ name: 'Electron', path: newest.path, content });
+    }
   } catch { /* ignore */ }
 
-  // Monitor log
+  // Monitor log (newest in monitor/)
   try {
-    const monitorLog = path.join(home, '.flow', 'monitor.log');
-    const content = fs.readFileSync(monitorLog, 'utf8');
-    logs.push({ name: 'Monitor', path: monitorLog, content });
+    const newest = getNewestLogFile(path.join(LOGS_BASE, 'monitor'));
+    if (newest) {
+      const content = fs.readFileSync(newest.path, 'utf8');
+      logs.push({ name: 'Monitor', path: newest.path, content });
+    }
   } catch { /* ignore */ }
 
-  // Server log
+  // Server log (newest in server/)
   try {
-    const serverLog = path.join(home, '.flow', 'server.log');
-    const content = fs.readFileSync(serverLog, 'utf8');
-    logs.push({ name: 'Server', path: serverLog, content });
+    const newest = getNewestLogFile(path.join(LOGS_BASE, 'server'));
+    if (newest) {
+      const content = fs.readFileSync(newest.path, 'utf8');
+      logs.push({ name: 'Server', path: newest.path, content });
+    }
   } catch { /* ignore */ }
 
   return logs;
@@ -301,29 +347,26 @@ let _logWatchInterval = null;
 const _logFileOffsets = {};  // { filePath: bytesReadSoFar }
 
 function _getLogFiles() {
-  const fs = require('fs');
-  const home = require('os').homedir();
   const files = [];
 
-  try {
-    files.push({ name: 'Electron', path: log.transports.file.getFile().path });
-  } catch { /* ignore */ }
+  // Re-discover newest file in each subdirectory on every tick
+  const subdirs = [
+    { name: 'Electron', dir: 'main_desktop' },
+    { name: 'Monitor', dir: 'monitor' },
+    { name: 'Server', dir: 'server' },
+  ];
 
-  const monitorLog = path.join(home, '.flow', 'monitor.log');
-  if (fs.existsSync(monitorLog)) {
-    files.push({ name: 'Monitor', path: monitorLog });
-  }
-
-  const serverLog = path.join(home, '.flow', 'server.log');
-  if (fs.existsSync(serverLog)) {
-    files.push({ name: 'Server', path: serverLog });
+  for (const { name, dir } of subdirs) {
+    const newest = getNewestLogFile(path.join(LOGS_BASE, dir));
+    if (newest) {
+      files.push({ name, path: newest.path });
+    }
   }
 
   return files;
 }
 
 function _readNewContent(filePath) {
-  const fs = require('fs');
   try {
     const stat = fs.statSync(filePath);
     const prev = _logFileOffsets[filePath] || 0;
@@ -350,7 +393,6 @@ function _readNewContent(filePath) {
 
 ipcMain.on('watch-startup-logs', (event) => {
   // Initialise offsets to current file sizes so we only stream NEW content
-  const fs = require('fs');
   const initialFiles = _getLogFiles();
   for (const f of initialFiles) {
     try {
