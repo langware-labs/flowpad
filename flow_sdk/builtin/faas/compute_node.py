@@ -441,8 +441,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.post("terminal-command")
     async def terminal_command(self): return await self._pty_terminal_command()
 
-    @action.get(action_name="list-shell-sessions")
-    async def _list_shell_sessions(self): return await self._pty_list_shell_sessions()
+    @action.get(action_name="list-shells")
+    async def _list_shells(self): return await self._pty_list_shells()
 
     @action.get(action_name="session-transcript")
     async def _session_transcript(self): return await self._pty_session_transcript()
@@ -453,8 +453,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.post(action_name="reset-pty")
     async def reset_pty(self): return await self._pty_reset_pty()
 
-    @action.post(action_name="update-shell-session")
-    async def _update_shell_session(self): return await self._pty_update_shell_session()
+    @action.post(action_name="update-shell")
+    async def _update_shell(self): return await self._pty_update_shell()
 
     @action.post("ops")
     async def ops(self): return await self._ops_dispatch()
@@ -520,11 +520,11 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.all(action_name="fs-records", methods=["get", "post", "put", "delete"])
     async def fs_records_action(self): return await self._fs_records_action()
 
-    # -- shell session record actions --------------------------------------------
+    # -- shell record actions ----------------------------------------------------
 
-    @action.post(action_name="elevate-shell-session")
-    async def _elevate_shell_session(self) -> ApiResponse:
-        """Elevate a running shell session to a Claude session via AgenticProcess.open()."""
+    @action.post(action_name="elevate-shell")
+    async def _elevate_shell(self) -> ApiResponse:
+        """Elevate a running shell to a Claude session via AgenticProcess.open()."""
         from uuid import uuid4
 
         from flow_sdk.builtin.agentic_process import AgenticProcess

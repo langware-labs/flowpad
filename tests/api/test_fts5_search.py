@@ -94,7 +94,7 @@ async def test_fts5_search_by_name(fts_driver):
 
 @pytest.mark.asyncio
 async def test_fts5_search_by_type(fts_driver):
-    """Entity.search('query', record_type='shell_session') filters by type."""
+    """Entity.search('query', record_type='shell') filters by type."""
     await _create_entity_with_content(
         fts_driver, "e1", "shell", "Session A", "matching query text"
     )

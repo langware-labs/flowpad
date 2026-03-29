@@ -70,7 +70,7 @@ def test_close_idempotent():
 
 def test_pty_stream_path(use_tmp_records_root):
     record = _make_record(id="sess-42", pty_pid="pty-xyz")
-    expected = use_tmp_records_root / "shell_session" / record_stem("shell_session", "sess-42") / "pty-xyz.pty"
+    expected = use_tmp_records_root / "shell" / record_stem("shell", "sess-42") / "pty-xyz.pty"
     assert record.pty_stream_path == expected
 
 
