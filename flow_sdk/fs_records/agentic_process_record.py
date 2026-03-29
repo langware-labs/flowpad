@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import json
-from flow_sdk._compat import StrEnum
-from typing import Any, ClassVar
+from typing import Any, ClassVar, TYPE_CHECKING
 
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.property_record import PropertyRecord
+from flow_sdk.fs_records.agent_status import (
+    AgenticProcessStatus,
+    is_running,
+    is_busy,
+    is_idle,
+    is_terminal,
+)
+
+if TYPE_CHECKING:
+    from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 
 
 def _read_queue(record) -> dict:
@@ -27,25 +36,8 @@ def _read_queue(record) -> dict:
 
 def _check_session_active(record) -> bool:
     """Check if the linked Claude session is still active (JSONL mtime within 5 min)."""
-    session_id = getattr(record, "worker_session_id", None)
-    if not session_id:
-        return False
-    try:
-        from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
-        session = ClaudeSessionRecord.discover_one(session_id)
-        return bool(session and session.is_active)
-    except Exception:
-        return False
-
-
-class ProcessorStatus(StrEnum):
-    IDLE = "idle"
-    RUNNING = "running"
-    PAUSED = "paused"
-    STEPPING = "stepping"
-    COMPLETE = "complete"
-    ERROR = "error"
-    TERMINATED = "terminated"
+    session = record.claude_session_record
+    return bool(session and session.is_active)
 
 
 class AgenticProcessRecord(Record):
@@ -57,7 +49,7 @@ class AgenticProcessRecord(Record):
 
     def __init__(self, **kwargs: Any):
         kwargs.setdefault("type", RecordType.AGENTIC_PROCESS)
-        kwargs.setdefault("status", ProcessorStatus.IDLE)
+        kwargs.setdefault("status", AgenticProcessStatus.IDLE)
         # Migrate old field names from pre-existing records on disk
         if "pty_session_id" in kwargs and "pty_pid" not in kwargs:
             kwargs["pty_pid"] = kwargs.pop("pty_session_id")
@@ -150,19 +142,27 @@ class AgenticProcessRecord(Record):
         val = self.instruction
         return str(val) if val else None
 
-    def discover_status(self, worker_session_id: str | None = None) -> ProcessorStatus:
-        """Derive process status from the Claude session transcript."""
+    @property
+    def claude_session_record(self) -> ClaudeSessionRecord | None:
+        """Return the linked ClaudeSessionRecord, or None if not found."""
+        from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+        sid = self.worker_session_id
+        return ClaudeSessionRecord.discover_one(sid) if sid else None
+
+    def discover_status(self, worker_session_id: str | None = None) -> AgenticProcessStatus:
+        """Derive process status from the Claude session transcript (tail-read, ~60µs)."""
         from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 
         sid = worker_session_id or self.worker_session_id
         if not sid:
-            return ProcessorStatus.IDLE
+            return AgenticProcessStatus.IDLE
 
-        session = ClaudeSessionRecord.discover_one(sid)
-        if not session:
-            return ProcessorStatus.IDLE
-
-        return ProcessorStatus(session.status)
+        session = (
+            self.claude_session_record
+            if not worker_session_id
+            else ClaudeSessionRecord.discover_one(worker_session_id)
+        )
+        return session.status if session else AgenticProcessStatus.IDLE
 
     def getChildrenByType(self, type_name: str) -> list[Record]:
         """Find child records linked via RelationshipRecord."""

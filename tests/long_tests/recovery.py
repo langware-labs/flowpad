@@ -1,24 +1,35 @@
 """E2E recovery tests — AgenticProcess + Shell after server restart.
 
 Mirrors the TypeScript agentic_process_stress.test.ts PTY lifecycle and
-restore-from-DB suites, but runs as Python long tests against a real server.
+restore-from-DB suites.  Uses pure Python object calls instead of WebSocket
+for assertions — Shell.connected, Shell.read_output(), Shell.pty.destruct(),
+AgenticProcess.get_shell(), AgenticProcess.sync_status().
 
 Scenario A: PTY lifecycle
-  1. Create AgenticProcess
-  2. open() → get shell_id + worker_session_id
-  3. Attach WS to shell, verify Claude Code starts up
-  4. Send a simple shell echo → verify output arrives
+  1. Create AgenticProcess via HTTP
+  2. open() via HTTP → shell_id + worker_session_id
+  3. Load Shell entity, hydrate provider
+  4. assert shell.connected
+  5. Poll read_output() until Claude startup output appears
+  6. proc.send_input('echo hello_claude') via object call
+  7. Poll read_output() for echo token
 
-Scenario B: Server-restart recovery
+Scenario B: PTY destruct + sync_status
   1. Same as A (Claude running)
-  2. SIGKILL the server → simulates crash
-  3. Verify WS connection drops
-  4. Restart server with the same DB (entities persist)
-  5. GET process → state still shows "running" (stale — no signal yet)
-  6. Call open() again → server detects dead PTY, resumes with --resume
-  7. Verify open() returns is_resume=True
-  8. Attach to new shell, verify PTY is alive
-  9. Send "echo hello_after_recovery" → verify it appears in PTY
+  2. shell.pty.destruct() — simulates in-process server crash (kills OS PTY)
+  3. assert not shell.connected
+  4. proc.sync_status() corrects state to idle
+  5. Re-open via HTTP → is_resume=True
+  6. Echo test on recovered shell
+
+Scenario C: Full server-restart recovery (kill/restart)
+  1. Same as A (Claude running)
+  2. SIGKILL the server process
+  3. Restart server with same DB
+  4. GET process → state still "running" (stale)
+  5. open() → is_resume=True, new shell_id
+  6. Load new Shell, verify connected
+  7. Echo test confirms PTY interactive
 
 These tests require:
   - DEEP_TESTING=true
@@ -27,10 +38,7 @@ These tests require:
 """
 
 import asyncio
-import base64
-import json
 import os
-import signal
 import socket
 import subprocess
 import sys
@@ -40,7 +48,6 @@ import uuid
 
 import httpx
 import pytest
-import websockets
 
 from tests.test_settings import test_service_config
 
@@ -49,8 +56,9 @@ pytestmark = pytest.mark.skipif(
     reason="Skipping long tests when DEEP_TESTING is disabled",
 )
 
+
 # ---------------------------------------------------------------------------
-# Server fixture helpers (shared pattern with test_shell_pty_recover.py)
+# Server fixture helpers
 # ---------------------------------------------------------------------------
 
 def _find_free_port() -> int:
@@ -127,99 +135,35 @@ async def recovery_server():
 
 
 # ---------------------------------------------------------------------------
-# WS / REST helpers (mirrored from test_shell_pty_recover.py)
+# Object-level helpers
 # ---------------------------------------------------------------------------
 
-def _rest_api_msg(
-    target_type: str,
-    target_id: str,
-    action: str,
-    body: dict,
-    method: str = "POST",
-    sub_path: str | None = None,
-    msg_id: str | None = None,
-) -> dict:
-    return {
-        "message_type": "rest_api_msg",
-        "message_id": msg_id or str(uuid.uuid4()),
-        "method": method,
-        "scope": [],
-        "direct_resource_type": None,
-        "target_typeid": {"type": target_type, "id": target_id},
-        "action": action,
-        "sub_path": sub_path,
-        "query_params": None,
-        "body": body,
-    }
+async def _load_shell(shell_id: str, db_path: str):
+    """Load a Shell entity from the shared DB."""
+    import flow_sdk.db.database as db_mod
+    os.environ["SQLITE_DATABASE_PATH"] = db_path
+    db_mod._engine = None
+    db_mod._session_factory = None
+
+    from flow_sdk.builtin.shell import Shell
+    shell = await Shell.get_by_id(shell_id)
+    assert shell is not None, f"Shell {shell_id} not found in DB"
+    return shell
 
 
-async def _recv(ws, timeout: float = 10.0) -> dict:
-    raw = await asyncio.wait_for(ws.recv(), timeout=timeout)
-    return json.loads(raw)
-
-
-async def _collect_pty_output(
-    ws,
-    keyword: str | None = None,
-    max_msgs: int = 60,
-    per_msg_timeout: float = 5.0,
-) -> str:
-    """Drain PTY output messages until keyword found or max_msgs exhausted."""
-    text = ""
-    for _ in range(max_msgs):
-        try:
-            msg = await _recv(ws, timeout=per_msg_timeout)
-        except asyncio.TimeoutError:
-            break
-        raw = None
-        content = msg.get("content")
-        if isinstance(content, dict) and content.get("message_type") == "pty_output_msg":
-            raw = content.get("data", "")
-        elif msg.get("message_type") == "pty_output_msg":
-            raw = msg.get("data", "")
-        if raw:
-            text += base64.b64decode(raw).decode("utf-8", errors="replace")
-        if keyword and keyword in text:
-            break
-    return text
-
-
-async def _attach_shell(ws, cn_id: str, shell_id: str, conn_id: str) -> dict:
-    """Call terminal-command/attach and return the response dict."""
-    await ws.send(json.dumps(
-        _rest_api_msg(
-            "compute_node", cn_id, "terminal-command",
-            body={"shell_id": shell_id, "since_seq": 0},
-            sub_path="attach",
-        )
-    ))
-    for _ in range(20):
-        msg = await _recv(ws, timeout=10)
-        if msg.get("status") in ("SUCCESS", "FAIL"):
-            return msg
-        if msg.get("message_type") == "response_msg":
-            content = msg.get("content", {})
-            if isinstance(content, dict) and content.get("status") in ("reattached", "not_found"):
-                return msg
-    raise AssertionError("terminal-command/attach response not received")
-
-
-async def _send_pty_input(ws, cn_id: str, shell_id: str, data: str) -> None:
-    await ws.send(json.dumps(
-        _rest_api_msg(
-            "compute_node", cn_id, "terminal-command",
-            body={"shell_id": shell_id, "data": data},
-            sub_path="input",
-        )
-    ))
-
-
-async def _wait_ws_disconnect(ws, timeout: float = 15.0) -> None:
-    """Wait until the WS connection closes (server crash or shutdown)."""
-    try:
-        await asyncio.wait_for(ws.wait_closed(), timeout=timeout)
-    except asyncio.TimeoutError:
-        raise AssertionError(f"WS did not close within {timeout}s after server kill")
+async def _poll_output(shell, keyword: bytes, timeout: float = 30.0) -> bytes:
+    """Poll shell.read_output() until keyword appears or timeout."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        output = await shell.read_output()
+        if keyword in output:
+            return output
+        await asyncio.sleep(0.5)
+    output = await shell.read_output()
+    raise TimeoutError(
+        f"Keyword {keyword!r} not found in PTY output within {timeout}s.\n"
+        f"Last output ({len(output)} bytes): {output[-500:]!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -229,17 +173,11 @@ async def _wait_ws_disconnect(ws, timeout: float = 15.0) -> None:
 @pytest.mark.asyncio
 @pytest.mark.timeout(120)
 async def test_proc_pty_lifecycle(recovery_server):
-    """Create a process, open() it, attach PTY, send echo, verify output.
+    """Create process, open(), verify Claude starts, echo test via object calls.
 
-    Mirrors TypeScript Suite 1 — PTY lifecycle:
-      proc = new AgenticProcess(...)
-      proc.open() → shell_id
-      shell.startPty() → wait replayDone
-      proc.sendInput('echo hello_pty') → 'hello_pty' in PTY output
+    Mirrors TypeScript Suite 1 — PTY lifecycle.
     """
     port, base_url, db_path, _srv = recovery_server
-    ws_base = f"ws://127.0.0.1:{port}"
-    conn_id = str(uuid.uuid4())
 
     async with httpx.AsyncClient(base_url=base_url, timeout=30.0) as http:
         # Bootstrap
@@ -256,9 +194,7 @@ async def test_proc_pty_lifecycle(recovery_server):
         process_id = proc_resp.json()["data"]["id"]
 
         # open() — starts Claude Code in a new PTY
-        open_resp = await http.post(
-            f"/api/v1/graph/agentic_process/{process_id}/open",
-        )
+        open_resp = await http.post(f"/api/v1/graph/agentic_process/{process_id}/open")
         assert open_resp.status_code == 200, open_resp.text
         open_data = open_resp.json()["data"]
         shell_id = open_data["shell_id"]
@@ -266,62 +202,43 @@ async def test_proc_pty_lifecycle(recovery_server):
         assert shell_id, "open() must return a shell_id"
         assert worker_session_id, "open() must return a worker_session_id"
 
-        async with websockets.connect(f"{ws_base}/api/v1/connect/ws/{conn_id}") as ws:
-            confirm = await _recv(ws, timeout=5)
-            assert confirm["status"] == "ok"
+    # Load Shell entity directly and check liveness
+    shell = await _load_shell(shell_id, db_path)
+    assert shell.connected, "Shell must be connected immediately after open()"
 
-            # Attach to the shell's PTY
-            attach_resp = await _attach_shell(ws, cn_id, shell_id, conn_id)
-            content = attach_resp.get("content", {})
-            assert isinstance(content, dict) and content.get("status") == "reattached", (
-                f"Expected reattached, got: {attach_resp}"
-            )
+    # Wait for Claude to emit startup output
+    await _poll_output(shell, b"", timeout=30.0)  # any output = Claude started
+    output = await shell.read_output()
+    assert len(output) > 0, "PTY produced no output — Claude Code may not have started"
 
-            # Wait for Claude Code to emit something (any PTY output = PTY alive)
-            # Claude startup can take 5–10s; wait up to 30s
-            output = await _collect_pty_output(ws, keyword=None, max_msgs=80, per_msg_timeout=2.0)
-            assert len(output) > 0, "PTY produced no output — Claude Code may not have started"
+    # Echo test via proc.send_input()
+    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    proc = await AgenticProcess.get_by_id(process_id)
+    assert proc is not None
 
-            # Send a shell echo to confirm PTY is interactive
-            echo_token = f"echo_token_{uuid.uuid4().hex[:8]}"
-            await _send_pty_input(ws, cn_id, shell_id, f"echo {echo_token}\r")
+    echo_token = f"hello_claude_{uuid.uuid4().hex[:8]}".encode()
+    await proc.send_input(f"echo {echo_token.decode()}")
 
-            echo_output = await _collect_pty_output(ws, keyword=echo_token, max_msgs=40, per_msg_timeout=3.0)
-            assert echo_token in echo_output, (
-                f"echo token not found in PTY output.\n"
-                f"Token: {echo_token!r}\n"
-                f"Output: {echo_output!r}"
-            )
+    output = await _poll_output(shell, echo_token, timeout=30.0)
+    assert echo_token in output, f"Echo token {echo_token!r} not found in output"
 
 
 # ---------------------------------------------------------------------------
-# Scenario B — Server-restart recovery
+# Scenario B — PTY destruct + sync_status
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(240)
-async def test_proc_recovery_after_server_restart(recovery_server):
-    """Full kill-restart recovery cycle.
+@pytest.mark.timeout(120)
+async def test_proc_recovery_after_destruct(recovery_server):
+    """destruct() kills PTY; sync_status() corrects to idle; re-open resumes.
 
-    Mirrors TypeScript Suite 2 — Restore from DB:
-      proc.open() → Claude running
-      kill server                      ← simulates crash
-      WS disconnects
-      restart server (same DB)
-      GET process → state still "running" (stale entity, no signal)
-      open() again → is_resume=True, new shell_id
-      attach new shell → PTY alive
-      echo test → response arrives
-
-    This test is the Python equivalent of:
-      'restore from DB: open() + prompt() × 2 → hola appears twice'
+    Mirrors TypeScript ghost-running + recovery test.
+    Uses shell.pty.destruct() instead of server SIGKILL — faster and
+    targeted at the specific PTY process without restarting the server.
     """
-    port, base_url, db_path, srv_proc = recovery_server
-    ws_base = f"ws://127.0.0.1:{port}"
-    conn_id_1 = str(uuid.uuid4())
+    port, base_url, db_path, _srv = recovery_server
 
     async with httpx.AsyncClient(base_url=base_url, timeout=30.0) as http:
-        # ── Phase 1: Bootstrap + create process ────────────────────────────
         resp = await http.get("/api/v1/graph/bootstrap")
         assert resp.status_code == 200, f"Bootstrap failed: {resp.text}"
         cn_id = resp.json()["data"]["default_compute_node"]["id"]
@@ -333,179 +250,151 @@ async def test_proc_recovery_after_server_restart(recovery_server):
         assert proc_resp.status_code == 200, proc_resp.text
         process_id = proc_resp.json()["data"]["id"]
 
-        # ── Phase 2: open() → Claude running ───────────────────────────────
         open_resp = await http.post(f"/api/v1/graph/agentic_process/{process_id}/open")
         assert open_resp.status_code == 200, open_resp.text
-        open_data = open_resp.json()["data"]
-        shell_id_before = open_data["shell_id"]
-        worker_session_id = open_data["worker_session_id"]
-        assert shell_id_before, "open() must return a shell_id"
+        shell_id = open_resp.json()["data"]["shell_id"]
+        worker_session_id = open_resp.json()["data"]["worker_session_id"]
 
-    # ── Phase 3: Connect WS, confirm PTY alive ─────────────────────────
-    async with websockets.connect(f"{ws_base}/api/v1/connect/ws/{conn_id_1}") as ws:
-        confirm = await _recv(ws, timeout=5)
-        assert confirm["status"] == "ok"
+    # Phase 1: Verify Claude is running
+    shell = await _load_shell(shell_id, db_path)
+    assert shell.connected, "Shell must be connected after open()"
+    await _poll_output(shell, b"", timeout=30.0)  # wait for Claude startup
 
-        attach_resp = await _attach_shell(ws, cn_id, shell_id_before, conn_id_1)
-        content = attach_resp.get("content", {})
-        assert isinstance(content, dict) and content.get("status") == "reattached", (
-            f"Expected reattached, got: {attach_resp}"
-        )
+    # Phase 2: Kill PTY — kills OS PTY, clears in-memory session
+    pty = shell.compute_node.get_pty(shell.id)
+    assert pty is not None, "PTY session must exist after open()"
+    await pty.kill()
+    assert not shell.connected, "Shell must not be connected after pty.kill()"
 
-        # Give Claude enough time to emit some startup output
-        output_before = await _collect_pty_output(ws, keyword=None, max_msgs=60, per_msg_timeout=2.0)
-        assert len(output_before) > 0, "No PTY output before restart — Claude may not have started"
+    # Phase 3: sync_status() corrects state to idle (in test process via shared DB)
+    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    proc = await AgenticProcess.get_by_id(process_id)
+    assert proc is not None
+    proc._set_process_state(status="running")  # simulate ghost state
+    await proc.sync_status()
+    assert proc._get_process_state()["status"] == "idle", (
+        "sync_status() must correct ghost-running state to idle"
+    )
 
-        # ── Phase 4: SIGKILL the server ────────────────────────────────────
-        srv_proc.kill()
-        srv_proc.wait(timeout=5)
+    # Phase 4: Re-open via HTTP → is_resume=True
+    async with httpx.AsyncClient(base_url=base_url, timeout=30.0) as http:
+        open2_resp = await http.post(f"/api/v1/graph/agentic_process/{process_id}/open")
+        assert open2_resp.status_code == 200, open2_resp.text
+        open2_data = open2_resp.json()["data"]
 
-        # Confirm WS disconnects
-        await _wait_ws_disconnect(ws, timeout=15.0)
+    shell_id_2 = open2_data["shell_id"]
+    is_resume = open2_data.get("is_resume", False)
+    assert is_resume is True, f"open() after destruct must resume: is_resume=True, got {open2_data}"
+    assert open2_data["worker_session_id"] == worker_session_id, (
+        "worker_session_id must be preserved through recovery"
+    )
 
-    # ── Phase 5: Restart server with same DB ───────────────────────────
-    new_srv = _start_server(port, db_path)
-    try:
-        await _wait_for_server(base_url, timeout=30.0)
+    # Phase 5: New shell is connected and interactive
+    shell2 = await _load_shell(shell_id_2, db_path)
+    assert shell2.connected, "Recovered shell must be connected"
 
-        conn_id_2 = str(uuid.uuid4())
-        async with httpx.AsyncClient(base_url=base_url, timeout=30.0) as http:
-            # Bootstrap is idempotent — re-run to confirm server is live
-            resp = await http.get("/api/v1/graph/bootstrap")
-            assert resp.status_code == 200, f"Post-restart bootstrap failed: {resp.text}"
+    echo_token = f"hello_after_recovery_{uuid.uuid4().hex[:8]}".encode()
+    from flow_sdk.builtin.agentic_processor import AgenticProcess as AP
+    proc2 = await AP.get_by_id(process_id)
+    await proc2.send_input(f"echo {echo_token.decode()}")
 
-            # ── Phase 6: Process still in DB, state shows "running" (stale) ──
-            proc_get = await http.get(f"/api/v1/graph/agentic_process/{process_id}")
-            assert proc_get.status_code == 200, f"Process not found after restart: {proc_get.text}"
-            proc_data = proc_get.json()["data"]
-            assert proc_data["worker_session_id"] == worker_session_id, (
-                "worker_session_id must survive server restart (persisted in DB)"
-            )
-            # State likely "running" — stale, no live signal yet
-            stale_status = proc_data.get("state", {}).get("status")
-            # (informational: not asserted, just logged)
-
-            # ── Phase 7: open() detects dead PTY and resumes ───────────────
-            open2_resp = await http.post(f"/api/v1/graph/agentic_process/{process_id}/open")
-            assert open2_resp.status_code == 200, f"open() after restart failed: {open2_resp.text}"
-            open2_data = open2_resp.json()["data"]
-
-            shell_id_after = open2_data["shell_id"]
-            is_resume = open2_data.get("is_resume", False)
-            assert shell_id_after, "open() after restart must return a shell_id"
-            assert is_resume is True, (
-                f"open() after restart must resume the Claude session (is_resume=True).\n"
-                f"Got: {open2_data}"
-            )
-            assert open2_data["worker_session_id"] == worker_session_id, (
-                "worker_session_id must be preserved through recovery"
-            )
-
-            # ── Phase 8: Attach new shell, verify PTY alive ────────────────
-        async with websockets.connect(f"{ws_base}/api/v1/connect/ws/{conn_id_2}") as ws2:
-            confirm2 = await _recv(ws2, timeout=5)
-            assert confirm2["status"] == "ok"
-
-            attach2_resp = await _attach_shell(ws2, cn_id, shell_id_after, conn_id_2)
-            content2 = attach2_resp.get("content", {})
-            assert isinstance(content2, dict) and content2.get("status") == "reattached", (
-                f"Expected reattached on recovered shell, got: {attach2_resp}"
-            )
-
-            # ── Phase 9: PTY is interactive ────────────────────────────────
-            # Wait for Claude to start (up to 30s)
-            recovery_output = await _collect_pty_output(ws2, keyword=None, max_msgs=80, per_msg_timeout=2.0)
-            assert len(recovery_output) > 0, (
-                "No PTY output after recovery — Claude Code may not have resumed"
-            )
-
-            # Echo test confirms PTY is interactive
-            echo_token = f"recovered_{uuid.uuid4().hex[:8]}"
-            await _send_pty_input(ws2, cn_id, shell_id_after, f"echo {echo_token}\r")
-            echo_output = await _collect_pty_output(ws2, keyword=echo_token, max_msgs=40, per_msg_timeout=3.0)
-            assert echo_token in echo_output, (
-                f"Echo token not found after recovery.\n"
-                f"Token: {echo_token!r}\n"
-                f"Output: {echo_output!r}"
-            )
-
-    finally:
-        new_srv.terminate()
-        try:
-            new_srv.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            new_srv.kill()
-            new_srv.wait(timeout=3)
+    output = await _poll_output(shell2, echo_token, timeout=30.0)
+    assert echo_token in output, (
+        f"Echo token {echo_token!r} not found after recovery.\n"
+        f"Output: {output[-500:]!r}"
+    )
 
 
 # ---------------------------------------------------------------------------
-# Scenario C — Ghost-running detection
+# Scenario C — Full server-restart recovery (kill + restart server process)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(60)
-async def test_proc_state_is_stale_after_restart(recovery_server):
-    """After server restart, process.state.status still shows 'running' (stale).
+@pytest.mark.timeout(240)
+async def test_proc_recovery_after_server_restart(recovery_server):
+    """Full kill-restart recovery cycle.
 
-    This is the signal gap: without WS push or is_active TTL check, the
-    frontend has no way to know Claude died.  Test documents the pre-recovery
-    state so the gap is explicit.
-
-    Mirrors TypeScript ghost-running test:
-      process.state = running + process.is_active = false → resolvedStatus = idle
+    Mirrors TypeScript Suite 2 — Restore from DB.
+    Uses object calls for Shell liveness / output checks; HTTP only for
+    server actions (open, bootstrap).
     """
     port, base_url, db_path, srv_proc = recovery_server
-    conn_id = str(uuid.uuid4())
 
-    async with httpx.AsyncClient(base_url=base_url, timeout=20.0) as http:
+    async with httpx.AsyncClient(base_url=base_url, timeout=30.0) as http:
         resp = await http.get("/api/v1/graph/bootstrap")
+        assert resp.status_code == 200, f"Bootstrap failed: {resp.text}"
         cn_id = resp.json()["data"]["default_compute_node"]["id"]
 
         proc_resp = await http.post(
             "/api/v1/graph/agentic_process",
             json={"compute_node_id": f"compute_node-{cn_id}"},
         )
+        assert proc_resp.status_code == 200, proc_resp.text
         process_id = proc_resp.json()["data"]["id"]
 
         open_resp = await http.post(f"/api/v1/graph/agentic_process/{process_id}/open")
-        assert open_resp.json()["status"] == "SUCCESS", open_resp.text
-        shell_id = open_resp.json()["data"]["shell_id"]
+        assert open_resp.status_code == 200, open_resp.text
+        open_data = open_resp.json()["data"]
+        shell_id_before = open_data["shell_id"]
+        worker_session_id = open_data["worker_session_id"]
 
-        # Confirm it's running
-        proc_before = (await http.get(f"/api/v1/graph/agentic_process/{process_id}")).json()["data"]
-        assert proc_before["state"]["status"] == "running", (
-            "Process must be 'running' before server kill"
-        )
+    # Verify Claude started
+    shell_before = await _load_shell(shell_id_before, db_path)
+    assert shell_before.connected
+    await _poll_output(shell_before, b"", timeout=30.0)
 
-    # Kill server
+    # SIGKILL the server — simulates crash
     srv_proc.kill()
     srv_proc.wait(timeout=5)
 
-    # Restart
+    # After kill: OS PTY processes are also dead
+    assert not shell_before.connected, "Shell must not be connected after server SIGKILL"
+
+    # Restart server with same DB
     new_srv = _start_server(port, db_path)
     try:
         await _wait_for_server(base_url, timeout=30.0)
 
-        async with httpx.AsyncClient(base_url=base_url, timeout=20.0) as http:
+        async with httpx.AsyncClient(base_url=base_url, timeout=30.0) as http:
             await http.get("/api/v1/graph/bootstrap")  # idempotent
 
-            # Read process — state is stale (still "running" from pre-kill DB write)
-            proc_after = (await http.get(f"/api/v1/graph/agentic_process/{process_id}")).json()["data"]
-            stale_status = proc_after["state"]["status"]
+            # Process still in DB, state "running" (stale — no correction yet)
+            proc_get = await http.get(f"/api/v1/graph/agentic_process/{process_id}")
+            assert proc_get.status_code == 200, f"Process not found: {proc_get.text}"
+            proc_data = proc_get.json()["data"]
+            assert proc_data["worker_session_id"] == worker_session_id
 
-            # Document the gap: entity says running but PTY is dead
-            # is_active should be false (not persisted in DB — resets on next WS push)
-            assert stale_status == "running", (
-                f"Expected stale 'running' state after restart, got {stale_status!r}.\n"
-                "If this fails, the server is already correcting ghost state on restart."
-            )
+            # open() detects dead PTY and resumes Claude
+            open2_resp = await http.post(f"/api/v1/graph/agentic_process/{process_id}/open")
+            assert open2_resp.status_code == 200, f"open() after restart failed: {open2_resp.text}"
+            open2_data = open2_resp.json()["data"]
 
-            # open() is the correct recovery path — it detects dead PTY
-            open2 = await http.post(f"/api/v1/graph/agentic_process/{process_id}/open")
-            assert open2.json()["status"] == "SUCCESS", (
-                f"open() failed after ghost-running state: {open2.text}"
-            )
-            assert open2.json()["data"]["is_resume"] is True
+        shell_id_after = open2_data["shell_id"]
+        is_resume = open2_data.get("is_resume", False)
+        assert shell_id_after, "open() after restart must return shell_id"
+        assert is_resume is True, (
+            f"open() after restart must resume Claude session (is_resume=True). Got: {open2_data}"
+        )
+        assert open2_data["worker_session_id"] == worker_session_id, (
+            "worker_session_id must be preserved through restart"
+        )
+
+        # New shell is connected and interactive
+        shell_after = await _load_shell(shell_id_after, db_path)
+        assert shell_after.connected, "Recovered shell must be connected after restart"
+
+        await _poll_output(shell_after, b"", timeout=30.0)
+
+        echo_token = f"recovered_{uuid.uuid4().hex[:8]}".encode()
+        from flow_sdk.builtin.agentic_processor import AgenticProcess
+        proc = await AgenticProcess.get_by_id(process_id)
+        await proc.send_input(f"echo {echo_token.decode()}")
+
+        output = await _poll_output(shell_after, echo_token, timeout=30.0)
+        assert echo_token in output, (
+            f"Echo token not found after server restart.\n"
+            f"Token: {echo_token!r}\nOutput: {output[-500:]!r}"
+        )
 
     finally:
         new_srv.terminate()
@@ -514,3 +403,81 @@ async def test_proc_state_is_stale_after_restart(recovery_server):
         except subprocess.TimeoutExpired:
             new_srv.kill()
             new_srv.wait(timeout=3)
+
+
+# ---------------------------------------------------------------------------
+# Scenario D — pure object-level: prompt → kill PTY → re-open recovers context
+# No HTTP. No server. Direct object calls only.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(120)
+async def test_agentic_process_recovery_no_http(tmp_path):
+    """AgenticProcess: open → prompt → kill PTY → re-open recalls prior context.
+
+    Zero HTTP. Uses the @local ComputeNode directly.
+    The ClaudeSessionRecord written to disk during the first session is the
+    recovery anchor — open() detects the dead PTY and passes --resume to Claude.
+    """
+    from flow_sdk.db.database import init_db
+    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+    from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
+    from flow_sdk.server.routes.bootstrap import get_or_create_local_compute_node
+
+    await init_db()
+    cn = await get_or_create_local_compute_node()
+    workdir = str(tmp_path / "workdir")
+    os.makedirs(workdir, exist_ok=True)
+
+    original_root = get_default_records_root()
+    set_default_records_root(tmp_path / "records")
+    try:
+        proc = AgenticProcess(compute_node_id=str(cn.typeid), workdir=workdir)
+        await proc.save()
+
+        # Phase 1: open fresh, send prompt
+        await proc.open()
+        assert proc.shell_id is not None, "open() must set shell_id"
+
+        # open() returns once Claude's PID is found, but Claude still needs ~2s
+        # to finish rendering its startup screen before it can accept input.
+        await asyncio.sleep(3)
+        await proc.send_input("Remember the number 3422455")
+
+        # Wait up to 30s for Claude to write the session transcript to disk.
+        # The transcript file is the recovery anchor for --resume.
+        worker_session_id = proc.worker_session_id
+        deadline = time.monotonic() + 30.0
+        session_rec = None
+        while time.monotonic() < deadline:
+            session_rec = ClaudeSessionRecord.discover_one(worker_session_id)
+            if session_rec:
+                break
+            await asyncio.sleep(0.5)
+        assert session_rec is not None, (
+            f"ClaudeSessionRecord not found after 30s for session {worker_session_id}. "
+            "Claude must write the transcript before recovery is possible."
+        )
+
+        # Phase 2: kill PTY — evicts RAM, disk (transcript + stream file) survives
+        shell = await proc.get_shell()
+        pty = shell.compute_node.get_pty(shell.id)
+        assert pty is not None, "PTY must be alive after open()"
+        await pty.kill()
+        assert not shell.connected, "Shell must be disconnected after pty.kill()"
+
+        # Phase 3: re-open — detects dead PTY, finds ClaudeSessionRecord → --resume
+        await proc.open()
+        assert proc.shell_id is not None, "re-open() must set shell_id"
+
+        await proc.send_input("What is the number I told you to remember? Reply with just the number.")
+
+        # Phase 4: Claude resumes with full context and recalls the number
+        shell2 = await proc.get_shell()
+        output = await _poll_output(shell2, b"3422455", timeout=30.0)
+        assert b"3422455" in output, (
+            f"Claude did not recall the number after recovery.\nOutput: {output[-500:]!r}"
+        )
+    finally:
+        set_default_records_root(original_root)

@@ -876,7 +876,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return actionInfo.castResponse ? (this.castAndDeepAssign(response) as unknown as Res) : response;
   }
 
-  public async callActionOverWS<_Req, Res>(actionInfo: ActionInfo): Promise<Res> {
+  public async callActionOverWS<_Req, Res>(actionInfo: ActionInfo, options?: import('../websocket').IWSRestOptions): Promise<Res> {
     const connectionManager = ConnectionManager.getInstance();
 
     if (!connectionManager.connected) {
@@ -898,7 +898,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       body: actionInfo.bodyParameters as Record<string, unknown> | null,
     };
 
-    const response = await connectionManager.sendRestApiMessage<Res>(message);
+    const response = await connectionManager.sendRestApiMessage<Res>(message, options);
     return actionInfo.castResponse ? (this.castAndDeepAssign(response) as unknown as Res) : response;
   }
 

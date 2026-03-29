@@ -28,6 +28,7 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.cli_workers.base import WorkerCLIOptions, WorkerExecutionInfo
+    from flow_sdk.builtin.faas.compute_node import ComputeNode
     from flow_sdk.fs_records.shell_record import ShellRecord
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,6 @@ class Shell(Entity):
     pty_pid: str | None = APIField(default=None, description="PTY session ID")
     compute_node_id: str | None = APIField(default=None, description="Owning compute node")
     tab_order: int = APIField(default=0)
-    claude_session_id: str | None = APIField(default=None)
     created_at: str | None = APIField(default=None, description="ISO creation timestamp")
     last_active_at: str | None = APIField(default=None, description="ISO last activity timestamp")
     error_message: str | None = APIField(default=None, description="Error message when status=error")
@@ -57,6 +57,37 @@ class Shell(Entity):
     worker_name: str | None = APIField(default=None, description="Worker executable name, e.g. 'claude'")
 
     _api_visible: ClassVar[bool] = True
+
+    @property
+    def compute_node(self) -> "ComputeNode":
+        """The local ComputeNode backing this shell's PTY sessions."""
+        from flow_sdk.builtin.faas.compute_node import ComputeNode
+        return ComputeNode(
+            id=self.compute_node_id or "",
+            node_provider_id="local",
+            node_provider_type="local_machine",
+        )
+
+    @property
+    def connected(self) -> bool:
+        """True if the PTY session is alive on the compute node."""
+        if not self.compute_node_id:
+            return False
+        pty = self.compute_node.get_pty(self.id)
+        return pty is not None and pty.is_alive
+
+    async def read_output(self) -> bytes:
+        """Read all accumulated PTY output from the .pty stream file on disk.
+
+        The stream file survives destruct() and server restarts — it is only
+        deleted by shell.close(). Returns b"" if no output has been written yet.
+        """
+        from flow_sdk.fs_records.shell_record import ShellRecord  # noqa: PLC0415
+
+        record = ShellRecord.discover_one(self.pty_pid or self.id)
+        if record and record.pty_stream_ref.exists():
+            return record.pty_stream_ref.read_bytes()
+        return b""
 
     async def send_input(self, cmd: str, bracketed: bool = False) -> None:
         """Send a command string to the PTY session.
@@ -69,17 +100,11 @@ class Shell(Entity):
                        PSReadLine) echoes the command as one clean unit instead
                        of repainting the line on every character.
         """
-        from flow_sdk.builtin.faas.compute_node import ComputeNode
-
-        if not self.compute_node_id:
-            raise ValueError("Shell has no compute_node_id")
-        compute_node = await ComputeNode.get_by_id(self.compute_node_id)
-        if not compute_node or not compute_node.node_provider_id:
-            raise ValueError(f"ComputeNode {self.compute_node_id} not found or has no provider")
+        pty = self.compute_node.get_pty(self.id)
+        if not pty:
+            raise RuntimeError("No PTY session — call start_pty() first")
         data = f"\x1b[200~{cmd}\x1b[201~\r".encode() if bracketed else f"{cmd}\r".encode()
-        await compute_node.compute_provider.send_pty_input(
-            compute_node.node_provider_id, self.id, data, None, None
-        )
+        await pty.send(data)
 
     def is_running(self, pid: int | None = None) -> bool:
         """Return True if the shell has a foreground process running.
@@ -122,22 +147,17 @@ class Shell(Entity):
             RuntimeError: PTY session is not alive.
         """
         from flow_sdk.builtin.cli_workers.base import WorkerExecutionInfo
-        from flow_sdk.builtin.faas.compute_node import ComputeNode
 
-        if not self.compute_node_id:
-            raise ValueError("Shell has no compute_node_id")
-        compute_node = await ComputeNode.get_by_id(self.compute_node_id)
-        if not compute_node or not compute_node.node_provider_id:
-            raise ValueError(f"ComputeNode {self.compute_node_id} not found or has no provider")
-
-        if not compute_node.compute_provider.is_pty_alive(compute_node.node_provider_id, self.id):
+        cn = self.compute_node
+        pty = cn.get_pty(self.id)
+        if pty is None or not pty.is_alive:
             raise RuntimeError("PTY session is not alive")
 
-        shell_pid = compute_node.compute_provider.get_pty_shell_pid(compute_node.node_provider_id, self.id)
+        shell_pid = cn.compute_provider.get_pty_shell_pid(cn.node_provider_id, self.id)
         executable = worker_cli._build_worker_args()[0]  # e.g. "claude"
         command = worker_cli.to_shell_string(instruction=instruction)
 
-        await self.send_input(command, bracketed=True)
+        await self.send_input(command)
 
         worker_pid = await self._poll_for_worker_pid(shell_pid, executable, timeout=1.0)
 
@@ -186,16 +206,13 @@ class Shell(Entity):
         Raises:
             RuntimeError: If the PTY session itself is dead.
         """
-        from flow_sdk.builtin.faas.compute_node import ComputeNode
-
         if not self.worker_pid:
             return False
 
         if self.compute_node_id:
-            compute_node = await ComputeNode.get_by_id(self.compute_node_id)
-            if compute_node and compute_node.node_provider_id:
-                if not compute_node.compute_provider.is_pty_alive(compute_node.node_provider_id, self.id):
-                    raise RuntimeError("PTY session is not alive")
+            pty = self.compute_node.get_pty(self.id)
+            if pty is not None and not pty.is_alive:
+                raise RuntimeError("PTY session is not alive")
 
         return psutil.pid_exists(self.worker_pid)
 
@@ -247,7 +264,6 @@ class Shell(Entity):
             name=record.data.get("name"),
             workdir=record.data.get("workdir"),
             tab_order=record.data.get("tab_order") or await cls.next_tab_order(),
-            claude_session_id=record.data.get("claude_session_id"),
             pty_pid=record.data.get("pty_pid"),
             created_at=record.data.get("created_at"),
             last_active_at=record.data.get("last_active_at"),
@@ -274,7 +290,6 @@ class Shell(Entity):
         self.name = record.data.get("name")
         self.workdir = record.data.get("workdir")
         self.tab_order = record.data.get("tab_order", 0)
-        self.claude_session_id = record.data.get("claude_session_id")
         self.pty_pid = record.data.get("pty_pid")
         self.created_at = record.data.get("created_at")
         self.last_active_at = record.data.get("last_active_at")
@@ -282,25 +297,25 @@ class Shell(Entity):
         self.status = status.value if hasattr(status, "value") else (status or ShellStatus.IDLE.value)
 
     async def _cleanup_stale_session(self) -> None:
-        """Clean up stale PTY session state so a fresh one can be created."""
-        from flow_sdk.builtin.faas.pty_replay_buffer import replay_buffer
-        from flow_sdk.builtin.faas.pty_session_manager import session_manager
+        """Evict any dead PTY session state so a fresh one can be spawned."""
+        pty = self.compute_node.get_pty(self.id)
+        if pty:
+            await pty.kill()
 
-        if not self.compute_node_id:
-            return
-        from flow_sdk.builtin.faas.compute_node import ComputeNode
+    async def open_pty(
+        self,
+        rows: int = 24,
+        cols: int = 80,
+        on_output=None,
+        on_exit=None,
+    ) -> None:
+        """Start the OS PTY via the compute provider. No DB writes.
 
-        compute_node = await ComputeNode.get_by_id(self.compute_node_id)
-        if not compute_node or not compute_node.node_provider_id:
-            return
-        pty_key = (compute_node.id, compute_node.node_provider_id, self.id)
-        existing = await session_manager.get_session(pty_key)
-        if existing:
-            await session_manager.close_session(pty_key)
-        replay_buffer.clear(pty_key)
-        active = compute_node.active_pty_sessions or []
-        if self.id in active:
-            compute_node.active_pty_sessions.remove(self.id)
+        Lightweight counterpart to ``start_pty()``. Use in tests and direct
+        provider calls when you want a real PTY without touching the DB or
+        updating entity status.
+        """
+        await self.compute_node.create_pty(self.id, rows=rows, cols=cols, on_exit=on_exit)
 
     async def start_pty(
         self, rows: int = 24, cols: int = 80, on_exit=None, connection_id: str | None = None
@@ -315,46 +330,32 @@ class Shell(Entity):
         - status in (idle, closed, None)     →  spawn new PTY, returns True
         - connection_id: WebSocket connection to route PTY output to
         """
-        from flow_sdk.builtin.faas.compute_node import ComputeNode
-
         if self.status not in (None, "idle", "closed", "running"):
             raise RuntimeError(f"Cannot open session in status: {self.status}")
-        if not self.compute_node_id:
-            raise RuntimeError("compute_node_id is required")
 
-        compute_node = await ComputeNode.get_by_id(self.compute_node_id)
-        if not compute_node:
-            raise RuntimeError(f"ComputeNode {self.compute_node_id} not found")
+        cn = self.compute_node
+        existing = cn.get_pty(self.id)
 
-        # If already running, check whether PTY is actually alive.
-        if self.status == "running":
-            actually_alive = compute_node.node_provider_id and compute_node.compute_provider.is_pty_alive(
-                compute_node.node_provider_id, self.id
-            )
-            if actually_alive:
-                if connection_id:
-                    from flow_sdk.builtin.faas.pty_session_manager import session_manager
+        if existing and existing.is_alive:
+            if connection_id:
+                await existing.attach(connection_id)
+            return False
 
-                    pty_key = (compute_node.id, compute_node.node_provider_id, self.id)
-                    await session_manager.attach_session(pty_key, connection_id)
-                return False
-
-        # Cleanup stale session state before spawning.
-        if self.status in ("running", "closed"):
+        # Dead session in manager — evict stale state before spawning.
+        if existing:
+            await existing.kill()
+        elif self.status in ("running", "closed"):
             await self._cleanup_stale_session()
 
-        success = await compute_node.start_machine_pty_session(
-            shell_id=self.id,
-            connection_id=connection_id,
+        await cn.create_pty(
+            self.id,
             rows=rows,
             cols=cols,
+            connection_id=connection_id,
             name=self.name,
             working_dir=self.workdir,
             on_exit=on_exit,
         )
-
-        if not success:
-            raise RuntimeError("Failed to start PTY session")
 
         self.status = "running"
         self.pty_pid = self.id
@@ -387,34 +388,23 @@ class Shell(Entity):
         Delegates to DomainObject for .pty file cleanup + disk record state,
         then kills the in-memory PTY process.
         """
-        from flow_sdk.builtin.faas.compute_node import ComputeNode
-        from flow_sdk.builtin.faas.pty_replay_buffer import replay_buffer
-        from flow_sdk.builtin.faas.pty_session_manager import session_manager
-
         # 1. Close disk record + delete .pty file
         try:
             from flow_sdk.fs_records.shell_record import ShellRecord  # noqa: PLC0415
 
             record = ShellRecord.discover_one(self.id)
             if record:
-                record.delete()
+                await record.delete()
         except Exception as e:
             logging.warning(f"[Shell.close] DomainObject close failed: {e}")
 
         # 2. Kill in-memory PTY
-        if self.compute_node_id:
-            try:
-                compute_node = await ComputeNode.get_by_id(self.compute_node_id)
-                if compute_node and compute_node.node_provider_id:
-                    pty_key = (compute_node.id, compute_node.node_provider_id, self.id)
-                    request_info = get_current_request_info()
-                    connection_id = request_info.request_connection_id if request_info else None
-                    await session_manager.close_for_connection(pty_key, connection_id)
-                    remaining = await session_manager.get_session(pty_key)
-                    if not remaining:
-                        replay_buffer.clear(pty_key)
-            except Exception as e:
-                logging.warning(f"[Shell.close] PTY kill failed: {e}")
+        try:
+            pty = self.compute_node.get_pty(self.id)
+            if pty:
+                await pty.close()
+        except Exception as e:
+            logging.warning(f"[Shell.close] PTY kill failed: {e}")
 
         # 3. Delete entity so it no longer appears in tab list
         await self.delete()
@@ -457,8 +447,6 @@ class Shell(Entity):
         """
         import sys
 
-        from flow_sdk.builtin.faas.compute_node import ComputeNode
-
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
         vars_dict: dict = body.get("vars", {})
@@ -466,10 +454,10 @@ class Shell(Entity):
             return ApiFailResponse(message="vars is required")
         self.env = {**(self.env or {}), **vars_dict}
         await self.save()
-        if self.status == "running" and self.compute_node_id:
+        if self.status == "running":
             try:
-                compute_node = await ComputeNode.get_by_id(self.compute_node_id)
-                if compute_node and compute_node.node_provider_id:
+                pty = self.compute_node.get_pty(self.id)
+                if pty:
                     is_windows = sys.platform == "win32"
                     lines = []
                     for key, val in vars_dict.items():
@@ -477,10 +465,7 @@ class Shell(Entity):
                             lines.append(f"set {key}={val}\r\n")
                         else:
                             lines.append(f"export {key}={val}\n")
-                    data = "".join(lines)
-                    await compute_node.node_provider.send_pty_input(
-                        compute_node.node_provider_id, self.id, data.encode(), None, None
-                    )
+                    await pty.send("".join(lines).encode())
             except Exception as e:
                 logging.warning(f"[Shell.set_env] PTY inject failed: {e}")
         return ApiSuccessResponse(data={"vars": list(vars_dict.keys())})
@@ -527,21 +512,15 @@ class Shell(Entity):
         """Resolve replay buffer and return chunk metadata."""
         import base64
 
-        from flow_sdk.builtin.faas.compute_node import ComputeNode
-        from flow_sdk.builtin.faas.pty_replay_buffer import PtyReplayBuffer
-
         if not self.compute_node_id:
-            return ApiFailResponse(message="compute_node_id not set")
+            return ApiFailResponse(message="Shell has no compute_node_id")
 
-        compute_node = await ComputeNode.get_by_id(self.compute_node_id)
-        if not compute_node or not compute_node.node_provider_id:
-            return ApiFailResponse(message="ComputeNode or provider not found")
+        pty = self.compute_node.get_pty(self.id)
+        if pty is None:
+            return ApiSuccessResponse(data={"chunks": [], "total_chunks": 0, "total_size_bytes": 0})
 
-        buf = PtyReplayBuffer.get_instance()
-        session_key = (compute_node.id, compute_node.node_provider_id, self.id)
-        session_buf = buf.buffers.get(session_key)
-
-        if not session_buf:
+        chunks = pty.get_replay(0)
+        if not chunks:
             return ApiSuccessResponse(data={"chunks": [], "total_chunks": 0, "total_size_bytes": 0})
 
         preview_bytes = 32
@@ -553,8 +532,10 @@ class Shell(Entity):
                 "data_b64": base64.b64encode(chunk.data).decode("ascii"),
                 "preview_b64": base64.b64encode(chunk.data[:preview_bytes]).decode("ascii"),
             }
-            for chunk in session_buf.chunks
+            for chunk in chunks
         ]
+        total_size_bytes = sum(len(c.data) for c in chunks)
+        next_seq = chunks[-1].seq + 1
 
         # Resolve PTY file path for binary comparison
         pty_file_b64 = None
@@ -570,18 +551,12 @@ class Shell(Entity):
         return ApiSuccessResponse(
             data={
                 "chunks": chunks_meta,
-                "total_chunks": len(session_buf.chunks),
-                "total_size_bytes": session_buf.total_size_bytes,
-                "next_seq": session_buf.next_seq,
+                "total_chunks": len(chunks_meta),
+                "total_size_bytes": total_size_bytes,
+                "next_seq": next_seq,
                 "pty_file_b64": pty_file_b64,
             }
         )
-
-    async def elevate(self, claude_session_id: str) -> None:
-        """Elevate to a Claude session."""
-        self.status = ShellStatus.ELEVATED.value
-        self.claude_session_id = claude_session_id
-        await self.save()
 
     @classmethod
     async def get_active_sessions(cls, compute_node_typeid: str | None = None) -> list[Shell]:
@@ -594,3 +569,5 @@ class Shell(Entity):
         active = [s for s in all_shells if s.status != ShellStatus.CLOSED.value]
         active.sort(key=lambda s: s.tab_order)
         return active
+
+

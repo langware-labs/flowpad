@@ -213,15 +213,15 @@ export class NavigationActions {
 
   async openNewClaudeProcess(options?: { cwd?: string }): Promise<{ processId: string; shellId: string; dockPointer: IDockPointer } | null> {
     try {
-      const { process: agenticProcess, shellId } = await AgenticProcess.spawn(
+      const { process: agenticProcess, shell } = await AgenticProcess.spawn(
         { workdir: options?.cwd || dataContext.project?.fs_storage_mount_path },
         { watchProcessor: false, watchProcess: false, visible: true },
       );
-      if (!shellId) {
-        console.error('[NavigationActions] AgenticProcess created without shell_id:', agenticProcess.id);
+      if (!shell) {
+        console.error('[NavigationActions] AgenticProcess created without shell:', agenticProcess.id);
         return null;
       }
-      return { processId: agenticProcess.id, shellId, dockPointer: agenticProcess.dockPointer };
+      return { processId: agenticProcess.id, shellId: shell.id, dockPointer: agenticProcess.dockPointer };
     } catch (error) {
       console.error('[NavigationActions] Error creating AgenticProcess:', error);
       return null;

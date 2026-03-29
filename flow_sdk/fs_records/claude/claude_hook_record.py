@@ -232,7 +232,7 @@ class ClaudeHookRecord(Record):
             encoding="utf-8",
         )
 
-    def delete(self) -> None:
+    async def delete(self, delete_ref: bool = False) -> None:
         """Remove this hook entry from the source settings.json file."""
         if not self.source_file or not self.json_path:
             return

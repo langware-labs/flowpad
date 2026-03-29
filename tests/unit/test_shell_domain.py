@@ -1,4 +1,4 @@
-"""Tests for ShellRecord lifecycle methods (close, elevate, pty_stream_path)."""
+"""Tests for ShellRecord lifecycle methods (close, pty_stream_path)."""
 
 import pytest
 
@@ -68,19 +68,6 @@ def test_close_idempotent():
     assert record.status == ShellStatus.CLOSED
 
 
-def test_elevate():
-    record = _make_record()
-    record.elevate("claude-123")
-
-    assert record.status == ShellStatus.ELEVATED
-    assert record.data.get("claude_session_id") == "claude-123"
-
-    reloaded = ShellRecord.discover_one("test-session-1")
-    assert reloaded is not None
-    assert reloaded.status == ShellStatus.ELEVATED
-    assert reloaded.data.get("claude_session_id") == "claude-123"
-
-
 def test_pty_stream_path(use_tmp_records_root):
     record = _make_record(id="sess-42", pty_pid="pty-xyz")
     expected = use_tmp_records_root / "shell_session" / record_stem("shell_session", "sess-42") / "pty-xyz.pty"
@@ -93,7 +80,3 @@ def test_pty_stream_path_raises_without_pty_pid():
         _ = record.pty_stream_path
 
 
-def test_shell_runner_alias():
-    from flow_sdk.domain import Shell, ShellRunner
-
-    assert Shell is ShellRunner

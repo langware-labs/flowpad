@@ -8,12 +8,10 @@ from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, AsyncGenerator, Callable
 
-from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord, ProcessorStatus
+from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord, AgenticProcessStatus
 
 if TYPE_CHECKING:
-    from .shell import ShellRunner
-    from .agent import Agent
-    from .watcher import Watcher
+    from flow_sdk.builtin.agent_runner import AgentRunner
     from flow_sdk.fs_records.text_file_record import TextFileRecord
 
 
@@ -35,12 +33,10 @@ class AgenticProcess:
         record: AgenticProcessRecord | None = None,
         *,
         workerType: WorkerType | None = None,
-        shell: ShellRunner | None = None,
     ) -> None:
         if record is None:
             record = AgenticProcessRecord(workerType=workerType or WorkerType.CLAUDE)
         self._record = record
-        self._shell = shell
         self._handlers: dict[str, list[Callable]] = {}
         self._popen: subprocess.Popen | None = None
         self._launched: bool = False
@@ -67,12 +63,8 @@ class AgenticProcess:
     # Lifecycle API
     # ------------------------------------------------------------------
 
-    def start(self, workdir: str | None = None, watcher: Watcher | None = None) -> None:
-        """Prepare the process: create workdir, persist record. No Claude launched yet.
-
-        If ``watcher`` is provided it is attached to the workdir and started so
-        that it begins watching before ``prompt()`` is called.
-        """
+    def start(self, workdir: str | None = None) -> None:
+        """Prepare the process: create workdir, persist record. No Claude launched yet."""
         self._workdir = Path(workdir) if workdir else Path(tempfile.mkdtemp(prefix="flow-process-"))
         self._workdir.mkdir(parents=True, exist_ok=True)
         self._start_time = time.time()
@@ -80,9 +72,6 @@ class AgenticProcess:
         records_dir.mkdir(exist_ok=True)
         record_path = records_dir / f"{self.record.id}.json"
         self.record.save_record_json(record_path)
-        if watcher is not None:
-            watcher.attach(self._workdir)
-            watcher.start()
 
     @property
     def idle(self) -> bool:
@@ -90,24 +79,30 @@ class AgenticProcess:
         if not self._launched:
             return True
         s = self.status
-        if s in (ProcessorStatus.COMPLETE, ProcessorStatus.ERROR, ProcessorStatus.TERMINATED):
+        if s in (AgenticProcessStatus.COMPLETE, AgenticProcessStatus.ERROR, AgenticProcessStatus.TERMINATED):
             self._launched = False
             return True
         return False
 
-    def prompt(self, instruction: str, agent: Agent | None = None) -> None:
+    def prompt(self, instruction: str, agent: "AgentRunner | None" = None) -> None:
         """Launch Claude with the given instruction. Sets idle=False.
 
         If ``agent`` is provided, installs it as a sub-agent in the workdir
         before launching (copies .md and passes CLAUDE_AGENTS_JSON env var).
         """
         import json
+        import os
         import shutil
-        from flow_sdk.builtin.process_runner import ProcessConfig, run_process
+        from uuid import uuid4
         if self._workdir is None:
             self.start()
 
-        env_vars: dict[str, str] = {}
+        sid = str(uuid4())
+
+        env = os.environ.copy()
+        env.pop("CLAUDECODE", None)
+        env["CLAUDE_PROJECT_DIR"] = str(self._workdir)
+
         if agent is not None:
             agents_dir = self._workdir / ".claude" / "agents"
             agents_dir.mkdir(parents=True, exist_ok=True)
@@ -115,20 +110,18 @@ class AgenticProcess:
                 src = agent.record.record_dir / f"{agent.name}.md"
                 if src.exists():
                     shutil.copy2(src, agents_dir / f"{agent.name}.md")
-            env_vars["CLAUDE_AGENTS_JSON"] = json.dumps(agent.record.to_agents_json())
+            env["CLAUDE_AGENTS_JSON"] = json.dumps(agent.record.to_agents_json())
 
-        config = ProcessConfig(
-            skill_name="direct_prompt",
-            instruction=instruction,
-            permission_mode="bypassPermissions",
-            env_vars=env_vars,
+        args = ["claude", "--dangerously-skip-permissions", "--session-id", sid, "-p", instruction]
+
+        self._popen = subprocess.Popen(
+            args,
+            cwd=str(self._workdir),
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
-        updated_record, self._popen = run_process(
-            config,
-            workdir=str(self._workdir),
-            session_id=None,
-        )
-        object.__setattr__(self.record, "worker_session_id", updated_record.data.get("worker_session_id"))
+        object.__setattr__(self.record, "worker_session_id", sid)
         self._launched = True
 
     async def waitForIdle(self, timeout: float | None = None) -> None:
@@ -145,7 +138,12 @@ class AgenticProcess:
             await asyncio.sleep(2.0)
 
     @property
-    def outputs(self) -> list[TextFileRecord]:
+    def output_folder(self) -> Path | None:
+        """The working directory where Claude writes output files."""
+        return self._workdir
+
+    @property
+    def outputs(self) -> list["TextFileRecord"]:
         """Files created in workdir at or after start() was called."""
         from flow_sdk.fs_records.text_file_record import TextFileRecord
         if self._workdir is None or self._start_time is None:
@@ -166,7 +164,7 @@ class AgenticProcess:
     # ------------------------------------------------------------------
 
     @property
-    def status(self) -> ProcessorStatus:
+    def status(self) -> AgenticProcessStatus:
         """Derive status from transcript via discover_status()."""
         return self.record.discover_status()
 
@@ -191,7 +189,7 @@ class AgenticProcess:
         deadline = (asyncio.get_event_loop().time() + timeout) if timeout else None
         while True:
             s = self.status
-            if s in (ProcessorStatus.COMPLETE, ProcessorStatus.ERROR, ProcessorStatus.TERMINATED):
+            if s in (AgenticProcessStatus.COMPLETE, AgenticProcessStatus.ERROR, AgenticProcessStatus.TERMINATED):
                 self._emit(s.value)
                 return
             if deadline and asyncio.get_event_loop().time() > deadline:
@@ -237,7 +235,7 @@ class AgenticProcess:
                 yield {"status": current.value, "previous": last_status.value}
                 self._emit(current.value)
                 last_status = current
-                if current in (ProcessorStatus.COMPLETE, ProcessorStatus.ERROR, ProcessorStatus.TERMINATED):
+                if current in (AgenticProcessStatus.COMPLETE, AgenticProcessStatus.ERROR, AgenticProcessStatus.TERMINATED):
                     return
             await asyncio.sleep(2.0)
 

@@ -7,7 +7,7 @@ detaches should the session be eligible for cleanup.
 
 import pytest
 
-from flow_sdk.builtin.faas.pty_session_manager import PtySessionManager
+from flow_sdk.compute.providers.desktop.pty_session_manager import PtySessionManager
 
 
 @pytest.fixture(autouse=True)

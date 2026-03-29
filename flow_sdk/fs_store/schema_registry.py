@@ -1170,7 +1170,7 @@ class SchemaRegistry:
                 for per_type_log in types_dir.glob("*/index_log.jsonl"):
                     per_type_log.unlink()
             types_cleared = cls.get_all_record_types()
-            RecordError.clear_all()
+            await RecordError.clear_all()
         else:
             fts_cleared = 0
             entities_cleared = 0
@@ -1183,7 +1183,7 @@ class SchemaRegistry:
                 if log_file.exists():
                     log_file.unlink()
                 types_cleared.append(type_name)
-                RecordError.clear_for_type(type_name)
+                await RecordError.clear_for_type(type_name)
         return ClearResult(
             fts_cleared=fts_cleared,
             entities_cleared=entities_cleared,

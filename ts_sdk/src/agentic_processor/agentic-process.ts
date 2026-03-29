@@ -18,7 +18,7 @@ import { DockPointerData } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
-import { ProcessorState, ProcessorStatus, StackFrame } from './agentic-types';
+import { isProcessorRunning, ProcessorState, ProcessorStatus, StackFrame } from './agentic-types';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
 import { InstructionFile } from '../models/workflow/InstructionFile';
 import { Shell, ShellStatus } from '../entities/shell';
@@ -31,8 +31,6 @@ export interface SpawnResult {
   process: AgenticProcess;
   /** Set in PTY mode */
   shell?: Shell;
-  /** Set in PTY mode */
-  shellId?: string;
   /** Set in both modes */
   workerSessionId?: string;
 }
@@ -198,17 +196,34 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     options: IAgenticProcessOptions,
     workerOptions?: ISpawnWorkerOptions,
   ): Promise<SpawnResult> {
-    const { dataContext } = await import('../FlowSync/context');
-    const computeNode = dataContext.computeNode;
-    if (!computeNode) throw new Error('[AgenticProcess.spawn] No local compute node');
-    const processor = await computeNode.createAgenticProcessor();
-
-    const process = await processor.createProcess(options, {
-      visible: workerOptions?.visible,
-      result: workerOptions?.result,
-      watchProcessor: workerOptions?.watchProcessor,
-      watchProcess: workerOptions?.watchProcess,
+    const cliConfig = new ClaudeCliOptions({
+      model: options.model,
+      permission_mode: options.permissionMode ?? 'bypassPermissions',
+      chrome: options.chrome,
+      debug: options.debug,
+      worktree: options.worktree,
+      agents_json: options.agentsJson,
+      env_vars: options.envVars,
+      ...(options.resumeSessionId
+        ? options.forkSession
+          ? { resume: true, fork_session_id: options.resumeSessionId }
+          : { resume: true }
+        : {}),
     });
+
+    const process = await new AgenticProcess({
+      cli_config: cliConfig.toJson(),
+      context_data: {
+        instructions: options.instructions,
+        project_id: options.projectId,
+        max_thinking_tokens: options.maxThinkingTokens ?? 1024,
+        ...(options.resumeSessionId && !options.forkSession
+          ? { resume_session_id: options.resumeSessionId }
+          : {}),
+      },
+      workdir: options.workdir,
+      visible: workerOptions?.visible,
+    }).save(options.scope ?? []);
 
     if (workerOptions?.headless) {
       await process.watch();
@@ -221,12 +236,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       return { process, workerSessionId: workerOptions.workerSessionId };
     }
 
-    // PTY shell mode (default)
-    const { shellId, workerSessionId, shell } = await process.open(
-      workerOptions?.instruction ? { instruction: workerOptions.instruction } : undefined,
-    );
-    await shell.startPty({ cols: 80, rows: 24, workdir: options?.workdir });
-    return { process, shell, shellId, workerSessionId };
+    await process.open({
+      instruction: workerOptions?.instruction,
+      ptyTimeout: workerOptions?.ptyTimeout,
+    });
+    return { process, shell: await process.getShell(), workerSessionId: process.worker_session_id };
   }
 
   /**
@@ -459,10 +473,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return Shell.getById(this.shell_id);
   }
 
-/** Resolved execution status — ghost-running (state=running + is_active=false) corrected to idle. */
+/** Resolved execution status — ghost-running (any busy state + is_active=false) corrected to idle. */
   get resolvedStatus(): ProcessorStatus {
     const raw = this.state?.status ?? ProcessorStatus.IDLE;
-    if (raw === ProcessorStatus.RUNNING && !this.is_active) {
+    if (isProcessorRunning(raw) && !this.is_active) {
       return ProcessorStatus.IDLE;
     }
     return raw;
@@ -1017,22 +1031,23 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @param options - Optional instruction to execute
    * @returns Shell session ID and worker session ID
    */
-  async open(options?: { instruction?: string; visible?: boolean }): Promise<{ shellId: string; workerSessionId: string; shell: Shell }> {
+  async open(options?: { instruction?: string; visible?: boolean; ptyTimeout?: number }): Promise<boolean> {
     const { Shell } = await import('../entities/shell');
     const actionInfo = new ActionInfo('open', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = options ?? {};
     const result = await dataManager.callAction<
       unknown,
-      { shell_id: string; worker_session_id: string; shell: Record<string, unknown> }
+      { shell_id: string; worker_session_id: string; shell: Record<string, unknown> } | null
     >(actionInfo);
+    if (!result) throw new Error('Process could not be opened (process may be terminated)');
     this.shell_id = result.shell_id;
     this.worker_session_id = result.worker_session_id;
     dataManager.updateEntityFromJson(result.shell);
     dataManager.notifyEntityChanged(this);
     const shell = await dataManager.getByTypeId<Shell>(new TypeId(Shell.type, result.shell_id));
     if (!shell) throw new Error(`Shell ${result.shell_id} not found after start()`);
-    await shell.startPty({ cols: 80, rows: 24 });
-    return { shellId: result.shell_id, workerSessionId: result.worker_session_id, shell };
+    await shell.startPty({ cols: 80, rows: 24, timeout: options?.ptyTimeout });
+    return true;
   }
 
   /**

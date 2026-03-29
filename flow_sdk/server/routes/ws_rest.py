@@ -132,12 +132,10 @@ async def handle_rest_message(connection_id: str, websocket: WebSocket, message_
             await execution_context.cleanup()
 
         if isinstance(response, ApiResponse):
-            if api_message.message_id:
-                response.request_id = api_message.message_id
             json_data = response.model_dump()
-            json_str = json.dumps(json_data)
 
-            # Check if data contains a response_msg
+            # Check if data contains an already-wrapped response_msg (stream/pty path)
+            nested_msg = None
             if json_data and "data" in json_data:
                 data = json_data.get("data")
                 if (
@@ -146,9 +144,23 @@ async def handle_rest_message(connection_id: str, websocket: WebSocket, message_
                     and "message_type" in data
                     and data["message_type"] == WSMessageType.RESPONSE_MSG.value
                 ):
-                    json_str = json.dumps(data)
+                    nested_msg = data
 
-            await websocket.send_text(json_str)
+            if nested_msg is not None:
+                await websocket.send_text(json.dumps(nested_msg))
+            elif api_message.message_id:
+                # Wrap as response_msg so the TS pending-request resolver can match by
+                # response_message_id. The full ApiResponse payload goes into `content`
+                # so callers can inspect status/message/data as usual.
+                response_msg = {
+                    "message_type": "response_msg",
+                    "message_id": api_message.message_id,
+                    "response_message_id": api_message.message_id,
+                    "content": json_data,
+                }
+                await websocket.send_text(json.dumps(response_msg))
+            else:
+                await websocket.send_text(json.dumps(json_data))
         elif response is not None:
             # Handle non-ApiResponse types (e.g., plain dicts)
             response_msg = {

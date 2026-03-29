@@ -3,7 +3,7 @@
 import asyncio
 import pytest
 
-from flow_sdk.compute.providers.local_compute_provider import LocalComputeProvider
+from flow_sdk.compute.providers.desktop.provider import LocalComputeProvider
 
 # Import types from the flow-sdk
 from flow_sdk.flowpad_types import RuntimeEnvironment, ExecutionEnvironmentStatus

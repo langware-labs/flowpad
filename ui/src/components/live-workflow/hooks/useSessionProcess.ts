@@ -4,6 +4,7 @@ import {
   AgenticProcessor,
   ContextEntitiesEnum,
   dataContext,
+  isProcessorRunning,
   ProcessorStatus,
   TypeId,
 } from '@sdk';
@@ -39,9 +40,8 @@ export function useSessionProcess(): UseSessionProcessResult {
   // Determine if running
   const isRunning =
     !completed &&
-    (state?.status === ProcessorStatus.RUNNING ||
-      state?.status === ProcessorStatus.STEPPING ||
-      state?.status === ProcessorStatus.PAUSED);
+    !!state?.status &&
+    isProcessorRunning(state.status);
 
   // Abort running process
   const abortProcess = useCallback(() => {
