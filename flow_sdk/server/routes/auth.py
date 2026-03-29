@@ -6,12 +6,14 @@ import os
 from pathlib import Path
 
 from fastapi import APIRouter, Query
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
-from .. import state
 from flow_sdk.responses.response import ApiSuccessResponse
 
-router = APIRouter()
+from .. import state
+
+router = APIRouter()  # page routes — mounted at root
+api_router = APIRouter(prefix="/api/v1/auth")  # API routes — mounted under /api/v1
 
 
 @router.get("/post_login", response_class=HTMLResponse)
@@ -28,16 +30,12 @@ async def post_login(flowpad_api_key: str = Query(None, alias="flowpad-api-key")
     """
     try:
         # Import here to avoid circular dependency
-        from flow_sdk.cli.auth import validate_api_key, set_api_key
         from flow_sdk.cli.app_config import set_user
+        from flow_sdk.cli.auth import set_api_key, validate_api_key
 
         # Check if API key was provided
         if not flowpad_api_key:
             raise ValueError("No API key provided. Expected 'flowpad-api-key' parameter.")
-
-        # Log the received API key for debugging
-        print(f"[DEBUG] Received API key: {flowpad_api_key}")
-        print(f"[DEBUG] API key value check: '{flowpad_api_key}' == 'dummy_key_1234567890': {flowpad_api_key == 'dummy_key_1234567890'}")
 
         # Validate the API key
         user_info = validate_api_key(flowpad_api_key)
@@ -48,17 +46,13 @@ async def post_login(flowpad_api_key: str = Query(None, alias="flowpad-api-key")
         # Store user info in app config
         set_user(user_info)
 
-        state.login_result = {
-            "success": True,
-            "user": user_info,
-            "message": "Login successful"
-        }
+        state.login_result = {"success": True, "user": user_info, "message": "Login successful"}
 
         # Signal that login was received
         state.login_received.set()
 
         # Return success HTML
-        user_id = user_info.get('id', 'Unknown')
+        user_id = user_info.get("id", "Unknown")
         html_content = f"""
 <!DOCTYPE html>
 <html lang="en">
@@ -135,11 +129,7 @@ async def post_login(flowpad_api_key: str = Query(None, alias="flowpad-api-key")
         return HTMLResponse(content=html_content)
 
     except Exception as e:
-        state.login_result = {
-            "success": False,
-            "error": str(e),
-            "message": "Login failed"
-        }
+        state.login_result = {"success": False, "error": str(e), "message": "Login failed"}
 
         # Signal that login was received (even if failed)
         state.login_received.set()
@@ -235,48 +225,59 @@ async def test_login():
     html_file = server_dir / "test_login.html"
 
     # Read and return the HTML content
-    with open(html_file, 'r') as f:
+    with open(html_file, "r") as f:
         html_content = f.read()
 
     return HTMLResponse(content=html_content)
 
 
-@router.get("/api/auth/status")
+@api_router.get("/status")
 async def auth_status():
     """Check if user is logged in."""
     try:
-        from flow_sdk.cli.auth import is_logged_in
         from flow_sdk.cli.app_config import get_user
+        from flow_sdk.cli.auth import is_logged_in
 
         logged_in = is_logged_in()
         user_info = get_user() if logged_in else None
 
-        return JSONResponse(content={
-            "logged_in": logged_in,
-            "user": user_info
-        })
+        return ApiSuccessResponse(data={"logged_in": logged_in, "user": user_info})
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 
-@router.get("/api/auth/login-url")
+@api_router.get("/login-url")
 async def get_login_url_endpoint():
     """Get the login URL for authentication."""
     try:
         from flow_sdk.cli.env_loader import get_login_url
 
-        # Get port from env
         port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
-
         callback_url = f"http://127.0.0.1:{port}/post_login"
-        full_login_url = get_login_url(callback_url)
+        login_url = get_login_url(callback_url)
 
-        return JSONResponse(content={"login_url": full_login_url})
+        return ApiSuccessResponse(data={"login_url": login_url})
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 
-@router.post("/api/v1/refresh-token")
+@api_router.post("/logout")
+async def logout():
+    """Clear stored API key and user info."""
+    try:
+        from flow_sdk.cli.app_config import set_user
+        from flow_sdk.cli.auth import delete_api_key
+
+        delete_api_key()
+        set_user(None)
+        state.login_result = None
+        state.login_received.clear()
+        return ApiSuccessResponse(data={"success": True})
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+@api_router.post("/refresh-token")
 async def refresh_token() -> ApiSuccessResponse[str]:
     """
     Refresh authentication token endpoint.

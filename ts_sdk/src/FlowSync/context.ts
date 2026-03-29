@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { computed, makeObservable, observable, runInAction } from 'mobx';
 import { v4 as uuidv4 } from 'uuid';
+import apiClient from '../client';
 import {
   ActionInfo,
   Agent,
@@ -156,6 +157,31 @@ class DataContext extends EventEmitter {
    */
   get desktopInfo(): any {
     return this.bootstrapInfo?.desktop_info ?? null;
+  }
+
+  /**
+   * Fetch cloud user info and set it as the active user in context.
+   * Called fire-and-forget after bootstrap when cloudLoginAvailable is true.
+   */
+  async loadCloudUser(): Promise<void> {
+    try {
+      const data = await apiClient.get<{ logged_in: boolean; user: Record<string, unknown> }>('/auth/status');
+      if (data?.logged_in && data.user) {
+        const cloudUser = new User(data.user);
+        cloudUser.markAsExpanded();
+        await this.setContextEntityTypeId(ContextEntitiesEnum.CurrentUserTypeId, cloudUser.typeId);
+      }
+    } catch {
+      // Non-critical — local user stays in context
+    }
+  }
+
+  /**
+   * Log out from the cloud account and reload the page
+   */
+  async cloudLogout(): Promise<void> {
+    await apiClient.post('/auth/logout');
+    window.location.reload();
   }
 
   /**

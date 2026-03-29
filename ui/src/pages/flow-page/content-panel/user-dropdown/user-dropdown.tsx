@@ -8,14 +8,14 @@ import {
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
 import { SettingsPane } from '@src/components/ui/settings-pane';
-import { Settings, User as UserIcon, Wrench } from 'lucide-react';
+import { LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
 
 import { AccountInfo } from '@src/components/account/account-info';
 
 import { trackEvent } from '@src/utils/analytics';
 import { redirectToConsole } from '@src/utils/navigation';
-import { Agent, ExpansionRequest, navigator, Page, PAGE_TYPE, QueryFilter, QueryRequest, TypeId } from '@sdk';
-import { useAuth, useConnectionStatus, useEntitiesQuery, useEntity, useWatch } from '@sdk/react/hooks';
+import { Agent, dataContext, ExpansionRequest, navigator, Page, PAGE_TYPE, QueryFilter, QueryRequest, TypeId } from '@sdk';
+import { useAuth, useConnectionStatus, useContext, useEntitiesQuery, useEntity, useWatch } from '@sdk/react/hooks';
 import { SerializedElementNode, SerializedLexicalNode, SerializedTextNode } from 'lexical';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
@@ -105,6 +105,7 @@ export function UserDropdown() {
   const { agentId } = useParams();
   const { user } = useAuth();
   const { isConnected } = useConnectionStatus();
+  const { cloudLoginAvailable } = useContext();
   const agentTypeId = useMemo(() => (agentId ? new TypeId(Agent.type, agentId) : null), [agentId]);
   const { data: agent } = useEntity<Agent>(agentTypeId, {
     query: user ? agentQuery : new ExpansionRequest({}),
@@ -134,6 +135,14 @@ export function UserDropdown() {
     () => (instructionsPage?.raw_content ? parseRulesContent(instructionsPage.raw_content) : ''),
     [instructionsPage?.raw_content],
   );
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await dataContext.cloudLogout();
+    } catch (e) {
+      console.error('[Logout] Failed:', e);
+    }
+  }, []);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false);
@@ -274,6 +283,15 @@ export function UserDropdown() {
                   <UserIcon className="mr-2 h-4 w-4" />
                   Account Details
                 </DropdownMenuItem>
+                {cloudLoginAvailable && (
+                  <DropdownMenuItem
+                    onClick={() => void handleLogout()}
+                    className="cursor-pointer text-red-500 focus:text-red-500"
+                  >
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Logout
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </>

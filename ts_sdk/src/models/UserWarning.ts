@@ -1,3 +1,4 @@
+import apiClient from '../client';
 import { ViewType } from '../utils/ui/view-types';
 
 /**
@@ -78,6 +79,16 @@ export function createCloudDisconnectedWarning(): UserWarning {
     message: 'Cloud Disconnected',
     description: 'Sharing, backup and download are blocked',
     targetView: ViewType.CONNECTIONS,
+    onClick: async () => {
+      try {
+        const data = await apiClient.get<{ login_url: string }>('/auth/login-url');
+        if (data?.login_url) {
+          window.open(data.login_url, '_blank');
+        }
+      } catch (e) {
+        console.error('[Cloud Login] Failed to get login URL:', e);
+      }
+    },
   };
 }
 

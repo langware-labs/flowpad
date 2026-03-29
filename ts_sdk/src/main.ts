@@ -41,6 +41,11 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       // Store bootstrap info in dataContext for UI access (e.g., desktop_info)
       dataContext.bootstrapInfo = bootstrapInfo;
 
+      // Load cloud user lazily — fire-and-forget, must not block page load
+      if (dataContext.cloudLoginAvailable) {
+        void dataContext.loadCloudUser();
+      }
+
       // Load schemas (pass empty array if null to prevent re-fetching)
       await dataManager.loadSchemas(bootstrapInfo.schemas || []);
 
