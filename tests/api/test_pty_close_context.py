@@ -1,7 +1,7 @@
 """Tests for PTY close over plain HTTP.
 
 After the fix, terminal-command/close works over plain HTTP (no WebSocket needed).
-It writes state=closed to the ShellRecord on disk so list-shell-sessions
+It writes state=closed to the ShellRecord on disk so list-shells
 excludes it — fixing the "close all → refresh → tabs back" bug.
 
 terminal-command/start still requires WebSocket context (it needs to stream PTY

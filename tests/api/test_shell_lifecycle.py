@@ -9,8 +9,8 @@ from flow_sdk.responses.response import ApiResponse
 
 
 @pytest.mark.asyncio
-async def test_create_shell_session_entity(bootstrapped_client):
-    """POST /graph/shell_session creates entity."""
+async def test_create_shell_entity(bootstrapped_client):
+    """POST /graph/shell creates entity."""
     response = await bootstrapped_client.post(
         "/api/v1/graph/shell",
         json={
@@ -33,8 +33,8 @@ async def test_create_shell_session_entity(bootstrapped_client):
 
 
 @pytest.mark.asyncio
-async def test_read_shell_session_entity(bootstrapped_client):
-    """GET /graph/shell_session/{id} returns entity."""
+async def test_read_shell_entity(bootstrapped_client):
+    """GET /graph/shell/{id} returns entity."""
     # Create first
     create_resp = await bootstrapped_client.post(
         "/api/v1/graph/shell",
@@ -54,8 +54,8 @@ async def test_read_shell_session_entity(bootstrapped_client):
 
 
 @pytest.mark.asyncio
-async def test_close_shell_session(bootstrapped_client):
-    """POST /graph/shell_session/{id}/close sets status=closed."""
+async def test_close_shell(bootstrapped_client):
+    """POST /graph/shell/{id}/close sets status=closed."""
     # Create entity
     create_resp = await bootstrapped_client.post(
         "/api/v1/graph/shell",
@@ -82,7 +82,7 @@ async def test_close_shell_session(bootstrapped_client):
 
 @pytest.mark.asyncio
 async def test_update_display(bootstrapped_client):
-    """POST /graph/shell_session/{id}/update-display updates fields."""
+    """POST /graph/shell/{id}/update-display updates fields."""
     # Create entity
     create_resp = await bootstrapped_client.post(
         "/api/v1/graph/shell",
@@ -105,8 +105,8 @@ async def test_update_display(bootstrapped_client):
 
 
 @pytest.mark.asyncio
-async def test_list_shell_sessions_entity_query(bootstrapped_client):
-    """list-shell-sessions returns only non-closed sessions via entity query."""
+async def test_list_shells_entity_query(bootstrapped_client):
+    """list-shells returns only non-closed sessions via entity query."""
     # Create two sessions with status="created" (not "running") to avoid zombie detection
     resp1 = await bootstrapped_client.post(
         "/api/v1/graph/shell",
@@ -121,7 +121,7 @@ async def test_list_shell_sessions_entity_query(bootstrapped_client):
 
     # List via compute_node action
     list_resp = await bootstrapped_client.get(
-        "/api/v1/graph/compute_node/@local/list-shell-sessions",
+        "/api/v1/graph/compute_node/@local/list-shells",
     )
     assert list_resp.status_code == 200, list_resp.text
     res = ApiResponse(**list_resp.json())
@@ -132,8 +132,8 @@ async def test_list_shell_sessions_entity_query(bootstrapped_client):
 
 
 @pytest.mark.asyncio
-async def test_close_shell_session_excluded_from_list(bootstrapped_client):
-    """Closed sessions don't appear in list-shell-sessions."""
+async def test_close_shell_excluded_from_list(bootstrapped_client):
+    """Closed sessions don't appear in list-shells."""
     # Create a session
     create_resp = await bootstrapped_client.post(
         "/api/v1/graph/shell",
@@ -150,7 +150,7 @@ async def test_close_shell_session_excluded_from_list(bootstrapped_client):
 
     # List should not include the closed session
     list_resp = await bootstrapped_client.get(
-        "/api/v1/graph/compute_node/@local/list-shell-sessions",
+        "/api/v1/graph/compute_node/@local/list-shells",
     )
     assert list_resp.status_code == 200
     res = ApiResponse(**list_resp.json())
@@ -180,7 +180,7 @@ async def test_close_all_then_list_empty(bootstrapped_client):
 
     # List should be empty (no running sessions)
     list_resp = await bootstrapped_client.get(
-        "/api/v1/graph/compute_node/@local/list-shell-sessions",
+        "/api/v1/graph/compute_node/@local/list-shells",
     )
     assert list_resp.status_code == 200
     res = ApiResponse(**list_resp.json())
@@ -216,7 +216,7 @@ async def test_create_shell_entity_fields(bootstrapped_client):
 
 @pytest.mark.asyncio
 async def test_run_command(bootstrapped_client):
-    """POST /graph/shell_session/{id}/run executes command and returns output."""
+    """POST /graph/shell/{id}/run executes command and returns output."""
     # Create entity
     create_resp = await bootstrapped_client.post(
         "/api/v1/graph/shell",
@@ -240,7 +240,7 @@ async def test_run_command(bootstrapped_client):
 
 @pytest.mark.asyncio
 async def test_set_env_persists_on_entity(bootstrapped_client):
-    """POST /graph/shell_session/{id}/set-env stores vars on the entity."""
+    """POST /graph/shell/{id}/set-env stores vars on the entity."""
     # Create entity
     create_resp = await bootstrapped_client.post(
         "/api/v1/graph/shell",

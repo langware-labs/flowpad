@@ -98,7 +98,7 @@ async def test_close_session_transitions_record(session_manager, use_tmp_records
     mock_stream_file.delete.assert_called_once()
 
 
-def test_shell_session_entity_defaults():
+def test_shell_entity_defaults():
     """Shell entity has correct default fields."""
     from flow_sdk.builtin.shell import Shell
 
@@ -114,7 +114,7 @@ def test_shell_session_entity_defaults():
     assert entity.last_active_at is None
 
 
-def test_shell_session_entity_has_all_api_fields():
+def test_shell_entity_has_all_api_fields():
     """All expected fields are APIFields on Shell."""
     from flow_sdk.builtin.shell import Shell
 
@@ -178,7 +178,7 @@ def test_shell_record_entity_id_default():
     assert record.data.get("entity_id") is None
 
 
-def test_shell_session_status_default_idle():
+def test_shell_status_default_idle():
     """Shell entity default status is 'idle'."""
     from flow_sdk.builtin.shell import Shell
 
@@ -187,7 +187,7 @@ def test_shell_session_status_default_idle():
 
 
 @pytest.mark.asyncio
-async def test_shell_session_open_recovers_dead_running_session():
+async def test_shell_open_recovers_dead_running_session():
     """open() on a running shell with no live PTY spawns a new PTY (recovery path)."""
     from flow_sdk.builtin.shell import Shell
 
