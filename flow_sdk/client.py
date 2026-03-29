@@ -1,33 +1,30 @@
-
 """Flowpad API Client"""
 
 import os
-from typing import Optional, Dict, Any
-from pydantic import BaseModel, Field
+from typing import Any, Dict, Optional
+
 import httpx
+from pydantic import BaseModel, Field
 
 
 class ApiConfig(BaseModel):
     """API configuration model"""
 
-    api_base_url: str = Field(default="https://flowpad.ai/api/v1")
-    login_url: str = Field(default="/login?target_path={redirect_url}")
+    api_base_url: Optional[str] = Field(default=None)
+    login_url: Optional[str] = Field(default=None)
 
     def __init__(self, **data: Any):
         super().__init__(**data)
-        self.api_base_url = os.environ.get("API_BASE_URL", "https://flowpad.ai/api/v1")
+        self.api_base_url = os.environ.get("API_BASE_URL", "https://app.flowpad.ai/api/v1")
         self.login_url = os.environ.get("LOGIN_URL", "/login?target_path={redirect_url}")
 
     @classmethod
     def from_env(cls) -> "ApiConfig":
         """Create ApiConfig from environment variables"""
-        api_base_url = os.environ.get("API_BASE_URL", "https://flowpad.ai/api/v1")
+        api_base_url = os.environ.get("API_BASE_URL", "https://app.flowpad.ai/api/v1")
         login_url = os.environ.get("LOGIN_URL", "/login?target_path={redirect_url}")
 
-        return cls(
-            api_base_url=api_base_url,
-            login_url=login_url
-        )
+        return cls(api_base_url=api_base_url, login_url=login_url)
 
     def get_full_login_url(self) -> str:
         """Get the full login URL by combining base URL with login path"""
@@ -77,9 +74,7 @@ class FlowpadClient:
         """Get or create the async HTTP client"""
         if self._client is None:
             self._client = httpx.AsyncClient(
-                base_url=self.config.api_base_url,
-                headers=self._get_headers(),
-                timeout=30.0
+                base_url=self.config.api_base_url, headers=self._get_headers(), timeout=30.0
             )
         else:
             # Update headers in case API key changed
@@ -115,7 +110,7 @@ class FlowpadClient:
         # Parse JSON response
         try:
             response_data = response.json()
-        except Exception as e:
+        except Exception:
             raise ValueError(f"Failed to parse JSON response: {response.text}")
         if "status" in response_data and str(response_data["status"]).lower() != "success":
             raise ValueError(f"API returned error status: {response_data}")
@@ -128,6 +123,7 @@ class FlowpadClient:
         # Validate that response has 'id' field
         if "id" not in user_data:
             import json
+
             formatted_json = json.dumps(response_data, indent=2)
             raise ValueError(f"Invalid user data: missing 'id' field. Got response:\n{formatted_json}")
 
