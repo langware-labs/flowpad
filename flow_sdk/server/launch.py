@@ -15,18 +15,15 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timezone
-from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import psutil
 
+from flow_sdk.service_log import cleanup_old_logs, generate_timestamped_log_path, LOGS_BASE
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-
-FLOW_HOME = Path.home() / ".flow"
-MONITOR_LOG_PATH = FLOW_HOME / "monitor.log"
-SERVER_LOG_PATH = FLOW_HOME / "server.log"
 
 # Marker substring used to validate that a PID actually belongs to our
 # server / monitor (guards against recycled PIDs).
@@ -42,11 +39,13 @@ log = logging.getLogger("flow.monitor")
 
 
 def _setup_logging() -> None:
-    """Configure rotating file + stderr logging for the monitor process."""
-    FLOW_HOME.mkdir(parents=True, exist_ok=True)
-    handler = RotatingFileHandler(
-        str(MONITOR_LOG_PATH), maxBytes=5 * 1024 * 1024, backupCount=3
-    )
+    """Configure timestamped file + stderr logging for the monitor process."""
+
+    monitor_log_dir = LOGS_BASE / "monitor"
+    cleanup_old_logs(monitor_log_dir)
+    monitor_log_path = generate_timestamped_log_path("monitor")
+
+    handler = logging.FileHandler(str(monitor_log_path))
     handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
     log.addHandler(handler)
     log.addHandler(logging.StreamHandler(sys.stderr))
@@ -136,16 +135,20 @@ def check_server_health(port: int, timeout: float = 2.0) -> bool:
 
 def start_server_process(port: int) -> int:
     """Start the minihub server as a detached process. Returns PID."""
+
     env = os.environ.copy()
     env["LOCAL_SERVER_PORT"] = str(port)
     env["MINIHUB_PORT"] = str(port)
 
-    FLOW_HOME.mkdir(parents=True, exist_ok=True)
-    server_log = open(SERVER_LOG_PATH, "a")  # noqa: WPS515 — fd inherited by child
+    server_log_dir = LOGS_BASE / "server"
+    cleanup_old_logs(server_log_dir)
+    server_log_path = generate_timestamped_log_path("server")
+
+    server_log = open(server_log_path, "a")  # noqa: WPS515 — fd inherited by child
     args = [sys.executable, "-m", "flow_sdk.server.run"]
     pid = start_detached_process(args, env=env, stderr=server_log)
     server_log.close()
-    log.info("Started server process PID=%d on port %d (stderr → %s)", pid, port, SERVER_LOG_PATH)
+    log.info("Started server process PID=%d on port %d (stderr → %s)", pid, port, server_log_path)
     return pid
 
 
@@ -301,7 +304,7 @@ def launch_monitor(port: int) -> None:
             _save_info(info)
 
             if not wait_for_server_health(port, timeout=15.0):
-                log.error("Server did not become healthy within 15s (check %s)", SERVER_LOG_PATH)
+                log.error("Server did not become healthy within 15s (check %s)", LOGS_BASE / "server")
 
             log.info("Entering monitor loop...")
             monitor_loop(port)
