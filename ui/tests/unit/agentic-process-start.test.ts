@@ -41,15 +41,14 @@ describe('AgenticProcess.start', () => {
     getByTypeIdSpy.mockRestore();
   });
 
-  it('resolves with shellId and workerSessionId without throwing', async () => {
+  it('resolves with true and sets shell_id and worker_session_id without throwing', async () => {
     const agenticProcess = new AgenticProcess({ id: '00000000-0000-4000-8000-000000000001', state: { status: 'idle' } });
 
     // This call must not throw "dataManager.getEntityById is not a function".
-    // It should resolve successfully with the shell returned from the backend.
-    await expect(agenticProcess.open()).resolves.toMatchObject({
-      shellId: '00000000-0000-4000-8000-000000000002',
-      workerSessionId: 'worker-session-xyz',
-    });
+    // It should resolve to true and set shell_id / worker_session_id on the process.
+    await expect(agenticProcess.open()).resolves.toBe(true);
+    expect(agenticProcess.shell_id).toBe('00000000-0000-4000-8000-000000000002');
+    expect(agenticProcess.worker_session_id).toBe('worker-session-xyz');
   });
 
   it('dataManager does not have a getEntityById method (verifies the broken API)', () => {

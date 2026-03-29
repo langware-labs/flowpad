@@ -94,7 +94,8 @@ def _last_user_text(chunk: str) -> str:
         except Exception:
             continue
         if entry.get("type") == "user":
-            content = entry.get("message", {}).get("content", "")
+            msg = entry.get("message", {})
+            content = msg.get("content", "") if isinstance(msg, dict) else str(msg)
             if isinstance(content, list):
                 return " ".join(
                     c.get("text", "") for c in content if c.get("type") == "text"

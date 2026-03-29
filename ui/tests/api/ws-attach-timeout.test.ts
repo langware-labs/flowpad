@@ -25,9 +25,8 @@ describe('AgenticProcess spawn regression', () => {
       context_data: {},
     }).save();
 
-    const { shell } = await process.open({ instruction: 'echo hello', ptyTimeout: 3000 });
-    expect(shell).toBeDefined();
-    expect(shell.id).toBeTruthy();
+    await process.open({ instruction: 'echo hello', ptyTimeout: 3000 });
+    expect(process.shell_id).toBeTruthy();
   }, 10000);
 });
 

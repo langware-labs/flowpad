@@ -165,7 +165,8 @@ async function loadShell(pointer: string | undefined): Promise<void> {
 
     let shell: import('@sdk/entities/shell').Shell;
     try {
-      ({ shell } = await process.open({ visible: true }));
+      await process.open({ visible: true });
+      shell = (await process.getShell())!;
     } catch {
       toast({ title: 'Session unavailable', description: 'This process has been terminated.', variant: 'destructive' });
       // eslint-disable-next-line @typescript-eslint/only-throw-error

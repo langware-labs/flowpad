@@ -717,7 +717,7 @@ class FsRecordsActionsMixin:
                         await driver.fts_delete(entity.id)
                     await entity.delete()
                 # Remove from disk
-                deleted = await asyncio.to_thread(record_list.delete, uid)
+                deleted = await record_list.delete(uid)
                 if not deleted:
                     return ApiFailResponse(message=f"Record '{uid}' not found", status_code=404)
                 await self._broadcast_fs_record_op("delete", record_type, uid)
