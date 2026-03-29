@@ -64,8 +64,6 @@ export interface IShell extends IEntity {
   env?: Record<string, string> | null;
 }
 
-// Legacy alias
-export type IShellSession = IShell;
 
 @registerEntity
 export class Shell extends APIEntity<Shell> implements IShell {
@@ -490,7 +488,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
   static async list(computeNodeId: string): Promise<Shell[]> {
     const { ComputeNode: ComputeNodeClass } = await import('./compute-node/compute-node');
     const action = new ActionInfo(
-      'list-shell-sessions',
+      'list-shells',
       ComputeNodeClass.type,
       computeNodeId,
       'GET',

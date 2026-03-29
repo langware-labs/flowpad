@@ -140,8 +140,8 @@ def _parse_vfs_uri_to_ref(vfs_uri: str) -> tuple[str, str]:
     """Parse a VFS URI into a (type, id) tuple.
 
     Example:
-        ``"vfs://compute_node-@local/.../shell_session-@abc123"``
-        -> ``("shell_session", "abc123")``
+        ``"vfs://compute_node-@local/.../shell-@abc123"``
+        -> ``("shell", "abc123")``
 
     Extracts the last path segment matching ``{type}-@{id}``.
 

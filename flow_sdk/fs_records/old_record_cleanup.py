@@ -93,7 +93,7 @@ async def cleanup_stale_skill_records() -> int:
 
 def run_old_record_cleanup() -> None:
     """Called once at startup in a background daemon thread."""
-    shell_deleted = _cleanup_records("shell_session", MAX_SHELL_RECORDS)
+    shell_deleted = _cleanup_records("shell", MAX_SHELL_RECORDS)
     ap_deleted = _cleanup_records("agentic_process", MAX_AGENTIC_RECORDS)
     if shell_deleted or ap_deleted:
         print(f"  Old record cleanup: removed {shell_deleted} shell + {ap_deleted} agentic_process records")

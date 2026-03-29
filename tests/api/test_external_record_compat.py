@@ -18,11 +18,11 @@ from flow_sdk.server.app import app
 
 
 @pytest.mark.asyncio
-async def test_shell_session_discover_no_meta(bootstrapped_client):
-    """_list_shell_sessions works correctly after _meta_data removal.
+async def test_shell_discover_no_meta(bootstrapped_client):
+    """list-shells works correctly after _meta_data removal.
 
     Creates a ShellRecord, discovers it, and verifies the
-    list-shell-sessions endpoint returns it without errors.
+    list-shells endpoint returns it without errors.
     """
     original_root = get_default_records_root()
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -51,7 +51,7 @@ async def test_shell_session_discover_no_meta(bootstrapped_client):
 
             # id and type stored in _data
             assert session.id == "test-session-1"
-            assert session.type == "shell_session"
+            assert session.type == "shell"
 
         finally:
             set_default_records_root(original_root)

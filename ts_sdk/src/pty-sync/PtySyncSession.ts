@@ -47,7 +47,7 @@ export class PtySyncSession {
    * Create the Phase-1 single segment covering the full session.
    * Call after initialize() once sessionStartTime is known.
    *
-   * @param sessionStartTime  ms epoch — from ShellSessionRecord.created_at
+   * @param sessionStartTime  ms epoch — from ShellRecord.created_at
    * @param rows              D = max(3, xterm.rows - 4)
    * @param baseAbsRow        evictionOffset at segment creation time
    */

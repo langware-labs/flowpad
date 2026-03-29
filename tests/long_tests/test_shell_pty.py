@@ -1,7 +1,7 @@
 """E2E test for Shell PTY lifecycle over WebSocket.
 
 Scenario:
-A. Create a shell → close it → must NOT appear in list-shell-sessions.
+A. Create a shell → close it → must NOT appear in list-shells.
 B. Create an idle shell → open WebSocket → call Shell.open() via rest_api_msg
    → PTY starts → SUCCESS response.
 C. Send "echo hello" via terminal-command/input rest_api_msg → receive
@@ -147,7 +147,7 @@ async def _recv(ws, timeout: float = 10.0) -> dict:
 @pytest.mark.timeout(90)
 async def test_shell_pty_e2e(pty_live_server):
     """
-    A. Create a shell → close it → not in list-shell-sessions.
+    A. Create a shell → close it → not in list-shells.
     B. Open WebSocket → call Shell.open() → PTY starts → SUCCESS.
     C. Send echo input → receive pty_output_msg → 'hello' in decoded output.
     """
@@ -159,7 +159,7 @@ async def test_shell_pty_e2e(pty_live_server):
         assert resp.status_code == 200, f"Bootstrap failed: {resp.text}"
         cn_id = resp.json()["data"]["default_compute_node"]["id"]
 
-        # ── A: Create a closed shell → must NOT appear in list-shell-sessions ──
+        # ── A: Create a closed shell → must NOT appear in list-shells ──
         r = await http.post(
             "/api/v1/graph/shell",
             json={"name": "closed-shell", "compute_node_id": cn_id},
@@ -171,12 +171,12 @@ async def test_shell_pty_e2e(pty_live_server):
         assert r.status_code == 200
 
         list_r = await http.get(
-            f"/api/v1/graph/compute_node/{cn_id}/list-shell-sessions"
+            f"/api/v1/graph/compute_node/{cn_id}/list-shells"
         )
         assert list_r.status_code == 200
         listed_ids = {s["id"] for s in list_r.json()["data"]}
         assert closed_id not in listed_ids, (
-            "Closed shell must not appear in list-shell-sessions"
+            "Closed shell must not appear in list-shells"
         )
 
         # ── B: Create idle shell → open WS → start PTY ───────────────────────

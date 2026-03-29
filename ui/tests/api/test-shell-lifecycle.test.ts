@@ -34,7 +34,7 @@ describe('Shell lifecycle (API)', () => {
     expect(closeBody.status).toBe('SUCCESS');
 
     // List
-    const listResp = await fetch(`${API}/compute_node/@local/list-shell-sessions`);
+    const listResp = await fetch(`${API}/compute_node/@local/list-shells`);
     const listBody = await listResp.json();
     const ids = (listBody.data || []).map((s: any) => s.id);
     expect(ids).not.toContain(created.id);
@@ -59,7 +59,7 @@ describe('Shell lifecycle (API)', () => {
     await fetch(`${API}/shell/${s2.data.id}/close`, { method: 'POST' });
 
     // List should be empty (for these sessions)
-    const listResp = await fetch(`${API}/compute_node/@local/list-shell-sessions`);
+    const listResp = await fetch(`${API}/compute_node/@local/list-shells`);
     const listBody = await listResp.json();
     const ids = (listBody.data || []).map((s: any) => s.id);
     expect(ids).not.toContain(s1.data.id);

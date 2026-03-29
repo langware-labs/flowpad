@@ -435,8 +435,8 @@ class PtyActionsMixin:
             raise RuntimeError(f"PTY session not found after creation for shell {shell_id}")
         return pty
 
-    async def _pty_list_shell_sessions(self) -> ApiResponse:
-        """List active shell session entities (status != closed)."""
+    async def _pty_list_shells(self) -> ApiResponse:
+        """List active shell entities (status != closed)."""
         from flow_sdk.builtin.shell import Shell as ShellEntity
 
         all_sessions = await ShellEntity.get_all()
@@ -567,8 +567,8 @@ class PtyActionsMixin:
         logging.info("[reset_pty] Cleared %d session(s) for compute node %s", cleared, self.id)
         return ApiSuccessResponse(data={"cleared": cleared})
 
-    async def _pty_update_shell_session(self) -> ApiResponse:
-        """Update a shell session record's display properties.
+    async def _pty_update_shell(self) -> ApiResponse:
+        """Update a shell record's display properties.
 
         Accepts shell_id (required) and optional fields: tab_order (int),
         name (str). Updates the record on disk and returns

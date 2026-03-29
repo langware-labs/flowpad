@@ -1,9 +1,9 @@
-"""ShellRecord -- filesystem record for shell session persistence.
+"""ShellRecord -- filesystem record for shell persistence.
 
-Tracks the lifecycle of a shell session (PTY) across server restarts.
+Tracks the lifecycle of a shell (PTY) across server restarts.
 Each record represents a single shell tab and stores its PTY PID,
 working directory, visibility, and status. Records are stored globally
-at ~/.flow/records/shell_session/ and are used by PtySessionManager to
+at ~/.flow/records/shell/ and are used by PtySessionManager to
 recover running sessions after a server restart.
 """
 
@@ -27,10 +27,6 @@ class ShellStatus(StrEnum):
     CLOSED = "closed"
 
 
-# Backward-compat alias
-ShellSessionStatus = ShellStatus
-
-
 class ShellRecord(Record):
     """Filesystem record for a shell session.
 
@@ -39,7 +35,7 @@ class ShellRecord(Record):
     PtySessionManager which manages the in-memory PTY process state.
     """
 
-    _record_type: ClassVar[str] = RecordType.SHELL_SESSION
+    _record_type: ClassVar[str] = RecordType.SHELL
     index_fields: ClassVar[list[str]] = ["name"]
 
     def __init__(self, **kwargs: Any) -> None:
@@ -47,7 +43,7 @@ class ShellRecord(Record):
 
         if "id" not in kwargs:
             kwargs["id"] = str(_uuid.uuid4())
-        kwargs.setdefault("type", RecordType.SHELL_SESSION)
+        kwargs.setdefault("type", RecordType.SHELL)
         # Migrate old field names from pre-existing records on disk
         if "pty_session_id" in kwargs and "pty_pid" not in kwargs:
             kwargs["pty_pid"] = kwargs.pop("pty_session_id")
@@ -82,8 +78,8 @@ class ShellRecord(Record):
         pty_pid = getattr(self, "pty_pid", None) or getattr(self, "pty_session_id", None)
         if pty_pid is None:
             raise ValueError("No pty_pid set")
-        stem = record_stem("shell_session", self.id)
-        return get_default_records_root() / "shell_session" / stem / f"{pty_pid}.pty"
+        stem = record_stem("shell", self.id)
+        return get_default_records_root() / "shell" / stem / f"{pty_pid}.pty"
 
     @property
     def pty_stream_ref(self) -> "BinaryFsRef":
@@ -120,5 +116,3 @@ class ShellRecord(Record):
         return True
 
 
-# Backward-compat alias
-ShellSessionRecord = ShellRecord

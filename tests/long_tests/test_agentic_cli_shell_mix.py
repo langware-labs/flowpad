@@ -15,7 +15,7 @@ Operations tested:
   merge   - Python port of useActiveTerminals logic
   start   - transition shell_A to running (PUT status + pty_pid)
   stop    - close shell_B (POST /close); verify entity deleted + excluded from
-            list-shell-sessions
+            list-shells
 """
 
 import pytest
@@ -230,13 +230,13 @@ async def test_agentic_cli_shell_mix(bootstrapped_client):
     assert tab_A_after["is_disabled"] is False
     assert tab_A_after["status"] == "running"
 
-    # list-shell-sessions includes shell_A (running, pty_pid set, not closed/error)
+    # list-shells includes shell_A (running, pty_pid set, not closed/error)
     list_r = await bootstrapped_client.get(
-        f"/api/v1/graph/compute_node/{cn_id}/list-shell-sessions"
+        f"/api/v1/graph/compute_node/{cn_id}/list-shells"
     )
     assert list_r.status_code == 200
     list_ids = {s["id"] for s in ApiResponse(**list_r.json()).data}
-    assert shell_A in list_ids, "Running shell_A must appear in list-shell-sessions"
+    assert shell_A in list_ids, "Running shell_A must appear in list-shells"
 
     # ── Stop: close shell_B ───────────────────────────────────────────────────
     r = await bootstrapped_client.post(f"/api/v1/graph/shell/{shell_B}/close")
@@ -252,10 +252,10 @@ async def test_agentic_cli_shell_mix(bootstrapped_client):
         "Closed shell_B should be deleted and not appear in tabs"
     )
 
-    # list-shell-sessions must NOT include closed shell_B
+    # list-shells must NOT include closed shell_B
     list_r2 = await bootstrapped_client.get(
-        f"/api/v1/graph/compute_node/{cn_id}/list-shell-sessions"
+        f"/api/v1/graph/compute_node/{cn_id}/list-shells"
     )
     assert list_r2.status_code == 200
     list_ids2 = {s["id"] for s in ApiResponse(**list_r2.json()).data}
-    assert shell_B not in list_ids2, "Closed shell_B must not appear in list-shell-sessions"
+    assert shell_B not in list_ids2, "Closed shell_B must not appear in list-shells"
