@@ -21,6 +21,9 @@ import time
 
 import pytest
 import requests
+from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.config import load_server_info
+from flow_sdk.flowpad_types.enums import WorkerType
 from tests.test_settings import test_service_config
 
 pytestmark = pytest.mark.skipif(
@@ -28,15 +31,18 @@ pytestmark = pytest.mark.skipif(
     reason="Skipping long tests when DEEP_TESTING is disabled",
 )
 
-from flow_sdk.builtin.agentic_process import AgenticProcess, WorkerType
 
-SERVER_URL = "http://localhost:9007"
-UI_URL = "http://localhost:4097"
+def _server_url() -> str:
+    info = load_server_info()
+    port = info.get("port", 9007)
+    return f"http://localhost:{port}"
 
 
-def _server_running(host: str = "localhost", port: int = 9007) -> bool:
+def _server_running() -> bool:
+    info = load_server_info()
+    port = info.get("port", 9007)
     try:
-        with socket.create_connection((host, port), timeout=1):
+        with socket.create_connection(("localhost", port), timeout=1):
             return True
     except OSError:
         return False
@@ -44,7 +50,7 @@ def _server_running(host: str = "localhost", port: int = 9007) -> bool:
 
 def _query_annotations(session_id: str) -> list[dict]:
     """Query annotations with the given session_id from the live server."""
-    resp = requests.get(f"{SERVER_URL}/api/v1/graph/annotation", timeout=10)
+    resp = requests.get(f"{_server_url()}/api/v1/graph/annotation", timeout=10)
     if resp.status_code != 200:
         return []
     data = resp.json()
@@ -62,14 +68,15 @@ async def test_prompt_annotation_created_and_visible():
       → print process URL for browser verification
     """
     if not _server_running():
-        pytest.skip("Server not running at localhost:9007 — start it with: uv run -m flow_sdk.server.run")
+        pytest.skip(f"Server not running at {_server_url()} — start it with: uv run -m flow_sdk.server.run")
 
+    server = _server_url()
     # ── 1. Bootstrap server (creates @local entities if not yet done) ──────
-    resp = requests.get(f"{SERVER_URL}/api/v1/graph/bootstrap", timeout=15)
+    resp = requests.get(f"{server}/api/v1/graph/bootstrap", timeout=15)
     assert resp.status_code == 200, f"Bootstrap failed: {resp.text}"
 
     # ── 2. Create and start process ─────────────────────────────────────────
-    process = AgenticProcess(workerType=WorkerType.CLAUDE)
+    process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
     process.start()
     assert process.idle is True, "Process should be idle before prompt"
 
@@ -81,7 +88,7 @@ async def test_prompt_annotation_created_and_visible():
     process_id = process.record.id
     print(f"\n[e2e] worker_session_id = {worker_session_id}")
     print(f"[e2e] process_id        = {process_id}")
-    print(f"[e2e] Process URL       = {UI_URL}/dock/shell/agentic_process-{process_id}")
+    print(f"[e2e] Process URL       = {server}/dock/shell/agentic_process-{process_id}")
 
     # ── 4. Wait for Claude to finish ─────────────────────────────────────────
     await process.waitForIdle(timeout=120)
@@ -119,7 +126,7 @@ async def test_prompt_annotation_created_and_visible():
           f"content={ann.get('content')!r} labels={ann.get('labels')}")
 
     # ── 6. Print URL for Playwright browser validation ───────────────────────
-    process_url = f"{UI_URL}/dock/shell/agentic_process-{process_id}"
+    process_url = f"{server}/dock/shell/agentic_process-{process_id}"
     print(f"\n[e2e] Open this URL to verify the annotation gutter:")
     print(f"[e2e]   {process_url}")
     print(f"[e2e] Expected: lime Tag icon in the annotation column "

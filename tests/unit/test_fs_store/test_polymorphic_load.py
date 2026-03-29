@@ -79,13 +79,13 @@ class TestNewFormatIO:
             json.dumps({"data": {"id": "new1", "type": "test"}})
         )
 
-        rec = Record.init_record(folder)
+        rec = Record.load_record(folder)
         assert rec.id == "new1"
 
     def test_init_record_data_writes_data_json(self, tmp_path):
         """init_record(data, path) writes metadata.json (+ _data.json) to folder."""
         folder = tmp_path / "entity"
-        rec = Record.init_record({"id": "w1", "type": "test", "name": "new"}, folder)
+        rec = Record._init_record({"id": "w1", "type": "test", "name": "new"}, folder)
         # New split format: id/type/name go to metadata.json
         data_path = folder / "metadata.json"
         assert data_path.exists()
@@ -100,5 +100,5 @@ class TestNewFormatIO:
         dj.parent.mkdir(parents=True)
         dj.write_text(json.dumps({"data": {"id": "rd1", "type": "test"}}))
 
-        rec = Record.init_record(folder)
+        rec = Record.load_record(folder)
         assert rec.record_dir == folder

@@ -14,20 +14,29 @@ from flow_sdk._compat import StrEnum
 
 
 class AgenticProcessStatus(StrEnum):
-    # Terminal / waiting
-    IDLE       = "idle"        # no session yet or not launched
-    COMPLETE   = "complete"    # finished cleanly (end_turn / last-prompt)
-    ERROR      = "error"       # abnormal end (stop_sequence / crash)
-    TERMINATED = "terminated"  # user interrupted
+    # No transcript (file-level)
+    NULL         = "null"         # JSONL file does not exist
+    EMPTY        = "empty"        # JSONL exists but has no parseable content
 
-    # Granular busy — transcript-derivable
-    THINKING   = "thinking"    # assistant streaming / generating text
-    TOOL_USE   = "tool_use"    # tool dispatched or executing
+    # Workflow default — no session linked yet
+    IDLE         = "idle"         # process created, no Claude session linked
+
+    # Terminal — session ended, cannot resume
+    COMPLETE     = "complete"     # finished cleanly (end_turn / last-prompt)
+    ERROR        = "error"        # abnormal end (stop_sequence / crash)
+    INTERRUPTED  = "interrupted"  # user interrupted (Escape / Ctrl-C)
+    INACTIVE     = "inactive"     # stale file >5 min with no terminal signal (assumed dead)
+
+    # Active — transcript-derivable
+    WAITING      = "waiting"      # user message received, Claude has not yet responded
+    THINKING     = "thinking"     # assistant streaming / generating text
+    TOOL_CALL    = "tool_call"    # Claude finished its turn and dispatched tool(s)
+    TOOL_RUNNING = "tool_running" # tool is actively executing (progress events)
 
     # Workflow-level — set by ProcessorState, not transcript-derivable
-    RUNNING    = "running"     # generic busy / backward compat
-    PAUSED     = "paused"
-    STEPPING   = "stepping"
+    RUNNING      = "running"      # generic busy / backward compat
+    PAUSED       = "paused"
+    STEPPING     = "stepping"
 
 
 # ---------------------------------------------------------------------------
@@ -35,8 +44,10 @@ class AgenticProcessStatus(StrEnum):
 # ---------------------------------------------------------------------------
 
 _RUNNING_STATUSES: frozenset[AgenticProcessStatus] = frozenset({
+    AgenticProcessStatus.WAITING,
     AgenticProcessStatus.THINKING,
-    AgenticProcessStatus.TOOL_USE,
+    AgenticProcessStatus.TOOL_CALL,
+    AgenticProcessStatus.TOOL_RUNNING,
     AgenticProcessStatus.RUNNING,
     AgenticProcessStatus.PAUSED,
     AgenticProcessStatus.STEPPING,
@@ -44,34 +55,36 @@ _RUNNING_STATUSES: frozenset[AgenticProcessStatus] = frozenset({
 
 _BUSY_STATUSES: frozenset[AgenticProcessStatus] = frozenset({
     AgenticProcessStatus.THINKING,
-    AgenticProcessStatus.TOOL_USE,
+    AgenticProcessStatus.TOOL_CALL,
+    AgenticProcessStatus.TOOL_RUNNING,
     AgenticProcessStatus.RUNNING,
 })
 
 _TERMINAL_STATUSES: frozenset[AgenticProcessStatus] = frozenset({
     AgenticProcessStatus.COMPLETE,
     AgenticProcessStatus.ERROR,
-    AgenticProcessStatus.TERMINATED,
+    AgenticProcessStatus.INTERRUPTED,
+    AgenticProcessStatus.INACTIVE,
 })
 
 
 def is_running(status: AgenticProcessStatus) -> bool:
-    """True for any active state (THINKING, TOOL_USE, RUNNING, PAUSED, STEPPING)."""
+    """True for any active state (WAITING, THINKING, TOOL_CALL, TOOL_RUNNING, RUNNING, PAUSED, STEPPING)."""
     return status in _RUNNING_STATUSES
 
 
 def is_busy(status: AgenticProcessStatus) -> bool:
-    """True when actively processing (THINKING, TOOL_USE, RUNNING). Excludes PAUSED/STEPPING."""
+    """True when actively processing (THINKING, TOOL_CALL, TOOL_RUNNING, RUNNING). Excludes WAITING/PAUSED/STEPPING."""
     return status in _BUSY_STATUSES
 
 
 def is_idle(status: AgenticProcessStatus) -> bool:
-    """True when not active (IDLE, COMPLETE, ERROR, TERMINATED)."""
+    """True when not active (NULL, EMPTY, IDLE, COMPLETE, ERROR, INTERRUPTED, INACTIVE)."""
     return status not in _RUNNING_STATUSES
 
 
 def is_terminal(status: AgenticProcessStatus) -> bool:
-    """True when the session cannot be resumed (COMPLETE, ERROR, TERMINATED)."""
+    """True when the session has ended and cannot be resumed (COMPLETE, ERROR, INTERRUPTED, INACTIVE)."""
     return status in _TERMINAL_STATUSES
 
 
@@ -113,14 +126,15 @@ def _tail_status(path: "str | _Path") -> AgenticProcessStatus:
       3. Classify: terminal signals take priority; granular busy states only
          when the file is still active.
 
-    Returns one of: IDLE, THINKING, TOOL_USE, RUNNING, COMPLETE, ERROR, TERMINATED.
-    (PAUSED and STEPPING are workflow states set by ProcessorState, not transcript-derivable.)
+    Returns one of: NULL, EMPTY, COMPLETE, ERROR, INTERRUPTED, INACTIVE,
+                    WAITING, THINKING, TOOL_CALL, TOOL_RUNNING, RUNNING.
+    (IDLE, PAUSED, STEPPING are workflow states set externally, not transcript-derivable.)
     """
     p = _Path(path)
     try:
         stat = p.stat()
     except OSError:
-        return AgenticProcessStatus.IDLE
+        return AgenticProcessStatus.NULL
 
     is_active = (_time.time() - stat.st_mtime) <= _ACTIVE_SECONDS
 
@@ -131,7 +145,7 @@ def _tail_status(path: "str | _Path") -> AgenticProcessStatus:
                 f.seek(sz - _TAIL_BYTES)
             chunk = f.read().decode("utf-8", errors="replace")
     except OSError:
-        return AgenticProcessStatus.IDLE
+        return AgenticProcessStatus.NULL
 
     last_type: str | None = None
     last_stop_reason: str | None = None
@@ -155,25 +169,27 @@ def _tail_status(path: "str | _Path") -> AgenticProcessStatus:
     if last_type == "last-prompt":
         return AgenticProcessStatus.COMPLETE
     if last_type == "user" and "interrupted" in _last_user_text(chunk).lower():
-        return AgenticProcessStatus.TERMINATED
+        return AgenticProcessStatus.INTERRUPTED
     if last_stop_reason == "end_turn":
         return AgenticProcessStatus.COMPLETE
     if last_stop_reason == "stop_sequence":
         return AgenticProcessStatus.ERROR
 
-    # Stale file with no clean termination → treat as dead
+    # Stale file with no clean termination signal → assumed dead
     if not is_active:
-        return AgenticProcessStatus.COMPLETE
+        return AgenticProcessStatus.INACTIVE
 
     if last_type is None:
-        return AgenticProcessStatus.IDLE
+        return AgenticProcessStatus.EMPTY
 
-    # Granular busy states (only when file is still active)
+    # Granular active states (only when file is still being written)
     if last_type == "assistant" and last_stop_reason is None:
         return AgenticProcessStatus.THINKING
     if last_type == "assistant" and last_stop_reason == "tool_use":
-        return AgenticProcessStatus.TOOL_USE
+        return AgenticProcessStatus.TOOL_CALL
     if last_type == "progress":
-        return AgenticProcessStatus.TOOL_USE
+        return AgenticProcessStatus.TOOL_RUNNING
+    if last_type == "user":
+        return AgenticProcessStatus.WAITING
 
     return AgenticProcessStatus.RUNNING

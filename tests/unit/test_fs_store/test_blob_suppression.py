@@ -56,7 +56,7 @@ def test_round_trip_with_blob_suppressed(tmp_rec, tmp_path):
     rec.save()
     folder = Path(rec.path)
     from flow_sdk.fs_store.record import Record as _R
-    reloaded = SuppressedRecord.init_record(folder)
+    reloaded = SuppressedRecord.load_record(folder)
     assert reloaded.settings == {"a": "b"}
 
 

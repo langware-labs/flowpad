@@ -54,6 +54,7 @@ class ClaudeCliOptions(WorkerCLIOptions):
         workdir: str | None = None,
         env_vars: dict[str, str] | None = None,
         print_mode: bool = False,
+        add_dirs: list[str] | None = None,
     ) -> None:
         super().__init__(workdir=workdir, env_vars=env_vars)
         self.session_id = session_id
@@ -66,6 +67,7 @@ class ClaudeCliOptions(WorkerCLIOptions):
         self.worktree = worktree
         self.agents_json = agents_json
         self.print_mode = print_mode
+        self.add_dirs: list[str] = list(add_dirs or [])
 
         # Auto-inject CLAUDE_PROJECT_DIR from workdir
         if workdir:
@@ -101,6 +103,8 @@ class ClaudeCliOptions(WorkerCLIOptions):
             args.append(f"--model {shlex.quote(self.model)}")
         if self.agents_json:
             args.append(f"--agents {shlex.quote(json.dumps(self.agents_json))}")
+        for d in self.add_dirs:
+            args.append(f"--add-dir {shlex.quote(d)}")
 
         if self.print_mode:
             args.append("-p")
@@ -125,6 +129,7 @@ class ClaudeCliOptions(WorkerCLIOptions):
             "worktree": self.worktree,
             "agents_json": self.agents_json,
             "print_mode": self.print_mode,
+            "add_dirs": self.add_dirs,
         })
         return d
 
@@ -143,4 +148,5 @@ class ClaudeCliOptions(WorkerCLIOptions):
             workdir=data.get("workdir"),
             env_vars=data.get("env_vars") or {},
             print_mode=bool(data.get("print_mode", False)),
+            add_dirs=list(data.get("add_dirs") or []),
         )

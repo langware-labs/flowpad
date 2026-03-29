@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, ClassVar
 from flow_sdk.fs_store import Record, RecordType
-from flow_sdk.fs_store.record import Scope
+from flow_sdk.fs_store.record import Scope, _META_JSON
 
 
 def _agent_search_dirs() -> list[Path]:
@@ -294,25 +294,20 @@ class AgentRecord(Record):
             object.__setattr__(self, "prompt_text", body)
 
     @classmethod
-    def init_record(cls, path_or_data, path=None, indent=2) -> "AgentRecord":
-        """Initialize or load an agent record with markdown bootstrap."""
-        if isinstance(path_or_data, dict):
-            return super().init_record(path_or_data, path, indent=indent)
-
-        p = Path(path_or_data)
-        if p.is_dir():
-            if (p / "data.json").exists() or (p / "metadata.json").exists():
-                return super().init_record(path_or_data, path, indent=indent)
-        elif p.exists():
-            return super().init_record(path_or_data, path, indent=indent)
-
+    def load_record(cls, path: str | Path) -> "AgentRecord":
+        """Load an agent record from a path, with markdown bootstrap for .md dirs."""
+        p = Path(path)
         if not p.is_dir():
-            return super().init_record(path_or_data, path, indent=indent)
+            return super().load_record(path)
 
-        # Try markdown bootstrap
+        # Shadow record dir (has metadata.json or old data.json) — load normally
+        if (p / _META_JSON).exists() or (p / "data.json").exists():
+            return super().load_record(path)
+
+        # Markdown bootstrap: dir contains only .md (external asset folder)
         md_files = list(p.glob("*.md"))
         if not md_files:
-            return super().init_record(path_or_data, path, indent=indent)
+            return super().load_record(path)
 
         md_file = md_files[0]
         text = md_file.read_text(encoding="utf-8")
@@ -331,18 +326,12 @@ class AgentRecord(Record):
             if key in fields:
                 data[key] = fields[key]
         rec = cls.from_dict(data)
-        # Store prompt as prompt_text (the backing attr used by the property getter)
         if body:
             object.__getattribute__(rec, "__dict__")["prompt_text"] = body
-        # Set asset_ref to the .md file (consistent with from_file); _record_folder_ref
-        # stays None so save() uses metadata_ref → default_path → records_root shadow.
+        # _record_folder_ref stays None so save() targets records_root shadow.
         from flow_sdk.fs_store.fs_ref import TextFsRef
         object.__setattr__(rec, "_asset_ref", TextFsRef(md_file.resolve()))
         return rec
-
-    @classmethod
-    def load_record(cls, path: str | Path) -> AgentRecord:
-        return cls.init_record(path)
 
     def save(self) -> None:
         """Save both record.json and the companion .md file."""
@@ -395,7 +384,7 @@ class AgentRecord(Record):
         """Load an AgentRecord from a directory, bootstrapping from .md if needed."""
         if not agent_dir.is_dir():
             return None
-        return AgentRecord.init_record(agent_dir)
+        return AgentRecord.load_record(agent_dir)
 
     @staticmethod
     def load_system_agent(name: str) -> AgentRecord | None:

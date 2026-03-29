@@ -10,36 +10,61 @@
 /**
  * Processor execution status enum.
  *
- * Granular busy states (transcript-derivable):
- *   THINKING  — assistant streaming / generating text
- *   TOOL_USE  — tool dispatched or executing
+ * File-level (no transcript):
+ *   NULL         — JSONL file does not exist
+ *   EMPTY        — JSONL exists but has no parseable content
  *
- * Workflow-level states (set by ProcessorState, not transcript-derivable):
- *   RUNNING   — generic busy / backward compat
- *   PAUSED, STEPPING — workflow control
+ * Workflow default:
+ *   IDLE         — process created, no Claude session linked yet
+ *
+ * Terminal (session ended, cannot resume):
+ *   COMPLETE     — finished cleanly (end_turn / last-prompt)
+ *   ERROR        — abnormal end (stop_sequence / crash)
+ *   INTERRUPTED  — user interrupted (Escape / Ctrl-C)
+ *   INACTIVE     — stale file >5 min with no terminal signal (assumed dead)
+ *
+ * Active (transcript-derivable):
+ *   WAITING      — user message received, Claude has not yet responded
+ *   THINKING     — assistant streaming / generating text
+ *   TOOL_CALL    — Claude finished its turn and dispatched tool(s)
+ *   TOOL_RUNNING — tool is actively executing (progress events)
+ *
+ * Workflow-level (set by ProcessorState, not transcript-derivable):
+ *   RUNNING, PAUSED, STEPPING
  *
  * Use isProcessorRunning() to aggregate all active states.
  */
 export enum ProcessorStatus {
-  // Terminal / waiting
-  IDLE       = 'idle',
-  COMPLETE   = 'complete',
-  ERROR      = 'error',
-  TERMINATED = 'terminated',
+  // No transcript
+  NULL         = 'null',
+  EMPTY        = 'empty',
 
-  // Granular busy
-  THINKING   = 'thinking',
-  TOOL_USE   = 'tool_use',
+  // Workflow default
+  IDLE         = 'idle',
+
+  // Terminal
+  COMPLETE     = 'complete',
+  ERROR        = 'error',
+  INTERRUPTED  = 'interrupted',
+  INACTIVE     = 'inactive',
+
+  // Active
+  WAITING      = 'waiting',
+  THINKING     = 'thinking',
+  TOOL_CALL    = 'tool_call',
+  TOOL_RUNNING = 'tool_running',
 
   // Workflow-level
-  RUNNING    = 'running',
-  PAUSED     = 'paused',
-  STEPPING   = 'stepping',
+  RUNNING      = 'running',
+  PAUSED       = 'paused',
+  STEPPING     = 'stepping',
 }
 
 const RUNNING_STATUSES = new Set<ProcessorStatus>([
+  ProcessorStatus.WAITING,
   ProcessorStatus.THINKING,
-  ProcessorStatus.TOOL_USE,
+  ProcessorStatus.TOOL_CALL,
+  ProcessorStatus.TOOL_RUNNING,
   ProcessorStatus.RUNNING,
   ProcessorStatus.PAUSED,
   ProcessorStatus.STEPPING,
@@ -47,32 +72,34 @@ const RUNNING_STATUSES = new Set<ProcessorStatus>([
 
 const BUSY_STATUSES = new Set<ProcessorStatus>([
   ProcessorStatus.THINKING,
-  ProcessorStatus.TOOL_USE,
+  ProcessorStatus.TOOL_CALL,
+  ProcessorStatus.TOOL_RUNNING,
   ProcessorStatus.RUNNING,
 ]);
 
 const TERMINAL_STATUSES = new Set<ProcessorStatus>([
   ProcessorStatus.COMPLETE,
   ProcessorStatus.ERROR,
-  ProcessorStatus.TERMINATED,
+  ProcessorStatus.INTERRUPTED,
+  ProcessorStatus.INACTIVE,
 ]);
 
-/** True for any active state (THINKING, TOOL_USE, RUNNING, PAUSED, STEPPING). */
+/** True for any active state (WAITING, THINKING, TOOL_CALL, TOOL_RUNNING, RUNNING, PAUSED, STEPPING). */
 export function isProcessorRunning(status: ProcessorStatus): boolean {
   return RUNNING_STATUSES.has(status);
 }
 
-/** True when actively processing (THINKING, TOOL_USE, RUNNING). Excludes PAUSED/STEPPING. */
+/** True when actively processing (THINKING, TOOL_CALL, TOOL_RUNNING, RUNNING). Excludes WAITING/PAUSED/STEPPING. */
 export function isProcessorBusy(status: ProcessorStatus): boolean {
   return BUSY_STATUSES.has(status);
 }
 
-/** True when not active (IDLE, COMPLETE, ERROR, TERMINATED). */
+/** True when not active (NULL, EMPTY, IDLE, COMPLETE, ERROR, INTERRUPTED, INACTIVE). */
 export function isProcessorIdle(status: ProcessorStatus): boolean {
   return !RUNNING_STATUSES.has(status);
 }
 
-/** True when the session cannot be resumed (COMPLETE, ERROR, TERMINATED). */
+/** True when the session has ended and cannot be resumed (COMPLETE, ERROR, INTERRUPTED, INACTIVE). */
 export function isProcessorTerminal(status: ProcessorStatus): boolean {
   return TERMINAL_STATUSES.has(status);
 }

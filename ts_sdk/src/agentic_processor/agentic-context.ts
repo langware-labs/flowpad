@@ -67,6 +67,9 @@ export interface AgenticContext {
 
   /** Enable Claude Code --worktree flag (runs in an isolated git worktree) */
   worktree?: boolean;
+
+  /** Extra directories to expose to Claude via --add-dir */
+  additionalDirs?: string[];
 }
 
 /**
@@ -124,5 +127,6 @@ export function serializeAgenticContext(ctx: AgenticContext): Record<string, unk
     chrome: ctx.chrome,
     debug: ctx.debug,
     worktree: ctx.worktree,
+    additional_dirs: ctx.additionalDirs ?? [],
   };
 }

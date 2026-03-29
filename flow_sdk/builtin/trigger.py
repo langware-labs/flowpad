@@ -426,7 +426,7 @@ class Trigger(Entity):
         record_file = Path(self.path) / "record.json"
         if not record_file.exists():
             return ApiFailResponse(message=f"record.json not found at {self.path}")
-        rule = ActivationRule.init_record(record_file)
+        rule = ActivationRule.load_record(record_file)
         mock_data = {
             "hookEvent": "UserPromptSubmit",
             "hook_event_name": "UserPromptSubmit",
@@ -511,7 +511,7 @@ class Trigger(Entity):
             record_file = Path(self.path) / "record.json"
             if record_file.exists():
                 try:
-                    rule = ActivationRule.init_record(record_file)
+                    rule = ActivationRule.load_record(record_file)
                     rule.save_log_mode(log_mode)
                 except Exception:
                     pass

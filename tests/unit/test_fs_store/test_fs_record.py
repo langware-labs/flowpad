@@ -23,14 +23,14 @@ class TestJsonIO:
     def test_from_json_existing(self, tmp_path):
         fp = tmp_path / "rec.json"
         fp.write_text(json.dumps({"id": "x", "name": "loaded"}))
-        r = Record.init_record(fp)
+        r = Record.load_record(fp)
         assert r.id == "x"
         assert r.name == "loaded"
         assert r.source_file == str(fp)
 
     def test_from_json_missing_creates_new(self, tmp_path):
         fp = tmp_path / "missing.json"
-        r = Record.init_record(fp)
+        r = Record.load_record(fp)
         assert r.source_file == str(fp)
         assert r.id  # auto-generated uuid
 
@@ -39,7 +39,7 @@ class TestJsonIO:
         r = Record(id="rt", type="session", name="s1",
                       scope=Scope.PROJECT, k="v")
         r.save_record_json(fp)
-        r2 = Record.init_record(fp)
+        r2 = Record.load_record(fp)
         assert r2.id == "rt"
         assert r2.scope == Scope.PROJECT
         assert r2["k"] == "v"
@@ -68,7 +68,7 @@ class TestJsonIO:
 class TestPersist:
     def test_persist(self, tmp_path):
         fp = tmp_path / "rec.json"
-        r = Record.init_record(fp)
+        r = Record.load_record(fp)
         r["key"] = "val"
         r.save()
         assert fp.exists()
@@ -97,7 +97,7 @@ class TestChildrenFileIO:
         ]
         parent.save_record_json(fp)
 
-        loaded = Record.init_record(fp)
+        loaded = Record.load_record(fp)
         assert len(loaded.children_refs) == 2
         assert isinstance(loaded.children_refs[0], RecordRef)
         assert loaded.children_refs[0].id == "c1"
@@ -152,7 +152,7 @@ class TestParentChildRecord:
         task.children_refs = [RecordRef.from_record(process)]
         task.save_record_json(fp)
 
-        loaded = Record.init_record(fp)
+        loaded = Record.load_record(fp)
         assert loaded.id == "task-1"
         assert len(loaded.children_refs) == 1
         child_ref = loaded.children_refs[0]
@@ -164,7 +164,7 @@ class TestParentChildRecord:
         r = Record(id="child-rec", parent_ref=RecordRef(id="parent-rec", type="session"))
         r.save_record_json(fp)
 
-        loaded = Record.init_record(fp)
+        loaded = Record.load_record(fp)
         assert isinstance(loaded.parent_ref, RecordRef)
         assert loaded.parent_ref.id == "parent-rec"
 
@@ -223,7 +223,7 @@ class TestLiveParentProperty:
         child.save_record_json(child_fp)
 
         # Reload child from disk, then resolve parent
-        reloaded = Record.init_record(child_fp)
+        reloaded = Record.load_record(child_fp)
         live_parent = reloaded.parent
         assert live_parent is not None
         assert live_parent.id == "task-1"
@@ -292,7 +292,7 @@ class TestLiveChildrenProperty:
         parent.save_record_json(parent_fp)
 
         # Reload parent from disk, then resolve children
-        reloaded = Record.init_record(parent_fp)
+        reloaded = Record.load_record(parent_fp)
         kids = reloaded.children
         assert len(kids) == 2
         assert {k.name for k in kids} == {"US Step", "EU Step"}
@@ -399,7 +399,7 @@ class TestAddChild:
 
         parent.add_child(child)
 
-        reloaded_parent = Record.init_record(parent_fp)
+        reloaded_parent = Record.load_record(parent_fp)
         assert len(reloaded_parent.children_refs) == 1
         assert reloaded_parent.children_refs[0].id == "c1"
         assert reloaded_parent.children_refs[0].path == str(child_fp)
@@ -414,10 +414,10 @@ class TestAddChild:
         parent = Record(id="sess", type="session")
         parent.save_record_json(parent_fp)
 
-        parent.add_child(Record.init_record(c1_fp))
-        parent.add_child(Record.init_record(c2_fp))
+        parent.add_child(Record.load_record(c1_fp))
+        parent.add_child(Record.load_record(c2_fp))
 
-        reloaded_parent = Record.init_record(parent_fp)
+        reloaded_parent = Record.load_record(parent_fp)
         kids = reloaded_parent.children
         assert len(kids) == 2
         assert {k.name for k in kids} == {"US Step", "EU Step"}
@@ -448,7 +448,7 @@ class TestLiveRoundTrip:
         child.save_record_json()
 
         # Now verify: load parent -> resolve children -> from child resolve parent
-        loaded_parent = Record.init_record(parent_fp)
+        loaded_parent = Record.load_record(parent_fp)
         kids = loaded_parent.children
         assert len(kids) == 1
         assert kids[0].id == "proc-1"

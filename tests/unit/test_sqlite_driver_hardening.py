@@ -130,7 +130,7 @@ class TestGetAllJsonFieldFilter:
         Regression: QueryFilter(worker_session_id=X) was silently ignored (Pydantic dropped
         the unknown kwarg), so get_all returned all entities unfiltered.
         """
-        from flow_sdk.builtin.agentic_processor import AgenticProcess
+        from flow_sdk.builtin.agentic_process import AgenticProcess
 
         p1 = AgenticProcess(worker_session_id="session-A")
         p2 = AgenticProcess(worker_session_id="session-B")

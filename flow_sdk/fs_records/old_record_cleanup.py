@@ -79,7 +79,7 @@ async def cleanup_stale_skill_records() -> int:
         if not _skill_record_is_stale(record_dir):
             continue
         try:
-            rec = SkillRecord.init_record(record_dir)
+            rec = SkillRecord.load_record(record_dir)
             await rec.delete()
         except Exception:
             pass

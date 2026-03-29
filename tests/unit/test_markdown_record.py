@@ -49,7 +49,7 @@ def make_asset(
 def reload(rec: AssetRecord) -> AssetRecord:
     """Reload an AssetRecord from disk by its directory path."""
     folder = Path(rec.path)
-    return AssetRecord.init_record(folder)
+    return AssetRecord.load_record(folder)
 
 
 def _folder_ref(rec: AssetRecord) -> RecordRef:
@@ -83,7 +83,7 @@ def get_children_of(parent: AssetRecord) -> list[AssetRecord]:
         # Ref may point to metadata.json (file) or the record dir – normalise to dir.
         folder = p if p.is_dir() else p.parent
         if folder.exists():
-            results.append(AssetRecord.init_record(folder))
+            results.append(AssetRecord.load_record(folder))
     return results
 
 
@@ -114,7 +114,7 @@ def all_assets_with_parent(parent: AssetRecord, root: Path) -> list[AssetRecord]
         if not entry.is_dir():
             continue
         try:
-            rec = AssetRecord.init_record(entry)
+            rec = AssetRecord.load_record(entry)
             if rec.parent_ref and rec.parent_ref.id == parent.id:
                 results.append(rec)
         except Exception:
@@ -424,7 +424,7 @@ class TestMultiLevelNesting:
 
         # Deep path: branch_b → branch_a → leaf_a1 via children property
         branch_a_via_children = next(
-            (AssetRecord.init_record(Path(r.path)) for r in b_fresh.children_refs if r.id == branch_a.id and r.path),
+            (AssetRecord.load_record(Path(r.path)) for r in b_fresh.children_refs if r.id == branch_a.id and r.path),
             None,
         )
         assert branch_a_via_children is not None

@@ -95,6 +95,8 @@ export interface IAgenticProcess extends IEntity {
   is_active?: boolean;
   /** Serialized CLI command config (WorkerCliOptions.toJson()) */
   cli_config?: Record<string, any>;
+  /** Extra directories passed to Claude via --add-dir */
+  additional_dirs?: string[];
 }
 
 /**
@@ -464,7 +466,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       cmd.workdir = wd;
       cmd.envVars['CLAUDE_PROJECT_DIR'] ??= wd;
     }
+    cmd.addDirs = this.additional_dirs ?? [];
     return cmd;
+  }
+
+  /** Append a directory to additional_dirs (passed to Claude via --add-dir). */
+  async addDir(path: string): Promise<void> {
+    await this.callAction('add-dir', { path });
+    this.additional_dirs = [...(this.additional_dirs ?? []), path];
   }
 
   async getShell(): Promise<Shell | null> {
@@ -871,7 +880,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   async executeInstruction(instruction: string, options: { sync?: boolean; workerSessionId?: string } = {}): Promise<void> {
     const { sync = true, workerSessionId } = options;
 
-    if (this.state.status === ProcessorStatus.TERMINATED) {
+    if (this.state.status === ProcessorStatus.INTERRUPTED) {
       throw new Error('Process has been terminated');
     }
 
@@ -963,7 +972,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
           unsubState();
           unsubError();
           reject(new Error(this.state.error || 'Process error'));
-        } else if (this.state.status === ProcessorStatus.TERMINATED) {
+        } else if (this.state.status === ProcessorStatus.INTERRUPTED) {
           unsubState();
           unsubError();
           reject(new Error('Process was terminated'));
@@ -996,7 +1005,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * ```
    */
   async exit(): Promise<void> {
-    if (this.state.status === ProcessorStatus.TERMINATED) {
+    if (this.state.status === ProcessorStatus.INTERRUPTED) {
       return; // Already terminated
     }
 
@@ -1015,7 +1024,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     await dataManager.callAction(actionInfo);
 
     // Update local state
-    this.state.status = ProcessorStatus.TERMINATED;
+    this.state.status = ProcessorStatus.INTERRUPTED;
     this._markComplete();
   }
 

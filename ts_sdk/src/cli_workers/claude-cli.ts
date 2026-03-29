@@ -20,6 +20,7 @@ export interface ClaudeCliOptionsOptions {
   agents_json?: Record<string, any> | null
   workdir?: string
   env_vars?: Record<string, string>
+  add_dirs?: string[]
 }
 
 export class ClaudeCliOptions extends WorkerCliOptions {
@@ -32,6 +33,7 @@ export class ClaudeCliOptions extends WorkerCliOptions {
   chrome: boolean
   worktree: boolean
   agents_json?: Record<string, any> | null
+  addDirs: string[]
 
   constructor(opts: ClaudeCliOptionsOptions = {}) {
     super(opts.workdir ?? undefined, opts.env_vars)
@@ -44,6 +46,7 @@ export class ClaudeCliOptions extends WorkerCliOptions {
     this.chrome = opts.chrome ?? false
     this.worktree = opts.worktree ?? false
     this.agents_json = opts.agents_json ?? undefined
+    this.addDirs = opts.add_dirs ?? []
 
     // Auto-inject CLAUDE_PROJECT_DIR from workdir (same as Python setdefault)
     if (opts.workdir) {
@@ -73,6 +76,9 @@ export class ClaudeCliOptions extends WorkerCliOptions {
 
     if (this.model) args.push(`--model ${shellQuote(this.model)}`)
     if (this.agents_json) args.push(`--agents ${shellQuote(JSON.stringify(this.agents_json))}`)
+    for (const d of this.addDirs) {
+      args.push(`--add-dir ${shellQuote(d)}`)
+    }
 
     return args
   }
@@ -90,6 +96,7 @@ export class ClaudeCliOptions extends WorkerCliOptions {
       chrome: this.chrome,
       worktree: this.worktree,
       agents_json: this.agents_json,
+      add_dirs: this.addDirs,
     }
   }
 
@@ -106,6 +113,7 @@ export class ClaudeCliOptions extends WorkerCliOptions {
       agents_json: data['agents_json'] ?? undefined,
       workdir: data['workdir'] ?? undefined,
       env_vars: data['env_vars'] ?? {},
+      add_dirs: data['add_dirs'] ?? [],
     })
   }
 }

@@ -183,8 +183,8 @@ class AgenticProcessRecord(Record):
                 and hasattr(to_ref, "type")
                 and to_ref.type == type_name
             ):
-                child = Record.init_record(to_ref.id)
-                if child:
+                if to_ref.path:
+                    child = Record.load_record(to_ref.path)
                     children.append(child)
         return children
 
@@ -207,7 +207,7 @@ class AgenticProcessRecord(Record):
                 and hasattr(from_ref, "type")
                 and from_ref.type == type_name
             ):
-                parent = Record.init_record(from_ref.id)
-                if parent:
+                if from_ref.path:
+                    parent = Record.load_record(from_ref.path)
                     parents.append(parent)
         return parents

@@ -51,6 +51,6 @@ class TaskResource(Record):
     def save_to(self, session_dir: Path) -> None:
         """Save this task into the unified session record at session_dir/record.json."""
         record_path = session_dir / "record.json"
-        session = Record.init_record(record_path)
+        session = Record.load_record(record_path)
         session["task"] = self.meta_dict()
         session.save()

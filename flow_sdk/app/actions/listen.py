@@ -68,7 +68,7 @@ async def _route_to_source_process(
     to find the source process and emit a flow_data_msg to its watchers.
     """
     try:
-        from flow_sdk.builtin.agentic_processor import _send_flow_data_message
+        from flow_sdk.builtin.agentic_process import _send_flow_data_message
     except Exception:
         return
 
@@ -92,7 +92,7 @@ async def _route_to_source_process(
     # Helper: find first process matching a field and route the message
     async def _find_and_route(field_name: str, field_value: str) -> bool:
         try:
-            from flow_sdk.builtin.agentic_processor import AgenticProcess
+            from flow_sdk.builtin.agentic_process import AgenticProcess
             from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
 
             processes = await AgenticProcess.get_all(entities_filter=QueryFilter(match=ExpressionNode(**{field_name: field_value})))
@@ -182,7 +182,7 @@ async def _broadcast_to_sniffer(
 async def _create_prompt_annotation(content: str, session_id: str) -> None:
     """Create an Annotation entity for a UserPromptSubmit event. Non-critical."""
     try:
-        from flow_sdk.builtin.agentic_processor import AgenticProcess
+        from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.annotation import Annotation
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
 
@@ -221,7 +221,7 @@ def _extract_agentic_process_id(execution_scope: list) -> str | None:
     Accepts both dict entries {"type": "agentic_process", "id": "..."} and
     TypeId strings (e.g. "agentic_process:uuid").
     """
-    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    from flow_sdk.builtin.agentic_process import AgenticProcess
     for entry in execution_scope:
         if isinstance(entry, dict) and entry.get("type") == AgenticProcess.get_type() and entry.get("id"):
             return entry["id"]
@@ -234,7 +234,7 @@ def _extract_agentic_process_id(execution_scope: list) -> str | None:
 
 async def _close_worktree_process(agentic_process_id: str) -> None:
     """Close the tab for a worktree agentic process after ExitWorktree completes."""
-    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    from flow_sdk.builtin.agentic_process import AgenticProcess
     process = await AgenticProcess.get_by_id(agentic_process_id)
     if not process:
         logger.warning("[ExitWorktree] Process %s not found", agentic_process_id)
@@ -256,7 +256,7 @@ def set_plan_auto_approve(agentic_process_id: str | None) -> None:
 async def _create_plan_annotation(tool_input: dict, session_id: str) -> None:
     """Create an Annotation entity for an ExitPlanMode event. Non-critical."""
     try:
-        from flow_sdk.builtin.agentic_processor import AgenticProcess
+        from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.annotation import Annotation
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
 

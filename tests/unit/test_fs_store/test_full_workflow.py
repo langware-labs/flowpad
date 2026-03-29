@@ -61,7 +61,7 @@ class TestFullWorkflow:
             "---\nname: my-skill\ndescription: A test skill\ntags: test\n---\n# My Skill"
         )
 
-        rec = SkillRecord.init_record(skill_dir)
+        rec = SkillRecord.load_record(skill_dir)
         assert rec.name == "my-skill"
         assert rec.description == "A test skill"
 
@@ -75,7 +75,7 @@ class TestFullWorkflow:
         assert (shadow_dir / "metadata.json").exists()
 
         # Reload from skill_dir still works (re-bootstraps from YAML)
-        reloaded = SkillRecord.init_record(skill_dir)
+        reloaded = SkillRecord.load_record(skill_dir)
         assert reloaded.name == "my-skill"
 
     def test_claude_session_read_only(self):
@@ -100,7 +100,7 @@ class TestFullWorkflow:
     async def test_delete_cleans_up(self, tmp_path):
         """Create a record, delete it, verify it's gone."""
         folder = tmp_path / "entity"
-        rec = Record.init_record({"id": "del1", "type": "test"}, folder)
+        rec = Record._init_record({"id": "del1", "type": "test"}, folder)
         assert folder.exists()
 
         await rec.delete()

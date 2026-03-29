@@ -163,7 +163,7 @@ def test_record_load_wrapped_format(tmp_path):
 def test_record_init_record_data_path(tmp_path):
     """init_record(data, path) writes metadata.json to folder (split format)."""
     folder = tmp_path / "my_record"
-    rec = Record.init_record(
+    rec = Record._init_record(
         {"id": "xyz", "type": "test", "name": "from_init"},
         path=folder,
     )

@@ -527,7 +527,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         """Elevate a running shell session to a Claude session via AgenticProcess.open()."""
         from uuid import uuid4
 
-        from flow_sdk.builtin.agentic_processor import AgenticProcess
+        from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.cli_workers import ClaudeCliOptions
 
         request_info = get_current_request_info()

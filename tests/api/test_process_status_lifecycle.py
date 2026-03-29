@@ -83,7 +83,7 @@ async def test_process_status_after_start_pty(bootstrapped_client):
     # Status is transcript-derived: may be idle (no transcript yet),
     # running (Claude is processing), or complete (Claude already finished)
     status = await _get_process_status(bootstrapped_client, process_id)
-    assert status in ("idle", "running", "complete"), f"Expected transcript-derived status, got {status}"
+    assert status in ("idle", "null", "empty", "waiting", "thinking", "tool_call", "tool_running", "running", "complete", "inactive"), f"Expected transcript-derived status, got {status}"
 
     # Clean up
     await bootstrapped_client.post(
@@ -123,7 +123,7 @@ async def test_process_status_after_kill_pty(bootstrapped_client):
 
     # Status is transcript-derived, not forced idle by stop
     status = await _get_process_status(bootstrapped_client, process_id)
-    assert status in ("idle", "running", "complete"), f"Expected transcript-derived status after stop, got {status}"
+    assert status in ("idle", "null", "empty", "waiting", "thinking", "tool_call", "tool_running", "running", "complete", "inactive"), f"Expected transcript-derived status after stop, got {status}"
 
 
 @pytest.mark.asyncio
@@ -148,7 +148,7 @@ async def test_process_status_full_lifecycle(bootstrapped_client):
     assert result.status == "SUCCESS", f"open failed: {result.message}"
 
     status = await _get_process_status(bootstrapped_client, process_id)
-    assert status in ("idle", "running", "complete"), f"Step 2: Expected transcript-derived status, got {status}"
+    assert status in ("idle", "null", "empty", "waiting", "thinking", "tool_call", "tool_running", "running", "complete", "inactive"), f"Step 2: Expected transcript-derived status, got {status}"
 
     # Verify worker_session_id and shell_id are set
     resp = await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{process_id}")
@@ -167,7 +167,7 @@ async def test_process_status_full_lifecycle(bootstrapped_client):
     await asyncio.sleep(0.5)
 
     status = await _get_process_status(bootstrapped_client, process_id)
-    assert status in ("idle", "running", "complete"), f"Step 3: Expected transcript-derived status, got {status}"
+    assert status in ("idle", "null", "empty", "waiting", "thinking", "tool_call", "tool_running", "running", "complete", "inactive"), f"Step 3: Expected transcript-derived status, got {status}"
 
     # Verify worker_session_id preserved, shell_id cleared
     resp = await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{process_id}")

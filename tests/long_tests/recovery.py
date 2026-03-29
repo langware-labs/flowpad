@@ -212,7 +212,7 @@ async def test_proc_pty_lifecycle(recovery_server):
     assert len(output) > 0, "PTY produced no output — Claude Code may not have started"
 
     # Echo test via proc.send_input()
-    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    from flow_sdk.builtin.agentic_process import AgenticProcess
     proc = await AgenticProcess.get_by_id(process_id)
     assert proc is not None
 
@@ -267,7 +267,7 @@ async def test_proc_recovery_after_destruct(recovery_server):
     assert not shell.connected, "Shell must not be connected after pty.kill()"
 
     # Phase 3: sync_status() corrects state to idle (in test process via shared DB)
-    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    from flow_sdk.builtin.agentic_process import AgenticProcess
     proc = await AgenticProcess.get_by_id(process_id)
     assert proc is not None
     proc._set_process_state(status="running")  # simulate ghost state
@@ -294,7 +294,7 @@ async def test_proc_recovery_after_destruct(recovery_server):
     assert shell2.connected, "Recovered shell must be connected"
 
     echo_token = f"hello_after_recovery_{uuid.uuid4().hex[:8]}".encode()
-    from flow_sdk.builtin.agentic_processor import AgenticProcess as AP
+    from flow_sdk.builtin.agentic_process import AgenticProcess as AP
     proc2 = await AP.get_by_id(process_id)
     await proc2.send_input(f"echo {echo_token.decode()}")
 
@@ -386,7 +386,7 @@ async def test_proc_recovery_after_server_restart(recovery_server):
         await _poll_output(shell_after, b"", timeout=30.0)
 
         echo_token = f"recovered_{uuid.uuid4().hex[:8]}".encode()
-        from flow_sdk.builtin.agentic_processor import AgenticProcess
+        from flow_sdk.builtin.agentic_process import AgenticProcess
         proc = await AgenticProcess.get_by_id(process_id)
         await proc.send_input(f"echo {echo_token.decode()}")
 
@@ -420,7 +420,7 @@ async def test_agentic_process_recovery_no_http(tmp_path):
     recovery anchor — open() detects the dead PTY and passes --resume to Claude.
     """
     from flow_sdk.db.database import init_db
-    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
     from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
     from flow_sdk.server.routes.bootstrap import get_or_create_local_compute_node

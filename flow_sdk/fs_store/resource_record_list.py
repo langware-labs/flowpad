@@ -64,7 +64,7 @@ class ResourceRecordList:
         if not fp.exists():
             return None
         try:
-            rec = self.record_class.init_record(fp)
+            rec = self.record_class.load_record(fp)
         except (json.JSONDecodeError, ValueError, OSError):
             # File exists but is empty/corrupt (concurrent write race) or
             # unreadable — treat as missing.
@@ -134,7 +134,7 @@ class ResourceRecordList:
             if not dj.exists():
                 continue
             try:
-                rec = self.record_class.init_record(dj)
+                rec = self.record_class.load_record(dj)
                 rec.path = str(entry)
                 yield rec
             except (json.JSONDecodeError, ValueError, OSError):

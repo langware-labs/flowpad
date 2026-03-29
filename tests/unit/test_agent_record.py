@@ -231,7 +231,7 @@ model: haiku
 Bootstrap prompt content."""
         (agent_dir / "test-boot.md").write_text(md_content)
 
-        agent = AgentRecord.init_record(agent_dir)
+        agent = AgentRecord.load_record(agent_dir)
         assert agent.name == "test-boot"
         assert agent.data.get("description") == "Bootstrap test"
         assert agent.data.get("model") == "haiku"
@@ -271,7 +271,7 @@ Bootstrap prompt content."""
         agent_dir.mkdir()
         (agent_dir / "no-write.md").write_text("---\nname: no-write\n---\nContent.\n")
 
-        AgentRecord.init_record(agent_dir)
+        AgentRecord.load_record(agent_dir)
 
         assert not (agent_dir / "metadata.json").exists(), \
             "metadata.json must not be written to the agent source dir"

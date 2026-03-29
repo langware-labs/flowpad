@@ -51,7 +51,8 @@ class Workflow(Entity):
             AgenticProcess. Use process.output_folder or process.outputs
             to access files written by Claude.
         """
-        from flow_sdk.builtin.agentic_process import AgenticProcess, WorkerType
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+        from flow_sdk.flowpad_types.enums import WorkerType
 
         if not self.source_vfs_path:
             raise ValueError("No source file linked to this workflow")
@@ -62,7 +63,7 @@ class Workflow(Entity):
 
         content = abs_path.read_text(encoding="utf-8")
 
-        process = AgenticProcess(workerType=WorkerType.CLAUDE)
+        process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
         process.start()
         process.prompt(content)
         return process

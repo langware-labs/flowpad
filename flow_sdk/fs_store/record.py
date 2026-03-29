@@ -964,37 +964,32 @@ class Record:
     # -- Load / Read --
 
     @classmethod
-    def init_record(
+    def _init_record(
         cls: type[T],
-        path_or_data: str | Path | dict[str, Any],
-        path: str | Path | None = None,
+        data: dict[str, Any],
+        path: str | Path,
         indent: int = 2,
     ) -> T:
-        """Initialize or load a record.
+        """Materialize entity data as metadata.json at path (DB→disk sync).
 
-        Forms:
-        - ``init_record(path)`` -> load from path (or create empty if missing)
-        - ``init_record(data, path)`` -> create folder-layout record at path
+        Args:
+            data:  entity.db_json() — the dict to persist as metadata.json.
+            path:  target folder (or .json file whose stem becomes the folder).
         """
-        if isinstance(path_or_data, dict):
-            if path is None:
-                raise ValueError("path is required when initializing from data")
-            p = Path(path)
-            if p.suffix == ".json":
-                folder = p.parent / p.stem
-            else:
-                folder = p
+        p = Path(path)
+        folder = p.parent / p.stem if p.suffix == ".json" else p
+        rec = cls.from_dict(data)
+        rec.path = str(folder)
+        meta_file = rec._save_split_format(folder, indent=indent)
+        rec.source_file = str(meta_file)
+        return rec
 
-            rec = cls.from_dict(path_or_data)
-            rec.path = str(folder)
-            meta_file = rec._save_split_format(folder, indent=indent)
-            rec.source_file = str(meta_file)
-            return rec
-
-        p = Path(path_or_data)
+    @classmethod
+    def load_record(cls: type[T], path: str | Path) -> T:
+        """Load a record from a disk path or directory."""
+        p = Path(path)
         if p.is_dir():
             folder = p
-            # Look for metadata.json first
             meta_file = folder / _META_JSON
             if meta_file.exists():
                 rec = cls()
@@ -1002,14 +997,11 @@ class Record:
                 rec.source_file = str(meta_file)
                 rec.path = str(folder)
                 return rec
-            # Try migrating from old format (data.json or .flow_record/)
             migrated = _migrate_old_format(folder)
             if migrated is None:
-                # Nothing to migrate — return empty record
                 rec = cls()
                 rec.path = str(folder)
                 return rec
-            # Migration wrote metadata.json — load it
             meta_file = folder / _META_JSON
             if meta_file.exists():
                 rec = cls()
@@ -1020,8 +1012,7 @@ class Record:
             rec = cls()
             rec.path = str(folder)
             return rec
-
-        # p is a file path
+        # File path
         rec = cls()
         if p.exists():
             rec.read_record(p)
@@ -1035,8 +1026,8 @@ class Record:
         path: str | Path,
         indent: int = 2,
     ) -> T:
-        """Backward-compatible alias for ``init_record(data, path)``."""
-        return cls.init_record(data, path, indent=indent)
+        """Backward-compatible alias for ``_init_record(data, path)``."""
+        return cls._init_record(data, path, indent=indent)
 
     @classmethod
     def load(cls, path: str | Path) -> Record:
@@ -1204,7 +1195,7 @@ class Record:
                 if not meta_file.exists() and _migrate_old_format(entry) is None:
                     continue
                 try:
-                    rec = cls.init_record(entry)
+                    rec = cls.load_record(entry)
                     seen_ids.add(rec.id)
                     yield rec
                     count += 1
@@ -1244,7 +1235,7 @@ class Record:
             meta_file = entry / _META_JSON
             if meta_file.exists():
                 try:
-                    yield cls.init_record(entry)
+                    yield cls.load_record(entry)
                 except (json.JSONDecodeError, OSError, ValueError):
                     continue
                 continue
@@ -1253,7 +1244,7 @@ class Record:
             if migrated is None:
                 continue
             try:
-                rec = cls.init_record(entry)
+                rec = cls.load_record(entry)
                 rec.path = str(entry)
                 yield rec
             except (json.JSONDecodeError, OSError, ValueError):
@@ -1277,14 +1268,14 @@ class Record:
             meta_file = folder / _META_JSON
             if meta_file.exists():
                 try:
-                    return cls.init_record(folder)
+                    return cls.load_record(folder)
                 except (json.JSONDecodeError, OSError):
                     return None
             # Try migrating old format
             migrated = _migrate_old_format(folder)
             if migrated is not None:
                 try:
-                    return cls.init_record(folder)
+                    return cls.load_record(folder)
                 except (json.JSONDecodeError, OSError):
                     return None
             # fall through to external source
@@ -1729,7 +1720,7 @@ class Record:
         p = Path(self.parent_ref.path)
         if not p.exists():
             return None
-        return Record.init_record(p)
+        return Record.load_record(p)
 
     @property
     def children(self) -> list[Record]:
@@ -1741,7 +1732,7 @@ class Record:
             p = Path(ref.path)
             if not p.exists():
                 continue
-            result.append(Record.init_record(p))
+            result.append(Record.load_record(p))
         return result
 
     def get_children_by_type(self, type: str) -> list[Record]:
@@ -1756,7 +1747,7 @@ class Record:
             if not p.exists():
                 continue
             target_cls = type_registry.get(type) or Record
-            child = target_cls.init_record(p)
+            child = target_cls.load_record(p)
             if child.type == type:
                 result.append(child)
         return result

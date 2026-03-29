@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from flow_sdk.builtin.agentic_processor import AgenticProcess
+from flow_sdk.builtin.agentic_process import AgenticProcess
 
 
 def _make_process(**kwargs) -> AgenticProcess:

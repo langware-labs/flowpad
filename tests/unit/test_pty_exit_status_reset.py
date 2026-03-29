@@ -13,7 +13,7 @@ class TestPtyExitStatusReset:
     @pytest.mark.asyncio
     async def test_pty_clean_exit_resets_status_to_idle(self):
         """_on_pty_exit with exit_code=0 must update status to IDLE."""
-        from flow_sdk.builtin.agentic_processor import AgenticProcess
+        from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.shell import Shell
 
         # Build a minimal entity via normal constructor
