@@ -411,7 +411,7 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
         try:
             import asyncio
 
-            from flow_sdk.compute.providers.local.pty_session_manager import session_manager as pty_mgr
+            from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager as pty_mgr
 
             asyncio.ensure_future(pty_mgr.detach_all_for_connection(connection_id))
         except Exception as e:

@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
 
-from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord, ProcessorStatus
+from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord, AgenticProcessStatus
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ def run_process(
     record = AgenticProcessRecord(
         id=process_id,
         name=f"{config.skill_name}:{sid[:8]}",
-        state=ProcessorStatus.RUNNING,
+        state=AgenticProcessStatus.RUNNING,
         worker_session_id=sid,
         skill_name=config.skill_name,
     )

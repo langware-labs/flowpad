@@ -8,7 +8,7 @@ from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import TYPE_CHECKING, AsyncGenerator, Callable
 
-from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord, ProcessorStatus
+from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord, AgenticProcessStatus
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agent_runner import AgentRunner
@@ -79,7 +79,7 @@ class AgenticProcess:
         if not self._launched:
             return True
         s = self.status
-        if s in (ProcessorStatus.COMPLETE, ProcessorStatus.ERROR, ProcessorStatus.TERMINATED):
+        if s in (AgenticProcessStatus.COMPLETE, AgenticProcessStatus.ERROR, AgenticProcessStatus.TERMINATED):
             self._launched = False
             return True
         return False
@@ -160,7 +160,7 @@ class AgenticProcess:
     # ------------------------------------------------------------------
 
     @property
-    def status(self) -> ProcessorStatus:
+    def status(self) -> AgenticProcessStatus:
         """Derive status from transcript via discover_status()."""
         return self.record.discover_status()
 
@@ -185,7 +185,7 @@ class AgenticProcess:
         deadline = (asyncio.get_event_loop().time() + timeout) if timeout else None
         while True:
             s = self.status
-            if s in (ProcessorStatus.COMPLETE, ProcessorStatus.ERROR, ProcessorStatus.TERMINATED):
+            if s in (AgenticProcessStatus.COMPLETE, AgenticProcessStatus.ERROR, AgenticProcessStatus.TERMINATED):
                 self._emit(s.value)
                 return
             if deadline and asyncio.get_event_loop().time() > deadline:
@@ -231,7 +231,7 @@ class AgenticProcess:
                 yield {"status": current.value, "previous": last_status.value}
                 self._emit(current.value)
                 last_status = current
-                if current in (ProcessorStatus.COMPLETE, ProcessorStatus.ERROR, ProcessorStatus.TERMINATED):
+                if current in (AgenticProcessStatus.COMPLETE, AgenticProcessStatus.ERROR, AgenticProcessStatus.TERMINATED):
                     return
             await asyncio.sleep(2.0)
 

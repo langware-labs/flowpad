@@ -1,7 +1,7 @@
 """Compute provider factory and registry."""
 
 from .compute_provider import ComputeProvider
-from .local import LocalComputeProvider
+from .desktop import LocalComputeProvider
 
 __all__ = ["ComputeProvider", "LocalComputeProvider", "get_compute_provider"]
 

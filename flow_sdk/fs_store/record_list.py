@@ -183,12 +183,12 @@ class RecordList:
         self.invalidate()
         return record
 
-    def delete(self, record_id: str) -> bool:
+    async def delete(self, record_id: str) -> bool:
         """Remove a record. Returns True if it existed."""
         record = self.get(record_id)
         if record is None:
             return False
-        record.delete()
+        await record.delete()
         self.invalidate()
         return True
 

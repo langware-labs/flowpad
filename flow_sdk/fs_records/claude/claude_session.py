@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Literal
+from flow_sdk.fs_records.agent_status import AgenticProcessStatus, _tail_status
 from flow_sdk._compat import Self
 
 from flow_sdk.fs_store import Record, RecordType
@@ -146,18 +147,12 @@ class ClaudeSessionRecord(Record):
         return d.get("jsonl_path") or d.get("source_file_field") or self.source_file
 
     @property
-    def status(self) -> Literal["idle", "running", "complete"]:
-        """Derive status from last assistant stop_reason.
-
-        Returns ``'idle'``, ``'running'``, or ``'complete'``.
-        Reads ``assistant_message_count`` and ``last_stop_reason`` via their
-        ``_SessionStatsProp`` descriptors (lazy JSONL parse on first call).
-        """
-        if not self.assistant_message_count:
-            return "idle"
-        if self.last_stop_reason in self.COMPLETE_STOP_REASONS:
-            return "complete"
-        return "running"
+    def status(self) -> AgenticProcessStatus:
+        """Derive status from the last 4 KB of the JSONL transcript (tail-read, ~60µs)."""
+        path = self.jsonl_path
+        if not path:
+            return AgenticProcessStatus.IDLE
+        return _tail_status(path)
 
     def to_dict(self) -> dict:
         """Serialize to dict, including all lazy PropertyRecord stats.

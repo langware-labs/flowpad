@@ -64,7 +64,8 @@ def test_save_adds_to_parent_children_refs(tmp_records_root):
     assert any(c.id == "child-1" and c.type == "task" for c in children)
 
 
-def test_delete_removes_from_parent_children_refs(tmp_records_root):
+@pytest.mark.asyncio
+async def test_delete_removes_from_parent_children_refs(tmp_records_root):
     """delete() should remove to_ref from parent's children_refs."""
     parent, parent_ref = _create_parent_on_disk(tmp_records_root)
     child_ref = _make_child_ref()
@@ -81,7 +82,7 @@ def test_delete_removes_from_parent_children_refs(tmp_records_root):
     rel = RelationshipRecord.child(parent_ref, child_ref)
     _setup_rel_on_disk(rel, tmp_records_root)
 
-    rel.delete()
+    await rel.delete()
 
     # Reload and verify child is removed
     reloaded = _reload_parent(Path(parent_ref.path))

@@ -18,7 +18,7 @@ import { DockPointerData } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
-import { ProcessorState, ProcessorStatus, StackFrame } from './agentic-types';
+import { isProcessorRunning, ProcessorState, ProcessorStatus, StackFrame } from './agentic-types';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
 import { InstructionFile } from '../models/workflow/InstructionFile';
 import { Shell, ShellStatus } from '../entities/shell';
@@ -473,10 +473,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return Shell.getById(this.shell_id);
   }
 
-/** Resolved execution status — ghost-running (state=running + is_active=false) corrected to idle. */
+/** Resolved execution status — ghost-running (any busy state + is_active=false) corrected to idle. */
   get resolvedStatus(): ProcessorStatus {
     const raw = this.state?.status ?? ProcessorStatus.IDLE;
-    if (raw === ProcessorStatus.RUNNING && !this.is_active) {
+    if (isProcessorRunning(raw) && !this.is_active) {
       return ProcessorStatus.IDLE;
     }
     return raw;

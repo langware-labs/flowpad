@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AgenticProcess, ProcessorStatus, type Task } from '@sdk';
+import { AgenticProcess, ProcessorStatus, isProcessorRunning, type Task } from '@sdk';
 import { useProcessState } from './use-process-state';
 import { useWorkflowProgressInfo } from '@src/components/live-workflow/hooks/useWorkflowProgressInfo';
 import { isActionTask, TaskType } from '@src/components/task-bar/task-utils';
@@ -63,10 +63,7 @@ export function useAnalysisTaskProgress(task: Task | null): AnalysisTaskProgress
   const taskIsDone = taskStatus === 'done';
   const taskIsRunning = taskStatus === 'in_progress';
 
-  const processRunning =
-    processState.status === ProcessorStatus.RUNNING ||
-    processState.status === ProcessorStatus.STEPPING ||
-    processState.status === ProcessorStatus.PAUSED;
+  const processRunning = isProcessorRunning(processState.status);
   const processComplete = processState.status === ProcessorStatus.COMPLETE;
   const processError = processState.status === ProcessorStatus.ERROR;
 

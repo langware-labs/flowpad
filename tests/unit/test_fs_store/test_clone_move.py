@@ -96,31 +96,34 @@ class TestMove:
 
 
 class TestDelete:
-    def test_delete_folder_layout(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_delete_folder_layout(self, tmp_path):
         folder = tmp_path / "entity"
         rec = Record.init_record({"id": "d1", "type": "test"}, folder)
         assert folder.exists()
 
-        rec.delete()
+        await rec.delete()
         assert not folder.exists()
         assert rec.source_file is None
         assert rec.path is None
 
-    def test_delete_folder_layout_explicit(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_delete_folder_layout_explicit(self, tmp_path):
         """Verify folder layout: folder exists after create, gone after delete."""
         folder = tmp_path / "entity2"
         rec = Record.init_record({"id": "d1", "type": "test"}, folder)
         assert folder.exists()
 
-        rec.delete()
+        await rec.delete()
         assert not folder.exists()
         assert rec.source_file is None
 
-    def test_delete_nonexistent_is_safe(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_delete_nonexistent_is_safe(self, tmp_path):
         rec = Record(id="d1", type="test")
         rec.source_file = str(tmp_path / "missing.json")
         # Should not raise
-        rec.delete()
+        await rec.delete()
         assert rec.source_file is None
 
 

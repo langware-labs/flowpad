@@ -1830,13 +1830,26 @@ class Record:
         if old_record_dir and old_record_dir.exists() and old_record_dir != p:
             shutil.rmtree(old_record_dir, ignore_errors=True)
 
-    def delete(self) -> None:
-        """Remove this record from disk."""
+    async def delete(self, delete_ref: bool = False) -> None:
+        """Remove this record from disk, its Entity DB row, and FTS index entry.
+
+        Args:
+            delete_ref: If True, also delete the asset_ref folder (e.g. the live
+                        skill directory at ~/.claude/skills/<name>/).
+        """
+        try:
+            await self.unindex()
+        except Exception:
+            pass
         rd = self.record_dir
         if rd and rd.exists():
             shutil.rmtree(rd, ignore_errors=True)
         elif self.source_file:
             Path(self.source_file).unlink(missing_ok=True)
+        if delete_ref:
+            ar = self.asset_ref
+            if ar is not None and ar._path.exists():
+                shutil.rmtree(ar._path, ignore_errors=True)
         self._bump_manifest("remove")
         self.source_file = None
         self.path = None

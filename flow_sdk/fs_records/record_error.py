@@ -39,18 +39,18 @@ class RecordError(Record):
         )
 
     @classmethod
-    def clear_for_type(cls, type_name: str) -> int:
+    async def clear_for_type(cls, type_name: str) -> int:
         count = 0
         for rec in super().discover():  # own records only, not subtypes
             if rec.source_record_type == type_name:
-                rec.delete()
+                await rec.delete()
                 count += 1
         return count
 
     @classmethod
-    def clear_all(cls) -> int:
+    async def clear_all(cls) -> int:
         count = 0
         for rec in super().discover():  # own records only, not subtypes
-            rec.delete()
+            await rec.delete()
             count += 1
         return count

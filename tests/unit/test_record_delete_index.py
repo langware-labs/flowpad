@@ -16,7 +16,7 @@ class FakeDeleteRecord(Record):
 class TestDeleteWithIndex:
     @pytest.mark.asyncio
     async def test_delete_removes_file_and_db_row(self, tmp_path):
-        """unindex() removes Entity + FTS, delete() removes filesystem."""
+        """delete() removes disk, Entity DB row, and FTS in one call."""
         from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
 
         old_root = get_default_records_root()
@@ -40,14 +40,10 @@ class TestDeleteWithIndex:
                 "flow_sdk.db.get_db_driver",
                 return_value=mock_driver,
             ):
-                await rec.unindex()
+                await rec.delete()
 
             mock_entity.delete.assert_called_once()
             mock_driver.fts_delete.assert_called_once_with("del-1")
-
-            # Now delete from disk
-            rec.delete()
-            # Verify filesystem cleanup
             assert rec.source_file is None
             assert rec.path is None
         finally:
@@ -72,9 +68,8 @@ class TestDeleteWithIndex:
                 "flow_sdk.db.get_db_driver",
                 return_value=MagicMock(),
             ):
-                await rec.unindex()
+                await rec.delete()
 
-            rec.delete()
             assert rec.source_file is None
         finally:
             set_default_records_root(old_root)
@@ -94,7 +89,7 @@ class TestDeleteWithIndex:
             assert record_dir is not None
             assert Path(record_dir).exists()
 
-            rec.delete()
+            await rec.delete()
             assert not Path(record_dir).exists()
         finally:
             set_default_records_root(old_root)

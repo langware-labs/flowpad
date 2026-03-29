@@ -12,16 +12,17 @@ import {
   createCodeBlockCommand,
 } from '@milkdown/preset-commonmark';
 import { gfm } from '@milkdown/preset-gfm';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listener, listenerCtx } from '@milkdown/plugin-listener';
 import { prism } from '@milkdown/plugin-prism';
 import { emoji } from '@milkdown/plugin-emoji';
+import { history } from '@milkdown/plugin-history';
 import { callCommand } from '@milkdown/utils';
 import type { MilkdownPlugin } from '@milkdown/ctx';
 import type { Ctx } from '@milkdown/ctx';
 import {
   Bold, Italic, Code, Heading1, Heading2, Heading3,
-  List, ListOrdered, SquareCode, Pilcrow,
+  List, ListOrdered, SquareCode, Pilcrow, ExternalLink,
 } from 'lucide-react';
 
 // Prism core must be imported before language components
@@ -53,6 +54,55 @@ interface MilkdownEditorProps {
   onChange?: (content: string) => void;
   readOnly?: boolean;
   plugins?: MilkdownPlugin[];
+  onLinkClick?: (href: string) => void;
+}
+
+// ── Link hover toolbar ────────────────────────────────────────────────────────
+
+interface HoveredLink {
+  href: string;
+  rect: DOMRect;
+}
+
+function LinkHoverToolbar({
+  link,
+  onOpen,
+  onMouseEnter,
+  onMouseLeave,
+}: {
+  link: HoveredLink;
+  onOpen: (href: string) => void;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+}) {
+  const { href, rect } = link;
+  const showAbove = rect.top > 56;
+  const left = Math.min(rect.left, window.innerWidth - 260);
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: showAbove ? rect.top - 4 : rect.bottom + 4,
+        left,
+        transform: showAbove ? 'translateY(-100%)' : 'none',
+        zIndex: 9999,
+      }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      className="flex items-center gap-1.5 rounded-md border bg-popover px-2 py-1 shadow-md"
+    >
+      <span className="max-w-[180px] truncate text-xs text-muted-foreground">{href}</span>
+      <div className="h-3.5 w-px bg-border" />
+      <button
+        onMouseDown={(e) => { e.preventDefault(); e.stopPropagation(); onOpen(href); }}
+        className="flex items-center gap-1 whitespace-nowrap rounded px-1.5 py-0.5 text-xs font-medium hover:bg-muted"
+      >
+        <ExternalLink className="h-3 w-3" />
+        Open
+      </button>
+    </div>
+  );
 }
 
 // ── Toolbar ───────────────────────────────────────────────────────────────────
@@ -126,7 +176,8 @@ function MilkdownEditorInner({ content, onChange, readOnly, plugins }: MilkdownE
         .use(gfm)
         .use(listener)
         .use(prism)
-        .use(emoji);
+        .use(emoji)
+        .use(history);
 
       // Register extra plugins (e.g. plan-note mark)
       if (plugins) {
@@ -153,15 +204,63 @@ function MilkdownEditorInner({ content, onChange, readOnly, plugins }: MilkdownE
   );
 }
 
-export function MilkdownEditor({ content, onChange, readOnly, plugins }: MilkdownEditorProps) {
+export function MilkdownEditor({ content, onChange, readOnly, plugins, onLinkClick }: MilkdownEditorProps) {
+  const [hoveredLink, setHoveredLink] = useState<HoveredLink | null>(null);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); }, []);
+
+  const cancelHide = useCallback(() => {
+    if (hideTimerRef.current) { clearTimeout(hideTimerRef.current); hideTimerRef.current = null; }
+  }, []);
+
+  const scheduleHide = useCallback(() => {
+    cancelHide();
+    hideTimerRef.current = setTimeout(() => setHoveredLink(null), 300);
+  }, [cancelHide]);
+
+  const handleMouseOver = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const anchor = (e.target as HTMLElement).closest('a');
+    if (anchor) {
+      const href = anchor.getAttribute('href');
+      if (!href || href.startsWith('#')) return;
+      cancelHide();
+      setHoveredLink({ href, rect: anchor.getBoundingClientRect() });
+    } else {
+      scheduleHide();
+    }
+  }, [cancelHide, scheduleHide]);
+
+  const handleOpenLink = useCallback((href: string) => {
+    setHoveredLink(null);
+    cancelHide();
+    if (/^https?:\/\//.test(href)) {
+      window.open(href, '_blank', 'noopener,noreferrer');
+    } else {
+      onLinkClick?.(href);
+    }
+  }, [onLinkClick, cancelHide]);
+
   return (
     <MilkdownProvider>
       <div className="flex h-full flex-col overflow-hidden">
         {!readOnly && <MilkdownToolbar />}
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div
+          className="min-h-0 flex-1 overflow-auto"
+          onMouseOver={handleMouseOver}
+          onMouseLeave={scheduleHide}
+        >
           <MilkdownEditorInner content={content} onChange={onChange} readOnly={readOnly} plugins={plugins} />
         </div>
       </div>
+      {hoveredLink && (
+        <LinkHoverToolbar
+          link={hoveredLink}
+          onOpen={handleOpenLink}
+          onMouseEnter={cancelHide}
+          onMouseLeave={scheduleHide}
+        />
+      )}
     </MilkdownProvider>
   );
 }

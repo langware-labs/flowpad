@@ -394,7 +394,7 @@ class Shell(Entity):
 
             record = ShellRecord.discover_one(self.id)
             if record:
-                record.delete()
+                await record.delete()
         except Exception as e:
             logging.warning(f"[Shell.close] DomainObject close failed: {e}")
 
