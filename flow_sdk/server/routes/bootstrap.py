@@ -418,7 +418,7 @@ def build_app_paths() -> AppPaths:
     user_skills = f"{home}/.claude/skills"
     system_skills = f"{workspace}/.flow/system_assets/skills"
     system_agents = f"{workspace}/.flow/system_assets/agents"
-    logs = f"{workspace}/.flow/logs"
+    logs = f"{home}/.flow/logs"
     settings = f"{workspace}/.flow/settings.json"
 
     return AppPaths(
@@ -964,13 +964,14 @@ def setup_desktop_filesystem() -> None:
     except Exception as e:
         logging.warning(f"Failed to create skills folder: {e}")
 
-    # Create logs folder
-    logs_path = workspace_path / ".flow" / "logs"
-    try:
-        logs_path.mkdir(parents=True, exist_ok=True)
-        logging.info(f"Logs folder ensured at: {logs_path}")
-    except Exception as e:
-        logging.warning(f"Failed to create logs folder: {e}")
+    # Create logs folder structure under ~/.flow/logs/
+    logs_base = Path.home() / ".flow" / "logs"
+    for subdir in ("server", "monitor", "main_desktop"):
+        try:
+            (logs_base / subdir).mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            logging.warning(f"Failed to create logs subdirectory {subdir}: {e}")
+    logging.info(f"Logs folder ensured at: {logs_base}")
 
     # Copy SDK-bundled system assets (skills, agents) to workspace
     _copy_system_assets(workspace_path)

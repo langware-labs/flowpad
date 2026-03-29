@@ -4,6 +4,43 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+# ---------------------------------------------------------------------------
+# Shared log path utilities
+# ---------------------------------------------------------------------------
+
+LOGS_BASE = Path.home() / ".flow" / "logs"
+
+
+def _timestamped_filename() -> str:
+    """Return a log filename like '4Jan2026_23_45_11.log'."""
+    now = datetime.now()
+    day = str(now.day)
+    return f"{day}{now.strftime('%b%Y_%H_%M_%S')}.log"
+
+
+def generate_timestamped_log_path(subdirectory: str) -> Path:
+    """Create ``~/.flow/logs/{subdirectory}/`` and return a timestamped file path inside it."""
+    log_dir = LOGS_BASE / subdirectory
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir / _timestamped_filename()
+
+
+def cleanup_old_logs(directory: Path, max_age_days: int = 7, max_files: int = 15) -> None:
+    """Delete ``*.log`` files older than *max_age_days* or exceeding *max_files*, always keeping at least one."""
+    if not directory.is_dir():
+        return
+    log_files = sorted(directory.glob("*.log"), key=lambda f: f.stat().st_mtime)
+    if len(log_files) <= 1:
+        return
+    # Enforce max file count (delete oldest first)
+    while len(log_files) > max_files:
+        log_files.pop(0).unlink(missing_ok=True)
+    # Enforce max age on remaining files (never delete the newest)
+    cutoff = time.time() - max_age_days * 86400
+    for f in log_files[:-1]:
+        if f.stat().st_mtime < cutoff:
+            f.unlink(missing_ok=True)
+
 from rich.console import Console
 from rich.text import Text
 
@@ -66,20 +103,10 @@ def init_file_logging(path: str) -> None:
     log_folder.mkdir(parents=True, exist_ok=True)
     log_folder_path = str(log_folder)
 
-    # Get existing log files sorted by modification time (oldest first)
-    existing_logs = sorted(log_folder.glob("*.log"), key=lambda f: f.stat().st_mtime)
+    # Clean up old log files (7-day retention, keep at least one)
+    cleanup_old_logs(log_folder)
 
-    # Delete oldest files if at or exceeding limit
-    while len(existing_logs) >= log_files_limit:
-        oldest = existing_logs.pop(0)
-        oldest.unlink()
-
-    # Create new log file with date format: 4Jan2026_23_45_11.log
-    # Use cross-platform approach: format day separately to avoid leading zero
-    now = datetime.now()
-    day = str(now.day)  # Remove leading zero by converting to int then string
-    timestamp = f"{day}{now.strftime('%b%Y_%H_%M_%S')}"
-    _log_file = log_folder / f"{timestamp}.log"
+    _log_file = log_folder / _timestamped_filename()
     _log_file.touch()
 
     log_to_folder = True
