@@ -56,17 +56,20 @@ class TestEntityStore:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_store_returns_none_if_record_missing(self):
-        from flow_sdk.core.entity.entity_model import Entity
+    async def test_store_creates_record_if_missing(self, tmp_path):
+        """store() creates a new record on disk when none exists yet (e.g. Bookmark, Task)."""
+        from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
+        from flow_sdk.builtin.bookmark import Bookmark
+        from flow_sdk.fs_records.bookmark import BookmarkRecord  # noqa: F401 — triggers SchemaRegistry registration
 
-        entity = MagicMock(spec=Entity)
-        entity.get_type.return_value = "fake_store"
-        entity.id = "nonexistent-id"
+        old_root = get_default_records_root()
+        set_default_records_root(tmp_path)
+        try:
+            entity = Bookmark(id="bm-new-1", name="dog")
 
-        with (
-            patch.object(SchemaRegistry, "get_record_cls", return_value=FakeStoreRecord),
-            patch.object(FakeStoreRecord, "discover_one", return_value=None),
-        ):
-            result = await Entity._store(entity)
+            result = await entity._store()
 
-        assert result is None
+            assert result is not None
+            assert result.id == "bm-new-1"
+        finally:
+            set_default_records_root(old_root)

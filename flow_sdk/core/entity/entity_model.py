@@ -242,7 +242,7 @@ class Entity(DBEntity):
             return None
         record = record_cls.discover_one(entity.id)
         if record is None:
-            return None
+            record = record_cls(id=entity.id)
         import asyncio
         try:
             await asyncio.to_thread(record.sync_from_entity, entity)
