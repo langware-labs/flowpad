@@ -63,6 +63,20 @@ export interface DbSettings {
 /** The five distinct system activities. */
 export type SystemActivity = 'clear' | 'archive' | 'load_from_archive' | 'scan' | 'index';
 
+export interface ScanTypeStats {
+  type: string;
+  count: number;
+  total_bytes: number;
+  avg_bytes: number;
+  scan_ms: number;
+}
+
+export interface LastScanResult {
+  types: ScanTypeStats[];
+  grand_total: number;
+  scan_ms: number;
+}
+
 /** Per-step progress for multi-step activities (scan / index). */
 export interface ActivityProgress {
   // Orchestration-level (set by resetAndRescan phases)
@@ -109,6 +123,7 @@ export class SystemToolsService extends EventEmitter {
   currentActivity: SystemActivity | null = null;
   activityProgress: ActivityProgress | null = null;
   scanInfo: ScanInfo | null = null;
+  lastScanResult: LastScanResult | null = null;
 
   constructor(userTypeId: { type: string; id: string }) {
     super();
@@ -314,6 +329,7 @@ export class SystemToolsService extends EventEmitter {
    * WS progress_report events drive the activityProgress.current / done / records fields.
    */
   async resetAndRescan(): Promise<void> {
+    let capturedScanResult: LastScanResult | null = null;
     try {
       // 1. Archive
       this._setActivity('archive');
@@ -332,12 +348,16 @@ export class SystemToolsService extends EventEmitter {
 
       // 4. Aggregate scan — WS progress_report events drive current/done/records progress
       this._setActivity('scan', { total: types.length, done: [], current: null, pending: [...types] });
-      await apiClient.get(`${FS_RECORDS_BASE}/scan?trigger=manual`);
+      const scanData = await apiClient.get(`${FS_RECORDS_BASE}/scan?trigger=manual`);
+      const scanResult = scanData as unknown as LastScanResult;
+      if (scanResult?.types) capturedScanResult = scanResult;
 
       // 5. Aggregate index — WS progress_report events drive current/done/records progress
       this._setActivity('index', { total: types.length, done: [], current: null, pending: [...types] });
       await apiClient.post(`${FS_RECORDS_BASE}/index`);
     } finally {
+      // Set lastScanResult before clearing activity so the state_changed event carries both
+      if (capturedScanResult) this.lastScanResult = capturedScanResult;
       this._setActivity(null);
       void dataManager.refreshScanInfo();
     }
