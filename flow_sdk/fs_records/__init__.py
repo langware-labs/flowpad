@@ -48,8 +48,6 @@ from .schema_record import TypeIndexStatus as TypeIndexStatus
 from .session_analysis import SessionAnalysis as SessionAnalysis
 from .session_classification import SessionClassification as SessionClassification
 from .shell_record import ShellRecord as ShellRecord
-from .shell_record import ShellSessionRecord as ShellSessionRecord  # backward compat
-from .shell_record import ShellSessionStatus as ShellSessionStatus  # backward compat
 from .shell_record import ShellStatus as ShellStatus
 from .skill_record import SkillRecord as SkillRecord
 from .task import TaskResource as TaskResource

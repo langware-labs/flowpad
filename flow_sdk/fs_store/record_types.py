@@ -47,7 +47,7 @@ class RecordType(StrEnum):
     SESSION_CLASSIFICATION = "session_classification"
     ACTIVE_SESSIONS = "active_sessions"
     ACTIVE_SESSION = "active_session"
-    SHELL_SESSION = "shell_session"
+    SHELL = "shell"
     CLAUDE_DEBUG_LOG = "claude_debug_log"
     CLAUDE_ERROR = "claude_error"
 

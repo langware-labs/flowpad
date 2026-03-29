@@ -2,15 +2,15 @@
  * Shell Session Tab Write-Through Tests.
  *
  * Verifies the write-through cache architecture for Entity→Record sync:
- * - When a ShellSession entity is updated via PUT /graph/shell_session/<id>,
- *   the change is written through to the ShellSessionRecord on disk.
- * - After closing all tabs (status=closed), list-shell-sessions returns 0 tabs.
+ * - When a Shell entity is updated via PUT /graph/shell/<id>,
+ *   the change is written through to the ShellRecord on disk.
+ * - After closing all tabs (status=closed), list-shells returns 0 tabs.
  *
  * These tests reproduce the "close all → refresh → tabs back" bug scenario
  * and verify the fix.
  *
  * Test setup: uses the running backend at localhost:9007.
- * ShellSessionRecords are created on disk via the PTY start endpoint, then
+ * ShellRecords are created on disk via the PTY start endpoint, then
  * their status is updated via the graph API.
  */
 
@@ -19,9 +19,9 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
 import { apiTestSetup, get_local_compute_node, getTestSignupInfo } from '../utils/test-utils';
 
-/** Call list-shell-sessions via the REST API and return the records array. */
-async function listShellSessions(computeNodeId: string): Promise<any[]> {
-  const url = `${GRAPH_API_PREFIX}/${ComputeNode.type}/${computeNodeId}/list-shell-sessions`;
+/** Call list-shells via the REST API and return the records array. */
+async function listShells(computeNodeId: string): Promise<any[]> {
+  const url = `${GRAPH_API_PREFIX}/${ComputeNode.type}/${computeNodeId}/list-shells`;
   const response = await apiClient.get<any>(url);
   // apiClient unwraps ApiSuccessResponse — response is typically the data array
   if (Array.isArray(response)) return response;
@@ -29,16 +29,16 @@ async function listShellSessions(computeNodeId: string): Promise<any[]> {
   return Array.isArray(data) ? data : [];
 }
 
-/** Find a shell session by sessionId via list-shell-sessions. Returns null if not found. */
-async function getShellSession(computeNodeId: string, sessionId: string): Promise<any | null> {
-  // list-shell-sessions only returns active (non-closed) sessions.
+/** Find a shell session by sessionId via list-shells. Returns null if not found. */
+async function getShell(computeNodeId: string, sessionId: string): Promise<any | null> {
+  // list-shells only returns active (non-closed) sessions.
   // For closed session checks we scan the fs-records disk store directly.
-  const active = await listShellSessions(computeNodeId);
+  const active = await listShells(computeNodeId);
   const found = active.find((r: any) => r.pty_session_id === sessionId || r.id === sessionId);
   if (found) return found;
 
   // Check closed sessions via fs-records scan
-  const url = `${GRAPH_API_PREFIX}/${ComputeNode.type}/${computeNodeId}/fs-records/shell_session/${sessionId}`;
+  const url = `${GRAPH_API_PREFIX}/${ComputeNode.type}/${computeNodeId}/fs-records/shell/${sessionId}`;
   try {
     const response = await apiClient.get<any>(url);
     if (response && typeof response === 'object' && !Array.isArray(response)) {
@@ -53,7 +53,7 @@ async function getShellSession(computeNodeId: string, sessionId: string): Promis
 }
 
 /**
- * Create a ShellSessionRecord on disk by starting a PTY session.
+ * Create a ShellRecord on disk by starting a PTY session.
  * Returns the session_id used.
  */
 async function startPtySession(computeNodeId: string): Promise<string> {
@@ -79,7 +79,7 @@ async function closePtySession(computeNodeId: string, sessionId: string): Promis
   await apiClient.post(url, { shell_id: sessionId }).catch(() => {/* non-fatal if PTY not started */});
 }
 
-describe('shell_session_tabs', () => {
+describe('shell_tabs', () => {
   const info = getTestSignupInfo();
   let computeNode: ComputeNode;
 
@@ -89,12 +89,12 @@ describe('shell_session_tabs', () => {
     await computeNode.setup();
   });
 
-  it('test_list_shell_sessions_excludes_closed', async () => {
-    // Start a PTY session (creates ShellSessionRecord with state=running)
+  it('test_list_shells_excludes_closed', async () => {
+    // Start a PTY session (creates ShellRecord with state=running)
     const sessionId = await startPtySession(computeNode.id);
 
     // Verify it appears in list
-    const beforeClose = await listShellSessions(computeNode.id);
+    const beforeClose = await listShells(computeNode.id);
     const sessionInList = beforeClose.find((r: any) => r.pty_session_id === sessionId || r.id === sessionId);
     expect(sessionInList).toBeTruthy();
 
@@ -102,7 +102,7 @@ describe('shell_session_tabs', () => {
     await closePtySession(computeNode.id, sessionId);
 
     // After close, it should be excluded from the list
-    const afterClose = await listShellSessions(computeNode.id);
+    const afterClose = await listShells(computeNode.id);
     const sessionStillInList = afterClose.find((r: any) => r.pty_session_id === sessionId || r.id === sessionId);
     expect(sessionStillInList).toBeUndefined();
   }, 15000);
@@ -112,7 +112,7 @@ describe('shell_session_tabs', () => {
     const sessionId = await startPtySession(computeNode.id);
 
     // Verify record exists with running state
-    const before = await getShellSession(computeNode.id, sessionId);
+    const before = await getShell(computeNode.id, sessionId);
     expect(before).toBeTruthy();
     const beforeState = before?.state ?? before?.status;
     expect(beforeState).toBe('running');
@@ -122,7 +122,7 @@ describe('shell_session_tabs', () => {
 
     // Shell.close() deletes the disk record and the DB entity entirely —
     // so after close the session should no longer be discoverable.
-    const after = await getShellSession(computeNode.id, sessionId);
+    const after = await getShell(computeNode.id, sessionId);
     expect(after).toBeNull();
   }, 15000);
 
@@ -131,7 +131,7 @@ describe('shell_session_tabs', () => {
     const sessionId = await startPtySession(computeNode.id);
 
     // Simulate "page load" — list returns our session
-    const initialList = await listShellSessions(computeNode.id);
+    const initialList = await listShells(computeNode.id);
     const found = initialList.find((r: any) => r.pty_session_id === sessionId || r.id === sessionId);
     expect(found).toBeTruthy();
 
@@ -139,7 +139,7 @@ describe('shell_session_tabs', () => {
     await closePtySession(computeNode.id, sessionId);
 
     // Simulate "page refresh" — list should return 0 of our sessions
-    const afterRefresh = await listShellSessions(computeNode.id);
+    const afterRefresh = await listShells(computeNode.id);
     const stillFound = afterRefresh.find((r: any) => r.pty_session_id === sessionId || r.id === sessionId);
     expect(stillFound).toBeUndefined();
   }, 15000);
@@ -148,7 +148,7 @@ describe('shell_session_tabs', () => {
     // Starting a PTY session should produce a record with state=running
     const sessionId = await startPtySession(computeNode.id);
 
-    const record = await getShellSession(computeNode.id, sessionId);
+    const record = await getShell(computeNode.id, sessionId);
     expect(record).toBeTruthy();
     const state = record?.state ?? record?.status;
     expect(state).toBe('running');
