@@ -220,7 +220,7 @@ class ScanActionsMixin:
         Returns:
             AgenticProcessor entity data
         """
-        from flow_sdk.builtin.agentic_processor import AgenticProcessor
+        from flow_sdk.builtin.agentic_process import AgenticProcessor
 
         try:
             processor = AgenticProcessor()
@@ -261,7 +261,7 @@ class ScanActionsMixin:
         Returns:
             AgenticProcess data with { id, type, processor_id, worker_session_id, created }
         """
-        from flow_sdk.builtin.agentic_processor import AgenticProcess, AgenticProcessor
+        from flow_sdk.builtin.agentic_process import AgenticProcess, AgenticProcessor
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
 
         request_info = get_current_request_info()

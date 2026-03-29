@@ -9,7 +9,7 @@ is implemented:
 
 import pytest
 
-from flow_sdk.builtin.agentic_processor import AgenticProcess
+from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
 from flow_sdk.api.api_types.api_field import APIField
 

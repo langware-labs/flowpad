@@ -972,9 +972,6 @@ def setup_desktop_filesystem() -> None:
     except Exception as e:
         logging.warning(f"Failed to create logs folder: {e}")
 
-    # Copy SDK-bundled system assets (skills, agents) to workspace
-    _copy_system_assets(workspace_path)
-
     # Create settings.json with defaults (only if file doesn't exist)
     settings_path = workspace_path / ".flow" / "settings.json"
     try:

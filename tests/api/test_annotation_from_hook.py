@@ -62,7 +62,7 @@ async def test_annotation_created_on_user_prompt_submit(bootstrapped_client, use
     session_id = str(uuid.uuid4())
 
     # Create the AgenticProcess so _create_prompt_annotation can link to it
-    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    from flow_sdk.builtin.agentic_process import AgenticProcess
     process = AgenticProcess(
         name="test-process-for-annotation",
         worker_session_id=session_id,
@@ -119,7 +119,7 @@ async def test_annotation_content_truncated_at_50_chars(bootstrapped_client, use
     client = bootstrapped_client
     session_id = str(uuid.uuid4())
 
-    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    from flow_sdk.builtin.agentic_process import AgenticProcess
     process = AgenticProcess(name="test-process-truncation", worker_session_id=session_id)
     await process.save(user.typeid)
 
@@ -237,7 +237,7 @@ async def test_annotation_readable_via_graph_api(bootstrapped_client, user):
     client = bootstrapped_client
     session_id = str(uuid.uuid4())
 
-    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    from flow_sdk.builtin.agentic_process import AgenticProcess
     process = AgenticProcess(name="test-process-read", worker_session_id=session_id)
     await process.save(user.typeid)
 
@@ -313,7 +313,7 @@ async def test_annotation_created_on_exit_plan_mode(bootstrapped_client, user):
     client = bootstrapped_client
     session_id = str(uuid.uuid4())
 
-    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    from flow_sdk.builtin.agentic_process import AgenticProcess
     process = AgenticProcess(
         name="test-process-plan",
         worker_session_id=session_id,
@@ -364,7 +364,7 @@ async def test_plan_annotation_includes_file_path_from_write(bootstrapped_client
     client = bootstrapped_client
     session_id = str(uuid.uuid4())
 
-    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    from flow_sdk.builtin.agentic_process import AgenticProcess
     process = AgenticProcess(
         name="test-process-plan-path",
         worker_session_id=session_id,
@@ -411,7 +411,7 @@ async def test_plan_annotation_no_file_path_when_write_is_not_plan(bootstrapped_
     client = bootstrapped_client
     session_id = str(uuid.uuid4())
 
-    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    from flow_sdk.builtin.agentic_process import AgenticProcess
     process = AgenticProcess(
         name="test-process-plan-nopath",
         worker_session_id=session_id,

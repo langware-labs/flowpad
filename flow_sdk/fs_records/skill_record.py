@@ -184,27 +184,22 @@ class SkillRecord(Record):
             object.__setattr__(self, "metadata", yaml_fields)
 
     @classmethod
-    def init_record(cls, path_or_data, path=None, indent=2) -> "SkillRecord":
-        """Initialize or load a skill record with YAML bootstrap."""
+    def load_record(cls, path: str | Path) -> "SkillRecord":
+        """Load a skill record from a path, with YAML/frontmatter bootstrap for skill dirs."""
         from flow_sdk.fs_store.record import _META_JSON
+        from flow_sdk.fs_store.fs_ref import FSRef
 
-        if isinstance(path_or_data, dict):
-            return super().init_record(path_or_data, path, indent=indent)
-
-        p = Path(path_or_data)
-        if p.is_dir():
-            if (p / _META_JSON).exists() or (p / "data.json").exists():
-                rec = super().init_record(path_or_data, path, indent=indent)
-                # Set asset_ref to the skill folder
-                from flow_sdk.fs_store.fs_ref import FSRef
-                object.__setattr__(rec, "_asset_ref", FSRef(p.resolve()))
-                return rec
-        elif p.exists():
-            return super().init_record(path_or_data, path, indent=indent)
-
+        p = Path(path)
         if not p.is_dir():
-            return super().init_record(path_or_data, path, indent=indent)
+            return super().load_record(path)
 
+        # Shadow record dir — load normally and set asset_ref to skill folder
+        if (p / _META_JSON).exists() or (p / "data.json").exists():
+            rec = super().load_record(path)
+            object.__setattr__(rec, "_asset_ref", FSRef(p.resolve()))
+            return rec
+
+        # YAML/frontmatter bootstrap for live skill dirs
         yaml_fields = _load_skill_yaml_from_dir(p)
         yaml_name = yaml_fields.get("name")
         skill_name = (yaml_name.strip() if isinstance(yaml_name, str) and yaml_name.strip()
@@ -216,15 +211,9 @@ class SkillRecord(Record):
         if yaml_fields:
             data["metadata"] = yaml_fields
         rec = cls.from_dict(data)
-        # Set asset_ref to the skill folder; _record_folder_ref stays None so
-        # save() uses metadata_ref → default_path → records_root shadow folder.
-        from flow_sdk.fs_store.fs_ref import FSRef
+        # _record_folder_ref stays None so save() targets records_root shadow.
         object.__setattr__(rec, "_asset_ref", FSRef(p.resolve()))
         return rec
-
-    @classmethod
-    def load_record(cls, path: str | Path) -> SkillRecord:
-        return cls.init_record(path)
 
     @classmethod
     def discovery_items_count(cls, limit: int | None = None) -> int:
@@ -260,7 +249,7 @@ class SkillRecord(Record):
                     continue
                 seen.add(key)
                 try:
-                    rec = cls.init_record(entry)
+                    rec = cls.load_record(entry)
                     object.__setattr__(rec, "scope", rec_scope)
                     if rec.asset_ref is None:
                         object.__setattr__(rec, "_asset_ref", FSRef(entry.resolve()))

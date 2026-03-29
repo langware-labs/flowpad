@@ -174,7 +174,7 @@ def test_record_from_dict_round_trip():
 def test_record_no_meta_fields_bleed(tmp_path):
     """Old meta fields (created_at etc.) should not appear in domain data."""
     folder = make_record_dir(tmp_path)
-    r = Record.init_record(folder / _DATA_JSON)
+    r = Record.load_record(folder / _DATA_JSON)
     assert "created_at" not in r.data
     assert "modified_at" not in r.data
 
@@ -187,7 +187,7 @@ def test_record_save_and_load(tmp_path):
     r.source_file = str(folder / _DATA_JSON)
     r.save_record_json()
 
-    r2 = WidgetRecord.init_record(folder / _DATA_JSON)
+    r2 = WidgetRecord.load_record(folder / _DATA_JSON)
     assert r2.name == "saved-widget"
     assert r2.id == "x1"
 

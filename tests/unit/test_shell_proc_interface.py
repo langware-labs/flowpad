@@ -119,7 +119,7 @@ async def test_shell_read_output_returns_file_bytes(tmp_path):
 
 @pytest.mark.asyncio
 async def test_proc_get_shell_returns_none_when_no_shell_id():
-    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    from flow_sdk.builtin.agentic_process import AgenticProcess
 
     proc = AgenticProcess(id=str(uuid.uuid4()), compute_node_id=str(uuid.uuid4()))
     assert await proc.get_shell() is None
@@ -127,7 +127,7 @@ async def test_proc_get_shell_returns_none_when_no_shell_id():
 
 @pytest.mark.asyncio
 async def test_proc_send_input_raises_when_no_shell():
-    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    from flow_sdk.builtin.agentic_process import AgenticProcess
 
     proc = AgenticProcess(id=str(uuid.uuid4()), compute_node_id=str(uuid.uuid4()))
     with pytest.raises(ValueError, match="No shell linked"):
@@ -137,7 +137,7 @@ async def test_proc_send_input_raises_when_no_shell():
 @pytest.mark.asyncio
 async def test_proc_sync_status_noop_when_already_idle():
     """sync_status returns immediately when status is idle — no DB call needed."""
-    from flow_sdk.builtin.agentic_processor import AgenticProcess
+    from flow_sdk.builtin.agentic_process import AgenticProcess
 
     proc = AgenticProcess(id=str(uuid.uuid4()), compute_node_id=str(uuid.uuid4()))
     proc._set_process_state(status="idle")

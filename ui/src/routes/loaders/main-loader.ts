@@ -20,7 +20,7 @@ import { TimeIt } from '@src/utils/timeit';
 
 // Get allowed view types from the ViewType enum
 const ALLOWED_VIEWS = new Set(Object.values(ViewType));
-const INACTIVE_PROCESS_STATUSES = new Set([ProcessorStatus.TERMINATED, ProcessorStatus.COMPLETE]);
+const INACTIVE_PROCESS_STATUSES = new Set([ProcessorStatus.COMPLETE, ProcessorStatus.ERROR, ProcessorStatus.INTERRUPTED, ProcessorStatus.INACTIVE]);
 
 /**
  * Ensure compute node is loaded for the current project

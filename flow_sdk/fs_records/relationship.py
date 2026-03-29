@@ -99,7 +99,7 @@ class RelationshipRecord(Record):
         if not parent_path.exists():
             return
 
-        parent = Record.init_record(parent_path)
+        parent = Record.load_record(parent_path)
 
         if op == "add":
             parent.add_child(to_ref)

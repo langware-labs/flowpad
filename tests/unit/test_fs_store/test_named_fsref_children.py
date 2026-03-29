@@ -112,7 +112,7 @@ def test_cold_load_rehydrates_from_named_file(tmp_record):
         json.dumps({"data": {"host": "localhost", "port": 5432}}), encoding="utf-8"
     )
 
-    rec = ConfigRecord.init_record(folder)
+    rec = ConfigRecord.load_record(folder)
     assert rec.config == {"host": "localhost", "port": 5432}
     assert rec.description == "hello"
 
@@ -133,7 +133,7 @@ def test_named_file_wins_over_blob(tmp_record):
         json.dumps({"data": {"from": "named"}}), encoding="utf-8"
     )
 
-    rec = ConfigRecord.init_record(folder)
+    rec = ConfigRecord.load_record(folder)
     assert rec.config == {"from": "named"}, (
         "named file should win over blob value"
     )

@@ -243,7 +243,7 @@ class TestMainRef:
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("---\nname: my-skill\n---\n")
-        rec = SkillRecord.init_record(skill_dir)
+        rec = SkillRecord.load_record(skill_dir)
         mr = rec.main_ref
         assert mr is not None
         assert isinstance(mr, TextFsRef)
@@ -254,7 +254,7 @@ class TestMainRef:
         folder = tmp_path / "agent-@myagent"
         folder.mkdir()
         (folder / "myagent.md").write_text("---\nname: myagent\n---\nHello\n")
-        rec = AgentRecord.init_record(folder)
+        rec = AgentRecord.load_record(folder)
         rec.path = str(folder)
         mr = rec.main_ref
         assert mr is not None

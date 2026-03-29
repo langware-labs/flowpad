@@ -12,7 +12,7 @@ class TestFsSyncDefault:
 
     def test_fs_sync_false_does_not_persist(self, tmp_path):
         fp = tmp_path / "rec.json"
-        r = Record.init_record(fp)
+        r = Record.load_record(fp)
         r.name = "changed"
         assert not fp.exists()
 
@@ -35,7 +35,7 @@ class TestFsSyncDefault:
 class TestFsSyncAutoSave:
     def test_setattr_triggers_persist(self, tmp_path):
         fp = tmp_path / "rec.json"
-        r = Record.init_record(fp)
+        r = Record.load_record(fp)
         r.save_record_json(fp)
         r.fs_sync = True
         r.name = "auto-saved"
@@ -45,7 +45,7 @@ class TestFsSyncAutoSave:
 
     def test_setitem_raw_json_triggers_persist(self, tmp_path):
         fp = tmp_path / "rec.json"
-        r = Record.init_record(fp)
+        r = Record.load_record(fp)
         r.save_record_json(fp)
         r.fs_sync = True
         r["custom_key"] = "custom_val"
@@ -71,7 +71,7 @@ class TestFsSyncAutoSave:
 
     def test_path_change_does_not_trigger_persist(self, tmp_path):
         fp = tmp_path / "rec.json"
-        r = Record.init_record(fp)
+        r = Record.load_record(fp)
         r.save_record_json(fp)
         original = fp.read_text()
         r.fs_sync = True
@@ -80,7 +80,7 @@ class TestFsSyncAutoSave:
 
     def test_private_attrs_do_not_trigger_persist(self, tmp_path):
         fp = tmp_path / "rec.json"
-        r = Record.init_record(fp)
+        r = Record.load_record(fp)
         r.save_record_json(fp)
         original = fp.read_text()
         r.fs_sync = True
@@ -89,7 +89,7 @@ class TestFsSyncAutoSave:
 
     def test_multiple_changes_persist_each(self, tmp_path):
         fp = tmp_path / "rec.json"
-        r = Record.init_record(fp)
+        r = Record.load_record(fp)
         r.save_record_json(fp)
         r.fs_sync = True
         r.name = "first"

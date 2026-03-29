@@ -166,7 +166,7 @@ class TestInitRecordWritesDataJson:
     def test_init_record_writes_data_json(self, records_root):
         """init_record(data, path) writes data.json to folder root."""
         folder = records_root / "sample" / record_stem("sample", "new1")
-        rec = SampleRecord.init_record(
+        rec = SampleRecord._init_record(
             {"id": "new1", "type": "sample", "name": "NewRecord"},
             path=folder,
         )
@@ -186,7 +186,7 @@ class TestInitRecordWritesDataJson:
         folder = records_root / "sample" / record_stem("sample", "read1")
         _write_data_json(folder, {"id": "read1", "type": "sample", "name": "ReadMe"})
 
-        rec = SampleRecord.init_record(folder)
+        rec = SampleRecord.load_record(folder)
         assert rec.id == "read1"
         assert rec.name == "ReadMe"
 
@@ -195,7 +195,7 @@ class TestInitRecordWritesDataJson:
         folder = records_root / "sample" / record_stem("sample", "old3")
         _write_old_format(folder, {"id": "old3", "type": "sample", "name": "OldInit"})
 
-        rec = SampleRecord.init_record(folder)
+        rec = SampleRecord.load_record(folder)
         assert rec.id == "old3"
         assert rec.name == "OldInit"
         # Migrated to new split format

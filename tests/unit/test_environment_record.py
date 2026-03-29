@@ -70,7 +70,7 @@ class TestEnvironmentRecord:
             rec.save()
 
             # Reload from folder
-            rec2 = EnvironmentRecord.init_record(Path(rec.path))
+            rec2 = EnvironmentRecord.load_record(Path(rec.path))
             assert rec2.work_dir == "/projects/myapp"
             assert rec2.shell == "/bin/bash"
             assert rec2.env_vars == {"HOME": "/root", "PATH": "/usr/bin"}
@@ -83,7 +83,7 @@ class TestEnvironmentRecord:
             rec = EnvironmentRecord(id="env-rt-2", work_dir="/tmp")
             rec.save()
 
-            rec2 = EnvironmentRecord.init_record(Path(rec.path))
+            rec2 = EnvironmentRecord.load_record(Path(rec.path))
             assert rec2.compute_node_id is None
             assert rec2.work_dir == "/tmp"
 

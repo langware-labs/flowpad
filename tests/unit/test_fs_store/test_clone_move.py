@@ -10,7 +10,7 @@ from flow_sdk.fs_store import Record, RecordRef, ReadOnlyRecordError
 class TestClone:
     def test_clone_creates_new_id(self, tmp_path):
         src = tmp_path / "src"
-        rec = Record.init_record({"id": "orig", "type": "test", "name": "hello"}, src)
+        rec = Record._init_record({"id": "orig", "type": "test", "name": "hello"}, src)
 
         dst = tmp_path / "dst"
         clone = rec.clone(dst)
@@ -18,7 +18,7 @@ class TestClone:
 
     def test_clone_preserves_data(self, tmp_path):
         src = tmp_path / "src"
-        rec = Record.init_record({"id": "orig", "type": "test", "name": "hello"}, src)
+        rec = Record._init_record({"id": "orig", "type": "test", "name": "hello"}, src)
 
         dst = tmp_path / "dst"
         clone = rec.clone(dst)
@@ -27,7 +27,7 @@ class TestClone:
 
     def test_clone_sets_origin_ref(self, tmp_path):
         src = tmp_path / "src"
-        rec = Record.init_record({"id": "orig", "type": "test"}, src)
+        rec = Record._init_record({"id": "orig", "type": "test"}, src)
 
         dst = tmp_path / "dst"
         clone = rec.clone(dst)
@@ -38,7 +38,7 @@ class TestClone:
 
     def test_clone_writes_to_new_path(self, tmp_path):
         src = tmp_path / "src"
-        rec = Record.init_record({"id": "orig", "type": "test"}, src)
+        rec = Record._init_record({"id": "orig", "type": "test"}, src)
 
         dst = tmp_path / "dst"
         clone = rec.clone(dst)
@@ -46,7 +46,7 @@ class TestClone:
 
     def test_clone_original_unchanged(self, tmp_path):
         src = tmp_path / "src"
-        rec = Record.init_record({"id": "orig", "type": "test", "name": "hello"}, src)
+        rec = Record._init_record({"id": "orig", "type": "test", "name": "hello"}, src)
 
         dst = tmp_path / "dst"
         clone = rec.clone(dst)
@@ -64,7 +64,7 @@ class TestClone:
 class TestMove:
     def test_move_keeps_same_id(self, tmp_path):
         src = tmp_path / "src"
-        rec = Record.init_record({"id": "m1", "type": "test"}, src)
+        rec = Record._init_record({"id": "m1", "type": "test"}, src)
 
         dst = tmp_path / "dst"
         rec.move(dst)
@@ -72,7 +72,7 @@ class TestMove:
 
     def test_move_updates_source_file(self, tmp_path):
         src = tmp_path / "src"
-        rec = Record.init_record({"id": "m1", "type": "test"}, src)
+        rec = Record._init_record({"id": "m1", "type": "test"}, src)
 
         dst = tmp_path / "dst"
         rec.move(dst)
@@ -80,7 +80,7 @@ class TestMove:
 
     def test_move_removes_old_location(self, tmp_path):
         src = tmp_path / "src"
-        rec = Record.init_record({"id": "m1", "type": "test"}, src)
+        rec = Record._init_record({"id": "m1", "type": "test"}, src)
         assert src.exists()
 
         dst = tmp_path / "dst"
@@ -99,7 +99,7 @@ class TestDelete:
     @pytest.mark.asyncio
     async def test_delete_folder_layout(self, tmp_path):
         folder = tmp_path / "entity"
-        rec = Record.init_record({"id": "d1", "type": "test"}, folder)
+        rec = Record._init_record({"id": "d1", "type": "test"}, folder)
         assert folder.exists()
 
         await rec.delete()
@@ -111,7 +111,7 @@ class TestDelete:
     async def test_delete_folder_layout_explicit(self, tmp_path):
         """Verify folder layout: folder exists after create, gone after delete."""
         folder = tmp_path / "entity2"
-        rec = Record.init_record({"id": "d1", "type": "test"}, folder)
+        rec = Record._init_record({"id": "d1", "type": "test"}, folder)
         assert folder.exists()
 
         await rec.delete()
@@ -131,13 +131,13 @@ class TestOriginRef:
     def test_origin_ref_round_trip(self, tmp_path):
         """Serialize and deserialize origin_ref."""
         src = tmp_path / "src"
-        rec = Record.init_record({"id": "orig", "type": "test"}, src)
+        rec = Record._init_record({"id": "orig", "type": "test"}, src)
 
         dst = tmp_path / "dst"
         clone = rec.clone(dst)
 
         # Reload the clone from disk
-        loaded = Record.init_record(dst)
+        loaded = Record.load_record(dst)
         assert loaded.origin_ref is not None
         assert loaded.origin_ref.id == "orig"
         assert loaded.origin_ref.type == "test"

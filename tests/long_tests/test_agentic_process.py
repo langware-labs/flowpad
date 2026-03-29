@@ -17,8 +17,9 @@ pytestmark = pytest.mark.skipif(
     reason="Skipping long tests when DEEP_TESTING is disabled",
 )
 
-from flow_sdk.builtin.agent_runner import AgentRunner as Agent
-from flow_sdk.builtin.agentic_process import AgenticProcess, WorkerType
+from flow_sdk.fs_records.agent_record import AgentRecord as Agent
+from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.flowpad_types.enums import WorkerType
 
 SAMPLE_SESSION = (
     "Session description: The user asked Claude to fix a bug where the wrong variable "
@@ -31,7 +32,7 @@ SAMPLE_SESSION = (
 @pytest.mark.asyncio
 @pytest.mark.timeout(180)
 async def test_agentic_process_hello_world():
-    process = AgenticProcess(workerType=WorkerType.CLAUDE)
+    process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
     process.start()
     assert process.idle is True
 
@@ -56,7 +57,7 @@ async def test_agentic_process_hello_world():
 @pytest.mark.asyncio
 @pytest.mark.timeout(180)
 async def test_agentic_process_classify():
-    process = AgenticProcess(workerType=WorkerType.CLAUDE)
+    process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
     process.start()
     assert process.idle is True
 
@@ -99,7 +100,7 @@ async def test_agentic_process_classify():
 async def test_agentic_process_classify_with_agent():
     agent = Agent.system_agent("classify")
 
-    process = AgenticProcess(workerType=WorkerType.CLAUDE)
+    process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
     process.start()
     assert process.idle is True
 
@@ -141,7 +142,7 @@ async def test_agentic_process_analyze_with_agent():
     """analyze system agent writes analysis.json and analysis.md."""
     agent = Agent.system_agent("analyze")
 
-    process = AgenticProcess(workerType=WorkerType.CLAUDE)
+    process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
     process.start()
 
     process.prompt(
@@ -181,7 +182,7 @@ async def test_agentic_process_fix_it_with_agent():
     """fix-it system agent writes analysis.json, analysis.md, and a skill folder with SKILL.MD."""
     agent = Agent.system_agent("fix-it")
 
-    process = AgenticProcess(workerType=WorkerType.CLAUDE)
+    process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
     process.start()
 
     process.prompt(
@@ -212,3 +213,64 @@ async def test_agentic_process_fix_it_with_agent():
 
     skill_content = await skill_files[0].content()
     assert len(skill_content) > 50, "SKILL.MD appears empty"
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(180)
+async def test_agentic_process_lists_system_skills():
+    """Verify that system skills are visible to Claude via --add-dir system_assets."""
+    process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
+    process.start()
+
+    process.prompt(
+        "List all available skills by looking in the .claude/skills/ directory. "
+        "Output the skill names as a JSON array to skills.json — one entry per skill directory name."
+    )
+    await process.waitForIdle(timeout=120)
+
+    skills_file = process.output_folder / "skills.json"
+    assert skills_file.exists(), "Expected skills.json to be created"
+
+    skills = json.loads(skills_file.read_text())
+    assert isinstance(skills, list), f"Expected JSON array, got: {type(skills)}"
+    names = [s.lower() if isinstance(s, str) else str(s).lower() for s in skills]
+    for expected in ["flow", "compile-workflow", "session_analysis"]:
+        assert any(expected in n for n in names), (
+            f"System skill '{expected}' not found in: {names}"
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(180)
+async def test_agentic_process_local_assets_skill(tmp_path):
+    """A skill linked into local_assets is discoverable by Claude via --add-dir."""
+    skill_name = "local-canary-skill"
+    skills_dir = tmp_path / "skills"
+    skill_dir = skills_dir / skill_name
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        f"---\nname: {skill_name}\n"
+        "description: Canary skill used only to verify local_assets linking works\n"
+        "---\n"
+        "When invoked, write the word 'canary-present' to canary.txt.\n"
+    )
+
+    process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
+    # local_assets.link() triggers lazy start() — no explicit start() needed
+    process.local_assets.link(skills_dir)  # local_assets/skills -> tmp_path/skills
+
+    process.prompt(
+        "List all available skills by looking in the .claude/skills/ directory. "
+        "Output the skill names as a JSON array to skills.json — one entry per skill directory name."
+    )
+    await process.waitForIdle(timeout=120)
+
+    skills_file = process.output_folder / "skills.json"
+    assert skills_file.exists(), "Expected skills.json to be created"
+
+    skills = json.loads(skills_file.read_text())
+    assert isinstance(skills, list), f"Expected JSON array, got: {type(skills)}"
+    names = [s.lower() if isinstance(s, str) else str(s).lower() for s in skills]
+    assert any(skill_name in n for n in names), (
+        f"'{skill_name}' not found in skill list: {names}"
+    )

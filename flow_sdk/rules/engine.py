@@ -33,7 +33,7 @@ def _load_dir(path: Path, source: str) -> list[ActivationRule]:
         if not rj.exists():
             continue
         try:
-            rec = ActivationRule.init_record(rj)
+            rec = ActivationRule.load_record(rj)
             rec.path = str(entry)
             rec.scope = source
             rules.append(rec)

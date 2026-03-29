@@ -36,7 +36,7 @@ def _make_child_ref() -> RecordRef:
 
 def _reload_parent(parent_dir: Path) -> Record:
     """Re-read parent from disk to verify changes persisted."""
-    return Record.init_record(parent_dir)
+    return Record.load_record(parent_dir)
 
 
 def _setup_rel_on_disk(rel: RelationshipRecord, tmp_records_root: Path) -> None:

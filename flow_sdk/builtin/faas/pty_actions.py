@@ -453,7 +453,7 @@ class PtyActionsMixin:
 
         # Enrich with agentic_process_id from AgenticProcess
         try:
-            from flow_sdk.builtin.agentic_processor import AgenticProcess
+            from flow_sdk.builtin.agentic_process import AgenticProcess
 
             all_procs = await AgenticProcess.get_all()
             pty_to_proc = {p.pty_pid: p.id for p in all_procs if p.pty_pid}
@@ -1002,7 +1002,7 @@ class PtyActionsMixin:
 
         # Enrich sessions with agentic_process_id when an AgenticProcess owns the PTY
         if active_sessions:
-            from flow_sdk.builtin.agentic_processor import AgenticProcess
+            from flow_sdk.builtin.agentic_process import AgenticProcess
 
             try:
                 all_procs = await AgenticProcess.get_all()

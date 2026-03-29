@@ -1,4 +1,4 @@
-import { Editor, rootCtx, defaultValueCtx } from '@milkdown/core';
+import { Editor, rootCtx, defaultValueCtx, editorViewCtx } from '@milkdown/core';
 import { Milkdown, MilkdownProvider, useEditor, useInstance } from '@milkdown/react';
 import {
   commonmark,
@@ -17,9 +17,11 @@ import { listener, listenerCtx } from '@milkdown/plugin-listener';
 import { prism } from '@milkdown/plugin-prism';
 import { emoji } from '@milkdown/plugin-emoji';
 import { history } from '@milkdown/plugin-history';
+import { trailing } from '@milkdown/plugin-trailing';
 import { callCommand } from '@milkdown/utils';
 import type { MilkdownPlugin } from '@milkdown/ctx';
 import type { Ctx } from '@milkdown/ctx';
+import type { EditorState } from '@milkdown/prose/state';
 import {
   Bold, Italic, Code, Heading1, Heading2, Heading3,
   List, ListOrdered, SquareCode, Pilcrow, ExternalLink,
@@ -105,9 +107,58 @@ function LinkHoverToolbar({
   );
 }
 
+// ── Toolbar active state ──────────────────────────────────────────────────────
+
+interface ActiveState {
+  bold: boolean;
+  italic: boolean;
+  inlineCode: boolean;
+  headingLevel: number; // 0 = not a heading
+  bulletList: boolean;
+  orderedList: boolean;
+  codeBlock: boolean;
+}
+
+const EMPTY_ACTIVE: ActiveState = {
+  bold: false, italic: false, inlineCode: false,
+  headingLevel: 0, bulletList: false, orderedList: false, codeBlock: false,
+};
+
+function getActiveState(state: EditorState): ActiveState {
+  const { selection, schema } = state;
+  const $from = selection?.$from;
+  if (!$from) return EMPTY_ACTIVE;
+
+  const { from, to, empty } = selection;
+  const markActive = (markName: string): boolean => {
+    const markType = schema.marks[markName];
+    if (!markType) return false;
+    if (empty) return !!(state.storedMarks || $from.marks()).find(m => m.type === markType);
+    return state.doc.rangeHasMark(from, to, markType);
+  };
+
+  const bold = markActive('strong');
+  const italic = markActive('em');
+  const inlineCode = markActive('code');
+
+  const parent = $from.parent;
+  const headingLevel = parent.type.name === 'heading' ? (parent.attrs.level as number) : 0;
+  const codeBlock = parent.type.name === 'code_block' || parent.type.name === 'fence';
+
+  let bulletList = false;
+  let orderedList = false;
+  for (let depth = $from.depth; depth > 0; depth--) {
+    const node = $from.node(depth);
+    if (node.type.name === 'bullet_list') bulletList = true;
+    if (node.type.name === 'ordered_list') orderedList = true;
+  }
+
+  return { bold, italic, inlineCode, headingLevel, bulletList, orderedList, codeBlock };
+}
+
 // ── Toolbar ───────────────────────────────────────────────────────────────────
 
-function MilkdownToolbar() {
+function MilkdownToolbar({ activeState }: { activeState: ActiveState }) {
   const [loading, get] = useInstance();
 
   const act = useCallback(
@@ -118,37 +169,43 @@ function MilkdownToolbar() {
     [loading, get],
   );
 
-  const btn = (title: string, icon: React.ReactNode, fn: (ctx: Ctx) => void) => (
+  const btn = (title: string, icon: React.ReactNode, fn: (ctx: Ctx) => void, active = false) => (
     <button
       title={title}
       onMouseDown={(e) => { e.preventDefault(); act(fn); }}
-      className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+      className={`flex h-7 w-7 items-center justify-center rounded hover:bg-muted hover:text-foreground ${
+        active
+          ? 'bg-muted text-foreground'
+          : 'text-muted-foreground'
+      }`}
     >
       {icon}
     </button>
   );
 
+  const { bold, italic, inlineCode, headingLevel, bulletList, orderedList, codeBlock } = activeState;
+
   return (
     <div className="flex flex-shrink-0 items-center gap-0.5 border-b bg-muted/20 px-2 py-1">
-      {btn('Bold', <Bold className="h-3.5 w-3.5" />, callCommand(toggleStrongCommand.key))}
-      {btn('Italic', <Italic className="h-3.5 w-3.5" />, callCommand(toggleEmphasisCommand.key))}
-      {btn('Inline code', <Code className="h-3.5 w-3.5" />, callCommand(toggleInlineCodeCommand.key))}
+      {btn('Bold', <Bold className="h-3.5 w-3.5" />, callCommand(toggleStrongCommand.key), bold)}
+      {btn('Italic', <Italic className="h-3.5 w-3.5" />, callCommand(toggleEmphasisCommand.key), italic)}
+      {btn('Inline code', <Code className="h-3.5 w-3.5" />, callCommand(toggleInlineCodeCommand.key), inlineCode)}
       <div className="mx-1.5 h-4 w-px bg-border" />
-      {btn('Normal text', <Pilcrow className="h-3.5 w-3.5" />, callCommand(turnIntoTextCommand.key))}
-      {btn('Heading 1', <Heading1 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 1))}
-      {btn('Heading 2', <Heading2 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 2))}
-      {btn('Heading 3', <Heading3 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 3))}
+      {btn('Normal text', <Pilcrow className="h-3.5 w-3.5" />, callCommand(turnIntoTextCommand.key), headingLevel === 0 && !codeBlock)}
+      {btn('Heading 1', <Heading1 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 1), headingLevel === 1)}
+      {btn('Heading 2', <Heading2 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 2), headingLevel === 2)}
+      {btn('Heading 3', <Heading3 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 3), headingLevel === 3)}
       <div className="mx-1.5 h-4 w-px bg-border" />
-      {btn('Bullet list', <List className="h-3.5 w-3.5" />, callCommand(wrapInBulletListCommand.key))}
-      {btn('Ordered list', <ListOrdered className="h-3.5 w-3.5" />, callCommand(wrapInOrderedListCommand.key))}
-      {btn('Code block', <SquareCode className="h-3.5 w-3.5" />, callCommand(createCodeBlockCommand.key))}
+      {btn('Bullet list', <List className="h-3.5 w-3.5" />, callCommand(wrapInBulletListCommand.key), bulletList)}
+      {btn('Ordered list', <ListOrdered className="h-3.5 w-3.5" />, callCommand(wrapInOrderedListCommand.key), orderedList)}
+      {btn('Code block', <SquareCode className="h-3.5 w-3.5" />, callCommand(createCodeBlockCommand.key), codeBlock)}
     </div>
   );
 }
 
 // ── Editor inner ──────────────────────────────────────────────────────────────
 
-function MilkdownEditorInner({ content, onChange, readOnly, plugins }: MilkdownEditorProps) {
+function MilkdownEditorInner({ content, onChange, readOnly, plugins, onActiveStateChange }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void }) {
   const editorRef = useRef<Editor | null>(null);
 
   // Strip HTML comments for display in WYSIWYG mode
@@ -166,10 +223,23 @@ function MilkdownEditorInner({ content, onChange, readOnly, plugins }: MilkdownE
         .config((ctx) => {
           ctx.set(rootCtx, root);
           ctx.set(defaultValueCtx, initialContentRef.current);
+          const lctx = ctx.get(listenerCtx);
           if (onChange) {
-            ctx.get(listenerCtx).markdownUpdated((_, markdown) => {
-              onChange(markdown);
-            });
+            lctx.markdownUpdated((_, markdown) => { onChange(markdown); });
+          }
+          if (onActiveStateChange) {
+            const notify = (ctx: Ctx) => {
+              try {
+                onActiveStateChange(getActiveState(ctx.get(editorViewCtx).state));
+              } catch {
+                // view not ready during initialization
+              }
+            };
+            // Fire on document changes — debounced 200ms so view.state is already updated
+            lctx.updated((ctx) => notify(ctx));
+            // selectionUpdated fires synchronously during apply (view.state is still old),
+            // so defer by one tick to read the updated view.state
+            lctx.selectionUpdated((ctx) => setTimeout(() => notify(ctx), 0));
           }
         })
         .use(commonmark)
@@ -177,7 +247,8 @@ function MilkdownEditorInner({ content, onChange, readOnly, plugins }: MilkdownE
         .use(listener)
         .use(prism)
         .use(emoji)
-        .use(history);
+        .use(history)
+        .use(trailing);
 
       // Register extra plugins (e.g. plan-note mark)
       if (plugins) {
@@ -188,7 +259,7 @@ function MilkdownEditorInner({ content, onChange, readOnly, plugins }: MilkdownE
 
       return editor;
     },
-    [onChange, plugins],
+    [onChange, onActiveStateChange, plugins],
   );
 
   useEffect(() => {
@@ -205,6 +276,7 @@ function MilkdownEditorInner({ content, onChange, readOnly, plugins }: MilkdownE
 }
 
 export function MilkdownEditor({ content, onChange, readOnly, plugins, onLinkClick }: MilkdownEditorProps) {
+  const [activeState, setActiveState] = useState<ActiveState>(EMPTY_ACTIVE);
   const [hoveredLink, setHoveredLink] = useState<HoveredLink | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -244,13 +316,13 @@ export function MilkdownEditor({ content, onChange, readOnly, plugins, onLinkCli
   return (
     <MilkdownProvider>
       <div className="flex h-full flex-col overflow-hidden">
-        {!readOnly && <MilkdownToolbar />}
+        {!readOnly && <MilkdownToolbar activeState={activeState} />}
         <div
           className="min-h-0 flex-1 overflow-auto"
           onMouseOver={handleMouseOver}
           onMouseLeave={scheduleHide}
         >
-          <MilkdownEditorInner content={content} onChange={onChange} readOnly={readOnly} plugins={plugins} />
+          <MilkdownEditorInner content={content} onChange={onChange} readOnly={readOnly} plugins={plugins} onActiveStateChange={setActiveState} />
         </div>
       </div>
       {hoveredLink && (

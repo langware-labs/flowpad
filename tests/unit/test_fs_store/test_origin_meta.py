@@ -48,7 +48,7 @@ class TestOriginRef:
 
     def test_origin_serialized_as_origin_key(self, tmp_path):
         folder = tmp_path / "entity"
-        rec = Record.init_record(
+        rec = Record._init_record(
             {"id": "sess-7", "type": "session", "name": "Serialization"}, folder
         )
         rec.origin_ref = RecordRef(id="sess-7", type="session", path="/src/session.jsonl")
