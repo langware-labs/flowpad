@@ -236,11 +236,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       return { process, workerSessionId: workerOptions.workerSessionId };
     }
 
-    const { workerSessionId, shell } = await process.open({
+    await process.open({
       instruction: workerOptions?.instruction,
       ptyTimeout: workerOptions?.ptyTimeout,
     });
-    return { process, shell, workerSessionId };
+    return { process, shell: await process.getShell(), workerSessionId: process.worker_session_id };
   }
 
   /**
@@ -1031,7 +1031,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @param options - Optional instruction to execute
    * @returns Shell session ID and worker session ID
    */
-  async open(options?: { instruction?: string; visible?: boolean; ptyTimeout?: number }): Promise<{ workerSessionId: string; shell: Shell }> {
+  async open(options?: { instruction?: string; visible?: boolean; ptyTimeout?: number }): Promise<boolean> {
     const { Shell } = await import('../entities/shell');
     const actionInfo = new ActionInfo('open', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = options ?? {};
@@ -1047,7 +1047,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const shell = await dataManager.getByTypeId<Shell>(new TypeId(Shell.type, result.shell_id));
     if (!shell) throw new Error(`Shell ${result.shell_id} not found after start()`);
     await shell.startPty({ cols: 80, rows: 24, timeout: options?.ptyTimeout });
-    return { workerSessionId: result.worker_session_id, shell };
+    return true;
   }
 
   /**

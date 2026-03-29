@@ -83,7 +83,7 @@ async def test_close_session_transitions_record(session_manager, use_tmp_records
     session_manager.sessions[pty_key] = session_state
 
     # Mock the compute node lookup to avoid DB access
-    with patch("flow_sdk.compute.providers.local.pty_session_manager.ComputeNode", create=True):
+    with patch("flow_sdk.compute.providers.desktop.pty_session_manager.ComputeNode", create=True):
         with patch(
             "flow_sdk.builtin.faas.compute_node.ComputeNode.get_by_id", new_callable=AsyncMock, return_value=None
         ):

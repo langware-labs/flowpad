@@ -15,43 +15,64 @@ from flow_sdk.fs_records.claude.claude_session import ClaudeSessionFsRecord
 # -- status property ----------------------------------------------------------
 
 
-def test_status_idle_no_assistant():
-    """No assistant messages → idle."""
-    session = ClaudeSessionFsRecord(assistant_message_count=0)
+def _write_jsonl(path, lines):
+    """Write JSONL lines to a temp file."""
+    path.write_text("\n".join(json.dumps(l) for l in lines))
+
+
+def test_status_idle_empty_file(tmp_path):
+    """Empty JSONL → idle (no entries to classify)."""
+    f = tmp_path / "session.jsonl"
+    f.write_text("")
+    session = ClaudeSessionFsRecord(jsonl_path=str(f))
     assert session.status == "idle"
 
 
-def test_status_complete_end_turn():
-    session = ClaudeSessionFsRecord(
-        assistant_message_count=1,
-        last_stop_reason="end_turn",
-    )
+def test_status_complete_end_turn(tmp_path):
+    """Assistant entry with stop_reason=end_turn → complete."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [
+        {"type": "user", "message": {"role": "user"}},
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn", "content": []}},
+    ])
+    session = ClaudeSessionFsRecord(jsonl_path=str(f))
     assert session.status == "complete"
 
 
-def test_status_complete_stop_sequence():
-    session = ClaudeSessionFsRecord(
-        assistant_message_count=1,
-        last_stop_reason="stop_sequence",
-    )
-    assert session.status == "complete"
+def test_status_error_stop_sequence(tmp_path):
+    """Assistant entry with stop_reason=stop_sequence → error."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [
+        {"type": "user", "message": {"role": "user"}},
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "stop_sequence", "content": []}},
+    ])
+    session = ClaudeSessionFsRecord(jsonl_path=str(f))
+    assert session.status == "error"
 
 
-def test_status_running_tool_use():
-    session = ClaudeSessionFsRecord(
-        assistant_message_count=1,
-        last_stop_reason="tool_use",
-    )
-    assert session.status == "running"
+def test_status_tool_use_active_file(tmp_path):
+    """Active file + stop_reason=tool_use → tool_use."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [
+        {"type": "user", "message": {"role": "user"}},
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "tool_use", "content": []}},
+    ])
+    # Keep mtime fresh (active file)
+    os.utime(f, None)
+    session = ClaudeSessionFsRecord(jsonl_path=str(f))
+    assert session.status == "tool_use"
 
 
-def test_status_running_none():
-    """Assistant messages exist but last_stop_reason is None → running."""
-    session = ClaudeSessionFsRecord(
-        assistant_message_count=1,
-        last_stop_reason=None,
-    )
-    assert session.status == "running"
+def test_status_thinking_active_no_stop_reason(tmp_path):
+    """Active file + assistant with no stop_reason → thinking."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [
+        {"type": "user", "message": {"role": "user"}},
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": None, "content": []}},
+    ])
+    os.utime(f, None)
+    session = ClaudeSessionFsRecord(jsonl_path=str(f))
+    assert session.status == "thinking"
 
 
 # -- is_active (now a property backed by PropertyRecord) ---------------------
@@ -113,7 +134,7 @@ def test_from_jsonl_captures_last_stop_reason(tmp_path: Path):
 
 
 def test_from_jsonl_no_assistant_entries(tmp_path: Path):
-    """Only user entries → idle status, no stop_reason."""
+    """Only user entries, active file → running (Claude hasn't responded yet)."""
     lines = [
         {"type": "user", "sessionId": "s2", "message": {"role": "user"}},
     ]
@@ -122,11 +143,11 @@ def test_from_jsonl_no_assistant_entries(tmp_path: Path):
 
     session = ClaudeSessionFsRecord.from_jsonl(f)
     assert session.last_stop_reason is None
-    assert session.status == "idle"
+    assert session.status == "running"
 
 
 def test_from_jsonl_last_assistant_running(tmp_path: Path):
-    """Last assistant has stop_reason=tool_use → running."""
+    """Last assistant has stop_reason=tool_use, active file → tool_use."""
     lines = [
         {"type": "user", "sessionId": "s3", "message": {"role": "user"}},
         {
@@ -144,4 +165,4 @@ def test_from_jsonl_last_assistant_running(tmp_path: Path):
 
     session = ClaudeSessionFsRecord.from_jsonl(f)
     assert session.last_stop_reason == "tool_use"
-    assert session.status == "running"
+    assert session.status == "tool_use"
