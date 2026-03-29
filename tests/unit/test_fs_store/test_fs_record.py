@@ -4,7 +4,7 @@ import json
 
 import pytest
 from flow_sdk.fs_store import Record, RecordRef, Scope
-from flow_sdk.fs_records import AgenticProcessRecord, ProcessorStatus, TaskResource, TaskStatus, TaskType
+from flow_sdk.fs_records import AgenticProcessRecord, AgenticProcessStatus, TaskResource, TaskStatus, TaskType
 
 # ---------------------------------------------------------------------------
 # from_json / to_json
@@ -145,7 +145,7 @@ class TestParentChildRecord:
         )
         process = AgenticProcessRecord(
             id="proc-1",
-            state=ProcessorStatus.RUNNING,
+            state=AgenticProcessStatus.RUNNING,
             worker_id="session-1",
             parent_ref=RecordRef(id="task-1", type="task"),
         )

@@ -79,10 +79,10 @@ class RelationshipRecord(Record):
         super().save()
         self._sync_parent_children_refs("add")
 
-    def delete(self) -> None:
+    async def delete(self, delete_ref: bool = False) -> None:
         """Remove from parent's children_refs before deleting."""
         self._sync_parent_children_refs("remove")
-        super().delete()
+        await super().delete(delete_ref=delete_ref)
 
     def _sync_parent_children_refs(self, op: str) -> None:
         """Update parent record's children_refs to include/exclude the to_ref.

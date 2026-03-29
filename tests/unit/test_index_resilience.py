@@ -87,7 +87,7 @@ class TestIndexResilience:
 
     @pytest.mark.asyncio
     async def test_record_delete_removes_file_and_db_row(self, tmp_path):
-        """Full lifecycle: create + save → unindex → delete → both file and entity gone."""
+        """Full lifecycle: create + save → delete() → both file and entity gone."""
         from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
         from pathlib import Path
 
@@ -102,7 +102,7 @@ class TestIndexResilience:
             assert record_dir is not None
             assert Path(record_dir).exists()
 
-            # Mock Entity DB interactions for unindex
+            # Mock Entity DB interactions for unindex (called internally by delete)
             mock_entity = MagicMock()
             mock_entity.id = "del-res-1"
             mock_entity.delete = AsyncMock()
@@ -117,16 +117,13 @@ class TestIndexResilience:
                 "flow_sdk.db.get_db_driver",
                 return_value=mock_driver,
             ):
-                await rec.unindex()
+                await rec.delete()
 
-            # Entity should be deleted
+            # Entity and FTS should be deleted
             mock_entity.delete.assert_called_once()
             mock_driver.fts_delete.assert_called_once_with("del-res-1")
 
-            # Delete from disk
-            rec.delete()
-
-            # Both file and entity should be gone
+            # File should also be gone
             assert not Path(record_dir).exists()
             assert rec.source_file is None
         finally:

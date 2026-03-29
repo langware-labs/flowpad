@@ -242,8 +242,8 @@ class PtyActionsMixin:
         Returns:
             True if session was created successfully, False otherwise
         """
-        from flow_sdk.compute.providers.local.pty_replay_buffer import replay_buffer
-        from flow_sdk.compute.providers.local.pty_session_manager import session_manager
+        from flow_sdk.compute.providers.desktop.pty_replay_buffer import replay_buffer
+        from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
 
         if not self.node_provider_id:
             logging.error("[PTY] No node_provider_id set for machine PTY session")
@@ -348,7 +348,7 @@ class PtyActionsMixin:
 
         # Create or update ShellRecord and wire PtyStreamFile
         try:
-            from flow_sdk.compute.providers.local.pty_stream_file import PtyStreamFile
+            from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
             from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
 
             existing_record = ShellRecord.discover_one(shell_id)

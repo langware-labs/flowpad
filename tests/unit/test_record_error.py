@@ -58,7 +58,8 @@ class TestRecordError:
         finally:
             set_default_records_root(old_root)
 
-    def test_clear_for_type_removes_matching(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_clear_for_type_removes_matching(self, tmp_path):
         from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
 
         old_root = get_default_records_root()
@@ -75,7 +76,7 @@ class TestRecordError:
             err2 = RecordError.from_exception(rec2, ValueError("err2"), trigger="index")
             err2.save()
 
-            removed = RecordError.clear_for_type("fake_for_error")
+            removed = await RecordError.clear_for_type("fake_for_error")
             assert removed == 1
 
             remaining = list(RecordError.discover())
@@ -84,7 +85,8 @@ class TestRecordError:
         finally:
             set_default_records_root(old_root)
 
-    def test_clear_all_removes_everything(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_clear_all_removes_everything(self, tmp_path):
         from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
 
         old_root = get_default_records_root()
@@ -97,7 +99,7 @@ class TestRecordError:
             err2 = RecordError.from_exception(rec, ValueError("e2"), trigger="index")
             err2.save()
 
-            removed = RecordError.clear_all()
+            removed = await RecordError.clear_all()
             assert removed == 2
             assert len(list(RecordError.discover())) == 0
         finally:
@@ -134,7 +136,8 @@ class TestRecordError:
         assert rec.occurred_at == "2026-01-01T00:00:00+00:00"
         assert rec.trigger == "claude_debug"
 
-    def test_clear_all_does_not_touch_subtypes(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_clear_all_does_not_touch_subtypes(self, tmp_path):
         """RecordError.clear_all() removes only its own records, not ClaudeErrorRecords."""
         from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
         from flow_sdk.fs_records.claude.claude_error import ClaudeErrorRecord
@@ -154,7 +157,7 @@ class TestRecordError:
             backing = ResourceRecordList(list_path=tmp_path / "claude_error", record_class=ClaudeErrorRecord)
             backing.create(claude_rec)
 
-            RecordError.clear_all()
+            await RecordError.clear_all()
 
             # RecordError gone (own records only)
             own_errors = list(super(RecordError, RecordError).discover.__func__(RecordError))

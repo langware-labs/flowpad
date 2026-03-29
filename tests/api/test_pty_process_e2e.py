@@ -132,7 +132,7 @@ def test_flowpad_pty_pid_in_env():
     """
     import inspect
 
-    from flow_sdk.compute.providers.local.provider import LocalComputeProvider
+    from flow_sdk.compute.providers.desktop.provider import LocalComputeProvider
 
     source = inspect.getsource(LocalComputeProvider.get_or_create_pty_session)
     assert "FLOWPAD_PTY_SESSION_ID" in source, "FLOWPAD_PTY_SESSION_ID should be set in get_or_create_pty_session"

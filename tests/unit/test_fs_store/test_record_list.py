@@ -64,15 +64,17 @@ class TestCrud:
         with pytest.raises(KeyError, match="No record"):
             rl.update("nope", {"name": "x"})
 
-    def test_delete(self):
+    @pytest.mark.asyncio
+    async def test_delete(self):
         rl = RecordList(record_class=OwnedRecord)
         rl.create(OwnedRecord(id="d1"))
-        assert rl.delete("d1") is True
+        assert await rl.delete("d1") is True
         assert rl.get("d1") is None
 
-    def test_delete_missing_returns_false(self):
+    @pytest.mark.asyncio
+    async def test_delete_missing_returns_false(self):
         rl = RecordList(record_class=OwnedRecord)
-        assert rl.delete("ghost") is False
+        assert await rl.delete("ghost") is False
 
 
 class TestIteration:
