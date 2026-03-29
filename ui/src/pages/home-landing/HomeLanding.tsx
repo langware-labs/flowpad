@@ -18,7 +18,6 @@ import { useClaudeProjectList } from '@src/hooks/use-claude-projects';
 import { useHooksSniffer } from '@src/hooks/use-hooks-sniffer';
 import { useEventDrivenSessions } from '@src/hooks/use-event-driven-sessions';
 import { useProjects } from '@src/hooks/use-projects';
-import { useSessionClassify } from '@src/hooks/use-session-classify';
 import { useActAccordingToClassification } from '@src/hooks/use-act-according-to-classification';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
 import { useForkInTerminal } from '@src/hooks/use-fork-in-terminal';
@@ -37,8 +36,9 @@ import type React from 'react';
 import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
-import { Loader2, PackageSearch } from 'lucide-react';
+import { Loader2, PackageSearch, X, CheckCircle2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { LastScanResult } from '@sdk';
 
 const getSafeTimestamp = (value?: string | null): number => {
   if (!value) return 0;
@@ -120,9 +120,19 @@ export function HomeLanding() {
     [currentProject?.typeId, annotationsRefetch],
   );
 
-  const { busy, resetAndRescan, currentActivity, activityProgress, scanInfo } = useSystemTools();
+  const { busy, resetAndRescan, currentActivity, activityProgress, scanInfo, lastScanResult } = useSystemTools();
   const [progressOpen, setProgressOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [postScanResult, setPostScanResult] = useState<LastScanResult | null>(null);
+
+  // Detect scan completion: when lastScanResult changes to a new value, capture it for display
+  const prevLastScanResultRef = useRef<LastScanResult | null>(null);
+  useEffect(() => {
+    if (lastScanResult && lastScanResult !== prevLastScanResultRef.current) {
+      setPostScanResult(lastScanResult);
+    }
+    prevLastScanResultRef.current = lastScanResult;
+  }, [lastScanResult]);
 
   // Show welcome modal once per app session when scanInfo first arrives as never_indexed.
   useEffect(() => {
@@ -138,6 +148,8 @@ export function HomeLanding() {
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
+  // Clear post-scan panel when user starts a real search
+  useEffect(() => { if (searchQuery.trim().length >= 2) setPostScanResult(null); }, [searchQuery]);
   const [showSessionInput, setShowSessionInput] = useState(false);
   const sessionInputRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -199,15 +211,6 @@ export function HomeLanding() {
     });
     return byPath?.encoded_name || null;
   }, [claudeProjects, currentProject, currentProjectPath]);
-
-  const { classifySession, classifyingSessionIds } = useSessionClassify({
-    onStarted: () => {
-      void taskRefetch();
-    },
-    onCompleted: () => {
-      void taskRefetch();
-    },
-  });
 
   const { actOnClassification, actingSessionId } = useActAccordingToClassification({
     onStarted: () => {
@@ -374,21 +377,6 @@ export function HomeLanding() {
     [navigation],
   );
 
-  const handleSessionClassify = useCallback(
-    async (resource: ProjectResourceListItem) => {
-      const cwd = resource.path || selectedClaudeProjectCwd;
-      if (!resource.sessionId || !cwd) {
-        toast({
-          title: 'Session unavailable',
-          description: 'No session ID or working directory found.',
-          variant: 'destructive',
-        });
-        return;
-      }
-      await classifySession(resource.sessionId, cwd);
-    },
-    [classifySession, toast, selectedClaudeProjectCwd],
-  );
 
   const handleActAccordingToClassification = useCallback(
     async (resource: ProjectResourceListItem, command: string) => {
@@ -544,6 +532,42 @@ export function HomeLanding() {
             )}
           </div>
 
+          {/* Post-scan results panel — shown after scan completes when user hasn't searched yet */}
+          {postScanResult && searchQuery.trim().length < 2 && (
+            <div className="w-full max-w-3xl self-center shrink-0">
+              <div className="flex flex-col rounded-lg border border-border bg-card overflow-hidden">
+                <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    Scan & index complete — {postScanResult.grand_total.toLocaleString()} records found
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setPostScanResult(null)}
+                    className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                {postScanResult.types.filter((t) => t.count > 0).length > 0 ? (
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 px-3 py-2">
+                    {postScanResult.types
+                      .filter((t) => t.count > 0)
+                      .sort((a, b) => b.count - a.count)
+                      .map((t) => (
+                        <span key={t.type} className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <span className="font-mono text-foreground">{t.type.replace('claude_', '')}</span>
+                          <span className="tabular-nums">{t.count.toLocaleString()}</span>
+                        </span>
+                      ))}
+                  </div>
+                ) : (
+                  <p className="px-3 py-2 text-xs text-muted-foreground">No records found on disk.</p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Inline search results */}
           <div className="w-full max-w-3xl self-center min-h-0 flex-1 overflow-hidden">
             <InlineSearchResults
@@ -576,7 +600,6 @@ export function HomeLanding() {
             onItemClick={handleResourceClick}
             onSessionResume={handleSessionResume}
             onSessionTasks={handleSessionTasks}
-            onSessionClassify={(item) => void handleSessionClassify(item)}
             onActAccordingToClassification={(item, cmd) => void handleActAccordingToClassification(item, cmd)}
             actingSessionId={actingSessionId}
             sessionEventCounts={sessionEventCounts}
