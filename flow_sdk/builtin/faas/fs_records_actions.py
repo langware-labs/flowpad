@@ -27,6 +27,31 @@ class FsRecordsActionsMixin:
 
     # -- fs-records search helper ------------------------------------------------
 
+    @staticmethod
+    def _resolve_source_path(ent) -> str:
+        """Resolve the on-disk path for an entity, with a record-level fallback."""
+        path = (
+            getattr(ent, "source_file", None)
+            or (ent.asset_ref.path if getattr(ent, "asset_ref", None) else None)
+            or getattr(ent, "source_path", None)
+        )
+        if path:
+            return path
+        try:
+            from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+            record_cls = SchemaRegistry.get_record_cls(ent.type or ent.get_type())
+            if record_cls:
+                rec = record_cls.discover_one(ent.id)
+                if rec is None:
+                    ent_name = getattr(ent, "name", None) or getattr(ent, "uname", None)
+                    if ent_name:
+                        rec = record_cls.discover_one(ent_name)
+                if rec:
+                    return getattr(rec, "source_path", None) or ""
+        except Exception:
+            pass
+        return ""
+
     async def _handle_fs_records_search(self, request_info) -> ApiResponse:
         from flow_sdk.core.entity.entity_model import Entity
 
@@ -43,23 +68,25 @@ class FsRecordsActionsMixin:
                 results = []
                 for ent in entities:
                     ent_status = getattr(ent, "status", None) or ""
-                    results.append(
-                        {
+                    row = {
                             "record_id": ent.id,
                             "record_type": ent.type or record_type,
                             "name": getattr(ent, "name", None) or getattr(ent, "title", "") or "",
-
                             "snippet": None,
                             "fts_title": getattr(ent, "_fts_title", None),
                             "fts_description": getattr(ent, "_fts_description", None),
                             "status": ent_status,
-                            "scope": "",
+                            "scope": getattr(ent, "scope", "") or "",
                             "created_at": str(getattr(ent, "created_date", "") or ""),
                             "modified_at": str(getattr(ent, "updated_date", "") or ""),
-                            "source_path": "",
+                            "source_path": self._resolve_source_path(ent),
                             "labels": getattr(ent, "labels", None) or [],
                         }
-                    )
+                    for extra_field in ("session_id", "worker_session_id"):
+                        val = getattr(ent, extra_field, None)
+                        if val:
+                            row[extra_field] = val
+                    results.append(row)
                 return ApiSuccessResponse(
                     data={"results": results, "query": "", "total": len(results), "indexer_ready": True}
                 )
@@ -86,8 +113,7 @@ class FsRecordsActionsMixin:
             ent_status = getattr(ent, "status", None) or ""
             if status and ent_status != status:
                 continue
-            results.append(
-                {
+            row = {
                     "record_id": ent.id,
                     "record_type": ent.type or ent.get_type(),
                     "name": getattr(ent, "name", None) or getattr(ent, "title", "") or "",
@@ -95,15 +121,17 @@ class FsRecordsActionsMixin:
                     "fts_title": getattr(ent, "_fts_title", None),
                     "fts_description": getattr(ent, "_fts_description", None),
                     "status": ent_status,
-                    "scope": "",
+                    "scope": getattr(ent, "scope", "") or "",
                     "created_at": str(getattr(ent, "created_date", "") or ""),
                     "modified_at": str(getattr(ent, "updated_date", "") or ""),
-                    "source_path": getattr(ent, "source_file", "")
-                    or (ent.asset_ref.path if getattr(ent, "asset_ref", None) else "")
-                    or "",
+                    "source_path": self._resolve_source_path(ent),
                     "labels": getattr(ent, "labels", None) or [],
                 }
-            )
+            for extra_field in ("session_id", "worker_session_id"):
+                val = getattr(ent, extra_field, None)
+                if val:
+                    row[extra_field] = val
+            results.append(row)
         return ApiSuccessResponse(data={"results": results, "query": q, "total": len(results), "indexer_ready": True})
 
     async def _handle_fs_records_scan(self, request_info) -> ApiResponse:
