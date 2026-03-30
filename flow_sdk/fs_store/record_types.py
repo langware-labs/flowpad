@@ -14,6 +14,8 @@ class RecordType(StrEnum):
     AGENTIC_PROCESS = "agentic_process"
     ARTIFACT = "artifact"
     BOOKMARK = "bookmark"
+    ANNOTATION = "annotation"
+    COMMENT = "comment"
 
     # Claude Code record types
     CLAUDE_ROOT = "claude_root"
