@@ -19,6 +19,7 @@ from flow_sdk.fs_store import Record, RecordType
 from .claude_session import ClaudeSessionRecord
 
 _CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
+_TEMP_PATH_PREFIXES = ("/tmp/", "/var/folders/", "/private/var/folders/", "/private/tmp/")
 
 
 class ClaudeProjectFsRecord(Record):
@@ -78,6 +79,8 @@ class ClaudeProjectFsRecord(Record):
                 continue
             encoded = d.name
             real = "/" + encoded.lstrip("-").replace("-", "/")
+            if real.startswith(_TEMP_PATH_PREFIXES):
+                continue
             session_count = sum(1 for f in d.glob("*.jsonl"))
             yield cls(encoded_path=encoded, real_path=real,
                       session_count=session_count, path=str(d))
@@ -90,7 +93,13 @@ class ClaudeProjectFsRecord(Record):
         projects_dir = _CLAUDE_PROJECTS_DIR
         if not projects_dir.is_dir():
             return 0
-        count = sum(1 for d in projects_dir.iterdir() if d.is_dir())
+        def _keep(d: Path) -> bool:
+            if not d.is_dir():
+                return False
+            real = "/" + d.name.lstrip("-").replace("-", "/")
+            return not real.startswith(_TEMP_PATH_PREFIXES)
+
+        count = sum(1 for d in projects_dir.iterdir() if _keep(d))
         return min(count, limit) if limit is not None else count
 
     @classmethod
@@ -100,6 +109,8 @@ class ClaudeProjectFsRecord(Record):
         if not candidate.is_dir():
             return None
         real = "/" + uid.lstrip("-").replace("-", "/")
+        if real.startswith(_TEMP_PATH_PREFIXES):
+            return None
         session_count = sum(1 for f in candidate.glob("*.jsonl"))
         return cls(encoded_path=uid, real_path=real,
                    session_count=session_count, path=str(candidate))
