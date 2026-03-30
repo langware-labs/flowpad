@@ -1,7 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '@sdk/client';
+import { RecordType } from '@sdk/resource_management/fs_records';
 
 const SEARCH_PATH = '/graph/compute_node/@local/fs-records/search';
+
+const ANNOTATION_LABEL_DISPLAY: Record<string, string> = {
+  prompt: 'user prompt',
+};
+
+export function getSearchResultBadgeLabel(result: { record_type: string; labels?: string[] }): string {
+  if (result.record_type === RecordType.ANNOTATION && result.labels?.length) {
+    const key = result.labels[0].replace(/:$/, '');
+    return ANNOTATION_LABEL_DISPLAY[key] ?? key;
+  }
+  return result.record_type.replace('claude_', '');
+}
 
 export interface SearchFilters {
   record_type?: string;
@@ -25,6 +38,7 @@ export interface SearchResult {
   record_id: string;
   record_type: string;
   name: string;
+  display_name?: string;
   text: string;
   snippet?: string;
   fts_title?: string;
@@ -35,6 +49,7 @@ export interface SearchResult {
   modified_at: string;
   source_path: string;
   message_count?: number;
+  labels?: string[];
 }
 
 export interface UseRecordSearchResult {
