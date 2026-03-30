@@ -39,7 +39,6 @@ export interface SearchResult {
   record_id: string;
   record_type: string;
   name: string;
-  display_name?: string;
   text: string;
   snippet?: string;
   fts_title?: string;
