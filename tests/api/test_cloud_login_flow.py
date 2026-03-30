@@ -158,6 +158,68 @@ async def test_post_login_invalid_key_returns_error(client):
 
 
 @pytest.mark.asyncio
+async def test_post_login_invalidates_bootstrap_cache(client):
+    """GET /post_login clears the bootstrap cache so the next fetch reflects logged-in state."""
+    import flow_sdk.server.routes.bootstrap as bootstrap_mod
+
+    user_info = {"id": "user_abc123", "name": "Test User", "email": "test@example.com"}
+    bootstrap_mod._bootstrap_cache = {"some": "stale_data"}
+
+    with (
+        patch("flow_sdk.cli.auth.validate_api_key", return_value=user_info),
+        patch("flow_sdk.cli.auth.set_api_key"),
+        patch("flow_sdk.cli.app_config.set_user"),
+    ):
+        response = await client.get(f"/post_login?flowpad-api-key={TEST_API_KEY}")
+
+    assert response.status_code == 200
+    assert bootstrap_mod._bootstrap_cache is None
+
+
+@pytest.mark.asyncio
+async def test_post_login_broadcasts_oauth_message(client):
+    """GET /post_login broadcasts an OAuthMessage with provider=flowpad_cloud and status=success."""
+    import json
+
+    user_info = {"id": "user_abc123", "name": "Test User", "email": "test@example.com"}
+    broadcast_calls = []
+
+    async def mock_broadcast(message: str):
+        broadcast_calls.append(json.loads(message))
+
+    with (
+        patch("flow_sdk.cli.auth.validate_api_key", return_value=user_info),
+        patch("flow_sdk.cli.auth.set_api_key"),
+        patch("flow_sdk.cli.app_config.set_user"),
+        patch("flow_sdk.server.routes.websocket.broadcast", side_effect=mock_broadcast),
+    ):
+        response = await client.get(f"/post_login?flowpad-api-key={TEST_API_KEY}")
+
+    assert response.status_code == 200
+    assert len(broadcast_calls) == 1
+    msg = broadcast_calls[0]
+    assert msg["oauth_request_id"] == "flowpad_cloud"
+    assert msg["status"] == "success"
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_cloud_login_not_available(bootstrapped_client):
+    """GET /api/v1/graph/bootstrap returns cloud_login_available=False when not logged in."""
+    import flow_sdk.server.routes.bootstrap as bootstrap_mod
+
+    bootstrap_mod._bootstrap_cache = None
+
+    with patch("flow_sdk.server.routes.bootstrap.is_cloud_login_available", new=AsyncMock(return_value=False)):
+        response = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+
+    assert response.status_code == 200
+    data = response.json()
+    desktop_info = data.get("data", {}).get("desktop_info") or data.get("desktop_info")
+    assert desktop_info is not None
+    assert desktop_info.get("cloud_login_available") is False
+
+
+@pytest.mark.asyncio
 async def test_refresh_token_returns_token(client):
     """POST /api/v1/auth/refresh-token should return a token string."""
     response = await client.post("/api/v1/auth/refresh-token")
