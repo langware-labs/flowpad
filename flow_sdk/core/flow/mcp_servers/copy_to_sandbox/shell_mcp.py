@@ -21,7 +21,7 @@ mcp = create_mcp_server("ShellMCP")
 
 
 @dataclass
-class ShellSession:
+class ShellMcp:
     id: str
     process: asyncio.subprocess.Process
     workdir: str
@@ -49,7 +49,7 @@ class ShellSession:
 
 
 # Global session storage
-sessions: dict[str, ShellSession] = {}
+sessions: dict[str, ShellMcp] = {}
 
 
 def get_environment_variables() -> dict[str, str]:
@@ -77,7 +77,7 @@ def get_shell_command() -> tuple[str, bool]:
         return "/bin/bash", False
 
 
-async def create_shell_session(workdir: str | None = None) -> ShellSession:
+async def create_shell_session(workdir: str | None = None) -> ShellMcp:
     """Create a new interactive shell session"""
     session_id = str(uuid.uuid4())
     shell_cmd, is_windows = get_shell_command()
@@ -102,7 +102,7 @@ async def create_shell_session(workdir: str | None = None) -> ShellSession:
         env=env,
     )
 
-    session = ShellSession(
+    session = ShellMcp(
         id=session_id,
         process=process,
         workdir=workdir or os.getcwd(),
