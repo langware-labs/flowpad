@@ -14,6 +14,8 @@ from typing import TYPE_CHECKING
 
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.core.entity.entity_model import DEFAULT_BROWSE_LIMIT
+
 
 
 class FsRecordsActionsMixin:
@@ -30,38 +32,32 @@ class FsRecordsActionsMixin:
 
         qp = request_info.request.query_params
         q = qp.get("q", "").strip()
-        limit = max(1, int(qp.get("limit", 20)))
+        limit = max(1, int(qp.get("limit", DEFAULT_BROWSE_LIMIT)))
         record_type = qp.get("record_type", "") or None
         status = qp.get("status", "") or None
 
         if not q:
-            # Filter-only browse: list all records of the given type via RecordList
+            # Filter-only browse: query DB with FTS join so fts_title is populated
             if record_type:
-                import flow_sdk.fs_records  # noqa: F401 — trigger auto-registration
-                from flow_sdk.fs_store.record_list import RecordList
-                from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
-
-                record_cls = _SR.get_record_cls(record_type)
-                if record_cls is None:
-                    return ApiSuccessResponse(data={"results": [], "query": "", "total": 0, "indexer_ready": True})
-
-                records = list(RecordList(record_class=record_cls))
+                entities = await Entity.browse(record_type=record_type, limit=limit, status=status)
                 results = []
-                for rec in records[:limit]:
-                    rec_status = getattr(rec, "status", None) or ""
-                    if status and rec_status != status:
-                        continue
+                for ent in entities:
+                    ent_status = getattr(ent, "status", None) or ""
                     results.append(
                         {
-                            "record_id": rec.id or "",
-                            "record_type": record_type,
-                            "name": getattr(rec, "name", None) or getattr(rec, "title", "") or "",
-                            "text": "",
-                            "status": rec_status,
+                            "record_id": ent.id,
+                            "record_type": ent.type or record_type,
+                            "name": getattr(ent, "name", None) or getattr(ent, "title", "") or "",
+
+                            "snippet": None,
+                            "fts_title": getattr(ent, "_fts_title", None),
+                            "fts_description": getattr(ent, "_fts_description", None),
+                            "status": ent_status,
                             "scope": "",
-                            "created_at": "",
-                            "modified_at": "",
-                            "source_path": rec.source_file or (rec.asset_ref.path if rec.asset_ref else "") or "",
+                            "created_at": str(getattr(ent, "created_date", "") or ""),
+                            "modified_at": str(getattr(ent, "updated_date", "") or ""),
+                            "source_path": "",
+                            "labels": getattr(ent, "labels", None) or [],
                         }
                     )
                 return ApiSuccessResponse(
@@ -105,6 +101,7 @@ class FsRecordsActionsMixin:
                     "source_path": getattr(ent, "source_file", "")
                     or (ent.asset_ref.path if getattr(ent, "asset_ref", None) else "")
                     or "",
+                    "labels": getattr(ent, "labels", None) or [],
                 }
             )
         return ApiSuccessResponse(data={"results": results, "query": q, "total": len(results), "indexer_ready": True})

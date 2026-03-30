@@ -133,12 +133,14 @@ class ClaudeSessionRecord(Record):
         # we use it; otherwise a sentinel "/" path carries the flag.
         _sf = object.__getattribute__(self, "_source_file")
         object.__setattr__(self, "_asset_ref", FSRef(_sf or "/", read_only=True))
-        # Set id and name from attrs (populated by constructor kwargs or from_jsonl)
+        # Set id and name from attrs (populated by constructor kwargs or from_jsonl).
+        # Priority: custom_title (user /rename) > slug (auto-generated) > session_id
         session_id = object.__getattribute__(self, "__dict__").get("session_id", "")
         if session_id:
             self.id = session_id
             if not self.name:
-                self.name = object.__getattribute__(self, "__dict__").get("slug", "") or session_id
+                custom_title = object.__getattribute__(self, "__dict__").get("custom_title", "") or ""
+                self.name = custom_title or object.__getattribute__(self, "__dict__").get("slug", "") or session_id
 
     @property
     def jsonl_path(self) -> str | None:
@@ -368,6 +370,7 @@ class ClaudeSessionRecord(Record):
             return result
         lines: list[str] = []
         last_user: str | None = None
+        last_custom_title: str | None = None
         try:
             with open(p, encoding="utf-8") as fh:
                 for raw_line in fh:
@@ -379,6 +382,11 @@ class ClaudeSessionRecord(Record):
                     except json.JSONDecodeError:
                         continue
                     etype = entry.get("type")
+                    if etype == "custom-title":
+                        ct = entry.get("customTitle")
+                        if ct:
+                            last_custom_title = ct  # keep last rename
+                        continue
                     if etype not in ("user", "assistant"):
                         continue
                     msg = entry.get("message") or {}
@@ -395,7 +403,9 @@ class ClaudeSessionRecord(Record):
             result = (None, None)
             object.__setattr__(self, "_fts_cache", result)
             return result
-        result = (last_user[:120] if last_user else None, "\n".join(lines) or None)
+        # custom-title (user /rename) takes priority over last user message
+        title = last_custom_title[:120] if last_custom_title else (last_user[:120] if last_user else None)
+        result = (title, "\n".join(lines) or None)
         object.__setattr__(self, "_fts_cache", result)
         return result
 
@@ -515,11 +525,11 @@ class ClaudeSessionRecord(Record):
         session_id = path.stem  # fallback
         slug = ""
 
-        # Quick first-entry scan for session_id, slug, and cwd.
-        # Stop as soon as slug is found (session_id falls back to path.stem, which
-        # always matches the sessionId stored in the file, so the old
-        # ``session_id != path.stem`` guard was never True and caused full-file scans).
+        # Scan all lines for session_id, slug, cwd, and custom-title.
+        # custom-title entries can appear anywhere (written on every /rename),
+        # so we must scan to the end and take the last one.
         cwd = ""
+        custom_title = ""
         try:
             with open(path, encoding="utf-8") as fh:
                 lines = fh.readlines()
@@ -551,13 +561,8 @@ class ClaudeSessionRecord(Record):
                     slug = raw["slug"]
                 if not cwd and raw.get("cwd"):
                     cwd = raw["cwd"]
-                # Stop once we have both slug and cwd (or after finding sessionId
-                # if it differs from the stem — belt-and-suspenders for any future
-                # format change).
-                if slug and cwd:
-                    break
-                if session_id != path.stem and slug:
-                    break
+                if raw.get("type") == "custom-title" and raw.get("customTitle"):
+                    custom_title = raw["customTitle"]  # keep last one (most recent rename)
         except OSError:
             pass
 
@@ -574,6 +579,7 @@ class ClaudeSessionRecord(Record):
             session_id=session_id,
             slug=slug,
             cwd=cwd,
+            custom_title=custom_title,
             message_count=message_count,
             jsonl_path=str(path),
             source_file=str(path),

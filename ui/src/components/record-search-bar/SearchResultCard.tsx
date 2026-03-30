@@ -35,7 +35,7 @@ export function SearchResultCard({ result }: { result: SearchResult }) {
       })()
     : '';
 
-  const title = result.display_name ?? result.fts_title ?? result.name ?? '(unnamed)';
+  const title = result.fts_title ?? result.name ?? '(unnamed)';
   const description = result.fts_description;
   // Only show snippet when match is in content (not already visible in title/description)
   const snippetText = result.snippet
