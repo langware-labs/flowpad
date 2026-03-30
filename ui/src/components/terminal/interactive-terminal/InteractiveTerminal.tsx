@@ -412,6 +412,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       targetTimestamp,
       shellReady,
       ptySyncSnapshot.version,
+      process?.workdir ?? undefined,
     );
   const annotationElements = useMemo(
     () => traceFilters.promptAnnotations
