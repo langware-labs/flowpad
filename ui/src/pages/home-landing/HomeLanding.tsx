@@ -36,8 +36,9 @@ import type React from 'react';
 import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
-import { Loader2, PackageSearch, X, CheckCircle2 } from 'lucide-react';
+import { Loader2, PackageSearch, X, CheckCircle2, Hammer } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDevMode } from '@src/contexts/dev-mode-context';
 import type { LastScanResult } from '@sdk';
 
 const getSafeTimestamp = (value?: string | null): number => {
@@ -120,7 +121,8 @@ export function HomeLanding() {
     [currentProject?.typeId, annotationsRefetch],
   );
 
-  const { busy, resetAndRescan, currentActivity, activityProgress, scanInfo, lastScanResult } = useSystemTools();
+  const devMode = useDevMode();
+  const { busy, resetAndRescan, clearIndex, currentActivity, activityProgress, scanInfo, lastScanResult } = useSystemTools();
   const [progressOpen, setProgressOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [postScanResult, setPostScanResult] = useState<LastScanResult | null>(null);
@@ -476,6 +478,22 @@ export function HomeLanding() {
                 </TooltipTrigger>
                 <TooltipContent>Refresh search data</TooltipContent>
               </Tooltip>
+              {devMode && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0 text-orange-500 ring-1 ring-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] animate-pulse"
+                      onClick={() => void clearIndex()}
+                      disabled={busy}
+                    >
+                      <Hammer className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Clear index (dev)</TooltipContent>
+                </Tooltip>
+              )}
             </div>
 
             {/* Activity strip — shown while any system activity is running */}
