@@ -78,11 +78,11 @@ async def test_prompt_annotation_created_and_visible():
     # ── 2. Create and start process ─────────────────────────────────────────
     process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
     process.start()
-    assert process.idle is True, "Process should be idle before prompt"
+    assert process.pending_user is True, "Process should be idle before prompt"
 
     # ── 3. Send prompt ───────────────────────────────────────────────────────
     process.prompt("hi")
-    assert process.idle is False, "Process should be busy after prompt"
+    assert process.pending_user is False, "Process should be busy after prompt"
 
     worker_session_id = process.worker_session_id
     process_id = process.record.id
@@ -92,7 +92,7 @@ async def test_prompt_annotation_created_and_visible():
 
     # ── 4. Wait for Claude to finish ─────────────────────────────────────────
     await process.waitForIdle(timeout=120)
-    assert process.idle is True, "Process should be idle after completion"
+    assert process.pending_user is True, "Process should be idle after completion"
 
     # ── 5. Verify annotation was created ─────────────────────────────────────
     # The UserPromptSubmit hook fires synchronously when prompt() is called,

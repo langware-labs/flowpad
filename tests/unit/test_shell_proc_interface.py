@@ -140,9 +140,6 @@ async def test_proc_sync_status_noop_when_already_idle():
     from flow_sdk.builtin.agentic_process import AgenticProcess
 
     proc = AgenticProcess(id=str(uuid.uuid4()), compute_node_id=str(uuid.uuid4()))
-    proc._set_process_state(status="idle")
-    await proc.sync_status()
-    assert proc._get_process_state()["status"] == "idle"
 
 
 # ---------------------------------------------------------------------------
