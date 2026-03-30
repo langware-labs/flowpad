@@ -183,20 +183,27 @@ class TestMissingFiles:
             set_default_records_root(old)
 
     @pytest.mark.asyncio
-    async def test_entity_store_returns_none_when_record_file_missing(self):
-        """entity._store() returns None gracefully when the record is not on disk."""
+    async def test_entity_store_creates_record_when_file_missing(self, tmp_path):
+        """entity._store() creates a new record when none exists on disk (DB-first entities like Bookmark, Task)."""
         from flow_sdk.core.entity.entity_model import Entity
+        from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
         from unittest.mock import MagicMock
 
-        entity = MagicMock(spec=Entity)
-        entity.get_type.return_value = "simple_test_record"
-        entity.id = "ghost-id"
+        old_root = get_default_records_root()
+        set_default_records_root(tmp_path)
+        try:
+            entity = MagicMock(spec=Entity)
+            entity.get_type.return_value = "simple_test_record"
+            entity.id = "ghost-id"
+            entity.db_json.return_value = {"name": "New Record"}
 
-        with patch.object(SimpleRecord, "discover_one", return_value=None), \
-             patch("flow_sdk.fs_store.schema_registry.SchemaRegistry.get_record_cls", return_value=SimpleRecord):
-            result = await Entity._store(entity)
+            with patch("flow_sdk.fs_store.schema_registry.SchemaRegistry.get_record_cls", return_value=SimpleRecord):
+                result = await Entity._store(entity)
 
-        assert result is None
+            assert result is not None
+            assert result.id == "ghost-id"
+        finally:
+            set_default_records_root(old_root)
 
     @pytest.mark.asyncio
     async def test_delete_by_record_ref_removed(self):
@@ -456,6 +463,7 @@ class TestInvalidDataRef:
             result = await Entity._store(entity)
 
         assert result is None
+        assert len(saved_errors) == 1
         assert len(saved_errors) == 1
         assert saved_errors[0].trigger == "store"
         assert "disk full" in saved_errors[0].error_message

@@ -14,7 +14,9 @@ from .agentic_process_record import AgenticProcessStatus as ProcessorStatus  # b
 from .artifact import Artifact as Artifact
 from .markdown_record import MarkdownRecord as MarkdownRecord
 from .markdown_record import MarkdownRecord as AssetRecord  # noqa: F401 — backward compat alias
+from .annotation_record import AnnotationRecord as AnnotationRecord
 from .bookmark import BookmarkRecord as BookmarkRecord
+from .comment_record import CommentRecord as CommentRecord
 from .claude import (  # noqa: F401 — trigger type_registry auto-registration
     ClaudeDebugLogFsRecord,  # backward compat alias
     ClaudeDebugLogRecordList,  # backward compat alias
