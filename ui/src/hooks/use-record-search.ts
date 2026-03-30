@@ -50,6 +50,7 @@ export interface SearchResult {
   source_path: string;
   message_count?: number;
   labels?: string[];
+  session_id?: string;
 }
 
 export interface UseRecordSearchResult {

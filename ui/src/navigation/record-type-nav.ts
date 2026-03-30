@@ -58,10 +58,31 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     ],
   },
   claude_hook: {
-    dockPointer: () => DockPointer.forTab(ViewType.HOOKS),
+    dockPointer: (r) => new DockPointer(ViewType.HOOKS, undefined, {
+      hookId: r.record_id,
+    }),
     actions: [
       { icon: Search, name: 'All hooks', dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'claude_hook' }) },
     ],
+  },
+  agent: {
+    dockPointer: (r) => r.source_path ? DockPointer.forAssetEditor(r.record_type, r.source_path) : null,
+  },
+  annotation: {
+    primaryAction: async (r, navigation) => {
+      const sessionId = r.session_id;
+      if (sessionId) {
+        await navigation.openClaudeSession(sessionId);
+      }
+    },
+  },
+  bookmark: {
+    primaryAction: async (r, navigation) => {
+      const sessionId = r.session_id;
+      if (sessionId) {
+        await navigation.openClaudeSession(sessionId);
+      }
+    },
   },
   claude_settings: {
     dockPointer: () => DockPointer.forSettings(),
