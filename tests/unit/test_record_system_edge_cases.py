@@ -464,7 +464,6 @@ class TestInvalidDataRef:
 
         assert result is None
         assert len(saved_errors) == 1
-        assert len(saved_errors) == 1
         assert saved_errors[0].trigger == "store"
         assert "disk full" in saved_errors[0].error_message
 
