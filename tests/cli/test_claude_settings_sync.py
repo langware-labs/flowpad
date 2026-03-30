@@ -3,18 +3,24 @@ from flow_sdk.builtin.claude_settings_sync import generate_hook_command
 
 def test_generate_hook_command():
     command = generate_hook_command("hook-abc", "PreToolUse")
-    assert command == "flow hooks report --hook-entry-id=hook-abc"
+    # Uses wrapper script, not bare flow
+    assert "hooks report --hook-entry-id=hook-abc" in command
+    assert "flowpad_runner" in command
+    assert not command.startswith("flow ")
 
 
 def test_generate_hook_command_with_name():
     command = generate_hook_command("hook-abc", "PostToolUse", name="flowpad_sniffer")
-    assert command == "flow hooks report --hook-entry-id=hook-abc --name=flowpad_sniffer"
+    assert "--hook-entry-id=hook-abc" in command
+    assert "--name=flowpad_sniffer" in command
+    assert "flowpad_runner" in command
 
 
 def test_generate_hook_command_permission_request_adds_wait_flag():
     command = generate_hook_command("hook-abc", "PermissionRequest", name="flowpad_sniffer")
     assert "--wait-for-response" in command
-    assert command == "flow hooks report --hook-entry-id=hook-abc --wait-for-response --name=flowpad_sniffer"
+    assert "--hook-entry-id=hook-abc" in command
+    assert "--name=flowpad_sniffer" in command
 
 
 def test_generate_hook_command_non_permission_request_no_wait_flag():
