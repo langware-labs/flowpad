@@ -6,8 +6,10 @@ import os
 from pathlib import Path
 
 from fastapi import APIRouter, Query
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
+from flow_sdk.api.messages import OAuthMessage, OAuthMessageStatus
+from flow_sdk.api.oauth_api import OAuthProvider
 from flow_sdk.responses.response import ApiSuccessResponse
 
 from .. import state
@@ -50,6 +52,24 @@ async def post_login(flowpad_api_key: str = Query(None, alias="flowpad-api-key")
 
         # Signal that login was received
         state.login_received.set()
+
+        # Invalidate the bootstrap cache so the next fetch returns cloud_login_available=true
+        from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
+        invalidate_bootstrap_cache()
+
+        # Notify connected WebSocket clients
+        try:
+            import asyncio
+
+            from flow_sdk.server.routes.websocket import broadcast
+
+            msg = OAuthMessage(
+                oauth_request_id=OAuthProvider.FLOWPAD_CLOUD,
+                status=OAuthMessageStatus.SUCCESS,
+            )
+            asyncio.ensure_future(broadcast(msg.model_dump_json()))
+        except Exception:
+            pass
 
         # Return success HTML
         user_id = user_info.get("id", "Unknown")
@@ -246,35 +266,20 @@ async def auth_status():
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 
-@api_router.get("/login-url")
-async def get_login_url_endpoint():
-    """Get the login URL for authentication."""
-    try:
-        from flow_sdk.cli.env_loader import get_login_url
 
-        port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
-        callback_url = f"http://127.0.0.1:{port}/post_login"
-        login_url = get_login_url(callback_url)
+@api_router.get("/logout")
+async def logout(next: str = Query(default="/")):
+    """Clear credentials and redirect to the frontend root."""
+    from flow_sdk.cli.app_config import set_user
+    from flow_sdk.cli.auth import delete_api_key
+    from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
 
-        return ApiSuccessResponse(data={"login_url": login_url})
-    except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
-
-
-@api_router.post("/logout")
-async def logout():
-    """Clear stored API key and user info."""
-    try:
-        from flow_sdk.cli.app_config import set_user
-        from flow_sdk.cli.auth import delete_api_key
-
-        delete_api_key()
-        set_user(None)
-        state.login_result = None
-        state.login_received.clear()
-        return ApiSuccessResponse(data={"success": True})
-    except Exception as e:
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+    delete_api_key()
+    set_user(None)
+    state.login_result = None
+    state.login_received.clear()
+    invalidate_bootstrap_cache()
+    return RedirectResponse(url=next, status_code=302)
 
 
 @api_router.post("/refresh-token")

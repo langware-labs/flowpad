@@ -1,10 +1,10 @@
 """
 Tests for the cloud login flow:
-  1. GET /api/auth/login-url returns a URL pointing at app.flowpad.ai with post_login callback
+  1. GET /api/v1/graph/oauth/flowpad_cloud/auth returns auth_url and oauth_request_id
   2. GET /post_login?flowpad-api-key=<key> stores the key and sets login state
-  3. GET /api/auth/status returns logged_in=True after a successful post_login
+  3. GET /api/v1/auth/status returns logged_in=True after a successful post_login
   4. GET /api/v1/graph/bootstrap returns cloud_login_available=True when logged in
-  5. POST /api/auth/logout clears the key and login state
+  5. GET /logout clears the key, login state, and redirects to /
 """
 
 import pytest
@@ -37,14 +37,16 @@ def _mock_is_logged_in_false() -> bool:
 
 
 @pytest.mark.asyncio
-async def test_login_url_points_to_cloud(client):
-    """GET /api/auth/login-url should return a URL targeting app.flowpad.ai with post_login callback."""
-    response = await client.get("/api/v1/auth/login-url")
+async def test_flowpad_cloud_oauth_auth(bootstrapped_client):
+    """GET /api/v1/graph/oauth/flowpad_cloud/auth returns an auth_url and oauth_request_id."""
+    response = await bootstrapped_client.get("/api/v1/graph/oauth/flowpad_cloud/auth")
     assert response.status_code == 200
-    data = response.json()
-    url = data["data"]["login_url"]
-    assert "app.flowpad.ai" in url, f"Expected app.flowpad.ai in URL, got: {url}"
-    assert "post_login" in url, f"Expected post_login in URL, got: {url}"
+    data = response.json()["data"]
+    assert "auth_url" in data, f"Expected auth_url in response: {data}"
+    assert "oauth_request_id" in data, f"Expected oauth_request_id in response: {data}"
+    assert "post_login" in data["auth_url"], f"Expected post_login in auth_url: {data['auth_url']}"
+    assert data["provider"] == "flowpad_cloud"
+    assert data["oauth_request_id"] == "flowpad_cloud"
 
 
 @pytest.mark.asyncio
@@ -167,21 +169,23 @@ async def test_refresh_token_returns_token(client):
 
 
 @pytest.mark.asyncio
-async def test_logout_clears_state(client):
-    """POST /api/auth/logout clears stored credentials and resets login state."""
+async def test_logout(client):
+    """GET /logout clears credentials, resets login state, invalidates bootstrap cache, and redirects to /."""
+    import flow_sdk.server.routes.bootstrap as bootstrap_mod
     from flow_sdk.server import state
 
     state.login_result = {"success": True, "user": {"id": "user_abc123"}}
     state.login_received.set()
+    bootstrap_mod._bootstrap_cache = {"some": "cached_data"}
 
     with (
         patch("flow_sdk.cli.auth.delete_api_key"),
         patch("flow_sdk.cli.app_config.set_user"),
     ):
-        response = await client.post("/api/v1/auth/logout")
+        response = await client.get("/api/v1/auth/logout?next=http://localhost:4097/", follow_redirects=False)
 
-    assert response.status_code == 200
-    data = response.json()["data"]
-    assert data["success"] is True
+    assert response.status_code == 302
+    assert response.headers["location"] == "http://localhost:4097/"
     assert state.login_result is None
     assert not state.login_received.is_set()
+    assert bootstrap_mod._bootstrap_cache is None

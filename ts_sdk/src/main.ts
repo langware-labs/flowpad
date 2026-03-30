@@ -13,6 +13,7 @@ import { navigator } from './services/navigationService';
 import * as Sentry from '@sentry/browser';
 import { ContextEntitiesEnum } from './FlowSync/context';
 import { getContextEntityFromLocalStorage } from './FlowSync/context-local-storage';
+import { OAuthEventType, OAUTH_PROVIDERS } from './services/oauth/oauth-service';
 import { ConnectionManager } from './websocket';
 
 declare global {
@@ -45,6 +46,13 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       if (dataContext.cloudLoginAvailable) {
         void dataContext.loadCloudUser();
       }
+
+      // Reload on cloud login completion (works for both browser popup and Electron external browser)
+      dataManager.on(OAuthEventType.OAUTH_FLOW_COMPLETE, (msg: { provider: string }) => {
+        if (msg.provider === OAUTH_PROVIDERS.FLOWPAD_CLOUD) {
+          window.location.reload();
+        }
+      });
 
       // Load schemas (pass empty array if null to prevent re-fetching)
       await dataManager.loadSchemas(bootstrapInfo.schemas || []);
