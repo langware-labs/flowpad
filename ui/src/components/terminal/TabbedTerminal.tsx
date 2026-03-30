@@ -12,7 +12,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@src/components/ui/context-menu';
-import { ChevronLeft, ChevronRight, FolderGit2, Loader2, ScrollText, SquareTerminal, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FolderGit2, Loader2, ScrollText, SquareTerminal, X, XCircle } from 'lucide-react';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import InteractiveTerminal from './interactive-terminal';
@@ -682,6 +682,27 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
+          )}
+
+          {/* Close All button — shown when 2+ tabs are open */}
+          {visibleSessions.length >= 2 && (
+            <TooltipProvider delayDuration={600}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 rounded-none text-muted-foreground hover:text-destructive"
+                    onClick={handleCloseAll}
+                    aria-label="Close all tabs"
+                    data-testid="close-all-tabs-button"
+                  >
+                    <XCircle className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Close all tabs</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
         </div>
 
