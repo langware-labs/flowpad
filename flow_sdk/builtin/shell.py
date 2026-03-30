@@ -106,25 +106,6 @@ class Shell(Entity):
         data = f"\x1b[200~{cmd}\x1b[201~\r".encode() if bracketed else f"{cmd}\r".encode()
         await pty.send(data)
 
-    def is_running(self, pid: int | None = None) -> bool:
-        """Return True if the shell has a foreground process running.
-
-        Uses psutil to check whether the shell process (identified by ``pid``)
-        has any child processes.  When the shell is idle no children exist;
-        when a command is running at least one child is present.
-
-        Args:
-            pid: OS PID of the shell process.  Pass None (or omit) when the
-                 PID is not yet known — returns False in that case.
-        """
-        if pid is None:
-            return False
-        try:
-            children = psutil.Process(pid).children(recursive=False)
-            return len(children) > 0
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            return False
-
     async def run_process(
         self,
         worker_cli: "WorkerCLIOptions",

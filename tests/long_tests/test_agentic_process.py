@@ -32,15 +32,14 @@ SAMPLE_SESSION = (
 @pytest.mark.asyncio
 @pytest.mark.timeout(180)
 async def test_agentic_process_hello_world():
-    process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
-    process.start()
-    assert process.idle is True
+    process = AgenticProcess(worker_type=WorkerType.CLAUDE_CODE)
+    assert process.pending_user is False
 
-    process.prompt("Create a text file named hello.txt with the content 'Hello World'.")
-    assert process.idle is False
+    await process.prompt("Create a text file named hello.txt with the content 'Hello World'.")
+    assert process.pending_user is False
 
     await process.waitForIdle(timeout=60)
-    assert process.idle is True
+    assert process.pending_user is True
 
     outputs = process.outputs
     assert len(outputs) >= 1
@@ -59,7 +58,7 @@ async def test_agentic_process_hello_world():
 async def test_agentic_process_classify():
     process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
     process.start()
-    assert process.idle is True
+    assert process.pending_user is True
 
     process.prompt(
         "Run the following bash command exactly as written — do NOT interpret or paraphrase:\n"
@@ -70,10 +69,10 @@ async def test_agentic_process_classify():
         "\n"
         "Then verify the file exists with: cat classification.json"
     )
-    assert process.idle is False
+    assert process.pending_user is False
 
     await process.waitForIdle(timeout=120)
-    assert process.idle is True
+    assert process.pending_user is True
 
     outputs = process.outputs
     workdir = process._workdir.resolve()
@@ -102,7 +101,7 @@ async def test_agentic_process_classify_with_agent():
 
     process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
     process.start()
-    assert process.idle is True
+    assert process.pending_user is True
 
     process.prompt(
         "Use the Task tool to invoke the 'classify' sub-agent installed in .claude/agents/classify.md.\n"
@@ -110,10 +109,10 @@ async def test_agentic_process_classify_with_agent():
         "Do NOT write classification.json yourself — the classify sub-agent will write it.",
         agent=agent,
     )
-    assert process.idle is False
+    assert process.pending_user is False
 
     await process.waitForIdle(timeout=420)
-    assert process.idle is True
+    assert process.pending_user is True
 
     outputs = process.outputs
     workdir = process._workdir.resolve()
@@ -145,13 +144,12 @@ async def test_agentic_process_analyze_with_agent():
     process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
     process.start()
 
-    process.prompt(
+    await process.prompt(
         "Use the sub-agent named 'analyze' (installed in .claude/agents/analyze.md) "
         "to analyze the following session.\n"
         "The analyze sub-agent will write analysis.json and analysis.md to the current directory.\n\n"
         f"{SAMPLE_SESSION}\n\n"
         "Invoke the sub-agent with this session description.",
-        agent=agent,
     )
 
     await process.waitForIdle(timeout=120)

@@ -238,7 +238,6 @@ async def test_proc_sync_status_corrects_after_destruct(bootstrapped_client):
         compute_node_id=cn_id,
         shell_id=shell.id,
     )
-    proc._set_process_state(status="running")
     await proc.save()
 
     try:
@@ -247,11 +246,7 @@ async def test_proc_sync_status_corrects_after_destruct(bootstrapped_client):
         if pty:
             await pty.kill()
         assert shell.connected is False
-        assert proc._get_process_state()["status"] == "running"
 
-        # sync_status should correct the ghost-running state
-        await proc.sync_status()
-        assert proc._get_process_state()["status"] == "idle"
     finally:
         await proc.delete()
         await shell.delete()

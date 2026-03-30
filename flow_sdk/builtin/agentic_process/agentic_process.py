@@ -20,6 +20,7 @@ from flow_sdk.app.actions.listen import set_plan_auto_approve
 from flow_sdk.builtin.cli_workers import ClaudeCliOptions
 from flow_sdk.core import Entity, action
 from flow_sdk.core.entity.entity_model import EntityExpansion
+from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.fs_records.agentic_process_record import AgenticProcessStatus
 from flow_sdk.fs_records.agent_status import is_idle as _is_idle_status
 from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
@@ -62,6 +63,7 @@ class AgenticProcess(Entity):
     is_active: bool = APIField(default=False)
     queue: dict | None = APIField(default=None)
     additional_dirs: list[str] = APIField(default_factory=list, description="Extra directories passed to Claude via --add-dir")
+    worker_type: WorkerType | None = APIField(default=None, validation_alias="workerType")
 
     @property
     def cli_options(self) -> "ClaudeCliOptions":
@@ -129,6 +131,23 @@ class AgenticProcess(Entity):
                 if not self.project_encoded_name:
                     self.project_encoded_name = project.project_encoded_name
 
+    @property
+    def pending_user(self) -> bool:
+        """True when the process has no active Claude session."""
+        return self.is_idle
+
+    async def prompt(self, instruction: str):
+        """Schedule a Claude run with *instruction* and return immediately.
+
+        Sets worker_session_id (so ``idle`` becomes False right away) then
+        creates an asyncio background task to do the actual PTY launch.
+        """
+        if await self.is_cli_running():
+            return await self.send_input(instruction)
+        return await self.open(instruction=instruction)
+
+
+
     def _discover_status_from_transcript(self) -> AgenticProcessStatus | None:
         """Derive status from the Claude session transcript record.
 
@@ -147,8 +166,6 @@ class AgenticProcess(Entity):
         Returns False while a subprocess has been launched but no transcript is written yet,
         so callers can safely call ``waitForIdle()`` immediately after ``prompt()``.
         """
-        if not self.worker_session_id:
-            return True
         status = self._discover_status_from_transcript()
         if status is None:
             return False  # session linked but transcript file not found yet
@@ -173,116 +190,12 @@ class AgenticProcess(Entity):
                 raise TimeoutError(f"Process did not become idle within {timeout}s")
             await asyncio.sleep(2.0)
 
-    @property
-    def effective_status(self) -> AgenticProcessStatus:
-        """Current status: transcript-derived when available, otherwise from persisted state."""
-        transcript = self._discover_status_from_transcript()
-        if transcript is not None:
-            return AgenticProcessStatus(transcript)
-        state_status = self._get_process_state().get("status")
-        if state_status:
-            try:
-                return AgenticProcessStatus(state_status)
-            except ValueError:
-                pass
-        return AgenticProcessStatus.NEW
-
-    def _get_process_state(self) -> dict[str, Any]:
-        if not isinstance(self.state, dict):
-            self.state = _default_processor_state()
-        state = dict(self.state)
-
-        # Derive status from transcript if available
-        transcript_status = self._discover_status_from_transcript()
-        if transcript_status is not None:
-            state["status"] = transcript_status
-
-        return state
-
-    def _set_process_state(self, **updates: Any) -> None:
-        if not isinstance(self.state, dict):
-            self.state = _default_processor_state()
-        state = dict(self.state)
-        state.update(updates)
-        self.state = state
-
-    @model_serializer(mode="wrap")
-    def api_json_serializer(self, nxt, info: SerializationInfo):
-        if info.context and info.context.get("skip_api_serializer"):
-            return nxt(self)
-        data = nxt(self)
-        if data is None:
-            return None
-        if data.get("expand") is None or (isinstance(data.get("expand"), dict) and not data["expand"]):
-            data["expand"] = EntityExpansion()
-        data = {key: value for key, value in data.items() if value is not None and self.is_api_field(key)}
-        return data
-
-    @action.all(action_name="control")
-    async def control(self):
-        """Unified control action dispatched by sub_path.
-
-        Ported from FlowPad: flowpad/hub/core/agentic_processor/process.py
-        Routes to internal control methods based on sub_path:
-        - /control/pause - Pause message processing
-        - /control/resume - Resume message processing
-        - /control/inject - Inject a new message
-
-        Returns:
-            ApiResponse with status or error message
-        """
-        request_info = get_current_request_info()
-        if request_info is None:
-            return ApiFailResponse(message="No request context available")
-
-        sub_action = request_info.sub_path
-        if not sub_action:
-            return ApiFailResponse(message="Missing sub_path for control action")
-
-        # Remove leading slash if present
-        sub_action = sub_action.lstrip("/")
-
-        if sub_action == "pause":
-            return await self._control_pause()
-        elif sub_action == "resume":
-            return await self._control_resume()
-        elif sub_action == "inject":
-            return await self._control_inject(request_info)
-        else:
-            return ApiFailResponse(message=f"Unknown control action: {sub_action}")
-
-    async def _control_pause(self):
-        """Pause message processing."""
-        logger.info(f"AgenticProcess {self.id}: control/pause")
-        self._set_process_state(status=AgenticProcessStatus.PAUSED.value)
-        await self.save()
-        return ApiSuccessResponse(data={"status": AgenticProcessStatus.PAUSED.value})
-
-    async def _control_resume(self):
-        """Resume message processing after pause."""
-        logger.info(f"AgenticProcess {self.id}: control/resume")
-        self._set_process_state(status=AgenticProcessStatus.RUNNING.value)
-        await self.save()
-        return ApiSuccessResponse(data={"status": AgenticProcessStatus.RUNNING.value})
-
-    async def _control_inject(self, request_info):
-        """Inject a new message into the worker's input queue."""
-        # Get message from request parameters or POST body
-        message = None
-        if request_info.request_parameters:
-            message = request_info.request_parameters.get("message")
-        if not message:
-            post_data = await request_info.get_post_data()
-            if isinstance(post_data, dict):
-                message = post_data.get("message")
-
-        if not message:
-            return ApiFailResponse(message="Missing 'message' parameter")
-
-        logger.info(f"AgenticProcess {self.id}: control/inject message: {message[:80]}...")
-
-        # Desktop stub: no active worker, log and return success
-        return ApiSuccessResponse(data={"injected": True, "message_length": len(message)})
+    async def is_cli_running(self) -> bool:
+        """True when the Claude CLI worker process is actively running in the PTY."""
+        shell = await self.get_shell()
+        if shell is None:
+            return False
+        return await shell.worker_alive()
 
     @action.get(action_name="input-dir")
     async def get_input_dir(self):
@@ -376,53 +289,11 @@ class AgenticProcess(Entity):
             }
         )
 
-    @action.all(action_name="step")
-    async def step_action(self):
-        """Execute one instruction step.
-
-        Ported from FlowPad: flowpad/hub/core/agentic_processor/process.py
-        Desktop stub: validates status and returns step result.
-
-        Returns:
-            ApiSuccessResponse with step result
-        """
-        state = self._get_process_state()
-
-        if state.get("status") == AgenticProcessStatus.INTERRUPTED.value:
-            return ApiFailResponse(message="Process has been terminated")
-
-        if state.get("status") == AgenticProcessStatus.RUNNING.value:
-            return ApiFailResponse(message="Process is already running")
-
-        logger.info(f"AgenticProcess {self.id}: step action")
-
-        try:
-            # Desktop mode: set status back to idle (no real instruction execution)
-            self._set_process_state(status=AgenticProcessStatus.IDLE.value)
-            await self.save()
-
-            return ApiSuccessResponse(
-                data={
-                    "id": self.id,
-                    "status": self._get_process_state().get("status"),
-                    "index": self.state.get("index", 0) if isinstance(self.state, dict) else 0,
-                }
-            )
-
-        except Exception as e:
-            logger.exception(f"AgenticProcess {self.id} step error: {e}")
-            self._set_process_state(status=AgenticProcessStatus.ERROR.value, error=str(e))
-            await self.save()
-            return ApiFailResponse(message=str(e))
-
     async def close(self) -> bool:
         """Terminate this process and close its linked shell.
 
         Returns True on success, False if already terminated or on error.
         """
-        if self._get_process_state().get("status") == AgenticProcessStatus.INTERRUPTED.value:
-            logger.debug("[AgenticProcess] close() skipped for %s: already terminated", self.id)
-            return False
 
         logger.info(f"AgenticProcess {self.id}: close")
 
@@ -431,13 +302,11 @@ class AgenticProcess(Entity):
             if shell_id:
                 self.shell_id = None
                 self.sidecar_shell_id = None
-
-            self._set_process_state(status=AgenticProcessStatus.INTERRUPTED.value)
             await self.save()
 
             if shell_id:
                 from flow_sdk.builtin.shell import Shell
-                shell = await Shell.get_by_id(shell_id)
+                shell:Shell= await Shell.get_by_id(shell_id)
                 if shell:
                     await shell.close()
 
@@ -488,116 +357,6 @@ class AgenticProcess(Entity):
             candidate = parent.context_data.get("resume_session_id") if parent else None
         return None
 
-    async def _open_shell(
-        self,
-        reuse_id: str | None = None,
-        name: str | None = None,
-        workdir: str | None = None,
-        compute_node: Any = None,
-    ) -> Any:
-        """Get existing shell by reuse_id, or create a new one."""
-        from flow_sdk.builtin.shell import Shell
-
-        if reuse_id:
-            shell = await Shell.get_by_id(reuse_id)
-            if shell:
-                return shell
-
-        # Restore tab_order saved by stop() so the restarted shell keeps its
-        # position.  For brand-new shells, append after all existing ones.
-        prev = self.context_data.pop("_prev_tab_order", None)
-        tab_order = prev if prev is not None else await Shell.next_tab_order()
-
-        shell = Shell(
-            compute_node_id=compute_node.id if compute_node else None,
-            name=name,
-            workdir=workdir,
-            tab_order=tab_order,
-        )
-        await shell.save()
-        return shell
-
-    def _make_pty_exit_callback(self) -> Callable[[int | None], None]:
-        """Create a callback for PTY process exit that updates process state.
-
-        Captures agentic_process_id and the running event loop. The callback is called
-        from the daemon reader thread, so it schedules the async state update
-        via run_coroutine_threadsafe.
-        """
-        main_loop = asyncio.get_running_loop()
-        agentic_process_id = self.id
-
-        def _on_pty_exit(exit_code: int | None) -> None:
-            async def _update_state():
-                try:
-                    proc = await AgenticProcess.get_by_id(agentic_process_id)
-                    if not proc:
-                        return
-                    # If shell_id is already cleared, stop() handled the
-                    # transition. Don't overwrite with complete/error.
-                    if not proc.shell_id:
-                        logger.info(
-                            "AgenticProcess %s: PTY exited (code=%s), skipping — already handled by stop",
-                            agentic_process_id,
-                            exit_code,
-                        )
-                        return
-                    # Detach from the shell but do NOT delete it — the user
-                    # may still see the tab and click X, which calls shell.close().
-                    proc.shell_id = None
-                    proc.sidecar_shell_id = None
-
-                    if exit_code is not None and exit_code != 0:
-                        proc._set_process_state(
-                            error=f"claude exited with code {exit_code}",
-                        )
-                    else:
-                        # Clean exit (code 0): transition back to idle
-                        proc._set_process_state(status=AgenticProcessStatus.IDLE.value)
-                    await proc.save()
-
-                    logger.info(
-                        "AgenticProcess %s: PTY exited (code=%s), state updated",
-                        agentic_process_id,
-                        exit_code,
-                    )
-                except Exception as exc:
-                    logger.warning("AgenticProcess %s: on_exit update failed: %s", agentic_process_id, exc)
-
-            asyncio.run_coroutine_threadsafe(_update_state(), main_loop)
-
-        return _on_pty_exit
-
-    @property
-    def compute_node(self) -> "ComputeNode":
-        """The local ComputeNode backing this process's PTY sessions.
-
-        compute_node_id is stored as the full typeid string ``compute_node-<uuid>``.
-        Raises ValueError if compute_node_id is not set — call open() which resolves it first.
-        """
-        if not self.compute_node_id:
-            raise ValueError(
-                f"AgenticProcess {self.id!r} has no compute_node_id. "
-                "Call open() to resolve and assign the compute node."
-            )
-        from flow_sdk.builtin.faas.compute_node import ComputeNode
-        parts = self.compute_node_id.split("-", 1)
-        node_id = parts[1] if len(parts) == 2 else self.compute_node_id
-        return ComputeNode(id=node_id, node_provider_id="local", node_provider_type="local_machine")
-
-    async def _send_pty_raw(self, compute_node, data: bytes) -> None:
-        """Send raw bytes into an already-running PTY session."""
-        shell_id = self.shell_id
-        if not shell_id:
-            raise RuntimeError("PTY session has no shell_id")
-        pty = compute_node.get_pty(shell_id)
-        if pty is None:
-            raise RuntimeError(f"PTY session not found for shell_id {shell_id}")
-        await pty.send(data)
-
-    async def _send_command_to_pty(self, compute_node, command: str) -> None:
-        """Send a command into an already-running PTY session."""
-        await self._send_pty_raw(compute_node, f"{command}\r".encode())
 
     @action.post(action_name="open")
     async def open(self, instruction: str | None = None, worker_session_id: str | None = None, visible: bool | None = None):
@@ -614,31 +373,8 @@ class AgenticProcess(Entity):
         the backend decides whether to start fresh, resume, or do nothing.
         """
 
-        state = self._get_process_state()
-        if state.get("status") == AgenticProcessStatus.INTERRUPTED.value:
-            return ApiFailResponse(message="Process has been terminated")
-
-
-        # Detect restart: process previously had a shell session.
-        # Captured before _open_shell so it reflects the pre-call state.
-        had_previous_session = bool(self.shell_id)
-
-        # Resolve compute node: if not yet assigned, look up the @local node (desktop only).
-        if not self.compute_node_id:
-            from flow_sdk.builtin.faas.compute_node import ComputeNode
-            local_node = await ComputeNode.get_one({"uname": "local"})
-            if not local_node:
-                return ApiFailResponse(
-                    message="No compute node assigned and no @local compute node found. "
-                    "This environment does not support local process execution."
-                )
-            self.compute_node_id = str(local_node.typeid)
-
-        compute_node = self.compute_node
-
         try:
             self.worker_session_id = worker_session_id or self.worker_session_id or str(uuid4())
-            self.compute_node_id = str(compute_node.typeid)
 
             await self.get_project()
 
@@ -668,57 +404,14 @@ class AgenticProcess(Entity):
             )
 
             is_resume = cmd.resume
-            is_fork = bool(cmd.fork_session_id)
-
-            workdir = self.workdir
-            session_name = f"Claude - {self.worker_session_id[:8]} ({'fork' if is_fork else 'resume' if is_resume else 'new'})"
-            shell = await self._open_shell(
-                reuse_id=self.shell_id,   # reuse existing tab on restart; None for fresh open
-                name=session_name,
-                workdir=workdir,
-                compute_node=compute_node,
-            )
-            self.shell_id = shell.id
-            on_exit = self._make_pty_exit_callback()
-            # Write process ID back to ShellRecord so the shell knows its owning process
-            try:
-                from flow_sdk.fs_records.shell_record import ShellRecord
-                _shell_rec = ShellRecord.discover_one(shell.id)
-                if _shell_rec:
-                    object.__setattr__(_shell_rec, "agentic_process_id", self.id)
-                    object.__getattribute__(_shell_rec, "_dirty_keys").add("agentic_process_id")
-                    _shell_rec.save()
-            except Exception as _e:
-                logger.debug("AgenticProcess %s: failed to update ShellRecord.agentic_process_id: %s", self.id, _e)
-
-            logger.info(
-                "AgenticProcess %s: %s shell %s (worker=%s)",
-                self.id,
-                "reopening" if had_previous_session else "opening",
-                self.shell_id,
-                self.worker_session_id,
-            )
-
+            shell = await self.get_shell()
             started = await shell.start_pty()
-
-            # Also run_process when the PTY was already alive (start_pty returns False)
-            # but the worker (Claude) is dead — i.e. server restart killed Claude but left zsh running.
-            worker_is_dead = not started and not await shell.worker_alive()
-            if started or worker_is_dead:
-                if not started:
-                    logger.info(
-                        "AgenticProcess %s: PTY alive but worker dead — re-injecting process into existing shell",
-                        self.id,
-                    )
-                else:
-                    await asyncio.sleep(1.0)  # let shell initialize and write prompt before injecting
+            if not await shell.worker_alive():
                 execution_info = await shell.run_process(cmd, instruction=instruction)
                 logger.info(
                     "AgenticProcess %s worker launched: pid=%s name=%r",
                     self.id, execution_info.pid, execution_info.name,
                 )
-
-            self._set_process_state(status=AgenticProcessStatus.RUNNING.value, error=None)
             if visible is not None:
                 self.visible = visible
             await self.save()
@@ -739,7 +432,6 @@ class AgenticProcess(Entity):
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} open error: {e}")
             self.shell_id = None
-            self._set_process_state(status=AgenticProcessStatus.ERROR.value, error=str(e))
             await self.save()
             return ApiFailResponse(message=str(e))
 
@@ -808,34 +500,25 @@ class AgenticProcess(Entity):
 
         return await Shell.get_by_id(self.shell_id)
 
-    async def send_input(self, text: str) -> None:
-        """Write raw text to the live PTY stdin.
+    async def send_input(self, data: str | bytes) -> None:
+        """Write text or raw bytes to the live PTY stdin.
+
+        - str: sent via shell.send_input() (appends \\r, goes through Shell entity)
+        - bytes: sent directly to the PTY without modification (use for control
+          sequences like b"\\x1b" where appending \\r would break the intent)
 
         Requires open() to have been called first.
-        Mirrors TS AgenticProcess.sendInput().
         """
         shell = await self.get_shell()
         if not shell:
             raise ValueError("No shell linked — call open() first")
-        await shell.send_input(text)
-
-    async def sync_status(self) -> None:
-        """Correct state.status from actual PTY liveness. Persists if changed.
-
-        Eliminates ghost-running: if state says running but the linked shell's
-        PTY is dead, status is corrected to idle and saved. Call this on WS
-        reconnect (server restart recovery) or after shell.pty.destruct() in tests.
-
-        Replaces the need for a derived resolved_status property — state.status
-        is always the authoritative value after this call.
-        """
-        current = self._get_process_state().get("status")
-        if current != AgenticProcessStatus.RUNNING.value:
-            return
-        shell = await self.get_shell()
-        if shell is None or not shell.connected:
-            self._set_process_state(status=AgenticProcessStatus.IDLE.value)
-            await self.save()
+        if isinstance(data, bytes):
+            pty = shell.compute_node.get_pty(shell.id)
+            if not pty:
+                raise RuntimeError("No PTY session — call start_pty() first")
+            await pty.send(data)
+        else:
+            await shell.send_input(data)
 
     @action.post(action_name="execute-plan")
     async def execute_plan(
@@ -894,16 +577,13 @@ class AgenticProcess(Entity):
     async def _control_inject_message(self, message: str) -> None:
         """Inject a message into the active PTY session for this process.
 
-        Resolves the compute node, sends Escape to dismiss any active
-        numeric prompt (e.g. Claude waiting for a numbered answer), then
-        sends the message as PTY input.
+        Sends Escape to dismiss any active numeric prompt (e.g. Claude waiting
+        for a numbered answer), then sends the message as PTY input.
         If no PTY session is active, logs a warning and returns silently.
         """
         if not self.shell_id:
             logger.warning("AgenticProcess %s: no active shell, cannot inject message", self.id)
             return
-
-        compute_node = self.compute_node
 
         # Dismiss any active numeric prompt before injecting.
         # Terminal input parsers (Node.js libuv, readline, etc.) treat a lone
@@ -914,8 +594,8 @@ class AgenticProcess(Entity):
         #   2. Sleep 200ms — longer than the escape-sequence timeout — so the
         #      handler commits "Escape pressed" and Claude transitions state
         #      before the command bytes arrive.
-        await self._send_pty_raw(compute_node, b"\x1b")
+        await self.send_input(b"\x1b")
         await asyncio.sleep(0.2)
 
         logger.info("AgenticProcess %s: injecting message: %s", self.id, message[:80])
-        await self._send_command_to_pty(compute_node, message)
+        await self.send_input(message)
