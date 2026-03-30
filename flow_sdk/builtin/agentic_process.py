@@ -432,6 +432,18 @@ async def _run_claude_subprocess(
             pass
 
 
+async def _index_session_on_close(worker_session_id: str) -> None:
+    """Index the ClaudeSessionRecord after an AgenticProcess closes (fire-and-forget)."""
+    try:
+        from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+        record = ClaudeSessionRecord.discover_one(worker_session_id)
+        if record:
+            await record.sync_to_db()
+            logger.debug("[AgenticProcess] indexed session %s on close", worker_session_id)
+    except Exception:
+        logger.debug("[AgenticProcess] failed to index session %s on close", worker_session_id, exc_info=True)
+
+
 class AgenticProcess(Entity):
     _api_visible = True
     type: str = APIField(default="agentic_process")
@@ -758,6 +770,9 @@ class AgenticProcess(Entity):
 
             self._set_process_state(status=AgenticProcessStatus.INTERRUPTED.value)
             await self.save()
+
+            if self.worker_session_id:
+                asyncio.create_task(_index_session_on_close(self.worker_session_id))
 
             if shell_id:
                 from flow_sdk.builtin.shell import Shell

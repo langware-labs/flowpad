@@ -1,4 +1,4 @@
-import { useRecordSearch, type SearchFilters, type SearchResult } from '@src/hooks/use-record-search';
+import { useRecordSearch, type SearchFilters, type SearchResult, getSearchResultBadgeLabel } from '@src/hooks/use-record-search';
 import { cn } from '@src/lib/utils';
 import { dataManager } from '@sdk';
 import { getActionsForResult } from '@src/navigation/record-type-nav';
@@ -19,6 +19,7 @@ const TYPE_COLORS: Record<string, string> = {
   command: 'bg-rose-500/20 text-rose-700 dark:text-rose-300',
   task: 'bg-teal-500/20 text-teal-700 dark:text-teal-300',
   agentic_process: 'bg-purple-500/20 text-purple-700 dark:text-purple-300',
+  annotation: 'bg-sky-500/20 text-sky-700 dark:text-sky-300',
 };
 
 function timeAgo(iso?: string): string {
@@ -168,7 +169,7 @@ export function InlineSearchResults({
                 TYPE_COLORS[result.record_type] ?? 'bg-muted text-muted-foreground',
               )}
             >
-              {result.record_type.replace('claude_', '')}
+              {getSearchResultBadgeLabel(result)}
             </span>
             <span className="flex-1 truncate font-semibold">{result.fts_title ?? result.name ?? result.record_id}</span>
             <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(result.modified_at)}</span>
