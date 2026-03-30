@@ -182,6 +182,19 @@ class Entity(DBEntity):
         await entity.save()
         return entity
 
+    async def _fts_upsert(self, type_name: str, content: str) -> None:
+        """Upsert this entity into the FTS5 table with the given content."""
+        from flow_sdk.db import get_db_driver
+        from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry
+        driver = get_db_driver()
+        if hasattr(driver, "fts_upsert"):
+            await driver.fts_upsert(FtsEntry(
+                entity_id=self.id,
+                entity_type=type_name,
+                name=getattr(self, "name", None) or None,
+                content=content,
+            ))
+
     async def updateSearchIndex(self) -> None:
         """Write this entity's searchable content into the FTS5 table.
 
@@ -198,16 +211,7 @@ class Entity(DBEntity):
         content = record.search_content
         if content is None:
             return
-        from flow_sdk.db import get_db_driver
-        from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry
-        driver = get_db_driver()
-        if hasattr(driver, "fts_upsert"):
-            await driver.fts_upsert(FtsEntry(
-                entity_id=self.id,
-                entity_type=self.get_type(),
-                name=getattr(self, "name", None) or None,
-                content=content,
-            ))
+        await self._fts_upsert(type_name, content)
 
     async def removeSearchIndex(self) -> None:
         """Remove this entity from the FTS5 table."""
@@ -239,6 +243,7 @@ class Entity(DBEntity):
         type_name = entity.get_type()
         record_cls = SchemaRegistry.get_record_cls(type_name)
         if record_cls is None:
+            service_log.debug(f"_store: no Record class registered for entity type '{type_name}'")
             return None
         record = record_cls.discover_one(entity.id)
         if record is None:
@@ -250,6 +255,10 @@ class Entity(DBEntity):
             from flow_sdk.fs_records.record_error import RecordError  # lazy (circular-safe)
             RecordError.from_exception(record, exc, trigger="store").save()
             return None
+        # Immediately index into FTS5 so the entity is searchable without a scan.
+        content = record.search_content
+        if content is not None:
+            await entity._fts_upsert(type_name, content)
         return record
 
     async def check_and_refresh_record(self) -> bool:
