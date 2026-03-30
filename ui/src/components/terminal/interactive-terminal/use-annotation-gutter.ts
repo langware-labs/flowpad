@@ -92,6 +92,7 @@ export function useAnnotationGutter(
   targetTimestamp?: string,
   replayComplete?: boolean,
   bufferVersion?: number,
+  workdir?: string,
 ) {
 
   const queryRequest = useMemo(
@@ -209,6 +210,7 @@ export function useAnnotationGutter(
       const bookmark = new Bookmark({
         bookmark_type: 'terminal_annotation',
         session_id: workerSessionId,
+        work_dir: workdir,
         data: { line: absoluteLine },
         content,
         title: 'Bookmark',
@@ -217,7 +219,7 @@ export function useAnnotationGutter(
       await bookmark.save([]);
       await refetch();
     },
-    [workerSessionId, refetch],
+    [workerSessionId, workdir, refetch],
   );
 
   const createComment = useCallback(

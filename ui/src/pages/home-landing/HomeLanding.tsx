@@ -418,7 +418,7 @@ export function HomeLanding() {
             onCloseBookmark={(m) => void closeBookmark(m)}
             onDeleteBookmark={(m) => void deleteBookmark(m)}
             onRemindBookmark={(m, mins) => void remindBookmark(m, mins)}
-            onOpenSession={(m) => m.session_id && resumeInTerminal(m.session_id, undefined, m.created_date ?? undefined)}
+            onOpenSession={(m) => m.session_id && resumeInTerminal(m.session_id, m.work_dir ?? undefined, m.created_date ?? undefined)}
             onForkSession={(m) => forkInTerminal(m.work_dir ?? undefined)}
             sessionEventCounts={sessionEventCounts}
             snifferEvents={snifferEvents}
