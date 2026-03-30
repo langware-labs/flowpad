@@ -7,6 +7,7 @@ import { BrowserAuthWindow, MockAuthWindow, OAuthWindow } from './oauth-window';
 export const OAUTH_PROVIDERS = {
   GITHUB: 'github',
   SLACK: 'slack',
+  FLOWPAD_CLOUD: 'flowpad_cloud',
 } as const;
 
 export enum ConnectionStatus {

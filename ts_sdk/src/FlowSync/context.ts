@@ -27,6 +27,7 @@ import { TypeId } from '../models/TypeId';
 import { UserWarning } from '../models/UserWarning';
 import { defineGlobal } from '../utils/globals';
 import { SnifferHook } from '../services/sniffer-hook';
+import { sdkConfig } from '../config/index';
 import { ConnectionManager } from '../websocket';
 import { AuthError, AuthEventType, authManager } from './auth';
 import {
@@ -177,11 +178,12 @@ class DataContext extends EventEmitter {
   }
 
   /**
-   * Log out from the cloud account and reload the page
+   * Log out from the cloud account by navigating to the logout redirect endpoint.
+   * The server clears credentials and redirects back to the app root (full page reload).
    */
-  async cloudLogout(): Promise<void> {
-    await apiClient.post('/auth/logout');
-    window.location.reload();
+  cloudLogout(): void {
+    const next = encodeURIComponent(window.location.origin);
+    window.location.href = `${sdkConfig.SERVER_URL}/auth/logout?next=${next}`;
   }
 
   /**

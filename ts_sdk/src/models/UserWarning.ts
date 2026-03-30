@@ -1,4 +1,3 @@
-import apiClient from '../client';
 import { ViewType } from '../utils/ui/view-types';
 
 /**
@@ -81,10 +80,8 @@ export function createCloudDisconnectedWarning(): UserWarning {
     targetView: ViewType.CONNECTIONS,
     onClick: async () => {
       try {
-        const data = await apiClient.get<{ login_url: string }>('/auth/login-url');
-        if (data?.login_url) {
-          window.open(data.login_url, '_blank');
-        }
+        const { oauthService, OAUTH_PROVIDERS } = await import('../services/oauth/oauth-service');
+        await oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
       } catch (e) {
         console.error('[Cloud Login] Failed to get login URL:', e);
       }
