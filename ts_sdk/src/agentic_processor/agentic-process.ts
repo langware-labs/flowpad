@@ -351,8 +351,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.fromClaudeSession] No compute node');
 
-    // Resolve workdir from the session record on disk — required before upsert.
-    // If resume+workdir are already set on an existing process, skip disk discovery.
+    // Resolve workdir from the session record on disk.
+    // Best-effort: empty sessions have no JSONL yet, so cwd may be null.
+    // upsertSessionProcess is idempotent — if the process already exists it is
+    // returned immediately without needing workdir at all.
     let resolvedCwd = cwd;
     if (!resolvedCwd) {
       const { ClaudeSessionRecord } = await import(
@@ -362,14 +364,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       resolvedCwd = record?.cwd ?? undefined;
     }
 
-    if (!resolvedCwd) {
-      throw new Error(`[AgenticProcess.fromClaudeSession] Cannot resolve workdir for session ${sessionId}`);
-    }
-
     // upsertSessionProcess is idempotent: finds existing process or creates a new one.
     // Backend sets cli_config.resume=true if the transcript exists on disk.
     const { processId } = await computeNode.upsertSessionProcess(sessionId, {
-      workdir: resolvedCwd,
+      ...(resolvedCwd ? { workdir: resolvedCwd } : {}),
       projectId: dataContext.project?.id,
     });
     const process = await AgenticProcess.getById(processId);
