@@ -21,6 +21,23 @@ class BookmarkRecord(Record):
         super().__init__(**kwargs)
 
     @property
+    def display_name(self) -> str:
+        body = getattr(self, "body", None) or getattr(self, "content", None)
+        if body:
+            first_line = str(body).strip().splitlines()[0][:100]
+            if first_line:
+                return first_line
+        title = getattr(self, "title", None)
+        if title:
+            return str(title).strip()
+        return self.name or ""
+
+    @property
+    def search_title(self) -> str | None:
+        result = self.display_name
+        return result or None
+
+    @property
     def search_content(self) -> str | None:
         parts: list[str] = []
         if self.name:

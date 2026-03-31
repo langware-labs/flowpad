@@ -432,12 +432,29 @@ async def _run_claude_subprocess(
             pass
 
 
-async def _index_session_on_close(worker_session_id: str) -> None:
-    """Index the ClaudeSessionRecord after an AgenticProcess closes (fire-and-forget)."""
+async def _index_session_on_close(worker_session_id: str, pty_title: str | None = None) -> None:
+    """Index the ClaudeSessionRecord after an AgenticProcess closes (fire-and-forget).
+
+    pty_title: Claude-generated tab title captured from ANSI OSC escapes in PTY
+               output.  Used as the FTS title / entity name when the JSONL has no
+               user-set custom-title (i.e. the user never ran /rename).
+    """
     try:
         from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
         record = ClaudeSessionRecord.discover_one(worker_session_id)
         if record:
+            # Inject PTY title when JSONL has no user-set custom-title.
+            if pty_title:
+                inst = object.__getattribute__(record, "__dict__")
+                if not inst.get("custom_title"):
+                    record.name = pty_title
+                    # Force FTS parse (to capture content), then override the title.
+                    _ = record.search_content  # populates _fts_cache
+                    cache = inst.get("_fts_cache")
+                    object.__setattr__(
+                        record, "_fts_cache",
+                        (pty_title[:120], cache[1] if cache else None),
+                    )
             await record.sync_to_db()
             logger.debug("[AgenticProcess] indexed session %s on close", worker_session_id)
     except Exception:
@@ -772,7 +789,18 @@ class AgenticProcess(Entity):
             await self.save()
 
             if self.worker_session_id:
-                asyncio.create_task(_index_session_on_close(self.worker_session_id))
+                # Read Claude-generated tab title from in-memory cache (populated
+                # by on_pty_output when ANSI OSC title escapes are detected).
+                # Must be read here — shell_id is still known and the title cache
+                # is populated regardless of whether the close is graceful.
+                _pty_title: str | None = None
+                if shell_id:
+                    try:
+                        from flow_sdk.builtin.faas.pty_actions import get_pty_session_title
+                        _pty_title = get_pty_session_title(shell_id)
+                    except Exception:
+                        pass
+                asyncio.create_task(_index_session_on_close(self.worker_session_id, pty_title=_pty_title))
 
             if shell_id:
                 from flow_sdk.builtin.shell import Shell

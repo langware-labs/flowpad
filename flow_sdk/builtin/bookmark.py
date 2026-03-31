@@ -25,3 +25,14 @@ class Bookmark(Entity):
     remind_at: Optional[str] = APIField(None)
     _api_visible: ClassVar[bool] = True
     _icon: ClassVar[str] = "Bookmark"
+
+    @property
+    def display_name(self) -> str:
+        body = self.content
+        if body:
+            first_line = str(body).strip().splitlines()[0][:100]
+            if first_line:
+                return first_line
+        if self.title:
+            return self.title.strip()
+        return self.name or ""

@@ -16,12 +16,14 @@ export class Skill extends APIEntity<Skill> {
   name: string = '';
   description: string = '';
   source_path?: string;
+  scope?: string;
 
   constructor(entity: Partial<Skill> = {}) {
     super(entity);
     this.name = entity.name ?? '';
     this.description = entity.description ?? '';
     this.source_path = entity.source_path;
+    this.scope = entity.scope;
   }
 
   get displayName(): string {
@@ -31,6 +33,13 @@ export class Skill extends APIEntity<Skill> {
   override get editorDockPointer(): DockPointerData {
     const path = this.source_path ?? this.id;
     return new DockPointerData(ViewType.ASSETS, `editor/skill/${path}`);
+  }
+
+  override get searchDockPointer(): DockPointerData {
+    if (this.source_path) {
+      return new DockPointerData(ViewType.ASSETS, `editor/skill/${this.source_path.replace(/^\//, '')}`);
+    }
+    return this.dockPointer;
   }
 
   static async create(name: string, description?: string): Promise<Skill> {

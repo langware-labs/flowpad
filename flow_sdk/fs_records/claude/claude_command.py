@@ -6,9 +6,28 @@ Each file is a markdown prompt template invoked via /<name>.
 
 from __future__ import annotations
 
-from typing import ClassVar
+import os
+from pathlib import Path
+from typing import Any, ClassVar
 
 from flow_sdk.fs_store import Record, RecordType
+from flow_sdk.fs_store.record import Scope
+
+
+def _command_search_dirs() -> list[tuple[Path, str]]:
+    """Return (directory, scope) pairs for command discovery."""
+    dirs: list[tuple[Path, str]] = []
+    seen: set[str] = set()
+
+    def _add(p: Path, scope: str) -> None:
+        rp = str(p.resolve())
+        if rp not in seen and p.is_dir():
+            seen.add(rp)
+            dirs.append((p, scope))
+
+    _add(Path.home() / ".claude" / "commands", "user")
+    _add(Path(os.getcwd()) / ".claude" / "commands", "project")
+    return dirs
 
 
 class ClaudeCommandFsRecord(Record):
@@ -16,6 +35,25 @@ class ClaudeCommandFsRecord(Record):
 
     Mapped from ``commands/<name>.md``.
     """
+
+    _record_type: ClassVar[str] = RecordType.COMMAND
+    _indexed_by_default: ClassVar[bool] = True
+
+    @property
+    def search_title(self) -> str | None:
+        return self.name or getattr(self, "command_name", None) or None
+
+    @property
+    def search_content(self) -> str | None:
+        return getattr(self, "content", None) or None
+
+    def meta_dict(self) -> dict:
+        data = super().meta_dict()
+        # Include source file path so the entity DB can resolve navigation without a disk lookup
+        sf = self.source_file
+        if sf:
+            data["source_path"] = sf
+        return data
 
     def __init__(self, **kwargs):
         if "type" not in kwargs:
@@ -31,3 +69,36 @@ class ClaudeCommandFsRecord(Record):
                 self.name = self.command_name
         from flow_sdk.fs_store.fs_ref import FSRef
         object.__setattr__(self, "_asset_ref", FSRef("/", read_only=True))
+
+    @classmethod
+    def discover(cls, scope: Scope | None = None, **kwargs: Any) -> list[ClaudeCommandFsRecord]:
+        """Discover command files from ~/.claude/commands/ and .claude/commands/."""
+        records: list[ClaudeCommandFsRecord] = []
+        scope_filter = scope.value if hasattr(scope, "value") else str(scope) if scope else None
+
+        for commands_dir, dir_scope in _command_search_dirs():
+            if scope_filter and dir_scope != scope_filter:
+                continue
+            for md_file in sorted(commands_dir.glob("*.md")):
+                if not md_file.is_file():
+                    continue
+                command_name = md_file.stem
+                try:
+                    content = md_file.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                rec = cls(
+                    command_name=command_name,
+                    content=content,
+                    scope=dir_scope,
+                )
+                rec.source_file = str(md_file)
+                records.append(rec)
+        return records
+
+    @classmethod
+    def discover_one(cls, uid: str, **kwargs: Any) -> ClaudeCommandFsRecord | None:
+        for r in cls.discover():
+            if r.id == uid:
+                return r
+        return None

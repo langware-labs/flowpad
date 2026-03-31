@@ -1,4 +1,6 @@
 import { APIEntity, registerEntity } from '../APIEntity';
+import { DockPointerData } from '../models/DockPointer';
+import { ViewType } from '../utils/ui/view-types';
 import { ComputeNodeSize } from './compute-node';
 import { ISiteConfig } from './siteconfig';
 
@@ -70,6 +72,8 @@ export class Agent extends APIEntity<Agent> {
   name?: string;
   description?: string;
 
+  source_path?: string;
+
   // Legacy cloud fields — kept for UI compat only
   site_config?: ISiteConfig;
   agent_config?: IAgentConfig;
@@ -80,10 +84,18 @@ export class Agent extends APIEntity<Agent> {
     super(entity);
     this.name = entity.name;
     this.description = entity.description;
+    this.source_path = entity.source_path;
     this.histogram = entity.histogram || {};
     this.enabled = entity.enabled ?? true;
     this.agent_config = entity.agent_config;
     this.site_config = entity.site_config;
+  }
+
+  override get searchDockPointer(): DockPointerData {
+    if (this.source_path) {
+      return new DockPointerData(ViewType.ASSETS, `editor/agent/${this.source_path.replace(/^\//, '')}`);
+    }
+    return this.dockPointer;
   }
 
 }

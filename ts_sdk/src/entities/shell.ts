@@ -223,9 +223,10 @@ export class Shell extends APIEntity<Shell> implements IShell {
           }
         });
         cm.on('on_reconnected', () => {
-          if (this.status === ShellStatus.CLOSED || this.status === ShellStatus.ERROR) return;
+          if (this.status === ShellStatus.ERROR) return;
           if (!this._hasEverBeenActive) return;
-          void this.startPty({ cols: 80, rows: 24 });
+          const workdir = this.workdir ?? dataContext.project?.fs_storage_mount_path ?? undefined;
+          void this.startPty({ cols: 80, rows: 24, workdir });
         });
       });
     }

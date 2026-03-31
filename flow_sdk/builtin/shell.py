@@ -55,6 +55,7 @@ class Shell(Entity):
     error_message: str | None = APIField(default=None, description="Error message when status=error")
     worker_pid: int | None = APIField(default=None, description="OS PID of the running worker process")
     worker_name: str | None = APIField(default=None, description="Worker executable name, e.g. 'claude'")
+    user_renamed: bool = APIField(default=False, description="True when user explicitly renamed this shell via /rename or the UI")
 
     _api_visible: ClassVar[bool] = True
 
@@ -474,15 +475,25 @@ class Shell(Entity):
     async def update_display(self) -> ApiResponse:
         """Update display properties (name, tab_order).
 
-        POST body: {name?, tab_order?}
+        POST body: {name?, tab_order?, is_pty?}
+
+        When ``is_pty=True`` the name came from a PTY OSC title escape (not a
+        user-initiated rename). If ``user_renamed`` is already True on this
+        entity the PTY name is ignored — the user's explicit rename wins.
         """
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
 
+        is_pty = bool(body.get("is_pty", False))
         changed = False
         if "name" in body:
-            self.name = body["name"]
-            changed = True
+            if is_pty and self.user_renamed:
+                pass  # PTY title must not override an explicit user rename
+            else:
+                self.name = body["name"]
+                if not is_pty:
+                    self.user_renamed = True
+                changed = True
         if "tab_order" in body:
             self.tab_order = body["tab_order"]
             changed = True
