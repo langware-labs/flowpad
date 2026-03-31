@@ -18,7 +18,7 @@ from flow_sdk.fs_store import Record, RecordType
 
 if TYPE_CHECKING:
     from flow_sdk.fs_store.fs_ref import BinaryFsRef
-from flow_sdk.fs_store.record import get_default_records_root, record_stem
+from flow_sdk.fs_store.record import get_default_records_data_root, get_default_records_root, record_stem
 
 
 class ShellStatus(StrEnum):
@@ -79,7 +79,7 @@ class ShellRecord(Record):
         if pty_pid is None:
             raise ValueError("No pty_pid set")
         stem = record_stem("shell", self.id)
-        return get_default_records_root() / "shell" / stem / f"{pty_pid}.pty"
+        return get_default_records_data_root() / "shell" / stem / f"{pty_pid}.pty"
 
     @property
     def pty_stream_ref(self) -> "BinaryFsRef":

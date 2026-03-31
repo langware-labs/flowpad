@@ -16,7 +16,12 @@ import uuid
 import pytest
 
 from flow_sdk.builtin.shell import Shell
-from flow_sdk.fs_store.record import get_default_records_root, set_default_records_root
+from flow_sdk.fs_store.record import (
+    get_default_records_data_root,
+    get_default_records_root,
+    set_default_records_data_root,
+    set_default_records_root,
+)
 
 
 async def _poll(shell: Shell, keyword: bytes, timeout: float = 10.0) -> bytes:
@@ -34,10 +39,13 @@ async def _poll(shell: Shell, keyword: bytes, timeout: float = 10.0) -> bytes:
 
 @pytest.fixture(autouse=True)
 def use_tmp_records_root(tmp_path):
-    original = get_default_records_root()
+    orig_root = get_default_records_root()
+    orig_data_root = get_default_records_data_root()
     set_default_records_root(tmp_path)
+    set_default_records_data_root(tmp_path)
     yield tmp_path
-    set_default_records_root(original)
+    set_default_records_root(orig_root)
+    set_default_records_data_root(orig_data_root)
 
 
 def _shell(**kwargs) -> Shell:
