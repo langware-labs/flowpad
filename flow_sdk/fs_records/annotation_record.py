@@ -18,6 +18,15 @@ class AnnotationRecord(Record):
         super().__init__(**kwargs)
 
     @property
+    def display_name(self) -> str:
+        content = getattr(self, "content", None)
+        if content:
+            first_line = str(content).strip().splitlines()[0][:100]
+            if first_line:
+                return first_line
+        return self.name or ""
+
+    @property
     def search_content(self) -> str | None:
         parts: list[str] = []
         if self.name:
