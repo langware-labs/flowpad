@@ -194,6 +194,16 @@ def _sync_handle_entity_op(op_message: DataOpMessage):
         if type_id:
             message["to_entity"] = type_id
 
+        # Skip notifications for non-API-visible entity types
+        if entity_type:
+            try:
+                from flow_sdk.core.entity.entity_model import Entity
+                if not Entity.api_visible_by_type(entity_type):
+                    logger.debug(f"Skipping WS notification for non-API-visible type: {entity_type}")
+                    return
+            except Exception:
+                pass
+
         recipients = _resolve_recipients(op, entity_type, entity_id, active_connections)
         if not recipients:
             logger.debug(f"No recipients for op={op}, entity={message.get('to_entity')}")

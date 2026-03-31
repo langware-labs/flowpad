@@ -327,7 +327,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // Get entity from cache
     const entity = this.getByTypeIdFromCache<T>(typeId);
     if (!entity) {
-      console.warn(`[DataManager.onFlowData] Entity not found in cache for typeId: ${typeId.toString()}`);
+      console.debug(`[DataManager.onFlowData] Entity not found in cache for typeId: ${typeId.toString()}`);
       return;
     }
 
