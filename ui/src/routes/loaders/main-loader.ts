@@ -8,6 +8,7 @@ import {
   QueryRequest,
   Shell,
   ShellStatus,
+  systemTools,
   Trigger,
   TypeId,
 } from '@sdk';
@@ -42,19 +43,6 @@ async function ensureComputeNodeLoaded(): Promise<void> {
   }
 }
 
-async function resolveProjectContext(workdir: string | undefined): Promise<void> {
-  if (!workdir) return;
-  const projects = await Project.query<Project>(new QueryRequest({ type: Project.type, scope: [] }));
-  const match = projects.find(
-    (p) => p.fs_storage_mount_path && workdir.startsWith(p.fs_storage_mount_path),
-  );
-  if (match) {
-    await dataContext.setContextEntityTypeId(
-      ContextEntitiesEnum.CurrentProjectTypeId,
-      match.typeId,
-    );
-  }
-}
 
 function isValidViewType(args: LoaderArgs): boolean {
   const { params } = args;
@@ -178,7 +166,11 @@ async function loadShell(pointer: string | undefined): Promise<void> {
       ContextEntitiesEnum.CurrentProcessTypeId,
       new TypeId(AgenticProcess.type, processId),
     );
-    await resolveProjectContext(process.workdir);
+    if (process.project_id) {
+      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, new TypeId(Project.type, process.project_id));
+    } else {
+      await systemTools.resolveProjectContext(process.workdir, process);
+    }
     _perfLog('loadShell done (agentic process path)');
   } else {
     // Shell pointer: "shell-<uuid>" or bare UUID
@@ -208,7 +200,11 @@ async function loadShell(pointer: string | undefined): Promise<void> {
     await shell.startPty({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: shell.workdir ?? undefined });
     dataContext.setActiveShellId(shell.id);
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
-    await resolveProjectContext(shell.workdir ?? undefined);
+    if (shell.project_id) {
+      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, new TypeId(Project.type, shell.project_id));
+    } else {
+      await systemTools.resolveProjectContext(shell.workdir ?? undefined, shell);
+    }
     _perfLog('loadShell done (shell path)');
   }
 }
@@ -251,7 +247,11 @@ export async function loadAgentApp(args: LoaderArgs) {
     if (processId) {
       await dataContext.setActiveEntityTypeId(new TypeId(AgenticProcess.type, processId));
       const process = await AgenticProcess.getById(processId).catch(() => null);
-      await resolveProjectContext(process?.workdir);
+      if (process?.project_id) {
+        await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, new TypeId(Project.type, process.project_id));
+      } else {
+        await systemTools.resolveProjectContext(process?.workdir, process ?? undefined);
+      }
     }
 
     // Session view doesn't require agent - just ensure compute node and return
@@ -284,7 +284,11 @@ export async function loadAgentApp(args: LoaderArgs) {
           parsed.agenticProcessTypeId,
         );
         const process = await AgenticProcess.getById(parsed.agenticProcessTypeId.id).catch(() => null);
-        await resolveProjectContext(process?.workdir);
+        if (process?.project_id) {
+          await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, new TypeId(Project.type, process.project_id));
+        } else {
+          await systemTools.resolveProjectContext(process?.workdir, process ?? undefined);
+        }
         t.time('loadPlan (set process context)');
       }
     }
