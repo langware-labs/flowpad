@@ -574,10 +574,10 @@ def hooks_set(
       flow hooks set --scope project
       flow hooks set --scope local
     """
+    from flow_sdk.builtin.flowpad_runner_wrapper import wrap_command
     from flow_sdk.cli.commands.setup_cmd.claude_code_setup.claude_hooks import setHook
     from flow_sdk.cli.commands.setup_cmd.claude_code_setup.flow_metadata import FlowHookMetadata
     from flow_sdk.cli.commands.setup_cmd.claude_code_setup.hook_events import EVENTS_NO_MATCHER, EVENTS_WITH_MATCHER
-    from flow_sdk.cli.commands.setup_cmd.claude_code_setup.setup_claude import _get_hook_script_path
 
     try:
         claude_scope = _parse_scope(scope)
@@ -594,24 +594,17 @@ def hooks_set(
 
     typer.echo(f"Setting Flow hooks (scope: {scope})...")
 
-    # Get the hook script path
-    hook_script_path = _get_hook_script_path()
-
-    if not hook_script_path.exists():
-        typer.echo(f"Error: Hook script not found at {hook_script_path}", err=True)
-        typer.echo("Run 'flow setup claude-code' first to create the hook script.", err=True)
-        raise typer.Exit(1)
-
     success_count = 0
 
     # Set hooks for events without matchers
     for event_name in EVENTS_NO_MATCHER:
         flow_metadata = FlowHookMetadata.create(name=event_name.lower())
+        cmd = wrap_command(f"hooks report --name={event_name.lower()}")
         success = setHook(
             scope=claude_scope,
             event_name=event_name,
             matcher=None,
-            cmd=str(hook_script_path),
+            cmd=cmd,
             context=context,
             flow_metadata=flow_metadata,
         )
@@ -624,11 +617,12 @@ def hooks_set(
     # Set hooks for events with matchers (match all tools)
     for event_name in EVENTS_WITH_MATCHER:
         flow_metadata = FlowHookMetadata.create(name=event_name.lower())
+        cmd = wrap_command(f"hooks report --name={event_name.lower()}")
         success = setHook(
             scope=claude_scope,
             event_name=event_name,
             matcher="*",  # Match all tools
-            cmd=str(hook_script_path),
+            cmd=cmd,
             context=context,
             flow_metadata=flow_metadata,
         )

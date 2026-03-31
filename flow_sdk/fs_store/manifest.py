@@ -5,7 +5,6 @@ Manifest stored at <records_root>/manifests/<record_type>/.manifest.json
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import sys
@@ -16,8 +15,10 @@ from typing import TypedDict
 
 if sys.platform == "win32":
     import msvcrt
+    fcntl = None
 else:
     import fcntl
+    msvcrt = None
 
 
 class ManifestData(TypedDict):
