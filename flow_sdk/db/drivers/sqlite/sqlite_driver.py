@@ -1,6 +1,8 @@
 """SQLAlchemy/SQLite database driver for FlowPad testing."""
 
 import json
+
+DEFAULT_BROWSE_LIMIT = 20
 import logging
 import os
 
@@ -564,6 +566,52 @@ class SQLiteDBDriver(DBDriver):
             entities_with_score.sort(key=_blend)
 
         return [ent for _, ent in entities_with_score[:limit]]
+
+    async def browse_by_type(
+        self,
+        entity_type: str,
+        limit: int = DEFAULT_BROWSE_LIMIT,
+        status: str | None = None,
+    ) -> list[Any]:
+        """Return entities of a type with FTS metadata, ordered by recency.
+
+        Unlike fts_search this does not require a query — it is used for
+        filter-only browsing (no search term, just a record_type filter).
+        Uses LEFT JOIN so entities without an FTS row are still returned.
+        """
+        if not self.session_factory:
+            return []
+        async with self.session_factory() as session:
+            sql = """
+                SELECT e.*,
+                       fts.title AS _fts_title,
+                       fts.description AS _fts_description
+                FROM entities e
+                LEFT JOIN entities_fts fts ON e.id = fts.entity_id
+                WHERE e.type = :entity_type
+            """
+            params: dict[str, Any] = {"entity_type": entity_type, "limit": limit}
+            if status:
+                sql += " AND json_extract(e.data, '$.status') = :status"
+                params["status"] = status
+            sql += " ORDER BY e.updated_date DESC LIMIT :limit"
+            result = await session.execute(text(sql), params)
+            rows = result.fetchall()
+            columns = result.keys()
+            entities: list[Any] = []
+            for row in rows:
+                row_dict = dict(zip(columns, row))
+                fts_title = row_dict.pop("_fts_title", None) or None
+                fts_description = row_dict.pop("_fts_description", None) or None
+                schema = EntitySchema(**row_dict)
+                try:
+                    entity = self._schema_to_entity(schema)
+                    entity._fts_title = fts_title  # type: ignore[attr-defined]
+                    entity._fts_description = fts_description  # type: ignore[attr-defined]
+                    entities.append(entity)
+                except Exception:
+                    logger.warning("browse_by_type: failed to hydrate entity %s", row_dict.get("id"))
+            return entities
 
     async def fts_delete(self, entity_id: str) -> None:
         """Remove a row from ``entities_fts``."""
