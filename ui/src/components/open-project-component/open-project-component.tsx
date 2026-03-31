@@ -13,8 +13,54 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { useToast } from '@src/hooks/use-toast';
-import { Check, FolderOpen, FolderPlus, Loader2 } from 'lucide-react';
+import { Check, FolderOpen, FolderPlus, Loader2, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+
+type TimeFilter = 'today' | 'week' | 'all';
+const TIME_FILTER_KEY = 'project-list-time-filter';
+
+function loadTimeFilter(): TimeFilter {
+  try {
+    const v = localStorage.getItem(TIME_FILTER_KEY);
+    if (v === 'today' || v === 'week' || v === 'all') return v;
+  } catch {}
+  return 'week';
+}
+
+function saveTimeFilter(v: TimeFilter) {
+  try { localStorage.setItem(TIME_FILTER_KEY, v); } catch {}
+}
+
+function cutoffForFilter(filter: TimeFilter): Date | null {
+  if (filter === 'all') return null;
+  const d = new Date();
+  if (filter === 'today') { d.setHours(0, 0, 0, 0); return d; }
+  d.setDate(d.getDate() - 7); d.setHours(0, 0, 0, 0); return d;
+}
+
+/** null modified_at → treat as now (always passes any time filter) */
+function effectiveModifiedAt(iso: string | null | undefined): Date {
+  if (!iso) return new Date();
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? new Date() : d;
+}
+
+function relativeTime(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const diff = Date.now() - new Date(iso).getTime();
+  if (isNaN(diff)) return null;
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return `${mo}mo ago`;
+  return `${Math.floor(mo / 12)}y ago`;
+}
 
 const normalizePath = (path: string): string => {
   const normalized = path.trim().replace(/\\/g, '/');
@@ -31,6 +77,343 @@ const canonicalPathKey = (path: string): string => {
 
 const getProjectPath = (project: Project): string => normalizePath(project.fs_storage_mount_path || project.name || '');
 
+// ---------------------------------------------------------------------------
+// ProjectSelectList
+// ---------------------------------------------------------------------------
+
+interface ProjectSelectListProps {
+  projects: ProjectListItem[];
+  isLoading: boolean;
+  currentProjectPath: string;
+  openingProjectId: string | null;
+  isSubmitting: boolean;
+  onProjectClick: (project: ProjectListItem) => void;
+}
+
+const TIME_FILTER_LABELS: { value: TimeFilter; label: string }[] = [
+  { value: 'today', label: 'Today' },
+  { value: 'week', label: 'This week' },
+  { value: 'all', label: 'All' },
+];
+
+function ProjectSelectList({
+  projects,
+  isLoading,
+  currentProjectPath,
+  openingProjectId,
+  isSubmitting,
+  onProjectClick,
+}: ProjectSelectListProps) {
+  const [search, setSearch] = useState('');
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>(loadTimeFilter);
+
+  const handleTimeFilter = (v: TimeFilter) => {
+    setTimeFilter(v);
+    saveTimeFilter(v);
+  };
+
+  const countForFilter = useMemo(
+    () => (f: TimeFilter) => {
+      const cutoff = cutoffForFilter(f);
+      return projects.filter((p) => !cutoff || effectiveModifiedAt(p.modified_at) >= cutoff).length;
+    },
+    [projects],
+  );
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const cutoff = cutoffForFilter(timeFilter);
+    return projects.filter((p) => {
+      if (cutoff && effectiveModifiedAt(p.modified_at) < cutoff) return false;
+      if (!q) return true;
+      return getProjectDisplayName(p).toLowerCase().includes(q) || (p.cwd ?? '').toLowerCase().includes(q);
+    });
+  }, [projects, search, timeFilter]);
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-1.5">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Search projects…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-8 pl-8 text-sm"
+          />
+        </div>
+        <div className="flex items-center rounded-md border border-border bg-muted p-0.5">
+          {TIME_FILTER_LABELS.map(({ value, label }) => {
+            const count = countForFilter(value);
+            const active = timeFilter === value;
+            return (
+              <button
+                key={value}
+                onClick={() => handleTimeFilter(value)}
+                className={`flex items-center gap-1 rounded px-2 py-0.5 text-xs transition-colors ${active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+              >
+                {label}
+                <span className={`rounded-full px-1.5 py-px text-[10px] font-medium tabular-nums ${active ? 'bg-muted text-foreground' : 'bg-background/80 text-muted-foreground border border-border'}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    <div className="max-h-56 overflow-y-auto rounded-lg border border-border bg-card">
+      {isLoading ? (
+        <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+          Loading projects...
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="py-8 text-center text-sm text-muted-foreground">
+          {projects.length === 0 ? 'No projects found' : 'No matches'}
+        </div>
+      ) : (
+        <div className="divide-y divide-border">
+          {filtered.map((project) => {
+            const projectPath = normalizePath(project.cwd || project.name || '');
+            const isCurrent = !!currentProjectPath && canonicalPathKey(projectPath) === canonicalPathKey(currentProjectPath);
+            const isOpening = openingProjectId === project.id;
+
+            return (
+              <button
+                key={project.id}
+                onClick={() => onProjectClick(project)}
+                disabled={!!openingProjectId || isSubmitting}
+                title={project.cwd ? `${getProjectDisplayName(project)}\n${project.cwd}` : getProjectDisplayName(project)}
+                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50 disabled:opacity-50 ${isCurrent ? 'bg-accent/30' : ''}`}
+              >
+                {isOpening ? (
+                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+                ) : isCurrent ? (
+                  <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+                ) : (
+                  <div className="h-3.5 w-3.5 shrink-0" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">{getProjectDisplayName(project)}</div>
+                  {project.cwd && (
+                    <div className="truncate font-mono text-xs text-muted-foreground">{project.cwd}</div>
+                  )}
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-0.5">
+                  {project.session_count > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      {project.session_count} session{project.session_count !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                  <span className="text-xs text-muted-foreground/70">
+                    {relativeTime(project.modified_at) ?? 'today'}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ProjectSelectDialog
+// ---------------------------------------------------------------------------
+
+interface ProjectSelectDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  projects: ProjectListItem[];
+  isLoadingProjects: boolean;
+  currentProjectPath: string;
+  openingProjectId: string | null;
+  isSubmitting: boolean;
+  computeNodeAvailable: boolean;
+  error: string | null;
+  onProjectClick: (project: ProjectListItem) => void;
+  onOpenFolder: () => void;
+  onCreateNew: () => void;
+}
+
+function ProjectSelectDialog({
+  open,
+  onOpenChange,
+  projects,
+  isLoadingProjects,
+  currentProjectPath,
+  openingProjectId,
+  isSubmitting,
+  computeNodeAvailable,
+  error,
+  onProjectClick,
+  onOpenFolder,
+  onCreateNew,
+}: ProjectSelectDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Projects</DialogTitle>
+          <DialogDescription>Select a project or open a new folder.</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 overflow-y-auto pr-1">
+          <ProjectSelectList
+            projects={projects}
+            isLoading={isLoadingProjects}
+            currentProjectPath={currentProjectPath}
+            openingProjectId={openingProjectId}
+            isSubmitting={isSubmitting}
+            onProjectClick={onProjectClick}
+          />
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              className="flex-1 gap-2"
+              onClick={onOpenFolder}
+              disabled={!computeNodeAvailable || isSubmitting || !!openingProjectId}
+            >
+              <FolderOpen className="h-4 w-4" />
+              Open Folder
+            </Button>
+            <Button
+              variant="outline"
+              className="flex-1 gap-2"
+              onClick={onCreateNew}
+              disabled={isSubmitting || !!openingProjectId}
+            >
+              <FolderPlus className="h-4 w-4" />
+              Create New
+            </Button>
+          </div>
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// NewProjectDialog
+// ---------------------------------------------------------------------------
+
+interface NewProjectDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  defaultWorkspacePath: string;
+  computeNodeAvailable: boolean;
+  pickFolder: (initialDir?: string) => Promise<string | null>;
+  onCreate: (name: string, parentFolder: string) => Promise<void>;
+}
+
+function NewProjectDialog({
+  open,
+  onOpenChange,
+  defaultWorkspacePath,
+  computeNodeAvailable,
+  pickFolder,
+  onCreate,
+}: NewProjectDialogProps) {
+  const [projectName, setProjectName] = useState('');
+  const [parentFolder, setParentFolder] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setProjectName('');
+    setParentFolder(defaultWorkspacePath);
+    setError(null);
+    setIsSubmitting(false);
+  }, [open, defaultWorkspacePath]);
+
+  const handleCreate = useCallback(async () => {
+    if (!projectName.trim() || !parentFolder.trim()) {
+      setError('Please fill in both fields');
+      return;
+    }
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await onCreate(projectName.trim(), parentFolder.trim());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create project');
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [projectName, parentFolder, onCreate]);
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Create New Project</DialogTitle>
+          <DialogDescription>Enter a name and choose a parent folder for the new project.</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="new-project-name">Project name</Label>
+            <Input
+              id="new-project-name"
+              placeholder="my-awesome-project"
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter') void handleCreate(); }}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="new-parent-folder">Parent folder</Label>
+            <div className="flex gap-2">
+              <Input
+                id="new-parent-folder"
+                value={parentFolder}
+                onChange={(e) => setParentFolder(e.target.value)}
+                placeholder={defaultWorkspacePath || 'Select parent folder'}
+                className="flex-1 font-mono text-sm"
+                dir="ltr"
+              />
+              {computeNodeAvailable && (
+                <Button variant="outline" onClick={() => void pickFolder(parentFolder || defaultWorkspacePath || undefined).then((p) => { if (p) setParentFolder(p); })} type="button" title="Browse">
+                  <FolderOpen className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+
+          <Button
+            className="w-full"
+            onClick={() => void handleCreate()}
+            disabled={isSubmitting || !projectName.trim() || !parentFolder.trim()}
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Creating...
+              </>
+            ) : (
+              'Create Project'
+            )}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// OpenProjectComponent — orchestrator
+// ---------------------------------------------------------------------------
+
 interface OpenProjectComponentProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -43,25 +426,65 @@ export function OpenProjectComponent({ open, onOpenChange, onProjectChanged }: O
   const { projects: scanProjects, isLoading: isLoadingScanProjects } = useClaudeProjectList({ enabled: open });
   const { computeNode } = useAgentContext();
 
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [newProjectName, setNewProjectName] = useState('');
-  const [parentFolderPath, setParentFolderPath] = useState('');
+  const [showCreate, setShowCreate] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [openingProjectId, setOpeningProjectId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [flowpadProjects, setFlowpadProjects] = useState<Project[]>([]);
 
   const defaultWorkspacePath = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '', []);
 
-  // Reset state when dialog opens
   useEffect(() => {
-    if (!open) return;
-    setShowCreateForm(false);
-    setNewProjectName('');
-    setParentFolderPath(defaultWorkspacePath);
-    setError(null);
-    setIsSubmitting(false);
-    setOpeningProjectId(null);
-  }, [open, defaultWorkspacePath]);
+    if (!open) {
+      setShowCreate(false);
+      setError(null);
+      setIsSubmitting(false);
+      setOpeningProjectId(null);
+      return;
+    }
+    Project.query(new QueryRequest({ type: Project.type, scope: [] }))
+      .then(setFlowpadProjects)
+      .catch(() => {});
+  }, [open]);
+
+  // Merge scanned Claude projects with flowpad Project entities, then deduplicate
+  // by canonical path. Scanned entries are preferred (they have real session counts
+  // and filesystem timestamps). Flowpad-only entries (no Claude session yet) are
+  // appended with session_count=0 and modified_at=null (treated as today by the filter).
+  const mergedProjects = useMemo((): ProjectListItem[] => {
+    const byPath = new Map<string, ProjectListItem>();
+
+    const upsert = (item: ProjectListItem) => {
+      const key = item.cwd ? canonicalPathKey(normalizePath(item.cwd)) : null;
+      if (!key) return;
+      const existing = byPath.get(key);
+      // Keep entry with more sessions; on tie prefer non-null modified_at
+      if (!existing || item.session_count > existing.session_count ||
+          (item.session_count === existing.session_count && item.modified_at && !existing.modified_at)) {
+        byPath.set(key, item);
+      }
+    };
+
+    for (const p of scanProjects) upsert(p);
+
+    for (const p of flowpadProjects) {
+      const path = p.fs_storage_mount_path;
+      // Skip blank, temp, internal, and session/record-path entities
+      if (!path || !p.name) continue;
+      if (/^\/tmp\/|^\/private\/tmp\//.test(path)) continue;
+      if (/[/\\](\.flow|flow\/sessions|flow\/records)[/\\]/.test(path)) continue;
+      upsert({
+        id: `flowpad:${p.id}`,
+        name: p.displayName,
+        encoded_name: p.id,
+        cwd: path,
+        session_count: 0,
+        modified_at: null,
+      });
+    }
+
+    return Array.from(byPath.values());
+  }, [scanProjects, flowpadProjects]);
 
   const currentProjectPath = useMemo(
     () => normalizePath(currentProject?.fs_storage_mount_path || currentProject?.name || ''),
@@ -103,7 +526,6 @@ export function OpenProjectComponent({ open, onOpenChange, onProjectChanged }: O
     [setCurrentProjectContext],
   );
 
-  // Click a project from the list
   const handleProjectClick = useCallback(
     async (project: ProjectListItem) => {
       const path = normalizePath(project.cwd || project.name || '');
@@ -123,24 +545,21 @@ export function OpenProjectComponent({ open, onOpenChange, onProjectChanged }: O
     [ensureProjectAndSetContext, onOpenChange],
   );
 
-  // Pick a folder via the backend compute node dialog.
-  // The dialog must open as part of the app (not a separate dock icon).
-  const pickFolder = useCallback(async (): Promise<string | null> => {
+  const pickFolder = useCallback(async (initialDir?: string): Promise<string | null> => {
     if (!computeNode) {
       setError('No compute node available');
       return null;
     }
     try {
-      return await computeNode.openPathDialog();
-    } catch (err) {
+      return await computeNode.openPathDialog(initialDir);
+    } catch {
       setError('Failed to open folder picker');
       return null;
     }
   }, [computeNode]);
 
-  // Open folder via picker
   const handleOpenFolder = useCallback(async () => {
-    const selected = await pickFolder();
+    const selected = await pickFolder(defaultWorkspacePath || undefined);
     if (!selected) return;
 
     setIsSubmitting(true);
@@ -158,166 +577,41 @@ export function OpenProjectComponent({ open, onOpenChange, onProjectChanged }: O
     }
   }, [pickFolder, ensureProjectAndSetContext, onOpenChange, toast]);
 
-  // Browse for parent folder in create mode
-  const handleBrowseParent = useCallback(async () => {
-    const selected = await pickFolder();
-    if (selected) {
-      setParentFolderPath(selected);
-      setError(null);
-    }
-  }, [pickFolder]);
-
-  // Create new project
-  const handleCreate = useCallback(async () => {
-    if (!newProjectName.trim() || !parentFolderPath.trim()) {
-      setError('Please fill in both fields');
-      return;
-    }
-
-    const fullPath = `${normalizePath(parentFolderPath)}/${newProjectName.trim()}`;
-    setIsSubmitting(true);
-    setError(null);
-    try {
+  // NewProjectDialog calls this after validation
+  const handleCreate = useCallback(
+    async (name: string, parentFolder: string) => {
+      const fullPath = `${normalizePath(parentFolder)}/${name}`;
       await ensureProjectAndSetContext(fullPath);
       onOpenChange(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create project');
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [newProjectName, parentFolderPath, ensureProjectAndSetContext, onOpenChange]);
+    },
+    [ensureProjectAndSetContext, onOpenChange],
+  );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Projects</DialogTitle>
-          <DialogDescription>Select a project or open a new folder.</DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-3 overflow-y-auto pr-1">
-          {/* Project list */}
-          <div className="max-h-64 overflow-y-auto rounded-lg border border-border bg-card">
-            {isLoadingScanProjects ? (
-              <div className="flex items-center justify-center py-8 text-sm text-muted-foreground">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Loading projects...
-              </div>
-            ) : scanProjects.length === 0 ? (
-              <div className="py-8 text-center text-sm text-muted-foreground">No projects found</div>
-            ) : (
-              <div className="divide-y divide-border">
-                {scanProjects.map((project) => {
-                  const projectPath = normalizePath(project.cwd || project.name || '');
-                  const isCurrent = !!currentProjectPath && canonicalPathKey(projectPath) === canonicalPathKey(currentProjectPath);
-                  const isOpening = openingProjectId === project.id;
-
-                  return (
-                    <button
-                      key={project.id}
-                      onClick={() => void handleProjectClick(project)}
-                      disabled={!!openingProjectId || isSubmitting}
-                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50 disabled:opacity-50 ${isCurrent ? 'bg-accent/30' : ''}`}
-                    >
-                      {isOpening ? (
-                        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
-                      ) : isCurrent ? (
-                        <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
-                      ) : (
-                        <div className="h-3.5 w-3.5 shrink-0" />
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium">{getProjectDisplayName(project)}</div>
-                        {project.cwd && (
-                          <div className="truncate font-mono text-xs text-muted-foreground">{project.cwd}</div>
-                        )}
-                      </div>
-                      {project.session_count > 0 && (
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                          {project.session_count} session{project.session_count !== 1 ? 's' : ''}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Action buttons */}
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              className="flex-1 gap-2"
-              onClick={() => void handleOpenFolder()}
-              disabled={!computeNode || isSubmitting || !!openingProjectId}
-            >
-              <FolderOpen className="h-4 w-4" />
-              Open Folder
-            </Button>
-            <Button
-              variant={showCreateForm ? 'default' : 'outline'}
-              className="flex-1 gap-2"
-              onClick={() => setShowCreateForm(!showCreateForm)}
-              disabled={isSubmitting || !!openingProjectId}
-            >
-              <FolderPlus className="h-4 w-4" />
-              Create New
-            </Button>
-          </div>
-
-          {/* Inline create form */}
-          {showCreateForm && (
-            <div className="space-y-3 rounded-lg border bg-card p-3">
-              <div className="space-y-2">
-                <Label htmlFor="project-name">Project name</Label>
-                <Input
-                  id="project-name"
-                  placeholder="my-awesome-project"
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                  autoFocus
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="parent-folder">Parent folder</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="parent-folder"
-                    value={parentFolderPath}
-                    onChange={(e) => setParentFolderPath(e.target.value)}
-                    placeholder={defaultWorkspacePath || 'Select parent folder'}
-                    className="flex-1 font-mono text-sm"
-                    dir="ltr"
-                  />
-                  {computeNode && (
-                    <Button variant="outline" onClick={() => void handleBrowseParent()} type="button" title="Browse">
-                      <FolderOpen className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-              <Button
-                className="w-full"
-                onClick={() => void handleCreate()}
-                disabled={isSubmitting || !newProjectName.trim() || !parentFolderPath.trim()}
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  'Create Project'
-                )}
-              </Button>
-            </div>
-          )}
-
-          {error && <p className="text-sm text-destructive">{error}</p>}
-        </div>
-      </DialogContent>
-    </Dialog>
+    <>
+      <ProjectSelectDialog
+        open={open && !showCreate}
+        onOpenChange={onOpenChange}
+        projects={mergedProjects}
+        isLoadingProjects={isLoadingScanProjects}
+        currentProjectPath={currentProjectPath}
+        openingProjectId={openingProjectId}
+        isSubmitting={isSubmitting}
+        computeNodeAvailable={!!computeNode}
+        error={error}
+        onProjectClick={(p) => void handleProjectClick(p)}
+        onOpenFolder={() => void handleOpenFolder()}
+        onCreateNew={() => setShowCreate(true)}
+      />
+      <NewProjectDialog
+        open={open && showCreate}
+        onOpenChange={(v) => { if (!v) onOpenChange(false); }}
+        defaultWorkspacePath={defaultWorkspacePath}
+        computeNodeAvailable={!!computeNode}
+        pickFolder={pickFolder}
+        onCreate={handleCreate}
+      />
+    </>
   );
 }
 
