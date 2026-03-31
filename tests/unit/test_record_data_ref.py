@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from flow_sdk.fs_store.record import get_default_records_root, record_stem, set_default_records_root
+from flow_sdk.fs_store.record import get_default_records_data_root, record_stem, set_default_records_data_root
 from flow_sdk.fs_store.record_ref import RecordDataRef, RecordRef
 
 
@@ -21,27 +21,27 @@ class TestRecordDataRef:
         assert roundtripped.id == ref.id
 
     def test_resolve_data_dir_returns_data_subfolder(self, tmp_path):
-        original = get_default_records_root()
+        original = get_default_records_data_root()
         try:
-            set_default_records_root(tmp_path)
+            set_default_records_data_root(tmp_path)
             ref = RecordDataRef(id="test-001", type="test_record")
             data_dir = ref.resolve_data_dir()
             stem = record_stem("test_record", "test-001")
-            assert data_dir == tmp_path / "test_record" / stem / "data"
+            assert data_dir == tmp_path / "test_record" / stem
         finally:
-            set_default_records_root(original)
+            set_default_records_data_root(original)
 
     def test_resolve_data_dir_with_explicit_root(self, tmp_path):
         ref = RecordDataRef(id="test-001", type="test_record")
         data_dir = ref.resolve_data_dir(records_root=tmp_path)
         stem = record_stem("test_record", "test-001")
-        assert data_dir == tmp_path / "test_record" / stem / "data"
+        assert data_dir == tmp_path / "test_record" / stem
 
     def test_resolve_data_file_default_is_data_json(self, tmp_path):
         ref = RecordDataRef(id="test-001", type="test_record")
         data_file = ref.resolve_data_file(records_root=tmp_path)
         stem = record_stem("test_record", "test-001")
-        assert data_file == tmp_path / "test_record" / stem / "data" / "_obj_data.json"
+        assert data_file == tmp_path / "test_record" / stem / "_obj_data.json"
 
     def test_resolve_data_file_with_absolute_path(self, tmp_path):
         abs_path = str(tmp_path / "custom" / "data.json")

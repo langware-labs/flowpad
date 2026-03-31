@@ -23,7 +23,11 @@ const normalizePath = (path: string): string => {
   return normalized.replace(/\/+$/, '');
 };
 
-const canonicalPathKey = (path: string): string => normalizePath(path).replace(/^\/+/, '');
+const canonicalPathKey = (path: string): string => {
+  const normalized = normalizePath(path);
+  if (!normalized) return '';
+  return normalized.replace(/^\/+/, '') || normalized;
+};
 
 const getProjectPath = (project: Project): string => normalizePath(project.fs_storage_mount_path || project.name || '');
 
