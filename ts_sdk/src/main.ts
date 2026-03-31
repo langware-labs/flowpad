@@ -47,7 +47,7 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         void dataContext.loadCloudUser();
       }
 
-      // Reload on cloud login completion (works for both browser popup and Electron external browser)
+      // Reload on cloud login and logout completion (works for both browser popup and Electron external browser)
       dataManager.on(OAuthEventType.OAUTH_FLOW_COMPLETE, (msg: { provider: string }) => {
         if (msg.provider === OAUTH_PROVIDERS.FLOWPAD_CLOUD) {
           window.location.reload();

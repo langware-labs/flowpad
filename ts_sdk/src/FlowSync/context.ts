@@ -178,12 +178,13 @@ class DataContext extends EventEmitter {
   }
 
   /**
-   * Log out from the cloud account by navigating to the logout redirect endpoint.
-   * The server clears credentials and redirects back to the app root (full page reload).
+   * Log out from the cloud account via the OAuth disconnect action.
+   * The server clears local credentials and returns the cloud logout URL;
+   * the OAuth service opens it in a browser window (same mechanism as login).
    */
-  cloudLogout(): void {
-    const next = encodeURIComponent(window.location.origin);
-    window.location.href = `${sdkConfig.SERVER_URL}/auth/logout?next=${next}`;
+  async cloudLogout(): Promise<void> {
+    const { oauthService, OAUTH_PROVIDERS } = await import('../services/oauth/oauth-service');
+    await oauthService.disconnect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
   }
 
   /**

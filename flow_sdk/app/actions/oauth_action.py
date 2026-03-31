@@ -103,6 +103,8 @@ async def oauth_main() -> ApiResponse:
 
         # Disconnect
         if oauth_action_str == OAuthAction.Disconnect:
+            if provider == OAuthProvider.FLOWPAD_CLOUD:
+                return await _handle_flowpad_cloud_disconnect()
             return ApiSuccessResponse(
                 message=f"OAuth {provider} disconnected (desktop stub)",
                 data={"remaining_attachment_count": 0},
@@ -153,6 +155,29 @@ async def _handle_status(provider: str) -> ApiResponse:
             message="Connection status checked",
             data={"status": "missing", "has_token": False, "is_attached": False},
         )
+
+
+async def _handle_flowpad_cloud_disconnect() -> ApiResponse:
+    """Handle flowpad_cloud disconnect: clear local credentials and return the cloud logout URL."""
+    import os
+
+    from flow_sdk.cli.app_config import set_user
+    from flow_sdk.cli.auth import delete_api_key
+    from flow_sdk.cli.env_loader import get_logout_url
+    from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
+    from flow_sdk.server import state as server_state
+
+    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    post_logout_url = f"http://127.0.0.1:{port}/post_logout"
+    cloud_logout_url = get_logout_url(post_logout_url)
+
+    delete_api_key()
+    set_user({})
+    server_state.login_result = None
+    server_state.login_received.clear()
+    invalidate_bootstrap_cache()
+
+    return ApiSuccessResponse(data={"remaining_attachment_count": 0, "browser_url": cloud_logout_url})
 
 
 async def _handle_auth(provider: str, request_info) -> ApiResponse:
