@@ -34,18 +34,36 @@ T = TypeVar("T", bound="Record")
 _META_JSON = "metadata.json"
 _DATA_JSON = "data.json"  # backward-compat: used by resource_record_list
 
-_DEFAULT_RECORDS_ROOT: Path = Path.home() / ".flow" / "records"
+_FLOWPAD_HOME: Path = Path.home() / ".flow"
+_DEFAULT_RECORDS_ROOT: Path = _FLOWPAD_HOME / "records"
+_DEFAULT_RECORDS_DATA_ROOT: Path = _FLOWPAD_HOME / "records_data"
+
+
+def get_flowpad_home() -> Path:
+    """Return the flowpad home directory (~/.flow by default)."""
+    return _FLOWPAD_HOME
 
 
 def get_default_records_root() -> Path:
-    """Return the default root for record storage."""
+    """Return the default root for record metadata storage."""
     return _DEFAULT_RECORDS_ROOT
+
+
+def get_default_records_data_root() -> Path:
+    """Return the default root for record data/blob storage (~/.flow/records_data)."""
+    return _DEFAULT_RECORDS_DATA_ROOT
 
 
 def set_default_records_root(path: Path) -> None:
     """Override the default records root (primarily for testing)."""
     global _DEFAULT_RECORDS_ROOT
     _DEFAULT_RECORDS_ROOT = path
+
+
+def set_default_records_data_root(path: Path) -> None:
+    """Override the default records data root (primarily for testing)."""
+    global _DEFAULT_RECORDS_DATA_ROOT
+    _DEFAULT_RECORDS_DATA_ROOT = path
 
 
 class RecordStatus(str, Enum):
