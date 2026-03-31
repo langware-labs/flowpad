@@ -198,6 +198,9 @@ _BUILTIN_DEFAULT_TYPES: list[str] = [
     RecordType.CLAUDE_MD,
     RecordType.CLAUDE_MEMORY,
     RecordType.CLAUDE_RULES,
+    RecordType.CLAUDE_HOOK,
+    RecordType.COMMAND,
+    RecordType.ANNOTATION,
 ]
 
 
