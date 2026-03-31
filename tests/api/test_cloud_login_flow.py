@@ -1,10 +1,11 @@
 """
-Tests for the cloud login flow:
+Tests for the cloud login/logout flow:
   1. GET /api/v1/graph/oauth/flowpad_cloud/auth returns auth_url and oauth_request_id
   2. GET /post_login?flowpad-api-key=<key> stores the key and sets login state
   3. GET /api/v1/auth/status returns logged_in=True after a successful post_login
   4. GET /api/v1/graph/bootstrap returns cloud_login_available=True when logged in
-  5. GET /logout clears the key, login state, and redirects to /
+  5. GET /api/v1/graph/oauth/flowpad_cloud/disconnect clears creds and returns browser_url
+  6. GET /post_logout shows a logout confirmation page
 """
 
 import pytest
@@ -231,8 +232,8 @@ async def test_refresh_token_returns_token(client):
 
 
 @pytest.mark.asyncio
-async def test_logout(client):
-    """GET /logout clears credentials, resets login state, invalidates bootstrap cache, and redirects to /."""
+async def test_flowpad_cloud_disconnect(client):
+    """GET /api/v1/graph/oauth/flowpad_cloud/disconnect clears credentials and returns browser_url."""
     import flow_sdk.server.routes.bootstrap as bootstrap_mod
     from flow_sdk.server import state
 
@@ -244,10 +245,25 @@ async def test_logout(client):
         patch("flow_sdk.cli.auth.delete_api_key"),
         patch("flow_sdk.cli.app_config.set_user"),
     ):
-        response = await client.get("/api/v1/auth/logout?next=http://localhost:4097/", follow_redirects=False)
+        response = await client.get("/api/v1/graph/oauth/flowpad_cloud/disconnect")
 
-    assert response.status_code == 302
-    assert response.headers["location"] == "http://localhost:4097/"
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert "browser_url" in data
+    assert "remaining_attachment_count" in data
+    assert data["remaining_attachment_count"] == 0
+    assert "logout_callback" in data["browser_url"]
+    assert "post_logout" in data["browser_url"]
     assert state.login_result is None
     assert not state.login_received.is_set()
     assert bootstrap_mod._bootstrap_cache is None
+
+
+@pytest.mark.asyncio
+async def test_post_logout(client):
+    """GET /post_logout shows the logout confirmation page."""
+    response = await client.get("/post_logout")
+
+    assert response.status_code == 200
+    assert "Logout Successful" in response.text
+    assert "You can now close this browser page" in response.text

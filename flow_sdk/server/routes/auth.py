@@ -2,11 +2,10 @@
 Authentication routes for the local server.
 """
 
-import os
 from pathlib import Path
 
 from fastapi import APIRouter, Query
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from flow_sdk.api.messages import OAuthMessage, OAuthMessageStatus
 from flow_sdk.api.oauth_api import OAuthProvider
@@ -18,39 +17,104 @@ router = APIRouter()  # page routes — mounted at root
 api_router = APIRouter(prefix="/api/v1/auth")  # API routes — mounted under /api/v1
 
 
+def _render_result_page(
+    title: str,
+    heading: str,
+    subheading: str,
+    detail_html: str,
+    color: str,
+    icon: str,
+    status_code: int = 200,
+) -> HTMLResponse:
+    """Render a simple branded result page (login/logout success or error)."""
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{title} - Flowpad</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }}
+        .container {{
+            background: white;
+            border-radius: 12px;
+            padding: 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            text-align: center;
+        }}
+        .result-icon {{
+            font-size: 64px;
+            margin-bottom: 20px;
+        }}
+        h1 {{
+            color: {color};
+            margin-bottom: 10px;
+        }}
+        p {{
+            color: #666;
+            margin: 10px 0;
+        }}
+        .detail-box {{
+            background: color-mix(in srgb, {color} 8%, white);
+            border-left: 4px solid {color};
+            padding: 15px;
+            margin: 20px 0;
+            text-align: left;
+            border-radius: 4px;
+        }}
+        .close-message {{
+            background: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 24px;
+            margin-top: 40px;
+            font-size: 18px;
+            font-weight: 600;
+            color: #334155;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="result-icon">{icon}</div>
+        <h1>{heading}</h1>
+        <p>{subheading}</p>
+        {detail_html}
+    </div>
+    <div class="close-message">
+        ✓ You can now close this browser page
+    </div>
+</body>
+</html>"""
+    return HTMLResponse(content=html_content, status_code=status_code)
+
+
 @router.get("/post_login", response_class=HTMLResponse)
 async def post_login(flowpad_api_key: str = Query(None, alias="flowpad-api-key")):
     """
     POST login endpoint that receives an API key.
     Validates the API key and stores it in the system keyring.
-
-    Args:
-        flowpad_api_key: The API key from the flowpad-api-key GET parameter
-
-    Returns:
-        HTML response with success or error message
     """
     try:
         # Import here to avoid circular dependency
         from flow_sdk.cli.app_config import set_user
         from flow_sdk.cli.auth import set_api_key, validate_api_key
 
-        # Check if API key was provided
         if not flowpad_api_key:
             raise ValueError("No API key provided. Expected 'flowpad-api-key' parameter.")
 
-        # Validate the API key
         user_info = validate_api_key(flowpad_api_key)
-
-        # Store the API key in keyring
         set_api_key(flowpad_api_key)
-
-        # Store user info in app config
         set_user(user_info)
 
         state.login_result = {"success": True, "user": user_info, "message": "Login successful"}
-
-        # Signal that login was received
         state.login_received.set()
 
         # Invalidate the bootstrap cache so the next fetch returns cloud_login_available=true
@@ -71,165 +135,31 @@ async def post_login(flowpad_api_key: str = Query(None, alias="flowpad-api-key")
         except Exception:
             pass
 
-        # Return success HTML
         user_id = user_info.get("id", "Unknown")
-        html_content = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login Successful - Flowpad</title>
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-            max-width: 600px;
-            margin: 50px auto;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-        }}
-        .container {{
-            background: white;
-            border-radius: 12px;
-            padding: 40px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-            text-align: center;
-        }}
-        .success-icon {{
-            font-size: 64px;
-            margin-bottom: 20px;
-        }}
-        h1 {{
-            color: #22c55e;
-            margin-bottom: 10px;
-        }}
-        p {{
-            color: #666;
-            margin: 10px 0;
-        }}
-        .info {{
-            background: #f0fdf4;
-            border-left: 4px solid #22c55e;
-            padding: 15px;
-            margin: 20px 0;
-            text-align: left;
-            border-radius: 4px;
-        }}
-        .close-message {{
-            background: #f8fafc;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            padding: 24px;
-            margin-top: 40px;
-            font-size: 18px;
-            font-weight: 600;
-            color: #334155;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="success-icon">✓</div>
-        <h1>Login Successful!</h1>
-        <p>You have been successfully logged in to Flowpad.</p>
-
-        <div class="info">
-            <strong>Account Details:</strong><br>
-            User ID: {user_id}
-        </div>
-    </div>
-
-    <div class="close-message">
-        ✓ You can now close this browser page
-    </div>
-</body>
-</html>
-"""
-        return HTMLResponse(content=html_content)
+        detail_html = f'<div class="detail-box"><strong>Account Details:</strong><br>User ID: {user_id}</div>'
+        return _render_result_page(
+            title="Login Successful",
+            heading="Login Successful!",
+            subheading="You have been successfully logged in to Flowpad.",
+            detail_html=detail_html,
+            color="#22c55e",
+            icon="✓",
+        )
 
     except Exception as e:
         state.login_result = {"success": False, "error": str(e), "message": "Login failed"}
-
-        # Signal that login was received (even if failed)
         state.login_received.set()
 
-        # Return error HTML
-        error_message = str(e)
-        html_content = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login Failed - Flowpad</title>
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-            max-width: 600px;
-            margin: 50px auto;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-        }}
-        .container {{
-            background: white;
-            border-radius: 12px;
-            padding: 40px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-            text-align: center;
-        }}
-        .error-icon {{
-            font-size: 64px;
-            margin-bottom: 20px;
-        }}
-        h1 {{
-            color: #ef4444;
-            margin-bottom: 10px;
-        }}
-        p {{
-            color: #666;
-            margin: 10px 0;
-        }}
-        .error-info {{
-            background: #fef2f2;
-            border-left: 4px solid #ef4444;
-            padding: 15px;
-            margin: 20px 0;
-            text-align: left;
-            border-radius: 4px;
-        }}
-        .close-message {{
-            background: #f8fafc;
-            border: 2px solid #e2e8f0;
-            border-radius: 8px;
-            padding: 24px;
-            margin-top: 40px;
-            font-size: 18px;
-            font-weight: 600;
-            color: #334155;
-        }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="error-icon">✗</div>
-        <h1>Login Failed</h1>
-        <p>There was an error during login.</p>
-
-        <div class="error-info">
-            <strong>Error Details:</strong><br>
-            {error_message}
-        </div>
-    </div>
-
-    <div class="close-message">
-        ✓ You can now close this browser page
-    </div>
-</body>
-</html>
-"""
-        return HTMLResponse(content=html_content, status_code=400)
+        detail_html = f'<div class="detail-box"><strong>Error Details:</strong><br>{e}</div>'
+        return _render_result_page(
+            title="Login Failed",
+            heading="Login Failed",
+            subheading="There was an error during login.",
+            detail_html=detail_html,
+            color="#ef4444",
+            icon="✗",
+            status_code=400,
+        )
 
 
 @router.get("/test_login", response_class=HTMLResponse)
@@ -267,19 +197,35 @@ async def auth_status():
 
 
 
-@api_router.get("/logout")
-async def logout(next: str = Query(default="/")):
-    """Clear credentials and redirect to the frontend root."""
+def _clear_local_credentials():
+    """Clear the locally stored API key and user info."""
     from flow_sdk.cli.app_config import set_user
     from flow_sdk.cli.auth import delete_api_key
     from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
 
     delete_api_key()
-    set_user(None)
+    set_user({})
     state.login_result = None
     state.login_received.clear()
     invalidate_bootstrap_cache()
-    return RedirectResponse(url=next, status_code=302)
+
+
+@router.get("/post_logout", response_class=HTMLResponse)
+async def post_logout():
+    """
+    Callback after cloud logout. Clears local credentials and shows a confirmation page.
+    The cloud server redirects here after invalidating the server-side session.
+    """
+    _clear_local_credentials()
+    return _render_result_page(
+        title="Logout Successful",
+        heading="Logout Successful",
+        subheading="You have been successfully logged out of Flowpad.",
+        detail_html="",
+        color="#22c55e",
+        icon="👋",
+    )
+
 
 
 @api_router.post("/refresh-token")

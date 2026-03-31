@@ -12,28 +12,38 @@ class ApiConfig(BaseModel):
 
     api_base_url: Optional[str] = Field(default=None)
     login_url: Optional[str] = Field(default=None)
+    logout_url: Optional[str] = Field(default=None)
 
     def __init__(self, **data: Any):
         super().__init__(**data)
         self.api_base_url = os.environ.get("API_BASE_URL", "https://app.flowpad.ai/api/v1")
         self.login_url = os.environ.get("LOGIN_URL", "/login?target_path={redirect_url}")
+        self.logout_url = os.environ.get("LOGOUT_URL", "/logout?returnTo={return_url}")
 
     @classmethod
     def from_env(cls) -> "ApiConfig":
         """Create ApiConfig from environment variables"""
         api_base_url = os.environ.get("API_BASE_URL", "https://app.flowpad.ai/api/v1")
         login_url = os.environ.get("LOGIN_URL", "/login?target_path={redirect_url}")
+        logout_url = os.environ.get("LOGOUT_URL", "/logout?returnTo={return_url}")
 
-        return cls(api_base_url=api_base_url, login_url=login_url)
+        return cls(api_base_url=api_base_url, login_url=login_url, logout_url=logout_url)
+
+    def _get_full_url(self, path: Optional[str]) -> str:
+        """Combine api_base_url with a relative path, or return as-is if absolute."""
+        if not path:
+            return self.api_base_url or ""
+        if path.startswith("http"):
+            return path
+        return f"{self.api_base_url}{path}"
 
     def get_full_login_url(self) -> str:
         """Get the full login URL by combining base URL with login path"""
-        # If login_url is absolute (starts with http), return as-is
-        if self.login_url.startswith("http"):
-            return self.login_url
+        return self._get_full_url(self.login_url)
 
-        # Otherwise, combine with api_base_url
-        return f"{self.api_base_url}{self.login_url}"
+    def get_full_logout_url(self) -> str:
+        """Get the full logout URL by combining base URL with logout path"""
+        return self._get_full_url(self.logout_url)
 
 
 class FlowpadClient:
