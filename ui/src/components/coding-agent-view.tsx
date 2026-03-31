@@ -74,7 +74,7 @@ export function CodingAgentView() {
           shell = Shell.create(cn, { name: 'Claude CLI' });
           (shell as any).id = sessionId;
           await shell.save(cn.typeId);
-          await shell.connect({ cols: 80, rows: 24 });
+          await shell.startPty({ cols: 80, rows: 24 });
 
           // Wait for PTY to be live before sending command
           const waitForPtyReady = () => {

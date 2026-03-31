@@ -1,7 +1,7 @@
-import { ActionInfo, dataContext, dataManager, Shell, Task } from '@sdk';
+import { ActionInfo, AgenticProcess, dataContext, dataManager, Task } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { useCallback, useMemo, useState } from 'react';
-import { v4 as uuidv4, v5 as uuidv5 } from 'uuid';
+import { v5 as uuidv5 } from 'uuid';
 import { useAction } from './use-action';
 import { useContext } from './useContext';
 
@@ -338,8 +338,6 @@ export function useClaudeErrorRecords() {
         await task.save([projectTypeId]);
         const taskId = task.id;
 
-        // Create a background shell session with Claude investigating the error
-        const shellSessionId = uuidv4();
         const workdir =
           project?.fs_storage_mount_path ||
           project?.name ||
@@ -356,37 +354,31 @@ export function useClaudeErrorRecords() {
           .filter(Boolean)
           .join('\n');
 
-        const sessionUuid = uuidv4();
-        const prompt = `Investigate this error. Analyze the issue, find root cause and solution, explain them to the user and fix the error if it is possible\n\n${errorDetails}`;
-        // Use ANSI-C quoting ($'...') so the shell interprets \n as newlines without
-        // embedding actual newline characters, which cause the terminal to show "quote>" prompts.
-        const escaped = prompt.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n');
-        const startCommand = `claude $'${escaped}' --session-id ${sessionUuid} --dangerously-skip-permissions`;
+        const instruction = `Investigate this error. Analyze the issue, find root cause and solution, explain them to the user and fix the error if it is possible\n\n${errorDetails}`;
 
-        const cn = computeNode ?? dataContext.computeNode;
-        if (cn) {
-          const shell = Shell.create(cn, { name: `Fix: ${error.error_msg.slice(0, 30)}` });
-          (shell as any).id = shellSessionId;
-          await shell.save(cn.typeId);
-          await shell.connect({ cols: 120, rows: 30, workdir, initialCommand: startCommand });
-        }
+        const { process, shell } = await AgenticProcess.spawn(
+          { permissionMode: 'bypassPermissions', workdir },
+          { instruction },
+        );
+
+        const shellId = shell?.id ?? null;
 
         if (taskId) {
           await _mutate(error.fingerprint, {
             error_status: ErrorStatus.TASK_CREATED,
             linked_task_id: taskId,
-            worker_session_id: shellSessionId,
-            claude_session_id: sessionUuid,
+            worker_session_id: shellId ?? '',
+            claude_session_id: process.worker_session_id ?? '',
             triaged_at: new Date().toISOString(),
           });
         }
-        return { taskId: taskId ?? null, shellId: shellSessionId };
+        return { taskId: taskId ?? null, shellId };
       } catch (e) {
         console.error('[useClaudeErrorRecords] Failed to create task:', e);
         return { taskId: null, shellId: null };
       }
     },
-    [projectTypeId, computeNode, project, _mutate],
+    [projectTypeId, project, _mutate],
   );
 
   /** Delete all debug logs and error records. Returns summary. */

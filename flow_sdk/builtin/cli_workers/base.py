@@ -111,11 +111,17 @@ class WorkerCLIOptions:
         cmd = f"{cd_part} && {env_part} {' '.join(args)}" if env_part else f"{cd_part} && {' '.join(args)}"
 
         if instruction:
-            if "\n" in instruction:
-                # Multi-line: heredoc avoids continuation prompts in PTY
-                cmd += f" \"$(cat <<'EOF'\n{instruction}\nEOF\n)\""
-            else:
-                cmd += f" {shlex.quote(instruction)}"
+            # ANSI-C quoting ($'...') is reliable in interactive PTY sessions.
+            # Heredoc inside $() inside "..." is fragile: bash's line-by-line
+            # PTY reader doesn't reliably recognize the EOF terminator.
+            escaped = (
+                instruction
+                .replace("\\", "\\\\")
+                .replace("'", "\\'")
+                .replace("\r", "")
+                .replace("\n", "\\n")
+            )
+            cmd += f" -- $'{escaped}'"
 
         return cmd
 
