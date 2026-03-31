@@ -237,7 +237,6 @@ class ScanActionsMixin:
                 data={
                     "id": processor.id,
                     "type": processor.type,
-                    "state": processor.state,
                 }
             )
 

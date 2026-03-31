@@ -566,11 +566,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * This is a convenience accessor mirroring Python's state.stackFrame.
    */
   get stackFrame(): Record<string, unknown> {
-    if (this.state.stack.length > 0) {
-      const topFrame = this.state.stack[this.state.stack.length - 1];
-      return { ...this.state.variables, ...topFrame.localVariables };
-    }
-    return this.state.variables;
+    return {};
   }
 
   /**
@@ -802,7 +798,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         this.flowDataStream.closeOpenGroups();
 
         // Check if process is already complete based on state
-        if (this.state.status === ProcessorStatus.COMPLETE || this.state.status === ProcessorStatus.ERROR) {
+        if (this.status === ProcessorStatus.COMPLETE || this.status === ProcessorStatus.ERROR) {
           this._markComplete();
         }
 
@@ -884,16 +880,16 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   async executeInstruction(instruction: string, options: { sync?: boolean; workerSessionId?: string } = {}): Promise<void> {
     const { sync = true, workerSessionId } = options;
 
-    if (this.state.status === ProcessorStatus.INTERRUPTED) {
+    if (this.status === ProcessorStatus.INTERRUPTED) {
       throw new Error('Process has been terminated');
     }
 
-    if (this.state.status === ProcessorStatus.RUNNING) {
+    if (this.status === ProcessorStatus.RUNNING) {
       throw new Error('Process is already running');
     }
 
     // Remember the initial status
-    const initialStatus = this.state.status;
+    const initialStatus = this.status;
 
     // Reset completion flag for new instruction (multi-turn support)
     this._completed = false;
@@ -962,21 +958,21 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Use this after async execute() calls to wait for completion.
    */
   async waitForIdle(): Promise<void> {
-    if (this.state.status === ProcessorStatus.IDLE) {
+    if (this.status === ProcessorStatus.IDLE) {
       return;
     }
 
     return new Promise((resolve, reject) => {
       const checkState = () => {
-        if (this.state.status === ProcessorStatus.IDLE) {
+        if (this.status === ProcessorStatus.IDLE) {
           unsubState();
           unsubError();
           resolve();
-        } else if (this.state.status === ProcessorStatus.ERROR) {
+        } else if (this.status === ProcessorStatus.ERROR) {
           unsubState();
           unsubError();
-          reject(new Error(this.state.error || 'Process error'));
-        } else if (this.state.status === ProcessorStatus.INTERRUPTED) {
+          reject(new Error(this._error?.message || 'Process error'));
+        } else if (this.status === ProcessorStatus.INTERRUPTED) {
           unsubState();
           unsubError();
           reject(new Error('Process was terminated'));
@@ -1009,7 +1005,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * ```
    */
   async exit(): Promise<void> {
-    if (this.state.status === ProcessorStatus.INTERRUPTED) {
+    if (this.status === ProcessorStatus.INTERRUPTED) {
       return; // Already terminated
     }
 
@@ -1028,7 +1024,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     await dataManager.callAction(actionInfo);
 
     // Update local state
-    this.state.status = ProcessorStatus.INTERRUPTED;
+    this.status = ProcessorStatus.INTERRUPTED;
     this._markComplete();
   }
 
@@ -1173,11 +1169,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * ```
    */
   async *step(): AsyncGenerator<FlowData, void, unknown> {
-    // Track the starting state index to detect when one instruction completes
-    const startIndex = this.state.index;
-
-    // Wait for flow data until we see the instruction index change
-    // or the process completes
+    // Wait for flow data until the process completes
     const queue: FlowData[] = [];
     let resolver: ((v: FlowData | null) => void) | null = null;
     let stepComplete = false;
@@ -1192,8 +1184,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     };
 
     const stateHandler = () => {
-      // Check if we've moved to a new instruction or completed
-      if (this.state.index > startIndex || this._completed) {
+      if (this._completed) {
         stepComplete = true;
         if (resolver) {
           resolver(null);
