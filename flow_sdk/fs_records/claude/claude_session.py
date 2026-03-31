@@ -149,6 +149,11 @@ class ClaudeSessionRecord(Record):
         return d.get("jsonl_path") or d.get("source_file_field") or self.source_file
 
     @property
+    def source_path(self) -> str:
+        """On-disk path used by search result navigation (the JSONL transcript file)."""
+        return self.jsonl_path or ""
+
+    @property
     def status(self) -> AgenticProcessStatus:
         """Derive status from the last 4 KB of the JSONL transcript (tail-read, ~60µs)."""
         path = self.jsonl_path
