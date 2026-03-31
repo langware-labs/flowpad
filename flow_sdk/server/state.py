@@ -3,13 +3,12 @@ Shared state for the local server.
 """
 
 import threading
-from typing import Dict, Any
+from typing import Any, Dict
 
-from .reporters import BufferReporter, WebSocketReporter, ReporterRegistry
-
+from .reporters import BufferReporter, ReporterRegistry, WebSocketReporter
 
 # Shared state for login
-login_result = None
+login_result: Dict[str, Any] | None = None
 login_received = threading.Event()
 
 # Shared state for ping

@@ -78,6 +78,14 @@ export function createCloudDisconnectedWarning(): UserWarning {
     message: 'Cloud Disconnected',
     description: 'Sharing, backup and download are blocked',
     targetView: ViewType.CONNECTIONS,
+    onClick: async () => {
+      try {
+        const { oauthService, OAUTH_PROVIDERS } = await import('../services/oauth/oauth-service');
+        await oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
+      } catch (e) {
+        console.error('[Cloud Login] Failed to get login URL:', e);
+      }
+    },
   };
 }
 

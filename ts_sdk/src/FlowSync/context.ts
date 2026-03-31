@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { computed, makeObservable, observable, runInAction } from 'mobx';
 import { v4 as uuidv4 } from 'uuid';
+import apiClient from '../client';
 import {
   ActionInfo,
   Agent,
@@ -26,6 +27,7 @@ import { TypeId } from '../models/TypeId';
 import { UserWarning } from '../models/UserWarning';
 import { defineGlobal } from '../utils/globals';
 import { SnifferHook } from '../services/sniffer-hook';
+import { sdkConfig } from '../config/index';
 import { ConnectionManager } from '../websocket';
 import { AuthError, AuthEventType, authManager } from './auth';
 import {
@@ -156,6 +158,33 @@ class DataContext extends EventEmitter {
    */
   get desktopInfo(): any {
     return this.bootstrapInfo?.desktop_info ?? null;
+  }
+
+  /**
+   * Fetch cloud user info and set it as the active user in context.
+   * Called fire-and-forget after bootstrap when cloudLoginAvailable is true.
+   */
+  async loadCloudUser(): Promise<void> {
+    try {
+      const data = await apiClient.get<{ logged_in: boolean; user: Record<string, unknown> }>('/auth/status');
+      if (data?.logged_in && data.user) {
+        const cloudUser = new User(data.user);
+        cloudUser.markAsExpanded();
+        await this.setContextEntityTypeId(ContextEntitiesEnum.CurrentUserTypeId, cloudUser.typeId);
+      }
+    } catch {
+      // Non-critical — local user stays in context
+    }
+  }
+
+  /**
+   * Log out from the cloud account via the OAuth disconnect action.
+   * The server clears local credentials and returns the cloud logout URL;
+   * the OAuth service opens it in a browser window (same mechanism as login).
+   */
+  async cloudLogout(): Promise<void> {
+    const { oauthService, OAUTH_PROVIDERS } = await import('../services/oauth/oauth-service');
+    await oauthService.disconnect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
   }
 
   /**
