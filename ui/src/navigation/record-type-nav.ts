@@ -108,7 +108,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     primaryAction: async (r, navigation) => {
       const sessionId = sessionIdFromResult(r);
       const p = await AgenticProcess.fromClaudeSession(sessionId);
-      navigation.openDock(p.searchDockPointer);
+      navigation.openDock(p.dockPointer);
     },
     actions: [
       {
