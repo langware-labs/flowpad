@@ -371,13 +371,18 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
     // Guard: reject TypeId-formatted strings (e.g. "claude-<uuid>", "shell-<uuid>")
     if (/^[a-z][a-z0-9-]*-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(newName)) return;
 
-    void shell.updateDisplay({ name: newName });
+    // PTY title changes must not override an explicit user rename.
+    // user_renamed is set by the backend when the user runs /rename in CC or
+    // renames via the UI dialog.
+    if (!injectRename && shell.user_renamed) return;
+
+    void shell.updateDisplay({ name: newName, is_pty: !injectRename });
 
     // Rule 4: inject /rename for Claude processes — only when user-initiated,
     // never when the title came from xterm (PTY escape sequence), to avoid a loop
     // where Claude sets the title → we inject /rename → Claude sets the title again.
     if (injectRename && session.agenticProcess && shell.connected) {
-      void shell.sendInput(`/rename ${newName}\n`);
+      void shell.sendInput(`/rename ${newName}\r`);
     }
   };
 
