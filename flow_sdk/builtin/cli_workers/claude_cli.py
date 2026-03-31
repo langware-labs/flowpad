@@ -92,10 +92,13 @@ class ClaudeCliOptions(WorkerCLIOptions):
             args.append("--worktree")
 
         if self.resume and self.session_id:
-            args.append(f"--resume {shlex.quote(self.session_id)}")
             if self.fork_session_id:
+                # Fork: --resume <source> --fork-session --session-id <new>
+                args.append(f"--resume {shlex.quote(self.fork_session_id)}")
                 args.append("--fork-session")
-                args.append(f"--session-id {shlex.quote(self.fork_session_id)}")
+                args.append(f"--session-id {shlex.quote(self.session_id)}")
+            else:
+                args.append(f"--resume {shlex.quote(self.session_id)}")
         elif self.session_id:
             args.append(f"--session-id {shlex.quote(self.session_id)}")
 
@@ -110,6 +113,27 @@ class ClaudeCliOptions(WorkerCLIOptions):
             args.append("-p")
 
         return args
+
+    def to_shell_string(self, instruction: str | None = None) -> str:
+        """Build shell command with --add-dir flags appended after the instruction.
+
+        Claude CLI requires that the prompt/instruction appear before --add-dir
+        flags when both are present. This override separates --add-dir from the
+        other args so _build_posix can insert the instruction first.
+        """
+        import sys
+
+        args = self._build_worker_args()
+        if sys.platform == "win32":
+            return self._build_win32(args, instruction)
+
+        main_args = [a for a in args if not a.startswith("--add-dir ")]
+        add_dir_args = [a for a in args if a.startswith("--add-dir ")]
+
+        cmd = self._build_posix(main_args, instruction)
+        if add_dir_args:
+            cmd += " " + " ".join(add_dir_args)
+        return cmd
 
     # ------------------------------------------------------------------
     # Serialisation

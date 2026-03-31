@@ -185,6 +185,11 @@ export class ConnectionManager extends EventEmitter {
   private baseReconnectDelay: number = 500; // ms
   private isReconnecting: boolean = false;
 
+  public resetReconnectState() {
+    this.reconnectAttempts = 0;
+    this.isReconnecting = false;
+  }
+
   constructor() {
     super();
     ConnectionManager.instance = this;

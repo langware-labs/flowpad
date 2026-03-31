@@ -208,13 +208,21 @@ async def test_shell_pty_e2e(pty_live_server):
 
             # The server may send interleaved data_op_msg broadcasts before the
             # REST response. Collect messages until we find the ApiResponse.
+            # The response may arrive at the top level (status=SUCCESS) or
+            # wrapped in a response_msg envelope (content.status=SUCCESS).
             open_resp = None
             for _ in range(10):
                 msg = await _recv(ws, timeout=15)
-                if msg.get("status") in ("SUCCESS", "FAIL"):
+                status = msg.get("status")
+                if status not in ("SUCCESS", "FAIL"):
+                    content = msg.get("content")
+                    if isinstance(content, dict):
+                        status = content.get("status")
+                if status in ("SUCCESS", "FAIL"):
                     open_resp = msg
+                    open_resp["_resolved_status"] = status
                     break
-            assert open_resp is not None and open_resp.get("status") == "SUCCESS", (
+            assert open_resp is not None and open_resp.get("_resolved_status") == "SUCCESS", (
                 f"Shell.open() failed or not received: {open_resp}"
             )
 

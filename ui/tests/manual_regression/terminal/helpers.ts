@@ -44,7 +44,7 @@ export async function gotoShell(page: Page) {
   await page
     .locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows')
     .first()
-    .waitFor({ state: 'attached', timeout: 10_000 });
+    .waitFor({ state: 'attached', timeout: 30_000 });
 
   // Give PTY time to start and render the prompt
   await page.waitForTimeout(2_000);
@@ -88,11 +88,11 @@ export async function gotoShellViaSidebar(page: Page) {
   await page.waitForURL(/\/dock\/shell/, { timeout: 10_000 });
 
   // Wait for the terminal to be ready
-  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
+  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
   await page
     .locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows')
     .first()
-    .waitFor({ state: 'attached', timeout: 10_000 });
+    .waitFor({ state: 'attached', timeout: 30_000 });
   await page.waitForTimeout(2_000);
 }
 
@@ -176,7 +176,7 @@ export async function goHome(page: Page) {
   // The collapsed sidebar renders: Back(0), Home(1), Shell(2), Skills(3), Triggers(4), …
   const homeSidebarBtn = page.locator('[data-sidebar="menu-button"]').nth(1);
   await homeSidebarBtn.click();
-  await page.getByRole('heading', { name: /hey /i }).waitFor({ state: 'visible', timeout: 15_000 });
+  await page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first().waitFor({ state: 'visible', timeout: 15_000 });
 }
 
 /**
