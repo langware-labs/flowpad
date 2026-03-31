@@ -54,6 +54,7 @@ def _acquire_singleton_lock() -> bool:
     global _lock
     from flow_sdk.config import get_port_file_path
     lock_path = get_port_file_path().with_suffix(".lock")
+    pid_path = get_port_file_path().with_suffix(".pid")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
 
     def _try_acquire() -> bool:
@@ -61,7 +62,7 @@ def _acquire_singleton_lock() -> bool:
         _lock = FileLock(str(lock_path), timeout=0)
         try:
             _lock.acquire()
-            lock_path.write_text(str(os.getpid()))
+            pid_path.write_text(str(os.getpid()))
             logging.info("[singleton] Lock acquired: pid=%d path=%s", os.getpid(), lock_path)
             return True
         except Timeout:
@@ -70,21 +71,22 @@ def _acquire_singleton_lock() -> bool:
     if _try_acquire():
         return True
 
-    # Acquisition failed — read holder PID from lock file (may not exist if server
+    # Acquisition failed — read holder PID from pid file (may not exist if server
     # was started before PID-writing was added, or if file was deleted externally).
     try:
-        holder_pid = int(lock_path.read_text().strip())
+        holder_pid = int(pid_path.read_text().strip())
     except Exception:
         holder_pid = 0
 
     if not holder_pid or not _pid_alive(holder_pid):
-        # Either no PID file or the recorded PID is dead — stale fcntl lock or
-        # missing file. Remove and retry; fcntl is the real guard.
+        # Either no PID file or the recorded PID is dead — stale lock.
+        # Remove and retry; FileLock is the real guard.
         if holder_pid:
             logging.warning("[singleton] Stale lock (pid=%d is dead) — removing and retrying", holder_pid)
         else:
-            logging.warning("[singleton] No PID in lock file — retrying acquire")
+            logging.warning("[singleton] No PID in pid file — retrying acquire")
         lock_path.unlink(missing_ok=True)
+        pid_path.unlink(missing_ok=True)
         if _try_acquire():
             return True
 

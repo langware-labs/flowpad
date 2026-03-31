@@ -99,8 +99,10 @@ def generate_hook_command(hook_id: str, event_name: str, name: str | None = None
     """
     Generate the command that Claude Code will execute when the hook fires.
 
-    Uses the `flow` console_scripts entry point. The CLI discovers the local
-    server via ~/.flow/server.json, so no env-var prefix is needed.
+    Uses a wrapper script (~/.claude/flowpad_hook.sh or .ps1) instead of
+    calling `flow` directly. The wrapper checks if `flow` exists and exits
+    silently if not, preventing stale hooks from breaking Claude after
+    flowpad is uninstalled.
 
     The hook name is embedded in the command itself (via --name) so that
     cleanup can identify hooks even after Claude Code strips custom keys
@@ -112,14 +114,16 @@ def generate_hook_command(hook_id: str, event_name: str, name: str | None = None
         name: Optional hook name (e.g. "flowpad_sniffer")
 
     Returns:
-        Shell command string (e.g. "flow hooks report --hook-entry-id=abc --name=flowpad_sniffer")
+        Shell command string using the wrapper script
     """
-    cmd = f"flow hooks report --hook-entry-id={hook_id}"
+    from flow_sdk.builtin.flowpad_runner_wrapper import wrap_command
+
+    args = f"hooks report --hook-entry-id={hook_id}"
     if event_name == "PermissionRequest":
-        cmd += " --wait-for-response"
+        args += " --wait-for-response"
     if name:
-        cmd += f" --name={name}"
-    return cmd
+        args += f" --name={name}"
+    return wrap_command(args)
 
 
 async def sync_hook_to_settings(hook: "AgentHook", project_path: Optional[Path] = None) -> bool:
