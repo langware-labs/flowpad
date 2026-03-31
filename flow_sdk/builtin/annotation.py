@@ -14,3 +14,11 @@ class Annotation(Entity):
     iso_timestamp: str = APIField("")
     data: Optional[Dict[str, Any]] = APIField(default_factory=dict)  # PTY: seq, seqOffset, line
     _api_visible: ClassVar[bool] = True
+
+    @property
+    def display_name(self) -> str:
+        if self.content:
+            first_line = str(self.content).strip().splitlines()[0][:100]
+            if first_line:
+                return first_line
+        return self.name or ""

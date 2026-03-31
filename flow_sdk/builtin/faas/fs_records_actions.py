@@ -28,6 +28,14 @@ class FsRecordsActionsMixin:
     # -- fs-records search helper ------------------------------------------------
 
     @staticmethod
+    def _entity_display_name(ent) -> str:
+        """Return the best human-readable name for a search result card."""
+        display_name = getattr(ent, "display_name", None)
+        if display_name:
+            return str(display_name)
+        return getattr(ent, "name", None) or getattr(ent, "title", "") or ""
+
+    @staticmethod
     def _resolve_source_path(ent) -> str:
         """Resolve the on-disk path for an entity, with a record-level fallback."""
         path = (
@@ -71,7 +79,7 @@ class FsRecordsActionsMixin:
                     row = {
                             "record_id": ent.id,
                             "record_type": ent.type or record_type,
-                            "name": getattr(ent, "name", None) or getattr(ent, "title", "") or "",
+                            "name": self._entity_display_name(ent),
                             "snippet": None,
                             "fts_title": getattr(ent, "_fts_title", None),
                             "fts_description": getattr(ent, "_fts_description", None),
@@ -116,7 +124,7 @@ class FsRecordsActionsMixin:
             row = {
                     "record_id": ent.id,
                     "record_type": ent.type or ent.get_type(),
-                    "name": getattr(ent, "name", None) or getattr(ent, "title", "") or "",
+                    "name": self._entity_display_name(ent),
                     "snippet": getattr(ent, "_fts_snippet", None),
                     "fts_title": getattr(ent, "_fts_title", None),
                     "fts_description": getattr(ent, "_fts_description", None),
