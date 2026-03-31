@@ -1,4 +1,4 @@
-import { FlowData, FlowElementTypes, ProcessState, ProcessorStatus } from '@sdk';
+import { FlowData, FlowElementTypes, ProcessorStatus } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { ArrowDown, Clock, Square, Zap } from 'lucide-react';
 import { FusionSpinner } from '@src/components/icons/FusionSpinner';
@@ -11,7 +11,7 @@ import ShellSection from '@src/components/ShellSection';
 
 interface RunningAreaProps {
   flowData: readonly FlowData[];
-  processState: ProcessState;
+  status: ProcessorStatus;
   isRunning: boolean;
   elapsedTime: string | null;
   statusMessage: string | null;
@@ -29,7 +29,7 @@ interface RunningAreaProps {
  */
 export function RunningArea({
   flowData,
-  processState,
+  status,
   isRunning,
   elapsedTime,
   statusMessage,
@@ -102,8 +102,8 @@ export function RunningArea({
 
   // Get terminal-style status color
   const getStatusColor = () => {
-    if (processState.status === ProcessorStatus.ERROR) return 'text-red-600 dark:text-red-400';
-    if (processState.status === ProcessorStatus.COMPLETE) return 'text-emerald-600 dark:text-emerald-400';
+    if (status === ProcessorStatus.ERROR) return 'text-red-600 dark:text-red-400';
+    if (status === ProcessorStatus.COMPLETE) return 'text-emerald-600 dark:text-emerald-400';
     if (isRunning) return 'text-amber-600 dark:text-amber-400';
     return 'text-zinc-500';
   };
@@ -195,18 +195,18 @@ export function RunningArea({
             <span
               className={cn(
                 'inline-block h-1.5 w-1.5 rounded-full',
-                processState.status === ProcessorStatus.ERROR
+                status === ProcessorStatus.ERROR
                   ? 'bg-red-500'
-                  : processState.status === ProcessorStatus.COMPLETE
+                  : status === ProcessorStatus.COMPLETE
                     ? 'bg-emerald-500'
                     : 'bg-zinc-400 dark:bg-zinc-600',
               )}
             />
           )}
           <span className={getStatusColor()}>
-            {processState.status === ProcessorStatus.COMPLETE
+            {status === ProcessorStatus.COMPLETE
               ? 'DONE'
-              : processState.status === ProcessorStatus.ERROR
+              : status === ProcessorStatus.ERROR
                 ? 'ERR'
                 : isRunning
                   ? activityLabel?.toUpperCase() || 'EXEC'

@@ -15,7 +15,7 @@ def _make_process(**kwargs) -> AgenticProcess:
     defaults = dict(
         shell_id="shell-123",
         worker_session_id="ws-123",
-        state={"status": "running"},
+        status="running",
         context_data={},
     )
     defaults.update(kwargs)

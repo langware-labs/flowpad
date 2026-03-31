@@ -10,7 +10,7 @@
 
 import { APIEntity, dataManager, registerEntity } from '../../APIEntity';
 import { TypeId } from '../../models/TypeId';
-import type { IAgenticProcessor, ProcessorState } from '../../agentic_processor/agentic-processor';
+import type { IAgenticProcessor } from '../../agentic_processor/agentic-processor';
 import { ConnectionManager } from '../../websocket';
 import {
   FlowData,
@@ -130,7 +130,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
 
     const action = new ActionInfo('createAgenticProcessor', ComputeNode.type, this.id, 'POST');
 
-    const response = await dataManager.callAction<void, { id: string; type: string; state: ProcessorState }>(action);
+    const response = await dataManager.callAction<void, { id: string; type: string }>(action);
 
     // Return cached instance if already registered (prevents duplicate-entity warnings
     // when called from multiple components or after HMR reloads)

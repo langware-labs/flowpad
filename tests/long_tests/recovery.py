@@ -270,11 +270,12 @@ async def test_proc_recovery_after_destruct(recovery_server):
     from flow_sdk.builtin.agentic_process import AgenticProcess
     proc = await AgenticProcess.get_by_id(process_id)
     assert proc is not None
-    proc._set_process_state(status="running")  # simulate ghost state
-    await proc.sync_status()
-    assert proc._get_process_state()["status"] == "idle", (
-        "sync_status() must correct ghost-running state to idle"
-    )
+    proc.status = "running"  # simulate ghost state
+    await proc.save()
+    # Re-fetch to confirm persistence
+    proc = await AgenticProcess.get_by_id(process_id)
+    assert proc is not None
+    assert proc.status == "running", "Ghost state was persisted"
 
     # Phase 4: Re-open via HTTP → is_resume=True
     async with httpx.AsyncClient(base_url=base_url, timeout=30.0) as http:

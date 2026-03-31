@@ -93,7 +93,7 @@ async def _create_post_restart_state(client, compute_node_id: str, session_id: s
             "compute_node_id": f"compute_node-{compute_node_id}",
             "shell_id": shell_id,
             "worker_session_id": session_id,
-            "state": {"status": "running"},   # <-- stale: Claude exited at restart
+            "status": "running",   # <-- stale: Claude exited at restart
         },
     )
     assert proc_resp.status_code == 200, proc_resp.text
@@ -129,7 +129,7 @@ async def test_loader_sees_no_error_signal_after_restart(bootstrapped_client):
     proc = ApiResponse(**proc_resp.json()).data
 
     # Process looks RUNNING → loader does NOT call process.open()
-    assert proc["state"]["status"] == "running", (
+    assert proc["status"] == "running", (
         "Process shows RUNNING after restart — loader has no reason to call open()"
     )
     assert proc["shell_id"] == shell_id, "shell_id is set — loader will look up the shell"
@@ -188,7 +188,7 @@ async def test_open_correctly_reconnects_claude_session(bootstrapped_client):
             f"/api/v1/graph/agentic_process/{process_id}"
         )
         proc = ApiResponse(**proc_resp.json()).data
-        assert proc["state"]["status"] == "running"
+        assert proc["status"] == "running"
         assert proc["shell_id"] is not None
         assert proc["worker_session_id"] == session_id
 
@@ -228,8 +228,8 @@ async def test_open_registers_on_exit_so_status_updates(bootstrapped_client):
             f"/api/v1/graph/agentic_process/{process_id}"
         )
         proc = ApiResponse(**proc_resp.json()).data
-        assert proc["state"]["status"] != "running", (
-            "BUG: process.state.status stays 'running' after the shell closes.\n"
+        assert proc["status"] != "running", (
+            "BUG: process.status stays 'running' after the shell closes.\n"
             "on_exit was never registered because open() was not called properly."
         )
 
@@ -342,7 +342,7 @@ async def test_open_preserves_session_id_after_restart(bootstrapped_client):
         proc = ApiResponse(**proc_resp.json()).data
         assert proc["worker_session_id"] == session_id
         assert proc["shell_id"] == new_shell_id
-        assert proc["state"]["status"] == "running"
+        assert proc["status"] == "running"
 
     finally:
         jsonl_path.unlink(missing_ok=True)

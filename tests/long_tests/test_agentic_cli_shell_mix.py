@@ -50,7 +50,7 @@ def _merge_tabs(shells: list[dict], processes: list[dict]) -> list[dict]:
     """
     active_procs = [
         p for p in processes
-        if p.get("state", {}).get("status") not in _TERMINAL_STATUSES
+        if p.get("status") not in _TERMINAL_STATUSES
     ]
 
     # shell_id → process
@@ -110,7 +110,7 @@ async def _create_process(client, processor_id: str, cn_id: str,
             "processor_id": processor_id,
             "compute_node_id": f"compute_node-{cn_id}",
             "context_data": {"compute_node_id": f"compute_node-{cn_id}"},
-            "state": {"status": state_status},
+            "status": state_status,
             "shell_id": shell_id,
         },
     )

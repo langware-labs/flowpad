@@ -177,6 +177,18 @@ export async function goHome(page: Page) {
   const homeSidebarBtn = page.locator('[data-sidebar="menu-button"]').nth(1);
   await homeSidebarBtn.click();
   await page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first().waitFor({ state: 'visible', timeout: 15_000 });
+
+  // Dismiss WelcomeModal / setup modal if it appears and blocks clicks
+  const skipForNow = page.getByRole('button', { name: 'Skip for now' });
+  if (await skipForNow.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await skipForNow.click({ force: true });
+    await page.waitForTimeout(500);
+  }
+  const skipButton = page.getByRole('button', { name: 'Skip' });
+  if (await skipButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    await skipButton.click({ force: true });
+    await page.waitForTimeout(500);
+  }
 }
 
 /**

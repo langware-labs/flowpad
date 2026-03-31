@@ -18,7 +18,7 @@ import { DockPointerData } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
-import { isProcessorRunning, ProcessorState, ProcessorStatus, StackFrame } from './agentic-types';
+import { isProcessorRunning, ProcessorStatus } from './agentic-types';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
 import { InstructionFile } from '../models/workflow/InstructionFile';
 import { Shell, ShellStatus } from '../entities/shell';
@@ -49,10 +49,11 @@ export interface ExecuteOptions {
 }
 
 /**
- * ProcessState represents the execution state of a Process instance.
- * Currently identical to ProcessorState - may diverge in future.
+ * ProcessState — minimal status wrapper for a process instance.
  */
-export type ProcessState = ProcessorState;
+export interface ProcessState {
+  status: ProcessorStatus;
+}
 
 /**
  * Response from get-history action
@@ -82,7 +83,7 @@ export interface IAgenticProcess extends IEntity {
   context?: Record<string, unknown>;
   context_data?: Record<string, unknown>;
   favorite_index?: number | null;
-  state?: ProcessorState;
+  status?: string;
   worker_session_id?: string | null;
   use_worker_history?: boolean;
   /** Shell entity ID linked to this process */
@@ -97,6 +98,8 @@ export interface IAgenticProcess extends IEntity {
   cli_config?: Record<string, any>;
   /** Extra directories passed to Claude via --add-dir */
   additional_dirs?: string[];
+  /** Owning project ID */
+  project_id?: string | null;
 }
 
 /**
@@ -427,8 +430,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Optional pinning index for tab ordering */
   favorite_index?: number | null;
 
-  /** Process state - synced from backend */
-  state: ProcessorState;
+  /** Current execution status — transcript-derived, updated via get_status action */
+  status: ProcessorStatus;
 
   /** Worker session ID for resume capability */
   worker_session_id?: string | null;
@@ -447,6 +450,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
+
+  /** Owning project ID */
+  project_id?: string | null;
 
   /** Backend TTL live field: true if a PTY session is actually alive (30s TTL) */
   is_active: boolean = false;
@@ -482,7 +488,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
 /** Resolved execution status — ghost-running (any busy state + is_active=false) corrected to idle. */
   get resolvedStatus(): ProcessorStatus {
-    const raw = this.state?.status ?? ProcessorStatus.IDLE;
+    const raw = this.status ?? ProcessorStatus.IDLE;
     if (isProcessorRunning(raw) && !this.is_active) {
       return ProcessorStatus.IDLE;
     }
@@ -511,7 +517,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.context = entity.context;
     this.context_data = entity.context_data;
     this.favorite_index = entity.favorite_index;
-    this.state = entity.state || this._defaultState();
+    this.status = (entity.status as ProcessorStatus) ?? ProcessorStatus.IDLE;
     this.worker_session_id = entity.worker_session_id;
     this.use_worker_history = entity.use_worker_history;
     this.shell_id = entity.shell_id;
@@ -1252,17 +1258,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const elementType = data.attributes?.['element-type'];
     const isComplete = data.attributes?.['complete'] === 'true';
 
-    // Update state from status FlowData (Flow pattern: state via FlowData, not entity updates)
     if (elementType === 'status' && typeof data.data === 'object' && data.data !== null) {
       const statusData = data.data as Record<string, unknown>;
       if (statusData.status && typeof statusData.status === 'string') {
-        this.state.status = statusData.status as ProcessorStatus;
-        this.emit('state_change', this.state);
+        this.status = statusData.status as ProcessorStatus;
+        this.emit('state_change', { status: this.status });
       }
     }
 
-    // Check for completion FlowData from backend
-    // The process emits status with complete="true" attribute when truly done.
     if (elementType === 'status' && isComplete) {
       this._markComplete();
     }
@@ -1274,26 +1277,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @internal
    */
   protected onEntityUpdate(data: Partial<IAgenticProcess>): void {
-    if (data.state) {
-      this._handleStateUpdate(data.state as unknown as Record<string, unknown>);
-    }
-  }
-
-  /**
-   * Handle state update from backend.
-   * @internal
-   */
-  _handleStateUpdate(rawState: Record<string, unknown>): void {
-    const normalizedState = this._normalizeState(rawState);
-    this.state = { ...this.state, ...normalizedState };
-    this.emit('state_change', this.state);
-
-    if (this.state.status === ProcessorStatus.COMPLETE) {
-      this._markComplete();
-    }
-
-    if (this.state.status === ProcessorStatus.ERROR && this.state.error) {
-      this._markError(new Error(this.state.error));
+    if (data.status) {
+      this.status = data.status as ProcessorStatus;
+      this.emit('state_change', { status: this.status });
+      if (this.status === ProcessorStatus.COMPLETE) {
+        this._markComplete();
+      }
+      if (this.status === ProcessorStatus.ERROR) {
+        this._markError(new Error(`Process ended with status: ${this.status}`));
+      }
     }
   }
 
@@ -1322,62 +1314,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       this._completed = true;
       this.emit('error', error);
     }
-  }
-
-  private _defaultState(): ProcessorState {
-    return {
-      status: ProcessorStatus.IDLE,
-      index: 0,
-      totalInstructions: 0,
-      currentInstructionId: null,
-      variables: {},
-      waitingForInput: false,
-      inputId: null,
-      stack: [] as StackFrame[],
-      debug: { enabled: false, breakpoints: [], stepMode: null },
-      error: null,
-      mdoContent: null,
-    };
-  }
-
-  private _normalizeState(rawState: Record<string, unknown>): Partial<ProcessorState> {
-    const result: Partial<ProcessorState> = {};
-
-    if ('status' in rawState) {
-      result.status = rawState.status as ProcessorStatus;
-    }
-    if ('index' in rawState) {
-      result.index = rawState.index as number;
-    }
-    if ('total_instructions' in rawState || 'totalInstructions' in rawState) {
-      result.totalInstructions = (rawState.total_instructions ?? rawState.totalInstructions) as number;
-    }
-    if ('current_instruction_id' in rawState || 'currentInstructionId' in rawState) {
-      result.currentInstructionId = (rawState.current_instruction_id ?? rawState.currentInstructionId) as string | null;
-    }
-    if ('variables' in rawState) {
-      result.variables = rawState.variables as Record<string, unknown>;
-    }
-    if ('waiting_for_input' in rawState || 'waitingForInput' in rawState) {
-      result.waitingForInput = (rawState.waiting_for_input ?? rawState.waitingForInput) as boolean;
-    }
-    if ('input_id' in rawState || 'inputId' in rawState) {
-      result.inputId = (rawState.input_id ?? rawState.inputId) as string | null;
-    }
-    if ('stack' in rawState) {
-      result.stack = rawState.stack as StackFrame[];
-    }
-    if ('debug' in rawState) {
-      result.debug = rawState.debug as ProcessorState['debug'];
-    }
-    if ('error' in rawState) {
-      result.error = rawState.error as string | null;
-    }
-    if ('mdo_content' in rawState || 'mdoContent' in rawState) {
-      result.mdoContent = (rawState.mdo_content ?? rawState.mdoContent) as string | null;
-    }
-
-    return result;
   }
 
   /**

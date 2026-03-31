@@ -57,7 +57,7 @@ export function useAnalysisTaskProgress(task: Task | null): AnalysisTaskProgress
     };
   }, [processId]);
 
-  const { state: processState } = useProcessState(process);
+  const processState = useProcessState(process);
   const taskStatus = task?.status;
 
   const taskIsDone = taskStatus === 'done';

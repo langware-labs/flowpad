@@ -48,7 +48,7 @@ async def _get_process_status(client, process_id: str) -> str:
     resp = await client.get(f"/api/v1/graph/agentic_process/{process_id}")
     assert resp.status_code == 200, resp.text
     entity = ApiResponse(**resp.json()).data
-    return (entity.get("state") or {}).get("status", "unknown")
+    return entity.get("status", "unknown")
 
 
 @pytest.mark.asyncio

@@ -50,12 +50,12 @@ export function useActiveTerminals() {
     .map((shell) => `${shell.id}:${shell.status ?? ''}:${shell.error_message ?? ''}:${shell.name ?? ''}:${shell.tab_order ?? 0}`)
     .join('|');
   const processProjectionKey = processes
-    .map((process) => `${process.id}:${process.state?.status ?? ''}:${process.shell_id ?? ''}:${process.sidecar_shell_id ?? ''}`)
+    .map((process) => `${process.id}:${process.status ?? ''}:${process.shell_id ?? ''}:${process.sidecar_shell_id ?? ''}`)
     .join('|');
 
   const tabs = useMemo(() => {
     // Filter active processes: not terminated and not complete
-    const activeProcesses = processes.filter((p) => !TERMINAL_STATUSES.has(p.state?.status));
+    const activeProcesses = processes.filter((p) => !TERMINAL_STATUSES.has(p.status));
 
     // Build a set of sidecar shell IDs — these are internal-only PTY sessions
     // managed by InteractiveTerminal and must not appear as top-level tabs.

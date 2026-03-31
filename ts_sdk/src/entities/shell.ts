@@ -57,6 +57,7 @@ export interface IShell extends IEntity {
   workdir?: string | null;
   pty_pid?: string | null;
   compute_node_id?: string | null;
+  project_id?: string | null;
   tab_order?: number;
   claude_session_id?: string | null;
   created_at?: string | null;
@@ -77,6 +78,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
   env: Record<string, string> | null = null;
   pty_pid: string | null = null;
   compute_node_id: string | null = null;
+  project_id: string | null = null;
   tab_order: number = 0;
   claude_session_id: string | null = null;
   created_at: string | null = null;

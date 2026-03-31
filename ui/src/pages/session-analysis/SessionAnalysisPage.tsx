@@ -117,7 +117,7 @@ export function SessionAnalysisPage() {
   const [activeProcess, setActiveProcess] = useState<AgenticProcess | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
-  const { state: processState } = useProcessState(activeProcess);
+  const processState = useProcessState(activeProcess);
   const isRunning =
     processState.status === ProcessorStatus.RUNNING ||
     processState.status === ProcessorStatus.STEPPING ||
@@ -384,7 +384,7 @@ export function SessionAnalysisPage() {
           setActiveSessionId(running.source_session_id);
         }
         const isActiveStatus = [ProcessorStatus.RUNNING, ProcessorStatus.STEPPING, ProcessorStatus.PAUSED].includes(
-          process.state.status,
+          process.status,
         );
         if (!isActiveStatus && running.status === 'running') {
           try {
