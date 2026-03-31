@@ -49,6 +49,7 @@ class Shell(Entity):
     env: dict | None = APIField(default=None, description="Custom environment variables")
     pty_pid: str | None = APIField(default=None, description="PTY session ID")
     compute_node_id: str | None = APIField(default=None, description="Owning compute node")
+    project_id: str | None = APIField(default=None, description="Owning project")
     tab_order: int = APIField(default=0)
     created_at: str | None = APIField(default=None, description="ISO creation timestamp")
     last_active_at: str | None = APIField(default=None, description="ISO last activity timestamp")

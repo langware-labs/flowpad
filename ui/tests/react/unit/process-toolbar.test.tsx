@@ -33,7 +33,7 @@ function makeProcess(overrides: Partial<AgenticProcess> = {}): AgenticProcess {
     pty_pid: 'pty-1',
     workdir: '/home/user/project',
     cliOptions: { chrome: false, permission_mode: 'askUser', debug: false },
-    state: { status: 'running' },
+    status: 'running',
     save: vi.fn(),
     ...overrides,
   } as unknown as AgenticProcess;

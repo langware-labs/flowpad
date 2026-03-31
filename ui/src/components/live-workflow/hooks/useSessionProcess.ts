@@ -13,12 +13,11 @@ import { useProcessState } from '@src/hooks/use-process-state';
 
 interface UseSessionProcessResult {
   process: AgenticProcess | null;
-  state: ReturnType<typeof useProcessState>['state'];
+  status: ProcessorStatus;
   completed: boolean;
   error: Error | null;
   isRunning: boolean;
   abortProcess: () => void;
-  appendInstruction: (content: string, instructionId?: string) => Promise<void>;
   injectInstruction: (content: string) => Promise<void>;
 }
 
@@ -26,7 +25,7 @@ interface UseSessionProcessResult {
  * Hook for managing agentic process lifecycle for sessions (without files)
  *
  * Consumes process from dataContext (set by loader).
- * Provides actions: abortProcess, appendInstruction, injectInstruction.
+ * Provides actions: abortProcess, injectInstruction.
  */
 export function useSessionProcess(): UseSessionProcessResult {
   const { agenticProcess } = useContext();
@@ -35,13 +34,10 @@ export function useSessionProcess(): UseSessionProcessResult {
   const processorRef = useRef<AgenticProcessor | null>(null);
 
   // Subscribe to process state
-  const { state, completed, error } = useProcessState(process);
+  const { status, completed, error } = useProcessState(process);
 
   // Determine if running
-  const isRunning =
-    !completed &&
-    !!state?.status &&
-    isProcessorRunning(state.status);
+  const isRunning = !completed && isProcessorRunning(status);
 
   // Abort running process
   const abortProcess = useCallback(() => {
@@ -49,24 +45,10 @@ export function useSessionProcess(): UseSessionProcessResult {
       processorRef.current.dispose();
       processorRef.current = null;
     }
-    // Clear process from context
     void dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
   }, []);
 
-  // Append a new instruction to the running process
-  const appendInstruction = useCallback(async (content: string, instructionId?: string) => {
-    if (!processorRef.current) {
-      console.warn('[useSessionProcess] Cannot append: no processor');
-      return;
-    }
-    try {
-      await processorRef.current.appendInstruction(content, instructionId);
-    } catch (err) {
-      console.error('[useSessionProcess] appendInstruction failed:', err);
-    }
-  }, []);
-
-  // Inject instruction - append if running, continue if completed
+  // Inject instruction — execute on the process (reuses active worker if available)
   const injectInstruction = useCallback(
     async (content: string) => {
       if (!process) {
@@ -74,21 +56,13 @@ export function useSessionProcess(): UseSessionProcessResult {
         return;
       }
 
-      if (isRunning) {
-        // Append to running process
-        await appendInstruction(content);
-        return;
-      }
-
       try {
-        // Execute on the process itself (reuses active worker if available,
-        // or resumes session via restored context after refresh).
         await process.executeInstruction(content, { sync: false });
       } catch (err) {
         console.error('[useSessionProcess] Failed to execute instruction:', err);
       }
     },
-    [process, isRunning, appendInstruction],
+    [process],
   );
 
   // Restore processor reference when process comes from context (e.g., page refresh)
@@ -153,12 +127,11 @@ export function useSessionProcess(): UseSessionProcessResult {
 
   return {
     process,
-    state,
+    status,
     completed,
     error,
     isRunning,
     abortProcess,
-    appendInstruction,
     injectInstruction,
   };
 }

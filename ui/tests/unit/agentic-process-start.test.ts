@@ -42,7 +42,7 @@ describe('AgenticProcess.start', () => {
   });
 
   it('resolves with true and sets shell_id and worker_session_id without throwing', async () => {
-    const agenticProcess = new AgenticProcess({ id: '00000000-0000-4000-8000-000000000001', state: { status: 'idle' } });
+    const agenticProcess = new AgenticProcess({ id: '00000000-0000-4000-8000-000000000001', status: 'idle' });
 
     // This call must not throw "dataManager.getEntityById is not a function".
     // It should resolve to true and set shell_id / worker_session_id on the process.

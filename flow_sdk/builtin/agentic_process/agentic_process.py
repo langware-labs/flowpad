@@ -27,11 +27,6 @@ from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
-from flow_sdk.builtin.agentic_process._shared import (
-    _default_processor_state,
-    _now_iso,
-    _send_flow_data_message,
-)
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.faas.compute_node import ComputeNode
@@ -51,7 +46,7 @@ class AgenticProcess(Entity):
     cli_config: dict[str, Any] = APIField(default_factory=dict)
     workdir: str | None = APIField(default=None)
     favorite_index: int | None = APIField(default=None)
-    state: dict[str, Any] = APIField(default_factory=_default_processor_state)
+    status: str = APIField(default=AgenticProcessStatus.IDLE.value)
     worker_session_id: str | None = APIField(default=None)
     use_worker_history: bool = APIField(default=False)
     project_id: str | None = APIField(default=None)
@@ -158,6 +153,19 @@ class AgenticProcess(Entity):
 
         session = self._discover_claude_record_session(self.worker_session_id)
         return session.status if session else None
+
+    @action.all(action_name="status")
+    async def get_status(self):
+        """Return current status, updating from transcript if it has changed.
+
+        Reads the transcript tail (~60µs). If the derived status differs from the
+        stored one, saves the entity (which triggers a WS entity-update notification).
+        """
+        new_status = self._discover_status_from_transcript()
+        if new_status is not None and str(new_status) != self.status:
+            self.status = str(new_status)
+            await self.save()
+        return ApiSuccessResponse(data={"status": self.status})
 
     @property
     def is_idle(self) -> bool:
@@ -560,16 +568,11 @@ class AgenticProcess(Entity):
                         return  # stop() already handled it
                     proc.shell_id = None
                     proc.sidecar_shell_id = None
-                    if not isinstance(proc.state, dict):
-                        proc.state = _default_processor_state()
-                    state = dict(proc.state)
                     if exit_code is not None and exit_code != 0:
-                        state["error"] = f"claude exited with code {exit_code}"
-                        state["status"] = AgenticProcessStatus.ERROR.value
+                        proc.status = AgenticProcessStatus.ERROR.value
                     else:
-                        state["status"] = AgenticProcessStatus.COMPLETE.value
-                    proc.state = state
-                    logger.info("AgenticProcess %s: saving COMPLETE state after PTY exit", agentic_process_id)
+                        proc.status = AgenticProcessStatus.COMPLETE.value
+                    logger.info("AgenticProcess %s: saving %s after PTY exit", agentic_process_id, proc.status)
                     await proc.save()
                 except Exception as exc:
                     logger.warning("AgenticProcess %s: on_exit update failed: %s", agentic_process_id, exc)

@@ -55,7 +55,7 @@ function WorkflowRunItem({
   computeNodeId: string | undefined;
 }) {
   const { navigation } = useDockNavigation();
-  const { state } = useProcessState(entry.process);
+  const state = useProcessState(entry.process);
   const isRunning = ACTIVE_STATUSES.has(state.status);
   const isError = state.status === ProcessorStatus.ERROR || state.status === ProcessorStatus.TERMINATED;
 

@@ -828,7 +828,7 @@ function AnnotationCell({
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
-      <Tooltip open={open ? false : undefined}>
+      <Tooltip>
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
             <div
