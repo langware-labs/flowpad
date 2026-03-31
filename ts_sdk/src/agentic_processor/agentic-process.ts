@@ -1269,6 +1269,17 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
+   * Called by the store when the backend pushes an entity update via WebSocket.
+   * Propagates state changes (including COMPLETE) so output() terminates correctly.
+   * @internal
+   */
+  protected onEntityUpdate(data: Partial<IAgenticProcess>): void {
+    if (data.state) {
+      this._handleStateUpdate(data.state as unknown as Record<string, unknown>);
+    }
+  }
+
+  /**
    * Handle state update from backend.
    * @internal
    */

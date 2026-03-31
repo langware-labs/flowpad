@@ -77,6 +77,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   streams: WSStream[] = [];
   saveIntervalMs: number = 5000;
   isPopupOpen = false;
+  dataOpQueryInvalidation = false;
   private subscriptions: SubscriptionMap<T> = new SubscriptionMap<T>();
   private watches: WatchMap = new WatchMap();
   private watchedQueries: WatchQueryMap<T> = new WatchQueryMap<T>();
@@ -367,8 +368,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // Handle delete operation by removing from all query results
     if (op === 'delete') {
       this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
-    } else {
-      // For non-delete operations, find all watched queries and potentially update them
+    } else if (op === 'create' || this.dataOpQueryInvalidation) {
+      // For create operations, always update watched queries so new entities appear in lists.
+      // For other ops (update), only invalidate if dataOpQueryInvalidation is enabled.
       const watchedQueries = this.watchedQueries.getWatchCallbacksByType(typeId.type);
 
       for (const watchedQuery of watchedQueries) {

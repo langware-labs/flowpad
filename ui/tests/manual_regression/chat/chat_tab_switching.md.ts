@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { dismissSetupModal, gotoLanding, submitFromLanding } from './helpers';
+import { dismissSetupModal, gotoLanding, submitFromLanding, waitForLanding } from './helpers';
 
 test.describe('Chat Tab Switching', () => {
   test.beforeEach(async ({ page }) => {
@@ -20,7 +20,14 @@ test.describe('Chat Tab Switching', () => {
     // Navigate back to home
     await page.goto('/dock/home');
     await expect(page).toHaveURL(/\/dock\/home/, { timeout: 10_000 });
-    await expect(page.getByRole('heading', { name: /hey /i })).toBeVisible({ timeout: 90_000 });
+    // Dismiss WelcomeModal if shown (may reappear after navigating back to home with a clean DB)
+    const skipForNow = page.getByRole('button', { name: 'Skip for now' });
+    if (await skipForNow.isVisible({ timeout: 5_000 }).catch(() => false)) {
+      await skipForNow.click({ force: true }).catch(() => {});
+      await page.waitForTimeout(500);
+    }
+    // Use CSS selector instead of getByRole to avoid aria-hidden issues when modal is present
+    await waitForLanding(page);
 
     // Navigate to a new shell terminal
     await page.goto('/dock/shell/new_terminal');

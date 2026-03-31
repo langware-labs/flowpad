@@ -843,7 +843,7 @@ async def sync_system_agent_entities(desktop_user: Optional[Entity] = None) -> N
     from flow_sdk.builtin.agent import Agent
     from flow_sdk.fs_records.agent_record import AgentRecord
 
-    agents_dir = Path(flow_sdk.__file__).parent / "system_assets" / "agents"
+    agents_dir = Path(flow_sdk.__file__).parent / "system_assets" / "available" / "agents"
     if not agents_dir.is_dir():
         return
 

@@ -88,6 +88,48 @@ def reset_db_for_testclient():
     _reset_db_state()
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def drain_background_tasks():
+    """Drain pending asyncio tasks and kill PTY sessions after each test."""
+    yield
+    import asyncio
+    # Kill all PTY sessions to release DB locks held by background reader threads.
+    try:
+        from flow_sdk.compute.providers import _providers
+        provider = _providers.get("local_machine")
+        if provider:
+            for pty_key, pty_info in list(provider._pty_sessions.items()):
+                try:
+                    process = pty_info.get("process")
+                    if process and hasattr(process, "terminate"):
+                        process.terminate()
+                except Exception:
+                    pass
+            provider._pty_sessions.clear()
+    except Exception:
+        pass
+    try:
+        from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
+        session_manager.sessions.clear()
+    except Exception:
+        pass
+    # Invalidate bootstrap cache so next test gets fresh state.
+    try:
+        from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
+        invalidate_bootstrap_cache()
+    except Exception:
+        pass
+    # Give background tasks a chance to finish naturally.
+    await asyncio.sleep(0)
+    # Cancel and await any remaining tasks (excluding the current one).
+    current = asyncio.current_task()
+    pending = [t for t in asyncio.all_tasks() if t is not current and not t.done()]
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
 @pytest_asyncio.fixture
 async def client():
     """Async HTTP client that calls the minihub FastAPI app in-process."""

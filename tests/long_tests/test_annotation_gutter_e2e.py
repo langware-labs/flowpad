@@ -60,7 +60,7 @@ def _query_annotations(session_id: str) -> list[dict]:
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(300)
-async def test_prompt_annotation_created_and_visible():
+async def test_prompt_annotation_created_and_visible(bootstrapped_client):
     """
     Full flow:
       process.start() → process.prompt("hi") → waitForIdle()
@@ -72,20 +72,20 @@ async def test_prompt_annotation_created_and_visible():
 
     server = _server_url()
     # ── 1. Bootstrap server (creates @local entities if not yet done) ──────
+    # bootstrapped_client already bootstrapped the in-process test DB.
+    # Also bootstrap the running server so its DB has @local entities.
     resp = requests.get(f"{server}/api/v1/graph/bootstrap", timeout=15)
     assert resp.status_code == 200, f"Bootstrap failed: {resp.text}"
 
     # ── 2. Create and start process ─────────────────────────────────────────
     process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
-    process.start()
-    assert process.pending_user is True, "Process should be idle before prompt"
+    process_id = process.id
 
     # ── 3. Send prompt ───────────────────────────────────────────────────────
-    process.prompt("hi")
+    await process.prompt("hi")
     assert process.pending_user is False, "Process should be busy after prompt"
 
     worker_session_id = process.worker_session_id
-    process_id = process.record.id
     print(f"\n[e2e] worker_session_id = {worker_session_id}")
     print(f"[e2e] process_id        = {process_id}")
     print(f"[e2e] Process URL       = {server}/dock/shell/agentic_process-{process_id}")

@@ -376,6 +376,17 @@ class AgenticProcess(Entity):
         try:
             self.worker_session_id = worker_session_id or self.worker_session_id or str(uuid4())
 
+            # Resolve compute node: if not yet assigned, look up the @local node (desktop only).
+            if not self.compute_node_id:
+                from flow_sdk.builtin.faas.compute_node import ComputeNode
+                local_node = await ComputeNode.get_one({"uname": "local"})
+                if not local_node:
+                    return ApiFailResponse(
+                        message="No compute node assigned and no @local compute node found. "
+                        "This environment does not support local process execution."
+                    )
+                self.compute_node_id = str(local_node.typeid)
+
             await self.get_project()
 
             # Build the CLI command from cli_config + entity fields
@@ -404,17 +415,25 @@ class AgenticProcess(Entity):
             )
 
             is_resume = cmd.resume
-            shell = await self.get_shell()
-            started = await shell.start_pty()
-            if not await shell.worker_alive():
+
+            # Get existing shell or create a new one
+            shell = await self._get_or_create_shell()
+            self.shell_id = shell.id
+            if visible is not None:
+                self.visible = visible
+            # Save worker_session_id + shell_id BEFORE launching Claude so that
+            # the Stop hook's _mark_process_complete() can find this entity even
+            # when fast bash-only tasks complete before the post-launch save.
+            await self.save()
+            on_exit = self._make_pty_exit_callback()
+            started = await shell.start_pty(on_exit=on_exit)
+            worker_is_alive = await shell.worker_alive()
+            if not worker_is_alive:
                 execution_info = await shell.run_process(cmd, instruction=instruction)
                 logger.info(
                     "AgenticProcess %s worker launched: pid=%s name=%r",
                     self.id, execution_info.pid, execution_info.name,
                 )
-            if visible is not None:
-                self.visible = visible
-            await self.save()
 
             return ApiSuccessResponse(
                 data={
@@ -488,6 +507,76 @@ class AgenticProcess(Entity):
             logger.exception(f"AgenticProcess {self.id} stop error: {e}")
             return ApiFailResponse(message=str(e))
 
+    async def _get_or_create_shell(self) -> "Shell":
+        """Get existing shell by shell_id, or create a new one."""
+        from flow_sdk.builtin.shell import Shell
+
+        if self.shell_id:
+            shell = await Shell.get_by_id(self.shell_id)
+            if shell:
+                return shell
+
+        # Restore tab_order saved by stop() so the restarted shell keeps its position.
+        # For brand-new shells, append after all existing ones.
+        prev = self.context_data.pop("_prev_tab_order", None)
+        tab_order = prev if prev is not None else await Shell.next_tab_order()
+
+        is_resume = self._is_exist_claude_resume_session(self.worker_session_id) if self.worker_session_id else False
+        is_fork = bool(getattr(self, 'cli_options', None) and self.cli_options.fork_session_id)
+        session_label = 'fork' if is_fork else 'resume' if is_resume else 'new'
+        session_name = f"Claude - {self.worker_session_id[:8]} ({session_label})"
+
+        # Resolve compute_node_id for the Shell
+        cn_id = self.compute_node_id
+        if cn_id and "-" in cn_id:
+            # Strip type prefix (e.g. "compute_node-<uuid>" → "<uuid>")
+            cn_id = cn_id.split("-", 1)[1]
+
+        shell = Shell(
+            compute_node_id=cn_id,
+            name=session_name,
+            workdir=self.workdir,
+            tab_order=tab_order,
+        )
+        await shell.save()
+        return shell
+
+    def _make_pty_exit_callback(self) -> Callable[[int | None], None]:
+        """Return a thread-safe callback that updates process status when the PTY exits."""
+        main_loop = asyncio.get_running_loop()
+        agentic_process_id = self.id
+
+        def _on_pty_exit(exit_code: int | None) -> None:
+            logger.info("AgenticProcess %s: PTY exited with code %s", agentic_process_id, exit_code)
+
+            async def _update_state():
+                try:
+                    proc = await AgenticProcess.get_by_id(agentic_process_id)
+                    if not proc:
+                        logger.info("AgenticProcess %s: not found in DB on exit", agentic_process_id)
+                        return
+                    if not proc.shell_id:
+                        logger.info("AgenticProcess %s: shell_id already cleared on exit, skipping", agentic_process_id)
+                        return  # stop() already handled it
+                    proc.shell_id = None
+                    proc.sidecar_shell_id = None
+                    if not isinstance(proc.state, dict):
+                        proc.state = _default_processor_state()
+                    state = dict(proc.state)
+                    if exit_code is not None and exit_code != 0:
+                        state["error"] = f"claude exited with code {exit_code}"
+                        state["status"] = AgenticProcessStatus.ERROR.value
+                    else:
+                        state["status"] = AgenticProcessStatus.COMPLETE.value
+                    proc.state = state
+                    logger.info("AgenticProcess %s: saving COMPLETE state after PTY exit", agentic_process_id)
+                    await proc.save()
+                except Exception as exc:
+                    logger.warning("AgenticProcess %s: on_exit update failed: %s", agentic_process_id, exc)
+            asyncio.run_coroutine_threadsafe(_update_state(), main_loop)
+
+        return _on_pty_exit
+
     async def get_shell(self) -> "Shell | None":
         """Resolve shell_id to the linked Shell entity.
 
@@ -519,6 +608,26 @@ class AgenticProcess(Entity):
             await pty.send(data)
         else:
             await shell.send_input(data)
+
+    @action.post(action_name="execute")
+    async def execute(
+        self,
+        instruction: str | None = None,
+        worker_session_id: str | None = None,
+    ) -> ApiSuccessResponse | ApiFailResponse:
+        """Execute an instruction on this process.
+
+        Called by the TS SDK's executeInstruction(). Delegates to prompt()
+        which handles both fresh-start and send-to-running-process cases.
+        """
+        if not instruction:
+            return ApiFailResponse(message="instruction is required")
+        if worker_session_id:
+            self.worker_session_id = worker_session_id
+        result = await self.prompt(instruction)
+        if isinstance(result, ApiFailResponse):
+            return result
+        return result if isinstance(result, ApiSuccessResponse) else ApiSuccessResponse(data={"status": "ok"})
 
     @action.post(action_name="execute-plan")
     async def execute_plan(

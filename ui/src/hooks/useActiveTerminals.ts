@@ -28,6 +28,7 @@ const shellQuery = new QueryRequest({
   type: 'shell',
   scope: [],
   name: 'useActiveTerminals:shells',
+  query: new QueryFilter({ match: { op: '$NE', operands: ['status', ShellStatus.CLOSED] } as Record<string, unknown> }),
 });
 
 const processQuery = new QueryRequest({

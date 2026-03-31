@@ -391,7 +391,7 @@ class AgentRecord(Record):
         """Load from system_assets/agents/<name>/."""
         import flow_sdk
 
-        source = Path(flow_sdk.__file__).parent / "system_assets" / "agents" / name
+        source = Path(flow_sdk.__file__).parent / "system_assets" / "available" / "agents" / name
         if source.is_dir():
             return AgentRecord.load_from_dir(source)
         # Also check workspace

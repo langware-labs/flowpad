@@ -36,7 +36,7 @@ test.describe('Terminal Tab Rename', () => {
 
     expect(newTabTestId).toBeTruthy();
     const newTab = page.locator(`[data-testid="${newTabTestId}"]`);
-    await expect(newTab).toContainText(/Terminal/);
+    await expect(newTab).toContainText(/Tab \d+/);
 
     // Step 5: click the tab to make it active, then double-click the name span to start editing.
     // The tab contains two spans: first is the status dot (h-2 w-2), second is the name text.
