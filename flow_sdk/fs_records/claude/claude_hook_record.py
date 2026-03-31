@@ -86,6 +86,19 @@ class ClaudeHookRecord(Record):
     """
 
     _record_type: ClassVar[str] = RecordType.CLAUDE_HOOK
+    _indexed_by_default: ClassVar[bool] = True
+
+    @property
+    def search_title(self) -> str | None:
+        event_type = getattr(self, "event_type", "") or ""
+        matcher = getattr(self, "matcher", "") or "*"
+        if event_type:
+            return f"{event_type} ({matcher})" if matcher != "*" else event_type
+        return self.name or None
+
+    @property
+    def search_content(self) -> str | None:
+        return getattr(self, "command", None) or None
 
     def __init__(self, **kwargs: Any):
         # Drop legacy flow_metadata dict (extracted during discovery)

@@ -21,6 +21,7 @@ from .claude import (  # noqa: F401 — trigger type_registry auto-registration
     ClaudeDebugLogFsRecord,  # backward compat alias
     ClaudeDebugLogRecordList,  # backward compat alias
     ClaudeErrorRecord,
+    ClaudeCommandFsRecord,
     ClaudeHookRecord,
     ClaudeHookRecordList,
     ClaudeManagedSettingsFsRecord,

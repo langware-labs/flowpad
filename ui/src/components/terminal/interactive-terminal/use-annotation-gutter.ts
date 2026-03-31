@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 /** Extract prompt anchors from annotations for anchor-based PTY alignment. */
 export function getAnchors(annotations: Annotation[]): PtyAnchor[] {
   return annotations
-    .filter(a => a.labels?.includes('prompt:') && a.content && a.created_date)
+    .filter(a => a.labels?.includes('prompt:') && typeof a.content === 'string' && a.content && a.created_date)
     .map(a => ({ text: (a.content as string).trim().slice(0, 60), time: new Date(a.created_date as unknown as string).toISOString() }))
     .sort((a, b) => a.time.localeCompare(b.time));
 }
@@ -40,7 +40,8 @@ function getAnnotationKind(annotation: Annotation): 'comment' | 'prompt' | 'plan
  * renders the title without the `#` prefix ("Hello World Plan").  We try the
  * original first line AND a stripped variant so we match either representation.
  */
-function buildNeedles(searchText: string): string[] {
+function buildNeedles(searchText: unknown): string[] {
+  if (typeof searchText !== 'string') return [];
   const firstLine = searchText.trim().split('\n')[0].trim().slice(0, 60);
   if (!firstLine) return [];
 
@@ -53,7 +54,7 @@ function buildNeedles(searchText: string): string[] {
   return needles;
 }
 
-function findTextRow(adapter: NonNullable<PtySyncSnapshot['adapter']>, searchText: string, scanFrom = 0): number | null {
+function findTextRow(adapter: NonNullable<PtySyncSnapshot['adapter']>, searchText: unknown, scanFrom = 0): number | null {
   const needles = buildNeedles(searchText);
   if (needles.length === 0) return null;
   const bufLen = adapter.getBufferLength();
