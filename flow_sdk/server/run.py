@@ -144,7 +144,7 @@ def main():
         sys.exit(0)
 
     host = os.environ.get("MINIHUB_HOST", DEFAULT_HOST)
-    port = int(os.environ.get("MINIHUB_PORT", os.environ.get("LOCAL_SERVER_PORT", DEFAULT_PORT)))
+    port = int(os.environ.get("LOCAL_SERVER_PORT", DEFAULT_PORT))
     # Auto-reload disabled by default; set MINIHUB_RELOAD=true to enable for development
     reload_enabled = os.environ.get("MINIHUB_RELOAD", "false").lower() == "true"
 

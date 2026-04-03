@@ -60,7 +60,10 @@ async def _on_server_startup():
 
     print(f"  Database path: {SQLITE_DATABASE_PATH}")
 
-    port = int(os.environ.get("MINIHUB_PORT", os.environ.get("LOCAL_SERVER_PORT", "9007")))
+    if os.environ.get("FLOWPAD_SKIP_LOCK", "").lower() == "true":
+        return
+
+    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
     set_server_info(
         {
             "port": port,

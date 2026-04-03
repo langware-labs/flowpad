@@ -15,7 +15,7 @@ import { useProjectBookmarks } from '@src/hooks/use-project-bookmarks';
 import { useProjectTasks } from '@src/hooks/use-project-tasks';
 import { useTaskMutations } from '@src/hooks/use-task-mutations';
 import { useClaudeProjectList } from '@src/hooks/use-claude-projects';
-import { useHooksSniffer } from '@src/hooks/use-hooks-sniffer';
+import { useSnifferContext } from '@src/contexts/SnifferContext';
 import { useEventDrivenSessions } from '@src/hooks/use-event-driven-sessions';
 import { useProjects } from '@src/hooks/use-projects';
 import { useActAccordingToClassification } from '@src/hooks/use-act-according-to-classification';
@@ -74,7 +74,7 @@ export function HomeLanding() {
   const { projects: claudeProjects, isLoading: isLoadingClaudeProjects } = useClaudeProjectList();
   const { project: currentProject } = useProject();
   const { toast } = useToast();
-  const { events: snifferEvents } = useHooksSniffer();
+  const { events: snifferEvents } = useSnifferContext();
 
   // Per-session event counts for notification badges
   const sessionEventCounts = useMemo(() => {

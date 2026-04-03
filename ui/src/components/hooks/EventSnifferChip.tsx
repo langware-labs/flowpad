@@ -1,6 +1,7 @@
 import { useContext } from '@sdk/react/hooks';
 import { useEventFilterMask } from '@src/hooks/use-event-filter-mask';
-import { useHooksSniffer, type SnifferEvent } from '@src/hooks/use-hooks-sniffer';
+import { type SnifferEvent } from '@src/hooks/use-hooks-sniffer';
+import { useSnifferContext } from '@src/contexts/SnifferContext';
 import { useSnifferPipeline, parsePipelineFilters, SnifferLevel, type PipelineFilters } from '@src/hooks/use-sniffer-pipeline';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -150,7 +151,7 @@ function HeartbeatChart({
 
 export function EventSnifferChip() {
   const { snifferEnabled: enabled } = useContext();
-  const { events, isLoading, isToggling, enable, disable, clear } = useHooksSniffer();
+  const { events, isLoading, isToggling, enable, disable, clear } = useSnifferContext();
   const { navigation } = useDockNavigation();
   const { mask, removeFilter, clearAll: clearMask } = useEventFilterMask();
 
