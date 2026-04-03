@@ -5,7 +5,7 @@ import { cn } from '@src/lib/utils';
 import { CornerDownLeft, Search, SlidersHorizontal, X } from 'lucide-react';
 import { KeyboardEvent, useCallback, useRef, useState } from 'react';
 
-const RECORD_TYPES = ['bookmark', 'claude_session', 'skill', 'agent', 'hook', 'command'];
+const RECORD_TYPES = ['bookmark', 'claude_session', 'skill', 'agent', 'claude_hook', 'command'];
 const TIME_PRESETS = [
   { value: '1h', label: '1h' },
   { value: '1d', label: '1d' },
