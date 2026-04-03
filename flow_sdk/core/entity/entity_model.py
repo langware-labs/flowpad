@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+
+DEFAULT_BROWSE_LIMIT = 20
 import types
 import functools
 from typing import (
@@ -94,6 +96,24 @@ class Entity(DBEntity):
         if not hasattr(driver, "fts_search"):
             return []
         return await driver.fts_search(query=query, limit=limit, record_type=record_type, status=status, calibration=calibration)
+
+    @classmethod
+    async def browse(
+        cls,
+        record_type: str,
+        limit: int = DEFAULT_BROWSE_LIMIT,
+        status: str | None = None,
+    ) -> list[Entity]:
+        """List entities of a type with FTS metadata, ordered by recency.
+
+        Used for filter-only browsing (no search query). Returns fts_title
+        populated so callers can display meaningful names without filesystem reads.
+        """
+        from flow_sdk.db import get_db_driver
+        driver = get_db_driver()
+        if not hasattr(driver, "browse_by_type"):
+            return []
+        return await driver.browse_by_type(entity_type=record_type, limit=limit, status=status)
 
     @classmethod
     def allocate_id(cls, data: dict) -> str:

@@ -183,7 +183,7 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({
       const cols = terminalRef.current?.cols || 80;
       const rows = terminalRef.current?.rows || 24;
       const workingDir = shell.workdir || dataContext.project?.fs_storage_mount_path || undefined;
-      await shell.connect({ cols, rows, workdir: workingDir });
+      await shell.startPty({ cols, rows, workdir: workingDir });
     };
 
     void connect();

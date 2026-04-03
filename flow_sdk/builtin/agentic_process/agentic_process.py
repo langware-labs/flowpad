@@ -34,6 +34,34 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+async def _index_session_on_close(worker_session_id: str, pty_title: str | None = None) -> None:
+    """Index the ClaudeSessionRecord after an AgenticProcess closes (fire-and-forget).
+
+    pty_title: Claude-generated tab title captured from ANSI OSC escapes in PTY
+               output. Used as the FTS title / entity name when the JSONL has no
+               user-set custom-title (i.e. the user never ran /rename).
+    """
+    try:
+        from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+        record = ClaudeSessionRecord.discover_one(worker_session_id)
+        if record:
+            if pty_title:
+                inst = object.__getattribute__(record, "__dict__")
+                if not inst.get("custom_title"):
+                    record.name = pty_title
+                    _ = record.search_content  # populate _fts_cache
+                    cache = inst.get("_fts_cache")
+                    object.__setattr__(
+                        record, "_fts_cache",
+                        (pty_title[:120], cache[1] if cache else None),
+                    )
+            await record.sync_to_db()
+            logger.debug("[AgenticProcess] indexed session %s on close", worker_session_id)
+    except Exception:
+        logger.debug("[AgenticProcess] failed to index session %s on close", worker_session_id, exc_info=True)
+
+
 class AgenticProcess(Entity):
     _api_visible = True
     type: str = APIField(default="agentic_process")
@@ -553,6 +581,8 @@ class AgenticProcess(Entity):
         """Return a thread-safe callback that updates process status when the PTY exits."""
         main_loop = asyncio.get_running_loop()
         agentic_process_id = self.id
+        worker_session_id = self.worker_session_id
+        shell_id = self.shell_id
 
         def _on_pty_exit(exit_code: int | None) -> None:
             logger.info("AgenticProcess %s: PTY exited with code %s", agentic_process_id, exit_code)
@@ -574,6 +604,16 @@ class AgenticProcess(Entity):
                         proc.status = AgenticProcessStatus.COMPLETE.value
                     logger.info("AgenticProcess %s: saving %s after PTY exit", agentic_process_id, proc.status)
                     await proc.save()
+
+                    if worker_session_id:
+                        _pty_title: str | None = None
+                        if shell_id:
+                            try:
+                                from flow_sdk.builtin.faas.pty_actions import get_pty_session_title
+                                _pty_title = get_pty_session_title(shell_id)
+                            except Exception:
+                                pass
+                        asyncio.create_task(_index_session_on_close(worker_session_id, pty_title=_pty_title))
                 except Exception as exc:
                     logger.warning("AgenticProcess %s: on_exit update failed: %s", agentic_process_id, exc)
             asyncio.run_coroutine_threadsafe(_update_state(), main_loop)

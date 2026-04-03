@@ -1,4 +1,4 @@
-import { SearchResult } from '@src/hooks/use-record-search';
+import { SearchResult, getSearchResultBadgeLabel } from '@src/hooks/use-record-search';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { isResultNavigable, navigateToResult, getActionsForResult } from '@src/navigation/record-type-nav';
 import { formatDistanceToNow } from 'date-fns';
@@ -11,6 +11,7 @@ const TYPE_COLORS: Record<string, string> = {
   agent: 'bg-amber-500/20 text-amber-700 dark:text-amber-300 border-amber-300',
   hook: 'bg-orange-500/20 text-orange-700 dark:text-orange-300 border-orange-300',
   command: 'bg-rose-500/20 text-rose-700 dark:text-rose-300 border-rose-300',
+  annotation: 'bg-sky-500/20 text-sky-700 dark:text-sky-300 border-sky-300',
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -43,6 +44,7 @@ export function SearchResultCard({ result }: { result: SearchResult }) {
   // Suppress snippet if it merely echoes the title (match was in title column)
   const showSnippet = snippetText && !(result.fts_title && snippetText.replace(/<\/?mark>/g, '') === result.fts_title);
   const typeColor = TYPE_COLORS[result.record_type] ?? 'bg-muted text-foreground border-border';
+  const typeBadgeLabel = getSearchResultBadgeLabel(result);
   const statusColor = STATUS_COLORS[result.status] ?? 'text-muted-foreground';
 
   return (
@@ -55,7 +57,7 @@ export function SearchResultCard({ result }: { result: SearchResult }) {
     >
       {/* header row: type badge, title, time, message count */}
       <div className="flex items-center gap-2">
-        <span className={`rounded border px-1.5 py-0 text-xs font-medium ${typeColor}`}>{result.record_type}</span>
+        <span className={`rounded border px-1.5 py-0 text-xs font-medium ${typeColor}`}>{typeBadgeLabel}</span>
         <span className="flex-1 truncate text-sm font-semibold">{title}</span>
         {result.message_count != null && result.message_count > 0 && (
           <span className="shrink-0 text-xs text-muted-foreground">{result.message_count} msgs</span>

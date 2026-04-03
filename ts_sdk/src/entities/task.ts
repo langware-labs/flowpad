@@ -1,4 +1,6 @@
 import { APIEntity, registerEntity } from '../APIEntity';
+import { DockPointerData } from '../models/DockPointer';
+import { ViewType } from '../utils/ui/view-types';
 import { IEntity } from '../IEntity';
 
 export interface ITask extends IEntity {
@@ -61,6 +63,10 @@ export class Task extends APIEntity<Task> implements ITask {
     this.tags = entity.tags ||= [];
     this.links = entity.links ||= {};
     this.metadata = entity.metadata ||= {};
+  }
+
+  override get searchDockPointer(): DockPointerData {
+    return new DockPointerData(ViewType.TASKS, this.id);
   }
 
   // TODO: Remove getter and setter for descriptionPlainText when task is created with lexical description
