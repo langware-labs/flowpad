@@ -76,7 +76,6 @@ interface HistoryResponse {
  * Interface for AgenticProcess entity data
  */
 export interface IAgenticProcess extends IEntity {
-  processor_id?: string;
   instruction_content?: string;
   source_vfs_path?: string;
   workdir?: string | null;
@@ -158,26 +157,24 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const { dataContext } = await import('../FlowSync/context');
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.execute] No local compute node');
-    const processor = await computeNode.createAgenticProcessor();
 
-    // Create context
     const context: AgenticContext = {
       workdir: options?.workdir,
       model: options?.model,
       permissionMode: options?.permissionMode ?? 'bypassPermissions',
     };
 
-    // Wrap command in AMD if needed
     const amdContent = AgenticProcess._wrapInAmd(command);
-    const instructionFile = InstructionFile.fromContent(amdContent);
-
-    return processor.run(instructionFile, context);
+    const process = await computeNode.createProcess(context);
+    await process.watch();
+    await process.executeInstruction(amdContent, { sync: false });
+    return process;
   }
 
   /**
    * Create and activate an AgenticProcess in one call.
    *
-   * Replaces the manual `createAgenticProcessor → createProcess → start/watch` pattern.
+   * Replaces the manual `createProcess → open/watch` pattern.
    * Use `headless: true` in workerOptions for background execution (no PTY).
    *
    * @example PTY shell
@@ -412,9 +409,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return this.dockPointer;
   }
 
-  /** Parent processor ID */
-  processor_id?: string;
-
   /** Instruction content being executed */
   instruction_content?: string;
 
@@ -511,7 +505,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   constructor(entity: Partial<IAgenticProcess> = {}) {
     super(entity);
-    this.processor_id = entity.processor_id;
     this.instruction_content = entity.instruction_content;
     this.source_vfs_path = entity.source_vfs_path;
     this.context = entity.context;
@@ -1100,13 +1093,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @deprecated Use executeInstruction() instead. Will be removed in future version.
    */
   async continue(command: string): Promise<AgenticProcess> {
-    const { dataContext } = await import('../FlowSync/context');
-    const computeNode = dataContext.computeNode;
-    if (!computeNode) throw new Error('[AgenticProcess.continue] No local compute node');
-    const processor = await computeNode.createAgenticProcessor();
-
-    // Use the processor's continueProcess method which handles session resume
-    return processor.continueProcess(this.id, AgenticProcess._wrapInAmd(command));
+    await this.executeInstruction(AgenticProcess._wrapInAmd(command), { sync: false });
+    return this;
   }
 
   /**

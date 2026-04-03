@@ -21,11 +21,7 @@ class AgenticContext(BaseModel):
 
 
 class ContextData(BaseModel):
-    """Serialized context data from frontend.
-
-    Note: compute_node_id is NOT passed from frontend - it's a security-sensitive
-    field set by the backend when AgenticProcessor is created via ComputeNode action.
-    """
+    """Serialized context data from frontend."""
 
     instructions: str | None = None
     workdir: str | None = None

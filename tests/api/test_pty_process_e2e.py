@@ -25,23 +25,10 @@ async def test_open_pty_creates_pty_session(bootstrapped_client):
     assert bootstrap.status_code == 200
     compute_node_id = _get_default_compute_node_id(bootstrap.json())
 
-    # Create processor
+    # Create process directly on the compute node
     response = await bootstrapped_client.post(
-        "/api/v1/graph/agentic_processor",
-        json={"name": "test-pty-processor"},
-    )
-    assert response.status_code == 200, response.text
-    processor_data = ApiResponse(**response.json())
-    processor_id = processor_data.data["id"]
-
-    # Create process with compute_node_id
-    response = await bootstrapped_client.post(
-        "/api/v1/graph/agentic_process",
-        json={
-            "processor_id": processor_id,
-            "compute_node_id": f"compute_node-{compute_node_id}",
-            "context_data": {"compute_node_id": f"compute_node-{compute_node_id}"},
-        },
+        f"/api/v1/graph/compute_node/{compute_node_id}/createProcess",
+        json={"context": {"compute_node_id": f"compute_node-{compute_node_id}"}},
     )
     assert response.status_code == 200, response.text
     process_data = ApiResponse(**response.json())

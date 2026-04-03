@@ -29,8 +29,7 @@ describe('system skills visible via --add-dir', () => {
     const workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-skills-test-'));
 
     // Create process with a fresh workdir
-    const processor = await computeNode.createAgenticProcessor();
-    const agenticProcess = await processor.createProcess({
+    const agenticProcess = await computeNode.createProcess({
       workdir,
       permissionMode: 'bypassPermissions',
     });

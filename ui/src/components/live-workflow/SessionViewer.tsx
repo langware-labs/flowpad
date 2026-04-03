@@ -300,15 +300,13 @@ export function SessionViewer() {
         return;
       }
 
-      // Create processor and process
-      const processor = await computeNode.createAgenticProcessor();
       console.log(
         '[SessionViewer] Creating process with projectId:',
         currentProject?.typeId?.id,
         'project:',
         currentProject?.name,
       );
-      const newAgenticProcess = await processor.createProcess({
+      const newAgenticProcess = await computeNode.createProcess({
         projectId: currentProject?.typeId?.id,
         workdir: currentProject?.fs_storage_mount_path,
       }, { visible: true });

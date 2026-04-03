@@ -291,49 +291,25 @@ describe('AgenticProcess WS entity updates — integration', () => {
     unsub();
   });
 
-  it('ghost-running: state=running + is_active=false → resolvedStatus=idle', async () => {
+  it('ghost-running: status=running + is_active=false → resolvedStatus=idle', async () => {
     const process = new AgenticProcess({
       id: uuidv4(),
       compute_node_id: uuidv4(),
-      state: {
-        status: ProcessorStatus.RUNNING,
-        index: 0,
-        totalInstructions: 0,
-        currentInstructionId: null,
-        variables: {},
-        waitingForInput: false,
-        inputId: null,
-        stack: [],
-        debug: { enabled: false, breakpoints: [], stepMode: null },
-        error: null,
-        mdoContent: null,
-      },
+      status: ProcessorStatus.RUNNING,
       is_active: false,
     });
     registerProcess(process);
 
-    // Ghost-running: state says running, but PTY is dead → resolvedStatus = idle
+    // Ghost-running: status says running, but PTY is dead → resolvedStatus = idle
     expect(process.resolvedStatus).toBe(ProcessorStatus.IDLE);
     expect(process.is_active).toBe(false);
   });
 
-  it('active running process: state=running + is_active=true → resolvedStatus=running', async () => {
+  it('active running process: status=running + is_active=true → resolvedStatus=running', async () => {
     const process = new AgenticProcess({
       id: uuidv4(),
       compute_node_id: uuidv4(),
-      state: {
-        status: ProcessorStatus.RUNNING,
-        index: 0,
-        totalInstructions: 0,
-        currentInstructionId: null,
-        variables: {},
-        waitingForInput: false,
-        inputId: null,
-        stack: [],
-        debug: { enabled: false, breakpoints: [], stepMode: null },
-        error: null,
-        mdoContent: null,
-      },
+      status: ProcessorStatus.RUNNING,
       is_active: true,
     });
     registerProcess(process);
@@ -342,15 +318,16 @@ describe('AgenticProcess WS entity updates — integration', () => {
     expect(process.is_active).toBe(true);
   });
 
-  it('resolvedStatus updates when _handleStateUpdate is called (simulates WS state event)', async () => {
+  it('resolvedStatus updates when onEntityUpdate is called (simulates WS entity event)', async () => {
     const process = new AgenticProcess({ id: uuidv4(), compute_node_id: uuidv4(), is_active: true });
     registerProcess(process);
 
     const statuses: ProcessorStatus[] = [];
     process.on('state_change', () => statuses.push(process.resolvedStatus));
 
-    process._handleStateUpdate({ status: ProcessorStatus.RUNNING });
-    process._handleStateUpdate({ status: ProcessorStatus.IDLE });
+    // Simulate WS entity updates (replaces the old _handleStateUpdate)
+    (process as any).onEntityUpdate({ status: ProcessorStatus.RUNNING });
+    (process as any).onEntityUpdate({ status: ProcessorStatus.IDLE });
 
     expect(statuses.length).toBe(2);
     expect(statuses[0]).toBe(ProcessorStatus.RUNNING);

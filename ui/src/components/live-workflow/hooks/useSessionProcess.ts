@@ -1,12 +1,10 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect } from 'react';
 import {
   AgenticProcess,
-  AgenticProcessor,
   ContextEntitiesEnum,
   dataContext,
   isProcessorRunning,
   ProcessorStatus,
-  TypeId,
 } from '@sdk';
 import { useContext } from '@sdk/react/hooks';
 import { useProcessState } from '@src/hooks/use-process-state';
@@ -31,8 +29,6 @@ export function useSessionProcess(): UseSessionProcessResult {
   const { agenticProcess } = useContext();
   const process = agenticProcess;
 
-  const processorRef = useRef<AgenticProcessor | null>(null);
-
   // Subscribe to process state
   const { status, completed, error } = useProcessState(process);
 
@@ -41,10 +37,6 @@ export function useSessionProcess(): UseSessionProcessResult {
 
   // Abort running process
   const abortProcess = useCallback(() => {
-    if (processorRef.current) {
-      processorRef.current.dispose();
-      processorRef.current = null;
-    }
     void dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
   }, []);
 
@@ -64,28 +56,6 @@ export function useSessionProcess(): UseSessionProcessResult {
     },
     [process],
   );
-
-  // Restore processor reference when process comes from context (e.g., page refresh)
-  useEffect(() => {
-    if (!process?.processor_id || processorRef.current) {
-      return;
-    }
-
-    const restoreProcessor = async () => {
-      try {
-        const processorTypeId = new TypeId(AgenticProcessor.type, process.processor_id);
-        const existingProcessor = await dataContext.loadContextEntity(processorTypeId);
-        if (existingProcessor) {
-          await (existingProcessor as AgenticProcessor).watch();
-          processorRef.current = existingProcessor as AgenticProcessor;
-        }
-      } catch (err) {
-        console.warn('[useSessionProcess] Could not restore processor:', err);
-      }
-    };
-
-    void restoreProcessor();
-  }, [process?.processor_id]);
 
   // Ensure we watch the process and load history after refresh
   useEffect(() => {
@@ -114,16 +84,6 @@ export function useSessionProcess(): UseSessionProcessResult {
       unsubComplete?.();
     };
   }, [process]);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (processorRef.current) {
-        processorRef.current.dispose();
-        processorRef.current = null;
-      }
-    };
-  }, []);
 
   return {
     process,

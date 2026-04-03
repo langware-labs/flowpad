@@ -509,8 +509,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.all(action_name="scan-project")
     async def scan_project_action(self): return await self._scan_project()
 
-    @action.all(action_name="createAgenticProcessor")
-    async def create_agentic_processor(self): return await self._scan_create_agentic_processor()
+    @action.post(action_name="createProcess")
+    async def create_process_action(self): return await self._scan_create_process()
 
     @action.post(action_name="upsertSessionProcess")
     async def upsert_session_process(self): return await self._scan_upsert_session_process()

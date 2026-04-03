@@ -71,7 +71,7 @@ function getDockViewType(args: LoaderArgs): ViewType | undefined {
  */
 function resolveDefaultShell(shells: Shell[], processes: AgenticProcess[]): string | null {
   const hiddenStatuses = new Set<string>([ShellStatus.CLOSED, ShellStatus.CLOSING, ShellStatus.ERROR]);
-  const activeProcesses = processes.filter((p) => !INACTIVE_PROCESS_STATUSES.has(p.state?.status as ProcessorStatus));
+  const activeProcesses = processes.filter((p) => !INACTIVE_PROCESS_STATUSES.has(p.status as ProcessorStatus));
   const isAlive = (s: Shell) => !hiddenStatuses.has(s.status as ShellStatus);
 
   const resolveUrl = (shell: Shell) => {

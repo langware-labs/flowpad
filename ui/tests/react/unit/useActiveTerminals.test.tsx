@@ -29,7 +29,8 @@ vi.mock('@sdk', () => {
       STEPPING: 'stepping',
       COMPLETE: 'complete',
       ERROR: 'error',
-      TERMINATED: 'terminated',
+      INTERRUPTED: 'interrupted',
+      INACTIVE: 'inactive',
     },
     QueryRequest: class QueryRequest {
       type: string;
