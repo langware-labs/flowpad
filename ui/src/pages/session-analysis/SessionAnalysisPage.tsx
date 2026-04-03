@@ -227,10 +227,9 @@ export function SessionAnalysisPage() {
 
       try {
         const workdirTemplate = `${normalizeAbsPath(paths.home)}/${WORKDIR_TEMPLATE_SUFFIX}`;
-        const processor = await computeNode.createAgenticProcessor();
         const normalizedSessionId = getSessionKey(session);
         const resultUname = buildResultUname(normalizedSessionId);
-        const process = await processor.createProcess(
+        const process = await computeNode.createProcess(
           {
             workdir: workdirTemplate,
             permissionMode: 'bypassPermissions',

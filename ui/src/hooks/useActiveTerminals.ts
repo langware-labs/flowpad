@@ -20,7 +20,7 @@ export interface TerminalTab {
   statusReason: string;
 }
 
-const TERMINAL_STATUSES = new Set([ProcessorStatus.TERMINATED, ProcessorStatus.COMPLETE]);
+const TERMINAL_STATUSES = new Set([ProcessorStatus.COMPLETE, ProcessorStatus.ERROR, ProcessorStatus.INTERRUPTED, ProcessorStatus.INACTIVE]);
 const HIDDEN_SHELL_STATUSES = new Set([ShellStatus.ERROR]);
 const DISABLED_SHELL_STATUSES = new Set([ShellStatus.CLOSED, ShellStatus.CLOSING]);
 

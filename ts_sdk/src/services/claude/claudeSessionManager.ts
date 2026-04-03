@@ -116,18 +116,12 @@ export class ClaudeSessionManager extends EventEmitter {
       forkSession: true,
     };
 
-    // Get the processor that owns this process
-    const { AgenticProcessor } = await import('../../agentic_processor/agentic-processor');
-    if (!process.processor_id) {
-      throw new Error('Cannot fork process: processor_id is not set');
-    }
-    const processor = await AgenticProcessor.getById<AgenticProcessor>(process.processor_id);
-    if (!processor) {
-      throw new Error(`Cannot fork process: processor ${process.processor_id} not found`);
-    }
+    // Create a sibling process on the same compute node
+    const { dataContext } = await import('../..');
+    const computeNode = dataContext.computeNode;
+    if (!computeNode) throw new Error('Cannot fork process: no compute node available');
 
-    // Create a sibling process with the same settings
-    const newProcess = await processor.createProcess(context, { visible: true });
+    const newProcess = await computeNode.createProcess(context, { visible: true });
 
     // Start shell — backend will use --resume <source_id> --fork-session
     await newProcess.open();
@@ -137,9 +131,6 @@ export class ClaudeSessionManager extends EventEmitter {
 
   /**
    * Create a brand-new AgenticProcess and open its PTY in one step.
-   *
-   * Combines createAgenticProcessor → createProcess → open() so callers
-   * can do: const process = await claudeSessionManager.createAndStartSession(...)
    *
    * @param context - AgenticContext with workdir, model, permissionMode, etc.
    * @param options.instruction - Optional prompt to pass as -p flag.
@@ -153,8 +144,7 @@ export class ClaudeSessionManager extends EventEmitter {
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('No compute node available');
 
-    const processor = await computeNode.createAgenticProcessor();
-    const process = await processor.createProcess(context);
+    const process = await computeNode.createProcess(context);
     await process.open(options);
     return process;
   }

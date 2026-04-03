@@ -21,26 +21,15 @@ def _get_default_compute_node_id(bootstrap_payload: dict) -> str:
     return bootstrap_payload["data"]["default_compute_node"]["id"]
 
 
-async def _create_process(client, compute_node_id: str) -> tuple[str, str]:
-    """Create a processor + process, return (processor_id, process_id)."""
+async def _create_process(client, compute_node_id: str) -> tuple[None, str]:
+    """Create a process directly on the compute node, return (None, process_id)."""
     resp = await client.post(
-        "/api/v1/graph/agentic_processor",
-        json={"name": "test-status-processor"},
-    )
-    assert resp.status_code == 200, resp.text
-    processor_id = ApiResponse(**resp.json()).data["id"]
-
-    resp = await client.post(
-        "/api/v1/graph/agentic_process",
-        json={
-            "processor_id": processor_id,
-            "compute_node_id": f"compute_node-{compute_node_id}",
-            "context_data": {"compute_node_id": f"compute_node-{compute_node_id}"},
-        },
+        f"/api/v1/graph/compute_node/{compute_node_id}/createProcess",
+        json={"context": {"compute_node_id": f"compute_node-{compute_node_id}"}},
     )
     assert resp.status_code == 200, resp.text
     process_id = ApiResponse(**resp.json()).data["id"]
-    return processor_id, process_id
+    return None, process_id
 
 
 async def _get_process_status(client, process_id: str) -> str:

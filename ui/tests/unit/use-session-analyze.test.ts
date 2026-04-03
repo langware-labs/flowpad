@@ -4,14 +4,14 @@ import { useSessionAnalyze } from '@src/hooks/use-session-analyze';
 
 const {
   mockToast,
-  mockCreateAgenticProcessor,
+  mockSpawn,
   mockMkdir,
   mockTaskSave,
   mockProcessResultGetById,
   mockDataContext,
 } = vi.hoisted(() => ({
   mockToast: vi.fn(),
-  mockCreateAgenticProcessor: vi.fn(),
+  mockSpawn: vi.fn(),
   mockMkdir: vi.fn(),
   mockTaskSave: vi.fn(),
   mockProcessResultGetById: vi.fn(),
@@ -32,7 +32,7 @@ vi.mock('@sdk', async (importOriginal) => {
     ProcessResult: { getById: (...args: any[]) => mockProcessResultGetById(...args) },
     AgenticProcess: {
       ...orig.AgenticProcess,
-      spawn: (...args: any[]) => mockCreateAgenticProcessor(...args),
+      spawn: (...args: any[]) => mockSpawn(...args),
     },
     Task: class MockTask {
       [key: string]: any;
@@ -74,7 +74,7 @@ describe('useSessionAnalyze', () => {
       on: vi.fn(),
       executeInstruction: vi.fn(),
     };
-    mockCreateAgenticProcessor.mockResolvedValue({ process: mockProcess });
+    mockSpawn.mockResolvedValue({ process: mockProcess });
     mockMkdir.mockResolvedValue(undefined);
     mockTaskSave.mockResolvedValue(undefined);
     mockProcessResultGetById.mockResolvedValue(null);
@@ -89,7 +89,7 @@ describe('useSessionAnalyze', () => {
       void result.current.analyzeSession('session-1', '/home/project');
     });
 
-    expect(mockCreateAgenticProcessor).toHaveBeenCalledTimes(1);
+    expect(mockSpawn).toHaveBeenCalledTimes(1);
   });
 
   it('shows toast when computeNode is unavailable', async () => {
@@ -112,7 +112,7 @@ describe('useSessionAnalyze', () => {
       on: vi.fn(),
       executeInstruction: vi.fn().mockResolvedValue(undefined),
     };
-    mockCreateAgenticProcessor.mockResolvedValue({ process: mockProcess });
+    mockSpawn.mockResolvedValue({ process: mockProcess });
     mockMkdir.mockResolvedValue(undefined);
     mockTaskSave.mockResolvedValue(undefined);
     mockProcessResultGetById.mockResolvedValue(null);
@@ -122,7 +122,7 @@ describe('useSessionAnalyze', () => {
       await result.current.analyzeSession('session-xyz', '/home/project');
     });
 
-    expect(mockCreateAgenticProcessor).toHaveBeenCalledWith(
+    expect(mockSpawn).toHaveBeenCalledWith(
       expect.objectContaining({
         workdir: '/home/project',
         resumeSessionId: 'session-xyz',
@@ -145,7 +145,7 @@ describe('useSessionAnalyze', () => {
       on: vi.fn(),
       executeInstruction: vi.fn().mockResolvedValue(undefined),
     };
-    mockCreateAgenticProcessor.mockResolvedValue({ process: mockProcess });
+    mockSpawn.mockResolvedValue({ process: mockProcess });
     mockMkdir.mockResolvedValue(undefined);
     mockTaskSave.mockResolvedValue(undefined);
     mockProcessResultGetById.mockResolvedValue(null);
@@ -169,7 +169,7 @@ describe('useSessionAnalyze', () => {
       on: vi.fn(),
       executeInstruction: vi.fn().mockResolvedValue(undefined),
     };
-    mockCreateAgenticProcessor.mockResolvedValue({ process: mockProcess });
+    mockSpawn.mockResolvedValue({ process: mockProcess });
     mockMkdir.mockResolvedValue(undefined);
     mockTaskSave.mockResolvedValue(undefined);
     mockProcessResultGetById.mockResolvedValue(null);

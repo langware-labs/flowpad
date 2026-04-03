@@ -290,7 +290,7 @@ extension, func, sync_service, plugin, plugin_manifest,
 flowpad_service, storage_device, flow_file, micro_app, web_domain,
 compute_node, job, system_job, job_execution, project, artifact,
 api_key, code_ref, comment, agent_hook, trigger,
-agentic_processor, agentic_process, process_result, workflow
+agentic_process, process_result, workflow
 ```
 
 ### FS Record Types (`RecordType` enum)

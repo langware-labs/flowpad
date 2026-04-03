@@ -2,7 +2,7 @@ test 1: Switch between multiple shell terminal tabs
 - navigate to {APP_URL}/dock/shell/new_terminal
 - wait for terminal to be ready (element with data-terminal-id is visible)
 - validate a terminal tab is visible and active in the tab bar
-- click the Add terminal tab button (data-testid="add-terminal-tab-button")
+- click the Add terminal tab button (data-testid="open-terminal-tab-button")
 - wait 2 seconds
 - validate a second tab is now visible in the tab bar
 - click the first terminal tab

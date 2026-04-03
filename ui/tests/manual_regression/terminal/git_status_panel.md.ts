@@ -29,8 +29,8 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal } from './helpers';
 
-const APP_URL = process.env.APP_URL ?? 'http://localhost:4097';
-const API_URL = process.env.API_URL ?? 'http://localhost:9007';
+const APP_URL = process.env.APP_URL ?? 'http://localhost:4098';
+const API_URL = process.env.API_URL ?? 'http://localhost:9008';
 
 /**
  * Cache the agentic process URL after the first successful navigation.
@@ -65,9 +65,9 @@ async function gotoAgenticProcess(page: import('@playwright/test').Page) {
   await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: 60_000 });
 
   if (!page.url().includes('agentic_process-')) {
-    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 60_000 });
     const startBtn = page.locator('[data-testid="start-claude-button"]');
-    await startBtn.waitFor({ state: 'visible', timeout: 30_000 });
+    await startBtn.waitFor({ state: 'visible', timeout: 60_000 });
     await startBtn.click();
     await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 60_000 });
   }
@@ -167,7 +167,7 @@ test.describe('Git Status Panel', () => {
     await gotoAgenticProcess(page);
 
     const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-    await activePanel.locator('.border-t .ml-auto button').nth(2).click();
+    await activePanel.locator('.border-t .ml-auto button').nth(1).click();
 
     const sideWindow = getSideWindow(page);
     await expect(sideWindow).toBeVisible({ timeout: 5_000 });
@@ -195,17 +195,10 @@ test.describe('Git Status Panel', () => {
   test('git panel shows file list with status badges and line counts', async ({ page }) => {
     test.setTimeout(180_000);
 
-    const knownProcessUrl = `${APP_URL}/dock/shell/agentic_process-17ef0307-fb47-48fa-9a3b-56b0e41c39a3`;
-    await page.goto(knownProcessUrl);
-    await page.waitForURL(/\/dock\/shell\/agentic_process-/, { timeout: 60_000 });
-    await page.waitForTimeout(8_000);
-
-    if (!page.url().includes('agentic_process-')) {
-      await gotoAgenticProcess(page);
-    }
+    await gotoAgenticProcess(page);
 
     const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-    await activePanel.locator('.border-t .ml-auto button').nth(2).click();
+    await activePanel.locator('.border-t .ml-auto button').nth(1).click();
 
     const sideWindow = getSideWindow(page);
     await expect(sideWindow).toBeVisible({ timeout: 5_000 });
@@ -246,7 +239,7 @@ test.describe('Git Status Panel', () => {
     await gotoAgenticProcess(page);
 
     const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-    await activePanel.locator('.border-t .ml-auto button').nth(2).click();
+    await activePanel.locator('.border-t .ml-auto button').nth(1).click();
 
     const sideWindow = getSideWindow(page);
     await expect(sideWindow).toBeVisible({ timeout: 5_000 });

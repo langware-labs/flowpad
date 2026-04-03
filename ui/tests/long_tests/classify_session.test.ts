@@ -92,8 +92,7 @@ describe('classify_session', () => {
     console.log(`[classify] forking session ${sessionId} in ${cwd}`);
 
     // ── 2. Fork session into a new AgenticProcess ───────────────────────────
-    const processor = await computeNode.createAgenticProcessor();
-    const agenticProcess = await processor.createProcess({
+    const agenticProcess = await computeNode.createProcess({
       workdir: cwd,
       permissionMode: 'bypassPermissions',
       resumeSessionId: sessionId,

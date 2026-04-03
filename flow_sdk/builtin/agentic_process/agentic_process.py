@@ -5,28 +5,20 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
-import shlex
-import shutil
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 from uuid import uuid4
-
-from pydantic import SerializationInfo, model_serializer
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.app.actions.listen import set_plan_auto_approve
 from flow_sdk.builtin.cli_workers import ClaudeCliOptions
 from flow_sdk.core import Entity, action
-from flow_sdk.core.entity.entity_model import EntityExpansion
 from flow_sdk.flowpad_types.enums import WorkerType
-from flow_sdk.fs_records.agentic_process_record import AgenticProcessStatus
 from flow_sdk.fs_records.agent_status import is_idle as _is_idle_status
+from flow_sdk.fs_records.agentic_process_record import AgenticProcessStatus
 from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
-
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.faas.compute_node import ComputeNode
@@ -62,11 +54,66 @@ async def _index_session_on_close(worker_session_id: str, pty_title: str | None 
         logger.debug("[AgenticProcess] failed to index session %s on close", worker_session_id, exc_info=True)
 
 
+async def _poll_for_completion(agentic_process_id: str, worker_session_id: str | None) -> None:
+    """Background task: poll the session transcript until COMPLETE/ERROR, then save.
+
+    Called from AgenticProcess.open() after launching the worker. When Claude
+    exits (end_turn / stop_sequence), the transcript tail changes. Saving the
+    updated status broadcasts a WS entity-update that lets the TypeScript
+    AgenticProcess._markComplete() fire and the output() generator terminate.
+    """
+    from flow_sdk.fs_records.agent_status import AgenticProcessStatus
+    from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+
+    TERMINAL = {AgenticProcessStatus.COMPLETE, AgenticProcessStatus.ERROR, AgenticProcessStatus.INTERRUPTED}
+
+    await asyncio.sleep(5)  # give Claude time to start and write the first JSONL entry
+    for _ in range(360):  # poll up to 30 min (360 * 5 s)
+        await asyncio.sleep(5)
+        try:
+            if not worker_session_id:
+                break
+            record = ClaudeSessionRecord.discover_one(worker_session_id)
+            if record is None:
+                continue  # transcript not written yet
+
+            new_status = record.status
+            try:
+                status_enum = AgenticProcessStatus(str(new_status))
+            except ValueError:
+                continue
+
+            if status_enum not in TERMINAL:
+                continue  # still running or unknown
+
+            # Fetch entity fresh from DB — use module-level AgenticProcess via
+            # globals() to avoid forward-reference issues (class defined below).
+            _AgenticProcess = globals().get("AgenticProcess")
+            if _AgenticProcess is None:
+                return
+            proc = await _AgenticProcess.get_by_id(agentic_process_id)
+            if proc is None:
+                return  # entity deleted
+
+            if proc.status == str(new_status):
+                return  # already up to date — WS was already sent
+
+            proc.status = str(new_status)
+            await proc.save()
+            logger.info(
+                "AgenticProcess %s: completion monitor set status=%s",
+                agentic_process_id,
+                new_status,
+            )
+            return
+        except Exception:
+            logger.debug("_poll_for_completion error for %s", agentic_process_id, exc_info=True)
+
+
 class AgenticProcess(Entity):
     _api_visible = True
     type: str = APIField(default="agentic_process")
 
-    processor_id: str | None = APIField(default=None)
     instruction_content: str | None = APIField(default=None)
     source_vfs_path: str | None = APIField(default=None)
     context: dict[str, Any] = APIField(default_factory=dict)
@@ -469,6 +516,13 @@ class AgenticProcess(Entity):
                 logger.info(
                     "AgenticProcess %s worker launched: pid=%s name=%r",
                     self.id, execution_info.pid, execution_info.name,
+                )
+                # Start background task to detect completion via transcript polling.
+                # The PTY exit callback only fires when the SHELL exits (not when
+                # Claude exits), so headless runs need this to send the WS update.
+                asyncio.create_task(
+                    _poll_for_completion(self.id, self.worker_session_id),
+                    name=f"completion-monitor-{self.id[:8]}",
                 )
 
             return ApiSuccessResponse(

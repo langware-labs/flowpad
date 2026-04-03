@@ -49,11 +49,11 @@ try:
 except ImportError as e:
     print(f"[WARN] Failed to import Flow: {e}")
 
-# Agentic processor entities (APU compatibility + processor/process)
+# Agentic process entity
 try:
-    from flow_sdk.builtin.agentic_process import APU, AgenticProcess, AgenticProcessor  # noqa: F401
+    from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import AgenticProcessor entities: {e}")
+    print(f"[WARN] Failed to import AgenticProcess entity: {e}")
 
 try:
     from flow_sdk.builtin.bookmark import Bookmark  # noqa: F401
