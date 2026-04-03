@@ -67,7 +67,7 @@ export class SDKConfig implements ISDKConfig {
   get API_PREFIXES() {
     return {
       bootstrap: '/graph/bootstrap',
-      refreshToken: '/refresh-token',
+      refreshToken: '/auth/refresh-token',
       graph: '/graph',
       currentUser: '/current-user',
       login: '/login',

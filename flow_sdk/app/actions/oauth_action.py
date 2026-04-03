@@ -11,7 +11,7 @@ Routes:
 import logging
 
 from flow_sdk.core import action
-from flow_sdk.api.oauth_api import OAuthAction, OAuthErrorCode
+from flow_sdk.api.oauth_api import OAuthAction, OAuthErrorCode, OAuthProvider, OauthClientRequestInfo
 from flow_sdk.app.actions.desktop_oauth import (
     _desktop_oauth_sessions,
     get_desktop_oauth_auth_url,
@@ -103,6 +103,8 @@ async def oauth_main() -> ApiResponse:
 
         # Disconnect
         if oauth_action_str == OAuthAction.Disconnect:
+            if provider == OAuthProvider.FLOWPAD_CLOUD:
+                return await _handle_flowpad_cloud_disconnect()
             return ApiSuccessResponse(
                 message=f"OAuth {provider} disconnected (desktop stub)",
                 data={"remaining_attachment_count": 0},
@@ -155,11 +157,38 @@ async def _handle_status(provider: str) -> ApiResponse:
         )
 
 
+async def _handle_flowpad_cloud_disconnect() -> ApiResponse:
+    """Handle flowpad_cloud disconnect: clear local credentials and return the cloud logout URL."""
+    import os
+
+    from flow_sdk.cli.app_config import set_user
+    from flow_sdk.cli.auth import delete_api_key
+    from flow_sdk.cli.env_loader import get_logout_url
+    from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
+    from flow_sdk.server import state as server_state
+
+    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    post_logout_url = f"http://127.0.0.1:{port}/post_logout"
+    cloud_logout_url = get_logout_url(post_logout_url)
+
+    delete_api_key()
+    set_user({})
+    server_state.login_result = None
+    server_state.login_received.clear()
+    invalidate_bootstrap_cache()
+
+    return ApiSuccessResponse(data={"remaining_attachment_count": 0, "browser_url": cloud_logout_url})
+
+
 async def _handle_auth(provider: str, request_info) -> ApiResponse:
     """Generate OAuth authorization URL.
 
     Desktop mode: generates desktop OAuth auth URL with PKCE and localhost callback.
+    For flowpad_cloud: returns the cloud login URL with a fresh oauth_request_id.
     """
+    if provider == OAuthProvider.FLOWPAD_CLOUD:
+        return await _get_flowpad_cloud_oauth_auth()
+
     # Extract user_id from request context
     user_id = ""
     if request_info and hasattr(request_info, 'target_entity_id') and request_info.target_entity_id:
@@ -168,6 +197,27 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
         user_id = request_info.user.id if hasattr(request_info.user, 'id') else str(request_info.user)
 
     return await get_desktop_oauth_auth_url(provider, user_id)
+
+
+async def _get_flowpad_cloud_oauth_auth() -> ApiResponse:
+    """Generate Flowpad cloud login URL."""
+    import os
+
+    from flow_sdk.cli.env_loader import get_login_url
+
+    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    callback_url = f"http://127.0.0.1:{port}/post_login"
+
+    auth_url = get_login_url(callback_url)
+
+    return ApiSuccessResponse(
+        data=OauthClientRequestInfo(
+            provider=OAuthProvider.FLOWPAD_CLOUD,
+            auth_url=auth_url,
+            # Fixed ID — must match the oauth_request_id broadcast by /post_login
+            oauth_request_id=OAuthProvider.FLOWPAD_CLOUD,
+        )
+    )
 
 
 async def _handle_callback(provider: str, request_info) -> ApiResponse:

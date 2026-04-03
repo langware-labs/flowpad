@@ -6,8 +6,12 @@ import { HooksTable, type HookTableRow } from './HooksTable';
 import { HooksBrowser } from './HooksBrowser';
 import { HookEditor } from './HookEditor';
 import { getHooks, updateHooks, type HookConfig, type HookDefinition } from './hooks-api';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 export function HooksView() {
+  const { currentDock } = useDockNavigation();
+  const highlightHookId = currentDock?.options?.hookId;
+  const highlightEventType = currentDock?.options?.eventType;
   const [config, setConfig] = useState<HookConfig>({ hooks: {} });
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [showEditor, setShowEditor] = useState(false);
@@ -323,7 +327,7 @@ export function HooksView() {
                 Scans all hook resources from the system profile and lists every hook with full details.
               </p>
             </div>
-            <HooksBrowser />
+            <HooksBrowser highlightHookId={highlightHookId} highlightEventType={highlightEventType} />
           </div>
 
           {/* Toggle between Table and Editor */}

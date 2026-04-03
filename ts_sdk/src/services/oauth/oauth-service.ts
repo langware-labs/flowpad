@@ -7,6 +7,7 @@ import { BrowserAuthWindow, MockAuthWindow, OAuthWindow } from './oauth-window';
 export const OAUTH_PROVIDERS = {
   GITHUB: 'github',
   SLACK: 'slack',
+  FLOWPAD_CLOUD: 'flowpad_cloud',
 } as const;
 
 export enum ConnectionStatus {
@@ -44,6 +45,7 @@ export interface OAuthConnection {
 
 export interface OAuthDetachResult {
   remaining_attachment_count: number;
+  browser_url?: string;
 }
 
 export interface OAuthClientRequestInfo {
@@ -292,6 +294,15 @@ export class OAuthService {
       // No target entity needed for disconnect - it removes the user's token completely
 
       const response = await dataManager.callAction<unknown, OAuthDetachResult>(actionInfo);
+
+      if (response?.browser_url) {
+        await this.createOAuthPopupWindow(response.browser_url, provider);
+      }
+
+      dataManager.emit(OAuthEventType.OAUTH_FLOW_COMPLETE, {
+        provider,
+        disconnectSuccess: true,
+      });
 
       return response;
     } catch (error) {

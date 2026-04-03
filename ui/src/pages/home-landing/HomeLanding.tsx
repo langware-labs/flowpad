@@ -64,7 +64,8 @@ const normalizePath = (value: string): string => {
  *   - Right column: Greeting, session input, project buttons, and Quick Access
  * URL: /dock/home
  */
-let _welcomeChecked = false;
+const _INDEX_APPROVED_KEY = 'flowpad-index-approved';
+const _SCAN_DISMISSED_KEY = 'flowpad-scan-dismissed';
 
 export function HomeLanding() {
   const { user } = useAuth();
@@ -136,10 +137,9 @@ export function HomeLanding() {
     prevLastScanResultRef.current = lastScanResult;
   }, [lastScanResult]);
 
-  // Show welcome modal once per app session when scanInfo first arrives as never_indexed.
+  // Show welcome modal when never_indexed, unless user has already approved or dismissed this session.
   useEffect(() => {
-    if (_welcomeChecked || !scanInfo) return;
-    _welcomeChecked = true;
+    if (localStorage.getItem(_INDEX_APPROVED_KEY) || sessionStorage.getItem(_SCAN_DISMISSED_KEY) || !scanInfo) return;
     if (scanInfo.never_indexed) setShowWelcome(true);
   }, [scanInfo]);
   const firstName = user?.name?.split(' ')[0] || 'there';
@@ -632,10 +632,14 @@ export function HomeLanding() {
       <WelcomeModal
         open={showWelcome}
         onStart={() => {
+          localStorage.setItem(_INDEX_APPROVED_KEY, '1');
           setShowWelcome(false);
           void resetAndRescan();
         }}
-        onSkip={() => setShowWelcome(false)}
+        onSkip={() => {
+          sessionStorage.setItem(_SCAN_DISMISSED_KEY, '1');
+          setShowWelcome(false);
+        }}
       />
 
       {/* Activity progress detail modal */}

@@ -31,6 +31,11 @@ class OAuthErrorCode(StrEnum):
     SOD_NOT_FOUND = "sod_not_found"
 
 
+class OAuthProvider(StrEnum):
+    """Known OAuth provider identifiers."""
+    FLOWPAD_CLOUD = "flowpad_cloud"
+
+
 class OauthClientRequestInfo(BaseModel):
     oauth_request_id: str
     provider: str

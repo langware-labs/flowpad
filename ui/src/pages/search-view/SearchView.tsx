@@ -19,6 +19,8 @@ import { AlertCircle, FileSearch, Loader2, Menu, RotateCcw, SlidersHorizontal } 
 import { useCallback, useEffect, useState } from 'react';
 
 const LS_KEY = 'flowpad-search-filters';
+const _INDEX_APPROVED_KEY = 'flowpad-index-approved';
+const _SCAN_DISMISSED_KEY = 'flowpad-scan-dismissed';
 
 function activityPhaseLabel(activity: SystemActivity): string {
   switch (activity) {
@@ -118,7 +120,7 @@ export function SearchView() {
   }, [statusState]);
 
   useEffect(() => {
-    if (indexState === 'never_indexed') setModalOpen(true);
+    if (indexState === 'never_indexed' && !localStorage.getItem(_INDEX_APPROVED_KEY) && !sessionStorage.getItem(_SCAN_DISMISSED_KEY)) setModalOpen(true);
   }, [indexState]);
 
   // Sync from URL when dock options change (e.g., browser back/forward)
@@ -375,8 +377,8 @@ export function SearchView() {
         <IndexNowModal
           open={modalOpen}
           types={statusState.status.default_types}
-          onComplete={() => { setModalOpen(false); setIndexState('ok'); }}
-          onDeny={() => { setModalOpen(false); setIndexState('denied'); }}
+          onComplete={() => { localStorage.setItem(_INDEX_APPROVED_KEY, '1'); setModalOpen(false); setIndexState('ok'); }}
+          onDeny={() => { sessionStorage.setItem(_SCAN_DISMISSED_KEY, '1'); setModalOpen(false); setIndexState('denied'); }}
         />
       )}
 

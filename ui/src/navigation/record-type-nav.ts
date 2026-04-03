@@ -3,7 +3,7 @@ import type { SearchResult } from '@src/hooks/use-record-search';
 import { DockPointer } from './DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { CheckSquare, Search, GitBranch, FileText } from 'lucide-react';
-import { AgenticProcess, Project } from '@sdk';
+import { Agent, AgenticProcess, Project, Skill, Task } from '@sdk';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import type { NavigationActions } from './NavigationActions';
 
@@ -47,21 +47,40 @@ function projectEncodedNameFromResult(result: SearchResult): string {
 
 export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   skill: {
-    dockPointer: (r) => {
-      // source_path = "skill/<folder-name>" (record_data_ref from backend)
-      const folderName = r.source_path ? r.source_path.replace(/^skill\//, '') : r.name;
-      const prefix = r.scope === 'project' ? 'project-skills' : 'user-skills';
-      return DockPointer.forSkills(`${prefix}/${folderName}`);
-    },
+    dockPointer: (r) => new Skill({ id: r.record_id, source_path: r.source_path || undefined }).searchDockPointer,
     actions: [
       { icon: Search, name: 'All skills', dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'skill' }) },
     ],
   },
   claude_hook: {
-    dockPointer: () => DockPointer.forTab(ViewType.HOOKS),
+    dockPointer: (r) => new DockPointer(ViewType.HOOKS, undefined, {
+      hookId: r.record_id,
+    }),
     actions: [
       { icon: Search, name: 'All hooks', dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'claude_hook' }) },
     ],
+  },
+  agent: {
+    dockPointer: (r) => new Agent({ id: r.record_id, source_path: r.source_path || undefined }).searchDockPointer,
+  },
+  annotation: {
+    primaryAction: async (r, navigation) => {
+      const sessionId = r.session_id;
+      if (sessionId) {
+        await navigation.openClaudeSession(sessionId);
+      }
+    },
+  },
+  bookmark: {
+    primaryAction: async (r, navigation) => {
+      const sessionId = r.session_id;
+      if (sessionId) {
+        await navigation.openClaudeSession(sessionId);
+      }
+    },
+  },
+  command: {
+    dockPointer: (r) => r.source_path ? DockPointer.forFile(r.source_path) : null,
   },
   claude_settings: {
     dockPointer: () => DockPointer.forSettings(),
@@ -70,7 +89,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     dockPointer: () => DockPointer.forSettings(),
   },
   task: {
-    dockPointer: (r) => DockPointer.forTasks(r.record_id),
+    dockPointer: (r) => new Task({ id: r.record_id }).searchDockPointer,
     actions: [
       { icon: CheckSquare, name: 'All tasks', dockPointer: () => DockPointer.forTasks() },
     ],
@@ -89,7 +108,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     primaryAction: async (r, navigation) => {
       const sessionId = sessionIdFromResult(r);
       const p = await AgenticProcess.fromClaudeSession(sessionId);
-      await navigation.openProcessTab(p.id);
+      navigation.openDock(p.dockPointer);
     },
     actions: [
       {
