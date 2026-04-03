@@ -138,7 +138,6 @@ def start_server_process(port: int) -> int:
 
     env = os.environ.copy()
     env["LOCAL_SERVER_PORT"] = str(port)
-    env["MINIHUB_PORT"] = str(port)
 
     server_log_dir = LOGS_BASE / "server"
     cleanup_old_logs(server_log_dir)

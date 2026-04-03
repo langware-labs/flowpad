@@ -3,7 +3,7 @@ import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/
 import type { TranscriptEntryData } from '@src/types/trace-event';
 import type { ClaudeTraceEvent } from '@src/types/trace-event';
 import { mapSnifferToTraceEvent, mapTranscriptToTraceEvents } from '@src/types/trace-event';
-import { useHooksSniffer } from '@src/hooks/use-hooks-sniffer';
+import { useSnifferContext } from '@src/contexts/SnifferContext';
 
 export function useClaudeSessionTrace(sessionId: string | null): {
   events: ClaudeTraceEvent[];
@@ -17,9 +17,9 @@ export function useClaudeSessionTrace(sessionId: string | null): {
   const [sessionStartTime, setSessionStartTime] = useState<string | null>(null);
   const cacheRef = useRef<Map<string, TranscriptEntryData[]>>(new Map());
   const discoveredRef = useRef<Set<string>>(new Set());
-  const { events: snifferEvents } = useHooksSniffer();
+  const { events: snifferEvents } = useSnifferContext();
   // Accumulated sniffer events for this session — survives ring buffer eviction
-  const [liveSnifferEvents, setLiveSnifferEvents] = useState<ReturnType<typeof useHooksSniffer>['events'][number][]>([]);
+  const [liveSnifferEvents, setLiveSnifferEvents] = useState<ReturnType<typeof useSnifferContext>['events'][number][]>([]);
   const seenSnifferIdsRef = useRef<Set<string>>(new Set());
 
   // Reset accumulated events when session changes

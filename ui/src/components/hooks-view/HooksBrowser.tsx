@@ -11,7 +11,7 @@ import { useResources, SystemResourceType } from '@src/hooks/use-resources';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { createClaudeHooksService, type HookItem, VFSPath } from '@sdk';
 import { useContext } from '@sdk/react/hooks';
-import { useHooksSniffer } from '@src/hooks/use-hooks-sniffer';
+import { useSnifferContext } from '@src/contexts/SnifferContext';
 import { HookEditor } from './HookEditor';
 
 type ScopeFilter = 'all' | 'user' | 'project' | 'managed' | 'plugin';
@@ -106,7 +106,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
     invalidate,
   } = useResources<HookItem>(SystemResourceType.HOOK, { limit: 200 });
   const { snifferEnabled } = useContext();
-  const { events: snifferEvents, isLoading: snifferLoading } = useHooksSniffer();
+  const { events: snifferEvents, isLoading: snifferLoading } = useSnifferContext();
   const [query, setQuery] = useState('');
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all');
   const [deletedHookIds, setDeletedHookIds] = useState<Set<string>>(new Set());

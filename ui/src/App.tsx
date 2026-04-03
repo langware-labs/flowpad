@@ -9,6 +9,7 @@ import { Toaster } from '@src/components/ui/toaster';
 import { useEffect, useRef, useState } from 'react';
 import { DesktopSetupModal, DESKTOP_SETUP_REASON_AUTH_FAILURE } from '@src/components/desktop-setup-modal';
 import { initNotificationListener } from '@src/store/use-notification-store';
+import { SnifferProvider } from '@src/contexts/SnifferContext';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -196,7 +197,9 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <Sonner />
         <GlobalEvents />
         <DesktopSetupModalHandler />
-        {children}
+        <SnifferProvider>
+          {children}
+        </SnifferProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );

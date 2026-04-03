@@ -71,9 +71,8 @@ def _server_env(port: int, db_path: str) -> dict:
     env = os.environ.copy()
     env["SQLITE_DATABASE_PATH"] = db_path
     env["MINIHUB_HOST"] = "127.0.0.1"
-    env["MINIHUB_PORT"] = str(port)
+    env["LOCAL_SERVER_PORT"] = str(port)
     env["FLOWPAD_SKIP_LOCK"] = "true"
-    env["FLOWPAD_DEV"] = "false"
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     env["PYTHONPATH"] = f"{repo_root}{os.pathsep}{env.get('PYTHONPATH', '')}"
     return env

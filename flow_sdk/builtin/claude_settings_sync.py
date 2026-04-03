@@ -71,7 +71,7 @@ def _resolve_backend_url() -> str:
     if svc and hasattr(svc, "api_url"):
         return svc.api_url
     # Desktop mode: service_urls_config is not set, use local server
-    port = os.environ.get("MINIHUB_PORT", os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    port = os.environ.get("LOCAL_SERVER_PORT", "9007")
     return f"http://localhost:{port}"
 
 
