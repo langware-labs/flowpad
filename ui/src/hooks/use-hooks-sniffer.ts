@@ -121,6 +121,18 @@ export function useHooksSniffer() {
   const { computeNode, snifferEnabled, isBootstrapping } = useContext();
   const isLoading = isBootstrapping;
   const status: HooksSnifferStatus = { enabled: snifferEnabled, hook_id: hookId };
+
+  // Sync hookId from snifferManager when snifferEnabled changes (e.g., after page refresh + bootstrap).
+  // The lazy useState initializer runs before bootstrap completes so hookId starts null;
+  // only this effect bridges the gap between dataContext.snifferEnabled becoming true and hookId being set.
+  useEffect(() => {
+    if (snifferEnabled) {
+      const entityId = snifferManager.entity?.id ?? null;
+      setHookId(entityId);
+    } else {
+      setHookId(null);
+    }
+  }, [snifferEnabled]);
   const sessionToProjectRef = useRef<Map<string, string | null>>(new Map());
 
   const projectFlowDataCounts = useMemo(() => {
