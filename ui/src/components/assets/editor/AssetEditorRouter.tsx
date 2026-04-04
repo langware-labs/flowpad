@@ -34,6 +34,7 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
     case 'claude_memory':
     case 'claude_rules':
     case 'agent':
+    case 'command':
       return <MarkdownAssetEditor sourcePath={vfsPath} />;
     default:
       return (

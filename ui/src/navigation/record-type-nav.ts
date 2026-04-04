@@ -80,7 +80,9 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     },
   },
   command: {
-    dockPointer: (r) => r.source_path ? DockPointer.forFile(r.source_path) : null,
+    dockPointer: (r) => r.source_path
+      ? new DockPointer(ViewType.ASSETS, `editor/command/${r.source_path.replace(/^\//, '')}`)
+      : null,
   },
   claude_settings: {
     dockPointer: () => DockPointer.forSettings(),
