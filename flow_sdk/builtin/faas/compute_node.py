@@ -557,6 +557,51 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         result = clear_debug_errors()
         return ApiSuccessResponse(data=result)
 
+    @action.post(action_name="search-cloud-errors")
+    async def search_cloud_errors_action(self) -> "ApiResponse":
+        """Proxy error fingerprint search to the Flowpad cloud known-issues database."""
+        import urllib.error
+        import urllib.request
+
+        from flow_sdk.cli.auth import get_api_key
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data()
+
+        fingerprints = body.get("fingerprints", [])
+        if not fingerprints:
+            return ApiFailResponse(message="fingerprints is required")
+
+        api_key = get_api_key()
+        if not api_key:
+            return ApiFailResponse(message="Not logged in to Flowpad cloud")
+
+        cloud_base = os.environ.get("FLOWPAD_CLOUD_API_URL", "https://app.flowpad.ai/api/v1")
+        payload = json.dumps(
+            {"analysis_type": "claude error", "fingerprints": fingerprints, "data": {}}
+        ).encode()
+
+        def _call_cloud() -> dict:
+            req = urllib.request.Request(
+                f"{cloud_base}/analysis/search",
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read())
+
+        try:
+            result = await asyncio.to_thread(_call_cloud)
+            return ApiSuccessResponse(data=result.get("data", {}))
+        except urllib.error.HTTPError as e:
+            return ApiFailResponse(message=f"Cloud search failed: {e.code} {e.reason}")
+        except Exception as e:
+            return ApiFailResponse(message=f"Cloud search error: {e}")
+
     @action.get(action_name="get-cwd")
     async def get_cwd_action(self) -> "ApiResponse":
         """Return the current working directory."""

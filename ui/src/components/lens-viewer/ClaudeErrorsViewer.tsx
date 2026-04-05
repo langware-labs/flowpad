@@ -10,8 +10,10 @@ import {
   ErrorStatus,
   useClaudeErrorRecords,
   type ClaudeErrorRecord,
+  type CloudSearchResult,
   type ErrorOccurrence,
 } from '@src/hooks/useClaudeErrorRecords';
+import { useContext } from '@src/hooks/useContext';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -27,6 +29,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@src/components/ui/alert-dialog';
+
 import {
   AlarmClock,
   AlertTriangle,
@@ -37,13 +40,16 @@ import {
   EyeOff,
   FileText,
   ListTodo,
+  Loader2,
   OctagonAlert,
   RefreshCw,
   RotateCcw,
+  Search,
   Terminal,
   Trash2,
   Webhook,
   Wrench,
+  X,
 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import {
@@ -242,7 +248,12 @@ function ErrorCard({
       isHook ? 'border-l-amber-500' : 'border-l-orange-500',
     )}>
       <div className="flex gap-2">
-        <Icon className={cn('mt-1.5 h-4 w-4 shrink-0', iconColor)} />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Icon className={cn('mt-1.5 h-4 w-4 shrink-0 cursor-default', iconColor)} />
+          </TooltipTrigger>
+          <TooltipContent>fingerprint: {error.fingerprint}</TooltipContent>
+        </Tooltip>
         {/* Occurrence counter in grouped mode */}
         {grouped && error.occurrence_count > 1 && (
           <Tooltip>
@@ -425,7 +436,12 @@ function OccurrenceCard({
       isHook ? 'border-l-amber-500' : 'border-l-orange-500',
     )}>
       <div className="flex gap-2">
-        <Icon className={cn('mt-1.5 h-3.5 w-3.5 shrink-0', iconColor)} />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Icon className={cn('mt-1.5 h-3.5 w-3.5 shrink-0 cursor-default', iconColor)} />
+          </TooltipTrigger>
+          <TooltipContent>fingerprint: {parentError.fingerprint}</TooltipContent>
+        </Tooltip>
 
         {/* Left: text content */}
         <div className="min-w-0 flex-1">
@@ -549,11 +565,24 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
     reopenError,
     createTaskForError,
     clearAll,
+    searchCloudForErrors,
+    autoFixErrors,
   } = useClaudeErrorRecords();
 
+  const { cloudLoginAvailable } = useContext();
   const { navigation } = useDockNavigation();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+
+  // Cloud search state
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [isSearchingCloud, setIsSearchingCloud] = useState(false);
+  const [cloudFixStatus, setCloudFixStatus] = useState<Record<string, 'fixing' | 'fixed' | 'error'>>({});
+  const [cloudSummary, setCloudSummary] = useState<{
+    ignored: number;
+    fixed: CloudSearchResult[];
+    remaining: number;
+  } | null>(null);
 
   // Apply initial status slug from URL on mount
   useMemo(() => {
@@ -619,7 +648,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
   );
 
   const handleOpenHook = useCallback(
-    (hookName: string, eventType: string) => {
+    (_hookName: string, eventType: string) => {
       navigation.openDock(
         new DockPointer(ViewType.HOOKS, undefined, {
           hookId: '',
@@ -654,7 +683,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
         } catch {
           /* not found */
         }
-        if (shell?.pty?.isLive) {
+        if ((shell as { pty?: { isLive?: boolean } } | null)?.pty?.isLive) {
           void navigation.openSession(error.worker_session_id, { skipPermissions: true });
         } else if (error.claude_session_id) {
           void navigation.openShell(error.worker_session_id, {
@@ -674,6 +703,37 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
   const handleIgnoreTillNow = useCallback((fp: string) => void ignoreTillNow(fp), [ignoreTillNow]);
   const handleSnooze = useCallback((fp: string, until: Date) => void ignoreUntil(fp, until), [ignoreUntil]);
   const handleReopen = useCallback((fp: string) => void reopenError(fp), [reopenError]);
+
+  const handleSearchCloud = useCallback(async () => {
+    if (!cloudLoginAvailable) {
+      setShowLoginModal(true);
+      return;
+    }
+    const openFingerprints = allErrors
+      .filter((e) => e.error_status === ErrorStatus.OPEN)
+      .map((e) => e.fingerprint);
+    if (openFingerprints.length === 0) return;
+    setIsSearchingCloud(true);
+    setCloudSummary(null);
+    setCloudFixStatus({});
+    try {
+      const results = await searchCloudForErrors(openFingerprints);
+      const toIgnore = results.filter((r) => r.action === 'ignore');
+      const toFix = results.filter((r) => r.action === 'fix');
+      const toAnalyse = results.filter((r) => r.action === 'analyse');
+      setCloudSummary({ ignored: toIgnore.length, fixed: toFix, remaining: toAnalyse.length });
+      // Mark ignored errors
+      await Promise.all(toIgnore.map((r) => ignoreAll(r.fingerprint)));
+      // Kick off auto-fix (runs in background, progress tracked via setCloudFixStatus)
+      void autoFixErrors(toFix, (fp, status) =>
+        setCloudFixStatus((prev) => ({ ...prev, [fp]: status })),
+      );
+    } catch (e) {
+      toast({ title: 'Cloud search failed', description: String(e), variant: 'destructive' });
+    } finally {
+      setIsSearchingCloud(false);
+    }
+  }, [cloudLoginAvailable, allErrors, searchCloudForErrors, autoFixErrors, ignoreAll]);
 
   return (
     <div className="flex h-full flex-col">
@@ -718,6 +778,21 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
                 </Tooltip>
               ))}
             </div>
+            {(statusCounts[ErrorStatus.OPEN] ?? 0) > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1.5 text-xs"
+                disabled={isSearchingCloud}
+                onClick={() => void handleSearchCloud()}
+              >
+                {isSearchingCloud
+                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                  : <Search className="h-3 w-3" />
+                }
+                Search Flowpad
+              </Button>
+            )}
             <Button variant="ghost" size="sm" className="h-7 gap-1.5" onClick={handleRefresh} disabled={isRefreshing}>
               <RefreshCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
               Refresh
@@ -738,7 +813,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleClearAll}>Clear All</AlertDialogAction>
+                  <AlertDialogAction onClick={() => void handleClearAll()}>Clear All</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
@@ -787,6 +862,72 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
         </div>
       </div>
 
+      {/* Cloud search summary bar */}
+      {cloudSummary && (() => {
+        const fixedCount = cloudSummary.fixed.filter((r) => cloudFixStatus[r.fingerprint] === 'fixed').length;
+        const stillFixing = cloudSummary.fixed.filter((r) => cloudFixStatus[r.fingerprint] === 'fixing').length;
+        return (
+          <div className="flex items-center gap-3 border-b border-border bg-muted/40 px-4 py-2 text-xs">
+            {cloudSummary.ignored > 0 && (
+              <span className="text-muted-foreground">
+                {cloudSummary.ignored} can be safely ignored
+              </span>
+            )}
+            {cloudSummary.fixed.length > 0 && (
+              <>
+                {cloudSummary.ignored > 0 && <span className="text-muted-foreground/40">·</span>}
+                <span className="flex items-center gap-1">
+                  {fixedCount}/{cloudSummary.fixed.length} auto-fixed
+                  {stillFixing > 0 && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+                </span>
+              </>
+            )}
+            {cloudSummary.remaining > 0 && (
+              <>
+                {(cloudSummary.ignored > 0 || cloudSummary.fixed.length > 0) && (
+                  <span className="text-muted-foreground/40">·</span>
+                )}
+                <span className="text-muted-foreground">{cloudSummary.remaining} remaining</span>
+              </>
+            )}
+            <button
+              className="ml-auto rounded p-0.5 text-muted-foreground hover:text-foreground"
+              onClick={() => setCloudSummary(null)}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        );
+      })()}
+
+
+
+      {/* Login required modal for cloud search */}
+      <AlertDialog open={showLoginModal} onOpenChange={setShowLoginModal}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Login required</AlertDialogTitle>
+            <AlertDialogDescription>
+              Login is required to search Flowpad database
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setShowLoginModal(false);
+                void (async () => {
+                  const { oauthService, OAUTH_PROVIDERS } = await import('@sdk/services/oauth/oauth-service');
+                  await oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
+                })();
+              }}
+            >
+              Login
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
         {isLoading && (
@@ -827,7 +968,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
                 {widerSpan && (
                   <button
                     className="mt-3 rounded bg-muted px-3 py-1 text-xs font-medium transition-colors hover:bg-muted/80"
-                    onClick={() => setTimeSpan(widerSpan!.value)}
+                    onClick={() => setTimeSpan(widerSpan.value)}
                   >
                     {widerCount} error{widerCount !== 1 ? 's' : ''} in the last {widerSpan.label} — switch
                   </button>
