@@ -80,11 +80,16 @@ class Project(Entity):
                 AGENT_MOUNT_FOLDER, self.name or "home"
             )
 
-        # Create the project folder if it doesn't exist
+        # Create the project folder if it doesn't exist.
         if self.fs_storage_mount_path and not os.path.exists(
             self.fs_storage_mount_path
         ):
-            os.makedirs(self.fs_storage_mount_path, exist_ok=True)
+            try:
+                os.makedirs(self.fs_storage_mount_path, exist_ok=True)
+            except OSError as e:
+                logging.warning(
+                    f"Project: could not create mount path {self.fs_storage_mount_path!r}: {e}"
+                )
         return self
 
     @classmethod
@@ -92,13 +97,9 @@ class Project(Entity):
         """Deterministic UUID5 keyed on the project work directory."""
         import uuid
         from flow_sdk.fs_store.identifier import is_valid_uuid
-        # Respect the record's own stable ID first (e.g. ClaudeProjectFsRecord sets id=encoded_path)
         rid = data.get("id") or ""
-        if rid:
-            if is_valid_uuid(rid):
-                return rid
-            type_str = data.get("type") or RecordType.PROJECT
-            return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{type_str}:{rid}"))
+        if rid and is_valid_uuid(rid):
+            return rid
         mount_path = data.get("fs_storage_mount_path") or data.get("real_path")
         if not mount_path:
             name = data.get("name", "")
