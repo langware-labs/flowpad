@@ -107,7 +107,10 @@ import flow_sdk.builtin.agentic_process  # noqa: F401
 
 # Load environment variables (guard against PyInstaller bundle where find_dotenv fails)
 try:
-    load_dotenv()
+    from dotenv import find_dotenv
+    env_name = os.getenv("ENV", ".env.local")
+    env_file = find_dotenv(env_name)
+    load_dotenv(env_file)
 except (FileNotFoundError, OSError):
     pass
 
