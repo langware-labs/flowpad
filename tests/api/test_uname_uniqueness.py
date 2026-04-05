@@ -63,16 +63,20 @@ async def test_duplicate_uname_same_type_rejected(bootstrapped_client):
         json={"uname": uname, "name": "First"},
     )
     assert create_resp.status_code == 200, create_resp.text
+    entity_id = ApiResponse(**create_resp.json()).data["id"]
 
-    # Try to create another project with the same uname — should be rejected
-    dup_resp = await bootstrapped_client.post(
-        "/api/v1/graph/project",
-        json={"uname": uname, "name": "Second"},
-    )
-    # Expect 409 Conflict (or the save should fail)
-    assert dup_resp.status_code == 409, (
-        f"Expected 409 for duplicate uname, got {dup_resp.status_code}: {dup_resp.text}"
-    )
+    try:
+        # Try to create another project with the same uname — should be rejected
+        dup_resp = await bootstrapped_client.post(
+            "/api/v1/graph/project",
+            json={"uname": uname, "name": "Second"},
+        )
+        # Expect 409 Conflict (or the save should fail)
+        assert dup_resp.status_code == 409, (
+            f"Expected 409 for duplicate uname, got {dup_resp.status_code}: {dup_resp.text}"
+        )
+    finally:
+        await bootstrapped_client.delete(f"/api/v1/graph/project/{entity_id}")
 
 
 @pytest.mark.asyncio
@@ -86,6 +90,7 @@ async def test_same_uname_different_types_allowed(bootstrapped_client):
         json={"uname": uname, "name": "Project X"},
     )
     assert resp1.status_code == 200, resp1.text
+    project_id = ApiResponse(**resp1.json()).data["id"]
 
     # Create a workspace with the same uname — should succeed
     resp2 = await bootstrapped_client.post(
@@ -95,6 +100,11 @@ async def test_same_uname_different_types_allowed(bootstrapped_client):
     assert resp2.status_code == 200, (
         f"Expected 200 for same uname on different type, got {resp2.status_code}: {resp2.text}"
     )
+    workspace_id = ApiResponse(**resp2.json()).data["id"]
+
+    # Cleanup
+    await bootstrapped_client.delete(f"/api/v1/graph/project/{project_id}")
+    await bootstrapped_client.delete(f"/api/v1/graph/workspace/{workspace_id}")
 
 
 @pytest.mark.asyncio
