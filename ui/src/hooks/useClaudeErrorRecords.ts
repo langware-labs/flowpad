@@ -69,6 +69,15 @@ function loadStoredDeduplicate(): boolean {
   return true;
 }
 
+/** Result from the Flowpad cloud known-issues search. */
+export interface CloudSearchResult {
+  fingerprint: string;
+  /** "fix" = a tested fix instruction is available; "ignore" = safe to ignore; "analyse" = no known resolution */
+  action: 'ignore' | 'fix' | 'analyse';
+  instruction: string | null;
+  message: string | null;
+}
+
 export interface ErrorOccurrence {
   timestamp: string;
   session_id: string;
@@ -308,7 +317,10 @@ export function useClaudeErrorRecords() {
   );
 
   const createTaskForError = useCallback(
-    async (error: ClaudeErrorRecord): Promise<{ taskId: string | null; shellId: string | null }> => {
+    async (
+      error: ClaudeErrorRecord,
+      options?: { instruction?: string },
+    ): Promise<{ taskId: string | null; shellId: string | null }> => {
       if (!projectTypeId) return { taskId: null, shellId: null };
       try {
         const task = new Task({
@@ -354,7 +366,9 @@ export function useClaudeErrorRecords() {
           .filter(Boolean)
           .join('\n');
 
-        const instruction = `Investigate this error. Analyze the issue, find root cause and solution, explain them to the user and fix the error if it is possible\n\n${errorDetails}`;
+        const instruction =
+          options?.instruction ??
+          `Investigate this error. Analyze the issue, find root cause and solution, explain them to the user and fix the error if it is possible\n\n${errorDetails}`;
 
         const { process, shell } = await AgenticProcess.spawn(
           { permissionMode: 'bypassPermissions', workdir },
@@ -385,15 +399,54 @@ export function useClaudeErrorRecords() {
   const clearAll = useCallback(async () => {
     if (!computeNode?.typeId?.id) return null;
     const info = new ActionInfo('clear-debug-errors', 'compute_node', computeNode.typeId.id, 'POST');
-    const result = await dataManager.callAction(info);
-    await refetch();
-    return result?.data as {
+    const result = await dataManager.callAction<unknown, {
       deleted_debug_logs: number;
       truncated_debug_logs: number;
       skipped_debug_logs: string[];
       deleted_error_records: number;
-    } | null;
+    }>(info);
+    await refetch();
+    return result ?? null;
   }, [computeNode?.typeId?.id, refetch]);
+
+  /**
+   * Query the Flowpad cloud known-issues database for a batch of fingerprints.
+   * Returns one result per fingerprint with action: 'fix' | 'ignore' | 'analyse'.
+   */
+  const searchCloudForErrors = useCallback(
+    async (fingerprints: string[]): Promise<CloudSearchResult[]> => {
+      if (!computeNode?.typeId?.id || fingerprints.length === 0) return [];
+      const info = new ActionInfo('search-cloud-errors', 'compute_node', computeNode.typeId.id, 'POST');
+      info.bodyParameters = { fingerprints };
+      const result = await dataManager.callAction<string[], { results: CloudSearchResult[] }>(info);
+      return result?.results ?? [];
+    },
+    [computeNode?.typeId?.id],
+  );
+
+  /**
+   * For each "fix" result from searchCloudForErrors, create a Task and spawn
+   * an AgenticProcess using the cloud-provided fix instruction.
+   * Reports progress via onProgress: 'fixing' → 'fixed' | 'error'.
+   */
+  const autoFixErrors = useCallback(
+    async (
+      fixResults: CloudSearchResult[],
+      onProgress: (fp: string, status: 'fixing' | 'fixed' | 'error') => void,
+    ): Promise<void> => {
+      await Promise.all(
+        fixResults.map(async (r) => {
+          if (!r.instruction) return;
+          const error = allErrors.find((e) => e.fingerprint === r.fingerprint);
+          if (!error) return;
+          onProgress(r.fingerprint, 'fixing');
+          const { taskId } = await createTaskForError(error, { instruction: r.instruction });
+          onProgress(r.fingerprint, taskId ? 'fixed' : 'error');
+        }),
+      );
+    },
+    [allErrors, createTaskForError],
+  );
 
   return {
     allErrors,
@@ -420,5 +473,8 @@ export function useClaudeErrorRecords() {
     linkTask,
     createTaskForError,
     clearAll,
+    // Cloud search
+    searchCloudForErrors,
+    autoFixErrors,
   };
 }
