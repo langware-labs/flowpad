@@ -106,13 +106,11 @@ def _release_singleton_lock() -> None:
 import flow_sdk.builtin.agentic_process  # noqa: F401
 
 # Load environment variables (guard against PyInstaller bundle where find_dotenv fails)
-# .env.local is loaded second with override=True, matching Vite convention: local overrides base.
 try:
     from dotenv import find_dotenv
-    load_dotenv()
-    local_env = find_dotenv(".env.local", usecwd=True)
-    if local_env:
-        load_dotenv(local_env, override=True)
+    env_name = os.getenv("ENV", ".env.local")
+    env_file = find_dotenv(env_name)
+    load_dotenv(env_file)
 except (FileNotFoundError, OSError):
     pass
 
