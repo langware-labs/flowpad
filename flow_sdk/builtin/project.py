@@ -8,6 +8,7 @@ from pydantic import ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider
+from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.flowpad_types.enums import AuthRole
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.type_id import TypeId
@@ -90,6 +91,14 @@ class Project(Entity):
     def allocate_id(cls, data: dict) -> str:
         """Deterministic UUID5 keyed on the project work directory."""
         import uuid
+        from flow_sdk.fs_store.identifier import is_valid_uuid
+        # Respect the record's own stable ID first (e.g. ClaudeProjectFsRecord sets id=encoded_path)
+        rid = data.get("id") or ""
+        if rid:
+            if is_valid_uuid(rid):
+                return rid
+            type_str = data.get("type") or RecordType.PROJECT
+            return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{type_str}:{rid}"))
         mount_path = data.get("fs_storage_mount_path") or data.get("real_path")
         if not mount_path:
             name = data.get("name", "")
