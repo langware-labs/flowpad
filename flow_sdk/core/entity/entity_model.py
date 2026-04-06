@@ -138,7 +138,7 @@ class Entity(DBEntity):
         return str(_uuid.uuid4())
 
     @classmethod
-    async def from_record(cls, record: "Record") -> Entity:
+    async def from_record(cls, record: "Record", notify: bool = True) -> Entity:
         """Create or update an Entity from a Record's meta_dict()."""
         record_type = record.type or record._record_type
         entity_cls = SchemaRegistry.get_entity_cls(record_type) or cls
@@ -199,7 +199,7 @@ class Entity(DBEntity):
                         setattr(entity, prop_name, record.get_prop(prop_name))
                     except Exception:
                         pass
-        await entity.save()
+        await entity.save(notify=notify)
         return entity
 
     async def _fts_upsert(self, type_name: str, content: str) -> None:
@@ -501,7 +501,7 @@ class Entity(DBEntity):
         await blob_index_entity.save(self.embedded_storage)
         # logging.info(f"Saved blob index for {self.typeid} with fields: {blob_index_entity._blob_index.fields.keys()} on \n {self.storage.vfs_root_path}")
 
-    async def save(self: EntityType, owner: DBEntity | TypeId | types.NoneType = None) -> EntityType:
+    async def save(self: EntityType, owner: DBEntity | TypeId | types.NoneType = None, notify: bool = True) -> EntityType:
         user_id = owner
         if isinstance(owner, Entity):
             user_id = owner.typeid
@@ -509,7 +509,7 @@ class Entity(DBEntity):
             if self.get_type() == BuiltinEntityType.USER.value:
                 user_id = self.typeid
         await self._save_blobs()
-        await super().save(user_id)
+        await super().save(user_id, notify=notify)
         # Sync entity metadata down to its record on disk
         await self._store()
         # Invalidate authorization cache since entity properties have changed

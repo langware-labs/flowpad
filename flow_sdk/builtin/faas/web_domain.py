@@ -28,7 +28,7 @@ class WebDomain(Entity):
     async def get_by_domain(cls, domain: str) -> Optional["WebDomain"]:
         return await cls.get_one({"domain": domain})
 
-    async def save(self: "EntityType", owner: DBEntity | TypeId | types.NoneType = None) -> "EntityType":
+    async def save(self: "EntityType", owner: DBEntity | TypeId | types.NoneType = None, notify: bool = True) -> "EntityType":
         """
         Auto-verify domains ending with app_domain.
         If the domain ends with the configured app_domain, automatically set verified=True.
@@ -43,4 +43,4 @@ class WebDomain(Entity):
                 self.verified = True
                 service_log.info(f"Auto-verifying WebDomain: {self.domain} (matches app_domain: {micro_app_domain})")
 
-        return await super().save(owner)
+        return await super().save(owner, notify=notify)
