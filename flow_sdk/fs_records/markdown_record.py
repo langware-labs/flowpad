@@ -6,9 +6,11 @@ Supports discovery of .md files across a project directory.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
-from typing import Any, ClassVar
+
+from typing import Any, ClassVar, Iterator
 
 from flow_sdk.fs_store import Record, RecordType
 
@@ -17,6 +19,32 @@ from ._frontmatter import (
     _extract_frontmatter,
     _yaml_load,
 )
+
+def _doc_search_dirs() -> list[Path]:
+    """Return directories to scan for doc .md files.
+
+    Scans user-level (~/.claude/docs), cwd/.claude/docs if present,
+    and any extra dirs from FLOWPAD_DOC_DIRS (colon-separated).
+    """
+    dirs: list[Path] = []
+    seen: set[Path] = set()
+
+    def _add(p: Path) -> None:
+        rp = p.resolve()
+        if rp not in seen and rp.is_dir():
+            seen.add(rp)
+            dirs.append(p)
+
+    _add(Path.home() / ".claude" / "docs")
+    _add(Path(os.getcwd()) / ".claude" / "docs")
+    _add(Path(os.getcwd()) / "docs")
+
+    for extra in os.environ.get("FLOWPAD_DOC_DIRS", "").split(":"):
+        if extra.strip():
+            _add(Path(extra.strip()))
+
+    return dirs
+
 
 # Map from directory name to asset_type
 _DIR_TO_ASSET_TYPE: dict[str, str] = {
@@ -156,12 +184,47 @@ class MarkdownRecord(Record):
 
     @property
     def search_content(self) -> str | None:
-        """Searchable text for FTS indexing: links (title/tags now in dedicated columns)."""
+        """Searchable text for FTS indexing: body text + wiki links."""
         parts: list[str] = []
+        ar = self.asset_ref
+        if ar is not None and ar.exists():
+            try:
+                body = _extract_body(Path(ar.path).read_text(encoding="utf-8"))
+                if body:
+                    parts.append(body)
+            except Exception:
+                pass
         links = getattr(self, "links", None) or []
         if links:
             parts.append(" ".join(str(l) for l in links))
         return " ".join(parts) if parts else None
+
+    @classmethod
+    def _external_source_count(cls, limit: int | None = None) -> int:
+        seen: set[str] = set()
+        for docs_dir in _doc_search_dirs():
+            for md_file in docs_dir.rglob("*.md"):
+                seen.add(str(md_file.resolve()))
+        count = len(seen)
+        return min(count, limit) if limit is not None else count
+
+    @classmethod
+    def _external_source_iter(cls, limit: int | None = None) -> Iterator["MarkdownRecord"]:
+        seen: set[str] = set()
+        count = 0
+        for docs_dir in _doc_search_dirs():
+            for md_file in sorted(docs_dir.rglob("*.md")):
+                key = str(md_file.resolve())
+                if key in seen:
+                    continue
+                seen.add(key)
+                try:
+                    yield cls.from_file(md_file)
+                    count += 1
+                    if limit is not None and count >= limit:
+                        return
+                except Exception:
+                    continue
 
     @classmethod
     def discover(cls, project_dir: str | Path = "", **kwargs) -> list["MarkdownRecord"]:

@@ -182,7 +182,7 @@ class Entity(DBEntity):
             try:
                 entity = entity_cls(**create_kwargs)
             except Exception:
-                entity = Entity(type=record_type, **create_kwargs)
+                entity = Entity(**create_kwargs)
         else:
             entity.type = record_type
             all_updates = {**data, **record_domain}
