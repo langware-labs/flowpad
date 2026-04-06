@@ -29,11 +29,11 @@ import { ProcessToolbar } from '@src/components/terminal/interactive-terminal/Pr
 function makeProcess(overrides: Partial<AgenticProcess> = {}): AgenticProcess {
   return {
     id: 'proc-1',
-    worker_session_id: 'session-1',
+    session_id: 'session-1',
     pty_pid: 'pty-1',
     workdir: '/home/user/project',
     cliOptions: { chrome: false, permission_mode: 'askUser', debug: false },
-    state: { status: 'running' },
+    status: 'running',
     save: vi.fn(),
     ...overrides,
   } as unknown as AgenticProcess;

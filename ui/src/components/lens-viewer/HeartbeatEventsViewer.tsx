@@ -1,6 +1,7 @@
 import { LAYER_COLORS } from '@src/hooks/sniffer-layers';
 import { useEventFilterMask } from '@src/hooks/use-event-filter-mask';
-import { useHooksSniffer, type EventLayer, type SnifferEvent } from '@src/hooks/use-hooks-sniffer';
+import { type EventLayer, type SnifferEvent } from '@src/hooks/use-hooks-sniffer';
+import { useSnifferContext } from '@src/contexts/SnifferContext';
 import { useSnifferPipeline, parsePipelineFilters, SnifferScope, type PipelineFilters } from '@src/hooks/use-sniffer-pipeline';
 import { EventOneLiner } from '@src/components/hooks/event-summaries';
 import { getEventColor, getEventIcon, navigateToTranscript } from '@src/components/hooks/event-utils';
@@ -104,7 +105,7 @@ const FILTER_LABEL = 'text-[10px] font-semibold text-foreground';
 // ---------------------------------------------------------------------------
 
 export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, selectedTimestamp }: Props) {
-  const { events, clear, maxEvents, setMaxEvents } = useHooksSniffer();
+  const { events, clear, maxEvents, setMaxEvents } = useSnifferContext();
   const { navigation } = useDockNavigation();
   const { mask, setFilter, removeFilter, clearAll: clearMask } = useEventFilterMask();
   const isJsonMode = viewMode === 'json';

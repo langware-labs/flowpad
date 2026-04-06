@@ -102,8 +102,8 @@ function WorkflowEditor({
     prevEventsRef.current = currentTraceEvents;
   }, [workerSessionId, currentTraceEvents]);
 
-  const { state: processState } = useProcessState(processEntry?.process ?? null);
-  const { state: prepareState } = useProcessState(prepareEntry?.process ?? null);
+  const processState = useProcessState(processEntry?.process ?? null);
+  const prepareState = useProcessState(prepareEntry?.process ?? null);
   const ACTIVE_STATUSES = new Set([
     ProcessorStatus.IDLE,
     ProcessorStatus.INITIALIZING,

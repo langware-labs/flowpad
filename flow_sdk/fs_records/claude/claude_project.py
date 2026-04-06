@@ -20,6 +20,7 @@ from flow_sdk.fs_store import Record, RecordType
 from .claude_session import ClaudeSessionRecord
 
 _CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
+_TEMP_PATH_PREFIXES = ("/tmp/", "/var/folders/", "/private/var/folders/", "/private/tmp/")
 
 
 def _project_id(encoded: str) -> str:
@@ -103,7 +104,13 @@ class ClaudeProjectFsRecord(Record):
         projects_dir = _CLAUDE_PROJECTS_DIR
         if not projects_dir.is_dir():
             return 0
-        count = sum(1 for d in projects_dir.iterdir() if d.is_dir())
+        def _keep(d: Path) -> bool:
+            if not d.is_dir():
+                return False
+            real = "/" + d.name.lstrip("-").replace("-", "/")
+            return not real.startswith(_TEMP_PATH_PREFIXES)
+
+        count = sum(1 for d in projects_dir.iterdir() if _keep(d))
         return min(count, limit) if limit is not None else count
 
     @classmethod

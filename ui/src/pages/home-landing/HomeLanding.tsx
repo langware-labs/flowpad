@@ -15,7 +15,7 @@ import { useProjectBookmarks } from '@src/hooks/use-project-bookmarks';
 import { useProjectTasks } from '@src/hooks/use-project-tasks';
 import { useTaskMutations } from '@src/hooks/use-task-mutations';
 import { useClaudeProjectList } from '@src/hooks/use-claude-projects';
-import { useHooksSniffer } from '@src/hooks/use-hooks-sniffer';
+import { useSnifferContext } from '@src/contexts/SnifferContext';
 import { useEventDrivenSessions } from '@src/hooks/use-event-driven-sessions';
 import { useProjects } from '@src/hooks/use-projects';
 import { useActAccordingToClassification } from '@src/hooks/use-act-according-to-classification';
@@ -36,8 +36,9 @@ import type React from 'react';
 import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
-import { Loader2, PackageSearch, X, CheckCircle2 } from 'lucide-react';
+import { Loader2, PackageSearch, X, CheckCircle2, Hammer } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDevMode } from '@src/contexts/dev-mode-context';
 import type { LastScanResult } from '@sdk';
 
 const getSafeTimestamp = (value?: string | null): number => {
@@ -73,7 +74,7 @@ export function HomeLanding() {
   const { projects: claudeProjects, isLoading: isLoadingClaudeProjects } = useClaudeProjectList();
   const { project: currentProject } = useProject();
   const { toast } = useToast();
-  const { events: snifferEvents } = useHooksSniffer();
+  const { events: snifferEvents } = useSnifferContext();
 
   // Per-session event counts for notification badges
   const sessionEventCounts = useMemo(() => {
@@ -121,7 +122,8 @@ export function HomeLanding() {
     [currentProject?.typeId, annotationsRefetch],
   );
 
-  const { busy, resetAndRescan, currentActivity, activityProgress, scanInfo, lastScanResult } = useSystemTools();
+  const devMode = useDevMode();
+  const { busy, resetAndRescan, clearIndex, currentActivity, activityProgress, scanInfo, lastScanResult } = useSystemTools();
   const [progressOpen, setProgressOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [postScanResult, setPostScanResult] = useState<LastScanResult | null>(null);
@@ -476,6 +478,22 @@ export function HomeLanding() {
                 </TooltipTrigger>
                 <TooltipContent>Refresh search data</TooltipContent>
               </Tooltip>
+              {devMode && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-9 w-9 shrink-0 text-orange-500 ring-1 ring-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] animate-pulse"
+                      onClick={() => void clearIndex()}
+                      disabled={busy}
+                    >
+                      <Hammer className="h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Clear index (dev)</TooltipContent>
+                </Tooltip>
+              )}
             </div>
 
             {/* Activity strip — shown while any system activity is running */}

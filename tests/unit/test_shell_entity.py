@@ -76,7 +76,7 @@ async def test_close():
 
 
 @pytest.mark.asyncio
-async def test_get_active_sessions():
+async def test_active():
     """RUNNING shells are active; CLOSED shells are not."""
     running1 = Shell(id=str(uuid.uuid4()), status=ShellStatus.RUNNING.value, tab_order=2)
     await running1.save()
@@ -87,7 +87,7 @@ async def test_get_active_sessions():
     closed = Shell(id=str(uuid.uuid4()), status=ShellStatus.CLOSED.value, tab_order=0)
     await closed.save()
 
-    active = await Shell.get_active_sessions()
+    active = await Shell.active()
     active_ids = [s.id for s in active]
 
     assert running1.id in active_ids

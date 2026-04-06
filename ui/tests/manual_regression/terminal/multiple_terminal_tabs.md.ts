@@ -26,9 +26,9 @@ test.describe('Multiple Terminal Tabs', () => {
     const tabsAfterFirst = page.locator('[data-testid^="tab-"]');
     await expect(tabsAfterFirst).toHaveCount(countBeforeFirst + 1, { timeout: 15000 });
 
-    // Step 5: validate the new tab has "Terminal" in its name
+    // Step 5: validate the new tab has a name (shells are named "Tab N")
     const newTab = tabsAfterFirst.last();
-    await expect(newTab).toContainText(/Terminal/);
+    await expect(newTab).toContainText(/Tab \d+/);
 
     // Step 6: add another tab — snapshot again immediately before
     const countBeforeSecond = await page.locator('[data-testid^="tab-"]').count();

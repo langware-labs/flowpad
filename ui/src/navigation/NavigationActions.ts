@@ -23,7 +23,7 @@ function toStringRecord(obj?: Record<string, unknown>): Record<string, string> |
  * Uses relative navigation: takes current URL and replaces the dock portion
  */
 export class NavigationActions {
-  constructor(private navigate: NavigateFunction) {}
+  constructor(private navigate: NavigateFunction, private currentDock: DockPointer | null = null) {}
 
   // ========== Core Navigation ==========
 
@@ -41,7 +41,7 @@ export class NavigationActions {
     const currentPath = window.location.pathname;
 
     if (pointer === null) {
-      // Navigate to base URL (strip dock portion)
+      if (this.currentDock === null) return; // already not on a dock URL
       const baseUrl = stripDockPortion(currentPath);
       void this.navigate(baseUrl);
       return;
@@ -49,6 +49,9 @@ export class NavigationActions {
 
     const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
     const dock = extraOptions ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout) : base;
+
+    if (this.currentDock?.equals(dock)) return; // already at this pointer, no-op
+
     const { viewType, pointer: pointerValue, layout } = dock.toUrlSegments();
     const searchParams = dock.toSearchParams();
 

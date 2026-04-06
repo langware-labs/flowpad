@@ -143,7 +143,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   agentic_process: {
     dockPointer: (r) => new AgenticProcess({
       id: r.record_id,
-      worker_session_id: (r as any).worker_session_id ?? undefined,
+      session_id: (r as any).session_id ?? undefined,
       project_encoded_name: (r as any).project_encoded_name ?? undefined,
     }).searchDockPointer,
   },
@@ -175,8 +175,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
           const cwd = record?.cwd ?? undefined;
           const computeNode = dataContext.computeNode;
           if (!computeNode) throw new Error('[Fork] No compute node');
-          const processor = await computeNode.createAgenticProcessor();
-          const p = await processor.createProcess(cwd ? { workdir: cwd } : {});
+          const p = await computeNode.createProcess(cwd ? { workdir: cwd } : {});
           void navigation.openShellProcess(p.id);
         },
       },

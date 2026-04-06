@@ -9,10 +9,6 @@ from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.property_record import PropertyRecord
 from flow_sdk.fs_records.agent_status import (
     AgenticProcessStatus,
-    is_running,
-    is_busy,
-    is_idle,
-    is_terminal,
 )
 
 if TYPE_CHECKING:
@@ -49,7 +45,7 @@ class AgenticProcessRecord(Record):
 
     def __init__(self, **kwargs: Any):
         kwargs.setdefault("type", RecordType.AGENTIC_PROCESS)
-        kwargs.setdefault("status", AgenticProcessStatus.IDLE)
+        kwargs.setdefault("status", AgenticProcessStatus.NEW)
         # Migrate old field names from pre-existing records on disk
         if "pty_session_id" in kwargs and "pty_pid" not in kwargs:
             kwargs["pty_pid"] = kwargs.pop("pty_session_id")

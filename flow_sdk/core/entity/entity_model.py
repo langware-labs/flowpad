@@ -61,9 +61,6 @@ class Entity(DBEntity):
 
     # Display name — overridden with required `str` on many subclasses
     name: str | None = APIField(default=None, description="Display name")
-    # Status — overridden on subclasses that use it
-    status: str | None = APIField(default=None, description="Entity status")
-
     _icon: ClassVar[str | None] = None
 
     # Optional per-instance FS storage configuration

@@ -56,7 +56,7 @@ async def test_dispatch_status_clean_repo():
         make_cmd(""),        # status --porcelain=v1
     ]
     result = await make_repo(responses).dispatch("status")
-    assert result.status == "SUCCESS"
+    assert result.worker_status == "SUCCESS"
     assert result.data["branch"] == "main"
     assert result.data["ahead"] == 1
     assert result.data["files"] == []
@@ -66,7 +66,7 @@ async def test_dispatch_status_not_a_repo():
     """Non-git directory returns an error field."""
     responses = [make_cmd("", exit_code=128)]  # rev-parse fails → is_init=False
     result = await make_repo(responses).dispatch("status")
-    assert result.status == "SUCCESS"
+    assert result.worker_status == "SUCCESS"
     assert result.data["error"] == "not a git repository"
 
 
@@ -76,13 +76,13 @@ async def test_dispatch_status_not_a_repo():
 
 async def test_dispatch_branch():
     result = await make_repo([make_cmd("feat/my-feature")]).dispatch("branch")
-    assert result.status == "SUCCESS"
+    assert result.worker_status == "SUCCESS"
     assert result.data["branch"] == "feat/my-feature"
 
 
 async def test_dispatch_branch_detached():
     result = await make_repo([make_cmd("", exit_code=0)]).dispatch("branch")
-    assert result.status == "SUCCESS"
+    assert result.worker_status == "SUCCESS"
     assert result.data["branch"] is None
 
 
@@ -92,13 +92,13 @@ async def test_dispatch_branch_detached():
 
 async def test_dispatch_is_init_true():
     result = await make_repo([make_cmd("true", exit_code=0)]).dispatch("is-init")
-    assert result.status == "SUCCESS"
+    assert result.worker_status == "SUCCESS"
     assert result.data["isInit"] is True  # camelCase via alias_generator
 
 
 async def test_dispatch_is_init_false():
     result = await make_repo([make_cmd("", exit_code=128)]).dispatch("is-init")
-    assert result.status == "SUCCESS"
+    assert result.worker_status == "SUCCESS"
     assert result.data["isInit"] is False
 
 
@@ -108,13 +108,13 @@ async def test_dispatch_is_init_false():
 
 async def test_dispatch_is_linked_worktree_true():
     result = await make_repo([make_cmd(".git/worktrees/feat-branch")]).dispatch("is-linked-worktree")
-    assert result.status == "SUCCESS"
+    assert result.worker_status == "SUCCESS"
     assert result.data["isLinkedWorktree"] is True  # camelCase via alias_generator
 
 
 async def test_dispatch_is_linked_worktree_false():
     result = await make_repo([make_cmd(".git", exit_code=0)]).dispatch("is-linked-worktree")
-    assert result.status == "SUCCESS"
+    assert result.worker_status == "SUCCESS"
     assert result.data["isLinkedWorktree"] is False
 
 
@@ -124,19 +124,19 @@ async def test_dispatch_is_linked_worktree_false():
 
 async def test_dispatch_has_commit_true():
     result = await make_repo([make_cmd("abc1234", exit_code=0)]).dispatch("has-commit")
-    assert result.status == "SUCCESS"
+    assert result.worker_status == "SUCCESS"
     assert result.data["hasCommit"] is True  # camelCase via alias_generator
 
 
 async def test_dispatch_has_commit_false_empty_repo():
     result = await make_repo([make_cmd("", exit_code=128)]).dispatch("has-commit")
-    assert result.status == "SUCCESS"
+    assert result.worker_status == "SUCCESS"
     assert result.data["hasCommit"] is False
 
 
 async def test_dispatch_has_commit_false_non_repo():
     result = await make_repo([make_cmd("", exit_code=128)]).dispatch("has-commit")
-    assert result.status == "SUCCESS"
+    assert result.worker_status == "SUCCESS"
     assert result.data["hasCommit"] is False
 
 
@@ -146,5 +146,5 @@ async def test_dispatch_has_commit_false_non_repo():
 
 async def test_dispatch_unknown_sub():
     result = await make_repo([]).dispatch("nonexistent")
-    assert result.status == "FAIL"
+    assert result.worker_status == "FAIL"
     assert "nonexistent" in result.message

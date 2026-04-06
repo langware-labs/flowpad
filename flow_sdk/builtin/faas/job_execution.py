@@ -131,7 +131,7 @@ class JobExecution(Entity):
             result = await self.job_runner.get_execution_result(self.job_execution_provider_id)
 
             # Update local state with result data
-            self.status = result.status
+            self.status = result.worker_status
             self.exit_code = result.exit_code
             self.error_message = result.error_message
             self.returned_value = result.returned_value

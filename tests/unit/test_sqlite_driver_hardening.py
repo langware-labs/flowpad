@@ -127,22 +127,22 @@ class TestGetAllJsonFieldFilter:
     async def test_filters_by_json_field(self, driver):
         """get_all with a JSON-field ExpressionNode must return only matching entities.
 
-        Regression: QueryFilter(worker_session_id=X) was silently ignored (Pydantic dropped
+        Regression: ExpressionNode(session_id=X) was silently ignored (Pydantic dropped
         the unknown kwarg), so get_all returned all entities unfiltered.
         """
         from flow_sdk.builtin.agentic_process import AgenticProcess
 
-        p1 = AgenticProcess(worker_session_id="session-A")
-        p2 = AgenticProcess(worker_session_id="session-B")
+        p1 = AgenticProcess(session_id="session-A")
+        p2 = AgenticProcess(session_id="session-B")
         await driver.save(p1)
         await driver.save(p2)
 
         results = await driver.get_all(
             QueryFilter(
                 type=AgenticProcess.get_type(),
-                match=ExpressionNode(worker_session_id="session-A"),
+                match=ExpressionNode(session_id="session-A"),
             )
         )
 
         assert len(results) == 1
-        assert results[0].worker_session_id == "session-A"
+        assert results[0].session_id == "session-A"

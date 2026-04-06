@@ -86,7 +86,7 @@ export function SessionViewer() {
   }, []);
 
   // Process management (consumes from context internally)
-  const { process, state, completed, isRunning, abortProcess, appendInstruction, injectInstruction } =
+  const { process, status, completed, isRunning, abortProcess, injectInstruction } =
     useSessionProcess();
 
   // FlowData stream
@@ -96,7 +96,7 @@ export function SessionViewer() {
   const { elapsedTime, statusMessage, activityLabel, tokenUsage } = useWorkflowProgressInfo(process, isRunning);
 
   // Session action buttons (analyze + resume in terminal)
-  const workerSessionId = process?.worker_session_id ?? null;
+  const workerSessionId = process?.session_id ?? null;
   const sessionCwd = process?.workdir;
 
   // Load recent sessions as tabs
@@ -300,15 +300,13 @@ export function SessionViewer() {
         return;
       }
 
-      // Create processor and process
-      const processor = await computeNode.createAgenticProcessor();
       console.log(
         '[SessionViewer] Creating process with projectId:',
         currentProject?.typeId?.id,
         'project:',
         currentProject?.name,
       );
-      const newAgenticProcess = await processor.createProcess({
+      const newAgenticProcess = await computeNode.createProcess({
         projectId: currentProject?.typeId?.id,
         workdir: currentProject?.fs_storage_mount_path,
       }, { visible: true });
@@ -399,14 +397,6 @@ export function SessionViewer() {
     [currentProject?.typeId],
   );
 
-  // Handle submit input (when waiting for input)
-  const handleSubmitInput = useCallback(
-    async (value: string) => {
-      await appendInstruction(value);
-    },
-    [appendInstruction],
-  );
-
   // Handle inject instruction
   const handleInjectInstruction = useCallback(
     async (content: string) => {
@@ -420,26 +410,10 @@ export function SessionViewer() {
     abortProcess();
   }, [abortProcess]);
 
-  // Default state for display
-  const defaultState = {
-    status: ProcessorStatus.IDLE,
-    index: 0,
-    totalInstructions: 0,
-    currentInstructionId: null,
-    variables: {},
-    waitingForInput: false,
-    inputId: null,
-    stack: [],
-    debug: { enabled: false, breakpoints: [], stepMode: null },
-    error: null,
-    mdoContent: null,
-  };
-
-  const displayState = state
-    ? completed && state.status !== ProcessorStatus.COMPLETE && state.status !== ProcessorStatus.ERROR
-      ? { ...state, status: ProcessorStatus.COMPLETE }
-      : state
-    : defaultState;
+  const displayStatus =
+    completed && status !== ProcessorStatus.COMPLETE && status !== ProcessorStatus.ERROR
+      ? ProcessorStatus.COMPLETE
+      : status;
 
   // Show empty state if no active process
   if (!processId && !isLoadingTabs) {
@@ -488,7 +462,7 @@ export function SessionViewer() {
       {/* Conversation/FlowData stream with status at bottom */}
       <RunningArea
         flowData={flowData}
-        processState={displayState}
+        status={displayStatus}
         isRunning={isRunning}
         elapsedTime={elapsedTime}
         statusMessage={statusMessage}
@@ -500,9 +474,6 @@ export function SessionViewer() {
 
       {/* Compact prompt input */}
       <InterferenceBox
-        waitingForInput={state?.waitingForInput ?? false}
-        inputId={state?.inputId ?? null}
-        onSubmitInput={handleSubmitInput}
         onInjectInstruction={handleInjectInstruction}
         disabled={false}
         className="shrink-0 border-t"
