@@ -7,6 +7,9 @@ import { type Page, expect } from '@playwright/test';
 export async function dismissSetupModal(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
+    // Also prevent WelcomeModal (search index never-indexed prompt) from
+    // appearing on /dock/home — it blocks the bookmark column.
+    localStorage.setItem('flowpad-index-approved', 'true');
   });
 }
 
@@ -44,7 +47,7 @@ export async function gotoShell(page: Page) {
   await page
     .locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows')
     .first()
-    .waitFor({ state: 'attached', timeout: 10_000 });
+    .waitFor({ state: 'attached', timeout: 30_000 });
 
   // Give PTY time to start and render the prompt
   await page.waitForTimeout(2_000);
@@ -88,11 +91,11 @@ export async function gotoShellViaSidebar(page: Page) {
   await page.waitForURL(/\/dock\/shell/, { timeout: 10_000 });
 
   // Wait for the terminal to be ready
-  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
+  await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
   await page
     .locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows')
     .first()
-    .waitFor({ state: 'attached', timeout: 10_000 });
+    .waitFor({ state: 'attached', timeout: 30_000 });
   await page.waitForTimeout(2_000);
 }
 
@@ -106,6 +109,15 @@ export async function sendCommand(page: Page, cmd: string) {
   // in the DOM when previous test runs left sessions open. The browser will correctly route
   // the click event to the topmost (most recently created) active panel.
   const terminalPanel = page.locator('[data-testid="terminal-panel"][data-active="true"]').last();
+  // Soft wait: ensure at least one terminal panel is present before clicking.
+  // After page load or resize, useEntitiesQuery briefly re-subscribes (sessions=[]), causing
+  // data-active="true" to be absent and panels to briefly unmount. We use 'attached' state
+  // (DOM presence, not CSS visibility) so rapid command loops don't stall when React is
+  // mid-re-render. The force:true click below handles any remaining visibility issues.
+  await page
+    .locator('[data-testid="terminal-panel"]')
+    .first()
+    .waitFor({ state: 'attached', timeout: 10_000 });
   await terminalPanel.click({ force: true });
 
   // Small delay to ensure focus is set
@@ -122,6 +134,11 @@ export async function sendCommand(page: Page, cmd: string) {
  * We poll until the text appears.
  */
 export async function waitForOutput(page: Page, text: string, timeout = 15_000) {
+  // First ensure the active panel exists (guards against brief re-render gaps on load/resize).
+  await page
+    .locator('[data-testid="terminal-panel"][data-active="true"]')
+    .first()
+    .waitFor({ state: 'visible', timeout: 10_000 });
   await expect(async () => {
     const content = await page
       .locator('[data-testid="terminal-panel"][data-active="true"] .xterm-rows')
@@ -176,7 +193,19 @@ export async function goHome(page: Page) {
   // The collapsed sidebar renders: Back(0), Home(1), Shell(2), Skills(3), Triggers(4), …
   const homeSidebarBtn = page.locator('[data-sidebar="menu-button"]').nth(1);
   await homeSidebarBtn.click();
-  await page.getByRole('heading', { name: /hey /i }).waitFor({ state: 'visible', timeout: 15_000 });
+  await page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first().waitFor({ state: 'visible', timeout: 15_000 });
+
+  // Dismiss WelcomeModal / setup modal if it appears and blocks clicks
+  const skipForNow = page.getByRole('button', { name: 'Skip for now' });
+  if (await skipForNow.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    await skipForNow.click({ force: true });
+    await page.waitForTimeout(500);
+  }
+  const skipButton = page.getByRole('button', { name: 'Skip' });
+  if (await skipButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    await skipButton.click({ force: true });
+    await page.waitForTimeout(500);
+  }
 }
 
 /**

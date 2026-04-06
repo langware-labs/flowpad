@@ -222,7 +222,7 @@ def check_server_health(server_info: FlowpadServerInfo, timeout: float = 2.0) ->
     try:
         req = urllib.request.Request(health_url, method="GET")
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.status == 200
+            return resp.worker_status == 200
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError):
         return False
 

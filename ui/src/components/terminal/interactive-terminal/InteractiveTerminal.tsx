@@ -2,8 +2,7 @@
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
 
-import { claudeSessionManager, connectionManager, dataContext, fsStore, Shell, type AgenticProcess } from '@sdk';
-import { ClaudeSessionEvent } from '@sdk/services/claude';
+import { connectionManager, dataContext, fsStore, Shell, type AgenticProcess } from '@sdk';
 import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
 import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
@@ -246,8 +245,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
   // Notify parent when the worker session ID becomes known (or clears)
   useEffect(() => {
-    onWorkerSessionId?.(process?.worker_session_id ?? null);
-  }, [process?.worker_session_id, onWorkerSessionId]);
+    onWorkerSessionId?.(process?.session_id ?? null);
+  }, [process?.session_id, onWorkerSessionId]);
   const [cellHeight, setCellHeight] = useState(0);
   const [traceFilters, setTraceFiltersState] = useState<TraceFilters>(() => loadTraceFilters());
   const [gutterExpanded, setGutterExpanded] = useState(false);
@@ -382,7 +381,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const rows = metrics?.visibleRows ?? terminalRef.current?.rows ?? 24;
 
   const { entries: gutterEntries, totalTraceEvents, historicalCount, liveCount, sessionStartTime, allEvents: allTraceEvents } = useTraceGutter(
-    process?.worker_session_id,
+    process?.session_id,
     terminalReady,
     ptySyncRef.current,
     shellReady,
@@ -405,7 +404,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
   const { elements: rawAnnotationElements, createBookmark, createComment, deleteBookmark, pendingScrollLine, sessionAnnotations } =
     useAnnotationGutter(
-      process?.worker_session_id,
+      process?.session_id,
       terminalReady,
       ptySyncSnapshot.adapter,
       ptySyncRef.current,
@@ -420,7 +419,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       : rawAnnotationElements.filter((el) => el.kind !== 'prompt'),
     [rawAnnotationElements, traceFilters.promptAnnotations],
   );
-  const showAnnotationGutter = !!process?.worker_session_id && colVis.annotations;
+  const showAnnotationGutter = !!process?.session_id && colVis.annotations;
   const reserveAnnotationSpace = colVis.annotations;
 
   const mergedPrompts = useMemo<PromptEntry[]>(() => {
@@ -807,7 +806,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     [sessionId],
   );
 
-  // PTY connect and WS reconnect are handled by process.open() (called in loader)
+  // PTY connect and WS reconnect are handled by process.start() (called in loader)
   // and Shell's built-in auto-reconnect (ConnectionManager on_reconnected listener).
 
   // Ref so the output handler always reads the latest bufferSyncUpdates without
@@ -994,14 +993,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   useEffect(() => {
     if (!process) return;
 
-    const handleRestarted = ({ process: restartedProcess }: { process: AgenticProcess }) => {
-      if (restartedProcess.id !== process.id) return;
-
+    const handleRestarted = () => {
       const term = terminalRef.current;
       const fit = fitAddonRef.current;
-      if (term) {
-        term.clear();
-      }
       ptySyncRef.current.resetSession();
 
       // connect({ force: true }) resets seq + replayDone, then re-attaches
@@ -1028,9 +1022,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       });
     };
 
-    claudeSessionManager.on(ClaudeSessionEvent.SESSION_RESTARTED, handleRestarted);
+    process.on('restarted', handleRestarted);
     return () => {
-      claudeSessionManager.off(ClaudeSessionEvent.SESSION_RESTARTED, handleRestarted);
+      process.off('restarted', handleRestarted);
     };
   }, [process]);
 

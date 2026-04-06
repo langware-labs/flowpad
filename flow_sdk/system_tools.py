@@ -227,7 +227,7 @@ async def archive() -> ArchiveResult:
     # Copy records root
     records_root = get_default_records_root()
     if records_root.exists():
-        shutil.copytree(records_root, archive_dir / "records", dirs_exist_ok=True)
+        shutil.copytree(records_root, archive_dir / "records", dirs_exist_ok=True, ignore_dangling_symlinks=True)
 
     logger.info(f"Archive created at: {archive_dir}")
     return ArchiveResult(

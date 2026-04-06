@@ -29,7 +29,8 @@ vi.mock('@sdk', () => {
       STEPPING: 'stepping',
       COMPLETE: 'complete',
       ERROR: 'error',
-      TERMINATED: 'terminated',
+      INTERRUPTED: 'interrupted',
+      INACTIVE: 'inactive',
     },
     QueryRequest: class QueryRequest {
       type: string;
@@ -123,7 +124,7 @@ function makeProcess(overrides: Record<string, any> = {}) {
   return {
     id: overrides.id ?? 'proc-1',
     type: 'agentic_process',
-    state: overrides.state ?? { status: 'running' },
+    status: overrides.status ?? 'running',
     shell_id: overrides.shell_id ?? null,
     pty_pid: overrides.pty_pid ?? null,
     save: shared().procSave,
@@ -152,7 +153,7 @@ describe('useActiveTerminals', () => {
     // Deliver process data - linked to sh-1
     await act(async () => {
       shared().watchCallbacks.get('useActiveTerminals:processes')?.([
-        makeProcess({ id: 'proc-1', shell_id: 'sh-1', state: { status: 'running' } }),
+        makeProcess({ id: 'proc-1', shell_id: 'sh-1', status: 'running' }),
       ]);
     });
 
@@ -177,7 +178,7 @@ describe('useActiveTerminals', () => {
 
     await act(async () => {
       shared().watchCallbacks.get('useActiveTerminals:processes')?.([
-        makeProcess({ id: 'proc-orphan', shell_id: null, state: { status: 'running' } }),
+        makeProcess({ id: 'proc-orphan', shell_id: null, status: 'running' }),
       ]);
     });
 
@@ -221,7 +222,7 @@ describe('useActiveTerminals', () => {
 
     await act(async () => {
       shared().watchCallbacks.get('useActiveTerminals:processes')?.([
-        makeProcess({ id: 'proc-1', shell_id: 'sh-main', sidecar_shell_id: 'sh-sidecar', state: { status: 'running' } }),
+        makeProcess({ id: 'proc-1', shell_id: 'sh-main', sidecar_shell_id: 'sh-sidecar', status: 'running' }),
       ]);
     });
 

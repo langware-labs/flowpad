@@ -20,7 +20,7 @@ export interface TerminalTab {
   statusReason: string;
 }
 
-const TERMINAL_STATUSES = new Set([ProcessorStatus.TERMINATED, ProcessorStatus.COMPLETE]);
+const TERMINAL_STATUSES = new Set([ProcessorStatus.COMPLETE, ProcessorStatus.ERROR, ProcessorStatus.INTERRUPTED, ProcessorStatus.INACTIVE]);
 const HIDDEN_SHELL_STATUSES = new Set([ShellStatus.ERROR]);
 const DISABLED_SHELL_STATUSES = new Set([ShellStatus.CLOSED, ShellStatus.CLOSING]);
 
@@ -28,6 +28,7 @@ const shellQuery = new QueryRequest({
   type: 'shell',
   scope: [],
   name: 'useActiveTerminals:shells',
+  query: new QueryFilter({ match: { op: '$NE', operands: ['status', ShellStatus.CLOSED] } as Record<string, unknown> }),
 });
 
 const processQuery = new QueryRequest({
@@ -49,12 +50,12 @@ export function useActiveTerminals() {
     .map((shell) => `${shell.id}:${shell.status ?? ''}:${shell.error_message ?? ''}:${shell.name ?? ''}:${shell.tab_order ?? 0}`)
     .join('|');
   const processProjectionKey = processes
-    .map((process) => `${process.id}:${process.state?.status ?? ''}:${process.shell_id ?? ''}:${process.sidecar_shell_id ?? ''}`)
+    .map((process) => `${process.id}:${process.status ?? ''}:${process.shell_id ?? ''}:${process.sidecar_shell_id ?? ''}`)
     .join('|');
 
   const tabs = useMemo(() => {
     // Filter active processes: not terminated and not complete
-    const activeProcesses = processes.filter((p) => !TERMINAL_STATUSES.has(p.state?.status));
+    const activeProcesses = processes.filter((p) => !TERMINAL_STATUSES.has(p.status));
 
     // Build a set of sidecar shell IDs — these are internal-only PTY sessions
     // managed by InteractiveTerminal and must not appear as top-level tabs.

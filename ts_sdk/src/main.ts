@@ -6,7 +6,7 @@ import { sdkConfig } from './config/index';
 import { Agent, ComputeNode, Project, User, Visitor, Workspace } from './entities';
 import { AgentHook } from './entities/agent-hook';
 import { authManager, dataContext, isTypeId, TypeId } from './FlowSync';
-import { SnifferHook } from './services/sniffer-hook';
+import { snifferManager } from './services/snifferManager';
 import { ActionInfo } from './models';
 import { navigator } from './services/navigationService';
 // import { authService } from './services/authService';
@@ -118,13 +118,7 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       if (bootstrapInfo.sniffer_hook) {
         const snifferHook = new AgentHook(bootstrapInfo.sniffer_hook);
         snifferHook.markAsExpanded();
-        // The bootstrap entity registers under @sniffer uname (agent_hook-@sniffer).
-        // Also register under the raw UUID so getByIdFromCache(uuid) returns the
-        // same instance — avoids useHooksSniffer creating a second entity.
-        const uuidTypeId = new TypeId(AgentHook.type, snifferHook.id);
-        const ref = dataManager.getRef(uuidTypeId);
-        ref.entity = snifferHook as any;
-        dataContext.setSnifferHook(new SnifferHook(snifferHook));
+        await snifferManager.attach(snifferHook);
       }
       dataContext.setSnifferEnabled(!!bootstrapInfo.sniffer_hook);
 

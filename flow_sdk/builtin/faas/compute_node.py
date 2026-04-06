@@ -509,8 +509,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.all(action_name="scan-project")
     async def scan_project_action(self): return await self._scan_project()
 
-    @action.all(action_name="createAgenticProcessor")
-    async def create_agentic_processor(self): return await self._scan_create_agentic_processor()
+    @action.post(action_name="createProcess")
+    async def create_process_action(self): return await self._scan_create_process()
 
     @action.post(action_name="upsertSessionProcess")
     async def upsert_session_process(self): return await self._scan_upsert_session_process()
@@ -524,7 +524,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     @action.post(action_name="elevate-shell")
     async def _elevate_shell(self) -> ApiResponse:
-        """Elevate a running shell to a Claude session via AgenticProcess.open()."""
+        """Elevate a running shell to a Claude session via AgenticProcess.start()."""
         from uuid import uuid4
 
         from flow_sdk.builtin.agentic_process import AgenticProcess
@@ -545,11 +545,11 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         )
         process = AgenticProcess(
             shell_id=shell_id,
-            worker_session_id=resume_session_id or str(uuid4()),
+            session_id=resume_session_id or str(uuid4()),
             cli_config=cmd.to_json(),
         )
         await process.save(owner=request_info.someone_typeid if request_info else None)
-        return await process.open()
+        return await process.start()
 
     @action.post(action_name="clear-debug-errors")
     async def clear_debug_errors_action(self) -> "ApiResponse":

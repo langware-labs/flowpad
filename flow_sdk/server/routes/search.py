@@ -96,7 +96,7 @@ def _entity_to_result(ent) -> dict:
         "modified_at": str(getattr(ent, "updated_date", "") or ""),
     }
     # Extra fields for per-type column rendering
-    for field in ("uname", "title", "description", "file_path", "filename", "work_dir", "project_encoded", "project_encoded_name", "worker_session_id", "asset_type"):
+    for field in ("uname", "title", "description", "file_path", "filename", "work_dir", "project_encoded", "project_encoded_name", "session_id", "asset_type"):
         val = getattr(ent, field, None)
         if val:
             result[field] = val

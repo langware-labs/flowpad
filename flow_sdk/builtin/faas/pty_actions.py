@@ -21,7 +21,7 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.faas.pty_session import PtySession
+    from flow_sdk.builtin.faas.pty_session import Pty as PtySession
 
 # When active PTY sessions reach this count, the oldest _PTY_EVICT_COUNT are closed automatically.
 # Prevents OS PTY device exhaustion (macOS default limit: 511).
@@ -341,6 +341,9 @@ class PtyActionsMixin:
                 ss = session_state_holder[0]
                 if ss.pty_stream_file:
                     ss.pty_stream_file.write(data)
+                # Feed Pty.output() iterators
+                for _q in ss.output_queues:
+                    asyncio.run_coroutine_threadsafe(_q.put(data), main_loop)
 
             async def get_and_send():
                 current_session = await session_manager.get_session(current_pty_key)
@@ -708,7 +711,7 @@ class PtyActionsMixin:
         replay_chunks = []
         if since_seq is not None:
             logging.info(f"[PTY] Snapshotting replay buffer from seq {since_seq}, shell_id={shell_id}")
-            replay_chunks = pty_handle.get_replay(since_seq)
+            replay_chunks = pty_handle.snapshot(since_seq)
             logging.info(f"[PTY] Snapshotted {len(replay_chunks)} chunks for shell_id={shell_id}")
 
         # Attach to session (updates connection_id — live output starts flowing)
@@ -851,7 +854,7 @@ class PtyActionsMixin:
         try:
             # Convert string to bytes
             data_bytes = data.encode("utf-8")
-            await pty.send(data_bytes)
+            await pty.write(data_bytes)
             response_msg = ResponseMessage(
                 session_id=shell_id,
                 message_id=request_message_id,
@@ -1080,7 +1083,7 @@ class PtyActionsMixin:
         if not pty:
             return ApiFailResponse(message=f"Session not found: {shell_id}")
 
-        pty.set_name(name)
+        pty.name = name
         response_msg = ResponseMessage(
             message_id=request_message_id,
             response_message_id=request_message_id,

@@ -29,7 +29,7 @@
  *   TOOL_CALL    — Claude finished its turn and dispatched tool(s)
  *   TOOL_RUNNING — tool is actively executing (progress events)
  *
- * Workflow-level (set by ProcessorState, not transcript-derivable):
+ * Workflow-level (legacy — no longer set by ProcessorState):
  *   RUNNING, PAUSED, STEPPING
  *
  * Use isProcessorRunning() to aggregate all active states.
@@ -102,47 +102,6 @@ export function isProcessorIdle(status: ProcessorStatus): boolean {
 /** True when the session has ended and cannot be resumed (COMPLETE, ERROR, INTERRUPTED, INACTIVE). */
 export function isProcessorTerminal(status: ProcessorStatus): boolean {
   return TERMINAL_STATUSES.has(status);
-}
-
-/**
- * Stack frame for nested execution contexts
- */
-export interface StackFrame {
-  frameId: string;
-  type: 'call' | 'block' | 'if' | 'each';
-  instructionId: string;
-  index: number;
-  sourceVfsPath?: string;
-  localVariables: Record<string, unknown>;
-  iteratorName?: string;
-  iteratorIndex?: number;
-  iteratorTotal?: number;
-}
-
-/**
- * Debug state
- */
-export interface DebugState {
-  enabled: boolean;
-  breakpoints: string[];
-  stepMode: 'over' | 'into' | 'out' | null;
-}
-
-/**
- * Processor state - synced from backend entity
- */
-export interface ProcessorState {
-  status: ProcessorStatus;
-  index: number;
-  totalInstructions: number;
-  currentInstructionId: string | null;
-  variables: Record<string, unknown>;
-  waitingForInput: boolean;
-  inputId: string | null;
-  stack: StackFrame[];
-  debug: DebugState;
-  error: string | null;
-  mdoContent: string | null;
 }
 
 /**

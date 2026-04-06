@@ -117,7 +117,7 @@ export function SessionAnalysisPage() {
   const [activeProcess, setActiveProcess] = useState<AgenticProcess | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
-  const { state: processState } = useProcessState(activeProcess);
+  const processState = useProcessState(activeProcess);
   const isRunning =
     processState.status === ProcessorStatus.RUNNING ||
     processState.status === ProcessorStatus.STEPPING ||
@@ -227,10 +227,9 @@ export function SessionAnalysisPage() {
 
       try {
         const workdirTemplate = `${normalizeAbsPath(paths.home)}/${WORKDIR_TEMPLATE_SUFFIX}`;
-        const processor = await computeNode.createAgenticProcessor();
         const normalizedSessionId = getSessionKey(session);
         const resultUname = buildResultUname(normalizedSessionId);
-        const process = await processor.createProcess(
+        const process = await computeNode.createProcess(
           {
             workdir: workdirTemplate,
             permissionMode: 'bypassPermissions',
@@ -248,7 +247,7 @@ export function SessionAnalysisPage() {
           const earlyResult = await ProcessResult.getById(`@${resultUname}`);
           if (earlyResult) {
             earlyResult.status = 'running';
-            earlyResult.worker_session_id = process.worker_session_id ?? earlyResult.worker_session_id;
+            earlyResult.worker_session_id = process.session_id ?? earlyResult.worker_session_id;
             await earlyResult.save();
           }
         } catch (error) {
@@ -279,7 +278,7 @@ export function SessionAnalysisPage() {
               return;
             }
             result.status = status;
-            result.worker_session_id = process.worker_session_id ?? result.worker_session_id;
+            result.worker_session_id = process.session_id ?? result.worker_session_id;
             await result.save();
             await refreshAnalyses();
           } catch (error) {
@@ -295,7 +294,7 @@ export function SessionAnalysisPage() {
 
         const syncWorkerSession = async () => {
           for (let attempt = 0; attempt < 10; attempt += 1) {
-            if (process.worker_session_id) {
+            if (process.session_id) {
               await persistResultState('running');
               break;
             }
@@ -384,13 +383,13 @@ export function SessionAnalysisPage() {
           setActiveSessionId(running.source_session_id);
         }
         const isActiveStatus = [ProcessorStatus.RUNNING, ProcessorStatus.STEPPING, ProcessorStatus.PAUSED].includes(
-          process.state.status,
+          process.status,
         );
         if (!isActiveStatus && running.status === 'running') {
           try {
             running.status = 'complete';
-            if (process.worker_session_id) {
-              running.worker_session_id = process.worker_session_id;
+            if (process.session_id) {
+              running.worker_session_id = process.session_id;
             }
             await running.save();
             await refreshAnalyses();
@@ -474,7 +473,7 @@ export function SessionAnalysisPage() {
               const isActiveSession = activeSessionId === normalizedSessionId;
               const isRunningAnalysis = analysisMatch?.status === 'running' || (isActiveSession && isRunning);
               const workerSessionId =
-                analysisMatch?.worker_session_id || (isActiveSession ? activeProcess?.worker_session_id : null);
+                analysisMatch?.worker_session_id || (isActiveSession ? activeProcess?.session_id : null);
               const showFlowStatus = isActiveSession && isRunning && !!activeProcess;
               const sessionInfo = getSessionTooltipInfo(session);
 

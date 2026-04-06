@@ -119,7 +119,7 @@ cleanup() {
 trap cleanup EXIT
 
 # Start server
-MINIHUB_PORT=$PORT "$PYTHON" -m flow_sdk.server.run &
+LOCAL_SERVER_PORT=$PORT "$PYTHON" -m flow_sdk.server.run &
 SERVER_PID=$!
 
 echo -e "  Waiting for server on port $PORT..."

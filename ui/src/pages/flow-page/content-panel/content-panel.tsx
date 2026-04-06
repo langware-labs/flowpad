@@ -85,11 +85,7 @@ export function ContentPanel() {
   /** Navigate to a terminal tab's shell or agentic process */
   const navigateToTab = useCallback(
     (tab: (typeof terminalTabs)[number]) => {
-      if (tab.type === 'claude' && tab.agenticProcess) {
-        void navigation.openShellProcess(tab.agenticProcess.id);
-      } else {
-        void navigation.openSession(tab.shellId);
-      }
+      navigation.openDock(tab.agenticProcess?.dockPointer ?? tab.shell!.dockPointer);
     },
     [navigation],
   );
@@ -158,7 +154,6 @@ export function ContentPanel() {
   // Handle shell routing based on URL pointer
   useEffect(() => {
     if (currentDock?.viewType !== ViewType.SHELL) return;
-    if (DockPointer.isAgenticProcessPointer(currentDock.pointer)) return;
     // Wait until both shells and processes are loaded so navigateToTab
     // can correctly distinguish plain shells from claude sessions.
     if (terminalsLoading) return;

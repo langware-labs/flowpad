@@ -1,7 +1,7 @@
 """End-to-end test: prompt annotation appears in the annotation gutter.
 
 Scenario:
-1. Create AgenticProcess, start(), prompt("hi"), waitForIdle()
+1. Create AgenticProcess, start(), prompt("hi"), wait()
 2. Verify that an Annotation entity with labels=['prompt:'] and the correct
    session_id was created in the DB by the UserPromptSubmit hook handler.
 3. Print the process URL for manual browser / Playwright validation.
@@ -60,10 +60,10 @@ def _query_annotations(session_id: str) -> list[dict]:
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(300)
-async def test_prompt_annotation_created_and_visible():
+async def test_prompt_annotation_created_and_visible(bootstrapped_client):
     """
     Full flow:
-      process.start() → process.prompt("hi") → waitForIdle()
+      process.start() → process.prompt("hi") → wait()
       → assert Annotation with labels=['prompt:'] exists for session
       → print process URL for browser verification
     """
@@ -72,38 +72,38 @@ async def test_prompt_annotation_created_and_visible():
 
     server = _server_url()
     # ── 1. Bootstrap server (creates @local entities if not yet done) ──────
+    # bootstrapped_client already bootstrapped the in-process test DB.
+    # Also bootstrap the running server so its DB has @local entities.
     resp = requests.get(f"{server}/api/v1/graph/bootstrap", timeout=15)
     assert resp.status_code == 200, f"Bootstrap failed: {resp.text}"
 
     # ── 2. Create and start process ─────────────────────────────────────────
     process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
-    process.start()
-    assert process.idle is True, "Process should be idle before prompt"
+    process_id = process.id
 
     # ── 3. Send prompt ───────────────────────────────────────────────────────
-    process.prompt("hi")
-    assert process.idle is False, "Process should be busy after prompt"
+    await process.prompt("hi")
+    assert process.is_idle is False, "Process should be busy after prompt"
 
-    worker_session_id = process.worker_session_id
-    process_id = process.record.id
-    print(f"\n[e2e] worker_session_id = {worker_session_id}")
+    session_id = process.session_id
+    print(f"\n[e2e] session_id = {session_id}")
     print(f"[e2e] process_id        = {process_id}")
     print(f"[e2e] Process URL       = {server}/dock/shell/agentic_process-{process_id}")
 
     # ── 4. Wait for Claude to finish ─────────────────────────────────────────
-    await process.waitForIdle(timeout=120)
-    assert process.idle is True, "Process should be idle after completion"
+    await process.wait(timeout=120)
+    assert process.is_idle is True, "Process should be idle after completion"
 
     # ── 5. Verify annotation was created ─────────────────────────────────────
     # The UserPromptSubmit hook fires synchronously when prompt() is called,
-    # so by the time waitForIdle() returns the annotation should be in the DB.
+    # so by the time wait() returns the annotation should be in the DB.
     # We give it up to 10s of polling in case of DB write delay.
-    assert worker_session_id, "worker_session_id must be set after prompt()"
+    assert session_id, "session_id must be set after prompt()"
 
     annotations = []
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
-        annotations = _query_annotations(worker_session_id)
+        annotations = _query_annotations(session_id)
         prompt_annotations = [
             a for a in annotations
             if "prompt:" in (a.get("labels") or [])
@@ -117,7 +117,7 @@ async def test_prompt_annotation_created_and_visible():
         if "prompt:" in (a.get("labels") or [])
     ]
     assert len(prompt_annotations) >= 1, (
-        f"Expected at least 1 prompt annotation for session {worker_session_id}, "
+        f"Expected at least 1 prompt annotation for session {session_id}, "
         f"got {annotations}"
     )
 

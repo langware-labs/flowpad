@@ -12,8 +12,6 @@ Validates the full pipeline:
 import asyncio
 import json
 import os
-import signal
-import socket
 import subprocess
 import sys
 import tempfile
@@ -35,23 +33,15 @@ pytestmark = pytest.mark.skipif(
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _find_free_port() -> int:
-    """Bind to port 0, let the OS pick a free port, return it."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
-
-
 def _server_env(port: int, db_path: str) -> dict:
     """Build an environment dict for the server subprocess."""
     env = os.environ.copy()
     env["SQLITE_DATABASE_PATH"] = db_path
     env["MINIHUB_HOST"] = "127.0.0.1"
-    env["MINIHUB_PORT"] = str(port)
-    # Ensure SDK + server are importable
+    env["LOCAL_SERVER_PORT"] = str(port)
+    env["FLOWPAD_SKIP_LOCK"] = "true"  # bypass singleton guard when dev server is running
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    sdk_path = os.path.join(repo_root, "sdk", "python")
-    env["PYTHONPATH"] = f"{sdk_path}{os.pathsep}{repo_root}{os.pathsep}{env.get('PYTHONPATH', '')}"
+    env["PYTHONPATH"] = f"{repo_root}{os.pathsep}{env.get('PYTHONPATH', '')}"
     return env
 
 
@@ -71,26 +61,25 @@ async def _wait_for_server(base_url: str, timeout: float = 30.0) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test
+# Fixtures
 # ---------------------------------------------------------------------------
 
 @pytest.fixture()
-async def live_server():
-    """Start a real uvicorn server on a random port with an isolated temp DB.
+async def live_server(allocate_ports):
+    """Start a real uvicorn server on a free port with an isolated temp DB.
 
-    Yields (port, base_url).  Kills the server on teardown.
+    Uses ``allocate_ports`` so teardown kills any process still holding the port.
+    Yields (port, base_url).
     """
-    port = _find_free_port()
+    port, = allocate_ports()
     base_url = f"http://127.0.0.1:{port}"
 
-    # Temp DB file — auto-deleted on close
     tmp_db = tempfile.NamedTemporaryFile(suffix=".db", prefix="flow_e2e_", delete=False)
     tmp_db.close()
     db_path = tmp_db.name
 
     env = _server_env(port, db_path)
 
-    # Start the server as a subprocess
     proc = subprocess.Popen(
         [sys.executable, "-m", "flow_sdk.server.run"],
         env=env,
@@ -102,7 +91,6 @@ async def live_server():
         await _wait_for_server(base_url)
         yield port, base_url
     finally:
-        # Graceful shutdown
         proc.terminate()
         try:
             proc.wait(timeout=5)
@@ -110,14 +98,16 @@ async def live_server():
             proc.kill()
             proc.wait(timeout=3)
 
-        # Clean up temp DB
         for suffix in ("", "-shm", "-wal"):
-            path = db_path + suffix
             try:
-                os.unlink(path)
+                os.unlink(db_path + suffix)
             except FileNotFoundError:
                 pass
 
+
+# ---------------------------------------------------------------------------
+# Test
+# ---------------------------------------------------------------------------
 
 @pytest.mark.timeout(60)
 async def test_listen_e2e_real_server_cli_subprocess(live_server):
@@ -162,11 +152,10 @@ async def test_listen_e2e_real_server_cli_subprocess(live_server):
             }
 
             repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-            sdk_path = os.path.join(repo_root, "sdk", "python")
 
             cli_env = os.environ.copy()
             cli_env["AGENT_HOOKS_REPORT_URL"] = f"http://127.0.0.1:{port}/api/v1/webhook/listen"
-            cli_env["PYTHONPATH"] = f"{sdk_path}{os.pathsep}{repo_root}{os.pathsep}{cli_env.get('PYTHONPATH', '')}"
+            cli_env["PYTHONPATH"] = f"{repo_root}{os.pathsep}{cli_env.get('PYTHONPATH', '')}"
 
             cli_proc = await asyncio.create_subprocess_exec(
                 sys.executable, "-m", "flow_sdk.cli.flow_cli",
@@ -188,11 +177,10 @@ async def test_listen_e2e_real_server_cli_subprocess(live_server):
             )
 
             # 5. Validate flow_data_msg on WebSocket
-            import time as _time
-            deadline = _time.monotonic() + 10
+            deadline = time.monotonic() + 10
             matched_msg = None
-            while _time.monotonic() < deadline:
-                remaining = max(0.1, deadline - _time.monotonic())
+            while time.monotonic() < deadline:
+                remaining = max(0.1, deadline - time.monotonic())
                 try:
                     raw_msg = await asyncio.wait_for(ws.recv(), timeout=remaining)
                 except asyncio.TimeoutError:
@@ -217,9 +205,7 @@ async def test_listen_e2e_real_server_cli_subprocess(live_server):
             assert matched_msg is not None, (
                 f"No flow_data_msg with agent_hook_id={sniffer_hook_id} received within 10s"
             )
-
             assert matched_msg["webhook_type"] == "agent_hook"
-
             hook_data = matched_msg.get("hook_data", {})
             assert hook_data.get("hook_event_name") == "test_ping"
             assert hook_data.get("session_id") == "test-session-123"
