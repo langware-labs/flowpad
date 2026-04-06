@@ -64,8 +64,7 @@ class Workflow(Entity):
         content = abs_path.read_text(encoding="utf-8")
 
         process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
-        process.start()
-        process.prompt(content)
+        await process.prompt(content)
         return process
 
     @action.post(action_name="prepare")

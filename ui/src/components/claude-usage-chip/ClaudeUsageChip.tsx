@@ -33,7 +33,7 @@ export function ClaudeUsageChip() {
   const todayKey = getTodayKey();
   const todayCost = costOverview?.by_day?.[todayKey]?.total_cost_usd ?? null;
   const worstPct = usage ? Math.max(usage.five_hour.pct, usage.seven_day.pct) : 0;
-  const sessionId = flow?.worker_session_id ?? null;
+  const sessionId = flow?.session_id ?? null;
 
   const label = [
     `5h ${usage ? `${usage.five_hour.pct}%` : '-'}`,

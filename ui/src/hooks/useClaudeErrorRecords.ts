@@ -389,7 +389,7 @@ export function useClaudeErrorRecords() {
             error_status: ErrorStatus.TASK_CREATED,
             linked_task_id: taskId,
             worker_session_id: shellId ?? '',
-            claude_session_id: process.worker_session_id ?? '',
+            claude_session_id: process.session_id ?? '',
             triaged_at: new Date().toISOString(),
           });
         }

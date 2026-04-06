@@ -14,6 +14,8 @@ from flow_sdk._compat import StrEnum
 
 
 class AgenticProcessStatus(StrEnum):
+    NEW          = "new"          # creation default — never launched
+
     # No transcript (file-level)
     NULL         = "null"         # JSONL file does not exist
     EMPTY        = "empty"        # JSONL exists but has no parseable content

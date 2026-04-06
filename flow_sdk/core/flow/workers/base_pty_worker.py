@@ -102,7 +102,7 @@ class BasePTYWorker(BaseWorker):
         return await self.cancel_pty_session(self._deps.flow)
 
     async def execute_task(self, request: WorkerRequest) -> AsyncIterator[WorkerStreamEvent]:
-        """PTY lifecycle: start session → run_process → yield RUNNING."""
+        """PTY lifecycle: start session → launch → yield RUNNING."""
         deps = request.ctx.deps
         self._deps = deps
 
@@ -164,7 +164,7 @@ class BasePTYWorker(BaseWorker):
                 cmd.add_env("FLOWPAD_EXECUTION_SCOPE", scope)
 
             logger.info(f"[BasePTYWorker] Launching worker via shell {self._machine_session_id}")
-            execution_info = await shell.run_process(cmd, instruction=prompt_content)
+            execution_info = await shell.launch(cmd, instruction=prompt_content)
             logger.info(
                 f"[BasePTYWorker] Worker launched: pid={execution_info.pid}, name={execution_info.name!r}"
             )

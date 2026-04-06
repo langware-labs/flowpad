@@ -17,7 +17,7 @@ from io import BytesIO
 from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Literal
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.faas.pty_session import PtySession
+    from flow_sdk.builtin.faas.pty_session import Pty as PtySession
 
 import anyio
 import psutil
@@ -905,20 +905,29 @@ class LocalComputeProvider(ComputeProvider):
         pid = self._pty_sessions[pty_key].get("pid")
         return self._is_process_alive(pid) if pid else False
 
-    async def pick_folder(self, provider_node_id: str) -> str | None:
-        """Open a native OS folder-picker dialog on the local machine."""
+    async def pick_folder(self, provider_node_id: str, initial_dir: str | None = None) -> str | None:
+        """Open a native OS folder-picker dialog on the local machine.
+
+        Args:
+            provider_node_id: The local compute node provider ID.
+            initial_dir: Optional path to open the dialog at initially.
+        """
         import subprocess
 
         if sys.platform == PLATFORM_DARWIN:
             # Activate Finder to bring the dialog in front, close any Finder
             # windows so only the picker is visible, then choose folder.
+            if initial_dir:
+                default_location = f'default location POSIX file "{initial_dir}"'
+            else:
+                default_location = ""
             apple_script = (
                 'tell application "Finder"\n'
                 "    activate\n"
                 "    close every window\n"
                 "end tell\n"
                 "delay 0.1\n"
-                "set theFolder to choose folder\n"
+                f"set theFolder to choose folder {default_location}\n"
                 "return POSIX path of theFolder"
             )
             result = subprocess.run(
@@ -930,9 +939,13 @@ class LocalComputeProvider(ComputeProvider):
             return None
 
         elif sys.platform == PLATFORM_WIN32:
+            selected_path_line = (
+                f'$d.SelectedPath = "{initial_dir}"; ' if initial_dir else ""
+            )
             ps_script = (
                 "Add-Type -AssemblyName System.Windows.Forms; "
                 "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                f"{selected_path_line}"
                 "if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath } else { '' }"
             )
             result = subprocess.run(
@@ -944,9 +957,13 @@ class LocalComputeProvider(ComputeProvider):
 
         else:
             # Linux — try zenity, then kdialog
+            zenity_args = ["zenity", "--file-selection", "--directory"]
+            kdialog_start = initial_dir or "."
+            if initial_dir:
+                zenity_args += ["--filename", initial_dir.rstrip("/") + "/"]
             for args in (
-                ["zenity", "--file-selection", "--directory"],
-                ["kdialog", "--getexistingdirectory", "."],
+                zenity_args,
+                ["kdialog", "--getexistingdirectory", kdialog_start],
             ):
                 try:
                     result = subprocess.run(args, capture_output=True, text=True, timeout=120)

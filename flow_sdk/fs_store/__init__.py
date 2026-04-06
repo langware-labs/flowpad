@@ -28,6 +28,12 @@ from .record import (
     get_default_records_root as get_default_records_root,
 )
 from .record import (
+    get_default_records_data_root as get_default_records_data_root,
+)
+from .record import (
+    get_flowpad_home as get_flowpad_home,
+)
+from .record import (
     parse_record_stem as parse_record_stem,
 )
 from .record import (
@@ -35,6 +41,9 @@ from .record import (
 )
 from .record import (
     set_default_records_root as set_default_records_root,
+)
+from .record import (
+    set_default_records_data_root as set_default_records_data_root,
 )
 from .record_list import ListMode as ListMode
 from .record_list import RecordList as RecordList

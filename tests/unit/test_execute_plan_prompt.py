@@ -9,13 +9,14 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process import agentic_process as _ap_module
 
 
 def _make_process(**kwargs) -> AgenticProcess:
     defaults = dict(
         shell_id="shell-123",
-        worker_session_id="ws-123",
-        state={"status": "running"},
+        session_id="ws-123",
+        status="running",
         context_data={},
     )
     defaults.update(kwargs)
@@ -31,7 +32,7 @@ async def test_execute_plan_includes_file_path_in_prompt():
     proc = _make_process()
     injected: list[str] = []
 
-    with patch.object(proc, "_control_inject_message", new_callable=AsyncMock, side_effect=lambda msg: injected.append(msg)):
+    with patch.object(AgenticProcess, "inject", new_callable=AsyncMock, side_effect=lambda msg: injected.append(msg)):
         await proc.execute_plan(file_path="/plans/my-plan.md", clear_context=False)
 
     assert len(injected) == 1
@@ -44,7 +45,7 @@ async def test_execute_plan_prompt_mentions_plan_note_and_execution():
     proc = _make_process()
     injected: list[str] = []
 
-    with patch.object(proc, "_control_inject_message", new_callable=AsyncMock, side_effect=lambda msg: injected.append(msg)):
+    with patch.object(AgenticProcess, "inject", new_callable=AsyncMock, side_effect=lambda msg: injected.append(msg)):
         await proc.execute_plan(file_path="/plans/my-plan.md", clear_context=False)
 
     prompt = injected[0]
@@ -58,7 +59,7 @@ async def test_execute_plan_clear_context_includes_file_path():
     proc = _make_process()
     injected: list[str] = []
 
-    with patch.object(proc, "_control_inject_message", new_callable=AsyncMock, side_effect=lambda msg: injected.append(msg)):
+    with patch.object(AgenticProcess, "inject", new_callable=AsyncMock, side_effect=lambda msg: injected.append(msg)):
         with patch("asyncio.sleep", new_callable=AsyncMock):
             await proc.execute_plan(file_path="/plans/my-plan.md", clear_context=True)
 
@@ -87,7 +88,7 @@ async def test_update_plan_includes_file_path_in_prompt():
     proc = _make_process()
     injected: list[str] = []
 
-    with patch.object(proc, "_control_inject_message", new_callable=AsyncMock, side_effect=lambda msg: injected.append(msg)):
+    with patch.object(AgenticProcess, "inject", new_callable=AsyncMock, side_effect=lambda msg: injected.append(msg)):
         await proc.update_plan(file_path="/plans/my-plan.md")
 
     assert len(injected) == 1
@@ -111,7 +112,7 @@ async def test_update_plan_does_not_mention_execution():
     proc = _make_process()
     injected: list[str] = []
 
-    with patch.object(proc, "_control_inject_message", new_callable=AsyncMock, side_effect=lambda msg: injected.append(msg)):
+    with patch.object(AgenticProcess, "inject", new_callable=AsyncMock, side_effect=lambda msg: injected.append(msg)):
         await proc.update_plan(file_path="/plans/my-plan.md")
 
     prompt = injected[0]

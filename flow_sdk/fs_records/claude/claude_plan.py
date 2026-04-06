@@ -19,8 +19,9 @@ from flow_sdk.fs_store.fs_ref import FSRef
 def _plan_search_dirs() -> list[Path]:
     """Return directories to scan for plan .md files.
 
-    Scans user-level (~/.claude/plans), cwd/.claude/plans if present,
-    and any extra dirs from FLOWPAD_PLAN_DIRS (colon-separated).
+    Scans user-level (~/.claude/plans), all known Claude projects
+    (<project>/.claude/plans), cwd-level, and any extra dirs from
+    FLOWPAD_PLAN_DIRS (colon-separated).
     """
     dirs: list[Path] = []
     seen: set[Path] = set()
@@ -32,6 +33,11 @@ def _plan_search_dirs() -> list[Path]:
             dirs.append(p)
 
     _add(Path.home() / ".claude" / "plans")
+
+    from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
+    for real in iter_claude_project_paths():
+        _add(real / ".claude" / "plans")
+
     _add(Path(os.getcwd()) / ".claude" / "plans")
 
     for extra in os.environ.get("FLOWPAD_PLAN_DIRS", "").split(":"):
