@@ -26,8 +26,21 @@ interface FakeFlowData {
 // Per-entity fake: flowDataStream + event emitter
 function makeFakeEntity(items: FakeFlowData[]) {
   const listeners: Record<string, Array<(...args: any[]) => void>> = {};
+  const streamListeners: Record<string, Array<(...args: any[]) => void>> = {};
   return {
-    flowDataStream: { items: [...items], isComplete: false },
+    flowDataStream: {
+      items: [...items],
+      isComplete: false,
+      on(event: string, handler: (...args: any[]) => void) {
+        (streamListeners[event] ??= []).push(handler);
+      },
+      off(event: string, handler: (...args: any[]) => void) {
+        streamListeners[event] = (streamListeners[event] ?? []).filter((h) => h !== handler);
+      },
+      emitStream(event: string, ...args: any[]) {
+        for (const h of streamListeners[event] ?? []) h(...args);
+      },
+    },
     on(event: string, handler: (...args: any[]) => void) {
       (listeners[event] ??= []).push(handler);
       return () => {

@@ -70,7 +70,7 @@ describe('useSessionAnalyze', () => {
   it('guards against double invocation', async () => {
     const mockProcess = {
       id: 'proc-1',
-      worker_session_id: 'ws-1',
+      session_id: 'ws-1',
       on: vi.fn(),
       executeInstruction: vi.fn(),
     };
@@ -108,7 +108,7 @@ describe('useSessionAnalyze', () => {
   it('creates process with fork/resume context', async () => {
     const mockProcess = {
       id: 'proc-abc',
-      worker_session_id: 'ws-1',
+      session_id: 'ws-1',
       on: vi.fn(),
       executeInstruction: vi.fn().mockResolvedValue(undefined),
     };
@@ -141,7 +141,7 @@ describe('useSessionAnalyze', () => {
   it('sets up complete and error event listeners', async () => {
     const mockProcess = {
       id: 'proc-abc',
-      worker_session_id: 'ws-1',
+      session_id: 'ws-1',
       on: vi.fn(),
       executeInstruction: vi.fn().mockResolvedValue(undefined),
     };
@@ -165,7 +165,7 @@ describe('useSessionAnalyze', () => {
     const onStarted = vi.fn();
     const mockProcess = {
       id: 'proc-1',
-      worker_session_id: 'ws-1',
+      session_id: 'ws-1',
       on: vi.fn(),
       executeInstruction: vi.fn().mockResolvedValue(undefined),
     };

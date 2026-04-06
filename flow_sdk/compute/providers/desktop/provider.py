@@ -17,7 +17,7 @@ from io import BytesIO
 from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Literal
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.faas.pty_session import PtySession
+    from flow_sdk.builtin.faas.pty_session import Pty as PtySession
 
 import anyio
 import psutil

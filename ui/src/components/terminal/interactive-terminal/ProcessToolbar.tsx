@@ -54,7 +54,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const devMode = useDevMode();
   const [showPtyViewer, setShowPtyViewer] = useState(false);
 
-  const hasSession = !!process.worker_session_id;
+  const hasSession = !!process.session_id;
   const canFork = hasSession && sessionTraceCount && sessionTraceCount > 0;
   const canToggle = hasSession;
   const workdir = process.workdir ?? '';
@@ -89,9 +89,9 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
       updatedCli.chrome = pendingChrome;
       updatedCli.permission_mode = pendingDanger ? 'bypassPermissions' : 'askUser';
       updatedCli.debug = pendingDebug;
-      process.cli_config = updatedCli.toJson();
+      process.cliOptions = updatedCli;
       await process.save();
-      await claudeSessionManager.restartSession(process);
+      await process.restart();
     } finally {
       setIsApplying(false);
     }
@@ -118,7 +118,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
     if (isRestarting) return;
     setIsRestarting(true);
     try {
-      await claudeSessionManager.restartSession(process);
+      await process.restart();
     } finally {
       setIsRestarting(false);
     }
@@ -320,7 +320,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
             disabled={false}
             onClick={() => {
               void (async () => {
-                const sessionId = process.worker_session_id!;
+                const sessionId = process.session_id!;
                 const record = await ClaudeSessionRecord.discover(sessionId).catch(() => null);
                 const projectEncodedName = record?.project_encoded_name ?? workdir.replace(/\//g, '-');
                 navigation.openLens('claude', 'transcript', `${projectEncodedName}/${sessionId}`);
@@ -499,7 +499,7 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
   if (chrome) parts.push('--chrome');
   if (debug) parts.push('--debug');
   if (worktree) parts.push('--worktree');
-  parts.push('--session-id', process.worker_session_id || '?');
+  parts.push('--session-id', process.session_id || '?');
   if (model && model !== '(default)') parts.push('--model', model);
   const command = parts.join(' ');
 
@@ -509,7 +509,7 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
     ['Started', startDisplay],
     ['Last message', lastDisplay],
     ['Working Dir', workdir],
-    ['Session ID', process.worker_session_id || 'none'],
+    ['Session ID', process.session_id || 'none'],
     ['PTY ID', process.pty_pid || 'none (detached)'],
     ['Permission', permMode],
     ['Chrome', chrome ? 'enabled' : 'disabled'],

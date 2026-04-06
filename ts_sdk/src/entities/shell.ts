@@ -66,6 +66,28 @@ export interface IShell extends IEntity {
 }
 
 
+// ---------------------------------------------------------------------------
+// Static dispatch registry — a single on_close + on_reconnected listener pair
+// on ConnectionManager routes events to all live Shell instances. This keeps
+// the EventEmitter listener count constant regardless of how many shells exist.
+// ---------------------------------------------------------------------------
+const _shellRegistry = new Set<Shell>();
+let _staticListenersRegistered = false;
+
+function _ensureStaticListeners(): void {
+  if (_staticListenersRegistered) return;
+  _staticListenersRegistered = true;
+  void import('../websocket').then(({ ConnectionManager }) => {
+    const cm = ConnectionManager.getInstance();
+    cm.on('on_close', () => {
+      for (const shell of _shellRegistry) shell._onCmClose();
+    });
+    cm.on('on_reconnected', () => {
+      for (const shell of _shellRegistry) shell._onCmReconnected();
+    });
+  });
+}
+
 @registerEntity
 export class Shell extends APIEntity<Shell> implements IShell {
   static type: string = 'shell';
@@ -90,9 +112,6 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
   /** True once this shell's tab has been the active tab at least once. */
   private _hasEverBeenActive = false;
-
-  /** Guard: WS reconnect listeners registered at most once per shell instance. */
-  private _reconnectListenersRegistered = false;
 
   /** True once startPty() has finished its replay phase and the output gate is open. */
   private _replayDone = false;
@@ -214,23 +233,9 @@ export class Shell extends APIEntity<Shell> implements IShell {
     if (isActive) this._hasEverBeenActive = true;
     if (!this._hasEverBeenActive) return;          // still deferred
 
-    if (!this._reconnectListenersRegistered) {
-      this._reconnectListenersRegistered = true;
-      void import('../websocket').then(({ ConnectionManager }) => {
-        const cm = ConnectionManager.getInstance();
-        cm.on('on_close', () => {
-          if (this._replayDone || this._pty?.started) {
-            this._replayDone = false;
-            this.emit('status', 'disconnected');
-          }
-        });
-        cm.on('on_reconnected', () => {
-          if (this.status === ShellStatus.ERROR) return;
-          if (!this._hasEverBeenActive) return;
-          const workdir = this.workdir ?? dataContext.project?.fs_storage_mount_path ?? undefined;
-          void this.startPty({ cols: 80, rows: 24, workdir });
-        });
-      });
+    if (!_shellRegistry.has(this)) {
+      _shellRegistry.add(this);
+      _ensureStaticListeners();
     }
 
     if (force) {
@@ -407,7 +412,24 @@ export class Shell extends APIEntity<Shell> implements IShell {
     }
   }
 
+  /** Called by the static on_close dispatcher. */
+  _onCmClose(): void {
+    if (this._replayDone || this._pty?.started) {
+      this._replayDone = false;
+      this.emit('status', 'disconnected');
+    }
+  }
+
+  /** Called by the static on_reconnected dispatcher. */
+  _onCmReconnected(): void {
+    if (this.status === ShellStatus.ERROR) return;
+    if (!this._hasEverBeenActive) return;
+    const workdir = this.workdir ?? dataContext.project?.fs_storage_mount_path ?? undefined;
+    void this.startPty({ cols: 80, rows: 24, workdir });
+  }
+
   async close(): Promise<void> {
+    _shellRegistry.delete(this);
     const previousStatus = this.status;
     this.status = ShellStatus.CLOSING;
     const action = new ActionInfo('close', Shell.type, this.id, 'POST');

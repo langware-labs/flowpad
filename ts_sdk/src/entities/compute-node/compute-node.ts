@@ -120,7 +120,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * ```typescript
    * const computeNode = await ComputeNode.getLocal();
    * const process = await computeNode.createProcess({ workdir: '/path' });
-   * await process.open();
+   * await process.start();
    * ```
    */
   async createProcess(
@@ -156,7 +156,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   /**
    * Find or create an AgenticProcess for a given Claude Code session ID.
    *
-   * If a process with matching worker_session_id exists, returns it.
+   * If a process with matching session_id exists, returns it.
    * Otherwise creates a new AgenticProcess with the session ID pre-set
    * so the session viewer can load JSONL history.
    *
@@ -177,7 +177,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
 
     const response = await dataManager.callAction<
       void,
-      { id: string; type: string; worker_session_id: string; created: boolean }
+      { id: string; type: string; session_id: string; created: boolean }
     >(action);
 
     return { processId: response.id, created: response.created };

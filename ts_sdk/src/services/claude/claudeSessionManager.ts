@@ -1,22 +1,11 @@
 import { EventEmitter } from 'events';
-import { ClaudeSessionEvent } from './claudeSessionEvents';
 
 import type { AgenticProcess } from '../../agentic_processor/agentic-process';
 import type { AgenticContext } from '../../agentic_processor/agentic-context';
-import { Shell } from '../../entities/shell';
-
-/**
- * Result of opening an AgenticProcess shell session (fresh start, resume, or no-op).
- */
-export interface AgenticProcessOpenResult {
-  shellId: string;
-  workerSessionId: string;
-}
 
 /**
  * ClaudeSessionManager — Singleton coordinator for Claude session lifecycle.
  *
- *  - restartSession — stop + reopen in a new shell, re-attach terminal (canonical "restart" for toolbar)
  *  - forkSession    — sibling process with same context_data, fresh session
  *  - createAndStartSession — create processor + process + open PTY in one step
  */
@@ -49,50 +38,6 @@ export class ClaudeSessionManager extends EventEmitter {
     }
   }
 
-  // ── Lifecycle ─────────────────────────────────────────────────────────────
-
-  /**
-   * Restart: stop existing shell, reopen in a new shell, re-attach the
-   * WebSocket connection so the terminal receives output in-place.
-   *
-   * This is the canonical "restart" used by ProcessToolbar.  Call this after
-   * saving updated context_data so the new shell picks up the latest flags.
-   */
-  async restartSession(process: AgenticProcess): Promise<AgenticProcessOpenResult> {
-    const oldShellId = process.shell_id;
-
-    if (oldShellId) {
-      await process.stop();
-    }
-
-    const result = await process.open();
-
-    // Swap the old tab's session ID to the new one so it stays in place.
-    if (oldShellId && oldShellId !== result.shellId) {
-      const { dataContext } = await import('../..');
-      dataContext.computeNode?.rekeySession(oldShellId, result.shellId);
-      // Update active shell pointer so the tab stays active — without this
-      // the new shell's connect() defers (active=false) and the terminal is blank.
-      dataContext.setActiveShellId(result.shellId);
-    }
-
-    // Emit RESTARTED first so the terminal clears before replay data arrives.
-    this.emit(ClaudeSessionEvent.SESSION_RESTARTED, { process, result });
-
-    // Re-attach the WebSocket connection to the (re)created shell session
-    // so the terminal receives output from the restarted session.
-    try {
-      const shell = await Shell.getById<Shell>(result.shellId);
-      if (shell) {
-        await shell.startPty({ cols: 80, rows: 24, force: true });
-      }
-    } catch (err) {
-      console.warn('[ClaudeSessionManager] shell.startPty() failed after restart — terminal may need manual refresh', err);
-    }
-  
-    return result;
-  }
-
   /**
    * Fork: create a sibling AgenticProcess that resumes from the source
    * session's conversation history but diverges into a new session ID.
@@ -112,7 +57,7 @@ export class ClaudeSessionManager extends EventEmitter {
       permissionMode: (ctx.permission_mode as AgenticContext['permissionMode']) || undefined,
       chrome: (ctx.chrome as boolean) || undefined,
       agentsJson: (ctx.agents_json as Record<string, Record<string, unknown>>) || undefined,
-      resumeSessionId: process.worker_session_id || undefined,
+      resumeSessionId: process.session_id || undefined,
       forkSession: true,
     };
 
@@ -124,7 +69,7 @@ export class ClaudeSessionManager extends EventEmitter {
     const newProcess = await computeNode.createProcess(context, { visible: true });
 
     // Start shell — backend will use --resume <source_id> --fork-session
-    await newProcess.open();
+    await newProcess.start();
 
     return newProcess;
   }
@@ -145,7 +90,7 @@ export class ClaudeSessionManager extends EventEmitter {
     if (!computeNode) throw new Error('No compute node available');
 
     const process = await computeNode.createProcess(context);
-    await process.open(options);
+    await process.start(options);
     return process;
   }
 }

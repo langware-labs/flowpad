@@ -7,9 +7,12 @@ from flow_sdk.builtin.agentic_process._shared import (
     ContextData,
     CreateProcessRequest,
     ExecuteRequest,
+    ProcessError,
     ProcessResultRequest,
     RunFileRequest,
     RunRequest,
+    RunResult,
+    StreamEvent,
 )
 from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 
@@ -23,4 +26,7 @@ __all__ = [
     "ExecuteRequest",
     "CreateProcessRequest",
     "ProcessResultRequest",
+    "RunResult",
+    "StreamEvent",
+    "ProcessError",
 ]

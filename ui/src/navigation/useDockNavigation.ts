@@ -42,11 +42,6 @@ export function useDockNavigation(): UseDockNavigationReturn {
   const params = useParams<{ agentId: string; processId: string; viewType?: string; pointer?: string; '*'?: string }>();
   const [searchParams] = useSearchParams();
 
-  // Create navigation instance - uses relative navigation from current URL
-  const navigation = useMemo(() => {
-    return new NavigationActions(navigate);
-  }, [navigate]);
-
   // Parse current dock state from URL
   const currentDock = useMemo(() => {
     if (params.viewType) {
@@ -68,6 +63,9 @@ export function useDockNavigation(): UseDockNavigationReturn {
     }
     return null;
   }, [location.pathname, params.viewType, params.pointer, searchParams]);
+
+  // Create navigation instance with currentDock so openDock() can deduplicate
+  const navigation = useMemo(() => new NavigationActions(navigate, currentDock), [navigate, currentDock]);
 
   const isDockUrl = currentDock !== null;
 

@@ -44,7 +44,7 @@ async def test_execute_plan_success(bootstrapped_client, user):
     # Create a process
     process = AgenticProcess(
         name="test-process-execute",
-        worker_session_id=str(uuid.uuid4()),
+        session_id=str(uuid.uuid4()),
     )
     await process.save(user.typeid)
 
@@ -75,7 +75,7 @@ async def test_execute_plan_with_clear_context(bootstrapped_client, user):
 
     process = AgenticProcess(
         name="test-process-clear",
-        worker_session_id=str(uuid.uuid4()),
+        session_id=str(uuid.uuid4()),
     )
     await process.save(user.typeid)
 
@@ -103,7 +103,7 @@ async def test_execute_plan_nonexistent_file_path(bootstrapped_client, user):
 
     process = AgenticProcess(
         name="test-process-nonexistent",
-        worker_session_id=str(uuid.uuid4()),
+        session_id=str(uuid.uuid4()),
     )
     await process.save(user.typeid)
 
@@ -128,7 +128,7 @@ async def test_execute_plan_with_valid_content(bootstrapped_client, user):
 
     process = AgenticProcess(
         name="test-process-valid",
-        worker_session_id=str(uuid.uuid4()),
+        session_id=str(uuid.uuid4()),
     )
     await process.save(user.typeid)
 
@@ -161,7 +161,7 @@ async def test_update_plan_success(bootstrapped_client, user):
 
     process = AgenticProcess(
         name="test-process-update",
-        worker_session_id=str(uuid.uuid4()),
+        session_id=str(uuid.uuid4()),
     )
     await process.save(user.typeid)
 
@@ -195,7 +195,7 @@ async def test_update_plan_without_notes(bootstrapped_client, user):
 
     process = AgenticProcess(
         name="test-process-update-no-notes",
-        worker_session_id=str(uuid.uuid4()),
+        session_id=str(uuid.uuid4()),
     )
     await process.save(user.typeid)
 
@@ -223,7 +223,7 @@ async def test_update_plan_missing_file(bootstrapped_client, user):
 
     process = AgenticProcess(
         name="test-process-update-missing",
-        worker_session_id=str(uuid.uuid4()),
+        session_id=str(uuid.uuid4()),
     )
     await process.save(user.typeid)
 
@@ -248,7 +248,7 @@ async def test_update_plan_with_multiple_notes(bootstrapped_client, user):
 
     process = AgenticProcess(
         name="test-process-update-multi",
-        worker_session_id=str(uuid.uuid4()),
+        session_id=str(uuid.uuid4()),
     )
     await process.save(user.typeid)
 

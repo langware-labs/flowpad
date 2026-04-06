@@ -89,7 +89,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
     // Before open: no shell
     expect(process.shell_id).toBeFalsy();
 
-    await process.open();
+    await process.start();
     const shellId = process.shell_id;
     expect(shellId).toBeTruthy();
 
@@ -109,7 +109,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
     // Idle before PTY
     expect(process.resolvedStatus).toBe(ProcessorStatus.IDLE);
 
-    await process.open();
+    await process.start();
 
     // After open(), is_active may be set by WS; resolvedStatus returns the actual status
     // (ghost-running correction: if running+is_active=false → idle)
@@ -123,7 +123,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
       model: 'claude-haiku-4-5-20251001',
     });
     const process = await createIdleProcess();
-    await process.open();
+    await process.start();
     const shellId = process.shell_id;
 
     const typeId = new TypeId(Shell.type, shellId!);
@@ -151,7 +151,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
       model: 'claude-haiku-4-5-20251001',
     });
     const process = await createIdleProcess();
-    await process.open();
+    await process.start();
     const shellId = process.shell_id;
 
     const typeId = new TypeId(Shell.type, shellId!);
@@ -211,9 +211,9 @@ describe.skip('AgenticProcess restore from DB — integration', () => {
       model: 'claude-haiku-4-5-20251001',
     });
     const process = await createIdleProcess();
-    await process.open();
+    await process.start();
     const shellId = process.shell_id;
-    const workerSessionId = process.worker_session_id;
+    const workerSessionId = process.session_id;
     const processId = process.id;
 
     expect(shellId).toBeTruthy();
@@ -227,10 +227,10 @@ describe.skip('AgenticProcess restore from DB — integration', () => {
     const typeId = new TypeId(AgenticProcess.type, processId);
     const restoredProcess = await dataManager.getByTypeId<AgenticProcess>(typeId);
     expect(restoredProcess).not.toBeNull();
-    expect(restoredProcess!.worker_session_id).toBe(workerSessionId);
+    expect(restoredProcess!.session_id).toBe(workerSessionId);
 
-    // 4. Reopen on restored process — open() resumes the Claude session
-    await restoredProcess!.open();
+    // 4. Reopen on restored process — start() resumes the Claude session
+    await restoredProcess!.start();
     const newShellId = restoredProcess!.shell_id;
     expect(newShellId).toBeTruthy();
 

@@ -10,19 +10,19 @@
 
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
-import { FlowData } from '../flow_processing';
+import { ClaudeCliOptions } from '../cli_workers';
 import { FlowDataFactory } from '../entities/flow/flow-data-factory';
+import { Shell, ShellStatus } from '../entities/shell';
+import { FlowData } from '../flow_processing';
 import { FlowElementTypes } from '../flow_processing/flow-element-types';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
+import { InstructionFile } from '../models/workflow/InstructionFile';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
-import { isProcessorRunning, ProcessorStatus } from './agentic-types';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
-import { InstructionFile } from '../models/workflow/InstructionFile';
-import { Shell, ShellStatus } from '../entities/shell';
-import { ClaudeCliOptions } from '../cli_workers';
+import { isProcessorRunning, ProcessorStatus } from './agentic-types';
 
 /**
  * Result returned by AgenticProcess.spawn().
@@ -68,7 +68,7 @@ interface HistoryResponse {
     focus?: string;
   }>;
   count: number;
-  worker_session_id: string | null;
+  session_id: string | null;
   use_worker_history: boolean;
 }
 
@@ -83,7 +83,7 @@ export interface IAgenticProcess extends IEntity {
   context_data?: Record<string, unknown>;
   favorite_index?: number | null;
   status?: string;
-  worker_session_id?: string | null;
+  session_id?: string | null;
   use_worker_history?: boolean;
   /** Shell entity ID linked to this process */
   shell_id?: string | null;
@@ -93,7 +93,7 @@ export interface IAgenticProcess extends IEntity {
   sidecar_shell_id?: string | null;
   /** Backend TTL live field: true if a PTY session is actually alive (30s TTL) */
   is_active?: boolean;
-  /** Serialized CLI command config (WorkerCliOptions.toJson()) */
+  /** @internal — use AgenticProcess.cliOptions getter/setter instead */
   cli_config?: Record<string, any>;
   /** Extra directories passed to Claude via --add-dir */
   additional_dirs?: string[];
@@ -194,10 +194,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * await process.executeInstruction('...', { sync: false });
    * ```
    */
-  static async spawn(
-    options: IAgenticProcessOptions,
-    workerOptions?: ISpawnWorkerOptions,
-  ): Promise<SpawnResult> {
+  static async spawn(options: IAgenticProcessOptions, workerOptions?: ISpawnWorkerOptions): Promise<SpawnResult> {
     const cliConfig = new ClaudeCliOptions({
       model: options.model,
       permission_mode: options.permissionMode ?? 'bypassPermissions',
@@ -219,9 +216,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         instructions: options.instructions,
         project_id: options.projectId,
         max_thinking_tokens: options.maxThinkingTokens ?? 1024,
-        ...(options.resumeSessionId && !options.forkSession
-          ? { resume_session_id: options.resumeSessionId }
-          : {}),
+        ...(options.resumeSessionId && !options.forkSession ? { resume_session_id: options.resumeSessionId } : {}),
       },
       workdir: options.workdir,
       visible: workerOptions?.visible,
@@ -238,11 +233,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       return { process, workerSessionId: workerOptions.workerSessionId };
     }
 
-    await process.open({
+    await process.start({
       instruction: workerOptions?.instruction,
       ptyTimeout: workerOptions?.ptyTimeout,
     });
-    return { process, shell: await process.getShell(), workerSessionId: process.worker_session_id };
+    return { process, shell: await process.shell(), workerSessionId: process.session_id };
   }
 
   /**
@@ -296,15 +291,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /**
    * Find or create an AgenticProcess by worker session ID.
    * Uses upsertSessionProcess — returns the existing process if one already
-   * has this worker_session_id, otherwise creates a new one.
+   * has this session_id, otherwise creates a new one.
    *
    * @param workerType - 'claude' (reserved for future worker types)
    * @param sessionId  - The Claude CLI session UUID
    */
-  static async fromWorkerSessionId(
-    workerType: 'claude',
-    sessionId: string,
-  ): Promise<AgenticProcess> {
+  static async fromWorkerSessionId(workerType: 'claude', sessionId: string): Promise<AgenticProcess> {
     return AgenticProcess.open(sessionId);
   }
 
@@ -312,28 +304,26 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Open (or create) an AgenticProcess for a Record and ensure it has a live PTY.
    *
    * If an entity already exists for the given record ID it is reused;
-   * otherwise a new AgenticProcess is created from the record's worker_session_id.
-   * open() is called to spawn or reuse a PTY (idempotent).
+   * otherwise a new AgenticProcess is created from the record's session_id.
+   * start() is called to spawn or reuse a PTY (idempotent).
    *
-   * @param record - Object with `id` and optional `worker_session_id`
+   * @param record - Object with `id` and optional `session_id`
    * @returns AgenticProcess with an active shell session
    */
-  static async openRecordInTerminal(
-    record: { id: string; worker_session_id?: string | null },
-  ): Promise<AgenticProcess> {
+  static async openRecordInTerminal(record: { id: string; session_id?: string | null }): Promise<AgenticProcess> {
     let entity = await AgenticProcess.getById(record.id).catch(() => null);
 
-    if (!entity && record.worker_session_id) {
-      entity = new AgenticProcess({ worker_session_id: record.worker_session_id });
+    if (!entity && record.session_id) {
+      entity = new AgenticProcess({ session_id: record.session_id });
       await entity.save();
     }
 
     if (!entity) {
-      throw new Error('Cannot open terminal: no worker_session_id on Record');
+      throw new Error('Cannot open terminal: no session_id on Record');
     }
 
-    // open() is idempotent: no-op if PTY alive, restarts with claude --resume if stale.
-    await entity.open();
+    // start() is idempotent: no-op if PTY alive, restarts with claude --resume if stale.
+    await entity.start();
 
     return entity;
   }
@@ -341,7 +331,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /**
    * Get or create an AgenticProcess linked to a Claude CLI session.
    * Resolves the session's working directory from ClaudeSessionRecord if not provided.
-   * Sets worker_session_id so the process can be resumed via open().
+   * Sets session_id so the process can be resumed via start().
    *
    * @param sessionId - The Claude CLI session UUID
    * @param cwd - Optional working directory (resolved from session record if omitted)
@@ -357,9 +347,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     // returned immediately without needing workdir at all.
     let resolvedCwd = cwd;
     if (!resolvedCwd) {
-      const { ClaudeSessionRecord } = await import(
-        '../resource_management/fs_records/claude/claude-session.js'
-      );
+      const { ClaudeSessionRecord } = await import('../resource_management/fs_records/claude/claude-session.js');
       const record = await ClaudeSessionRecord.discover(sessionId).catch(() => null);
       resolvedCwd = record?.cwd ?? undefined;
     }
@@ -400,11 +388,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   get searchDockPointer(): DockPointerData {
-    if (this.worker_session_id && this.project_encoded_name) {
-      return new DockPointerData(
-        ViewType.LENS,
-        `claude/transcript/${this.project_encoded_name}/${this.worker_session_id}`,
-      );
+    if (this.session_id && this.project_encoded_name) {
+      return new DockPointerData(ViewType.LENS, `claude/transcript/${this.project_encoded_name}/${this.session_id}`);
     }
     return this.dockPointer;
   }
@@ -428,7 +413,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   status: ProcessorStatus;
 
   /** Worker session ID for resume capability */
-  worker_session_id?: string | null;
+  session_id?: string | null;
 
   /** Encoded project path for transcript navigation */
   project_encoded_name?: string | null;
@@ -458,7 +443,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   get cliOptions(): ClaudeCliOptions {
     const cmd = ClaudeCliOptions.fromJson(this.cli_config ?? {});
-    if (this.worker_session_id) cmd.session_id = this.worker_session_id;
+    if (this.session_id) cmd.session_id = this.session_id;
     const wd = this.workdir;
     if (wd) {
       cmd.workdir = wd;
@@ -468,19 +453,23 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return cmd;
   }
 
+  set cliOptions(cmd: ClaudeCliOptions) {
+    this.cli_config = cmd.toJson();
+  }
+
   /** Append a directory to additional_dirs (passed to Claude via --add-dir). */
   async addDir(path: string): Promise<void> {
     await this.callAction('add-dir', { path });
     this.additional_dirs = [...(this.additional_dirs ?? []), path];
   }
 
-  async getShell(): Promise<Shell | null> {
+  async shell(): Promise<Shell | null> {
     if (!this.shell_id) return null;
     const { Shell } = await import('../entities/shell');
     return Shell.getById(this.shell_id);
   }
 
-/** Resolved execution status — ghost-running (any busy state + is_active=false) corrected to idle. */
+  /** Resolved execution status — ghost-running (any busy state + is_active=false) corrected to idle. */
   get resolvedStatus(): ProcessorStatus {
     const raw = this.status ?? ProcessorStatus.IDLE;
     if (isProcessorRunning(raw) && !this.is_active) {
@@ -511,7 +500,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.context_data = entity.context_data;
     this.favorite_index = entity.favorite_index;
     this.status = (entity.status as ProcessorStatus) ?? ProcessorStatus.IDLE;
-    this.worker_session_id = entity.worker_session_id;
+    this.session_id = entity.session_id;
     this.use_worker_history = entity.use_worker_history;
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;
@@ -742,12 +731,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         const response = await dataManager.callAction<void, HistoryResponse>(actionInfo);
 
         if (!response || !response.history) {
-          console.warn(`[AgenticProcess] No history returned for process ${this.id}`);
           return;
         }
 
         // Update session info
-        this.worker_session_id = response.worker_session_id;
+        this.session_id = response.session_id;
         this.use_worker_history = response.use_worker_history;
 
         // Convert history items to FlowData and append to stream
@@ -816,12 +804,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Wait for process completion.
+   * Wait for process completion (complete or error event).
    *
    * @returns Promise that resolves when execution completes
    * @throws Error if execution fails
    */
-  async wait(): Promise<void> {
+  async waitForComplete(): Promise<void> {
     if (this._completed) {
       if (this._error) throw this._error;
       return;
@@ -867,10 +855,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * // Async execution - returns immediately
    * await process.execute("Do something long", { sync: false });
    * // ... do other work ...
-   * await process.waitForIdle();
+   * await process.wait();
    * ```
    */
-  async executeInstruction(instruction: string, options: { sync?: boolean; workerSessionId?: string } = {}): Promise<void> {
+  async executeInstruction(
+    instruction: string,
+    options: { sync?: boolean; workerSessionId?: string } = {},
+  ): Promise<void> {
     const { sync = true, workerSessionId } = options;
 
     if (this.status === ProcessorStatus.INTERRUPTED) {
@@ -950,7 +941,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    *
    * Use this after async execute() calls to wait for completion.
    */
-  async waitForIdle(): Promise<void> {
+  async wait(): Promise<void> {
     if (this.status === ProcessorStatus.IDLE) {
       return;
     }
@@ -1019,33 +1010,40 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     // Update local state
     this.status = ProcessorStatus.INTERRUPTED;
     this._markComplete();
+
+    // Dispose the frontend PTY client. The backend already cleaned up the PTY
+    // session as part of exit; shell.close() disposes _pty and handles the
+    // expected 404 gracefully.
+    if (this.shell_id) {
+      const shell = Shell.getByIdFromCache(this.shell_id);
+      if (shell) await shell.close().catch(() => {});
+    }
   }
 
   // ============ Shell Lifecycle API ============
 
   /**
-   * Open (start or reopen) this AgenticProcess.
+   * Start (or reopen) this AgenticProcess.
    *
    * Calls the backend `open` action which builds the full claude command
    * server-side and opens a Shell-owned PTY. Handles all cases:
-   * fresh open, reopen after restart (resumes Claude), or no-op if PTY alive.
+   * fresh start, reopen after restart (resumes Claude), or no-op if PTY alive.
    *
    * @param options - Optional instruction to execute
-   * @returns Shell session ID and worker session ID
+   * @returns Shell session ID and session ID
    */
-  async open(options?: { instruction?: string; visible?: boolean; ptyTimeout?: number }): Promise<boolean> {
+  async start(options?: { instruction?: string; visible?: boolean; ptyTimeout?: number }): Promise<boolean> {
     const { Shell } = await import('../entities/shell');
     const actionInfo = new ActionInfo('open', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = options ?? {};
     const result = await dataManager.callAction<
       unknown,
-      { shell_id: string; worker_session_id: string; shell: Record<string, unknown> } | null
+      { shell_id: string; session_id: string; shell: Record<string, unknown> } | null
     >(actionInfo);
     if (!result) throw new Error('Process could not be opened (process may be terminated)');
     this.shell_id = result.shell_id;
-    this.worker_session_id = result.worker_session_id;
+    this.session_id = result.session_id;
     dataManager.updateEntityFromJson(result.shell);
-    dataManager.notifyEntityChanged(this);
     const shell = await dataManager.getByTypeId<Shell>(new TypeId(Shell.type, result.shell_id));
     if (!shell) throw new Error(`Shell ${result.shell_id} not found after start()`);
     await shell.startPty({ cols: 80, rows: 24, timeout: options?.ptyTimeout });
@@ -1055,13 +1053,23 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /**
    * Stop the current shell session.
    *
-   * Delegates to Shell.close() for PTY teardown. The worker_session_id is
-   * preserved so the process can be resumed later via open().
+   * Delegates to Shell.close() for PTY teardown. The session_id is
+   * preserved so the process can be resumed later via start().
    */
   async stop(): Promise<void> {
     const actionInfo = new ActionInfo('stop', AgenticProcess.type, this.id, 'POST');
     await dataManager.callAction(actionInfo);
     this.shell_id = null;
+  }
+
+  /**
+   * Stop the current shell session and start a new one, preserving session history.
+   * Emits 'restarted' so the terminal can clear and re-attach.
+   */
+  async restart(): Promise<void> {
+    if (this.shell_id) await this.stop();
+    await this.start();
+    this.emit('restarted', { process: this });
   }
 
   /**
