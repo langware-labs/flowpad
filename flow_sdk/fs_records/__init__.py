@@ -13,6 +13,7 @@ from .agent_status import is_terminal as is_terminal
 from .agentic_process_record import AgenticProcessStatus as ProcessorStatus  # backward compat
 from .artifact import Artifact as Artifact
 from .markdown_record import MarkdownRecord as MarkdownRecord
+from . import asset_record as _asset_record  # noqa: F401 — trigger "asset" type_registry
 from .markdown_record import MarkdownRecord as AssetRecord  # noqa: F401 — backward compat alias
 from .annotation_record import AnnotationRecord as AnnotationRecord
 from .bookmark import BookmarkRecord as BookmarkRecord

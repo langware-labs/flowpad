@@ -127,8 +127,19 @@ def _register_project_asset_dirs() -> None:
     appended to FLOWPAD_SKILL_DIRS / FLOWPAD_AGENT_DIRS (colon-separated).
     """
     from pathlib import Path
-    cwd = Path.cwd()
-    for env_var, subdir in [("FLOWPAD_SKILL_DIRS", ".claude/skills"), ("FLOWPAD_AGENT_DIRS", ".claude/agents")]:
+    # Derive repo root from __file__ (flow_sdk/server/run.py → 3 levels up)
+    # This is reliable regardless of how/where the server is invoked.
+    # TODO find a better solution
+    cwd = Path(__file__).resolve().parent.parent.parent
+    candidates = [
+        ("FLOWPAD_SKILL_DIRS", ".claude/skills"),
+        ("FLOWPAD_AGENT_DIRS", ".claude/agents"),
+        ("FLOWPAD_DOC_DIRS", ".claude/docs"),
+        ("FLOWPAD_DOC_DIRS", "docs"),
+        ("FLOWPAD_PLAN_DIRS", ".claude/plans"),
+        ("FLOWPAD_WORKFLOW_DIRS", ".claude/workflows"),
+    ]
+    for env_var, subdir in candidates:
         candidate = cwd / subdir
         if candidate.is_dir():
             existing = os.environ.get(env_var, "")
