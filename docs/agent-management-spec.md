@@ -1,6 +1,6 @@
 # Agent Management Specification
 
-Complete reference for the `AgenticProcessor` / `AgenticProcess` system: entity hierarchy, execution models, lifecycle, session management, status tracking, and frontend integration.
+Complete reference for the `AgenticProcess` system: execution models, lifecycle, session management, status tracking, and frontend integration.
 
 ---
 
@@ -21,23 +21,13 @@ Complete reference for the `AgenticProcessor` / `AgenticProcess` system: entity 
 
 ---
 
-## 1. Entity Hierarchy
-
-```
-AgenticProcessor          (parent — manages a pool of processes)
-  └── AgenticProcess      (child — one Claude execution session)
-```
-
-**AgenticProcessor** (`agentic_processor`):
-- Created once per workspace/user session.
-- Has an `active_process_id` pointing to the most recently launched process.
-- Provides factory methods: `run()`, `execute()`, `createProcess()`.
-- The `@local` processor is the default for the desktop.
+## 1. Entity
 
 **AgenticProcess** (`agentic_process`):
-- Represents one Claude Code execution.
+- Represents one Claude Code execution session.
+- Created via `ComputeNode.createProcess(context)` — `compute_node_id` is the ownership link.
 - Has two representations:
-  - **Entity** (`flow_sdk/builtin/agentic_processor.py`) — SQLite-backed, survives server restart.
+  - **Entity** (`flow_sdk/builtin/agentic_process/agentic_process.py`) — SQLite-backed, survives server restart.
   - **Record** (`flow_sdk/fs_records/agentic_process.py`) — filesystem snapshot, lightweight.
 - Carries `worker_session_id` → the bridge to the JSONL transcript on disk.
 

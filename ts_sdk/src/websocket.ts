@@ -181,9 +181,13 @@ export class ConnectionManager extends EventEmitter {
 
   // Reconnect state
   private reconnectAttempts: number = 0;
-  private maxReconnectAttempts: number = 10;
   private baseReconnectDelay: number = 500; // ms
   private isReconnecting: boolean = false;
+
+  public resetReconnectState() {
+    this.reconnectAttempts = 0;
+    this.isReconnecting = false;
+  }
 
   constructor() {
     super();
@@ -263,41 +267,36 @@ export class ConnectionManager extends EventEmitter {
   }
 
   /**
-   * Reconnect with exponential backoff
+   * Reconnect with exponential backoff. Retries indefinitely — no hard cap.
+   * Uses setTimeout instead of recursive await to avoid growing the Promise chain
+   * (which was a memory leak when the server was down for a long time).
    */
   private async reconnect(): Promise<void> {
     if (this.isReconnecting) {
-      console.warn('[ConnectionManager] Reconnect already in progress');
       return;
     }
 
     this.isReconnecting = true;
+    this.reconnectAttempts++;
+
+    const delay =
+      Math.min(this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts - 1), 10000) + // Max 10 seconds
+      Math.random() * 1000; // Add jitter
+
+    console.log(`[ConnectionManager] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
+    await new Promise((resolve) => setTimeout(resolve, delay));
 
     try {
-      if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-        console.error('[ConnectionManager] Max reconnect attempts reached');
-        this.emit('on_reconnect_failed');
-        this.isReconnecting = false;
-        return;
-      }
-
-      this.reconnectAttempts++;
-      const delay =
-        Math.min(this.baseReconnectDelay * Math.pow(2, this.reconnectAttempts - 1), 10000) + // Max 10 seconds
-        Math.random() * 1000; // Add jitter
-
-      console.log(`[ConnectionManager] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
-      await new Promise((resolve) => setTimeout(resolve, delay));
-
       await this.connect();
-      this.reconnectAttempts = 0; // Reset on success
+      this.reconnectAttempts = 0;
       this.isReconnecting = false;
       this.emit('on_reconnected');
       console.log('[ConnectionManager] Reconnected successfully');
     } catch (error) {
       console.error('[ConnectionManager] Reconnect failed:', error);
       this.isReconnecting = false;
-      await this.reconnect(); // Try again
+      // Schedule next attempt without recursive await (avoids Promise chain memory leak)
+      setTimeout(() => void this.reconnect(), 0);
     }
   }
 

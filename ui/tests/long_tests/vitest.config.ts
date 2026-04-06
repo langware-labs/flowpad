@@ -13,7 +13,8 @@ export default mergeConfig(
     test: {
       testTimeout: 240000, // 4 min — real Claude subprocess tests
       hookTimeout: 15000,
-      exclude: [],
+      include: ['tests/long_tests/**/*.test.{ts,tsx}', 'tests/api/**/*.test.{ts,tsx}'],
+      exclude: ['**/node_modules/**'],
       pool: 'threads',
       poolOptions: {
         threads: {

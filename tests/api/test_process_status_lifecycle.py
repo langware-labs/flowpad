@@ -21,26 +21,15 @@ def _get_default_compute_node_id(bootstrap_payload: dict) -> str:
     return bootstrap_payload["data"]["default_compute_node"]["id"]
 
 
-async def _create_process(client, compute_node_id: str) -> tuple[str, str]:
-    """Create a processor + process, return (processor_id, process_id)."""
+async def _create_process(client, compute_node_id: str) -> tuple[None, str]:
+    """Create a process directly on the compute node, return (None, process_id)."""
     resp = await client.post(
-        "/api/v1/graph/agentic_processor",
-        json={"name": "test-status-processor"},
-    )
-    assert resp.status_code == 200, resp.text
-    processor_id = ApiResponse(**resp.json()).data["id"]
-
-    resp = await client.post(
-        "/api/v1/graph/agentic_process",
-        json={
-            "processor_id": processor_id,
-            "compute_node_id": f"compute_node-{compute_node_id}",
-            "context_data": {"compute_node_id": f"compute_node-{compute_node_id}"},
-        },
+        f"/api/v1/graph/compute_node/{compute_node_id}/createProcess",
+        json={"context": {"compute_node_id": f"compute_node-{compute_node_id}"}},
     )
     assert resp.status_code == 200, resp.text
     process_id = ApiResponse(**resp.json()).data["id"]
-    return processor_id, process_id
+    return None, process_id
 
 
 async def _get_process_status(client, process_id: str) -> str:
@@ -48,7 +37,7 @@ async def _get_process_status(client, process_id: str) -> str:
     resp = await client.get(f"/api/v1/graph/agentic_process/{process_id}")
     assert resp.status_code == 200, resp.text
     entity = ApiResponse(**resp.json()).data
-    return (entity.get("state") or {}).get("status", "unknown")
+    return entity.get("status", "unknown")
 
 
 @pytest.mark.asyncio
@@ -64,7 +53,7 @@ async def test_process_status_idle_on_create(bootstrapped_client):
 
 
 @pytest.mark.asyncio
-async def test_process_status_after_start_pty(bootstrapped_client):
+async def test_process_status_after_start(bootstrapped_client):
     """After start, process status depends on transcript state."""
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     compute_node_id = _get_default_compute_node_id(bootstrap.json())
@@ -87,7 +76,7 @@ async def test_process_status_after_start_pty(bootstrapped_client):
 
     # Clean up
     await bootstrapped_client.post(
-        f"/api/v1/graph/agentic_process/{process_id}/stop",
+        f"/api/v1/graph/agentic_process/{process_id}/exit",
         json={},
     )
     await asyncio.sleep(0.5)
@@ -112,12 +101,12 @@ async def test_process_status_after_kill_pty(bootstrapped_client):
 
     # Stop shell
     resp = await bootstrapped_client.post(
-        f"/api/v1/graph/agentic_process/{process_id}/stop",
+        f"/api/v1/graph/agentic_process/{process_id}/exit",
         json={},
     )
     assert resp.status_code == 200, resp.text
     stop_result = ApiResponse(**resp.json())
-    assert stop_result.status == "SUCCESS", f"stop failed: {stop_result.message}"
+    assert stop_result.status == "SUCCESS", f"exit failed: {stop_result.message}"
 
     await asyncio.sleep(0.5)
 
@@ -150,16 +139,16 @@ async def test_process_status_full_lifecycle(bootstrapped_client):
     status = await _get_process_status(bootstrapped_client, process_id)
     assert status in ("idle", "null", "empty", "waiting", "thinking", "tool_call", "tool_running", "running", "complete", "inactive"), f"Step 2: Expected transcript-derived status, got {status}"
 
-    # Verify worker_session_id and shell_id are set
+    # Verify session_id and shell_id are set
     resp = await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{process_id}")
     entity = ApiResponse(**resp.json()).data
-    assert entity.get("worker_session_id"), "worker_session_id should be set while running"
+    assert entity.get("session_id"), "session_id should be set while running"
     assert entity.get("shell_id"), "shell_id should be set while running"
-    worker_sid = entity["worker_session_id"]
+    worker_sid = entity["session_id"]
 
     # 3. Stop shell → status still from transcript
     resp = await bootstrapped_client.post(
-        f"/api/v1/graph/agentic_process/{process_id}/stop",
+        f"/api/v1/graph/agentic_process/{process_id}/exit",
         json={},
     )
     assert resp.status_code == 200, resp.text
@@ -169,11 +158,11 @@ async def test_process_status_full_lifecycle(bootstrapped_client):
     status = await _get_process_status(bootstrapped_client, process_id)
     assert status in ("idle", "null", "empty", "waiting", "thinking", "tool_call", "tool_running", "running", "complete", "inactive"), f"Step 3: Expected transcript-derived status, got {status}"
 
-    # Verify worker_session_id preserved, shell_id cleared
+    # Verify session_id preserved, shell_id cleared
     resp = await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{process_id}")
     entity = ApiResponse(**resp.json()).data
-    assert entity.get("worker_session_id") == worker_sid, "worker_session_id should be preserved after stop"
-    assert entity.get("shell_id") is None, "shell_id should be cleared after stop"
+    assert entity.get("session_id") == worker_sid, "session_id should be preserved after exit"
+    assert entity.get("shell_id"), "shell_id should still be set after exit (shell entity kept alive)"
 
 
 @pytest.mark.asyncio

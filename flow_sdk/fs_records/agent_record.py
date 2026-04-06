@@ -22,8 +22,9 @@ from flow_sdk.fs_store.record import Scope, _META_JSON
 def _agent_search_dirs() -> list[Path]:
     """Return directories to scan for agent .md files.
 
-    Scans user-level (~/.claude/agents) and the cwd/.claude/agents if present
-    (covers project-level agents when the server runs from the project dir).
+    Scans user-level (~/.claude/agents), all known Claude projects
+    (<project>/.claude/agents), cwd-level, and any extra dirs from
+    FLOWPAD_AGENT_DIRS (colon-separated).
     """
     import os
     dirs: list[Path] = []
@@ -36,6 +37,11 @@ def _agent_search_dirs() -> list[Path]:
             dirs.append(p)
 
     _add(Path.home() / ".claude" / "agents")
+
+    from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
+    for real in iter_claude_project_paths():
+        _add(real / ".claude" / "agents")
+
     _add(Path(os.getcwd()) / ".claude" / "agents")
 
     for extra in os.environ.get("FLOWPAD_AGENT_DIRS", "").split(":"):
@@ -391,7 +397,7 @@ class AgentRecord(Record):
         """Load from system_assets/agents/<name>/."""
         import flow_sdk
 
-        source = Path(flow_sdk.__file__).parent / "system_assets" / "agents" / name
+        source = Path(flow_sdk.__file__).parent / "system_assets" / "available" / "agents" / name
         if source.is_dir():
             return AgentRecord.load_from_dir(source)
         # Also check workspace

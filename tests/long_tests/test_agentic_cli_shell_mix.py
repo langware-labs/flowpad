@@ -50,7 +50,7 @@ def _merge_tabs(shells: list[dict], processes: list[dict]) -> list[dict]:
     """
     active_procs = [
         p for p in processes
-        if p.get("state", {}).get("status") not in _TERMINAL_STATUSES
+        if p.get("status") not in _TERMINAL_STATUSES
     ]
 
     # shell_id → process
@@ -102,15 +102,14 @@ async def _create_shell(client, name: str, tab_order: int, cn_id: str,
     return ApiResponse(**r.json()).data["id"]
 
 
-async def _create_process(client, processor_id: str, cn_id: str,
+async def _create_process(client, cn_id: str,
                           shell_id: str, state_status: str) -> str:
     r = await client.post(
         "/api/v1/graph/agentic_process",
         json={
-            "processor_id": processor_id,
             "compute_node_id": f"compute_node-{cn_id}",
             "context_data": {"compute_node_id": f"compute_node-{cn_id}"},
-            "state": {"status": state_status},
+            "status": state_status,
             "shell_id": shell_id,
         },
     )
@@ -144,14 +143,6 @@ async def test_agentic_cli_shell_mix(bootstrapped_client):
     assert bs.status_code == 200
     cn_id = _cn_id(bs.json())
 
-    # ── Processor (shared parent for all processes in this test) ──────────────
-    r = await bootstrapped_client.post(
-        "/api/v1/graph/agentic_processor",
-        json={"name": "mix-test-processor"},
-    )
-    assert r.status_code == 200
-    processor_id = ApiResponse(**r.json()).data["id"]
-
     # ── Setup shells ──────────────────────────────────────────────────────────
     shell_A = await _create_shell(bootstrapped_client, "plain-A", 0, cn_id)
     shell_B = await _create_shell(bootstrapped_client, "claude-B", 1, cn_id)
@@ -167,11 +158,11 @@ async def test_agentic_cli_shell_mix(bootstrapped_client):
     # ── Setup processes ───────────────────────────────────────────────────────
     # process_B: RUNNING, linked to shell_B → active, makes shell_B a claude tab
     process_B = await _create_process(
-        bootstrapped_client, processor_id, cn_id, shell_B, "running"
+        bootstrapped_client, cn_id, shell_B, "running"
     )
     # process_E: TERMINATED, linked to shell_E → filtered out, shell_E stays plain
     process_E = await _create_process(
-        bootstrapped_client, processor_id, cn_id, shell_E, "terminated"
+        bootstrapped_client, cn_id, shell_E, "terminated"
     )
     our_proc_ids = {process_B, process_E}
 

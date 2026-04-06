@@ -57,11 +57,11 @@ const statusConfig: Record<
     bgColor: 'bg-red-100 dark:bg-red-900/30',
     label: 'Error',
   },
-  [ProcessorStatus.TERMINATED]: {
+  [ProcessorStatus.INTERRUPTED]: {
     icon: XCircle,
     color: 'text-gray-500',
     bgColor: 'bg-gray-100 dark:bg-gray-800',
-    label: 'Terminated',
+    label: 'Interrupted',
   },
 };
 

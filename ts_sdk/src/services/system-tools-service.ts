@@ -2,6 +2,11 @@ import apiClient from '../client';
 import { ScanInfo } from '../models';
 import { dataManager } from '../APIEntity';
 import { EventEmitter } from 'events';
+import { dataContext } from '../FlowSync/context';
+import { ContextEntitiesEnum } from '../FlowSync/context';
+import { Project } from '../entities/project';
+import { QueryRequest } from '../FlowSync/query';
+import { TypeId } from '../models/TypeId';
 import { connectionManager } from '../websocket';
 
 const ACTION = 'desktop-db';
@@ -367,6 +372,34 @@ export class SystemToolsService extends EventEmitter {
 
   async setDbPath(dbPath: string): Promise<DbSettings> {
     return apiClient.post<DbSettings>(`${this.base}/db-settings`, { db_path: dbPath });
+  }
+
+  // ---- project context resolution ------------------------------------------
+
+  /**
+   * Resolve workdir → project using longest-match on fs_storage_mount_path.
+   * Sets CurrentProjectTypeId in dataContext.
+   * If entity is provided and lacks project_id, writes the resolved id back and saves.
+   */
+  async resolveProjectContext(
+    workdir: string | undefined,
+    entity?: { project_id?: string | null; save: () => Promise<void> },
+  ): Promise<void> {
+    if (!workdir) return;
+    const projects = await Project.query<Project>(new QueryRequest({ type: Project.type, scope: [] }));
+    const candidates = projects.filter(
+      (p) => p.fs_storage_mount_path && workdir.startsWith(p.fs_storage_mount_path),
+    );
+    const match = candidates.sort(
+      (a, b) => (b.fs_storage_mount_path?.length ?? 0) - (a.fs_storage_mount_path?.length ?? 0),
+    )[0];
+    if (match) {
+      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, match.typeId);
+      if (entity && !entity.project_id) {
+        entity.project_id = match.id;
+        await entity.save();
+      }
+    }
   }
 
   // ---- OS folder openers ---------------------------------------------------

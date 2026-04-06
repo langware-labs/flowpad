@@ -15,8 +15,9 @@ from ._frontmatter import _coerce_scalar, _extract_frontmatter, _yaml_load  # no
 def _skill_search_dirs() -> list[Path]:
     """Return directories to scan for skill folders.
 
-    Scans user-level (~/.claude/skills) and the cwd/.claude/skills if present
-    (covers project-level skills when the server runs from the project dir).
+    Scans user-level (~/.claude/skills), all known Claude projects
+    (<project>/.claude/skills), cwd-level, and any extra dirs from
+    FLOWPAD_SKILL_DIRS (colon-separated).
     """
     import os
     dirs: list[Path] = []
@@ -29,6 +30,11 @@ def _skill_search_dirs() -> list[Path]:
             dirs.append(p)
 
     _add(Path.home() / ".claude" / "skills")
+
+    from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
+    for real in iter_claude_project_paths():
+        _add(real / ".claude" / "skills")
+
     _add(Path(os.getcwd()) / ".claude" / "skills")
 
     for extra in os.environ.get("FLOWPAD_SKILL_DIRS", "").split(":"):

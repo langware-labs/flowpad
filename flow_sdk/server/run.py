@@ -120,45 +120,16 @@ DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 9007
 
 
-def _register_project_asset_dirs() -> None:
-    """Register project-level .claude/skills and .claude/agents dirs via env vars.
-
-    Uses the server's working directory as the project root. Extra dirs are
-    appended to FLOWPAD_SKILL_DIRS / FLOWPAD_AGENT_DIRS (colon-separated).
-    """
-    from pathlib import Path
-    # Derive repo root from __file__ (flow_sdk/server/run.py → 3 levels up)
-    # This is reliable regardless of how/where the server is invoked.
-    # TODO find a better solution
-    cwd = Path(__file__).resolve().parent.parent.parent
-    candidates = [
-        ("FLOWPAD_SKILL_DIRS", ".claude/skills"),
-        ("FLOWPAD_AGENT_DIRS", ".claude/agents"),
-        ("FLOWPAD_DOC_DIRS", ".claude/docs"),
-        ("FLOWPAD_DOC_DIRS", "docs"),
-        ("FLOWPAD_PLAN_DIRS", ".claude/plans"),
-        ("FLOWPAD_WORKFLOW_DIRS", ".claude/workflows"),
-    ]
-    for env_var, subdir in candidates:
-        candidate = cwd / subdir
-        if candidate.is_dir():
-            existing = os.environ.get(env_var, "")
-            candidate_str = str(candidate)
-            if candidate_str not in existing.split(":"):
-                os.environ[env_var] = f"{existing}:{candidate_str}" if existing else candidate_str
-
-
 def main():
     """Start the minihub server."""
     startup_start = time.time()
-    _register_project_asset_dirs()
 
     if not _acquire_singleton_lock():
         print(f"[pid={os.getpid()}] Another server instance is already running. Exiting.")
         sys.exit(0)
 
     host = os.environ.get("MINIHUB_HOST", DEFAULT_HOST)
-    port = int(os.environ.get("MINIHUB_PORT", os.environ.get("LOCAL_SERVER_PORT", DEFAULT_PORT)))
+    port = int(os.environ.get("LOCAL_SERVER_PORT", DEFAULT_PORT))
     # Auto-reload disabled by default; set MINIHUB_RELOAD=true to enable for development
     reload_enabled = os.environ.get("MINIHUB_RELOAD", "false").lower() == "true"
 

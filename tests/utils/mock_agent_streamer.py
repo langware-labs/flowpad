@@ -83,7 +83,7 @@ class MockAgentStreamer:
 
         # Serialize WorkerResponse
         if part_type == "WorkerResponse":
-            serialized["status"] = str(part.status) if hasattr(part, "status") else "COMPLETED"
+            serialized["status"] = str(part.worker_status) if hasattr(part, "status") else "COMPLETED"
             serialized["new_messages_count"] = len(part.new_messages) if hasattr(part, "new_messages") else 0
             if hasattr(part, "run_usage"):
                 serialized["run_usage"] = {

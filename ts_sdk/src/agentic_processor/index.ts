@@ -1,20 +1,14 @@
 /**
- * AgenticProcessor Module
+ * AgenticProcess Module
  *
- * Provides client-side support for executing MDO (Markdown Directive Object)
- * instructions via the AgenticProcessor entity.
- *
- * AgenticProcessor and AgenticProcess are APIEntity subclasses that receive
- * entity notifications from the backend via WebSocket. The backend uses
- * notifyEntity to push FlowData and state updates to the frontend.
+ * Provides client-side support for managing AgenticProcess entities.
+ * AgenticProcess is an APIEntity subclass that receives entity notifications
+ * from the backend via WebSocket.
  */
 
 // Shared types (canonical source - breaks circular dependency)
 export { ProcessorStatus, parseUIUri, isProcessorRunning, isProcessorBusy, isProcessorIdle, isProcessorTerminal } from './agentic-types';
-export type { ProcessorState, DebugState, ParsedUIUri, StackFrame, UIComponentPayload } from './agentic-types';
-
-export { AgenticProcessor } from './agentic-processor';
-export type { IAgenticProcessor, CreateProcessOptions } from './agentic-processor';
+export type { ParsedUIUri, UIComponentPayload } from './agentic-types';
 
 export { AgenticProcess } from './agentic-process';
 export type { IAgenticProcess, ProcessState, ExecuteOptions, SpawnResult } from './agentic-process';

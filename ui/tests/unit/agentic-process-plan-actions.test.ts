@@ -19,7 +19,7 @@ describe('AgenticProcess.executePlan', () => {
   });
 
   it('sends file_path in body parameters', async () => {
-    const process = new AgenticProcess({ id: 'test-123', state: { status: 'running' } });
+    const process = new AgenticProcess({ id: 'test-123', status: 'running' });
 
     await process.executePlan('/plans/my-plan.md');
 
@@ -31,7 +31,7 @@ describe('AgenticProcess.executePlan', () => {
   });
 
   it('sends file_path and clear_context=true in body parameters', async () => {
-    const process = new AgenticProcess({ id: 'test-123', state: { status: 'running' } });
+    const process = new AgenticProcess({ id: 'test-123', status: 'running' });
 
     await process.executePlan('/plans/my-plan.md', { clearContext: true });
 
@@ -44,7 +44,7 @@ describe('AgenticProcess.executePlan', () => {
   });
 
   it('sends clear_context=false when specified', async () => {
-    const process = new AgenticProcess({ id: 'test-123', state: { status: 'running' } });
+    const process = new AgenticProcess({ id: 'test-123', status: 'running' });
 
     await process.executePlan('/plans/my-plan.md', { clearContext: false });
 
@@ -57,7 +57,7 @@ describe('AgenticProcess.executePlan', () => {
   });
 
   it('uses execute-plan action name', async () => {
-    const process = new AgenticProcess({ id: 'test-123', state: { status: 'running' } });
+    const process = new AgenticProcess({ id: 'test-123', status: 'running' });
 
     await process.executePlan('/plans/my-plan.md');
 
@@ -78,7 +78,7 @@ describe('AgenticProcess.updatePlan', () => {
   });
 
   it('sends file_path in body parameters', async () => {
-    const process = new AgenticProcess({ id: 'test-456', state: { status: 'running' } });
+    const process = new AgenticProcess({ id: 'test-456', status: 'running' });
 
     await process.updatePlan('/plans/update-me.md');
 
@@ -90,7 +90,7 @@ describe('AgenticProcess.updatePlan', () => {
   });
 
   it('uses update-plan action name', async () => {
-    const process = new AgenticProcess({ id: 'test-456', state: { status: 'running' } });
+    const process = new AgenticProcess({ id: 'test-456', status: 'running' });
 
     await process.updatePlan('/plans/update-me.md');
 

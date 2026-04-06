@@ -120,16 +120,22 @@ class RecordDataRef(RecordRef):
     format: str | None = None
 
     def resolve_data_dir(self, records_root: Path | None = None) -> Path | None:
-        """Resolve to the data/ subdirectory of the referenced record."""
+        """Resolve to the data directory of the referenced record.
+
+        Uses ``records_root`` if explicitly provided (backward-compat), otherwise
+        uses ``get_default_records_data_root()`` so data blobs live under
+        ``~/.flow/records_data/<type>/<type>-@<id>/`` instead of alongside metadata.
+        """
         if not self.type or not self.id:
             return None
         if records_root is None:
-            from flow_sdk.fs_store.record import get_default_records_root, record_stem
-            records_root = get_default_records_root()
+            from flow_sdk.fs_store.record import get_default_records_data_root, record_stem
+            data_root = get_default_records_data_root()
         else:
             from flow_sdk.fs_store.record import record_stem
+            data_root = records_root
         stem = record_stem(self.type, self.id)
-        return records_root / self.type / stem / "data"
+        return data_root / self.type / stem
 
     def resolve_data_file(self, records_root: Path | None = None) -> Path | None:
         """Resolve to the specific file in the data/ subdirectory.

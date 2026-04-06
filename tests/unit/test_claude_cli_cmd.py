@@ -155,7 +155,10 @@ def test_instruction_single_line():
 def test_instruction_multiline_heredoc():
     cmd = ClaudeCliOptions(session_id="s", workdir="/p")
     result = cmd.to_shell_string(instruction="step one\nstep two")
-    assert "EOF" in result
+    # Uses ANSI-C quoting ($'...') with \n escape for multiline args
+    assert "$'" in result
+    assert "step one" in result
+    assert "step two" in result
 
 
 def test_instruction_win32_base64(monkeypatch):

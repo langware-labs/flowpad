@@ -126,7 +126,6 @@ The `AgenticProcess` entity is persisted in SQLite and survives server restarts.
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `processor_id` | `str` | Parent AgenticProcessor entity ID |
 | `worker_session_id` | `str` | Claude Code session ID -- used as the JSONL filename and for `--session-id` / `--resume`. **Persistent across PTY restarts.** |
 | `pty_pid` | `str \| None` | Active PTY session UUID. Changes on each resume. `None` when no PTY is attached. |
 | `compute_node_id` | `str` | The ComputeNode that hosts the PTY (format: `compute_node-<id>`) |
@@ -311,7 +310,7 @@ The UI renders terminals in two distinct modes, determined by `ViewType`:
 ### 1. Create
 
 ```
-AgenticProcessor.createProcess()
+ComputeNode.createProcess()
   --> Creates AgenticProcess entity with state.status = "idle"
   --> No worker_session_id, no pty_pid
   --> API reads return "idle" (DB fallback, no transcript)
@@ -432,7 +431,7 @@ The helper: (1) tries `getById(record.id)`, (2) if not found, creates a minimal 
 
 ### Record ↔ Entity `pty_pid` Sync
 
-`AgenticProcessRecord` has a `pty_pid` field (None by default). The Entity (`agentic_processor.py`) writes it to the Record after every PTY start, resume, or exit — keeping the filesystem artifact up to date so `openRecordInTerminal` knows whether a live PTY is active without querying the DB.
+`AgenticProcessRecord` has a `pty_pid` field (None by default). The Entity (`agentic_process.py`) writes it to the Record after every PTY start, resume, or exit — keeping the filesystem artifact up to date so `openRecordInTerminal` knows whether a live PTY is active without querying the DB.
 
 ---
 
@@ -560,7 +559,7 @@ JSON response with transcript-derived status
 | `flow_sdk/builtin/faas/pty_session_manager.py` | Singleton registry of WebSocket-to-PTY attachments |
 | `flow_sdk/builtin/faas/pty_replay_buffer.py` | Circular output buffer with sequence numbers |
 | `flow_sdk/builtin/faas/compute_node.py` | PTY attach/detach orchestration, replay delivery |
-| `flow_sdk/builtin/agentic_processor.py` | AgenticProcessor entity (parent, manages process creation) |
+| `flow_sdk/builtin/faas/scan_actions.py` | `ComputeNode.createProcess()` action — creates AgenticProcess directly |
 | `flow_sdk/builtin/process_runner.py` | Headless SDK launcher — `run_process()` + pre-built configs (no server/DB needed) |
 | `flow_sdk/fs_records/agentic_process_record.py` | `AgenticProcessRecord` — filesystem Record with `discover_status()` and `pty_pid` |
 | `server/routes/websocket.py` | WebSocket connection management |
@@ -573,7 +572,7 @@ JSON response with transcript-derived status
 | `ts_sdk/src/services/shell/shellManager.ts` | Shell lifecycle orchestration (sync, attach, detach) |
 | `ts_sdk/src/services/shell/shellSession.ts` | Per-tab xterm.js session wrapper |
 | `ts_sdk/src/agentic_processor/agentic-process.ts` | AgenticProcess entity (PTY API, state, history, streaming, `openRecordInTerminal`) |
-| `ts_sdk/src/agentic_processor/agentic-processor.ts` | AgenticProcessor entity (process creation, `run()`) |
+| `ts_sdk/src/entities/compute-node/compute-node.ts` | `ComputeNode.createProcess()` — creates AgenticProcess |
 | `ui/src/hooks/use-session-analyze.ts` | Analysis hook (thin wrapper over `runSkillitProcess`) |
 | `ui/src/hooks/use-session-fix-it.ts` | Fix-it hook — launch Claude to fix errors, write fix-report.md |
 | `ui/src/components/terminal/InteractiveTerminal.tsx` | Base xterm.js terminal component |

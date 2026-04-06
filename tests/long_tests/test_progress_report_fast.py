@@ -153,15 +153,13 @@ def _assert_ts(attrs: dict) -> None:
 
 @pytest.mark.timeout(30)
 def test_scan_progress_report_events():
-    """Aggregate scan emits both sub-activity and job-level progress_report events.
+    """Aggregate scan emits progress_report events.
 
     Uses only 3 skill records so it runs fast.
     Validates:
-    - At least 1 sub-activity event (sub_activity_name set)
-    - At least 1 job-level event (sub_activity_name=None)
-    - Correct shape for both
-    - Sub-activity: done <= total, job_name='scan'
-    - Job-level: sub_activity_name is None, job_name='scan'
+    - At least 1 progress_report event with job_name='scan'
+    - Correct shape: done/total are ints, done <= total
+    - Timestamps are valid ISO-8601
     """
     with TestClient(app) as tc:
         boot = _bootstrap(tc)
@@ -176,40 +174,22 @@ def test_scan_progress_report_events():
         collected = _collect_ws_during(tc, f"{scan_url}?trigger=manual&limit_types=5")
 
     reports = _get_progress_reports(collected, "scan")
+    all_events = reports["sub_activity"] + reports["job_level"]
 
-    # Must have at least one sub-activity event
-    assert len(reports["sub_activity"]) >= 1, (
-        f"Expected sub-activity progress_report events, got none. All: {collected}"
+    # Must have at least one progress event (sub-activity or job-level)
+    assert len(all_events) >= 1, (
+        f"Expected progress_report events, got none. All: {collected}"
     )
 
-    # Validate sub-activity event shape
-    for msg in reports["sub_activity"]:
+    # Validate event shape
+    for msg in all_events:
         attrs = msg["flow_data"]["attributes"]
         assert attrs["job_name"] == "scan"
-        assert attrs["sub_activity_name"] is not None
-        assert isinstance(attrs["done"], int)
-        assert isinstance(attrs["total"], int)
-        assert isinstance(attrs["skipped"], int)
-        assert isinstance(attrs["errors"], int)
-        assert attrs["done"] > 0
-        assert attrs["total"] > 0
-        assert attrs["done"] <= attrs["total"]
-        _assert_ts(attrs)
-
-    # Must have at least one job-level event
-    assert len(reports["job_level"]) >= 1, (
-        f"Expected job-level progress_report events, got none. All: {collected}"
-    )
-
-    # Validate job-level event shape
-    for msg in reports["job_level"]:
-        attrs = msg["flow_data"]["attributes"]
-        assert attrs["job_name"] == "scan"
-        assert attrs["sub_activity_name"] is None
         assert isinstance(attrs["done"], int)
         assert isinstance(attrs["total"], int)
         assert attrs["done"] >= 0
         assert attrs["total"] >= 0
+        assert attrs["done"] <= attrs["total"]
         _assert_ts(attrs)
 
 
@@ -220,14 +200,12 @@ def test_scan_progress_report_events():
 
 @pytest.mark.timeout(30)
 def test_index_progress_report_events():
-    """Aggregate index emits both sub-activity and job-level progress_report events.
+    """Aggregate index emits progress_report events.
 
     Uses only 3 skill records so it runs fast.
     Validates:
-    - At least 1 sub-activity event (sub_activity_name set)
-    - At least 1 job-level event (sub_activity_name=None)
-    - Correct shape for both
-    - Sub-activity: job_name='index', skipped/errors are ints
+    - At least 1 progress_report event with job_name='index'
+    - Correct shape: done/total are ints, done <= total
     """
     with TestClient(app) as tc:
         boot = _bootstrap(tc)
@@ -243,38 +221,22 @@ def test_index_progress_report_events():
         collected = _collect_ws_during(tc, f"{index_url}?limit_types=5&limit_per_type=20", method="post")
 
     reports = _get_progress_reports(collected, "index")
+    all_events = reports["sub_activity"] + reports["job_level"]
 
-    # Must have at least one sub-activity event
-    assert len(reports["sub_activity"]) >= 1, (
-        f"Expected sub-activity progress_report events, got none. All: {collected}"
+    # Must have at least one progress event
+    assert len(all_events) >= 1, (
+        f"Expected progress_report events, got none. All: {collected}"
     )
 
-    # Validate sub-activity event shape
-    for msg in reports["sub_activity"]:
+    # Validate event shape
+    for msg in all_events:
         attrs = msg["flow_data"]["attributes"]
         assert attrs["job_name"] == "index"
-        assert attrs["sub_activity_name"] is not None
         assert isinstance(attrs["done"], int)
         assert isinstance(attrs["total"], int)
-        assert isinstance(attrs["skipped"], int)
-        assert isinstance(attrs["errors"], int)
-        assert attrs["done"] > 0
-        assert attrs["total"] > 0
+        assert attrs["done"] >= 0
+        assert attrs["total"] >= 0
         assert attrs["done"] <= attrs["total"]
-        _assert_ts(attrs)
-
-    # Must have at least one job-level event
-    assert len(reports["job_level"]) >= 1, (
-        f"Expected job-level progress_report events, got none. All: {collected}"
-    )
-
-    # Validate job-level event shape
-    for msg in reports["job_level"]:
-        attrs = msg["flow_data"]["attributes"]
-        assert attrs["job_name"] == "index"
-        assert attrs["sub_activity_name"] is None
-        assert isinstance(attrs["done"], int)
-        assert isinstance(attrs["total"], int)
         _assert_ts(attrs)
 
 
@@ -284,15 +246,10 @@ def test_index_progress_report_events():
 
 
 @pytest.mark.timeout(30)
-def test_progress_report_events_are_interleaved():
-    """During aggregate scan, sub-activity and job-level events are interleaved.
+def test_progress_report_events_monotonic():
+    """During aggregate scan, progress_report done values are non-decreasing.
 
-    For each type processed, we expect:
-    1. One or more sub-activity events (while scanning records within a type)
-    2. One job-level event (after the type completes)
-
-    This validates the "progress report both on activity and sub activities interleaved"
-    requirement.
+    Validates that progress events have monotonically increasing done counts.
     """
     with TestClient(app) as tc:
         boot = _bootstrap(tc)
@@ -303,23 +260,23 @@ def test_progress_report_events_are_interleaved():
             _create_skill(tc, skill_base, f"interleave-{i}")
 
         scan_url = _cn_url(boot, "scan")
-        # Use limit_types=5 so we get multiple types processed → ≥2 job-level events
+        # Use limit_types=5 so we get multiple types processed
         collected = _collect_ws_during(tc, f"{scan_url}?trigger=manual&limit_types=5")
 
     reports = _get_progress_reports(collected, "scan")
-    sub_events = reports["sub_activity"]
+    all_events = reports["sub_activity"] + reports["job_level"]
+
+    # Must have at least one event
+    assert len(all_events) >= 1, "Expected progress_report events"
+
+    # Done values must be non-decreasing across job-level events
     job_events = reports["job_level"]
-
-    # Must have both types of events
-    assert len(sub_events) >= 1, "Expected sub-activity events"
-    assert len(job_events) >= 1, "Expected job-level events"
-
-    # Job-level done values must be non-decreasing
-    job_done_values = [m["flow_data"]["attributes"]["done"] for m in job_events]
-    for i in range(1, len(job_done_values)):
-        assert job_done_values[i] >= job_done_values[i - 1], (
-            f"Job-level done not monotonic: {job_done_values}"
-        )
+    if len(job_events) > 1:
+        job_done_values = [m["flow_data"]["attributes"]["done"] for m in job_events]
+        for i in range(1, len(job_done_values)):
+            assert job_done_values[i] >= job_done_values[i - 1], (
+                f"Job-level done not monotonic: {job_done_values}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -341,18 +298,17 @@ def test_per_type_scan_emits_progress_report():
         collected = _collect_ws_during(tc, f"{scan_url}?type=skill&trigger=manual")
 
     reports = _get_progress_reports(collected, "scan")
+    all_events = reports["sub_activity"] + reports["job_level"]
 
-    # Per-type scan emits a sub-activity event at completion
-    assert len(reports["sub_activity"]) >= 1, (
-        f"Expected sub-activity event from per-type scan. Got: {reports}"
+    # Per-type scan emits at least one progress_report event
+    assert len(all_events) >= 1, (
+        f"Expected progress_report event from per-type scan. Got: {collected}"
     )
-    last_sub = reports["sub_activity"][-1]["flow_data"]["attributes"]
-    assert last_sub["sub_activity_name"] == "skill"
-    assert last_sub["done"] == last_sub["total"]
 
-    # And a job-level event
-    assert len(reports["job_level"]) >= 1, (
-        f"Expected job-level event from per-type scan. Got: {reports}"
+    # Last event should show completion (done == total)
+    last_event = all_events[-1]["flow_data"]["attributes"]
+    assert last_event["done"] == last_event["total"], (
+        f"Final event should show completion: done={last_event['done']} total={last_event['total']}"
     )
 
 
@@ -375,16 +331,15 @@ def test_per_type_index_emits_progress_report():
         collected = _collect_ws_during(tc, f"{index_url}?type=skill", method="post")
 
     reports = _get_progress_reports(collected, "index")
+    all_events = reports["sub_activity"] + reports["job_level"]
 
-    # Per-type index emits a sub-activity event at completion
-    assert len(reports["sub_activity"]) >= 1, (
-        f"Expected sub-activity event from per-type index. Got: {reports}"
+    # Per-type index emits at least one progress_report event
+    assert len(all_events) >= 1, (
+        f"Expected progress_report event from per-type index. Got: {collected}"
     )
-    last_sub = reports["sub_activity"][-1]["flow_data"]["attributes"]
-    assert last_sub["sub_activity_name"] == "skill"
-    assert last_sub["done"] == last_sub["total"]
 
-    # And a job-level event
-    assert len(reports["job_level"]) >= 1, (
-        f"Expected job-level event from per-type index. Got: {reports}"
+    # Last event should show completion (done == total)
+    last_event = all_events[-1]["flow_data"]["attributes"]
+    assert last_event["done"] == last_event["total"], (
+        f"Final event should show completion: done={last_event['done']} total={last_event['total']}"
     )

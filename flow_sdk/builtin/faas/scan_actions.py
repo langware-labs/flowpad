@@ -211,47 +211,117 @@ class ScanActionsMixin:
             logging.exception(f"scan-project failed: {e}")
             return ApiFailResponse(message=str(e))
 
-    async def _scan_create_agentic_processor(self) -> ApiResponse:
-        """Create an AgenticProcessor bound to this ComputeNode.
+    async def _scan_create_process(self) -> ApiResponse:
+        """Create a new idle AgenticProcess on this ComputeNode.
 
-        Ported from FlowPad: flowpad/hub/builtin/faas/compute_node.py
-        The processor's compute_node_id is set internally and not exposed to frontend.
+        POST body: { context, result, visible } (same shape as CreateProcessRequest)
 
         Returns:
-            AgenticProcessor entity data
+            AgenticProcess entity data
         """
-        from flow_sdk.builtin.agentic_process import AgenticProcessor
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+        from flow_sdk.builtin.cli_workers.claude_cli import ClaudeCliOptions
 
         try:
-            processor = AgenticProcessor()
-            # In production, compute_node_id is set on the processor entity.
-            # Desktop mode: we don't have that field on the simplified entity,
-            # so we just create and save.
-
             request_info = get_current_request_info()
-            await processor.save(owner=request_info.someone_typeid if request_info else None)
+            owner = request_info.someone_typeid if request_info else None
 
-            logging.info(f"ComputeNode {self.id} created AgenticProcessor {processor.id}")
+            body = {}
+            if request_info:
+                body = await request_info.get_post_data() or {}
+            if not isinstance(body, dict):
+                body = {}
+
+            context_raw = body.get("context", {})
+            if not isinstance(context_raw, dict):
+                context_raw = {}
+
+            visible = bool(body.get("visible", False))
+            result_data = body.get("result")
+
+            context_data = dict(context_raw)
+            workdir = context_data.pop("workdir", None)
+
+            fork_session = bool(context_data.pop("fork_session", False))
+            resume_session_id = context_data.pop("resume_session_id", None)
+            additional_dirs: list[str] = list(context_data.pop("additional_dirs", None) or [])
+
+            cli_opts = ClaudeCliOptions(
+                model=context_data.pop("model", None) or None,
+                permission_mode=context_data.pop("permission_mode", "bypassPermissions"),
+                chrome=bool(context_data.pop("chrome", False)),
+                debug=bool(context_data.pop("debug", True)),
+                worktree=bool(context_data.pop("worktree", False)),
+                agents_json=context_data.pop("agents_json", None),
+            )
+
+            if fork_session and resume_session_id:
+                cli_opts.resume = True
+                cli_opts.fork_session_id = resume_session_id
+            elif resume_session_id:
+                cli_opts.resume = True
+
+            process = AgenticProcess(
+                compute_node_id=str(self.typeid),
+                instruction_content="",
+                cli_config=cli_opts.to_json(),
+                context_data=context_data,
+                workdir=workdir,
+                visible=visible,
+                additional_dirs=additional_dirs,
+            )
+            if resume_session_id and not fork_session:
+                process.session_id = resume_session_id
+            await process.save(owner)
+
+            if result_data and isinstance(result_data, dict):
+                try:
+                    from flow_sdk.builtin.process_result import ProcessResult
+
+                    result_uname = result_data.get("uname")
+                    existing_result = None
+                    if result_uname:
+                        existing_result = await ProcessResult.get_by_uname(result_uname)
+
+                    result_type = result_data.get("result_type") or result_data.get("resultType")
+                    source_session_id = result_data.get("source_session_id") or result_data.get("sourceSessionId")
+
+                    if existing_result:
+                        existing_result.agentic_process_id = process.id
+                        existing_result.status = "running"
+                        existing_result.result_type = result_type
+                        existing_result.source_session_id = source_session_id
+                        await existing_result.save(owner)
+                    else:
+                        process_result = ProcessResult(
+                            uname=result_uname,
+                            agentic_process_id=process.id,
+                            status="running",
+                            result_type=result_type,
+                            source_session_id=source_session_id,
+                        )
+                        await process_result.save(owner)
+                except ImportError:
+                    logging.debug("ProcessResult entity not available, skipping result creation")
+
+            logging.info(f"ComputeNode {self.id} created AgenticProcess {process.id}")
 
             return ApiSuccessResponse(
                 data={
-                    "id": processor.id,
-                    "type": processor.type,
-                    "state": processor.state,
+                    "id": process.id,
+                    "type": process.type,
                 }
             )
 
         except Exception as e:
-            logging.exception(f"ComputeNode {self.id} createAgenticProcessor error: {e}")
+            logging.exception(f"ComputeNode {self.id} createProcess error: {e}")
             return ApiFailResponse(message=str(e))
 
     async def _scan_upsert_session_process(self) -> ApiResponse:
         """Find or create an AgenticProcess for a given Claude Code session ID.
 
-        Ported from FlowPad: flowpad/hub/builtin/faas/compute_node.py
-        If a process with matching worker_session_id exists, return it.
-        Otherwise, create a new AgenticProcessor + AgenticProcess with
-        worker_session_id pre-set.
+        If a process with matching session_id exists, return it.
+        Otherwise, create a new AgenticProcess with session_id pre-set.
 
         POST body (camelCase):
             sessionId: str - Claude Code session ID
@@ -259,9 +329,9 @@ class ScanActionsMixin:
             projectId: str | None - Project ID for context
 
         Returns:
-            AgenticProcess data with { id, type, processor_id, worker_session_id, created }
+            AgenticProcess data with { id, type, session_id, created }
         """
-        from flow_sdk.builtin.agentic_process import AgenticProcess, AgenticProcessor
+        from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
 
         request_info = get_current_request_info()
@@ -280,9 +350,9 @@ class ScanActionsMixin:
             workdir = body.get("workdir")
             project_id = body.get("projectId")
 
-            # Try to find existing process by worker_session_id
+            # Try to find existing process by session_id
             existing = await AgenticProcess.get_all(
-                entities_filter=QueryFilter(match=ExpressionNode(worker_session_id=session_id))
+                entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id))
             )
             if existing:
                 process = existing[0]
@@ -290,8 +360,7 @@ class ScanActionsMixin:
                     data={
                         "id": process.id,
                         "type": process.type,
-                        "processor_id": process.processor_id,
-                        "worker_session_id": process.worker_session_id,
+                        "session_id": process.session_id,
                         "created": False,
                     }
                 )
@@ -319,10 +388,8 @@ class ScanActionsMixin:
             except Exception:
                 pass
 
-            # Create new processor + process
-            processor = AgenticProcessor()
+            # Create new process directly on this compute node
             owner = request_info.someone_typeid if request_info else None
-            await processor.save(owner=owner)
 
             context_data = {"compute_node_id": f"{self.type}-{self.id}"}
             if workdir:
@@ -331,8 +398,7 @@ class ScanActionsMixin:
                 context_data["project_id"] = project_id
 
             process = AgenticProcess(
-                processor_id=processor.id,
-                worker_session_id=session_id,
+                session_id=session_id,
                 use_worker_history=True,
                 context_data=context_data,
                 compute_node_id=str(self.typeid),
@@ -343,7 +409,7 @@ class ScanActionsMixin:
 
             logging.info(
                 f"ComputeNode {self.id} upserted AgenticProcess {process.id} for session {session_id} (created). "
-                f"worker_session_id on saved object={process.worker_session_id}"
+                f"session_id on saved object={process.session_id}"
             )
 
             # Set resume flag if transcript exists on disk (O(1) with workdir, O(P) fallback).
@@ -363,8 +429,7 @@ class ScanActionsMixin:
                 data={
                     "id": process.id,
                     "type": process.type,
-                    "processor_id": processor.id,
-                    "worker_session_id": session_id,
+                    "session_id": session_id,
                     "created": True,
                 }
             )

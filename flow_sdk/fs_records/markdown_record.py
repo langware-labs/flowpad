@@ -20,11 +20,46 @@ from ._frontmatter import (
     _yaml_load,
 )
 
+_WALK_IGNORED: frozenset[str] = frozenset({
+    ".git", "node_modules", ".venv", "venv", "__pycache__",
+    ".tox", "dist", "build", ".eggs", ".mypy_cache", ".pytest_cache",
+    ".ruff_cache", ".next", ".nuxt", "coverage", ".cache",
+})
+
+
+_DOCS_WALK_MAX_DEPTH = 3
+
+
+def _find_docs_subdirs(root: Path) -> list[Path]:
+    """Return all directories named 'docs' anywhere under root.
+
+    Skips common noise directories (node_modules, .git, build outputs, etc.)
+    and stops at _DOCS_WALK_MAX_DEPTH levels deep to keep the walk fast.
+    """
+    found: list[Path] = []
+    root_depth = len(root.parts)
+    try:
+        for dirpath, dirnames, _ in os.walk(root, topdown=True):
+            p = Path(dirpath)
+            depth = len(p.parts) - root_depth
+            if depth >= _DOCS_WALK_MAX_DEPTH:
+                dirnames.clear()
+                continue
+            dirnames[:] = [d for d in dirnames if d not in _WALK_IGNORED]
+            if p.name == "docs":
+                found.append(p)
+    except PermissionError:
+        pass
+    return found
+
+
 def _doc_search_dirs() -> list[Path]:
     """Return directories to scan for doc .md files.
 
-    Scans user-level (~/.claude/docs), cwd/.claude/docs if present,
-    and any extra dirs from FLOWPAD_DOC_DIRS (colon-separated).
+    Scans user-level (~/.claude/docs), all known Claude projects
+    (every 'docs' directory anywhere in each project tree, plus
+    <project>/.claude/docs), cwd-level, and any extra dirs from
+    FLOWPAD_DOC_DIRS (colon-separated).
     """
     dirs: list[Path] = []
     seen: set[Path] = set()
@@ -36,8 +71,16 @@ def _doc_search_dirs() -> list[Path]:
             dirs.append(p)
 
     _add(Path.home() / ".claude" / "docs")
+
+    from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
+    for real in iter_claude_project_paths():
+        for docs_dir in _find_docs_subdirs(real):
+            _add(docs_dir)
+        _add(real / ".claude" / "docs")
+
     _add(Path(os.getcwd()) / ".claude" / "docs")
-    _add(Path(os.getcwd()) / "docs")
+    for docs_dir in _find_docs_subdirs(Path(os.getcwd())):
+        _add(docs_dir)
 
     for extra in os.environ.get("FLOWPAD_DOC_DIRS", "").split(":"):
         if extra.strip():

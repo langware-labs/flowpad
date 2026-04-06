@@ -1,6 +1,5 @@
 import {
   AgentConfig,
-  AgenticProcessor,
   AgenticProcess,
   ComputeNode,
   ComputeProviderType,
@@ -216,8 +215,6 @@ export interface CreateAgenticProcessOptions {
 export interface AgenticProcessTestContext {
   /** The compute node */
   computeNode: ComputeNode;
-  /** The agentic processor */
-  processor: AgenticProcessor;
   /** The agentic context for running instructions */
   context: AgenticContext;
 
@@ -267,23 +264,22 @@ export interface AgenticProcessRunResult {
 }
 
 /**
- * Create an AgenticProcessor with compute node and context ready for testing.
+ * Create an agentic process test context with compute node and context ready for testing.
  *
  * This is the recommended way to set up agentic process tests. It handles:
  * - Creating a local compute node
- * - Creating an AgenticProcessor
  * - Setting up the context with sensible defaults
  * - Providing convenience methods for running instructions
  *
  * @param options - Optional configuration overrides
- * @returns Test context with processor, context, and helper methods
+ * @returns Test context with computeNode, context, and helper methods
  *
  * @example
  * ```typescript
- * const { run, dispose } = await createAgenticProcess();
+ * const { execute, dispose } = await createAgenticProcess();
  *
- * // Run an instruction and get results
- * const { outputs, getChatContent, hasUserMessage } = await run('Say hello');
+ * // Execute an instruction and get results
+ * const { outputs, getChatContent, hasUserMessage } = await execute('Say hello');
  *
  * expect(hasUserMessage()).toBe(true);
  * expect(getChatContent()).toContain('hello');
@@ -304,9 +300,6 @@ export async function createAgenticProcess(
 
   // Create compute node
   const computeNode = await get_local_compute_node(nodeName);
-
-  // Create processor via compute node (secure - compute_node_id set by backend)
-  const processor = await computeNode.createAgenticProcessor();
 
   // Create context
   const context: AgenticContext = {
@@ -348,27 +341,29 @@ export async function createAgenticProcess(
 
   return {
     computeNode,
-    processor,
     context,
 
     createIdleProcess: async () => {
-      return processor.createProcess(context);
+      return computeNode.createProcess(context);
     },
 
     run: async (instruction: string) => {
       const amdContent = `<!-- <flow-do> -->\n${instruction}\n<!-- </flow-do> -->`;
-      const instructionFile = InstructionFile.fromContent(amdContent);
-      const process = await processor.run(instructionFile, context);
+      const process = await computeNode.createProcess(context);
+      await process.watch();
+      await process.executeInstruction(amdContent, { sync: false });
       return collectOutputs(process);
     },
 
     execute: async (instruction: string) => {
-      const process = await processor.execute(instruction, context);
+      const process = await computeNode.createProcess(context);
+      await process.watch();
+      await process.executeInstruction(instruction, { sync: false });
       return collectOutputs(process);
     },
 
     dispose: () => {
-      processor.dispose();
+      // Nothing to dispose — no processor
     },
   };
 }

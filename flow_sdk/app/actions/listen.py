@@ -103,9 +103,9 @@ async def _route_to_source_process(
             logger.debug("Failed to route to process by %s: %s", field_name, exc)
         return False
 
-    # Route via session_id (agent_hook events — match worker_session_id)
+    # Route via session_id (agent_hook events — match session_id)
     if session_id:
-        if await _find_and_route("worker_session_id", session_id):
+        if await _find_and_route("session_id", session_id):
             return
 
     # Fallback: route via pty_pid from payload
@@ -187,7 +187,7 @@ async def _create_prompt_annotation(content: str, session_id: str) -> None:
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
 
         now_iso = datetime.now(timezone.utc).isoformat()
-        processes = await AgenticProcess.get_all(entities_filter=QueryFilter(match=ExpressionNode(worker_session_id=session_id)))
+        processes = await AgenticProcess.get_all(entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id)))
         process_id = ""
         if processes:
             process_id = processes[0].id or ""
@@ -271,7 +271,7 @@ async def _create_plan_annotation(tool_input: dict, session_id: str) -> None:
 
         now_iso = datetime.now(timezone.utc).isoformat()
         agentic_processes = await AgenticProcess.get_all(
-            entities_filter=QueryFilter(match=ExpressionNode(worker_session_id=session_id))
+            entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id))
         )
         agentic_process_id = agentic_processes[0].id if agentic_processes else ""
 
@@ -648,7 +648,7 @@ async def _reflect_entity(
             # Log final state after save
             if record_type == "task":
                 logger.info(
-                    f"[_reflect_entity] Updated task {existing.id}: status={existing.status}, title={existing.title}"
+                    f"[_reflect_entity] Updated task {existing.id}: status={existing.worker_status}, title={existing.title}"
                 )
             else:
                 logger.info(f"[_reflect_entity] Updated {record_type} {existing.id} (uname={external_id})")

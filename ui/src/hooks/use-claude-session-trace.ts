@@ -3,7 +3,11 @@ import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/
 import type { TranscriptEntryData } from '@src/types/trace-event';
 import type { ClaudeTraceEvent } from '@src/types/trace-event';
 import { mapSnifferToTraceEvent, mapTranscriptToTraceEvents } from '@src/types/trace-event';
-import { useHooksSniffer } from '@src/hooks/use-hooks-sniffer';
+import { useProcessSniffer } from './use-process-sniffer';
+
+// Sentinel that can never match a real session_id — used when sessionId is null
+// so useProcessSniffer (an unconditional hook) stays mounted but returns nothing.
+const NULL_SESSION_SENTINEL = '__null_session__';
 
 export function useClaudeSessionTrace(sessionId: string | null): {
   events: ClaudeTraceEvent[];
@@ -17,27 +21,10 @@ export function useClaudeSessionTrace(sessionId: string | null): {
   const [sessionStartTime, setSessionStartTime] = useState<string | null>(null);
   const cacheRef = useRef<Map<string, TranscriptEntryData[]>>(new Map());
   const discoveredRef = useRef<Set<string>>(new Set());
-  const { events: snifferEvents } = useHooksSniffer();
-  // Accumulated sniffer events for this session — survives ring buffer eviction
-  const [liveSnifferEvents, setLiveSnifferEvents] = useState<ReturnType<typeof useHooksSniffer>['events'][number][]>([]);
-  const seenSnifferIdsRef = useRef<Set<string>>(new Set());
 
-  // Reset accumulated events when session changes
-  useEffect(() => {
-    setLiveSnifferEvents([]);
-    seenSnifferIdsRef.current.clear();
-  }, [sessionId]);
-
-  // Accumulate new session-specific sniffer events as they arrive in the ring buffer
-  useEffect(() => {
-    if (!sessionId) return;
-    const fresh = snifferEvents.filter(
-      (e) => e.session_id === sessionId && !seenSnifferIdsRef.current.has(e.id),
-    );
-    if (fresh.length === 0) return;
-    for (const e of fresh) seenSnifferIdsRef.current.add(e.id);
-    setLiveSnifferEvents((prev) => [...prev, ...fresh]);
-  }, [snifferEvents, sessionId]);
+  // useProcessSniffer handles accumulation + idx-stable deduplication internally.
+  // Pass a sentinel when sessionId is null so the hook is unconditionally mounted.
+  const { events: liveSnifferEvents } = useProcessSniffer(sessionId ?? NULL_SESSION_SENTINEL);
 
   // Fetch transcript via entity layer
   useEffect(() => {
