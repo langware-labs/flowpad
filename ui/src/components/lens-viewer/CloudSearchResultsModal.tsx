@@ -91,7 +91,7 @@ export function CloudSearchResultsModal({
                 {fixableFingerprints.length > 0 && !fixedAll && (
                   <Button
                     size="sm"
-                    className="h-7 gap-1.5 bg-green-600 text-xs text-white hover:bg-green-500"
+                    className="h-7 gap-1.5 bg-green-600 text-xs text-white hover:bg-green-500 hidden"
                     disabled={isFixingAll}
                     onClick={() => void handleFixAll()}
                   >
