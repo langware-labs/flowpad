@@ -784,7 +784,7 @@ class SchemaRegistry:
                 batch_fts: list = []
 
                 async def _index_one(rec, _fts=batch_fts):
-                    await rec.sync_to_db(fts_batch=_fts)
+                    await rec.sync_to_db(fts_batch=_fts, notify=False)
 
                 results = await asyncio.gather(
                     *[_index_one(r) for r in batch],
@@ -977,7 +977,7 @@ class SchemaRegistry:
                 skipped += 1
             else:
                 try:
-                    await rec.sync_to_db(fts_batch=fts_batch)
+                    await rec.sync_to_db(fts_batch=fts_batch, notify=False)
                     indexed += 1
                 except Exception:
                     errors += 1
