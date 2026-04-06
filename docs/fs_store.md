@@ -472,8 +472,8 @@ from flow_sdk.fs_records import ShellSessionRecord
 record = ShellSessionRecord.discover_one(session_id)
 session = ShellSession.fromRecord(record)  # hydrate
 
-session.status       # delegates to record.status
-session.close()      # transitions status, deletes .pty file, saves record
+session.worker_status  # delegates to record.status
+session.close()  # transitions status, deletes .pty file, saves record
 ```
 
 ### Domain Objects (`flow_sdk/domain/`)

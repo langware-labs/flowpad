@@ -320,7 +320,7 @@ def discover_status(self, worker_session_id: str | None = None) -> ProcessorStat
     session = ClaudeSessionFsRecord.discover_one(sid)
     if not session:
         return ProcessorStatus.IDLE
-    return ProcessorStatus(session.status)
+    return ProcessorStatus(session.worker_status)
 ```
 
 This is the same logic as the entity's `_discover_status_from_transcript()` — the record delegates to `ClaudeSessionFsRecord.status`.

@@ -193,7 +193,7 @@ class TestPathBasedHandler:
                     node._handle_path_based_source_file("get", ri)
                 )
 
-        assert result.status == "SUCCESS"
+        assert result.worker_status == "SUCCESS"
         data = result.data
         assert isinstance(data, list)
         assert len(data) >= 3  # root + permissions + sandbox (at least)
@@ -218,7 +218,7 @@ class TestPathBasedHandler:
                     node._handle_path_based_source_file("get", ri)
                 )
 
-        assert result.status == "SUCCESS"
+        assert result.worker_status == "SUCCESS"
         assert result.data["type"] == RecordType.CLAUDE_SETTINGS_JSON_PERMISSIONS
         assert result.data["json_path"] == "/permissions"
 
@@ -238,7 +238,7 @@ class TestPathBasedHandler:
                     node._handle_path_based_source_file("get", ri)
                 )
 
-        assert result.status == "SUCCESS"
+        assert result.worker_status == "SUCCESS"
         assert result.data["type"] == RecordType.CLAUDE_SETTINGS_JSON
 
     def test_path_update_record(self, tmp_path):
@@ -259,7 +259,7 @@ class TestPathBasedHandler:
                         node._handle_path_based_source_file("put", ri)
                     )
 
-        assert result.status == "SUCCESS"
+        assert result.worker_status == "SUCCESS"
         assert result.data["source_file"] == str(f)
 
     def test_path_update_roundtrip(self, tmp_path):
@@ -302,7 +302,7 @@ class TestPathBasedHandler:
                         node._handle_path_based_source_file("delete", ri)
                     )
 
-        assert result.status == "SUCCESS"
+        assert result.worker_status == "SUCCESS"
         raw = json.loads(f.read_text())
         assert "permissions" not in raw
         assert raw["model"] == "claude-sonnet-4-6"
@@ -317,7 +317,7 @@ class TestPathBasedHandler:
             node._handle_path_based_source_file("get", ri)
         )
 
-        assert result.status == "FAIL"
+        assert result.worker_status == "FAIL"
         assert result.status_code == 403
 
     def test_path_unknown_filename_returns_400(self, tmp_path):
@@ -332,7 +332,7 @@ class TestPathBasedHandler:
                 node._handle_path_based_source_file("get", ri)
             )
 
-        assert result.status == "FAIL"
+        assert result.worker_status == "FAIL"
         assert result.status_code == 400
 
     def test_path_missing_path_param_returns_400(self):
@@ -345,7 +345,7 @@ class TestPathBasedHandler:
             node._handle_path_based_source_file("get", ri)
         )
 
-        assert result.status == "FAIL"
+        assert result.worker_status == "FAIL"
         assert result.status_code == 400
 
     def test_path_nonexistent_json_path_returns_404(self, tmp_path):
@@ -364,7 +364,7 @@ class TestPathBasedHandler:
                     node._handle_path_based_source_file("get", ri)
                 )
 
-        assert result.status == "FAIL"
+        assert result.worker_status == "FAIL"
         assert result.status_code == 404
 
     def test_path_read_only_record_returns_403(self, tmp_path):
@@ -384,7 +384,7 @@ class TestPathBasedHandler:
                     node._handle_path_based_source_file("put", ri)
                 )
 
-        assert result.status == "FAIL"
+        assert result.worker_status == "FAIL"
         assert result.status_code == 403
 
     def test_path_broadcast_includes_source_file(self, tmp_path):
