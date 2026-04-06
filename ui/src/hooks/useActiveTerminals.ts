@@ -1,4 +1,4 @@
-import { AgenticProcess, ProcessorStatus, QueryFilter, QueryRequest, Shell, ShellStatus } from '@sdk';
+import { AgenticProcess, isProcessActive, QueryFilter, QueryRequest, Shell, ShellStatus } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useMemo } from 'react';
 
@@ -20,7 +20,6 @@ export interface TerminalTab {
   statusReason: string;
 }
 
-const TERMINAL_STATUSES = new Set([ProcessorStatus.COMPLETE, ProcessorStatus.ERROR, ProcessorStatus.INTERRUPTED, ProcessorStatus.INACTIVE]);
 const HIDDEN_SHELL_STATUSES = new Set([ShellStatus.ERROR]);
 const DISABLED_SHELL_STATUSES = new Set([ShellStatus.CLOSED, ShellStatus.CLOSING]);
 
@@ -54,8 +53,7 @@ export function useActiveTerminals() {
     .join('|');
 
   const tabs = useMemo(() => {
-    // Filter active processes: not terminated and not complete
-    const activeProcesses = processes.filter((p) => !TERMINAL_STATUSES.has(p.status));
+    const activeProcesses = processes.filter((p) => isProcessActive(p.status));
 
     // Build a set of sidecar shell IDs — these are internal-only PTY sessions
     // managed by InteractiveTerminal and must not appear as top-level tabs.

@@ -7,7 +7,18 @@
  */
 
 // Shared types (canonical source - breaks circular dependency)
-export { ProcessorStatus, parseUIUri, isProcessorRunning, isProcessorBusy, isProcessorIdle, isProcessorTerminal } from './agentic-types';
+export {
+  ProcessStatus,
+  ProcessorStatus,
+  parseUIUri,
+  isProcessActive,
+  isProcessStartable,
+  isProcessLive,
+  isProcessorRunning,
+  isProcessorBusy,
+  isProcessorIdle,
+  isProcessorTerminal,
+} from './agentic-types';
 export type { ParsedUIUri, UIComponentPayload } from './agentic-types';
 
 export { AgenticProcess } from './agentic-process';

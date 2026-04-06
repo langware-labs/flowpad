@@ -9,12 +9,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 from uuid import uuid4
 
+from pydantic import SerializationInfo, model_serializer
+
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.app.actions.listen import set_plan_auto_approve
 from flow_sdk.builtin.cli_workers import ClaudeCliOptions
 from flow_sdk.core import Entity, action
 from flow_sdk.flowpad_types.enums import WorkerType
-from flow_sdk.fs_records.agentic_process_record import AgenticProcessStatus
+from flow_sdk.fs_records.agent_status import AgenticProcessStatus, is_terminal as is_worker_terminal
+from flow_sdk.fs_records.agentic_process_lifecycle import AgenticProcessLifecycleStatus
 from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
@@ -54,14 +57,13 @@ async def _index_session_on_close(session_id: str, pty_title: str | None = None)
 
 
 async def _poll_for_completion(agentic_process_id: str, session_id: str | None) -> None:
-    """Background task: poll the session transcript until COMPLETE/ERROR, then save.
+    """Background task: poll the transcript until terminal worker_status, then save.
 
     Called from AgenticProcess.start() after launching the worker. When Claude
     exits (end_turn / stop_sequence), the transcript tail changes. Saving the
-    updated status broadcasts a WS entity-update that lets the TypeScript
-    AgenticProcess._markComplete() fire and the output() generator terminate.
+    updated lifecycle status broadcasts a WS entity-update that includes the
+    new worker_status projection from to_dict().
     """
-    from flow_sdk.fs_records.agent_status import AgenticProcessStatus
     from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 
     TERMINAL = {AgenticProcessStatus.COMPLETE, AgenticProcessStatus.ERROR, AgenticProcessStatus.INTERRUPTED}
@@ -94,14 +96,20 @@ async def _poll_for_completion(agentic_process_id: str, session_id: str | None) 
             if proc is None:
                 return  # entity deleted
 
-            if proc.status == str(new_status):
+            if proc.status in {
+                AgenticProcessLifecycleStatus.STOPPING.value,
+                AgenticProcessLifecycleStatus.STOPPED.value,
+                AgenticProcessLifecycleStatus.FAILED.value,
+            }:
                 return  # already up to date — WS was already sent
 
-            proc.status = str(new_status)
+            proc.status = AgenticProcessLifecycleStatus.STOPPED.value
+            proc.visible = False
             await proc.save()
             logger.info(
-                "AgenticProcess %s: completion monitor set status=%s",
+                "AgenticProcess %s: completion monitor set lifecycle=%s worker_status=%s",
                 agentic_process_id,
+                proc.status,
                 new_status,
             )
             return
@@ -126,11 +134,13 @@ def _build_run_result(proc: "AgenticProcess") -> "RunResult":
         except Exception:
             pass
 
-    status_str = proc.status
-    try:
-        status_enum = AgenticProcessStatus(status_str)
-    except ValueError:
-        status_enum = AgenticProcessStatus.COMPLETE
+    status_enum = proc._discover_status_from_transcript()
+    if status_enum is None:
+        try:
+            lifecycle = AgenticProcessLifecycleStatus(proc.status)
+        except ValueError:
+            lifecycle = AgenticProcessLifecycleStatus.STOPPED
+        status_enum = AgenticProcessStatus.ERROR if lifecycle == AgenticProcessLifecycleStatus.FAILED else AgenticProcessStatus.IDLE
 
     ok = status_enum not in (AgenticProcessStatus.ERROR, AgenticProcessStatus.INTERRUPTED)
     return RunResult(
@@ -155,7 +165,7 @@ class AgenticProcess(Entity):
     cli_config: dict[str, Any] = APIField(default_factory=dict)
     workdir: str | None = APIField(default=None)
     favorite_index: int | None = APIField(default=None)
-    status: str = APIField(default=AgenticProcessStatus.IDLE.value)
+    status: str = APIField(default=AgenticProcessLifecycleStatus.NEW.value)
     session_id: str | None = APIField(default=None)
     use_worker_history: bool = APIField(default=False)
     project_id: str | None = APIField(default=None)
@@ -232,6 +242,19 @@ class AgenticProcess(Entity):
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
+    def _build_open_payload(self, shell: "Shell", *, is_resume: bool) -> dict[str, Any]:
+        """Return the canonical HTTP payload for an open/live process."""
+        return {
+            "id": self.id,
+            "status": self.status,
+            "shell_id": self.shell_id,
+            "session_id": self.session_id,
+            "compute_node_id": self.compute_node_id,
+            "shell": shell.model_dump(mode="json"),
+            "is_resume": is_resume,
+            "worker_pid": shell.worker_pid,
+        }
+
     async def start(
         self,
         instruction: str | None = None,
@@ -248,6 +271,13 @@ class AgenticProcess(Entity):
         """
         try:
             self.session_id = self.session_id or str(uuid4())
+            if visible is not None:
+                self.visible = visible
+
+            if self.status == AgenticProcessLifecycleStatus.STARTING.value and self.shell_id:
+                shell = await self.shell()
+                if shell is not None:
+                    return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=False))
 
             # Resolve compute node: if not yet assigned, look up the @local node (desktop only).
             if not self.compute_node_id:
@@ -291,12 +321,9 @@ class AgenticProcess(Entity):
             # Get existing shell or create a new one
             shell = await self._get_or_create_shell()
             self.shell_id = shell.id
-            self.status = AgenticProcessStatus.RUNNING.value
-            if visible is not None:
-                self.visible = visible
-            # Save session_id + shell_id BEFORE launching Claude so that
-            # the Stop hook's _mark_process_complete() can find this entity even
-            # when fast bash-only tasks complete before the post-launch save.
+            self.status = AgenticProcessLifecycleStatus.STARTING.value
+            # Save session_id + shell_id before launching Claude so revalidation
+            # can observe STARTING and avoid issuing a second open.
             await self.save()
             on_exit = self._make_pty_exit_callback()
             await shell.start(on_exit=on_exit)
@@ -313,28 +340,21 @@ class AgenticProcess(Entity):
                     name=f"completion-monitor-{self.id[:8]}",
                 )
 
-            return ApiSuccessResponse(
-                data={
-                    "id": self.id,
-                    "status": AgenticProcessStatus.RUNNING.value,
-                    "shell_id": self.shell_id,
-                    "session_id": self.session_id,
-                    "compute_node_id": self.compute_node_id,
-                    "shell": shell.model_dump(mode="json"),
-                    "is_resume": is_resume,
-                    "worker_pid": shell.worker_pid,
-                }
-            )
+            self.status = AgenticProcessLifecycleStatus.LIVE.value
+            await self.save()
+
+            return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=is_resume))
 
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} start error: {e}")
             self.shell_id = None
+            self.status = AgenticProcessLifecycleStatus.FAILED.value
             await self.save()
             return ApiFailResponse(message=str(e))
 
     @action.post(action_name="exit")
     async def exit(self) -> ApiSuccessResponse | ApiFailResponse:
-        """Kill worker process but keep shell entity alive (status=idle). Use before restart."""
+        """Kill worker process but keep shell entity alive (status=stopped). Use before restart."""
         if not self.shell_id:
             return ApiFailResponse(message="No active shell session")
 
@@ -349,7 +369,7 @@ class AgenticProcess(Entity):
             # Clear sidecar but NOT shell_id — shell entity stays alive for restart.
             self.context_data = {**self.context_data, "_shell_exit_pending": True}
             self.sidecar_shell_id = None
-            self.status = AgenticProcessStatus.INTERRUPTED.value
+            self.status = AgenticProcessLifecycleStatus.STOPPING.value
             await self.save()
 
             if shell:
@@ -359,6 +379,8 @@ class AgenticProcess(Entity):
             else:
                 logger.warning("AgenticProcess %s: Shell entity %s not found on exit", self.id, self.shell_id)
 
+            self.status = AgenticProcessLifecycleStatus.STOPPED.value
+            await self.save()
             logger.info(
                 "AgenticProcess %s: exited (session_id preserved: %s)",
                 self.id,
@@ -368,7 +390,7 @@ class AgenticProcess(Entity):
             return ApiSuccessResponse(
                 data={
                     "id": self.id,
-                    "status": AgenticProcessStatus.IDLE.value,
+                    "status": self.status,
                     "shell_id": self.shell_id,
                     "session_id": self.session_id,
                 }
@@ -376,6 +398,8 @@ class AgenticProcess(Entity):
 
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} exit error: {e}")
+            self.status = AgenticProcessLifecycleStatus.FAILED.value
+            await self.save()
             return ApiFailResponse(message=str(e))
 
     @action.post(action_name="restart")
@@ -387,19 +411,17 @@ class AgenticProcess(Entity):
         return await self.start()
 
     async def wait(self, timeout: float | None = None) -> None:
-        """Block until status reaches a terminal state (complete / error / interrupted).
+        """Block until worker_status reaches a terminal state (complete / error / interrupted).
 
         Polling interval: 2s. Raises TimeoutError if timeout elapses first.
         """
-        from flow_sdk.fs_records.agent_status import is_terminal
         deadline = (asyncio.get_event_loop().time() + timeout) if timeout else None
         while True:
-            try:
-                current = AgenticProcessStatus(self.status)
-                if is_terminal(current):
-                    return
-            except ValueError:
-                pass
+            worker_status = self._discover_status_from_transcript()
+            if worker_status and is_worker_terminal(worker_status):
+                return
+            if self.status == AgenticProcessLifecycleStatus.FAILED.value:
+                return
             if deadline and asyncio.get_event_loop().time() > deadline:
                 raise TimeoutError(f"Process did not reach terminal state within {timeout}s")
             await asyncio.sleep(2.0)
@@ -544,6 +566,17 @@ class AgenticProcess(Entity):
         d["worker_status"] = str(computed) if computed else AgenticProcessStatus.IDLE.value
         return d
 
+    @model_serializer(mode="wrap")
+    def api_json_serializer(self, nxt, info: SerializationInfo):
+        data = super().api_json_serializer(nxt, info)
+        if info.context and info.context.get("skip_api_serializer"):
+            return data
+        if data is None:
+            return None
+        computed = self._discover_status_from_transcript()
+        data["worker_status"] = str(computed) if computed else AgenticProcessStatus.IDLE.value
+        return data
+
     def _discover_status_from_transcript(self) -> AgenticProcessStatus | None:
         """Derive status from the Claude session transcript record."""
         session = self._discover_claude_record_session(self.session_id)
@@ -561,7 +594,11 @@ class AgenticProcess(Entity):
     @property
     def is_idle(self) -> bool:
         """True when not actively running."""
-        return self.status != AgenticProcessStatus.RUNNING.value
+        return self.status in {
+            AgenticProcessLifecycleStatus.NEW.value,
+            AgenticProcessLifecycleStatus.STOPPED.value,
+            AgenticProcessLifecycleStatus.FAILED.value,
+        }
 
     async def is_running(self) -> bool:
         """True when the Claude CLI worker process is actively running in the PTY."""
@@ -625,10 +662,8 @@ class AgenticProcess(Entity):
 
         try:
             shell_id = self.shell_id
-            if shell_id:
-                self.shell_id = None
-                self.sidecar_shell_id = None
-            self.status = AgenticProcessStatus.INTERRUPTED.value
+            self.status = AgenticProcessLifecycleStatus.STOPPING.value
+            self.visible = False
             await self.save()
 
             if shell_id:
@@ -637,17 +672,23 @@ class AgenticProcess(Entity):
                 if shell:
                     await shell.close()
 
+            self.shell_id = None
+            self.sidecar_shell_id = None
+            self.status = AgenticProcessLifecycleStatus.STOPPED.value
+            await self.save()
             return True
 
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} close error: {e}")
+            self.status = AgenticProcessLifecycleStatus.FAILED.value
+            await self.save()
             return False
 
     # ── HTTP actions ──────────────────────────────────────────────────────────
 
     @action.post(action_name="open")
     async def _http_open(self) -> ApiSuccessResponse | ApiFailResponse:
-        """HTTP: Start PTY and set status=running.
+        """HTTP: Start PTY and move lifecycle status to starting/live.
 
         POST body: {instruction?, visible?, session_id?}
         """
@@ -673,7 +714,7 @@ class AgenticProcess(Entity):
         return ApiSuccessResponse(
             data={
                 "id": self.id,
-                "status": AgenticProcessStatus.INTERRUPTED.value,
+                "status": AgenticProcessLifecycleStatus.STOPPED.value,
                 "terminated": True,
             }
         )
@@ -809,8 +850,14 @@ class AgenticProcess(Entity):
                         return
                     proc.shell_id = None
                     proc.sidecar_shell_id = None
-                    if proc.status == AgenticProcessStatus.RUNNING.value:
-                        proc.status = AgenticProcessStatus.INTERRUPTED.value
+                    if proc.status == AgenticProcessLifecycleStatus.STARTING.value:
+                        proc.status = AgenticProcessLifecycleStatus.FAILED.value
+                    elif proc.status not in {
+                        AgenticProcessLifecycleStatus.STOPPING.value,
+                        AgenticProcessLifecycleStatus.STOPPED.value,
+                        AgenticProcessLifecycleStatus.FAILED.value,
+                    }:
+                        proc.status = AgenticProcessLifecycleStatus.STOPPED.value
                     await proc.save()
 
                     if session_id:

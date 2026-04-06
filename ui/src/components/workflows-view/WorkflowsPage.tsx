@@ -12,7 +12,18 @@ import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useProcessState } from '@src/hooks/use-process-state';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { ActionInfo, AgenticProcess, dataContext, dataManager, fsManager, ProcessorStatus, QueryRequest, type TypeId, Workflow } from '@sdk';
+import {
+  ActionInfo,
+  AgenticProcess,
+  dataContext,
+  dataManager,
+  fsManager,
+  isProcessActive,
+  isProcessorRunning,
+  QueryRequest,
+  type TypeId,
+  Workflow,
+} from '@sdk';
 import { ComputeNode, openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { ExternalLink, FilePlus, GitFork, Loader2, Play, Save, Trash2, Workflow as WorkflowIcon, Zap } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState, KeyboardEvent } from 'react';
@@ -104,14 +115,8 @@ function WorkflowEditor({
 
   const processState = useProcessState(processEntry?.process ?? null);
   const prepareState = useProcessState(prepareEntry?.process ?? null);
-  const ACTIVE_STATUSES = new Set([
-    ProcessorStatus.IDLE,
-    ProcessorStatus.INITIALIZING,
-    ProcessorStatus.RUNNING,
-    ProcessorStatus.WAITING_FOR_INPUT,
-  ]);
-  const isRunning = !!processEntry && ACTIVE_STATUSES.has(processState.status);
-  const isPrepareRunning = !!prepareEntry && ACTIVE_STATUSES.has(prepareState.status);
+  const isRunning = !!processEntry && (isProcessActive(processState.lifecycleStatus) || isProcessorRunning(processState.status));
+  const isPrepareRunning = !!prepareEntry && (isProcessActive(prepareState.lifecycleStatus) || isProcessorRunning(prepareState.status));
 
   // When the prepare process finishes, verify the file actually landed on disk.
   // If it didn't, `verifyPrepared` clears prepared_vfs_path and saves the entity.

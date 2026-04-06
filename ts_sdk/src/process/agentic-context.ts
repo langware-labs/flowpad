@@ -1,9 +1,9 @@
 /**
- * AgenticContext - Execution context for AgenticProcessor
+ * AgenticContext - Execution context for AgenticProcess
  *
  * Frontend DTO for passing execution parameters to the backend.
  * Note: compute_node_id is NOT passed from frontend - it's a security-sensitive
- * field managed internally by the backend Processor.
+ * field managed internally by the backend process runtime.
  */
 
 /**
@@ -14,10 +14,10 @@
 export type PermissionMode = 'bypassPermissions' | 'askUser';
 
 /**
- * Context for AgenticProcessor execution.
+ * Context for AgenticProcess execution.
  *
  * Provides optional configuration for running instruction files.
- * The compute node is managed by the backend Processor (not passed from frontend).
+ * The compute node is managed by the backend process runtime (not passed from frontend).
  *
  * @example
  * ```typescript
@@ -97,9 +97,8 @@ export interface ISpawnWorkerOptions {
   /** ProcessResult child metadata (forwarded to CreateProcessOptions). */
   result?: { uname?: string; resultType?: string; sourceSessionId?: string };
   /** Forwarded to createProcess(). Default: true. */
-  watchProcessor?: boolean;
   watchProcess?: boolean;
-  /** WS request timeout ms for shell.startPty() (default: 30 000). */
+  /** WS request timeout ms for shell.attachPty() (default: 30 000). */
   ptyTimeout?: number;
 }
 
@@ -107,7 +106,7 @@ export interface ISpawnWorkerOptions {
  * Serialize AgenticContext to backend-compatible format.
  *
  * Converts camelCase properties to snake_case for Python backend.
- * Note: compute_node_id is NOT serialized - it's managed by the backend Processor.
+ * Note: compute_node_id is NOT serialized - it's managed by the backend process runtime.
  *
  * @param ctx - AgenticContext to serialize
  * @returns Record suitable for REST API body

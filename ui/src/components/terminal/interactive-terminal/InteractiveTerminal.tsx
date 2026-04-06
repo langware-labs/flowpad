@@ -329,7 +329,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     if (!sidecarShellId) {
       // Create a plain Shell entity and let SidecarShellTerminal start its PTY
       // process.compute_node_id may be a TypeId object (deepAssign converts "type-UUID" strings).
-      // Extract the plain UUID (.id) to pass to Shell so startPty() constructs valid ActionInfo URLs.
+      // Extract the plain UUID (.id) to pass to Shell so attachPty() constructs valid ActionInfo URLs.
       const rawCnId = process.compute_node_id ?? shellRef.current?.compute_node_id ?? null;
       if (!rawCnId) return;
       const computeNodeId: string | null =

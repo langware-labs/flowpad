@@ -10,7 +10,7 @@
 
 import { APIEntity, dataManager, registerEntity } from '../../APIEntity';
 import { TypeId } from '../../models/TypeId';
-import type { IAgenticProcess } from '../../agentic_processor/agentic-process';
+import type { IAgenticProcess } from '../../process/agentic-process';
 import { ConnectionManager } from '../../websocket';
 import {
   FlowData,
@@ -114,7 +114,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    *
    * @param context - Execution context (workdir, permissionMode, model, etc.)
    * @param options - Optional result metadata and watch settings
-   * @returns Promise resolving to a new AgenticProcess in IDLE status
+   * @returns Promise resolving to a new AgenticProcess in NEW status
    *
    * @example
    * ```typescript
@@ -124,15 +124,15 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * ```
    */
   async createProcess(
-    context: import('../../agentic_processor/agentic-context').AgenticContext = {},
+    context: import('../../process/agentic-context').AgenticContext = {},
     options?: {
       result?: { uname?: string; resultType?: string; sourceSessionId?: string };
       watchProcess?: boolean;
       visible?: boolean;
     },
-  ): Promise<import('../../agentic_processor/agentic-process').AgenticProcess> {
-    const { AgenticProcess } = await import('../../agentic_processor/agentic-process');
-    const { serializeAgenticContext } = await import('../../agentic_processor/agentic-context');
+  ): Promise<import('../../process/agentic-process').AgenticProcess> {
+    const { AgenticProcess } = await import('../../process/agentic-process');
+    const { serializeAgenticContext } = await import('../../process/agentic-context');
 
     const action = new ActionInfo('createProcess', ComputeNode.type, this.id, 'POST');
     action.bodyParameters = {
@@ -143,7 +143,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
 
     const response = await dataManager.callAction<unknown, IAgenticProcess>(action);
 
-    const process = dataManager.updateEntityFromJson<import('../../agentic_processor/agentic-process').AgenticProcess>(response);
+    const process = dataManager.updateEntityFromJson<import('../../process/agentic-process').AgenticProcess>(response);
     process._context = context;
 
     if (options?.watchProcess !== false) {
