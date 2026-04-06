@@ -85,6 +85,49 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       ? new DockPointer(ViewType.ASSETS, `editor/command/${r.source_path.replace(/^\//, '')}`)
       : null,
   },
+  comment: {
+    primaryAction: async (r, navigation) => {
+      const sessionId = r.session_id;
+      if (sessionId) {
+        await navigation.openClaudeSession(sessionId);
+      }
+    },
+  },
+  docs: {
+    dockPointer: (r) => r.source_path
+      ? new DockPointer(ViewType.ASSETS, `editor/docs/${r.source_path.replace(/^\//, '')}`)
+      : null,
+  },
+  plan: {
+    dockPointer: (r) => r.source_path
+      ? new DockPointer(ViewType.ASSETS, `editor/plan/${r.source_path.replace(/^\//, '')}`)
+      : null,
+  },
+  workflow: {
+    dockPointer: (r) => r.source_path
+      ? new DockPointer(ViewType.ASSETS, `editor/workflow/${r.source_path.replace(/^\//, '')}`)
+      : null,
+  },
+  claude_md: {
+    dockPointer: (r) => r.source_path
+      ? new DockPointer(ViewType.ASSETS, `editor/claude_md/${r.source_path.replace(/^\//, '')}`)
+      : null,
+  },
+  claude_memory: {
+    dockPointer: (r) => r.source_path
+      ? new DockPointer(ViewType.ASSETS, `editor/claude_memory/${r.source_path.replace(/^\//, '')}`)
+      : null,
+  },
+  claude_rules: {
+    dockPointer: (r) => r.source_path
+      ? new DockPointer(ViewType.ASSETS, `editor/claude_rules/${r.source_path.replace(/^\//, '')}`)
+      : null,
+  },
+  asset: {
+    dockPointer: (r) => r.source_path
+      ? new DockPointer(ViewType.ASSETS, `editor/asset/${r.source_path.replace(/^\//, '')}`)
+      : null,
+  },
   claude_settings: {
     dockPointer: () => DockPointer.forSettings(),
   },
