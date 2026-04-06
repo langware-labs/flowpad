@@ -15,14 +15,7 @@
  *   resolvedStatus ghost-running correction works.
  */
 
-import {
-  AgenticProcess,
-  ConnectionManager,
-  dataManager,
-  ProcessorStatus,
-  Shell,
-  TypeId,
-} from '@sdk';
+import { AgenticProcess, ConnectionManager, dataManager, ProcessorStatus, Shell, TypeId } from '@sdk';
 import { v4 as uuidv4 } from 'uuid';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiTestSetup, createAgenticProcess, getTestSignupInfo } from '../utils/test-utils';
@@ -74,7 +67,9 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
     await apiTestSetup(info, ctx.task.name);
     manager = ConnectionManager.getInstance();
     await vi.waitFor(
-      () => { if (!manager.connected) throw new Error('WS not connected'); },
+      () => {
+        if (!manager.connected) throw new Error('WS not connected');
+      },
       { timeout: 5000, interval: 200 },
     );
   });
@@ -131,7 +126,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
     expect(shell).not.toBeNull();
 
     // Connect shell to start receiving PTY output
-    await shell!.startPty({ cols: 80, rows: 24 });
+    await shell!.attachPty({ cols: 80, rows: 24 });
     await waitForShellReady(shell!, 15000);
 
     // Wait for Claude Code to start up before sending prompt
@@ -158,7 +153,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
     const shell = await dataManager.getByTypeId<Shell>(typeId);
     expect(shell).not.toBeNull();
 
-    await shell!.startPty({ cols: 80, rows: 24 });
+    await shell!.attachPty({ cols: 80, rows: 24 });
     await waitForShellReady(shell!, 15000);
     await new Promise((r) => setTimeout(r, 3000));
 
@@ -193,7 +188,9 @@ describe.skip('AgenticProcess restore from DB — integration', () => {
     await apiTestSetup(info, ctx.task.name);
     manager = ConnectionManager.getInstance();
     await vi.waitFor(
-      () => { if (!manager.connected) throw new Error('WS not connected'); },
+      () => {
+        if (!manager.connected) throw new Error('WS not connected');
+      },
       { timeout: 5000, interval: 200 },
     );
   });
@@ -239,7 +236,7 @@ describe.skip('AgenticProcess restore from DB — integration', () => {
     const newShell = await dataManager.getByTypeId<Shell>(newShellTypeId);
     expect(newShell).not.toBeNull();
 
-    await newShell!.startPty({ cols: 80, rows: 24 });
+    await newShell!.attachPty({ cols: 80, rows: 24 });
     await waitForShellReady(newShell!, 15000);
     await new Promise((r) => setTimeout(r, 3000));
 

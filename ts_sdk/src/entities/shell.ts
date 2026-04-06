@@ -1,14 +1,12 @@
-import { v4 as uuidv4 } from 'uuid';
-import { APIEntity, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { isApiError } from '../ApiResponse';
 import { dataContext } from '../FlowSync/context';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models';
 import { DockPointerData } from '../models/DockPointer';
-import { dataManager } from '../APIEntity';
-import { isApiError } from '../ApiResponse';
-import { ViewType } from '../utils/ui/view-types';
 import { PtyConnection } from '../services/shell/ptyConnection';
 import { ptyOrphanBuffer } from '../services/shell/ptyOrphanBuffer';
+import { ViewType } from '../utils/ui/view-types';
 
 export const ShellStatus = {
   IDLE: 'idle',
@@ -45,10 +43,10 @@ export interface PtySequenceData {
 export interface IShellConnectionOptions {
   cols: number;
   rows: number;
-  isActive?: boolean;       // deferred activation gate (default: true)
+  isActive?: boolean; // deferred activation gate (default: true)
   workdir?: string;
-  force?: boolean;          // reset seq + replayDone and re-attach (absorbs restart())
-  timeout?: number;         // WS request timeout ms (default: 30 000)
+  force?: boolean; // reset seq + replayDone and re-attach (absorbs restart())
+  timeout?: number; // WS request timeout ms (default: 30 000)
 }
 
 export interface IShell extends IEntity {
@@ -64,7 +62,6 @@ export interface IShell extends IEntity {
   last_active_at?: string | null;
   env?: Record<string, string> | null;
 }
-
 
 // ---------------------------------------------------------------------------
 // Static dispatch registry — a single on_close + on_reconnected listener pair
@@ -155,10 +152,14 @@ export class Shell extends APIEntity<Shell> implements IShell {
   // ── Private PTY state accessors ───────────────────────────────────────────
 
   /** Seq of last received chunk; used by connect() for replay offset. */
-  private get _lastPtySeq(): number { return this._pty?.lastSeq ?? 0; }
+  private get _lastPtySeq(): number {
+    return this._pty?.lastSeq ?? 0;
+  }
 
   /** Force-reset seq to 0 so connect() requests a full replay. */
-  private _resetPtySeq(): void { if (this._pty) this._pty.lastSeq = 0; }
+  private _resetPtySeq(): void {
+    if (this._pty) this._pty.lastSeq = 0;
+  }
 
   // ── Public accessors ──────────────────────────────────────────────────────
 
@@ -188,7 +189,11 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
   printPty(): void {
     const dec = new TextDecoder();
-    console.log(this.getPtyChunks().map(c => dec.decode(c.data)).join(''));
+    console.log(
+      this.getPtyChunks()
+        .map((c) => dec.decode(c.data))
+        .join(''),
+    );
   }
 
   /**
@@ -217,11 +222,11 @@ export class Shell extends APIEntity<Shell> implements IShell {
    * _bump({ replayDone: true }) signals React to read getPtyChunks() for the
    * replay write, then subscribe onOutput() for live output.
    */
-  async startPty(opts: IShellConnectionOptions): Promise<void> {
+  async attachPty(opts: IShellConnectionOptions): Promise<void> {
     const { cols, rows, isActive = true, workdir, force = false, timeout } = opts;
 
     if (isActive) this._hasEverBeenActive = true;
-    if (!this._hasEverBeenActive) return;          // still deferred
+    if (!this._hasEverBeenActive) return; // still deferred
 
     if (!_shellRegistry.has(this)) {
       _shellRegistry.add(this);
@@ -233,7 +238,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
       this._replayDone = false;
     }
 
-    if (this._pty?.started && this._replayDone) return;  // already fully connected
+    if (this._pty?.started && this._replayDone) return; // already fully connected
 
     if (!this.compute_node_id) return;
 
@@ -283,7 +288,10 @@ export class Shell extends APIEntity<Shell> implements IShell {
     // ONLY NOW flip replayDone — InteractiveTerminal's 'connected' event handler
     // resets xterm, writes getPtyChunks() for the replay, and subscribes onOutput().
     const _t0 = (typeof window !== 'undefined' ? window : globalThis) as Record<string, unknown>;
-    if (_t0.__shellNavT0 !== undefined) console.log(`[PERF] +${(performance.now() - (_t0.__shellNavT0 as number)).toFixed(0)}ms shell.startPty() replayDone=true (shell=${this.id.slice(0,8)})`);
+    if (_t0.__shellNavT0 !== undefined)
+      console.log(
+        `[PERF] +${(performance.now() - (_t0.__shellNavT0 as number)).toFixed(0)}ms shell.startPty() replayDone=true (shell=${this.id.slice(0, 8)})`,
+      );
     this._replayDone = true;
     this.emit('status', 'connected');
   }
@@ -322,7 +330,10 @@ export class Shell extends APIEntity<Shell> implements IShell {
     const action = new ActionInfo('terminal-command', 'compute_node', this.compute_node_id, 'POST');
     action.subpath = 'attach';
     action.bodyParameters = { shell_id: this.id, since_seq: sinceSeq, connection_id };
-    const result = await dataManager.callActionOverWS<any, any>(action, timeout !== undefined ? { timeout } : undefined);
+    const result = await dataManager.callActionOverWS<any, any>(
+      action,
+      timeout !== undefined ? { timeout } : undefined,
+    );
 
     // Server returns status="not_found" when the PTY session no longer exists
     if (result?.status === 'not_found') {
@@ -352,11 +363,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     // If started but server-side PTY has died, sendInput will auto-recover on first keystroke.
   }
 
-  private async _open(opts?: {
-    connection_id?: string;
-    cols?: number;
-    rows?: number;
-  }): Promise<void> {
+  private async _open(opts?: { connection_id?: string; cols?: number; rows?: number }): Promise<void> {
     const action = new ActionInfo('open', Shell.type, this.id, 'POST');
     action.bodyParameters = opts ?? {};
     const result = await dataManager.callAction<any, any>(action);
@@ -367,7 +374,10 @@ export class Shell extends APIEntity<Shell> implements IShell {
   // ── Public I/O and display methods ───────────────────────────────────────
 
   async sendInput(data: string): Promise<void> {
-    if (!this._pty?.isLive) { console.warn('[Shell] sendInput: PTY not live'); return; }
+    if (!this._pty?.isLive) {
+      console.warn('[Shell] sendInput: PTY not live');
+      return;
+    }
     if (!this.compute_node_id) return;
     const action = new ActionInfo('terminal-command', 'compute_node', this.compute_node_id, 'POST');
     action.subpath = 'input';
@@ -414,7 +424,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     if (this.status === ShellStatus.ERROR) return;
     if (!this._hasEverBeenActive) return;
     const workdir = this.workdir ?? dataContext.project?.fs_storage_mount_path ?? undefined;
-    void this.startPty({ cols: 80, rows: 24, workdir });
+    void this.attachPty({ cols: 80, rows: 24, workdir });
   }
 
   async close(): Promise<void> {
@@ -441,10 +451,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     }
   }
 
-  async updateDisplay(fields: {
-    name?: string;
-    tab_order?: number;
-  }): Promise<void> {
+  async updateDisplay(fields: { name?: string; tab_order?: number }): Promise<void> {
     const action = new ActionInfo('update-display', Shell.type, this.id, 'POST');
     action.bodyParameters = fields;
     await dataManager.callAction<any, any>(action);
@@ -495,20 +502,15 @@ export class Shell extends APIEntity<Shell> implements IShell {
     if (!computeNodeId) throw new Error('[Shell.newLiveShell] No compute node');
     const shell = new Shell({ name: opts?.name ?? 'shell', workdir: opts?.workdir, compute_node_id: computeNodeId });
     await shell.save();
-    await shell.startPty({ cols: opts?.cols ?? 80, rows: opts?.rows ?? 24 });
+    await shell.attachPty({ cols: opts?.cols ?? 80, rows: opts?.rows ?? 24 });
     return shell;
   }
 
   static async list(computeNodeId: string): Promise<Shell[]> {
     const { ComputeNode: ComputeNodeClass } = await import('./compute-node/compute-node');
-    const action = new ActionInfo(
-      'list-shells',
-      ComputeNodeClass.type,
-      computeNodeId,
-      'GET',
-    );
+    const action = new ActionInfo('list-shells', ComputeNodeClass.type, computeNodeId, 'GET');
     const response = await dataManager.callAction<any, any>(action);
-    const data = Array.isArray(response) ? response : (response?.data || []);
+    const data = Array.isArray(response) ? response : response?.data || [];
     const results: Shell[] = [];
     for (const d of data) {
       try {
@@ -524,8 +526,6 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
   static async getActiveSessions(): Promise<Shell[]> {
     const all = await Shell.query<Shell>({});
-    return all
-      .filter((s) => s.status !== ShellStatus.CLOSED)
-      .sort((a, b) => (a.tab_order ?? 0) - (b.tab_order ?? 0));
+    return all.filter((s) => s.status !== ShellStatus.CLOSED).sort((a, b) => (a.tab_order ?? 0) - (b.tab_order ?? 0));
   }
 }

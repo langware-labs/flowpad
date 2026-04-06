@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
-import { Loader2, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
+import { Check, ClipboardList, Loader2, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import type { Shell, PtySequenceData, PtySequenceChunkMeta } from '@sdk';
 import {
@@ -10,6 +10,7 @@ import {
   getXtermChunkCount,
   formatTimestamp,
   formatBytes,
+  decodePlainText,
   type PtyViewerData,
 } from './pty-viewer-logic';
 
@@ -228,6 +229,56 @@ function SegmentRenderer({ segments, showCursor }: { segments: Segment[]; showCu
   );
 }
 
+function buildLogText(
+  shellId: string,
+  data: PtyViewerData,
+  replayData: PtySequenceData,
+  xtermChunkCount: number,
+): string {
+  const baseTimestamp = replayData.chunks[0]?.timestamp;
+  const statsLine = [
+    `Replay: ${data.totalChunks} chunks (${formatBytes(data.totalSizeBytes)})`,
+    `xterm: ${xtermChunkCount} chunks`,
+    data.ptyFileSize > 0 ? `PTY file: ${formatBytes(data.ptyFileSize)}` : null,
+    data.alignmentSeq >= 0 ? `Aligned at seq ${data.alignmentSeq}` : null,
+  ].filter(Boolean).join('  ');
+
+  const SEP = '─'.repeat(82);
+  const lines: string[] = [
+    `PTY Viewer Log — Shell: ${shellId}`,
+    SEP,
+    statsLine,
+    SEP,
+    '',
+    ` ${'seq'.padStart(5)} │ ${'time'.padEnd(10)} │ ${'size'.padStart(7)} │ ${'status'.padEnd(9)} │ events / preview`,
+    `${'─'.repeat(7)}┼${'─'.repeat(12)}┼${'─'.repeat(9)}┼${'─'.repeat(11)}┼${'─'.repeat(42)}`,
+  ];
+
+  const statusLabels: Record<PtyValidationStatus, string> = {
+    [PtyValidationStatus.MATCH]: 'OK',
+    [PtyValidationStatus.MISMATCH]: 'MISMATCH',
+    [PtyValidationStatus.NO_DATA]: '—',
+    [PtyValidationStatus.PRE_ALIGNMENT]: 'pre-align',
+  };
+
+  for (const row of data.rows) {
+    const chunk = replayData.chunks.find(c => c.seq === row.seq);
+    const status = statusLabels[row.validationStatus];
+    const time = formatTimestamp(row.timestamp, baseTimestamp);
+    const size = formatBytes(row.size);
+    const eventStr = row.namedEvents.map(e => e.data ? `${e.name}(${e.data})` : e.name).join(' ');
+    let preview = '';
+    if (chunk?.data_b64) {
+      const plain = decodePlainText(chunk.data_b64).replace(/\n/g, '↵').trim();
+      if (plain) preview = plain.slice(0, 50);
+    }
+    const content = [eventStr, preview].filter(Boolean).join(' │ ');
+    lines.push(` ${String(row.seq).padStart(5)} │ ${time.padEnd(10)} │ ${size.padStart(7)} │ ${status.padEnd(9)} │ ${content}`);
+  }
+
+  return lines.join('\n');
+}
+
 export function PTYViewer({ open, onClose, shell }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -239,7 +290,17 @@ export function PTYViewer({ open, onClose, shell }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [tableExpanded, setTableExpanded] = useState(false);
   const [splitPct, setSplitPct] = useState(45);
+  const [copied, setCopied] = useState(false);
   const draggingRef = useRef(false);
+
+  const handleCopyLog = useCallback(() => {
+    if (!data || !replayData || !shell) return;
+    const text = buildLogText(shell.id, data, replayData, xtermChunkCount);
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [data, replayData, shell, xtermChunkCount]);
 
   useEffect(() => {
     if (!open || !shell) return;
@@ -299,9 +360,26 @@ export function PTYViewer({ open, onClose, shell }: Props) {
           <DialogTitle className="flex items-center gap-2 text-sm">
             PTY Viewer
             {shell && <span className="text-xs text-muted-foreground font-mono">{shell.id.slice(0, 8)}</span>}
-            <button onClick={() => setExpanded(e => !e)} className="ml-auto text-muted-foreground hover:text-foreground">
-              {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-            </button>
+            <div className="ml-auto flex items-center gap-1">
+              {data && (
+                <TooltipProvider delayDuration={300}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={handleCopyLog}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <ClipboardList className="h-3.5 w-3.5" />}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom" className="text-xs">Copy as log</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+              <button onClick={() => setExpanded(e => !e)} className="text-muted-foreground hover:text-foreground">
+                {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+              </button>
+            </div>
           </DialogTitle>
         </DialogHeader>
 

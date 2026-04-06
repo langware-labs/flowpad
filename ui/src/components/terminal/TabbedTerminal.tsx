@@ -421,7 +421,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   const modKey = /Mac/i.test(osPlatform) ? 'Ctrl' : /Win/i.test(osPlatform) ? 'Meta' : 'Alt';
   const modLabel = /Mac/i.test(osPlatform) ? 'Ctrl' : /Win/i.test(osPlatform) ? 'Win' : 'Alt';
 
-  // Intercept mod+W (close tab), mod+T (new terminal), mod+C (new Claude), mod+PgUp/PgDn (cycle tabs)
+  // Intercept mod+W (close tab), mod+T (new Claude), mod+PgUp/PgDn (cycle tabs)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const modPressed = modKey === 'Ctrl' ? e.ctrlKey : modKey === 'Meta' ? e.metaKey : e.altKey;
@@ -430,9 +430,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
         e.preventDefault();
         void handleCloseTab(activeShellId);
       } else if (e.key === 't' || e.key === 'T') {
-        e.preventDefault();
-        void handleStartTerminal();
-      } else if (e.key === 'c' || e.key === 'C') {
         e.preventDefault();
         void handleStartClaude();
       } else if (e.key === 'PageUp') {
