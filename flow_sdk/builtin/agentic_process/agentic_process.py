@@ -190,7 +190,7 @@ class AgenticProcess(Entity):
             await proc.wait()
             result = _build_run_result(proc)
         if not result.ok:
-            raise ProcessError(status=result.worker_status, session_id=result.session_id)
+            raise ProcessError(status=result.status, session_id=result.session_id)
         return result
 
     @classmethod

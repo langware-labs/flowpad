@@ -506,6 +506,7 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
   const rows: [string, string][] = [
     ['Process ID', process.id || 'none'],
     ['Status', process.status || 'unknown'],
+    ['CLI worker status', process.workerStatus || 'idle'],
     ['Started', startDisplay],
     ['Last message', lastDisplay],
     ['Working Dir', workdir],
