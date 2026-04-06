@@ -41,7 +41,7 @@ def _proc(**kwargs) -> AgenticProcess:
 def test_defaults():
     """New process has idle status, no session_id, no shell_id."""
     proc = AgenticProcess()
-    assert proc.worker_status == AgenticProcessStatus.IDLE.value
+    assert proc.status == AgenticProcessStatus.IDLE.value
     assert proc.session_id is None
     assert proc.shell_id is None
 
@@ -90,10 +90,8 @@ async def test_wait_returns_when_no_transcript():
     proc = _proc()
     # No session_id → _discover_status_from_transcript returns None → is_idle=False
     # But with a terminal status set directly, wait() should return.
-    proc.worker_status = AgenticProcessStatus.COMPLETE.value
-    # Simulate transcript returning COMPLETE status
-    with patch.object(proc, "_discover_status_from_transcript", return_value=AgenticProcessStatus.COMPLETE):
-        await proc.wait(timeout=2.0)
+    proc.status = AgenticProcessStatus.COMPLETE.value
+    await proc.wait(timeout=2.0)
 
 
 # ---------------------------------------------------------------------------
@@ -251,8 +249,15 @@ def test_stream_raises_not_implemented():
 # is_idle — no transcript
 # ---------------------------------------------------------------------------
 
-def test_is_idle_false_without_transcript():
-    """is_idle is False when no Claude session transcript exists."""
+def test_is_idle_true_when_not_running():
+    """is_idle is True when status is not RUNNING."""
     proc = _proc()
-    # No session_id means _discover_claude_record_session returns None → is_idle=False
+    # Default status is IDLE — not running
+    assert proc.is_idle is True
+
+
+def test_is_idle_false_when_running():
+    """is_idle is False when status is RUNNING."""
+    proc = _proc()
+    proc.status = AgenticProcessStatus.RUNNING.value
     assert proc.is_idle is False
