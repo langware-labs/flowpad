@@ -1,4 +1,15 @@
-import { AgenticProcess, CodeRef, dataContext, DockPointerData, FSItem, type IDockPointer, QueryRequest, Shell, TypeId, ViewType } from '@sdk';
+import {
+  AgenticProcess,
+  CodeRef,
+  dataContext,
+  DockPointerData,
+  FSItem,
+  type IDockPointer,
+  QueryRequest,
+  Shell,
+  TypeId,
+  ViewType,
+} from '@sdk';
 import { NavigateFunction } from 'react-router';
 import { DockPointer } from './DockPointer';
 import { FileOptions, TabOptions } from './types';
@@ -23,7 +34,10 @@ function toStringRecord(obj?: Record<string, unknown>): Record<string, string> |
  * Uses relative navigation: takes current URL and replaces the dock portion
  */
 export class NavigationActions {
-  constructor(private navigate: NavigateFunction, private currentDock: DockPointer | null = null) {}
+  constructor(
+    private navigate: NavigateFunction,
+    private currentDock: DockPointer | null = null,
+  ) {}
 
   // ========== Core Navigation ==========
 
@@ -48,7 +62,9 @@ export class NavigationActions {
     }
 
     const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
-    const dock = extraOptions ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout) : base;
+    const dock = extraOptions
+      ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout)
+      : base;
 
     if (this.currentDock?.equals(dock)) return; // already at this pointer, no-op
 
@@ -139,9 +155,12 @@ export class NavigationActions {
     this.openDock(new DockPointerData(ViewType.SHELL));
   }
 
-  async openShell(shellId: string, options?: { startClaude?: boolean; cwd?: string; startCommand?: string; skipPermissions?: boolean }): Promise<Shell | null> {
+  async openShell(
+    shellId: string,
+    options?: { startClaude?: boolean; cwd?: string; startCommand?: string; skipPermissions?: boolean },
+  ): Promise<Shell | null> {
     const extraOptions = toStringRecord(options);
-    const shell = Shell.getByIdFromCache(shellId) ?? await Shell.getById(shellId);
+    const shell = Shell.getByIdFromCache(shellId) ?? (await Shell.getById(shellId));
     if (!shell) {
       return null;
     }
@@ -151,7 +170,8 @@ export class NavigationActions {
 
   async openShellProcess(agenticProcessId: string, options?: { t?: string }): Promise<AgenticProcess | null> {
     const extraOptions = toStringRecord(options);
-    const process = AgenticProcess.getByIdFromCache(agenticProcessId) ?? await AgenticProcess.getById(agenticProcessId);
+    const process =
+      AgenticProcess.getByIdFromCache(agenticProcessId) ?? (await AgenticProcess.getById(agenticProcessId));
     if (!process) {
       return null;
     }
@@ -169,14 +189,14 @@ export class NavigationActions {
 
   /** Open an AgenticProcess in a terminal tab. Route loader calls open(). */
   async openProcessTab(processId: string, options?: Record<string, string>): Promise<void> {
-    const process = AgenticProcess.getByIdFromCache(processId) ?? await AgenticProcess.getById(processId);
+    const process = AgenticProcess.getByIdFromCache(processId) ?? (await AgenticProcess.getById(processId));
     if (!process) return;
     this.openDock(process.dockPointer, options);
   }
 
   /** Open a plain Shell in a terminal tab. */
   async openShellTab(shellId: string): Promise<void> {
-    const shell = Shell.getByIdFromCache(shellId) ?? await Shell.getById(shellId);
+    const shell = Shell.getByIdFromCache(shellId) ?? (await Shell.getById(shellId));
     if (!shell) return;
     this.openDock(shell.dockPointer);
   }
@@ -214,7 +234,9 @@ export class NavigationActions {
     }
   }
 
-  async openNewClaudeProcess(options?: { cwd?: string }): Promise<{ processId: string; shellId: string; dockPointer: IDockPointer } | null> {
+  async openNewClaudeProcess(options?: {
+    cwd?: string;
+  }): Promise<{ processId: string; shellId: string; dockPointer: IDockPointer } | null> {
     try {
       const { process: agenticProcess, shell } = await AgenticProcess.spawn(
         { workdir: options?.cwd || dataContext.project?.fs_storage_mount_path },
@@ -231,17 +253,21 @@ export class NavigationActions {
     }
   }
 
-  async openNewShell(options?: { cwd?: string; startCommand?: string; }): Promise<{ shellId: string } | null> {
+  async openNewShell(options?: { cwd?: string; startCommand?: string }): Promise<{ shellId: string } | null> {
     try {
       const cn = dataContext.computeNode;
-      if (!cn) { console.error('[NavigationActions] No compute node'); this.openShellView(); return null; }
+      if (!cn) {
+        console.error('[NavigationActions] No compute node');
+        this.openShellView();
+        return null;
+      }
       const { nextTerminalName } = await import('@src/components/terminal/TabbedTerminal');
       const shells = await Shell.list(cn.id);
-      const name = nextTerminalName(shells.map(s => ({ name: s.name ?? '' })));
+      const name = nextTerminalName(shells.map((s) => ({ name: s.name ?? '' })));
       const newShell = Shell.create(cn, { name });
       await newShell.save(cn.typeId);
       const cwd = options?.cwd || dataContext.project?.fs_storage_mount_path || undefined;
-      await newShell.startPty({ cols: 80, rows: 24, workdir: cwd });
+      await newShell.attachPty({ cols: 80, rows: 24, workdir: cwd });
       const openedShell = await this.openShell(newShell.id, options);
       return { shellId: openedShell?.id ?? newShell.id };
     } catch (error) {
@@ -376,7 +402,17 @@ export class NavigationActions {
    * @param query - Optional initial query string
    * @param filters - Optional filter options
    */
-  openSearch(query?: string, filters?: { record_type?: string; status?: string; scope?: string; time_preset?: string; time_start?: string; time_end?: string }): void {
+  openSearch(
+    query?: string,
+    filters?: {
+      record_type?: string;
+      status?: string;
+      scope?: string;
+      time_preset?: string;
+      time_start?: string;
+      time_end?: string;
+    },
+  ): void {
     const pointer = DockPointer.forSearch(query, filters);
     this.openDock(pointer);
   }

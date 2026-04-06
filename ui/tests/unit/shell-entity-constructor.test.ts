@@ -11,7 +11,7 @@
  * (status !== 'running') and registers none (no pty_pid), leaving
  * the ProcessTerminal in "Reconnecting to session..." state forever.
  */
-import { dataManager, ConnectionManager } from '@sdk';
+import { ConnectionManager, dataManager } from '@sdk';
 import { Shell } from '@sdk/entities/shell';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -54,7 +54,7 @@ describe('Shell entity constructor', () => {
         type: 'shell',
         status: 'running',
         pty_pid: '26dc80b4-2a76-48e9-b141-e7443563d8c2',
-          compute_node_id: 'compute_node-c9ed243c-a3be-4985-9858-7a0821ec9e9f',
+        compute_node_id: 'compute_node-c9ed243c-a3be-4985-9858-7a0821ec9e9f',
       },
     ];
 
@@ -81,7 +81,7 @@ describe('Shell entity constructor', () => {
     vi.spyOn(dataManager, 'callActionOverWS').mockResolvedValue({ status: 'not_found' });
     const callActionSpy = vi.spyOn(dataManager, 'callAction').mockResolvedValue({});
 
-    await shell.startPty({ cols: 80, rows: 24, workdir: '/tmp' });
+    await shell.attachPty({ cols: 80, rows: 24, workdir: '/tmp' });
 
     expect(callActionSpy).toHaveBeenCalledTimes(1);
     expect(callActionSpy.mock.calls[0]?.[0].bodyParameters).toMatchObject({

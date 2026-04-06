@@ -1,13 +1,10 @@
 """Test AgenticProcess status lifecycle through shell operations.
 
-Verifies that status is derived from the Claude session transcript:
-  - No transcript → idle (default)
-  - Transcript with last assistant stop_reason="tool_use" → running
-  - Transcript with last assistant stop_reason="end_turn" → complete
-  - After stop, status still reflects transcript state (not forced idle)
-
-The process entity's state.status is derived from the Claude session transcript
-so the frontend can gate UI controls (e.g. ProcessToolbar toggles).
+Verifies app-managed status field transitions:
+  - New process → idle
+  - After start() → running
+  - After exit() → interrupted
+  - worker_status (computed from transcript) is separate and read-only
 """
 
 import asyncio
@@ -110,9 +107,9 @@ async def test_process_status_after_kill_pty(bootstrapped_client):
 
     await asyncio.sleep(0.5)
 
-    # Status is transcript-derived, not forced idle by stop
+    # After exit(), app status = interrupted
     status = await _get_process_status(bootstrapped_client, process_id)
-    assert status in ("idle", "null", "empty", "waiting", "thinking", "tool_call", "tool_running", "running", "complete", "inactive"), f"Expected transcript-derived status after stop, got {status}"
+    assert status == "interrupted", f"Expected interrupted after exit, got {status}"
 
 
 @pytest.mark.asyncio
@@ -155,8 +152,9 @@ async def test_process_status_full_lifecycle(bootstrapped_client):
 
     await asyncio.sleep(0.5)
 
+    # After exit(), app status = interrupted
     status = await _get_process_status(bootstrapped_client, process_id)
-    assert status in ("idle", "null", "empty", "waiting", "thinking", "tool_call", "tool_running", "running", "complete", "inactive"), f"Step 3: Expected transcript-derived status, got {status}"
+    assert status == "interrupted", f"Step 3: Expected interrupted after exit, got {status}"
 
     # Verify session_id preserved, shell_id cleared
     resp = await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{process_id}")

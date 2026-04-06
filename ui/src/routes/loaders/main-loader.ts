@@ -12,16 +12,21 @@ import {
   Trigger,
   TypeId,
 } from '@sdk';
+import { toast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation';
 import { ViewType } from '@src/types/ViewType';
-import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
-import { toast } from '@src/hooks/use-toast';
-import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
 import { TimeIt } from '@src/utils/timeit';
+import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
+import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
 
 // Get allowed view types from the ViewType enum
 const ALLOWED_VIEWS = new Set(Object.values(ViewType));
-const INACTIVE_PROCESS_STATUSES = new Set([ProcessorStatus.COMPLETE, ProcessorStatus.ERROR, ProcessorStatus.INTERRUPTED, ProcessorStatus.INACTIVE]);
+const INACTIVE_PROCESS_STATUSES = new Set([
+  ProcessorStatus.COMPLETE,
+  ProcessorStatus.ERROR,
+  ProcessorStatus.INTERRUPTED,
+  ProcessorStatus.INACTIVE,
+]);
 
 /**
  * Ensure compute node is loaded for the current project
@@ -42,7 +47,6 @@ async function ensureComputeNodeLoaded(): Promise<void> {
     }
   }
 }
-
 
 function isValidViewType(args: LoaderArgs): boolean {
   const { params } = args;
@@ -115,7 +119,7 @@ async function loadShell(pointer: string | undefined): Promise<void> {
     const newShell = Shell.create(cn, { name });
     await newShell.save(cn.typeId);
     const cwd = dataContext.project?.fs_storage_mount_path ?? undefined;
-    await newShell.startPty({ cols: 80, rows: 24, workdir: cwd });
+    await newShell.attachPty({ cols: 80, rows: 24, workdir: cwd });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw redirect(`/dock/shell/${newShell.dockPointer.pointer}`);
   }
@@ -144,7 +148,8 @@ async function loadShell(pointer: string | undefined): Promise<void> {
   if (DockPointer.isAgenticProcessPointer(pointer)) {
     const processId = DockPointer.extractAgenticProcessId(pointer);
 
-    const process = processes.find((p) => p.id === processId) ?? await AgenticProcess.getById(processId).catch(() => null);
+    const process =
+      processes.find((p) => p.id === processId) ?? (await AgenticProcess.getById(processId).catch(() => null));
     if (!process) {
       toast({ title: 'Session not found', description: `Agentic process does not exist.`, variant: 'destructive' });
       // eslint-disable-next-line @typescript-eslint/only-throw-error
@@ -167,7 +172,10 @@ async function loadShell(pointer: string | undefined): Promise<void> {
       new TypeId(AgenticProcess.type, processId),
     );
     if (process.project_id) {
-      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, new TypeId(Project.type, process.project_id));
+      await dataContext.setContextEntityTypeId(
+        ContextEntitiesEnum.CurrentProjectTypeId,
+        new TypeId(Project.type, process.project_id),
+      );
     } else {
       await systemTools.resolveProjectContext(process.workdir, process);
     }
@@ -197,11 +205,14 @@ async function loadShell(pointer: string | undefined): Promise<void> {
     }
 
     // Plain shell — no linked process
-    await shell.startPty({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: shell.workdir ?? undefined });
+    await shell.attachPty({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: shell.workdir ?? undefined });
     dataContext.setActiveShellId(shell.id);
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
     if (shell.project_id) {
-      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, new TypeId(Project.type, shell.project_id));
+      await dataContext.setContextEntityTypeId(
+        ContextEntitiesEnum.CurrentProjectTypeId,
+        new TypeId(Project.type, shell.project_id),
+      );
     } else {
       await systemTools.resolveProjectContext(shell.workdir ?? undefined, shell);
     }
@@ -248,7 +259,10 @@ export async function loadAgentApp(args: LoaderArgs) {
       await dataContext.setActiveEntityTypeId(new TypeId(AgenticProcess.type, processId));
       const process = await AgenticProcess.getById(processId).catch(() => null);
       if (process?.project_id) {
-        await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, new TypeId(Project.type, process.project_id));
+        await dataContext.setContextEntityTypeId(
+          ContextEntitiesEnum.CurrentProjectTypeId,
+          new TypeId(Project.type, process.project_id),
+        );
       } else {
         await systemTools.resolveProjectContext(process?.workdir, process ?? undefined);
       }
@@ -279,13 +293,13 @@ export async function loadAgentApp(args: LoaderArgs) {
     if (viewType === ViewType.PLAN && pointer) {
       const parsed = DockPointer.parsePlanPointer(pointer);
       if (parsed) {
-        await dataContext.setContextEntityTypeId(
-          ContextEntitiesEnum.CurrentProcessTypeId,
-          parsed.agenticProcessTypeId,
-        );
+        await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, parsed.agenticProcessTypeId);
         const process = await AgenticProcess.getById(parsed.agenticProcessTypeId.id).catch(() => null);
         if (process?.project_id) {
-          await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, new TypeId(Project.type, process.project_id));
+          await dataContext.setContextEntityTypeId(
+            ContextEntitiesEnum.CurrentProjectTypeId,
+            new TypeId(Project.type, process.project_id),
+          );
         } else {
           await systemTools.resolveProjectContext(process?.workdir, process ?? undefined);
         }
