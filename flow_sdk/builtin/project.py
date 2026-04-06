@@ -8,6 +8,7 @@ from pydantic import ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider
+from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.flowpad_types.enums import AuthRole
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.type_id import TypeId
@@ -79,17 +80,26 @@ class Project(Entity):
                 AGENT_MOUNT_FOLDER, self.name or "home"
             )
 
-        # Create the project folder if it doesn't exist
+        # Create the project folder if it doesn't exist.
         if self.fs_storage_mount_path and not os.path.exists(
             self.fs_storage_mount_path
         ):
-            os.makedirs(self.fs_storage_mount_path, exist_ok=True)
+            try:
+                os.makedirs(self.fs_storage_mount_path, exist_ok=True)
+            except OSError as e:
+                logging.warning(
+                    f"Project: could not create mount path {self.fs_storage_mount_path!r}: {e}"
+                )
         return self
 
     @classmethod
     def allocate_id(cls, data: dict) -> str:
         """Deterministic UUID5 keyed on the project work directory."""
         import uuid
+        from flow_sdk.fs_store.identifier import is_valid_uuid
+        rid = data.get("id") or ""
+        if rid and is_valid_uuid(rid):
+            return rid
         mount_path = data.get("fs_storage_mount_path") or data.get("real_path")
         if not mount_path:
             name = data.get("name", "")

@@ -62,6 +62,7 @@ class ClaudeMemoryRecord(Record):
     ) -> Iterator["ClaudeMemoryRecord"]:
         if not _CLAUDE_PROJECTS.is_dir():
             return
+        from flow_sdk.fs_records._claude_projects import _real_path_from_jsonl
         count = 0
         for project_dir in sorted(_CLAUDE_PROJECTS.iterdir()):
             if not project_dir.is_dir():
@@ -70,7 +71,8 @@ class ClaudeMemoryRecord(Record):
             if not mem_dir.is_dir():
                 continue
             encoded = project_dir.name
-            real = "/" + encoded.lstrip("-").replace("-", "/")
+            real_path = _real_path_from_jsonl(project_dir)
+            real = str(real_path) if real_path else "/" + encoded.lstrip("-").replace("-", "/")
             for md_file in sorted(mem_dir.glob("*.md")):
                 yield cls._from_md_file(md_file, project_path=real, project_encoded=encoded)
                 count += 1

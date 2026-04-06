@@ -74,13 +74,8 @@ class ClaudeMdFsRecord(Record):
                     return
 
         # Project-level CLAUDE.md files
-        if not _CLAUDE_PROJECTS.is_dir():
-            return
-        for project_dir in sorted(_CLAUDE_PROJECTS.iterdir()):
-            if not project_dir.is_dir():
-                continue
-            encoded = project_dir.name
-            real_path = Path("/" + encoded.lstrip("-").replace("-", "/"))
+        from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
+        for real_path in iter_claude_project_paths():
             for rel in ("CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"):
                 candidate = real_path / rel
                 if candidate.is_file():
@@ -95,15 +90,11 @@ class ClaudeMdFsRecord(Record):
         for name in ("CLAUDE.md", "CLAUDE.local.md"):
             if (_CLAUDE_HOME / name).is_file():
                 count += 1
-        if _CLAUDE_PROJECTS.is_dir():
-            for project_dir in _CLAUDE_PROJECTS.iterdir():
-                if not project_dir.is_dir():
-                    continue
-                encoded = project_dir.name
-                real_path = Path("/" + encoded.lstrip("-").replace("-", "/"))
-                for rel in ("CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"):
-                    if (real_path / rel).is_file():
-                        count += 1
+        from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
+        for real_path in iter_claude_project_paths():
+            for rel in ("CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"):
+                if (real_path / rel).is_file():
+                    count += 1
         return min(count, limit) if limit is not None else count
 
     @classmethod

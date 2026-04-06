@@ -1921,7 +1921,7 @@ class Record:
                 await driver.fts_delete(entity.id)
             await entity.delete()
 
-    async def sync_to_db(self, fts_batch: "list | None" = None) -> None:
+    async def sync_to_db(self, fts_batch: "list | None" = None, notify: bool = True) -> None:
         """Create or update the corresponding Entity in SQLite.
 
         If ``fts_batch`` is provided the FtsEntry is appended to it instead of
@@ -1934,7 +1934,7 @@ class Record:
 
         try:
             # Step 1: Entity row (delegates to Entity.from_record)
-            entity = await Entity.from_record(self)
+            entity = await Entity.from_record(self, notify=notify)
 
             # Write entity's db_json() back to metadata.json so disk reflects entity state,
             # then write the hash sentinel (sync_from_entity handles both).

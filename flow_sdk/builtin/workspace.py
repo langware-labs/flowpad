@@ -16,8 +16,8 @@ class Workspace(Entity):
     name: str = APIField()
     _api_visible: ClassVar[bool] = True
 
-    async def save(self: EntityType, owner: DBEntity | TypeId | types.NoneType = None) -> EntityType:
-        save_result = await super().save(owner)
+    async def save(self: EntityType, owner: DBEntity | TypeId | types.NoneType = None, notify: bool = True) -> EntityType:
+        save_result = await super().save(owner, notify=notify)
         # TODO consider moving this to a separate action from client side
         await self.grant_access_to_public_data()
         return save_result

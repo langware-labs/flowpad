@@ -107,7 +107,10 @@ import flow_sdk.builtin.agentic_process  # noqa: F401
 
 # Load environment variables (guard against PyInstaller bundle where find_dotenv fails)
 try:
-    load_dotenv()
+    from dotenv import find_dotenv
+    env_name = os.getenv("ENV", ".env.local")
+    env_file = find_dotenv(env_name)
+    load_dotenv(env_file)
 except (FileNotFoundError, OSError):
     pass
 
@@ -117,27 +120,9 @@ DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 9007
 
 
-def _register_project_asset_dirs() -> None:
-    """Register project-level .claude/skills and .claude/agents dirs via env vars.
-
-    Uses the server's working directory as the project root. Extra dirs are
-    appended to FLOWPAD_SKILL_DIRS / FLOWPAD_AGENT_DIRS (colon-separated).
-    """
-    from pathlib import Path
-    cwd = Path.cwd()
-    for env_var, subdir in [("FLOWPAD_SKILL_DIRS", ".claude/skills"), ("FLOWPAD_AGENT_DIRS", ".claude/agents")]:
-        candidate = cwd / subdir
-        if candidate.is_dir():
-            existing = os.environ.get(env_var, "")
-            candidate_str = str(candidate)
-            if candidate_str not in existing.split(":"):
-                os.environ[env_var] = f"{existing}:{candidate_str}" if existing else candidate_str
-
-
 def main():
     """Start the minihub server."""
     startup_start = time.time()
-    _register_project_asset_dirs()
 
     if not _acquire_singleton_lock():
         print(f"[pid={os.getpid()}] Another server instance is already running. Exiting.")

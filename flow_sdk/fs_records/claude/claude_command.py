@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Iterator
 
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.record import Scope
@@ -38,6 +38,10 @@ class ClaudeCommandFsRecord(Record):
 
     _record_type: ClassVar[str] = RecordType.COMMAND
     _indexed_by_default: ClassVar[bool] = True
+
+    @property
+    def source_path(self) -> str:
+        return self.source_file or ""
 
     @property
     def search_title(self) -> str | None:
@@ -71,6 +75,32 @@ class ClaudeCommandFsRecord(Record):
         object.__setattr__(self, "_asset_ref", FSRef("/", read_only=True))
 
     @classmethod
+    def discovery_items_count(cls, limit: int | None = None) -> int:
+        count = sum(1 for d, _ in _command_search_dirs() for f in d.glob("*.md") if f.is_file())
+        return min(count, limit) if limit is not None else count
+
+    @classmethod
+    def discover_iter(cls, limit: int | None = None, scope: Scope | None = None, **kwargs: Any) -> Iterator[ClaudeCommandFsRecord]:
+        scope_filter = scope.value if hasattr(scope, "value") else str(scope) if scope else None
+        count = 0
+        for commands_dir, dir_scope in _command_search_dirs():
+            if scope_filter and dir_scope != scope_filter:
+                continue
+            for md_file in sorted(commands_dir.glob("*.md")):
+                if not md_file.is_file():
+                    continue
+                try:
+                    content = md_file.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                rec = cls(command_name=md_file.stem, content=content, scope=dir_scope)
+                rec.source_file = str(md_file)
+                yield rec
+                count += 1
+                if limit is not None and count >= limit:
+                    return
+
+    @classmethod
     def discover(cls, scope: Scope | None = None, **kwargs: Any) -> list[ClaudeCommandFsRecord]:
         """Discover command files from ~/.claude/commands/ and .claude/commands/."""
         records: list[ClaudeCommandFsRecord] = []
@@ -99,6 +129,6 @@ class ClaudeCommandFsRecord(Record):
     @classmethod
     def discover_one(cls, uid: str, **kwargs: Any) -> ClaudeCommandFsRecord | None:
         for r in cls.discover():
-            if r.id == uid:
+            if r.id == uid or r.name == uid:
                 return r
         return None

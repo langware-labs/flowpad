@@ -16,31 +16,6 @@ from flow_sdk.builtin.user import User
 from flow_sdk.responses.response import ApiResponse
 
 
-@pytest.fixture(scope="session", autouse=True)
-def clean_db():
-    """Delete the test SQLite DB file (and WAL/SHM files) before the session to prevent state leaking between runs."""
-    db_path = os.environ["SQLITE_DATABASE_PATH"]
-    for path in [db_path, db_path + "-wal", db_path + "-shm"]:
-        if os.path.exists(path):
-            os.remove(path)
-    yield
-    # Dispose the DB engine so aiosqlite threads terminate and the process exits cleanly.
-    import asyncio
-    import flow_sdk.db.database as db_mod
-    if db_mod._engine is not None:
-        try:
-            loop = asyncio.new_event_loop()
-            loop.run_until_complete(db_mod._engine.dispose())
-            loop.close()
-        except Exception:
-            pass
-        db_mod._engine = None
-        db_mod._session_factory = None
-    # Clear stale WS connections.
-    from flow_sdk.core.network.connections import _registry
-    _registry.clear()
-
-
 def _reset_db_state():
     """Clear all cached DB state so the next access creates a fresh event-loop-bound session."""
     import asyncio
@@ -72,6 +47,34 @@ def _reset_db_state():
     lazy._name = "_db"
     lazy._owner = DBEntity
     DBEntity._db = lazy
+
+
+@pytest.fixture(scope="session", autouse=True)
+def clean_db():
+    """Delete the test SQLite DB file (and WAL/SHM files) before the session to prevent state leaking between runs."""
+    # Reset the DB singleton FIRST — if the production server's modules were already
+    # imported, the singleton may point to the production DB regardless of the env var.
+    _reset_db_state()
+    db_path = os.environ["SQLITE_DATABASE_PATH"]
+    for path in [db_path, db_path + "-wal", db_path + "-shm"]:
+        if os.path.exists(path):
+            os.remove(path)
+    yield
+    # Dispose the DB engine so aiosqlite threads terminate and the process exits cleanly.
+    import asyncio
+    import flow_sdk.db.database as db_mod
+    if db_mod._engine is not None:
+        try:
+            loop = asyncio.new_event_loop()
+            loop.run_until_complete(db_mod._engine.dispose())
+            loop.close()
+        except Exception:
+            pass
+        db_mod._engine = None
+        db_mod._session_factory = None
+    # Clear stale WS connections.
+    from flow_sdk.core.network.connections import _registry
+    _registry.clear()
 
 
 @pytest.fixture
