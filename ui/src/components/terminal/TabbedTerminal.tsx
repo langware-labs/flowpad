@@ -1,7 +1,6 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { useActiveTerminals } from '@src/hooks/useActiveTerminals';
 import { dataContext, isProcessorRunning, ProcessorStatus, ShellStatus, type AgenticProcess } from '@sdk';
-import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { useContext } from '@src/hooks/useContext';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Button } from '@src/components/ui/button';
@@ -12,7 +11,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@src/components/ui/context-menu';
-import { ChevronLeft, ChevronRight, FolderGit2, Loader2, ScrollText, SquareTerminal, X, XCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FolderGit2, Loader2, SquareTerminal, X, XCircle } from 'lucide-react';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import InteractiveTerminal from './interactive-terminal';
@@ -422,7 +421,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   const modKey = /Mac/i.test(osPlatform) ? 'Ctrl' : /Win/i.test(osPlatform) ? 'Meta' : 'Alt';
   const modLabel = /Mac/i.test(osPlatform) ? 'Ctrl' : /Win/i.test(osPlatform) ? 'Win' : 'Alt';
 
-  // Intercept mod+W (close tab), mod+T (new terminal), mod+C (new Claude), mod+PgUp/PgDn (cycle tabs)
+  // Intercept mod+W (close tab), mod+T (new Claude), mod+PgUp/PgDn (cycle tabs)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const modPressed = modKey === 'Ctrl' ? e.ctrlKey : modKey === 'Meta' ? e.metaKey : e.altKey;
@@ -431,9 +430,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
         e.preventDefault();
         void handleCloseTab(activeShellId);
       } else if (e.key === 't' || e.key === 'T') {
-        e.preventDefault();
-        void handleStartTerminal();
-      } else if (e.key === 'c' || e.key === 'C') {
         e.preventDefault();
         void handleStartClaude();
       } else if (e.key === 'PageUp') {
@@ -568,25 +564,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
                     </span>
                   )}
 
-                  {session.agenticProcess?.session_id && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void (async () => {
-                          const sessionId = session.agenticProcess!.session_id!;
-                          const workdir = session.agenticProcess!.workdir ?? '';
-                          const record = await ClaudeSessionRecord.discover(sessionId).catch(() => null);
-                          const projectEncodedName = record?.project_encoded_name ?? workdir.replace(/\//g, '-');
-                          navigation.openLens('claude', 'transcript', `${projectEncodedName}/${sessionId}`);
-                        })();
-                      }}
-                      className="rounded p-0.5 opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100"
-                      aria-label="Open transcript"
-                      title="Open transcript"
-                    >
-                      <ScrollText className="h-3 w-3" />
-                    </button>
-                  )}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();

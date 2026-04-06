@@ -22,7 +22,7 @@ async def test_fs_open_dispatches_to_os_handler(bootstrapped_client, monkeypatch
     assert response.status_code == 200, response.text
 
     parsed = ApiResponse.parse_json(response.text)
-    assert parsed.worker_status == "SUCCESS"
+    assert parsed.status == "SUCCESS"
     assert isinstance(parsed.data, str)
     assert parsed.data.startswith("Opened")
     assert calls, "Expected subprocess.run to be called by fs/open"
@@ -41,7 +41,7 @@ async def test_fs_browse_permission_denied_returns_403(bootstrapped_client, monk
     assert response.status_code == 403, response.text
 
     parsed = ApiResponse.parse_json(response.text)
-    assert parsed.worker_status == "FAIL"
+    assert parsed.status == "FAIL"
     assert isinstance(parsed.message, str)
     assert "not allowed" in parsed.message.lower()
     assert "/home" in parsed.message

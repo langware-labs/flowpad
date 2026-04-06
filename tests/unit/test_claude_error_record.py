@@ -16,7 +16,7 @@ from flow_sdk.fs_records.claude.claude_error import (
     upsert_error,
 )
 from flow_sdk.fs_store import RecordType
-from flow_sdk.fs_store.resource_record_list import ResourceRecordList
+from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
 
 # ─── Normalization ───────────────────────────────────────────────────────────
 
@@ -90,7 +90,7 @@ def test_fingerprint_log_different_for_different_messages():
     assert fp1 != fp2
 
 
-# ─── Record roundtrip ────────────────────────────────────────────────────────
+# ─── Record roundtrip ─────────────────────────────────────────────────────���──
 
 
 def test_record_type():
@@ -196,9 +196,15 @@ def records_dir(tmp_path):
     return d
 
 
-@pytest.fixture
-def backing(records_dir):
-    return ResourceRecordList(list_path=records_dir, record_class=ClaudeErrorRecord)
+@pytest.fixture(autouse=True)
+def _use_tmp_records_root(tmp_path):
+    """Point records_root at tmp_path/records so discover/save use the temp dir."""
+    root = tmp_path / "records"
+    root.mkdir(exist_ok=True)
+    original = get_default_records_root()
+    set_default_records_root(root)
+    yield
+    set_default_records_root(original)
 
 
 def test_sync_from_debug_logs_creates_records(debug_dir, records_dir, monkeypatch):
@@ -212,7 +218,7 @@ def test_sync_from_debug_logs_creates_records(debug_dir, records_dir, monkeypatc
     )
 
     sync_from_debug_logs(records_dir, hours=9999)
-    records = list(ResourceRecordList(list_path=records_dir, record_class=ClaudeErrorRecord))
+    records = ClaudeErrorRecord.discover()
 
     # session-aaa: 1 hook error + 1 log error = 2 fingerprints
     # session-bbb: 1 hook error (same fingerprint as aaa's hook error)
@@ -245,11 +251,11 @@ def test_sync_from_debug_logs_idempotent(debug_dir, records_dir, monkeypatch):
     )
 
     sync_from_debug_logs(records_dir, hours=9999)
-    records1 = list(ResourceRecordList(list_path=records_dir, record_class=ClaudeErrorRecord))
+    records1 = ClaudeErrorRecord.discover()
     hook_count_1 = next(r for r in records1 if r.error_category == ErrorCategory.HOOK).occurrence_count
 
     sync_from_debug_logs(records_dir, hours=9999)
-    records2 = list(ResourceRecordList(list_path=records_dir, record_class=ClaudeErrorRecord))
+    records2 = ClaudeErrorRecord.discover()
     hook_count_2 = next(r for r in records2 if r.error_category == ErrorCategory.HOOK).occurrence_count
 
     assert len(records1) == len(records2)
@@ -273,7 +279,7 @@ def test_sync_from_debug_logs_detects_new_file(debug_dir, records_dir, monkeypat
     (debug_dir / "session-ddd.txt").write_text("2026-02-28T00:00:00.000Z [ERROR] Brand new error\n")
 
     sync_from_debug_logs(records_dir, hours=9999)
-    records = list(ResourceRecordList(list_path=records_dir, record_class=ClaudeErrorRecord))
+    records = ClaudeErrorRecord.discover()
     assert len(records) == 3
 
 
@@ -296,12 +302,7 @@ def test_sync_state_saved(debug_dir, records_dir, monkeypatch):
 
 def test_upsert_error_creates_new_record(tmp_path):
     """upsert_error creates a new ClaudeErrorRecord when fingerprint not present."""
-    records_dir = tmp_path / "claude_error"
-    records_dir.mkdir(parents=True)
-    bk = ResourceRecordList(list_path=records_dir, record_class=ClaudeErrorRecord)
-
     upsert_error(
-        backing=bk,
         fingerprint="abc123def456",
         error_category=ErrorCategory.HOOK,
         error_msg="some error",
@@ -314,9 +315,7 @@ def test_upsert_error_creates_new_record(tmp_path):
         jsonl_path="",
     )
 
-    import uuid as _uuid
-    rec_id = str(_uuid.uuid5(_uuid.NAMESPACE_DNS, "claude_error:abc123def456"))
-    rec = bk.get(rec_id)
+    rec = ClaudeErrorRecord.get_by_fingerprint("abc123def456")
     assert rec is not None
     assert rec.error_category == ErrorCategory.HOOK
     assert rec.occurrence_count == 1
@@ -324,13 +323,8 @@ def test_upsert_error_creates_new_record(tmp_path):
 
 def test_upsert_error_merges_existing(tmp_path):
     """upsert_error increments occurrence_count for existing fingerprint."""
-    records_dir = tmp_path / "claude_error"
-    records_dir.mkdir(parents=True)
-    bk = ResourceRecordList(list_path=records_dir, record_class=ClaudeErrorRecord)
-
     for ts in ["2026-01-01T00:00:00Z", "2026-01-02T00:00:00Z"]:
         upsert_error(
-            backing=bk,
             fingerprint="aabbccddeeff",
             error_category=ErrorCategory.LOG,
             error_msg="log error",
@@ -343,8 +337,6 @@ def test_upsert_error_merges_existing(tmp_path):
             jsonl_path="",
         )
 
-    import uuid as _uuid
-    rec_id = str(_uuid.uuid5(_uuid.NAMESPACE_DNS, "claude_error:aabbccddeeff"))
-    rec = bk.get(rec_id)
+    rec = ClaudeErrorRecord.get_by_fingerprint("aabbccddeeff")
     assert rec is not None
     assert rec.occurrence_count == 2

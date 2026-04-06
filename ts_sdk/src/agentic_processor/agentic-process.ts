@@ -22,7 +22,7 @@ import { InstructionFile } from '../models/workflow/InstructionFile';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
-import { isProcessorRunning, ProcessorStatus } from './agentic-types';
+import { ProcessorStatus } from './agentic-types';
 
 /**
  * Result returned by AgenticProcess.spawn().
@@ -472,7 +472,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const { Shell } = await import('../entities/shell');
     return Shell.getById(this.shell_id);
   }
-
 
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -1057,7 +1056,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     dataManager.updateEntityFromJson(result.shell);
     const shell = await dataManager.getByTypeId<Shell>(new TypeId(Shell.type, result.shell_id));
     if (!shell) throw new Error(`Shell ${result.shell_id} not found after start()`);
-    await shell.startPty({ cols: 80, rows: 24, timeout: options?.ptyTimeout });
+    await shell.attachPty({ cols: 80, rows: 24, timeout: options?.ptyTimeout });
     return true;
   }
 

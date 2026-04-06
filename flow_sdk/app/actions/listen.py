@@ -648,7 +648,7 @@ async def _reflect_entity(
             # Log final state after save
             if record_type == "task":
                 logger.info(
-                    f"[_reflect_entity] Updated task {existing.id}: status={existing.worker_status}, title={existing.title}"
+                    f"[_reflect_entity] Updated task {existing.id}: status={existing.status}, title={existing.title}"
                 )
             else:
                 logger.info(f"[_reflect_entity] Updated {record_type} {existing.id} (uname={external_id})")
