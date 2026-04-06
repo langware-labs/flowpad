@@ -14,20 +14,22 @@ class ApiConfig(BaseModel):
     login_url: Optional[str] = Field(default=None)
     logout_url: Optional[str] = Field(default=None)
 
-    def __init__(self, **data: Any):
-        super().__init__(**data)
-        self.api_base_url = os.environ.get("API_BASE_URL", "https://app.flowpad.ai/api/v1")
-        self.login_url = os.environ.get("LOGIN_URL", "/login?target_path={redirect_url}")
-        self.logout_url = os.environ.get("LOGOUT_URL", "/logout?returnTo={return_url}")
+    def __init__(
+        self,
+        api_base_url: Optional[str] = None,
+        login_url: Optional[str] = None,
+        logout_url: Optional[str] = None,
+    ):
+        super().__init__(
+            api_base_url=api_base_url or os.environ.get("API_BASE_URL", "https://app.flowpad.ai/api/v1"),
+            login_url=login_url or os.environ.get("LOGIN_URL", "/login?target_path={redirect_url}"),
+            logout_url=logout_url or os.environ.get("LOGOUT_URL", "/logout?returnTo={return_url}"),
+        )
 
     @classmethod
     def from_env(cls) -> "ApiConfig":
         """Create ApiConfig from environment variables"""
-        api_base_url = os.environ.get("API_BASE_URL", "https://app.flowpad.ai/api/v1")
-        login_url = os.environ.get("LOGIN_URL", "/login?target_path={redirect_url}")
-        logout_url = os.environ.get("LOGOUT_URL", "/logout?returnTo={return_url}")
-
-        return cls(api_base_url=api_base_url, login_url=login_url, logout_url=logout_url)
+        return cls()
 
     def _get_full_url(self, path: Optional[str]) -> str:
         """Combine api_base_url with a relative path, or return as-is if absolute."""
@@ -98,46 +100,44 @@ class FlowpadClient:
             await self._client.aclose()
             self._client = None
 
-    async def get_user(self) -> Dict[str, Any]:
-        """
-        Get the current user information.
-
-        Returns:
-            User data as a dictionary
+    def _unwrap(self, response: httpx.Response) -> Any:
+        """Validate an API response and return its unwrapped ``data`` value.
 
         Raises:
-            httpx.HTTPStatusError: If the request fails
-            ValueError: If the response is not valid JSON or missing 'id'
+            ValueError: On non-200 status, non-success envelope status, or
+                unparseable JSON.
         """
-        client = await self._get_client()
-
-        response = await client.get("/current-user")
-
-        # Check status code
         if response.status_code != 200:
             raise ValueError(f"API returned status {response.status_code}: {response.text}")
-
-        # Parse JSON response
         try:
             response_data = response.json()
         except Exception:
             raise ValueError(f"Failed to parse JSON response: {response.text}")
         if "status" in response_data and str(response_data["status"]).lower() != "success":
             raise ValueError(f"API returned error status: {response_data}")
-        # Check if response has a 'data' property (wrapped response)
-        if "data" in response_data:
-            user_data = response_data["data"]
-        else:
-            user_data = response_data
+        return response_data["data"] if "data" in response_data else response_data
 
-        # Validate that response has 'id' field
+    async def get(self, path: str) -> Any:
+        """Make a GET request and return the unwrapped response data."""
+        client = await self._get_client()
+        return self._unwrap(await client.get(path))
+
+    async def get_user(self) -> Dict[str, Any]:
+        """Get the current user information.
+
+        Raises:
+            ValueError: If the response is missing the 'id' field.
+        """
+        user_data = await self.get("/current-user")
         if "id" not in user_data:
             import json
-
-            formatted_json = json.dumps(response_data, indent=2)
-            raise ValueError(f"Invalid user data: missing 'id' field. Got response:\n{formatted_json}")
-
+            raise ValueError(f"Invalid user data: missing 'id' field. Got:\n{json.dumps(user_data, indent=2)}")
         return user_data
+
+    async def post(self, path: str, data: Dict[str, Any]) -> Any:
+        """Make a POST request and return the unwrapped response data."""
+        client = await self._get_client()
+        return self._unwrap(await client.post(path, json=data))
 
     async def __aenter__(self):
         """Async context manager entry"""

@@ -3,7 +3,7 @@
 Errors are deduplicated by **fingerprint** (one record per unique error
 pattern).  A sync step parses ``~/.claude/debug/*.txt`` via the
 existing ``parse_debug_log()`` helper and upserts into a writable
-``ResourceRecordList`` stored at ``~/.flow/records/claude_error/``.
+``~/.flow/records/claude_error/``.
 
 Each record tracks occurrence count, first/last seen timestamps, session
 list, and a triage status (open / ignored / ignored_until / task_created).
@@ -26,7 +26,6 @@ from typing import Any, ClassVar
 
 from flow_sdk.fs_records.record_error import RecordError
 from flow_sdk.fs_store import RecordType
-from flow_sdk.fs_store.resource_record_list import ResourceRecordList
 
 from .claude_debug_log import (
     ClaudeSessionDebugLogRecord,
@@ -98,6 +97,28 @@ class ErrorCategory(StrEnum):
     LOG = "log"
 
 
+# ─── Fix suggestion ───────────────────────────────────────────────────────────
+
+
+class Fix:
+    """Cloud fix suggestion."""
+
+    __slots__ = ("instruction", "message")
+
+    def __init__(self, instruction: str = "", message: str = "") -> None:
+        self.instruction = instruction or ""
+        self.message = message or ""
+
+    def to_dict(self) -> dict:
+        return {"instruction": self.instruction, "message": self.message}
+
+    @classmethod
+    def from_dict(cls, d: object) -> "Fix":
+        if isinstance(d, dict):
+            return cls(d.get("instruction") or "", d.get("message") or "")
+        return cls()
+
+
 # ─── Record ───────────────────────────────────────────────────────────────────
 
 
@@ -105,6 +126,17 @@ class ClaudeErrorRecord(RecordError):
     """A deduplicated, triageable error record backed by ``~/.flow/records/claude_error/``."""
 
     _record_type: ClassVar[str] = RecordType.CLAUDE_ERROR
+
+    @classmethod
+    def _rec_id_for_fingerprint(cls, fingerprint: str) -> str:
+        """Return the deterministic record id for a given fingerprint."""
+        import uuid as _uuid
+        return str(_uuid.uuid5(_uuid.NAMESPACE_DNS, f"{RecordType.CLAUDE_ERROR}:{fingerprint}"))
+
+    @classmethod
+    def get_by_fingerprint(cls, fingerprint: str) -> "ClaudeErrorRecord | None":
+        """Look up an error record by its fingerprint string."""
+        return cls.discover_one(cls._rec_id_for_fingerprint(fingerprint))
 
     def __init__(self, **kwargs: Any):
         kwargs.setdefault("type", RecordType.CLAUDE_ERROR)
@@ -139,7 +171,24 @@ class ClaudeErrorRecord(RecordError):
         kwargs.setdefault("claude_session_id", "")
         kwargs.setdefault("triaged_at", "")
         kwargs.setdefault("notes", "")
+        # Cloud fix suggestion (populated by apply-cloud-results action)
+        fix_val = kwargs.pop("fix", None)
+        kwargs["fix"] = fix_val if isinstance(fix_val, Fix) else Fix.from_dict(fix_val)
         super().__init__(**kwargs)
+
+    def to_dict(self) -> dict:
+        d = super().to_dict()
+        if isinstance(fix := d.get("fix"), Fix):
+            d["fix"] = fix.to_dict()
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "ClaudeErrorRecord":
+        rec = super().from_dict(data)
+        rec_d = object.__getattribute__(rec, "__dict__")
+        if not isinstance(rec_d.get("fix"), Fix):
+            rec_d["fix"] = Fix.from_dict(rec_d.get("fix"))
+        return rec
 
 
 # ─── Sync state persistence ──────────────────────────────────────────────────
@@ -202,7 +251,6 @@ def _cleanup_and_measure_debug_dir() -> tuple[int, int, int]:
 
 
 def _check_debug_dir_size(
-    backing: ResourceRecordList,
     total_bytes: int,
     file_count: int,
 ) -> None:
@@ -213,7 +261,6 @@ def _check_debug_dir_size(
     fp = "debug-dir-size-warning"
     now_iso = datetime.now(timezone.utc).isoformat()
     upsert_error(
-        backing=backing,
         fingerprint=fp,
         error_category=ErrorCategory.LOG,
         error_msg=(
@@ -236,7 +283,6 @@ def _check_debug_dir_size(
 
 
 def upsert_error(
-    backing: ResourceRecordList,
     *,
     fingerprint: str,
     error_category: str,
@@ -249,10 +295,9 @@ def upsert_error(
     session_id: str,
     jsonl_path: str,
 ) -> None:
-    """Create or update an error record by fingerprint into *backing*."""
-    import uuid as _uuid
-    rec_id = str(_uuid.uuid5(_uuid.NAMESPACE_DNS, f"claude_error:{fingerprint}"))
-    existing = backing.get(rec_id)
+    """Create or update an error record by fingerprint."""
+    rec_id = ClaudeErrorRecord._rec_id_for_fingerprint(fingerprint)
+    existing = ClaudeErrorRecord.get_by_fingerprint(fingerprint)
 
     occurrence: dict = {
         "timestamp": timestamp,
@@ -281,7 +326,7 @@ def upsert_error(
             if occ.get("session_id") == session_id and occ.get("timestamp") == timestamp:
                 # Still persist if hooks changed so the backfill isn't lost
                 if hooks_dirty:
-                    backing.save(existing)
+                    existing.save()
                 return
 
         existing.occurrence_count += 1
@@ -308,7 +353,7 @@ def upsert_error(
             if timestamp > existing.ignored_until:
                 existing.error_status = ErrorStatus.OPEN
                 existing.ignored_until = ""
-        backing.save(existing)
+        existing.save()
     else:
         rec = ClaudeErrorRecord(
             id=rec_id,
@@ -330,38 +375,7 @@ def upsert_error(
             occurrences=[occurrence],
             error_status=ErrorStatus.OPEN,
         )
-        try:
-            backing.create(rec)
-        except ValueError:
-            # Race: record appeared between get and create.
-            # Re-read; if still unreadable (corrupt/empty), overwrite.
-            existing2 = backing.get(rec_id)
-            if existing2 is not None:
-                # Now readable — merge this occurrence into it
-                for occ in existing2.occurrences:
-                    if occ.get("session_id") == session_id and occ.get("timestamp") == timestamp:
-                        return
-                existing2.occurrence_count += 1
-                existing2.last_seen = timestamp
-                existing2.last_session_id = session_id
-                existing2.last_jsonl_path = jsonl_path
-                existing2.error_msg = error_msg
-                existing2.traceback = traceback
-                if root_cause:
-                    existing2.root_cause = root_cause
-                if session_id and session_id not in existing2.session_ids:
-                    existing2.session_ids.append(session_id)
-                if hook:
-                    current_hooks2 = getattr(existing2, "hooks", None) or []
-                    if hook not in current_hooks2:
-                        existing2.hooks = current_hooks2 + [hook]
-                existing2.occurrences.append(occurrence)
-                if len(existing2.occurrences) > _MAX_OCCURRENCES:
-                    existing2.occurrences = existing2.occurrences[-_MAX_OCCURRENCES:]
-                backing.save(existing2)
-            else:
-                # File on disk is corrupt/empty — overwrite it
-                backing.save(rec)
+        rec.save()
 
 
 def sync_from_debug_logs(list_path: Path, hours: float = 168.0) -> None:
@@ -373,12 +387,13 @@ def sync_from_debug_logs(list_path: Path, hours: float = 168.0) -> None:
     Pure side-effecting function — call explicitly at startup or on-demand.
     ``ClaudeErrorRecord.discover()`` is a plain disk read with no sync.
     """
+    import shutil
+
     debug_dir = ClaudeSessionDebugLogRecord.debug_dir()
     if not debug_dir.is_dir():
         return
 
     list_path.mkdir(parents=True, exist_ok=True)
-    backing = ResourceRecordList(list_path=list_path, record_class=ClaudeErrorRecord)
     sync_state = _load_sync_state(list_path)
     processed: dict[str, float] = sync_state.get("processed", {})
 
@@ -412,7 +427,6 @@ def sync_from_debug_logs(list_path: Path, hours: float = 168.0) -> None:
         for he in hook_errors:
             fp = _fingerprint_hook(he.hook, he.event, he.root_cause)
             upsert_error(
-                backing=backing,
                 fingerprint=fp,
                 error_category=ErrorCategory.HOOK,
                 error_msg=he.root_cause or f"{he.hook} ({he.event}) error",
@@ -429,7 +443,6 @@ def sync_from_debug_logs(list_path: Path, hours: float = 168.0) -> None:
         for le in log_errors:
             fp = _fingerprint_log(le.message)
             upsert_error(
-                backing=backing,
                 fingerprint=fp,
                 error_category=ErrorCategory.LOG,
                 error_msg=le.message,
@@ -447,7 +460,7 @@ def sync_from_debug_logs(list_path: Path, hours: float = 168.0) -> None:
     # Check ignored_until expiry on all existing records
     now_iso = datetime.now(timezone.utc).isoformat()
     cutoff_iso = datetime.fromtimestamp(cutoff, tz=timezone.utc).isoformat()
-    for rec in list(backing):
+    for rec in ClaudeErrorRecord.discover():
         # Auto-reopen expired snoozes — but only for real future snoozes, not
         # "ignore till now" (where ignored_until ≈ triaged_at, both set to the
         # same moment).  A real snooze always has ignored_until > triaged_at.
@@ -456,10 +469,12 @@ def sync_from_debug_logs(list_path: Path, hours: float = 168.0) -> None:
             if is_real_snooze and rec.ignored_until <= now_iso:
                 rec.error_status = ErrorStatus.OPEN
                 rec.ignored_until = ""
-                backing.save(rec)
+                rec.save()
         # Prune records older than the time window
         if rec.last_seen and rec.last_seen < cutoff_iso:
-            backing.delete(rec.id)
+            rd = rec.record_dir
+            if rd and rd.exists():
+                shutil.rmtree(rd, ignore_errors=True)
 
     sync_state["processed"] = processed
     sync_state["last_sync_ts"] = time.time()
