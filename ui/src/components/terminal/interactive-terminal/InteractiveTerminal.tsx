@@ -996,9 +996,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     const handleRestarted = () => {
       const term = terminalRef.current;
       const fit = fitAddonRef.current;
-      if (term) {
-        term.clear();
-      }
       ptySyncRef.current.resetSession();
 
       // connect({ force: true }) resets seq + replayDone, then re-attaches

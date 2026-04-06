@@ -160,16 +160,6 @@ export class Shell extends APIEntity<Shell> implements IShell {
   /** Force-reset seq to 0 so connect() requests a full replay. */
   private _resetPtySeq(): void { if (this._pty) this._pty.lastSeq = 0; }
 
-  /**
-   * Reset PTY sequence and mark replay as incomplete.
-   * Used internally by startPty({ force: true }).
-   */
-  private _restart(): void {
-    this._resetPtySeq();
-    this._replayDone = false;
-    this.emit('status', 'disconnected');
-  }
-
   // ── Public accessors ──────────────────────────────────────────────────────
 
   /**
@@ -239,9 +229,8 @@ export class Shell extends APIEntity<Shell> implements IShell {
     }
 
     if (force) {
-      this._resetPtySeq();
+      this._pty?.clear();
       this._replayDone = false;
-      this.emit('status', 'disconnected');
     }
 
     if (this._pty?.started && this._replayDone) return;  // already fully connected

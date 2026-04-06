@@ -60,9 +60,9 @@ async def test_open_pty_creates_pty_session(bootstrapped_client):
     assert process_entity.get("shell_id") == shell_id
     assert process_entity["session_id"] == session_id
 
-    # Clean up: stop the shell
+    # Clean up: exit the shell (shell entity kept alive, status=idle)
     response = await bootstrapped_client.post(
-        f"/api/v1/graph/agentic_process/{process_id}/stop",
+        f"/api/v1/graph/agentic_process/{process_id}/exit",
         json={},
     )
     assert response.status_code == 200, response.text

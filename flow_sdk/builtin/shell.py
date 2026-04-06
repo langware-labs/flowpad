@@ -178,6 +178,29 @@ class Shell(Entity):
         await self.stop()
         await self.start()
 
+    async def terminate_worker(self) -> None:
+        """Gracefully kill the Claude worker: SIGTERM, wait 3s, SIGKILL if needed.
+
+        Shell entity and PTY are left alive (status unchanged).
+        Uses self.worker_pid set by _launch_worker_process().
+        """
+        import signal
+
+        pid = self.worker_pid
+        if not pid:
+            return
+        try:
+            os.kill(pid, signal.SIGTERM)
+            deadline = asyncio.get_event_loop().time() + 3.0
+            while asyncio.get_event_loop().time() < deadline:
+                if not psutil.pid_exists(pid):
+                    return
+                await asyncio.sleep(0.1)
+            if psutil.pid_exists(pid):
+                os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass  # already gone
+
     # ── I/O ───────────────────────────────────────────────────────────────────
 
     async def _wait_for_shell_ready(self, timeout: float = 5.0, idle_ms: int = 150) -> None:

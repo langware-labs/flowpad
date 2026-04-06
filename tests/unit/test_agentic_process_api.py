@@ -136,28 +136,28 @@ def test_fork_factory_does_not_set_session_id():
 
 @pytest.mark.asyncio
 async def test_context_manager_calls_start_and_stop():
-    """async with AgenticProcess(...) calls start() on enter and stop() on exit."""
+    """async with AgenticProcess(...) calls start() on enter and exit() on __aexit__."""
     proc = _proc()
     start_called = []
-    stop_called = []
+    exit_called = []
 
     async def _fake_start(**kwargs):
         start_called.append(True)
         from flow_sdk.responses.response import ApiSuccessResponse
         return ApiSuccessResponse(data={})
 
-    async def _fake_stop():
-        stop_called.append(True)
+    async def _fake_exit():
+        exit_called.append(True)
         from flow_sdk.responses.response import ApiSuccessResponse
         return ApiSuccessResponse(data={})
 
     with patch.object(AgenticProcess, "start", new_callable=AsyncMock, side_effect=_fake_start):
-        with patch.object(AgenticProcess, "stop", new_callable=AsyncMock, side_effect=_fake_stop):
+        with patch.object(AgenticProcess, "exit", new_callable=AsyncMock, side_effect=_fake_exit):
             async with proc:
                 pass
 
     assert start_called == [True]
-    assert stop_called == [True]
+    assert exit_called == [True]
 
 
 # ---------------------------------------------------------------------------

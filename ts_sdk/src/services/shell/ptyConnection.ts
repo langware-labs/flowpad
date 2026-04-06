@@ -80,6 +80,11 @@ export class PtyConnection {
     }
   }
 
+  clear(): void {
+    this.chunks.clear();
+    this.lastSeq = 0;
+  }
+
   dispose(): void {
     this.listeners.clear();
     this.chunks.clear();

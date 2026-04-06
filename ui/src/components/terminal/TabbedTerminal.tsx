@@ -273,7 +273,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
       if (!session) return;
       try {
         if (session.agenticProcess) {
-          await session.agenticProcess.exit();
+          await session.agenticProcess.close();
         } else if (session.shell) {
           await session.shell.close();
         }
