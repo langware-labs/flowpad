@@ -1,10 +1,15 @@
 """Tests for the search-cloud-errors ComputeNode action."""
 
 import asyncio
-import json
 import time
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+# Patch targets: imports inside search_cloud_errors_action are lazy (inside the function),
+# so we patch at the source modules, not at compute_node module level.
+_PATCH_GET_CURRENT_REQUEST_INFO = "flow_sdk.builtin.faas.compute_node.get_current_request_info"
+_PATCH_GET_API_KEY = "flow_sdk.cli.auth.get_api_key"
+_PATCH_FLOWPAD_CLIENT = "flow_sdk.client.FlowpadClient"
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -25,6 +30,19 @@ def _make_request_info(body: dict):
     return info
 
 
+def _make_mock_client(post_result=None, post_side_effect=None):
+    """Return an async context manager mock for FlowpadClient."""
+    mock_client = MagicMock()
+    mock_client.set_api_key = MagicMock()
+    if post_side_effect is not None:
+        mock_client.post = AsyncMock(side_effect=post_side_effect)
+    else:
+        mock_client.post = AsyncMock(return_value=post_result)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    return mock_client
+
+
 # ─── Tests ───────────────────────────────────────────────────────────────────
 
 
@@ -34,7 +52,7 @@ class TestSearchCloudErrorsAction(unittest.IsolatedAsyncioTestCase):
         node = _make_compute_node()
         mock_info = _make_request_info({"fingerprints": []})
 
-        with patch("flow_sdk.builtin.faas.compute_node.get_current_request_info", return_value=mock_info):
+        with patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info):
             resp = await node.search_cloud_errors_action()
 
         self.assertEqual(resp.status, "FAIL")
@@ -45,8 +63,8 @@ class TestSearchCloudErrorsAction(unittest.IsolatedAsyncioTestCase):
         mock_info = _make_request_info({"fingerprints": ["abc123def456"]})
 
         with (
-            patch("flow_sdk.builtin.faas.compute_node.get_current_request_info", return_value=mock_info),
-            patch("flow_sdk.cli.auth.get_api_key", return_value=None),
+            patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info),
+            patch(_PATCH_GET_API_KEY, return_value=None),
         ):
             resp = await node.search_cloud_errors_action()
 
@@ -58,44 +76,45 @@ class TestSearchCloudErrorsAction(unittest.IsolatedAsyncioTestCase):
         fp = "abc123def456"
         mock_info = _make_request_info({"fingerprints": [fp]})
 
-        cloud_response = {"data": {"results": [{"fingerprint": fp, "action": "analyse", "instruction": None, "message": None}]}}
+        expected_result = {"results": [{"fingerprint": fp, "action": "analyse", "instruction": None, "message": None}]}
         captured = {}
 
-        def _fake_urlopen(req, timeout):
-            captured["url"] = req.full_url
-            captured["body"] = json.loads(req.data)
-            captured["auth"] = req.get_header("Authorization")
-            mock_resp = MagicMock()
-            mock_resp.__enter__ = lambda s: s
-            mock_resp.__exit__ = MagicMock(return_value=False)
-            mock_resp.read.return_value = json.dumps(cloud_response).encode()
-            return mock_resp
+        async def _fake_post(path, data):
+            captured["path"] = path
+            captured["body"] = data
+            return expected_result
+
+        mock_client = MagicMock()
+        mock_client.set_api_key = MagicMock()
+        mock_client.post = _fake_post
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
 
         with (
-            patch("flow_sdk.builtin.faas.compute_node.get_current_request_info", return_value=mock_info),
-            patch("flow_sdk.cli.auth.get_api_key", return_value="test-api-key"),
-            patch("urllib.request.urlopen", side_effect=_fake_urlopen),
+            patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info),
+            patch(_PATCH_GET_API_KEY, return_value="test-api-key"),
+            patch(_PATCH_FLOWPAD_CLIENT, return_value=mock_client),
         ):
             resp = await node.search_cloud_errors_action()
 
         self.assertEqual(resp.status, "SUCCESS")
-        self.assertIn("/analysis/search", captured["url"])
+        self.assertIn("/analysis/search", captured["path"])
         self.assertEqual(captured["body"]["fingerprints"], [fp])
         self.assertEqual(captured["body"]["analysis_type"], "claude error")
-        self.assertIn("test-api-key", captured["auth"])
+        mock_client.set_api_key.assert_called_once_with("test-api-key")
 
     async def test_cloud_http_error_returns_fail(self):
-        import urllib.error
-
         node = _make_compute_node()
         mock_info = _make_request_info({"fingerprints": ["abc123def456"]})
 
+        mock_client = _make_mock_client(
+            post_side_effect=ValueError("API returned status 401: Unauthorized")
+        )
+
         with (
-            patch("flow_sdk.builtin.faas.compute_node.get_current_request_info", return_value=mock_info),
-            patch("flow_sdk.cli.auth.get_api_key", return_value="test-api-key"),
-            patch("urllib.request.urlopen", side_effect=urllib.error.HTTPError(
-                url="http://test", code=401, msg="Unauthorized", hdrs={}, fp=None
-            )),
+            patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info),
+            patch(_PATCH_GET_API_KEY, return_value="test-api-key"),
+            patch(_PATCH_FLOWPAD_CLIENT, return_value=mock_client),
         ):
             resp = await node.search_cloud_errors_action()
 
@@ -106,10 +125,12 @@ class TestSearchCloudErrorsAction(unittest.IsolatedAsyncioTestCase):
         node = _make_compute_node()
         mock_info = _make_request_info({"fingerprints": ["abc123def456"]})
 
+        mock_client = _make_mock_client(post_side_effect=ConnectionError("timeout"))
+
         with (
-            patch("flow_sdk.builtin.faas.compute_node.get_current_request_info", return_value=mock_info),
-            patch("flow_sdk.cli.auth.get_api_key", return_value="test-api-key"),
-            patch("urllib.request.urlopen", side_effect=ConnectionError("timeout")),
+            patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info),
+            patch(_PATCH_GET_API_KEY, return_value="test-api-key"),
+            patch(_PATCH_FLOWPAD_CLIENT, return_value=mock_client),
         ):
             resp = await node.search_cloud_errors_action()
 
@@ -117,8 +138,8 @@ class TestSearchCloudErrorsAction(unittest.IsolatedAsyncioTestCase):
 
     async def test_cloud_call_does_not_block_event_loop(self):
         """
-        The cloud HTTP call runs inside asyncio.to_thread so it must not block
-        the event loop while waiting for the network response.
+        The cloud HTTP call is truly async via FlowpadClient, so it must not
+        block the event loop while waiting for the network response.
 
         Proof: a fast coroutine launched concurrently with the (slow) cloud
         search must finish before the cloud search does, and the total wall
@@ -128,21 +149,17 @@ class TestSearchCloudErrorsAction(unittest.IsolatedAsyncioTestCase):
 
         node = _make_compute_node()
         mock_info = _make_request_info({"fingerprints": ["abc123def456"]})
-        cloud_response = {
-            "data": {
-                "results": [
-                    {"fingerprint": "abc123def456", "action": "analyse", "instruction": None, "message": None}
-                ]
-            }
-        }
+        expected_result = {"results": [{"fingerprint": "abc123def456", "action": "analyse", "instruction": None, "message": None}]}
 
-        def _slow_urlopen(req, timeout):
-            time.sleep(SLOW_DELAY)  # blocks only the worker thread, not the event loop
-            mock_resp = MagicMock()
-            mock_resp.__enter__ = lambda s: s
-            mock_resp.__exit__ = MagicMock(return_value=False)
-            mock_resp.read.return_value = json.dumps(cloud_response).encode()
-            return mock_resp
+        async def _slow_post(path, data):
+            await asyncio.sleep(SLOW_DELAY)  # async sleep, yields to event loop
+            return expected_result
+
+        mock_client = MagicMock()
+        mock_client.set_api_key = MagicMock()
+        mock_client.post = _slow_post
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
 
         fast_finished_at: list[float] = []
 
@@ -152,9 +169,9 @@ class TestSearchCloudErrorsAction(unittest.IsolatedAsyncioTestCase):
             return "fast done"
 
         with (
-            patch("flow_sdk.builtin.faas.compute_node.get_current_request_info", return_value=mock_info),
-            patch("flow_sdk.cli.auth.get_api_key", return_value="test-api-key"),
-            patch("urllib.request.urlopen", side_effect=_slow_urlopen),
+            patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info),
+            patch(_PATCH_GET_API_KEY, return_value="test-api-key"),
+            patch(_PATCH_FLOWPAD_CLIENT, return_value=mock_client),
         ):
             start = time.monotonic()
             cloud_resp, fast_result = await asyncio.gather(
