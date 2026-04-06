@@ -19,8 +19,9 @@ from flow_sdk.fs_store import Record, RecordType
 def _workflow_search_dirs() -> list[Path]:
     """Return directories to scan for workflow .md files.
 
-    Scans user-level (~/.claude/workflows), cwd/.claude/workflows if present,
-    and any extra dirs from FLOWPAD_WORKFLOW_DIRS (colon-separated).
+    Scans user-level (~/.claude/workflows), all known Claude projects
+    (<project>/.claude/workflows), cwd-level, and any extra dirs from
+    FLOWPAD_WORKFLOW_DIRS (colon-separated).
     """
     dirs: list[Path] = []
     seen: set[Path] = set()
@@ -32,6 +33,11 @@ def _workflow_search_dirs() -> list[Path]:
             dirs.append(p)
 
     _add(Path.home() / ".claude" / "workflows")
+
+    from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
+    for real in iter_claude_project_paths():
+        _add(real / ".claude" / "workflows")
+
     _add(Path(os.getcwd()) / ".claude" / "workflows")
 
     for extra in os.environ.get("FLOWPAD_WORKFLOW_DIRS", "").split(":"):
