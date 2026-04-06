@@ -1,11 +1,4 @@
-"""Test AgenticProcess status lifecycle through shell operations.
-
-Verifies app-managed status field transitions:
-  - New process → idle
-  - After start() → running
-  - After exit() → interrupted
-  - worker_status (computed from transcript) is separate and read-only
-"""
+"""Test AgenticProcess lifecycle status and transcript worker_status separation."""
 
 import asyncio
 
@@ -29,29 +22,34 @@ async def _create_process(client, compute_node_id: str) -> tuple[None, str]:
     return None, process_id
 
 
-async def _get_process_status(client, process_id: str) -> str:
-    """Fetch the process entity and return state.status."""
+async def _get_process_entity(client, process_id: str) -> dict:
+    """Fetch the full process entity."""
     resp = await client.get(f"/api/v1/graph/agentic_process/{process_id}")
     assert resp.status_code == 200, resp.text
-    entity = ApiResponse(**resp.json()).data
+    return ApiResponse(**resp.json()).data
+
+
+async def _get_process_status(client, process_id: str) -> str:
+    entity = await _get_process_entity(client, process_id)
     return entity.get("status", "unknown")
 
 
 @pytest.mark.asyncio
 async def test_process_status_idle_on_create(bootstrapped_client):
-    """Newly created process should have idle status (no transcript)."""
+    """Newly created process should have NEW lifecycle status (no transcript yet)."""
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     compute_node_id = _get_default_compute_node_id(bootstrap.json())
 
     _, process_id = await _create_process(bootstrapped_client, compute_node_id)
 
-    status = await _get_process_status(bootstrapped_client, process_id)
-    assert status == "idle", f"Expected idle on create, got {status}"
+    entity = await _get_process_entity(bootstrapped_client, process_id)
+    assert entity.get("status") == "new", f"Expected new on create, got {entity.get('status')}"
+    assert entity.get("worker_status") == "idle", f"Expected idle worker_status on create, got {entity.get('worker_status')}"
 
 
 @pytest.mark.asyncio
 async def test_process_status_after_start(bootstrapped_client):
-    """After start, process status depends on transcript state."""
+    """After start, lifecycle status is LIVE while worker_status stays transcript-derived."""
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     compute_node_id = _get_default_compute_node_id(bootstrap.json())
 
@@ -66,10 +64,20 @@ async def test_process_status_after_start(bootstrapped_client):
     result = ApiResponse(**resp.json())
     assert result.status == "SUCCESS", f"open failed: {result.message}"
 
-    # Status is transcript-derived: may be idle (no transcript yet),
-    # running (Claude is processing), or complete (Claude already finished)
-    status = await _get_process_status(bootstrapped_client, process_id)
-    assert status in ("idle", "null", "empty", "waiting", "thinking", "tool_call", "tool_running", "running", "complete", "inactive"), f"Expected transcript-derived status, got {status}"
+    entity = await _get_process_entity(bootstrapped_client, process_id)
+    assert entity.get("status") == "live", f"Expected live lifecycle status after open, got {entity.get('status')}"
+    assert entity.get("worker_status") in (
+        "idle",
+        "null",
+        "empty",
+        "waiting",
+        "thinking",
+        "tool_call",
+        "tool_running",
+        "running",
+        "complete",
+        "inactive",
+    ), f"Expected transcript-derived worker_status, got {entity.get('worker_status')}"
 
     # Clean up
     await bootstrapped_client.post(
@@ -81,7 +89,7 @@ async def test_process_status_after_start(bootstrapped_client):
 
 @pytest.mark.asyncio
 async def test_process_status_after_kill_pty(bootstrapped_client):
-    """After stop, process status reflects transcript (not forced idle)."""
+    """After exit, lifecycle status becomes STOPPED."""
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     compute_node_id = _get_default_compute_node_id(bootstrap.json())
 
@@ -107,22 +115,21 @@ async def test_process_status_after_kill_pty(bootstrapped_client):
 
     await asyncio.sleep(0.5)
 
-    # After exit(), app status = interrupted
-    status = await _get_process_status(bootstrapped_client, process_id)
-    assert status == "interrupted", f"Expected interrupted after exit, got {status}"
+    entity = await _get_process_entity(bootstrapped_client, process_id)
+    assert entity.get("status") == "stopped", f"Expected stopped after exit, got {entity.get('status')}"
 
 
 @pytest.mark.asyncio
 async def test_process_status_full_lifecycle(bootstrapped_client):
-    """Full lifecycle: idle → transcript-derived, with context_data preserved."""
+    """Full lifecycle: new -> live -> stopped, with worker_status kept separate."""
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     compute_node_id = _get_default_compute_node_id(bootstrap.json())
 
     _, process_id = await _create_process(bootstrapped_client, compute_node_id)
 
-    # 1. Verify initial idle (no transcript)
-    status = await _get_process_status(bootstrapped_client, process_id)
-    assert status == "idle", f"Step 1: Expected idle, got {status}"
+    entity = await _get_process_entity(bootstrapped_client, process_id)
+    assert entity.get("status") == "new", f"Step 1: Expected new, got {entity.get('status')}"
+    assert entity.get("worker_status") == "idle", f"Step 1: Expected idle worker_status, got {entity.get('worker_status')}"
 
     # 2. Open shell → status from transcript
     resp = await bootstrapped_client.post(
@@ -133,12 +140,22 @@ async def test_process_status_full_lifecycle(bootstrapped_client):
     result = ApiResponse(**resp.json())
     assert result.status == "SUCCESS", f"open failed: {result.message}"
 
-    status = await _get_process_status(bootstrapped_client, process_id)
-    assert status in ("idle", "null", "empty", "waiting", "thinking", "tool_call", "tool_running", "running", "complete", "inactive"), f"Step 2: Expected transcript-derived status, got {status}"
+    entity = await _get_process_entity(bootstrapped_client, process_id)
+    assert entity.get("status") == "live", f"Step 2: Expected live lifecycle status, got {entity.get('status')}"
+    assert entity.get("worker_status") in (
+        "idle",
+        "null",
+        "empty",
+        "waiting",
+        "thinking",
+        "tool_call",
+        "tool_running",
+        "running",
+        "complete",
+        "inactive",
+    ), f"Step 2: Expected transcript-derived worker_status, got {entity.get('worker_status')}"
 
     # Verify session_id and shell_id are set
-    resp = await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{process_id}")
-    entity = ApiResponse(**resp.json()).data
     assert entity.get("session_id"), "session_id should be set while running"
     assert entity.get("shell_id"), "shell_id should be set while running"
     worker_sid = entity["session_id"]
@@ -152,13 +169,10 @@ async def test_process_status_full_lifecycle(bootstrapped_client):
 
     await asyncio.sleep(0.5)
 
-    # After exit(), app status = interrupted
-    status = await _get_process_status(bootstrapped_client, process_id)
-    assert status == "interrupted", f"Step 3: Expected interrupted after exit, got {status}"
+    entity = await _get_process_entity(bootstrapped_client, process_id)
+    assert entity.get("status") == "stopped", f"Step 3: Expected stopped after exit, got {entity.get('status')}"
 
-    # Verify session_id preserved, shell_id cleared
-    resp = await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{process_id}")
-    entity = ApiResponse(**resp.json()).data
+    # Verify session_id preserved and shell_id retained for shell reuse
     assert entity.get("session_id") == worker_sid, "session_id should be preserved after exit"
     assert entity.get("shell_id"), "shell_id should still be set after exit (shell entity kept alive)"
 

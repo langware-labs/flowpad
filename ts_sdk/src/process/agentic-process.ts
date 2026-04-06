@@ -22,7 +22,7 @@ import { InstructionFile } from '../models/workflow/InstructionFile';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
-import { ProcessorStatus } from './agentic-types';
+import { ProcessStatus, ProcessorStatus, isProcessLive, isProcessorRunning, isProcessorTerminal } from './agentic-types';
 
 /**
  * Result returned by AgenticProcess.spawn().
@@ -37,7 +37,7 @@ export interface SpawnResult {
 
 /**
  * Options for AgenticProcess.execute()
- * Note: compute node is managed by backend Processor, not passed from frontend.
+ * Note: compute node is managed by the backend process runtime, not passed from frontend.
  */
 export interface ExecuteOptions {
   /** Working directory for file operations */
@@ -82,8 +82,8 @@ export interface IAgenticProcess extends IEntity {
   context?: Record<string, unknown>;
   context_data?: Record<string, unknown>;
   favorite_index?: number | null;
-  status?: string;
-  worker_status?: string;
+  readonly status?: ProcessStatus;
+  readonly worker_status?: ProcessorStatus;
   session_id?: string | null;
   use_worker_history?: boolean;
   /** Shell entity ID linked to this process */
@@ -105,12 +105,12 @@ export interface IAgenticProcess extends IEntity {
 /**
  * AgenticProcess Entity - A running instruction execution process
  *
- * Created by AgenticProcessor.run(), this entity tracks execution state
+ * Created by AgenticProcess.spawn(), this entity tracks execution state
  * and provides streaming access to FlowData outputs.
  *
  * @example
  * ```typescript
- * const process = await processor.run(instructionFile, context);
+ * const process = await AgenticProcess.spawn({ workdir }, { instruction: 'Run the task' });
  *
  * // Stream outputs as they arrive
  * for await (const flowData of process.output()) {
@@ -175,7 +175,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /**
    * Create and activate an AgenticProcess in one call.
    *
-   * Replaces the manual `createProcess → open/watch` pattern.
+   * Replaces the manual `createProcess -> start/watch` pattern.
    * Use `headless: true` in workerOptions for background execution (no PTY).
    *
    * @example PTY shell
@@ -410,11 +410,29 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Optional pinning index for tab ordering */
   favorite_index?: number | null;
 
-  /** App lifecycle status: IDLE → RUNNING → COMPLETE / ERROR / INTERRUPTED */
-  status: ProcessorStatus;
+  /** Backend-owned lifecycle status. */
+  private _status: ProcessStatus = ProcessStatus.NEW;
 
-  /** Granular transcript-derived status: THINKING, TOOL_CALL, WAITING, etc. Read-only, computed by backend. */
-  workerStatus: ProcessorStatus = ProcessorStatus.IDLE;
+  /** Granular transcript-derived worker status. */
+  private _workerStatus: ProcessorStatus = ProcessorStatus.IDLE;
+
+  /** Backend-owned lifecycle status. Read-only outside this class. */
+  get status(): ProcessStatus {
+    return this._status;
+  }
+
+  private set status(value: ProcessStatus) {
+    this._status = value;
+  }
+
+  /** Transcript-derived worker status. Read-only outside this class. */
+  get workerStatus(): ProcessorStatus {
+    return this._workerStatus;
+  }
+
+  private set workerStatus(value: ProcessorStatus) {
+    this._workerStatus = value;
+  }
 
   /** Worker session ID for resume capability */
   session_id?: string | null;
@@ -494,7 +512,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.context = entity.context;
     this.context_data = entity.context_data;
     this.favorite_index = entity.favorite_index;
-    this.status = (entity.status as ProcessorStatus) ?? ProcessorStatus.IDLE;
+    this.status = (entity.status as ProcessStatus) ?? ProcessStatus.NEW;
     this.workerStatus = (entity.worker_status as ProcessorStatus) ?? ProcessorStatus.IDLE;
     this.session_id = entity.session_id;
     this.use_worker_history = entity.use_worker_history;
@@ -774,9 +792,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         // Close any open groups after loading history
         this.flowDataStream.closeOpenGroups();
 
-        // Check if process is already complete based on state
-        if (this.status === ProcessorStatus.COMPLETE || this.status === ProcessorStatus.ERROR) {
-          this._markComplete();
+        // Check if the worker already reached a terminal state.
+        if (isProcessorTerminal(this.workerStatus)) {
+          if (this.workerStatus === ProcessorStatus.COMPLETE) {
+            this._markComplete();
+          } else {
+            this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
+          }
         }
 
         console.log(`[AgenticProcess] Loaded ${historyItems.length} history items for process ${this.id}`);
@@ -833,7 +855,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Execute an instruction on this process.
    *
    * This is the primary API for running instructions on an existing process.
-   * The process must be in IDLE status to accept new instructions.
+   * The process must not be stopping or already executing work.
    *
    * @param instruction - The instruction text to execute
    * @param options - Execution options
@@ -860,19 +882,21 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   ): Promise<void> {
     const { sync = true, workerSessionId } = options;
 
-    if (this.status === ProcessorStatus.INTERRUPTED) {
-      throw new Error('Process has been terminated');
+    if (this.status === ProcessStatus.STOPPING) {
+      throw new Error('Process is stopping');
     }
 
-    if (this.status === ProcessorStatus.RUNNING) {
+    if (this.status === ProcessStatus.FAILED) {
+      throw new Error('Process failed to start');
+    }
+
+    if (isProcessorRunning(this.workerStatus)) {
       throw new Error('Process is already running');
     }
 
-    // Remember the initial status
-    const initialStatus = this.status;
-
     // Reset completion flag for new instruction (multi-turn support)
     this._completed = false;
+    this._error = null;
 
     // Optimistically echo user message into the stream
     this.appendUserMessage(instruction);
@@ -885,8 +909,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
     // If sync, wait for execution to complete
     if (sync) {
-      // Wait for a state change (RUNNING -> IDLE cycle) to complete
-      await this.waitForExecutionComplete(initialStatus);
+      await this.waitForExecutionComplete();
     }
   }
 
@@ -895,7 +918,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Listens for the 'complete' event which is emitted when status FlowData
    * with complete=true is received (following Flow's pattern of state via FlowData).
    */
-  private async waitForExecutionComplete(_initialStatus: ProcessorStatus): Promise<void> {
+  private async waitForExecutionComplete(): Promise<void> {
     // If already completed, return immediately
     if (this._completed) {
       return;
@@ -933,29 +956,33 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Wait for process to return to IDLE status.
+   * Wait for the worker_status to reach a terminal state.
    *
    * Use this after async execute() calls to wait for completion.
    */
   async wait(): Promise<void> {
-    if (isProcessorTerminal(this.status)) {
+    if (isProcessorTerminal(this.workerStatus)) {
       return;
     }
 
     return new Promise((resolve, reject) => {
       const checkState = () => {
-        if (this.status === ProcessorStatus.COMPLETE) {
+        if (this.workerStatus === ProcessorStatus.COMPLETE) {
           unsubState();
           unsubError();
           resolve();
-        } else if (this.status === ProcessorStatus.ERROR) {
+        } else if (this.workerStatus === ProcessorStatus.ERROR) {
           unsubState();
           unsubError();
           reject(new Error(this._error?.message || 'Process error'));
-        } else if (this.status === ProcessorStatus.INTERRUPTED) {
+        } else if (this.workerStatus === ProcessorStatus.INTERRUPTED) {
           unsubState();
           unsubError();
           reject(new Error('Process was terminated'));
+        } else if (this.status === ProcessStatus.FAILED) {
+          unsubState();
+          unsubError();
+          reject(new Error(this._error?.message || 'Process failed'));
         }
       };
 
@@ -974,8 +1001,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /**
    * Terminate this process.
    *
-   * After exit, the process cannot accept new instructions.
-   * The process is saved with status TERMINATED.
+   * After exit, the worker is stopped and the lifecycle status is controlled by the backend.
    *
    * @example
    * ```typescript
@@ -999,7 +1025,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const actionInfo = new ActionInfo('exit', AgenticProcess.type, this.id, 'POST');
     await dataManager.callAction(actionInfo);
 
-    // Shell entity is kept alive by the backend (status=idle) — do NOT call shell.close()
+    // Shell entity is kept alive by the backend — do NOT call shell.close()
   }
 
   /**
@@ -1007,7 +1033,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Use for "close tab" — shell is gone after this call.
    */
   async close(): Promise<void> {
-    if (this.status === ProcessorStatus.INTERRUPTED) return;
+    if (this.status === ProcessStatus.STOPPING || this.status === ProcessStatus.STOPPED) return;
 
     if (this.shell_id) {
       const shell = Shell.getByIdFromCache(this.shell_id);
@@ -1019,9 +1045,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
     const actionInfo = new ActionInfo('close', AgenticProcess.type, this.id, 'POST');
     await dataManager.callAction(actionInfo);
-
-    this.status = ProcessorStatus.INTERRUPTED;
-    this._markComplete();
 
     // Dispose frontend PTY client — backend already deleted the shell entity.
     if (this.shell_id) {
@@ -1044,13 +1067,28 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   async start(options?: { instruction?: string; visible?: boolean; ptyTimeout?: number }): Promise<boolean> {
     const { Shell } = await import('../entities/shell');
+    if (this.status === ProcessStatus.STOPPING) {
+      throw new Error('Process is stopping');
+    }
+
+    if (isProcessLive(this.status) && this.shell_id) {
+      const existingShell = await this.shell();
+      if (existingShell) {
+        await existingShell.attachPty({ cols: 80, rows: 24, timeout: options?.ptyTimeout });
+        return true;
+      }
+    }
+
     const actionInfo = new ActionInfo('open', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = options ?? {};
     const result = await dataManager.callAction<
       unknown,
-      { shell_id: string; session_id: string; shell: Record<string, unknown> } | null
+      { shell_id: string; session_id: string; status?: string; shell: Record<string, unknown> } | null
     >(actionInfo);
     if (!result) throw new Error('Process could not be opened (process may be terminated)');
+    if (result.status) {
+      this.status = result.status as ProcessStatus;
+    }
     this.shell_id = result.shell_id;
     this.session_id = result.session_id;
     dataManager.updateEntityFromJson(result.shell);
@@ -1061,7 +1099,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Stop the current shell session (shell entity kept alive, status=idle).
+   * Stop the current shell session while keeping the shell entity available for reuse.
    *
    * Calls the backend exit action which kills the worker and PTY but
    * preserves the shell entity. The session_id is preserved so the
@@ -1093,7 +1131,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /**
    * Write raw text to the live PTY stdin.
-   * The shell must have an active PTY (call open() first).
+   * The shell must have an active PTY (call start() first).
    *
    * @param text - Text to send (newline appended automatically)
    */
@@ -1125,7 +1163,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    *
    * @example
    * ```typescript
-   * const process = await processor.run(instructionFile, context);
+   * const { process } = await AgenticProcess.spawn({ workdir }, { instruction: 'First task' });
    *
    * // Inject additional instructions during execution
    * const result = await process.inject("Now do another task");
@@ -1259,6 +1297,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       if (statusData.status && typeof statusData.status === 'string') {
         this.workerStatus = statusData.status as ProcessorStatus;
         this.emit('state_change', { status: this.status });
+        if (this.workerStatus === ProcessorStatus.ERROR || this.workerStatus === ProcessorStatus.INTERRUPTED) {
+          this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
+        }
       }
     }
 
@@ -1274,18 +1315,20 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   protected onEntityUpdate(data: Partial<IAgenticProcess>): void {
     if (data.status) {
-      this.status = data.status as ProcessorStatus;
+      this.status = data.status as ProcessStatus;
       this.emit('state_change', { status: this.status });
-      if (this.status === ProcessorStatus.COMPLETE) {
-        this._markComplete();
-      }
-      if (this.status === ProcessorStatus.ERROR) {
-        this._markError(new Error(`Process ended with status: ${this.status}`));
+      if (this.status === ProcessStatus.FAILED && !isProcessorTerminal(this.workerStatus)) {
+        this._markError(new Error(`Process ended with lifecycle status: ${this.status}`));
       }
     }
     if (data.worker_status) {
       this.workerStatus = data.worker_status as ProcessorStatus;
       this.emit('state_change', { status: this.status });
+      if (this.workerStatus === ProcessorStatus.COMPLETE) {
+        this._markComplete();
+      } else if (this.workerStatus === ProcessorStatus.ERROR || this.workerStatus === ProcessorStatus.INTERRUPTED) {
+        this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
+      }
     }
   }
 

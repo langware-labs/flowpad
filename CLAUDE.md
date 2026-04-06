@@ -262,7 +262,7 @@ These stubs exist to break circular import chains through `request_context`. Do 
 
 ### TypeScript SDK Circular Dependency
 
-`agentic-process.ts` ↔ `agentic-processor.ts` circular import fixed by extracting shared types to `ts_sdk/src/agentic_processor/agentic-types.ts`. When re-exporting interfaces, use `export type { ... }` for Rollup compatibility.
+The process module lives under `ts_sdk/src/process/`. Shared types are extracted to `ts_sdk/src/process/agentic-types.ts` to keep circular dependencies manageable. When re-exporting interfaces, use `export type { ... }` for Rollup compatibility.
 
 ### Test Execution
 

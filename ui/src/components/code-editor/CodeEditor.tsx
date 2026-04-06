@@ -386,7 +386,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
       setActiveTerminalSessionId(runShell.id);
 
       if (!runShell.pty?.isLive) {
-        await runShell.attachPty(80, 24);
+        await runShell.attachPty({ cols: 80, rows: 24 });
       }
       await runShell.resize(80, 24);
       await runShell.sendInput(command.trim() + '\r');

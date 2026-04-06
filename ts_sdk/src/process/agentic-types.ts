@@ -1,14 +1,46 @@
-/**
- * Shared types for AgenticProcessor and AgenticProcess.
- *
- * Extracted to break circular dependency:
- *   agentic-process -> agentic-processor -> agentic-process
- *
- * Both modules now import these types from agentic-types instead.
- */
+/** Shared status and UI types for AgenticProcess. */
 
 /**
- * Processor execution status enum.
+ * Backend-owned process lifecycle status enum.
+ *
+ * This is Flowpad's control-plane FSM for an AgenticProcess resource.
+ * It is not derived from Claude transcript output.
+ */
+export enum ProcessStatus {
+  NEW = 'new',
+  STARTING = 'starting',
+  LIVE = 'live',
+  STOPPING = 'stopping',
+  STOPPED = 'stopped',
+  FAILED = 'failed',
+}
+
+const ACTIVE_PROCESS_STATUSES = new Set<ProcessStatus>([
+  ProcessStatus.STARTING,
+  ProcessStatus.LIVE,
+  ProcessStatus.STOPPING,
+]);
+
+const STARTABLE_PROCESS_STATUSES = new Set<ProcessStatus>([
+  ProcessStatus.NEW,
+  ProcessStatus.STOPPED,
+  ProcessStatus.FAILED,
+]);
+
+export function isProcessActive(status: ProcessStatus): boolean {
+  return ACTIVE_PROCESS_STATUSES.has(status);
+}
+
+export function isProcessStartable(status: ProcessStatus): boolean {
+  return STARTABLE_PROCESS_STATUSES.has(status);
+}
+
+export function isProcessLive(status: ProcessStatus): boolean {
+  return status === ProcessStatus.LIVE;
+}
+
+/**
+ * Claude worker execution status enum.
  *
  * File-level (no transcript):
  *   NULL         — JSONL file does not exist

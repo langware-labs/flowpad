@@ -383,7 +383,7 @@ export function SessionAnalysisPage() {
           setActiveSessionId(running.source_session_id);
         }
         const isActiveStatus = [ProcessorStatus.RUNNING, ProcessorStatus.STEPPING, ProcessorStatus.PAUSED].includes(
-          process.status,
+          process.workerStatus,
         );
         if (!isActiveStatus && running.status === 'running') {
           try {

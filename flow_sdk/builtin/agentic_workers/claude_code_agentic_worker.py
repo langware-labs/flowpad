@@ -1,7 +1,7 @@
 """
 ClaudeCodeAgenticWorker - Lean Claude Code execution via claude_agent_sdk.
 
-Migrated from FlowPad: flowpad/hub/core/agentic_processor/agentic_workers/claude_code_agentic_worker.py
+Migrated from FlowPad's Claude Code worker implementation.
 
 Uses ClaudeSDKClient directly (no PTY complexity).
 Supports streaming input mode for pause/resume/inject capabilities.

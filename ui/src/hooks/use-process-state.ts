@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
-import { AgenticProcess, ProcessorStatus } from '@sdk';
+import { AgenticProcess, ProcessStatus, ProcessorStatus } from '@sdk';
 
 /**
  * Hook for subscribing to AgenticProcess status via WebSocket entity updates.
@@ -10,15 +10,18 @@ import { AgenticProcess, ProcessorStatus } from '@sdk';
  */
 export function useProcessState(process: AgenticProcess | null | undefined): {
   status: ProcessorStatus;
+  lifecycleStatus: ProcessStatus;
   completed: boolean;
   error: Error | null;
 } {
   const snapshotRef = useRef<{
     status: ProcessorStatus;
+    lifecycleStatus: ProcessStatus;
     completed: boolean;
     error: Error | null;
   }>({
     status: ProcessorStatus.IDLE,
+    lifecycleStatus: ProcessStatus.NEW,
     completed: false,
     error: null,
   });
@@ -26,12 +29,13 @@ export function useProcessState(process: AgenticProcess | null | undefined): {
   useEffect(() => {
     if (process) {
       snapshotRef.current = {
-        status: process.status ?? ProcessorStatus.IDLE,
+        status: process.workerStatus ?? ProcessorStatus.IDLE,
+        lifecycleStatus: process.status ?? ProcessStatus.NEW,
         completed: process.completed,
         error: process.error,
       };
     } else {
-      snapshotRef.current = { status: ProcessorStatus.IDLE, completed: false, error: null };
+      snapshotRef.current = { status: ProcessorStatus.IDLE, lifecycleStatus: ProcessStatus.NEW, completed: false, error: null };
     }
   }, [process]);
 
@@ -49,7 +53,8 @@ export function useProcessState(process: AgenticProcess | null | undefined): {
   const getSnapshot = useCallback(() => {
     if (!process) return snapshotRef.current;
     const next = {
-      status: process.status ?? ProcessorStatus.IDLE,
+      status: process.workerStatus ?? ProcessorStatus.IDLE,
+      lifecycleStatus: process.status ?? ProcessStatus.NEW,
       completed: process.completed,
       error: process.error,
     };
