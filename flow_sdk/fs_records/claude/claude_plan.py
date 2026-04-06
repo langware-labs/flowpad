@@ -11,10 +11,34 @@ import uuid
 from pathlib import Path
 from typing import ClassVar, Iterator
 
+import os
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.fs_ref import FSRef
 
-_CLAUDE_PLANS_DIR = Path.home() / ".claude" / "plans"
+
+def _plan_search_dirs() -> list[Path]:
+    """Return directories to scan for plan .md files.
+
+    Scans user-level (~/.claude/plans), cwd/.claude/plans if present,
+    and any extra dirs from FLOWPAD_PLAN_DIRS (colon-separated).
+    """
+    dirs: list[Path] = []
+    seen: set[Path] = set()
+
+    def _add(p: Path) -> None:
+        rp = p.resolve()
+        if rp not in seen and rp.is_dir():
+            seen.add(rp)
+            dirs.append(p)
+
+    _add(Path.home() / ".claude" / "plans")
+    _add(Path(os.getcwd()) / ".claude" / "plans")
+
+    for extra in os.environ.get("FLOWPAD_PLAN_DIRS", "").split(":"):
+        if extra.strip():
+            _add(Path(extra.strip()))
+
+    return dirs
 
 
 def _extract_name_from_markdown(text: str) -> str | None:
@@ -112,20 +136,26 @@ class ClaudePlanRecord(Record):
 
     @classmethod
     def _external_source_iter(cls, limit: int | None = None) -> Iterator["ClaudePlanRecord"]:
-        if not _CLAUDE_PLANS_DIR.is_dir():
-            return
+        seen: set[str] = set()
         count = 0
-        for md_file in sorted(_CLAUDE_PLANS_DIR.glob("*.md")):
-            yield cls._from_md_file(md_file)
-            count += 1
-            if limit is not None and count >= limit:
-                return
+        for plans_dir in _plan_search_dirs():
+            for md_file in sorted(plans_dir.glob("*.md")):
+                key = str(md_file.resolve())
+                if key in seen:
+                    continue
+                seen.add(key)
+                yield cls._from_md_file(md_file)
+                count += 1
+                if limit is not None and count >= limit:
+                    return
 
     @classmethod
     def _external_source_count(cls, limit: int | None = None) -> int:
-        if not _CLAUDE_PLANS_DIR.is_dir():
-            return 0
-        count = sum(1 for _ in _CLAUDE_PLANS_DIR.glob("*.md"))
+        seen: set[str] = set()
+        for plans_dir in _plan_search_dirs():
+            for md_file in plans_dir.glob("*.md"):
+                seen.add(str(md_file.resolve()))
+        count = len(seen)
         return min(count, limit) if limit is not None else count
 
     @classmethod
