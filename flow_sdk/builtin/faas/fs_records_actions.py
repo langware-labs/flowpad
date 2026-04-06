@@ -85,8 +85,8 @@ class FsRecordsActionsMixin:
                             "fts_description": getattr(ent, "_fts_description", None),
                             "status": ent_status,
                             "scope": getattr(ent, "scope", "") or "",
-                            "created_at": str(getattr(ent, "created_date", "") or ""),
-                            "modified_at": str(getattr(ent, "updated_date", "") or ""),
+                            "created_at": (d.isoformat() if (d := getattr(ent, "created_date", None)) else ""),
+                            "modified_at": (d.isoformat() if (d := getattr(ent, "updated_date", None)) else ""),
                             "source_path": self._resolve_source_path(ent),
                             "labels": getattr(ent, "labels", None) or [],
                         }
@@ -130,8 +130,8 @@ class FsRecordsActionsMixin:
                     "fts_description": getattr(ent, "_fts_description", None),
                     "status": ent_status,
                     "scope": getattr(ent, "scope", "") or "",
-                    "created_at": str(getattr(ent, "created_date", "") or ""),
-                    "modified_at": str(getattr(ent, "updated_date", "") or ""),
+                    "created_at": (d.isoformat() if (d := getattr(ent, "created_date", None)) else ""),
+                    "modified_at": (d.isoformat() if (d := getattr(ent, "updated_date", None)) else ""),
                     "source_path": self._resolve_source_path(ent),
                     "labels": getattr(ent, "labels", None) or [],
                 }

@@ -12,6 +12,7 @@ O(1) by ``discover_one()``.
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 from typing import ClassVar
 
@@ -20,6 +21,10 @@ from .claude_session import ClaudeSessionRecord
 
 _CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 _TEMP_PATH_PREFIXES = ("/tmp/", "/var/folders/", "/private/var/folders/", "/private/tmp/")
+
+
+def _project_id(encoded: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{encoded}"))
 
 
 class ClaudeProjectFsRecord(Record):
@@ -38,7 +43,6 @@ class ClaudeProjectFsRecord(Record):
         super().__init__(**kwargs)
         encoded_path = self.data.get("encoded_path", "")
         if encoded_path:
-            self.id = encoded_path
             if not self.name:
                 self.name = self.data.get("real_path", "") or encoded_path
             # External-source records (from ~/.claude/projects/) are read-only;
@@ -68,6 +72,19 @@ class ClaudeProjectFsRecord(Record):
     # -- External source: ~/.claude/projects/ --
 
     @classmethod
+    def _from_claude_dir(cls, d: Path) -> "ClaudeProjectFsRecord":
+        encoded = d.name
+        real = "/" + encoded.lstrip("-").replace("-", "/")
+        session_count = sum(1 for f in d.glob("*.jsonl"))
+        return cls(
+            id=_project_id(encoded),
+            encoded_path=encoded,
+            real_path=real,
+            session_count=session_count,
+            path=str(d),
+        )
+
+    @classmethod
     def _external_source_iter(cls, limit: int | None = None):
         """Yield projects discovered from ``~/.claude/projects/``."""
         projects_dir = _CLAUDE_PROJECTS_DIR
@@ -77,13 +94,7 @@ class ClaudeProjectFsRecord(Record):
         for d in sorted(projects_dir.iterdir()):
             if not d.is_dir():
                 continue
-            encoded = d.name
-            real = "/" + encoded.lstrip("-").replace("-", "/")
-            if real.startswith(_TEMP_PATH_PREFIXES):
-                continue
-            session_count = sum(1 for f in d.glob("*.jsonl"))
-            yield cls(encoded_path=encoded, real_path=real,
-                      session_count=session_count, path=str(d))
+            yield cls._from_claude_dir(d)
             count += 1
             if limit is not None and count >= limit:
                 return
@@ -103,14 +114,14 @@ class ClaudeProjectFsRecord(Record):
         return min(count, limit) if limit is not None else count
 
     @classmethod
-    def _external_source_find_one(cls, uid: str) -> ClaudeProjectFsRecord | None:
-        """O(1): the uid for Claude-projects is the encoded directory name."""
-        candidate = _CLAUDE_PROJECTS_DIR / uid
-        if not candidate.is_dir():
+    def _external_source_find_one(cls, uid: str) -> "ClaudeProjectFsRecord | None":
+        """Find a Claude-project record by UUID (O(N) fallback before first index run)."""
+        projects_dir = _CLAUDE_PROJECTS_DIR
+        if not projects_dir.is_dir():
             return None
-        real = "/" + uid.lstrip("-").replace("-", "/")
-        if real.startswith(_TEMP_PATH_PREFIXES):
-            return None
-        session_count = sum(1 for f in candidate.glob("*.jsonl"))
-        return cls(encoded_path=uid, real_path=real,
-                   session_count=session_count, path=str(candidate))
+        for d in projects_dir.iterdir():
+            if not d.is_dir():
+                continue
+            if _project_id(d.name) == uid:
+                return cls._from_claude_dir(d)
+        return None
