@@ -560,10 +560,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.post(action_name="search-cloud-errors")
     async def search_cloud_errors_action(self) -> "ApiResponse":
         """Proxy error fingerprint search to the Flowpad cloud known-issues database."""
-        import urllib.error
-        import urllib.request
-
-        from flow_sdk.cli.auth import get_api_key
+        from flow_sdk.cli.auth import get_api_key as get_flowpad_api_key
+        from flow_sdk.client import ApiConfig, FlowpadClient
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data()
@@ -572,33 +570,20 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         if not fingerprints:
             return ApiFailResponse(message="fingerprints is required")
 
-        api_key = get_api_key()
-        if not api_key:
+        flowpad_api_key = get_flowpad_api_key()
+        if not flowpad_api_key:
             return ApiFailResponse(message="Not logged in to Flowpad cloud")
 
-        cloud_base = os.environ.get("FLOWPAD_CLOUD_API_URL", "https://app.flowpad.ai/api/v1")
-        payload = json.dumps(
-            {"analysis_type": "claude error", "fingerprints": fingerprints, "data": {}}
-        ).encode()
-
-        def _call_cloud() -> dict:
-            req = urllib.request.Request(
-                f"{cloud_base}/analysis/search",
-                data=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {api_key}",
-                },
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                return json.loads(resp.read())
+        config = ApiConfig()
 
         try:
-            result = await asyncio.to_thread(_call_cloud)
-            return ApiSuccessResponse(data=result.get("data", {}))
-        except urllib.error.HTTPError as e:
-            return ApiFailResponse(message=f"Cloud search failed: {e.code} {e.reason}")
+            async with FlowpadClient(config) as client:
+                client.set_api_key(flowpad_api_key)
+                result = await client.post(
+                    "/graph/analysis/search",
+                    {"analysis_type": "claude error", "fingerprints": fingerprints, "data": {}},
+                )
+            return ApiSuccessResponse(data=result)
         except Exception as e:
             return ApiFailResponse(message=f"Cloud search error: {e}")
 
