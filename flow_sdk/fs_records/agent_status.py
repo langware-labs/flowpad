@@ -17,7 +17,7 @@ class AgenticProcessStatus(StrEnum):
     NEW          = "new"          # creation default — never launched
 
     # No transcript (file-level)
-    NULL         = "null"         # JSONL file does not exist
+    INIT         = "init"         # launched, never had first prompt / no transcript file yet
     EMPTY        = "empty"        # JSONL exists but has no parseable content
 
     # Workflow default — no session linked yet
@@ -81,7 +81,7 @@ def is_busy(status: AgenticProcessStatus) -> bool:
 
 
 def is_idle(status: AgenticProcessStatus) -> bool:
-    """True when not active (NULL, EMPTY, IDLE, COMPLETE, ERROR, INTERRUPTED, INACTIVE)."""
+    """True when not active (INIT, EMPTY, IDLE, COMPLETE, ERROR, INTERRUPTED, INACTIVE)."""
     return status not in _RUNNING_STATUSES
 
 
@@ -128,7 +128,7 @@ def _tail_status(path: "str | _Path") -> AgenticProcessStatus:
       3. Classify: terminal signals take priority; granular busy states only
          when the file is still active.
 
-    Returns one of: NULL, EMPTY, COMPLETE, ERROR, INTERRUPTED, INACTIVE,
+    Returns one of: INIT, EMPTY, COMPLETE, ERROR, INTERRUPTED, INACTIVE,
                     WAITING, THINKING, TOOL_CALL, TOOL_RUNNING, RUNNING.
     (IDLE, PAUSED, STEPPING are workflow states set externally, not transcript-derivable.)
     """
@@ -136,7 +136,7 @@ def _tail_status(path: "str | _Path") -> AgenticProcessStatus:
     try:
         stat = p.stat()
     except OSError:
-        return AgenticProcessStatus.NULL
+        return AgenticProcessStatus.INIT
 
     is_active = (_time.time() - stat.st_mtime) <= _ACTIVE_SECONDS
 
@@ -147,7 +147,7 @@ def _tail_status(path: "str | _Path") -> AgenticProcessStatus:
                 f.seek(sz - _TAIL_BYTES)
             chunk = f.read().decode("utf-8", errors="replace")
     except OSError:
-        return AgenticProcessStatus.NULL
+        return AgenticProcessStatus.INIT
 
     last_type: str | None = None
     last_stop_reason: str | None = None

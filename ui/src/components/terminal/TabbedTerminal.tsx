@@ -350,9 +350,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
     // Rule 5: skip if no change
     if (shell.name === newName) return;
 
-    // Rule 3: skip if agentic process is not idle
-    if (session.agenticProcess && isProcessLive(session.agenticProcess.status)) return;
-
     // Guard: reject TypeId-formatted strings (e.g. "claude-<uuid>", "shell-<uuid>")
     if (/^[a-z][a-z0-9-]*-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(newName)) return;
 
@@ -363,10 +360,10 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
 
     void shell.updateDisplay({ name: newName, is_pty: !injectRename });
 
-    // Rule 4: inject /rename for Claude processes — only when user-initiated,
+    // Inject /rename only when user-initiated AND Claude is at the prompt (waiting_for_prompt),
     // never when the title came from xterm (PTY escape sequence), to avoid a loop
     // where Claude sets the title → we inject /rename → Claude sets the title again.
-    if (injectRename && session.agenticProcess && shell.connected) {
+    if (injectRename && session.agenticProcess?.waiting_for_prompt) {
       void shell.sendInput(`/rename ${newName}\r`);
     }
   };

@@ -68,7 +68,7 @@ async def test_process_status_after_start(bootstrapped_client):
     assert entity.get("status") == "live", f"Expected live lifecycle status after open, got {entity.get('status')}"
     assert entity.get("worker_status") in (
         "idle",
-        "null",
+        "init",
         "empty",
         "waiting",
         "thinking",
@@ -144,7 +144,7 @@ async def test_process_status_full_lifecycle(bootstrapped_client):
     assert entity.get("status") == "live", f"Step 2: Expected live lifecycle status, got {entity.get('status')}"
     assert entity.get("worker_status") in (
         "idle",
-        "null",
+        "init",
         "empty",
         "waiting",
         "thinking",

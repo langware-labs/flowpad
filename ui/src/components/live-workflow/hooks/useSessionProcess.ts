@@ -3,15 +3,15 @@ import {
   AgenticProcess,
   ContextEntitiesEnum,
   dataContext,
-  isProcessorRunning,
-  ProcessorStatus,
+  isProcessActive,
+  ProcessStatus,
 } from '@sdk';
 import { useContext } from '@sdk/react/hooks';
 import { useProcessState } from '@src/hooks/use-process-state';
 
 interface UseSessionProcessResult {
   process: AgenticProcess | null;
-  status: ProcessorStatus;
+  status: ProcessStatus;
   completed: boolean;
   error: Error | null;
   isRunning: boolean;
@@ -33,7 +33,7 @@ export function useSessionProcess(): UseSessionProcessResult {
   const { status, completed, error } = useProcessState(process);
 
   // Determine if running
-  const isRunning = !completed && isProcessorRunning(status);
+  const isRunning = !completed && isProcessActive(status);
 
   // Abort running process
   const abortProcess = useCallback(() => {

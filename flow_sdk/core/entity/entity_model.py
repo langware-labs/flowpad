@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 
+from ...fs_store import Record
+
 DEFAULT_BROWSE_LIMIT = 20
 import types
 import functools
@@ -212,23 +214,27 @@ class Entity(DBEntity):
                 content=content,
             ))
 
+    async def get_record(self) -> "Record | None":
+        """Return the fs-record associated with this entity, or None if none exists."""
+        type_name = self.get_type()
+        record_cls = SchemaRegistry.get_record_cls(type_name)
+        if record_cls is None:
+            return None
+        return record_cls.discover_one(self.id)
+
     async def updateSearchIndex(self) -> None:
         """Write this entity's searchable content into the FTS5 table.
 
         Content is sourced from the linked record's search_content. No-op if entity
         has no linked record or record returns None.
         """
-        type_name = self.get_type()
-        record_cls = SchemaRegistry.get_record_cls(type_name)
-        if record_cls is None:
-            return
-        record = record_cls.discover_one(self.id)
+        record = await self.get_record()
         if record is None:
             return
         content = record.search_content
         if content is None:
             return
-        await self._fts_upsert(type_name, content)
+        await self._fts_upsert(self.get_type(), content)
 
     async def removeSearchIndex(self) -> None:
         """Remove this entity from the FTS5 table."""
@@ -280,11 +286,7 @@ class Entity(DBEntity):
 
     async def check_and_refresh_record(self) -> bool:
         """If record is stale, run discover + index. Returns True if refresh happened."""
-        type_name = self.get_type()
-        record_cls = SchemaRegistry.get_record_cls(type_name)
-        if record_cls is None:
-            return False
-        record = record_cls.discover_one(self.id)
+        record = await self.get_record()
         if record is None:
             return False
         ttl = getattr(type(record), '_record_ttl', 30.0)

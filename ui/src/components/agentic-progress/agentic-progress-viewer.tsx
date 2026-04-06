@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AgenticProcess, ProcessorStatus, TypeId } from '@sdk';
+import { AgenticProcess, ProcessStatus, TypeId } from '@sdk';
 import { useEntityData } from '@sdk/react/hooks';
 import { cn } from '@src/lib/utils';
 import { useAgenticProcessState } from './hooks/use-agentic-process-state';
@@ -27,7 +27,7 @@ export function AgenticProgressViewer({
   const { flowData, isComplete: flowDataComplete, count: flowDataCount } = useEntityData(processTypeId);
 
   const { status, completed } = useAgenticProcessState(process);
-  const displayStatus = status ?? ProcessorStatus.IDLE;
+  const displayStatus = status ?? ProcessStatus.NEW;
 
   return (
     <div className={cn('w-full', className)} data-testid="agentic-progress-viewer">

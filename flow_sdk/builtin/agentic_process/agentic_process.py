@@ -426,6 +426,19 @@ class AgenticProcess(Entity):
                 raise TimeoutError(f"Process did not reach terminal state within {timeout}s")
             await asyncio.sleep(2.0)
 
+    async def waitForIdle(self, timeout: float | None = None) -> None:
+        """Block until waiting_for_prompt is True.
+
+        Polling interval: 2s. Raises TimeoutError if timeout elapses first.
+        """
+        deadline = (asyncio.get_event_loop().time() + timeout) if timeout else None
+        while True:
+            if self.waiting_for_prompt:
+                return
+            if deadline and asyncio.get_event_loop().time() > deadline:
+                raise TimeoutError(f"Process did not reach idle state within {timeout}s")
+            await asyncio.sleep(2.0)
+
     # ── Execution ─────────────────────────────────────────────────────────────
 
     async def prompt(self, instruction: str) -> ApiSuccessResponse | ApiFailResponse:
@@ -435,6 +448,8 @@ class AgenticProcess(Entity):
           worker alive → write instruction to PTY stdin (continues session)
           worker dead  → call start(instruction) (fresh or auto-resume)
         """
+        if not self.exist_in_db:
+            return ApiFailResponse(message=f"AgenticProcess {self.id} not found in database")
         if await self.is_running():
             await self.send(instruction)
             return ApiSuccessResponse(data={"status": "sent"})
@@ -564,6 +579,7 @@ class AgenticProcess(Entity):
         d = super().to_dict()
         computed = self._discover_status_from_transcript()
         d["worker_status"] = str(computed) if computed else AgenticProcessStatus.IDLE.value
+        d["waiting_for_prompt"] = self._waiting_for_prompt_from_status(computed)
         return d
 
     @model_serializer(mode="wrap")
@@ -575,7 +591,20 @@ class AgenticProcess(Entity):
             return None
         computed = self._discover_status_from_transcript()
         data["worker_status"] = str(computed) if computed else AgenticProcessStatus.IDLE.value
+        data["waiting_for_prompt"] = self._waiting_for_prompt_from_status(computed)
         return data
+
+    def _waiting_for_prompt_from_status(self, computed: "AgenticProcessStatus | None") -> bool:
+        """Compute waiting_for_prompt from an already-resolved transcript status."""
+        if self.status != AgenticProcessLifecycleStatus.LIVE.value:
+            return False
+        if computed is None:
+            return not bool(self.session_id)
+        return computed in {
+            AgenticProcessStatus.COMPLETE,
+            AgenticProcessStatus.INTERRUPTED,
+            AgenticProcessStatus.IDLE,
+        }
 
     def _discover_status_from_transcript(self) -> AgenticProcessStatus | None:
         """Derive status from the Claude session transcript record."""
@@ -590,6 +619,29 @@ class AgenticProcess(Entity):
             "status": self.status,
             "worker_status": str(worker_status) if worker_status else AgenticProcessStatus.IDLE.value,
         })
+
+    @property
+    def waiting_for_prompt(self) -> bool:
+        """True when the process is live and ready for the user's next prompt.
+
+        Covers:
+        - complete: Claude finished its turn cleanly (end_turn)
+        - interrupted: user hit Escape, Claude stopped mid-run, back at prompt
+        - idle (no session linked): process is live but never been given a prompt
+        """
+        if self.status != AgenticProcessLifecycleStatus.LIVE.value:
+            return False
+        worker_status = self._discover_status_from_transcript()
+        if worker_status is None:
+            # No transcript found. If session_id is unset the process was never
+            # prompted — it is waiting. If session_id is set, Claude was just
+            # launched and the transcript hasn't been written yet — still busy.
+            return not bool(self.session_id)
+        return worker_status in {
+            AgenticProcessStatus.COMPLETE,
+            AgenticProcessStatus.INTERRUPTED,
+            AgenticProcessStatus.IDLE,
+        }
 
     @property
     def is_idle(self) -> bool:
@@ -749,7 +801,7 @@ class AgenticProcess(Entity):
 
         record = None
         try:
-            record = AgenticProcessRecord.discover_one(self.id)
+            record = await self.get_record()
         except Exception:
             pass
 
@@ -816,11 +868,16 @@ class AgenticProcess(Entity):
         cn_id = self.compute_node_id
         if cn_id and "-" in cn_id:
             cn_id = cn_id.split("-", 1)[1]
-
+        workdir = self.workdir
+        if not self.workdir:
+            rec = await self.get_record()
+            if not rec:
+                raise NotADirectoryError("No workdir on for process and no record, can not open shell")
+            workdir = str(rec.output_dir)
         shell = Shell(
             compute_node_id=cn_id,
             name=session_name,
-            workdir=self.workdir,
+            workdir=workdir,
             tab_order=tab_order,
         )
         await shell.save()
