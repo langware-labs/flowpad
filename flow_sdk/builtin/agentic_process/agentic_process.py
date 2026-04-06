@@ -14,7 +14,6 @@ from flow_sdk.app.actions.listen import set_plan_auto_approve
 from flow_sdk.builtin.cli_workers import ClaudeCliOptions
 from flow_sdk.core import Entity, action
 from flow_sdk.flowpad_types.enums import WorkerType
-from flow_sdk.fs_records.agent_status import is_idle as _is_idle_status
 from flow_sdk.fs_records.agentic_process_record import AgenticProcessStatus
 from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 from flow_sdk.request_context.methods import get_current_request_info
@@ -191,7 +190,7 @@ class AgenticProcess(Entity):
             await proc.wait()
             result = _build_run_result(proc)
         if not result.ok:
-            raise ProcessError(status=result.status, session_id=result.session_id)
+            raise ProcessError(status=result.worker_status, session_id=result.session_id)
         return result
 
     @classmethod
@@ -292,6 +291,7 @@ class AgenticProcess(Entity):
             # Get existing shell or create a new one
             shell = await self._get_or_create_shell()
             self.shell_id = shell.id
+            self.status = AgenticProcessStatus.RUNNING.value
             if visible is not None:
                 self.visible = visible
             # Save session_id + shell_id BEFORE launching Claude so that
@@ -349,6 +349,7 @@ class AgenticProcess(Entity):
             # Clear sidecar but NOT shell_id — shell entity stays alive for restart.
             self.context_data = {**self.context_data, "_shell_exit_pending": True}
             self.sidecar_shell_id = None
+            self.status = AgenticProcessStatus.INTERRUPTED.value
             await self.save()
 
             if shell:
@@ -390,22 +391,15 @@ class AgenticProcess(Entity):
 
         Polling interval: 2s. Raises TimeoutError if timeout elapses first.
         """
-        TERMINAL = {
-            AgenticProcessStatus.COMPLETE,
-            AgenticProcessStatus.ERROR,
-            AgenticProcessStatus.INTERRUPTED,
-        }
+        from flow_sdk.fs_records.agent_status import is_terminal
         deadline = (asyncio.get_event_loop().time() + timeout) if timeout else None
         while True:
-            status = self._discover_status_from_transcript()
-            if status is not None:
-                try:
-                    if AgenticProcessStatus(str(status)) in TERMINAL:
-                        return
-                except ValueError:
-                    pass
-            if self.is_idle:
-                return
+            try:
+                current = AgenticProcessStatus(self.status)
+                if is_terminal(current):
+                    return
+            except ValueError:
+                pass
             if deadline and asyncio.get_event_loop().time() > deadline:
                 raise TimeoutError(f"Process did not reach terminal state within {timeout}s")
             await asyncio.sleep(2.0)
@@ -544,6 +538,12 @@ class AgenticProcess(Entity):
         cmd.add_dirs = [core_dir] + extra
         return cmd
 
+    def to_dict(self) -> dict:
+        d = super().to_dict()
+        computed = self._discover_status_from_transcript()
+        d["worker_status"] = str(computed) if computed else AgenticProcessStatus.IDLE.value
+        return d
+
     def _discover_status_from_transcript(self) -> AgenticProcessStatus | None:
         """Derive status from the Claude session transcript record."""
         session = self._discover_claude_record_session(self.session_id)
@@ -551,26 +551,17 @@ class AgenticProcess(Entity):
 
     @action.all(action_name="status")
     async def get_status(self):
-        """Return current status, updating from transcript if it has changed."""
-        new_status = self._discover_status_from_transcript()
-        if new_status is not None and str(new_status) != self.status:
-            self.status = str(new_status)
-            await self.save()
-        return ApiSuccessResponse(data={"status": self.status})
+        """Return current app status and computed worker_status from transcript."""
+        worker_status = self._discover_status_from_transcript()
+        return ApiSuccessResponse(data={
+            "status": self.status,
+            "worker_status": str(worker_status) if worker_status else AgenticProcessStatus.IDLE.value,
+        })
 
     @property
     def is_idle(self) -> bool:
-        """True when no active session or the session has reached a terminal state."""
-        status = self._discover_status_from_transcript()
-        if status is None:
-            return False
-        try:
-            status = AgenticProcessStatus(status)
-        except ValueError:
-            return False
-        if status in (AgenticProcessStatus.NULL, AgenticProcessStatus.EMPTY):
-            return False
-        return _is_idle_status(status)
+        """True when not actively running."""
+        return self.status != AgenticProcessStatus.RUNNING.value
 
     async def is_running(self) -> bool:
         """True when the Claude CLI worker process is actively running in the PTY."""
@@ -637,6 +628,7 @@ class AgenticProcess(Entity):
             if shell_id:
                 self.shell_id = None
                 self.sidecar_shell_id = None
+            self.status = AgenticProcessStatus.INTERRUPTED.value
             await self.save()
 
             if shell_id:
@@ -817,10 +809,8 @@ class AgenticProcess(Entity):
                         return
                     proc.shell_id = None
                     proc.sidecar_shell_id = None
-                    if exit_code is not None and exit_code != 0:
-                        proc.status = AgenticProcessStatus.ERROR.value
-                    else:
-                        proc.status = AgenticProcessStatus.COMPLETE.value
+                    if proc.status == AgenticProcessStatus.RUNNING.value:
+                        proc.status = AgenticProcessStatus.INTERRUPTED.value
                     await proc.save()
 
                     if session_id:

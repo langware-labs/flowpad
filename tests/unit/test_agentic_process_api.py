@@ -41,7 +41,7 @@ def _proc(**kwargs) -> AgenticProcess:
 def test_defaults():
     """New process has idle status, no session_id, no shell_id."""
     proc = AgenticProcess()
-    assert proc.status == AgenticProcessStatus.IDLE.value
+    assert proc.worker_status == AgenticProcessStatus.IDLE.value
     assert proc.session_id is None
     assert proc.shell_id is None
 
@@ -90,7 +90,7 @@ async def test_wait_returns_when_no_transcript():
     proc = _proc()
     # No session_id → _discover_status_from_transcript returns None → is_idle=False
     # But with a terminal status set directly, wait() should return.
-    proc.status = AgenticProcessStatus.COMPLETE.value
+    proc.worker_status = AgenticProcessStatus.COMPLETE.value
     # Simulate transcript returning COMPLETE status
     with patch.object(proc, "_discover_status_from_transcript", return_value=AgenticProcessStatus.COMPLETE):
         await proc.wait(timeout=2.0)

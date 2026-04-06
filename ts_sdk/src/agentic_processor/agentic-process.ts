@@ -83,6 +83,7 @@ export interface IAgenticProcess extends IEntity {
   context_data?: Record<string, unknown>;
   favorite_index?: number | null;
   status?: string;
+  worker_status?: string;
   session_id?: string | null;
   use_worker_history?: boolean;
   /** Shell entity ID linked to this process */
@@ -409,8 +410,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Optional pinning index for tab ordering */
   favorite_index?: number | null;
 
-  /** Current execution status — transcript-derived, updated via get_status action */
+  /** App lifecycle status: IDLE → RUNNING → COMPLETE / ERROR / INTERRUPTED */
   status: ProcessorStatus;
+
+  /** Granular transcript-derived status: THINKING, TOOL_CALL, WAITING, etc. Read-only, computed by backend. */
+  workerStatus: ProcessorStatus = ProcessorStatus.IDLE;
 
   /** Worker session ID for resume capability */
   session_id?: string | null;
@@ -469,14 +473,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return Shell.getById(this.shell_id);
   }
 
-  /** Resolved execution status — ghost-running (any busy state + is_active=false) corrected to idle. */
-  get resolvedStatus(): ProcessorStatus {
-    const raw = this.status ?? ProcessorStatus.IDLE;
-    if (isProcessorRunning(raw) && !this.is_active) {
-      return ProcessorStatus.IDLE;
-    }
-    return raw;
-  }
 
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -500,6 +496,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.context_data = entity.context_data;
     this.favorite_index = entity.favorite_index;
     this.status = (entity.status as ProcessorStatus) ?? ProcessorStatus.IDLE;
+    this.workerStatus = (entity.worker_status as ProcessorStatus) ?? ProcessorStatus.IDLE;
     this.session_id = entity.session_id;
     this.use_worker_history = entity.use_worker_history;
     this.shell_id = entity.shell_id;
@@ -942,13 +939,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Use this after async execute() calls to wait for completion.
    */
   async wait(): Promise<void> {
-    if (this.status === ProcessorStatus.IDLE) {
+    if (isProcessorTerminal(this.status)) {
       return;
     }
 
     return new Promise((resolve, reject) => {
       const checkState = () => {
-        if (this.status === ProcessorStatus.IDLE) {
+        if (this.status === ProcessorStatus.COMPLETE) {
           unsubState();
           unsubError();
           resolve();
@@ -1261,7 +1258,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (elementType === 'status' && typeof data.data === 'object' && data.data !== null) {
       const statusData = data.data as Record<string, unknown>;
       if (statusData.status && typeof statusData.status === 'string') {
-        this.status = statusData.status as ProcessorStatus;
+        this.workerStatus = statusData.status as ProcessorStatus;
         this.emit('state_change', { status: this.status });
       }
     }
@@ -1286,6 +1283,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       if (this.status === ProcessorStatus.ERROR) {
         this._markError(new Error(`Process ended with status: ${this.status}`));
       }
+    }
+    if (data.worker_status) {
+      this.workerStatus = data.worker_status as ProcessorStatus;
+      this.emit('state_change', { status: this.status });
     }
   }
 

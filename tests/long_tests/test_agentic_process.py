@@ -82,7 +82,7 @@ async def test_agentic_process_classify():
     json_outputs = [o for o in outputs if o.file_path.name == "classification.json"]
     assert len(json_outputs) >= 1, (
         f"classification.json not found in workdir. "
-        f"Status={process.status}. Files found: {all_files}"
+        f"Status={process.worker_status}. Files found: {all_files}"
     )
 
     content = await json_outputs[0].content()
@@ -119,7 +119,7 @@ async def test_agentic_process_classify_with_agent():
     json_outputs = [o for o in outputs if o.file_path.name == "classification.json"]
     assert len(json_outputs) >= 1, (
         f"classification.json not written by classify sub-agent. "
-        f"Status={process.status}. Files found: {all_files}"
+        f"Status={process.worker_status}. Files found: {all_files}"
     )
 
     content = await json_outputs[0].content()
