@@ -14,6 +14,7 @@ import {
   type ErrorOccurrence,
 } from '@src/hooks/useClaudeErrorRecords';
 import { useContext } from '@src/hooks/useContext';
+import { CloudSearchResultsModal } from './CloudSearchResultsModal';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -49,7 +50,6 @@ import {
   Trash2,
   Webhook,
   Wrench,
-  X,
 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import {
@@ -383,15 +383,27 @@ function ErrorCard({
             />
           </div>
           {error.error_status === ErrorStatus.OPEN && (
-            <Button
-              variant="default"
-              size="sm"
-              className="h-8 w-24 gap-1.5 border-0 bg-green-600 text-sm font-semibold text-white shadow-sm hover:bg-green-500 active:bg-green-700"
-              onClick={() => onCreateTask(error)}
-            >
-              <Wrench className="h-3.5 w-3.5" />
-              Fix It
-            </Button>
+            <div className="flex flex-col items-end gap-1">
+              <Button
+                variant="default"
+                size="sm"
+                className="h-8 w-24 gap-1.5 border-0 bg-green-600 text-sm font-semibold text-white shadow-sm hover:bg-green-500 active:bg-green-700"
+                onClick={() => onCreateTask(error)}
+              >
+                <Wrench className="h-3.5 w-3.5" />
+                Fix It
+              </Button>
+              {(error.fix.message || error.fix.instruction) && (
+                <div className="max-w-[200px] space-y-0.5 text-right">
+                  {error.fix.message && (
+                    <p className="text-[10px] font-medium text-blue-400">{error.fix.message}</p>
+                  )}
+                  {error.fix.instruction && (
+                    <p className="line-clamp-2 text-[10px] text-muted-foreground">{error.fix.instruction}</p>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -566,7 +578,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
     createTaskForError,
     clearAll,
     searchCloudForErrors,
-    autoFixErrors,
+    fixAllCloud,
   } = useClaudeErrorRecords();
 
   const { cloudLoginAvailable } = useContext();
@@ -577,10 +589,9 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
   // Cloud search state
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [isSearchingCloud, setIsSearchingCloud] = useState(false);
-  const [cloudFixStatus, setCloudFixStatus] = useState<Record<string, 'fixing' | 'fixed' | 'error'>>({});
-  const [cloudSummary, setCloudSummary] = useState<{
+  const [cloudResultsModal, setCloudResultsModal] = useState<{
     ignored: number;
-    fixed: CloudSearchResult[];
+    fixResults: CloudSearchResult[];
     remaining: number;
   } | null>(null);
 
@@ -661,9 +672,11 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
 
   const handleCreateTask = useCallback(
     (error: ClaudeErrorRecord) => {
-      void createTaskForError(error).then(({ taskId, shellId: shellId }) => {
+      const instruction = error.fix?.instruction;
+      void createTaskForError(error, instruction ? { instruction } : undefined).then(({ taskId, shellId }) => {
         if (taskId && shellId) {
-          toast({ title: 'Session started', description: 'Claude is investigating the error.' });
+          const description = instruction ? 'Claude is applying the fix.' : 'Claude is investigating the error.';
+          toast({ title: 'Session started', description });
           void navigation.openSession(shellId, { skipPermissions: true });
         } else {
           toast({ title: 'Failed to start session', variant: 'destructive' });
@@ -714,26 +727,19 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       .map((e) => e.fingerprint);
     if (openFingerprints.length === 0) return;
     setIsSearchingCloud(true);
-    setCloudSummary(null);
-    setCloudFixStatus({});
+    setCloudResultsModal(null);
     try {
       const results = await searchCloudForErrors(openFingerprints);
       const toIgnore = results.filter((r) => r.action === 'ignore');
       const toFix = results.filter((r) => r.action === 'fix');
       const toAnalyse = results.filter((r) => r.action === 'analyse');
-      setCloudSummary({ ignored: toIgnore.length, fixed: toFix, remaining: toAnalyse.length });
-      // Mark ignored errors
-      await Promise.all(toIgnore.map((r) => ignoreAll(r.fingerprint)));
-      // Kick off auto-fix (runs in background, progress tracked via setCloudFixStatus)
-      void autoFixErrors(toFix, (fp, status) =>
-        setCloudFixStatus((prev) => ({ ...prev, [fp]: status })),
-      );
+      setCloudResultsModal({ ignored: toIgnore.length, fixResults: toFix, remaining: toAnalyse.length });
     } catch (e) {
       toast({ title: 'Cloud search failed', description: String(e), variant: 'destructive' });
     } finally {
       setIsSearchingCloud(false);
     }
-  }, [cloudLoginAvailable, allErrors, searchCloudForErrors, autoFixErrors, ignoreAll]);
+  }, [cloudLoginAvailable, allErrors, searchCloudForErrors]);
 
   return (
     <div className="flex h-full flex-col">
@@ -780,15 +786,14 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
             </div>
             {(statusCounts[ErrorStatus.OPEN] ?? 0) > 0 && (
               <Button
-                variant="outline"
                 size="sm"
-                className="h-7 gap-1.5 text-xs"
+                className="h-8 gap-1.5 bg-blue-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 active:bg-blue-700"
                 disabled={isSearchingCloud}
                 onClick={() => void handleSearchCloud()}
               >
                 {isSearchingCloud
-                  ? <Loader2 className="h-3 w-3 animate-spin" />
-                  : <Search className="h-3 w-3" />
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Search className="h-3.5 w-3.5" />
                 }
                 Search Flowpad
               </Button>
@@ -862,46 +867,6 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
         </div>
       </div>
 
-      {/* Cloud search summary bar */}
-      {cloudSummary && (() => {
-        const fixedCount = cloudSummary.fixed.filter((r) => cloudFixStatus[r.fingerprint] === 'fixed').length;
-        const stillFixing = cloudSummary.fixed.filter((r) => cloudFixStatus[r.fingerprint] === 'fixing').length;
-        return (
-          <div className="flex items-center gap-3 border-b border-border bg-muted/40 px-4 py-2 text-xs">
-            {cloudSummary.ignored > 0 && (
-              <span className="text-muted-foreground">
-                {cloudSummary.ignored} can be safely ignored
-              </span>
-            )}
-            {cloudSummary.fixed.length > 0 && (
-              <>
-                {cloudSummary.ignored > 0 && <span className="text-muted-foreground/40">·</span>}
-                <span className="flex items-center gap-1">
-                  {fixedCount}/{cloudSummary.fixed.length} auto-fixed
-                  {stillFixing > 0 && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
-                </span>
-              </>
-            )}
-            {cloudSummary.remaining > 0 && (
-              <>
-                {(cloudSummary.ignored > 0 || cloudSummary.fixed.length > 0) && (
-                  <span className="text-muted-foreground/40">·</span>
-                )}
-                <span className="text-muted-foreground">{cloudSummary.remaining} remaining</span>
-              </>
-            )}
-            <button
-              className="ml-auto rounded p-0.5 text-muted-foreground hover:text-foreground"
-              onClick={() => setCloudSummary(null)}
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        );
-      })()}
-
-
-
       {/* Login required modal for cloud search */}
       <AlertDialog open={showLoginModal} onOpenChange={setShowLoginModal}>
         <AlertDialogContent>
@@ -927,6 +892,23 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Cloud search results modal */}
+      {cloudResultsModal && (
+        <CloudSearchResultsModal
+          open={!!cloudResultsModal}
+          onClose={() => setCloudResultsModal(null)}
+          ignored={cloudResultsModal.ignored}
+          fixResults={cloudResultsModal.fixResults}
+          fixErrors={allErrors.filter((e) =>
+            cloudResultsModal.fixResults.some((r) => r.fingerprint === e.fingerprint),
+          )}
+          remaining={cloudResultsModal.remaining}
+          onFixAll={async (fps) => {
+            await fixAllCloud(fps);
+          }}
+        />
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">

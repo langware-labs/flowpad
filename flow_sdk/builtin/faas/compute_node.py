@@ -543,23 +543,23 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             permission_mode=body.get("permission_mode", "bypassPermissions"),
             resume=bool(resume_session_id),
         )
-        process = AgenticProcess(
+        agentic_process = AgenticProcess(
             shell_id=shell_id,
             worker_session_id=resume_session_id or str(uuid4()),
             cli_config=cmd.to_json(),
         )
-        await process.save(owner=request_info.someone_typeid if request_info else None)
-        return await process.open()
+        await agentic_process.save(owner=request_info.someone_typeid if request_info else None)
+        return await agentic_process.open()
 
     @action.post(action_name="clear-debug-errors")
-    async def clear_debug_errors_action(self) -> "ApiResponse":
+    async def clear_debug_errors_action(self) -> ApiResponse:
         """Delete all Claude debug logs and error records."""
         result = clear_debug_errors()
         return ApiSuccessResponse(data=result)
 
     @action.post(action_name="search-cloud-errors")
-    async def search_cloud_errors_action(self) -> "ApiResponse":
-        """Proxy error fingerprint search to the Flowpad cloud known-issues database."""
+    async def search_cloud_errors_action(self) -> ApiResponse:
+        """Proxy error fingerprint search to the Flowpad cloud, then apply results to local records."""
         from flow_sdk.cli.auth import get_api_key as get_flowpad_api_key
         from flow_sdk.client import ApiConfig, FlowpadClient
 
@@ -581,21 +581,92 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 client.set_api_key(flowpad_api_key)
                 result = await client.post(
                     "/graph/analysis/search",
-                    {"analysis_type": "claude error", "fingerprints": fingerprints, "data": {}},
+                    {"analysis_type": "claude_error", "fingerprints": fingerprints, "data": {}},
                 )
+            await self._apply_cloud_results(result.get("results", []))
             return ApiSuccessResponse(data=result)
         except Exception as e:
             return ApiFailResponse(message=f"Cloud search error: {e}")
 
+    async def _apply_cloud_results(self, results: list) -> None:
+        """Apply cloud search results to local records (mark ignored / save fix suggestions)."""
+        from datetime import datetime, timezone
+
+        from flow_sdk.fs_records.claude.claude_error import ClaudeErrorRecord, ErrorStatus, Fix
+
+        if not results:
+            return
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        for r in results:
+            fp = r.get("fingerprint", "")
+            if not fp:
+                continue
+            rec = ClaudeErrorRecord.get_by_fingerprint(fp)
+            if rec is None:
+                continue
+            if r.get("action") == "ignore":
+                rec.error_status = ErrorStatus.IGNORED
+                rec.triaged_at = now
+                rec.save()
+            elif r.get("action") == "fix":
+                rec.fix = Fix(
+                    instruction=r.get("instruction") or "",
+                    message=r.get("message") or "",
+                )
+                rec.triaged_at = now
+                rec.save()
+
+    @action.post(action_name="fix-all-cloud-errors")
+    async def fix_all_cloud_errors_action(self) -> ApiResponse:
+        """Spawn an AgenticProcess for each error with a saved cloud fix instruction."""
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+        from flow_sdk.builtin.cli_workers import ClaudeCliOptions
+        from flow_sdk.fs_records.claude.claude_error import ClaudeErrorRecord, Fix
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data()
+        fingerprints = body.get("fingerprints", [])
+        if not fingerprints:
+            return ApiFailResponse(message="fingerprints is required")
+
+        spawned = []
+        for fp in fingerprints:
+            rec = ClaudeErrorRecord.get_by_fingerprint(fp)
+            fix = getattr(rec, "fix", None)
+            fix_instruction = fix.instruction if isinstance(fix, Fix) else ""
+            if rec is None or not fix_instruction:
+                spawned.append({"fingerprint": fp, "status": "skipped"})
+                continue
+            try:
+                cmd = ClaudeCliOptions(permission_mode="bypassPermissions")
+                agentic_process = AgenticProcess(
+                    cli_config=cmd.to_json(),
+                )
+                await agentic_process.save(owner=request_info.someone_typeid if request_info else None)
+                result = await agentic_process.open(instruction=fix_instruction)  # type: ignore[assignment]
+                shell_id = agentic_process.shell_id or ""
+                spawned.append({
+                    "fingerprint": fp,
+                    "status": "spawned",
+                    "shell_id": shell_id,
+                    "worker_session_id": agentic_process.worker_session_id or "",
+                })
+            except Exception as e:
+                spawned.append({"fingerprint": fp, "status": "error", "message": str(e)})
+
+        return ApiSuccessResponse(data={"spawned": spawned})
+
     @action.get(action_name="get-cwd")
-    async def get_cwd_action(self) -> "ApiResponse":
+    async def get_cwd_action(self) -> ApiResponse:
         """Return the current working directory."""
         cmd = await self.run_command("pwd", background=False)
         cwd = (cmd.all_stdout or "").strip()
         return ApiSuccessResponse(data={"cwd": cwd})
 
     @action.get(action_name="git-ops")
-    async def git_ops_action(self) -> "ApiResponse":
+    async def git_ops_action(self) -> ApiResponse:
         """Unified gateway for git operations. Delegates to GitRepo.dispatch().
 
         Routing (via sub_path):

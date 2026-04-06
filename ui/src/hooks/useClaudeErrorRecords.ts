@@ -78,6 +78,12 @@ export interface CloudSearchResult {
   message: string | null;
 }
 
+/** Cloud fix suggestion */
+export interface Fix {
+  instruction: string;
+  message: string;
+}
+
 export interface ErrorOccurrence {
   timestamp: string;
   session_id: string;
@@ -114,6 +120,7 @@ export interface ClaudeErrorRecord {
   claude_session_id: string;
   triaged_at: string;
   notes: string;
+  fix: Fix;
 }
 
 // ─── Hook ────────────────────────────────────────────────────────────────────
@@ -411,6 +418,7 @@ export function useClaudeErrorRecords() {
 
   /**
    * Query the Flowpad cloud known-issues database for a batch of fingerprints.
+   * The server applies results (ignore / save fix) to local records automatically.
    * Returns one result per fingerprint with action: 'fix' | 'ignore' | 'analyse'.
    */
   const searchCloudForErrors = useCallback(
@@ -419,33 +427,26 @@ export function useClaudeErrorRecords() {
       const info = new ActionInfo('search-cloud-errors', 'compute_node', computeNode.typeId.id, 'POST');
       info.bodyParameters = { fingerprints };
       const result = await dataManager.callAction<string[], { results: CloudSearchResult[] }>(info);
+      await refetch();
       return result?.results ?? [];
     },
-    [computeNode?.typeId?.id],
+    [computeNode?.typeId?.id, refetch],
   );
 
   /**
-   * For each "fix" result from searchCloudForErrors, create a Task and spawn
-   * an AgenticProcess using the cloud-provided fix instruction.
-   * Reports progress via onProgress: 'fixing' → 'fixed' | 'error'.
+   * Spawn an AgenticProcess for each fingerprint using the cloud fix instruction stored on the record.
+   * Returns per-fingerprint spawn results from the server.
    */
-  const autoFixErrors = useCallback(
-    async (
-      fixResults: CloudSearchResult[],
-      onProgress: (fp: string, status: 'fixing' | 'fixed' | 'error') => void,
-    ): Promise<void> => {
-      await Promise.all(
-        fixResults.map(async (r) => {
-          if (!r.instruction) return;
-          const error = allErrors.find((e) => e.fingerprint === r.fingerprint);
-          if (!error) return;
-          onProgress(r.fingerprint, 'fixing');
-          const { taskId } = await createTaskForError(error, { instruction: r.instruction });
-          onProgress(r.fingerprint, taskId ? 'fixed' : 'error');
-        }),
-      );
+  const fixAllCloud = useCallback(
+    async (fingerprints: string[]): Promise<Array<{ fingerprint: string; status: string; shell_id?: string; worker_session_id?: string }>> => {
+      if (!computeNode?.typeId?.id || fingerprints.length === 0) return [];
+      const info = new ActionInfo('fix-all-cloud-errors', 'compute_node', computeNode.typeId.id, 'POST');
+      info.bodyParameters = { fingerprints };
+      const result = await dataManager.callAction<unknown, { spawned: Array<{ fingerprint: string; status: string; shell_id?: string; worker_session_id?: string }> }>(info);
+      await refetch();
+      return result?.spawned ?? [];
     },
-    [allErrors, createTaskForError],
+    [computeNode?.typeId?.id, refetch],
   );
 
   return {
@@ -475,6 +476,6 @@ export function useClaudeErrorRecords() {
     clearAll,
     // Cloud search
     searchCloudForErrors,
-    autoFixErrors,
+    fixAllCloud,
   };
 }
