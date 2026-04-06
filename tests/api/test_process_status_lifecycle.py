@@ -76,7 +76,7 @@ async def test_process_status_after_start(bootstrapped_client):
 
     # Clean up
     await bootstrapped_client.post(
-        f"/api/v1/graph/agentic_process/{process_id}/stop",
+        f"/api/v1/graph/agentic_process/{process_id}/exit",
         json={},
     )
     await asyncio.sleep(0.5)
@@ -101,12 +101,12 @@ async def test_process_status_after_kill_pty(bootstrapped_client):
 
     # Stop shell
     resp = await bootstrapped_client.post(
-        f"/api/v1/graph/agentic_process/{process_id}/stop",
+        f"/api/v1/graph/agentic_process/{process_id}/exit",
         json={},
     )
     assert resp.status_code == 200, resp.text
     stop_result = ApiResponse(**resp.json())
-    assert stop_result.status == "SUCCESS", f"stop failed: {stop_result.message}"
+    assert stop_result.status == "SUCCESS", f"exit failed: {stop_result.message}"
 
     await asyncio.sleep(0.5)
 
@@ -148,7 +148,7 @@ async def test_process_status_full_lifecycle(bootstrapped_client):
 
     # 3. Stop shell → status still from transcript
     resp = await bootstrapped_client.post(
-        f"/api/v1/graph/agentic_process/{process_id}/stop",
+        f"/api/v1/graph/agentic_process/{process_id}/exit",
         json={},
     )
     assert resp.status_code == 200, resp.text
@@ -161,8 +161,8 @@ async def test_process_status_full_lifecycle(bootstrapped_client):
     # Verify session_id preserved, shell_id cleared
     resp = await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{process_id}")
     entity = ApiResponse(**resp.json()).data
-    assert entity.get("session_id") == worker_sid, "session_id should be preserved after stop"
-    assert entity.get("shell_id") is None, "shell_id should be cleared after stop"
+    assert entity.get("session_id") == worker_sid, "session_id should be preserved after exit"
+    assert entity.get("shell_id"), "shell_id should still be set after exit (shell entity kept alive)"
 
 
 @pytest.mark.asyncio

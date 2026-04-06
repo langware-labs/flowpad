@@ -229,7 +229,7 @@ class AgenticProcess(Entity):
         return self
 
     async def __aexit__(self, *_) -> None:
-        await self.stop()
+        await self.exit()
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -332,35 +332,34 @@ class AgenticProcess(Entity):
             await self.save()
             return ApiFailResponse(message=str(e))
 
-    @action.post(action_name="stop")
-    async def stop(self) -> ApiSuccessResponse | ApiFailResponse:
-        """Kill PTY shell. Preserves session_id so session can be resumed later."""
+    @action.post(action_name="exit")
+    async def exit(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Kill worker process but keep shell entity alive (status=idle). Use before restart."""
         if not self.shell_id:
             return ApiFailResponse(message="No active shell session")
 
         try:
             from flow_sdk.builtin.shell import Shell
 
-            old_shell_id = self.shell_id
-
-            # Preserve tab_order so start() can place the new shell in the same slot.
-            shell = await Shell.get_by_id(old_shell_id)
+            shell = await Shell.get_by_id(self.shell_id)
             if shell:
                 self.context_data = {**self.context_data, "_prev_tab_order": shell.tab_order}
 
-            # Clear shell_id BEFORE closing so on_exit callback sees None and skips.
-            self.shell_id = None
+            # Set flag so the PTY exit callback knows to preserve shell_id.
+            # Clear sidecar but NOT shell_id — shell entity stays alive for restart.
+            self.context_data = {**self.context_data, "_shell_exit_pending": True}
             self.sidecar_shell_id = None
             await self.save()
 
             if shell:
-                await shell.close()
-                logger.info("AgenticProcess %s: closed Shell entity %s", self.id, old_shell_id)
+                await shell.terminate_worker()  # graceful SIGTERM → SIGKILL
+                await shell.stop()              # kill PTY, set status=idle
+                logger.info("AgenticProcess %s: exited (shell entity %s preserved)", self.id, self.shell_id)
             else:
-                logger.warning("AgenticProcess %s: Shell entity %s not found", self.id, old_shell_id)
+                logger.warning("AgenticProcess %s: Shell entity %s not found on exit", self.id, self.shell_id)
 
             logger.info(
-                "AgenticProcess %s: stopped (session_id preserved: %s)",
+                "AgenticProcess %s: exited (session_id preserved: %s)",
                 self.id,
                 self.session_id,
             )
@@ -369,14 +368,22 @@ class AgenticProcess(Entity):
                 data={
                     "id": self.id,
                     "status": AgenticProcessStatus.IDLE.value,
-                    "shell_id": None,
+                    "shell_id": self.shell_id,
                     "session_id": self.session_id,
                 }
             )
 
         except Exception as e:
-            logger.exception(f"AgenticProcess {self.id} stop error: {e}")
+            logger.exception(f"AgenticProcess {self.id} exit error: {e}")
             return ApiFailResponse(message=str(e))
+
+    @action.post(action_name="restart")
+    async def http_restart(self) -> ApiSuccessResponse | ApiFailResponse:
+        """exit() + start(). Shell entity is preserved and reused."""
+        exit_result = await self.exit()
+        if isinstance(exit_result, ApiFailResponse) and "No active shell" not in exit_result.message:
+            return exit_result
+        return await self.start()
 
     async def wait(self, timeout: float | None = None) -> None:
         """Block until status reaches a terminal state (complete / error / interrupted).
@@ -662,9 +669,9 @@ class AgenticProcess(Entity):
             self.session_id = session_id_override
         return await self.start(instruction=instruction, visible=visible)
 
-    @action.all(action_name="exit")
-    async def _http_exit(self) -> ApiSuccessResponse | ApiFailResponse:
-        """HTTP: Terminate this process (permanent teardown).
+    @action.post(action_name="close")
+    async def _http_close(self) -> ApiSuccessResponse | ApiFailResponse:
+        """HTTP: Permanent teardown — kill worker + delete shell entity.
 
         Delegates to close(), then returns an ApiResponse for the HTTP layer.
         """
@@ -802,7 +809,12 @@ class AgenticProcess(Entity):
                     if not proc:
                         return
                     if not proc.shell_id:
-                        return  # stop() already handled it
+                        return  # close() already handled it
+                    if proc.context_data.get("_shell_exit_pending"):
+                        # exit() was called — shell entity stays alive, just clear the flag
+                        proc.context_data = {k: v for k, v in proc.context_data.items() if k != "_shell_exit_pending"}
+                        await proc.save()
+                        return
                     proc.shell_id = None
                     proc.sidecar_shell_id = None
                     if exit_code is not None and exit_code != 0:

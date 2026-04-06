@@ -989,13 +989,30 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * ```
    */
   async exit(): Promise<void> {
-    if (this.status === ProcessorStatus.INTERRUPTED) {
-      return; // Already terminated
-    }
+    if (!this.shell_id) return; // Nothing to exit
 
     // Optimistically mark the shell CLOSING synchronously (no await) so the
     // loader's resolveDefaultShell sees it as non-alive and won't redirect back
     // to this tab while the exit API call is in-flight.
+    const shell = Shell.getByIdFromCache(this.shell_id);
+    if (shell) {
+      shell.status = ShellStatus.CLOSING;
+      dataManager.notifyEntityChanged(shell);
+    }
+
+    const actionInfo = new ActionInfo('exit', AgenticProcess.type, this.id, 'POST');
+    await dataManager.callAction(actionInfo);
+
+    // Shell entity is kept alive by the backend (status=idle) — do NOT call shell.close()
+  }
+
+  /**
+   * Permanent teardown: kill worker + delete shell entity.
+   * Use for "close tab" — shell is gone after this call.
+   */
+  async close(): Promise<void> {
+    if (this.status === ProcessorStatus.INTERRUPTED) return;
+
     if (this.shell_id) {
       const shell = Shell.getByIdFromCache(this.shell_id);
       if (shell) {
@@ -1004,16 +1021,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       }
     }
 
-    const actionInfo = new ActionInfo('exit', AgenticProcess.type, this.id, 'POST');
+    const actionInfo = new ActionInfo('close', AgenticProcess.type, this.id, 'POST');
     await dataManager.callAction(actionInfo);
 
-    // Update local state
     this.status = ProcessorStatus.INTERRUPTED;
     this._markComplete();
 
-    // Dispose the frontend PTY client. The backend already cleaned up the PTY
-    // session as part of exit; shell.close() disposes _pty and handles the
-    // expected 404 gracefully.
+    // Dispose frontend PTY client — backend already deleted the shell entity.
     if (this.shell_id) {
       const shell = Shell.getByIdFromCache(this.shell_id);
       if (shell) await shell.close().catch(() => {});
@@ -1051,15 +1065,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Stop the current shell session.
+   * Stop the current shell session (shell entity kept alive, status=idle).
    *
-   * Delegates to Shell.close() for PTY teardown. The session_id is
-   * preserved so the process can be resumed later via start().
+   * Calls the backend exit action which kills the worker and PTY but
+   * preserves the shell entity. The session_id is preserved so the
+   * process can be resumed later via start().
    */
   async stop(): Promise<void> {
-    const actionInfo = new ActionInfo('stop', AgenticProcess.type, this.id, 'POST');
-    await dataManager.callAction(actionInfo);
-    this.shell_id = null;
+    await this.exit();
   }
 
   /**
