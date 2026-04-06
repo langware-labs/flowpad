@@ -275,7 +275,7 @@ class ApiKey(Entity):
         machine_hash = api_key_hash(raw_machine_id)
         return machine_hash in self.allowed_machine_id_hashes
 
-    async def save(self, someone_typeid: TypeId | None = None):
+    async def save(self, someone_typeid: TypeId | None = None, notify: bool = True):
         """
         Save API key and invalidate caches.
 
@@ -290,7 +290,7 @@ class ApiKey(Entity):
             Saved ApiKey entity
         """
         # Call parent save
-        result = await super().save(someone_typeid)
+        result = await super().save(someone_typeid, notify=notify)
 
         # Invalidate entity cache so fresh version is loaded on next access
         from flow_sdk.core.cache.entity_cache import entity_cache

@@ -37,7 +37,7 @@ class Mention(Entity):
         )
         return await cls.get_all(entities_filter=_filter)
 
-    async def save(self, owner: Union[Entity, TypeId, None] = None) -> Mention:
+    async def save(self, owner: Union[Entity, TypeId, None] = None, notify: bool = True) -> Mention:
         mentioned_in = await Entity.get_by_typeid(
             TypeId(type=self.mentioned_in_entity_type, id=self.mentioned_in_entity_id)
         )
@@ -54,4 +54,4 @@ class Mention(Entity):
                 status_code=400,
                 detail=f"{self.mentioned_user_id} is not a member in {self.mentioned_in_entity_type}",
             )
-        return await super().save(owner)
+        return await super().save(owner, notify=notify)
