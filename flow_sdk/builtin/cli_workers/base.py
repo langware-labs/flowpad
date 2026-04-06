@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 
 class WorkerExecutionInfo(BaseModel):
-    """Info about a worker process launched via Shell.run_process()."""
+    """Info about a worker process launched via Shell.launch()."""
 
     pid: int | None          # OS PID of the worker (None if not detected within timeout)
     name: str                # executable name, e.g. "claude"

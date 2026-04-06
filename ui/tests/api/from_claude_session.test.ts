@@ -46,7 +46,7 @@ describe('AgenticProcess.fromClaudeSession', () => {
       }
       throw e;
     }
-    expect(proc.worker_session_id).toBe(sessionId);
+    expect(proc.session_id).toBe(sessionId);
     expect((proc as any).cli_config?.resume).toBe(true);
   }, 15000);
 
@@ -67,9 +67,9 @@ describe('AgenticProcess.fromClaudeSession', () => {
       }
       throw e;
     }
-    await proc.open();
+    await proc.start();
 
-    const shell = await proc.getShell();
+    const shell = await proc.shell();
     expect(shell).not.toBeNull();
 
     // Wait for PTY to produce output

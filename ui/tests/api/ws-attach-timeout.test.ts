@@ -1,5 +1,5 @@
 /**
- * Regression test: AgenticProcess.spawn() → process.open() should succeed.
+ * Regression test: AgenticProcess.spawn() → process.start() should succeed.
  *
  * Currently FAILS with "Request timeout" because spawn() creates AgenticProcess
  * without compute_node_id. See RCA below.
@@ -17,7 +17,7 @@ describe('AgenticProcess spawn regression', () => {
     await waitFor(() => ConnectionManager.getInstance().connected, 5000);
   });
 
-  it('process.open() succeeds after spawn() creates the process', async () => {
+  it('process.start() succeeds after spawn() creates the process', async () => {
     const cliConfig = new ClaudeCliOptions({ permission_mode: 'bypassPermissions' });
 
     const process = await new AgenticProcess({
@@ -25,7 +25,7 @@ describe('AgenticProcess spawn regression', () => {
       context_data: {},
     }).save();
 
-    await process.open({ instruction: 'echo hello', ptyTimeout: 3000 });
+    await process.start({ instruction: 'echo hello', ptyTimeout: 3000 });
     expect(process.shell_id).toBeTruthy();
   }, 10000);
 });

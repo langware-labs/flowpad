@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from flow_sdk.fs_records.agentic_process_record import AgenticProcessStatus
 
 
 def _now_iso() -> str:
@@ -62,7 +66,43 @@ class ProcessResultRequest(BaseModel):
 
 
 class CreateProcessRequest(BaseModel):
-    """Request to create a new idle process ready for open() / prompt() calls."""
+    """Request to create a new idle process ready for start() / prompt() calls."""
 
     context: ContextData | dict[str, Any] = {}
     result: ProcessResultRequest | None = None
+
+
+# ── Result types ──────────────────────────────────────────────────────────────
+
+@dataclass
+class RunResult:
+    """Return value from AgenticProcess.run() / prompt()."""
+
+    text: str
+    session_id: str
+    status: "AgenticProcessStatus"
+    ok: bool                        # False when status is error or interrupted
+    duration_ms: int | None = None
+    models_used: list[str] = field(default_factory=list)
+    token_usage: dict | None = None
+
+
+@dataclass
+class StreamEvent:
+    """A single event yielded by AgenticProcess.stream()."""
+
+    type: Literal["text", "tool_use", "tool_result", "error"]
+    text: str | None = None
+    tool: str | None = None
+    input: dict | None = None
+    result: str | None = None
+    error: str | None = None
+
+
+class ProcessError(Exception):
+    """Raised by AgenticProcess.run() when status is error or interrupted."""
+
+    def __init__(self, status: "AgenticProcessStatus", session_id: str):
+        self.status = status
+        self.session_id = session_id
+        super().__init__(f"Process ended with status={status} session_id={session_id}")

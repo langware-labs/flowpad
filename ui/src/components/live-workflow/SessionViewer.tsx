@@ -96,7 +96,7 @@ export function SessionViewer() {
   const { elapsedTime, statusMessage, activityLabel, tokenUsage } = useWorkflowProgressInfo(process, isRunning);
 
   // Session action buttons (analyze + resume in terminal)
-  const workerSessionId = process?.worker_session_id ?? null;
+  const workerSessionId = process?.session_id ?? null;
   const sessionCwd = process?.workdir;
 
   // Load recent sessions as tabs

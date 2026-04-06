@@ -45,12 +45,12 @@ async def test_open_pty_creates_pty_session(bootstrapped_client):
 
     pty_data = result.data
     assert "shell_id" in pty_data, f"Missing shell_id in response: {pty_data}"
-    assert "worker_session_id" in pty_data, f"Missing worker_session_id in response: {pty_data}"
+    assert "session_id" in pty_data, f"Missing session_id in response: {pty_data}"
 
     shell_id = pty_data["shell_id"]
-    worker_session_id = pty_data["worker_session_id"]
+    session_id = pty_data["session_id"]
     assert shell_id, "shell_id should not be empty"
-    assert worker_session_id, "worker_session_id should not be empty"
+    assert session_id, "session_id should not be empty"
 
     # Verify process entity has shell_id set
     response = await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{process_id}")
@@ -58,7 +58,7 @@ async def test_open_pty_creates_pty_session(bootstrapped_client):
     entity_data = ApiResponse(**response.json())
     process_entity = entity_data.data
     assert process_entity.get("shell_id") == shell_id
-    assert process_entity["worker_session_id"] == worker_session_id
+    assert process_entity["session_id"] == session_id
 
     # Clean up: stop the shell
     response = await bootstrapped_client.post(
@@ -90,15 +90,15 @@ async def test_upsert_session_process(bootstrapped_client):
 
     upsert_data = result.data
     assert upsert_data["created"] is True
-    assert upsert_data["worker_session_id"] == test_session_id
+    assert upsert_data["session_id"] == test_session_id
 
-    # Verify the process exists and has correct worker_session_id
+    # Verify the process exists and has correct session_id
     process_id = upsert_data["id"]
     response = await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{process_id}")
     assert response.status_code == 200, response.text
     entity_data = ApiResponse(**response.json())
     process_entity = entity_data.data
-    assert process_entity["worker_session_id"] == test_session_id
+    assert process_entity["session_id"] == test_session_id
 
     # Calling upsertSessionProcess again should return same process (not create new)
     response = await bootstrapped_client.post(

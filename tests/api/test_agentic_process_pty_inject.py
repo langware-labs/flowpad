@@ -2,7 +2,7 @@
 API tests for AgenticProcess PTY message injection.
 
 Tests that execute-plan and update-plan inject messages into the active PTY
-session via _control_inject_message → send_input.
+session via inject → send.
 """
 
 import uuid
@@ -15,25 +15,25 @@ from flow_sdk.responses.response import ApiResponse, ApiResponseStatus
 
 
 def _str_calls(mock):
-    """Return only the send_input calls that carried a plain string (not bytes)."""
+    """Return only the send calls that carried a plain string (not bytes)."""
     return [c for c in mock.call_args_list if isinstance(c[0][0], str)]
 
 
 @pytest.mark.asyncio
 async def test_execute_plan_injects_to_pty(bootstrapped_client, user):
-    """execute-plan with active PTY sends the plan prompt via send_input."""
+    """execute-plan with active PTY sends the plan prompt via send."""
     client = bootstrapped_client
 
     process = AgenticProcess(
         name="test-pty-inject-execute",
-        worker_session_id=str(uuid.uuid4()),
+        session_id=str(uuid.uuid4()),
         shell_id=str(uuid.uuid4()),
         compute_node_id=f"compute_node-{uuid.uuid4()}",
     )
     await process.save(user.typeid)
 
     try:
-        with patch.object(AgenticProcess, "send_input", new_callable=AsyncMock) as mock_send:
+        with patch.object(AgenticProcess, "send", new_callable=AsyncMock) as mock_send:
             resp = await client.post(
                 f"/api/v1/graph/agentic_process/{process.id}/execute-plan",
                 json={"file_path": "/some/plan.md", "clear_context": False},
@@ -59,14 +59,14 @@ async def test_execute_plan_clear_context_injects_clear_then_plan(bootstrapped_c
 
     process = AgenticProcess(
         name="test-pty-inject-clear",
-        worker_session_id=str(uuid.uuid4()),
+        session_id=str(uuid.uuid4()),
         shell_id=str(uuid.uuid4()),
         compute_node_id=f"compute_node-{uuid.uuid4()}",
     )
     await process.save(user.typeid)
 
     try:
-        with patch.object(AgenticProcess, "send_input", new_callable=AsyncMock) as mock_send:
+        with patch.object(AgenticProcess, "send", new_callable=AsyncMock) as mock_send:
             resp = await client.post(
                 f"/api/v1/graph/agentic_process/{process.id}/execute-plan",
                 json={"file_path": "/some/plan.md", "clear_context": True},
@@ -87,19 +87,19 @@ async def test_execute_plan_clear_context_injects_clear_then_plan(bootstrapped_c
 
 @pytest.mark.asyncio
 async def test_update_plan_injects_to_pty(bootstrapped_client, user):
-    """update-plan with active PTY sends update prompt via send_input."""
+    """update-plan with active PTY sends update prompt via send."""
     client = bootstrapped_client
 
     process = AgenticProcess(
         name="test-pty-inject-update",
-        worker_session_id=str(uuid.uuid4()),
+        session_id=str(uuid.uuid4()),
         shell_id=str(uuid.uuid4()),
         compute_node_id=f"compute_node-{uuid.uuid4()}",
     )
     await process.save(user.typeid)
 
     try:
-        with patch.object(AgenticProcess, "send_input", new_callable=AsyncMock) as mock_send:
+        with patch.object(AgenticProcess, "send", new_callable=AsyncMock) as mock_send:
             resp = await client.post(
                 f"/api/v1/graph/agentic_process/{process.id}/update-plan",
                 json={"file_path": "/some/plan.md"},
@@ -118,18 +118,18 @@ async def test_update_plan_injects_to_pty(bootstrapped_client, user):
 
 @pytest.mark.asyncio
 async def test_inject_no_pty_skips_silently(bootstrapped_client, user):
-    """When no PTY is active, _control_inject_message skips without error."""
+    """When no PTY is active, inject skips without error."""
     client = bootstrapped_client
 
     process = AgenticProcess(
         name="test-no-pty-inject",
-        worker_session_id=str(uuid.uuid4()),
+        session_id=str(uuid.uuid4()),
         # No shell_id set
     )
     await process.save(user.typeid)
 
     try:
-        with patch.object(AgenticProcess, "send_input", new_callable=AsyncMock) as mock_send:
+        with patch.object(AgenticProcess, "send", new_callable=AsyncMock) as mock_send:
             resp = await client.post(
                 f"/api/v1/graph/agentic_process/{process.id}/execute-plan",
                 json={"file_path": "/some/plan.md", "clear_context": False},

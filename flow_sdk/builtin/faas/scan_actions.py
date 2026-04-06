@@ -271,7 +271,7 @@ class ScanActionsMixin:
                 additional_dirs=additional_dirs,
             )
             if resume_session_id and not fork_session:
-                process.worker_session_id = resume_session_id
+                process.session_id = resume_session_id
             await process.save(owner)
 
             if result_data and isinstance(result_data, dict):
@@ -320,8 +320,8 @@ class ScanActionsMixin:
     async def _scan_upsert_session_process(self) -> ApiResponse:
         """Find or create an AgenticProcess for a given Claude Code session ID.
 
-        If a process with matching worker_session_id exists, return it.
-        Otherwise, create a new AgenticProcess with worker_session_id pre-set.
+        If a process with matching session_id exists, return it.
+        Otherwise, create a new AgenticProcess with session_id pre-set.
 
         POST body (camelCase):
             sessionId: str - Claude Code session ID
@@ -329,7 +329,7 @@ class ScanActionsMixin:
             projectId: str | None - Project ID for context
 
         Returns:
-            AgenticProcess data with { id, type, worker_session_id, created }
+            AgenticProcess data with { id, type, session_id, created }
         """
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
@@ -350,9 +350,9 @@ class ScanActionsMixin:
             workdir = body.get("workdir")
             project_id = body.get("projectId")
 
-            # Try to find existing process by worker_session_id
+            # Try to find existing process by session_id
             existing = await AgenticProcess.get_all(
-                entities_filter=QueryFilter(match=ExpressionNode(worker_session_id=session_id))
+                entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id))
             )
             if existing:
                 process = existing[0]
@@ -360,7 +360,7 @@ class ScanActionsMixin:
                     data={
                         "id": process.id,
                         "type": process.type,
-                        "worker_session_id": process.worker_session_id,
+                        "session_id": process.session_id,
                         "created": False,
                     }
                 )
@@ -398,7 +398,7 @@ class ScanActionsMixin:
                 context_data["project_id"] = project_id
 
             process = AgenticProcess(
-                worker_session_id=session_id,
+                session_id=session_id,
                 use_worker_history=True,
                 context_data=context_data,
                 compute_node_id=str(self.typeid),
@@ -409,7 +409,7 @@ class ScanActionsMixin:
 
             logging.info(
                 f"ComputeNode {self.id} upserted AgenticProcess {process.id} for session {session_id} (created). "
-                f"worker_session_id on saved object={process.worker_session_id}"
+                f"session_id on saved object={process.session_id}"
             )
 
             # Set resume flag if transcript exists on disk (O(1) with workdir, O(P) fallback).
@@ -429,7 +429,7 @@ class ScanActionsMixin:
                 data={
                     "id": process.id,
                     "type": process.type,
-                    "worker_session_id": session_id,
+                    "session_id": session_id,
                     "created": True,
                 }
             )

@@ -2,19 +2,19 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AgenticProcess, dataManager } from '@sdk';
 
 /**
- * Regression test for: AgenticProcess.open() crashes with
+ * Regression test for: AgenticProcess.start() crashes with
  * "TypeError: dataManager.getEntityById is not a function"
  *
- * Root cause (commit 61e31865): `open()` previously called `dataManager.getEntityById()`
- * which does not exist on DataManager. The correct method is
+ * Root cause (commit 61e31865): `start()` (formerly `open()`) previously called
+ * `dataManager.getEntityById()` which does not exist on DataManager. The correct method is
  * `dataManager.getByTypeId()`.
  *
- * When open() throws, AgenticProcess.spawn() propagates the error,
+ * When start() throws, AgenticProcess.spawn() propagates the error,
  * NavigationActions.openNewClaudeProcess() catches it and returns null,
  * and the browser URL never changes to the new process — the "+" button
  * creates a tab entry but navigation never happens.
  */
-describe('AgenticProcess.start', () => {
+describe('AgenticProcess.start (open action)', () => {
   let callActionSpy: ReturnType<typeof vi.spyOn>;
   let updateEntitySpy: ReturnType<typeof vi.spyOn>;
   let notifyChangedSpy: ReturnType<typeof vi.spyOn>;
@@ -23,7 +23,7 @@ describe('AgenticProcess.start', () => {
   const fakeShell = { type: 'shell', id: '00000000-0000-4000-8000-000000000002', name: 'test-shell', startPty: vi.fn().mockResolvedValue(undefined) };
   const fakeActionResult = {
     shell_id: '00000000-0000-4000-8000-000000000002',
-    worker_session_id: 'worker-session-xyz',
+    session_id: 'worker-session-xyz',
     shell: fakeShell,
   };
 
@@ -41,14 +41,14 @@ describe('AgenticProcess.start', () => {
     getByTypeIdSpy.mockRestore();
   });
 
-  it('resolves with true and sets shell_id and worker_session_id without throwing', async () => {
+  it('resolves with true and sets shell_id and session_id without throwing', async () => {
     const agenticProcess = new AgenticProcess({ id: '00000000-0000-4000-8000-000000000001', status: 'idle' });
 
     // This call must not throw "dataManager.getEntityById is not a function".
-    // It should resolve to true and set shell_id / worker_session_id on the process.
-    await expect(agenticProcess.open()).resolves.toBe(true);
+    // It should resolve to true and set shell_id / session_id on the process.
+    await expect(agenticProcess.start()).resolves.toBe(true);
     expect(agenticProcess.shell_id).toBe('00000000-0000-4000-8000-000000000002');
-    expect(agenticProcess.worker_session_id).toBe('worker-session-xyz');
+    expect(agenticProcess.session_id).toBe('worker-session-xyz');
   });
 
   it('dataManager does not have a getEntityById method (verifies the broken API)', () => {

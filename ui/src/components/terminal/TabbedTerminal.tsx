@@ -59,7 +59,7 @@ const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: str
   const workdir = process.workdir;
   const isActive = process.is_active;
   const status = process.resolvedStatus;
-  const workerSessionId = process.worker_session_id ?? null;
+  const workerSessionId = process.session_id ?? null;
 
   return (
     <div className="space-y-1.5 min-w-[220px]">
@@ -267,17 +267,18 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
     selectTab(activeShellId, { navigate: false });
   }, [activeShellId, hasActiveTab, hasTabOverflow, canScrollLeft, selectTab]);
 
-  // --- Context menu handlers ---
-
-  const closeShell = useCallback(
+  const closeTab = useCallback(
     async (shellId: string): Promise<void> => {
       const session = sessions.find((s) => s.shellId === shellId);
-      if (!session?.shell || ([ShellStatus.CLOSING, ShellStatus.CLOSED] as string[]).includes(session.shell.status)) return;
+      if (!session) return;
       try {
-        await session.agenticProcess?.exit();
-        await session.shell.close();
+        if (session.agenticProcess) {
+          await session.agenticProcess.exit();
+        } else if (session.shell) {
+          await session.shell.close();
+        }
       } catch (error) {
-        console.error('[TabbedTerminal] Failed to close shell session:', shellId, error);
+        console.error('[TabbedTerminal] Failed to close tab:', shellId, error);
       }
     },
     [sessions],
@@ -285,52 +286,37 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
 
   const handleCloseTab = useCallback(
     (shellId: string) => {
-      void closeShell(shellId);
       if (activeShellId === shellId) {
         const idx = visibleSessions.findIndex((s) => s.shellId === shellId);
         const remaining = visibleSessions.filter((s) => s.shellId !== shellId && !s.isDisabled);
-        if (remaining.length > 0) {
-          const nextIdx = Math.min(idx, remaining.length - 1);
-          selectTab(remaining[nextIdx].shellId);
-        } else {
-          navigation.openShellView();
-        }
+        remaining.length > 0 ? selectTab(remaining[Math.min(idx, remaining.length - 1)].shellId) : navigation.openShellView();
       }
+      void closeTab(shellId);
     },
-    [activeShellId, visibleSessions, closeShell, selectTab, navigation],
+    [activeShellId, visibleSessions, closeTab, selectTab, navigation],
   );
 
   const handleCloseAll = useCallback(() => {
-    visibleSessions.forEach((session) => {
-      void closeShell(session.shellId);
-    });
+    void Promise.all(visibleSessions.map((s) => closeTab(s.shellId)));
     navigation.openShellView();
-  }, [visibleSessions, closeShell, navigation]);
+  }, [visibleSessions, closeTab, navigation]);
 
   const handleCloseAllButThis = useCallback(
     (shellId: string) => {
-      visibleSessions.forEach((session) => {
-        if (session.shellId !== shellId) {
-          void closeShell(session.shellId);
-        }
-      });
+      void Promise.all(visibleSessions.filter((s) => s.shellId !== shellId).map((s) => closeTab(s.shellId)));
       selectTab(shellId);
     },
-    [visibleSessions, closeShell, selectTab],
+    [visibleSessions, closeTab, selectTab],
   );
 
   const handleCloseToTheRight = useCallback(
     (shellId: string) => {
       const idx = visibleSessions.findIndex((s) => s.shellId === shellId);
       const toClose = visibleSessions.slice(idx + 1);
-      toClose.forEach((session) => {
-        void closeShell(session.shellId);
-      });
-      if (toClose.some((s) => s.shellId === activeShellId)) {
-        selectTab(shellId);
-      }
+      void Promise.all(toClose.map((s) => closeTab(s.shellId)));
+      if (toClose.some((s) => s.shellId === activeShellId)) selectTab(shellId);
     },
-    [visibleSessions, activeShellId, closeShell, selectTab],
+    [visibleSessions, activeShellId, closeTab, selectTab],
   );
 
   const handleTabDoubleClick = (shellId: string, currentName: string) => {
@@ -582,12 +568,12 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
                     </span>
                   )}
 
-                  {session.agenticProcess?.worker_session_id && (
+                  {session.agenticProcess?.session_id && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         void (async () => {
-                          const sessionId = session.agenticProcess!.worker_session_id!;
+                          const sessionId = session.agenticProcess!.session_id!;
                           const workdir = session.agenticProcess!.workdir ?? '';
                           const record = await ClaudeSessionRecord.discover(sessionId).catch(() => null);
                           const projectEncodedName = record?.project_encoded_name ?? workdir.replace(/\//g, '-');

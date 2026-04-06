@@ -53,7 +53,7 @@ async def test_process_status_idle_on_create(bootstrapped_client):
 
 
 @pytest.mark.asyncio
-async def test_process_status_after_start_pty(bootstrapped_client):
+async def test_process_status_after_start(bootstrapped_client):
     """After start, process status depends on transcript state."""
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     compute_node_id = _get_default_compute_node_id(bootstrap.json())
@@ -139,12 +139,12 @@ async def test_process_status_full_lifecycle(bootstrapped_client):
     status = await _get_process_status(bootstrapped_client, process_id)
     assert status in ("idle", "null", "empty", "waiting", "thinking", "tool_call", "tool_running", "running", "complete", "inactive"), f"Step 2: Expected transcript-derived status, got {status}"
 
-    # Verify worker_session_id and shell_id are set
+    # Verify session_id and shell_id are set
     resp = await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{process_id}")
     entity = ApiResponse(**resp.json()).data
-    assert entity.get("worker_session_id"), "worker_session_id should be set while running"
+    assert entity.get("session_id"), "session_id should be set while running"
     assert entity.get("shell_id"), "shell_id should be set while running"
-    worker_sid = entity["worker_session_id"]
+    worker_sid = entity["session_id"]
 
     # 3. Stop shell → status still from transcript
     resp = await bootstrapped_client.post(
@@ -158,10 +158,10 @@ async def test_process_status_full_lifecycle(bootstrapped_client):
     status = await _get_process_status(bootstrapped_client, process_id)
     assert status in ("idle", "null", "empty", "waiting", "thinking", "tool_call", "tool_running", "running", "complete", "inactive"), f"Step 3: Expected transcript-derived status, got {status}"
 
-    # Verify worker_session_id preserved, shell_id cleared
+    # Verify session_id preserved, shell_id cleared
     resp = await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{process_id}")
     entity = ApiResponse(**resp.json()).data
-    assert entity.get("worker_session_id") == worker_sid, "worker_session_id should be preserved after stop"
+    assert entity.get("session_id") == worker_sid, "session_id should be preserved after stop"
     assert entity.get("shell_id") is None, "shell_id should be cleared after stop"
 
 

@@ -34,6 +34,7 @@ class PtySessionState(BaseModel):
     rows: int = 24
     provider_session_data: Dict[str, Any] = Field(default_factory=dict)
     pty_stream_file: Any = None
+    output_queues: list = Field(default_factory=list)  # asyncio.Queue feeds for Pty.output()
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
