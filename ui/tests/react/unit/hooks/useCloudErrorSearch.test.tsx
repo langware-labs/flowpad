@@ -1,9 +1,9 @@
 /**
  * Tests for the cloud error search additions in useClaudeErrorRecords:
  *   - searchCloudForErrors
- *   - autoFixErrors
+ *   - fixAllCloud
  */
-import { AgenticProcess, Task, dataManager } from '@sdk';
+import { dataManager } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { renderHook, act } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,6 +13,7 @@ import {
   useClaudeErrorRecords,
   type ClaudeErrorRecord,
   type CloudSearchResult,
+  type Fix,
 } from '@src/hooks/useClaudeErrorRecords';
 import { useAction } from '@src/hooks/use-action';
 import { unitTestSetup } from '../../../utils/test-utils';
@@ -45,6 +46,7 @@ vi.mock('@src/hooks/use-action', () => ({
 }));
 
 const mockUseAction = vi.mocked(useAction);
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const mockUseProject = vi.mocked(useProject);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -86,6 +88,7 @@ function makeErrorRecord(overrides: Partial<ClaudeErrorRecord> = {}): ClaudeErro
     claude_session_id: '',
     triaged_at: '',
     notes: '',
+    fix: { instruction: '', message: '' } satisfies Fix,
     ...overrides,
   };
 }
@@ -161,165 +164,68 @@ describe('searchCloudForErrors', () => {
   });
 });
 
-// ─── autoFixErrors ────────────────────────────────────────────────────────────
-//
-// autoFixErrors calls createTaskForError internally, which requires:
-//   - allErrors containing the matching ClaudeErrorRecord (from useAction)
-//   - projectTypeId (from useProject)
-//   - Task.prototype.save (mocked to avoid DB)
-//   - AgenticProcess.spawn (spied on)
-//   - dataManager.callAction for the _mutate PUT (mocked)
+// ─── fixAllCloud ──────────────────────────────────────────────────────────────
 
-const PROJECT_TYPE_ID = { id: '00000000-0000-4000-a000-000000000002', type: 'project' };
-
-describe('autoFixErrors', () => {
-  let spawnSpy: ReturnType<typeof vi.spyOn>;
-  let taskSaveSpy: ReturnType<typeof vi.spyOn>;
+describe('fixAllCloud', () => {
   let callActionSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
     await unitTestSetup();
 
-    // Provide matching error records in allErrors
     mockUseAction.mockReturnValue({
       data: [
-        makeErrorRecord({ fingerprint: 'fp1', error_msg: 'Error A' }),
-        makeErrorRecord({ fingerprint: 'fp2', error_msg: 'Error B' }),
-        makeErrorRecord({ fingerprint: 'fp-fail', error_msg: 'Error fail' }),
-        makeErrorRecord({ fingerprint: 'fp-seq', error_msg: 'Error seq' }),
+        makeErrorRecord({ fingerprint: 'fp1', fix: { instruction: 'Fix A', message: '' } }),
+        makeErrorRecord({ fingerprint: 'fp2', fix: { instruction: 'Fix B', message: '' } }),
       ],
       isLoading: false,
       refetch: vi.fn(),
     } as never);
 
-    // Provide a project so projectTypeId is set
-    mockUseProject.mockReturnValue({
-      project: { typeId: PROJECT_TYPE_ID } as never,
-    });
-
-    // Prevent Task.save from hitting the DB
-    taskSaveSpy = vi.spyOn(Task.prototype, 'save').mockResolvedValue(undefined as never);
-
-    // Spy on spawn (called inside createTaskForError)
-    spawnSpy = vi.spyOn(AgenticProcess, 'spawn').mockResolvedValue({
-      process: { worker_session_id: 'ws-1' },
-      shell: { id: 'shell-1' },
-    } as never);
-
-    // Mock callAction for _mutate PUT calls (inside createTaskForError)
-    callActionSpy = vi.spyOn(dataManager, 'callAction').mockResolvedValue({} as never);
+    callActionSpy = vi.spyOn(dataManager, 'callAction');
   });
 
   afterEach(() => {
-    spawnSpy.mockRestore();
-    taskSaveSpy.mockRestore();
     callActionSpy.mockRestore();
+    mockUseAction.mockReset();
   });
 
-  it('spawns an AgenticProcess for each fix result with an instruction', async () => {
-    const fixResults: CloudSearchResult[] = [
-      makeCloudResult({ fingerprint: 'fp1', action: 'fix', instruction: 'Fix A' }),
-      makeCloudResult({ fingerprint: 'fp2', action: 'fix', instruction: 'Fix B' }),
-    ];
-
+  it('returns empty array when fingerprints list is empty', async () => {
     const { result } = renderHook(() => useClaudeErrorRecords());
-    const progress: Record<string, string> = {};
-
+    let out: unknown[] = [];
     await act(async () => {
-      await result.current.autoFixErrors(fixResults, (fp, status) => {
-        progress[fp] = status;
-      });
+      out = await result.current.fixAllCloud([]);
     });
-
-    expect(spawnSpy).toHaveBeenCalledTimes(2);
-    expect(progress['fp1']).toBe('fixed');
-    expect(progress['fp2']).toBe('fixed');
+    expect(out).toEqual([]);
+    expect(callActionSpy).not.toHaveBeenCalled();
   });
 
-  it('passes the cloud instruction to AgenticProcess.spawn', async () => {
-    const instruction = 'Apply the patch from PR #42';
-    const fixResults: CloudSearchResult[] = [
-      makeCloudResult({ fingerprint: 'fp1', action: 'fix', instruction }),
+  it('calls fix-all-cloud-errors action with the given fingerprints', async () => {
+    const spawned = [
+      { fingerprint: 'fp1', status: 'spawned', shell_id: 'sh-1', worker_session_id: 'ws-1' },
+      { fingerprint: 'fp2', status: 'spawned', shell_id: 'sh-2', worker_session_id: 'ws-2' },
     ];
+    callActionSpy.mockResolvedValueOnce({ spawned } as never);
 
     const { result } = renderHook(() => useClaudeErrorRecords());
-
+    let out: unknown[] = [];
     await act(async () => {
-      await result.current.autoFixErrors(fixResults, () => {});
+      out = await result.current.fixAllCloud(['fp1', 'fp2']);
     });
 
-    expect(spawnSpy).toHaveBeenCalledOnce();
-    const [, spawnOptions] = spawnSpy.mock.calls[0];
-    expect((spawnOptions as { instruction: string }).instruction).toBe(instruction);
+    expect(callActionSpy).toHaveBeenCalledOnce();
+    const callArg = callActionSpy.mock.calls[0][0] as { bodyParameters?: { fingerprints: string[] } };
+    expect(callArg.bodyParameters?.fingerprints).toEqual(['fp1', 'fp2']);
+    expect(out).toHaveLength(2);
+    expect((out[0] as { status: string }).status).toBe('spawned');
   });
 
-  it('skips fix results with no instruction', async () => {
-    const fixResults: CloudSearchResult[] = [
-      makeCloudResult({ action: 'fix', instruction: null }),
-    ];
+  it('returns empty array when server returns null', async () => {
+    callActionSpy.mockResolvedValueOnce(null as never);
     const { result } = renderHook(() => useClaudeErrorRecords());
-    const progress: Record<string, string> = {};
-
+    let out: unknown[] = [1, 2]; // non-empty sentinel
     await act(async () => {
-      await result.current.autoFixErrors(fixResults, (fp, status) => {
-        progress[fp] = status;
-      });
+      out = await result.current.fixAllCloud(['fp1']);
     });
-
-    expect(spawnSpy).not.toHaveBeenCalled();
-    expect(Object.keys(progress)).toHaveLength(0);
-  });
-
-  it('skips fix results with no matching error record', async () => {
-    const fixResults: CloudSearchResult[] = [
-      makeCloudResult({ fingerprint: 'unknown-fp', action: 'fix', instruction: 'Fix it' }),
-    ];
-    const { result } = renderHook(() => useClaudeErrorRecords());
-    const progress: Record<string, string> = {};
-
-    await act(async () => {
-      await result.current.autoFixErrors(fixResults, (fp, status) => {
-        progress[fp] = status;
-      });
-    });
-
-    expect(spawnSpy).not.toHaveBeenCalled();
-    expect(Object.keys(progress)).toHaveLength(0);
-  });
-
-  it('reports error status when spawn fails', async () => {
-    spawnSpy.mockRejectedValueOnce(new Error('spawn failed'));
-
-    const fixResults: CloudSearchResult[] = [
-      makeCloudResult({ fingerprint: 'fp-fail', action: 'fix', instruction: 'Fix X' }),
-    ];
-
-    const { result } = renderHook(() => useClaudeErrorRecords());
-    const progress: Record<string, string> = {};
-
-    await act(async () => {
-      await result.current.autoFixErrors(fixResults, (fp, status) => {
-        progress[fp] = status;
-      });
-    });
-
-    expect(progress['fp-fail']).toBe('error');
-  });
-
-  it('reports fixing before fixed in order', async () => {
-    const fixResults: CloudSearchResult[] = [
-      makeCloudResult({ fingerprint: 'fp-seq', action: 'fix', instruction: 'Fix' }),
-    ];
-    const statusHistory: string[] = [];
-
-    const { result } = renderHook(() => useClaudeErrorRecords());
-
-    await act(async () => {
-      await result.current.autoFixErrors(fixResults, (_fp, status) => {
-        statusHistory.push(status);
-      });
-    });
-
-    expect(statusHistory).toEqual(['fixing', 'fixed']);
+    expect(out).toEqual([]);
   });
 });
