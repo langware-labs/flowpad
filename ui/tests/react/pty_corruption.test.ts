@@ -44,7 +44,10 @@ describe('PTY onOutput() gate — unit tests', () => {
     expect(received.join('')).toBe('bash$ ');
     // Same chunk is also in getPtyChunks → caller would write it AGAIN
     const decoder = new TextDecoder();
-    const chunkText = shell.getPtyChunks().map((c) => decoder.decode(c.data)).join('');
+    const chunkText = shell
+      .getPtyChunks()
+      .map((c) => decoder.decode(c.data))
+      .join('');
     expect(chunkText).toBe('bash$ ');
     expect(received.join('')).toBe(chunkText); // identical → double-write
   });
@@ -107,7 +110,9 @@ describe('PTY output corruption — integration test with real PTY', () => {
     await apiTestSetup(info, ctx.task.name);
     const manager = ConnectionManager.getInstance();
     await vi.waitFor(
-      () => { if (!manager.connected) throw new Error('WS not connected'); },
+      () => {
+        if (!manager.connected) throw new Error('WS not connected');
+      },
       { timeout: 5000, interval: 200 },
     );
   });
@@ -119,17 +124,21 @@ describe('PTY output corruption — integration test with real PTY', () => {
     const shellId = uuidv4();
     const manager = ConnectionManager.getInstance();
 
-    await apiClient.post(
-      `${GRAPH_API_PREFIX}/compute_node/${computeNode.id}/terminal-command/start`,
-      { shell_id: shellId, connection_id: manager.id, rows: 24, cols: 80 },
-    );
+    await apiClient.post(`${GRAPH_API_PREFIX}/compute_node/${computeNode.id}/terminal-command/start`, {
+      shell_id: shellId,
+      connection_id: manager.id,
+      rows: 24,
+      cols: 80,
+    });
 
     // Let bash start, then send a newline to guarantee it emits a prompt
     await new Promise((resolve) => setTimeout(resolve, 400));
-    await apiClient.post(
-      `${GRAPH_API_PREFIX}/compute_node/${computeNode.id}/terminal-command/input`,
-      { shell_id: shellId, data: '\n' },
-    ).catch(() => {});
+    await apiClient
+      .post(`${GRAPH_API_PREFIX}/compute_node/${computeNode.id}/terminal-command/input`, {
+        shell_id: shellId,
+        data: '\n',
+      })
+      .catch(() => {});
 
     // Wait for the echo + prompt to be stored with seq numbers on the server
     await new Promise((resolve) => setTimeout(resolve, 800));
@@ -142,7 +151,7 @@ describe('PTY output corruption — integration test with real PTY', () => {
     const liveData: string[] = [];
 
     // Fire connect — pty is created synchronously, then reattach() yields
-    const connectPromise = shell.startPty({ cols: 80, rows: 24 });
+    const connectPromise = shell.attachPty({ cols: 80, rows: 24 });
 
     // Attempt to subscribe during the race window.
     // replayDone is false → onOutput() returns undefined → NOT subscribed.
@@ -153,11 +162,14 @@ describe('PTY output corruption — integration test with real PTY', () => {
     unsub?.();
 
     const decoder = new TextDecoder();
-    const replayText = shell.getPtyChunks().map((c) => decoder.decode(c.data)).join('');
+    const replayText = shell
+      .getPtyChunks()
+      .map((c) => decoder.decode(c.data))
+      .join('');
     const liveText = liveData.join('');
 
     expect(replayText.length).toBeGreaterThan(0); // replay chunks stored in SDK
-    expect(liveText).toBe('');                    // external listener got nothing
+    expect(liveText).toBe(''); // external listener got nothing
 
     await apiClient
       .post(`${GRAPH_API_PREFIX}/compute_node/${computeNode.id}/terminal-command/close`, {
