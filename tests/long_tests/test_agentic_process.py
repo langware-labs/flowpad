@@ -10,16 +10,15 @@ Requires Claude CLI in PATH and network access.
 import json
 
 import pytest
+
+from flow_sdk.responses import ApiResponse, ApiSuccessResponse
 from tests.test_settings import test_service_config
 
 pytestmark = [
     pytest.mark.skipif(
         not test_service_config.deep_testing,
         reason="Skipping long tests when DEEP_TESTING is disabled",
-    ),
-    pytest.mark.skip(
-        reason="AgenticProcess.outputs / output_folder / _workdir removed in refactor"
-    ),
+    )
 ]
 
 from flow_sdk.fs_records.agent_record import AgentRecord as Agent
@@ -36,15 +35,17 @@ SAMPLE_SESSION = (
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(180)
-async def test_agentic_process_hello_world():
-    process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
-    assert process.pending_user is False
+async def test_agentic_process_hello_world(local_compute_node):
+    assert local_compute_node is not None
+    process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
+    assert process.waiting_for_prompt is False
 
-    await process.prompt("Create a text file named hello.txt with the content 'Hello World'.")
-    assert process.pending_user is False
+    result:ApiResponse = await process.prompt("Create a text file named hello.txt with the content 'Hello World'.")
+    assert isinstance(result, ApiSuccessResponse)
+    assert process.waiting_for_prompt is False
 
-    await process.waitForIdle(timeout=60)
-    assert process.pending_user is True
+    await process.waitForIdle(timeout=10)
+    assert process.waiting_for_prompt is True
 
     outputs = process.outputs
     assert len(outputs) >= 1

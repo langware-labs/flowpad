@@ -19,7 +19,6 @@ import {
   dataManager,
   fsManager,
   isProcessActive,
-  isProcessorRunning,
   QueryRequest,
   type TypeId,
   Workflow,
@@ -115,8 +114,8 @@ function WorkflowEditor({
 
   const processState = useProcessState(processEntry?.process ?? null);
   const prepareState = useProcessState(prepareEntry?.process ?? null);
-  const isRunning = !!processEntry && (isProcessActive(processState.lifecycleStatus) || isProcessorRunning(processState.status));
-  const isPrepareRunning = !!prepareEntry && (isProcessActive(prepareState.lifecycleStatus) || isProcessorRunning(prepareState.status));
+  const isRunning = !!processEntry && isProcessActive(processState.status);
+  const isPrepareRunning = !!prepareEntry && isProcessActive(prepareState.status);
 
   // When the prepare process finishes, verify the file actually landed on disk.
   // If it didn't, `verifyPrepared` clears prepared_vfs_path and saves the entity.

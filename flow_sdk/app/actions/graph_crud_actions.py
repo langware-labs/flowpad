@@ -160,7 +160,7 @@ async def handle_record_action():
     if rec_cls is None:
         return ApiFailResponse(message=f"No Record class for type {entity.type}")
 
-    rec = rec_cls.discover_one(entity.id)
+    rec = await entity.get_record()
     if rec is None:
         # Try by uname as well
         if getattr(entity, "uname", None):

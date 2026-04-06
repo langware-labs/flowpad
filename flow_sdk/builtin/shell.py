@@ -388,8 +388,7 @@ class Shell(Entity):
         self.last_active_at = datetime.now(timezone.utc).isoformat()
         await self.save()
         try:
-            from flow_sdk.fs_records.shell_record import ShellRecord  # noqa: PLC0415
-            record = ShellRecord.discover_one(self.id)
+            record = await self.get_record()
             if record:
                 record.sync_from_entity(self)
         except Exception:
@@ -504,9 +503,7 @@ class Shell(Entity):
     async def close(self) -> ApiResponse:
         """Kill PTY + delete disk record + delete entity. Permanent teardown."""
         try:
-            from flow_sdk.fs_records.shell_record import ShellRecord  # noqa: PLC0415
-
-            record = ShellRecord.discover_one(self.id)
+            record = await self.get_record()
             if record:
                 await record.delete()
         except Exception as e:
@@ -593,9 +590,7 @@ class Shell(Entity):
             self.last_active_at = datetime.now(timezone.utc).isoformat()
             await self.save()
             try:
-                from flow_sdk.fs_records.shell_record import ShellRecord  # noqa: PLC0415
-
-                record = ShellRecord.discover_one(self.id)
+                record = await self.get_record()
                 if record:
                     record.sync_from_entity(self)
             except Exception:
@@ -635,9 +630,7 @@ class Shell(Entity):
 
         pty_file_b64 = None
         try:
-            from flow_sdk.fs_records.shell_record import ShellRecord
-
-            record = ShellRecord.discover_one(self.id)
+            record = await self.get_record()
             if record and record.pty_stream_ref.exists():
                 pty_file_b64 = base64.b64encode(record.pty_stream_ref.read_bytes()).decode("ascii")
         except Exception as e:

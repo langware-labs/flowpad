@@ -62,19 +62,9 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
     <div className="flex items-center border-t bg-muted/30 px-4 py-1.5">
       {/* Left: process status LED + queue */}
       <div className="flex items-center gap-2">
-        <div className="relative flex h-2.5 w-2.5 items-center justify-center">
-          {isActive && (
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-          )}
-          <span
-            className={`relative inline-flex h-2 w-2 rounded-full ${
-              isActive ? 'bg-emerald-500' : 'bg-muted-foreground/30'
-            }`}
-          />
-        </div>
-        <span className="text-[11px] text-muted-foreground">
-          {isActive ? 'running' : 'idle'}
-        </span>
+        <span
+          className={`inline-flex h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`}
+        />
         {queue && onQueueAdd && onQueueRemove && (
           <TooltipProvider delayDuration={400}>
             <QueueButton
