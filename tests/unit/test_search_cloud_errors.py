@@ -8,9 +8,10 @@ to on-disk ClaudeErrorRecord files.
 import asyncio
 import time
 import uuid
-import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 # Patch targets: imports inside search_cloud_errors_action are lazy (inside the function),
 # so we patch at the source modules, not at compute_node module level.
@@ -51,158 +52,149 @@ def _make_mock_client(post_result=None, post_side_effect=None):
     return mock_client
 
 
-# ─── Tests ───────────────────────────────────────────────────────────────────
+# ─── Tests: cloud proxy layer ────────────────────────────────────────────────
 
 
-class TestSearchCloudErrorsAction(unittest.IsolatedAsyncioTestCase):
+async def test_missing_fingerprints_returns_fail():
+    node = _make_compute_node()
+    mock_info = _make_request_info({"fingerprints": []})
 
-    async def test_missing_fingerprints_returns_fail(self):
-        node = _make_compute_node()
-        mock_info = _make_request_info({"fingerprints": []})
+    with patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info):
+        resp = await node.search_cloud_errors_action()
 
-        with patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info):
-            resp = await node.search_cloud_errors_action()
+    assert resp.status == "FAIL"
+    assert "fingerprints" in resp.message
 
-        self.assertEqual(resp.status, "FAIL")
-        self.assertIn("fingerprints", resp.message)
 
-    async def test_not_logged_in_returns_fail(self):
-        node = _make_compute_node()
-        mock_info = _make_request_info({"fingerprints": ["abc123def456"]})
+async def test_not_logged_in_returns_fail():
+    node = _make_compute_node()
+    mock_info = _make_request_info({"fingerprints": ["abc123def456"]})
 
-        with (
-            patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info),
-            patch(_PATCH_GET_API_KEY, return_value=None),
-        ):
-            resp = await node.search_cloud_errors_action()
+    with (
+        patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info),
+        patch(_PATCH_GET_API_KEY, return_value=None),
+    ):
+        resp = await node.search_cloud_errors_action()
 
-        self.assertEqual(resp.status, "FAIL")
-        self.assertIn("logged in", resp.message.lower())
+    assert resp.status == "FAIL"
+    assert "logged in" in resp.message.lower()
 
-    async def test_proxies_fingerprints_to_cloud(self):
-        node = _make_compute_node()
-        fp = "abc123def456"
-        mock_info = _make_request_info({"fingerprints": [fp]})
 
-        expected_result = {"results": [{"fingerprint": fp, "action": "analyse", "instruction": None, "message": None}]}
-        captured = {}
+async def test_proxies_fingerprints_to_cloud():
+    node = _make_compute_node()
+    fp = "abc123def456"
+    mock_info = _make_request_info({"fingerprints": [fp]})
 
-        async def _fake_post(path, data):
-            captured["path"] = path
-            captured["body"] = data
-            return expected_result
+    expected_result = {"results": [{"fingerprint": fp, "action": "analyse", "instruction": None, "message": None}]}
+    captured = {}
 
-        mock_client = MagicMock()
-        mock_client.set_api_key = MagicMock()
-        mock_client.post = _fake_post
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
+    async def _fake_post(path, data):
+        captured["path"] = path
+        captured["body"] = data
+        return expected_result
 
-        with (
-            patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info),
-            patch(_PATCH_GET_API_KEY, return_value="test-api-key"),
-            patch(_PATCH_FLOWPAD_CLIENT, return_value=mock_client),
-        ):
-            resp = await node.search_cloud_errors_action()
+    mock_client = MagicMock()
+    mock_client.set_api_key = MagicMock()
+    mock_client.post = _fake_post
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        self.assertEqual(resp.status, "SUCCESS")
-        self.assertIn("/analysis/search", captured["path"])
-        self.assertEqual(captured["body"]["fingerprints"], [fp])
-        self.assertEqual(captured["body"]["analysis_type"], "claude_error")
-        mock_client.set_api_key.assert_called_once_with("test-api-key")
+    with (
+        patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info),
+        patch(_PATCH_GET_API_KEY, return_value="test-api-key"),
+        patch(_PATCH_FLOWPAD_CLIENT, return_value=mock_client),
+    ):
+        resp = await node.search_cloud_errors_action()
 
-    async def test_cloud_http_error_returns_fail(self):
-        node = _make_compute_node()
-        mock_info = _make_request_info({"fingerprints": ["abc123def456"]})
+    assert resp.status == "SUCCESS"
+    assert "/analysis/search" in captured["path"]
+    assert captured["body"]["fingerprints"] == [fp]
+    assert captured["body"]["analysis_type"] == "claude_error"
+    mock_client.set_api_key.assert_called_once_with("test-api-key")
 
-        mock_client = _make_mock_client(
-            post_side_effect=ValueError("API returned status 401: Unauthorized")
+
+async def test_cloud_http_error_returns_fail():
+    node = _make_compute_node()
+    mock_info = _make_request_info({"fingerprints": ["abc123def456"]})
+
+    mock_client = _make_mock_client(
+        post_side_effect=ValueError("API returned status 401: Unauthorized")
+    )
+
+    with (
+        patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info),
+        patch(_PATCH_GET_API_KEY, return_value="test-api-key"),
+        patch(_PATCH_FLOWPAD_CLIENT, return_value=mock_client),
+    ):
+        resp = await node.search_cloud_errors_action()
+
+    assert resp.status == "FAIL"
+    assert "401" in resp.message
+
+
+async def test_cloud_generic_error_returns_fail():
+    node = _make_compute_node()
+    mock_info = _make_request_info({"fingerprints": ["abc123def456"]})
+
+    mock_client = _make_mock_client(post_side_effect=ConnectionError("timeout"))
+
+    with (
+        patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info),
+        patch(_PATCH_GET_API_KEY, return_value="test-api-key"),
+        patch(_PATCH_FLOWPAD_CLIENT, return_value=mock_client),
+    ):
+        resp = await node.search_cloud_errors_action()
+
+    assert resp.status == "FAIL"
+
+
+async def test_cloud_call_does_not_block_event_loop():
+    """
+    The cloud HTTP call is truly async via FlowpadClient, so it must not
+    block the event loop while waiting for the network response.
+    """
+    SLOW_DELAY = 0.25  # 250 ms simulated network latency
+
+    node = _make_compute_node()
+    mock_info = _make_request_info({"fingerprints": ["abc123def456"]})
+    expected_result = {"results": [{"fingerprint": "abc123def456", "action": "analyse", "instruction": None, "message": None}]}
+
+    async def _slow_post(path, data):
+        await asyncio.sleep(SLOW_DELAY)
+        return expected_result
+
+    mock_client = MagicMock()
+    mock_client.set_api_key = MagicMock()
+    mock_client.post = _slow_post
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    fast_finished_at: list[float] = []
+
+    async def _fast_coroutine():
+        await asyncio.sleep(0)
+        fast_finished_at.append(time.monotonic())
+        return "fast done"
+
+    with (
+        patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info),
+        patch(_PATCH_GET_API_KEY, return_value="test-api-key"),
+        patch(_PATCH_FLOWPAD_CLIENT, return_value=mock_client),
+    ):
+        start = time.monotonic()
+        cloud_resp, fast_result = await asyncio.gather(
+            node.search_cloud_errors_action(),
+            _fast_coroutine(),
         )
+        elapsed = time.monotonic() - start
 
-        with (
-            patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info),
-            patch(_PATCH_GET_API_KEY, return_value="test-api-key"),
-            patch(_PATCH_FLOWPAD_CLIENT, return_value=mock_client),
-        ):
-            resp = await node.search_cloud_errors_action()
-
-        self.assertEqual(resp.status, "FAIL")
-        self.assertIn("401", resp.message)
-
-    async def test_cloud_generic_error_returns_fail(self):
-        node = _make_compute_node()
-        mock_info = _make_request_info({"fingerprints": ["abc123def456"]})
-
-        mock_client = _make_mock_client(post_side_effect=ConnectionError("timeout"))
-
-        with (
-            patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info),
-            patch(_PATCH_GET_API_KEY, return_value="test-api-key"),
-            patch(_PATCH_FLOWPAD_CLIENT, return_value=mock_client),
-        ):
-            resp = await node.search_cloud_errors_action()
-
-        self.assertEqual(resp.status, "FAIL")
-
-    async def test_cloud_call_does_not_block_event_loop(self):
-        """
-        The cloud HTTP call is truly async via FlowpadClient, so it must not
-        block the event loop while waiting for the network response.
-
-        Proof: a fast coroutine launched concurrently with the (slow) cloud
-        search must finish before the cloud search does, and the total wall
-        time must be close to slow_delay (not 2×slow_delay).
-        """
-        SLOW_DELAY = 0.25  # 250 ms simulated network latency
-
-        node = _make_compute_node()
-        mock_info = _make_request_info({"fingerprints": ["abc123def456"]})
-        expected_result = {"results": [{"fingerprint": "abc123def456", "action": "analyse", "instruction": None, "message": None}]}
-
-        async def _slow_post(path, data):
-            await asyncio.sleep(SLOW_DELAY)  # async sleep, yields to event loop
-            return expected_result
-
-        mock_client = MagicMock()
-        mock_client.set_api_key = MagicMock()
-        mock_client.post = _slow_post
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        fast_finished_at: list[float] = []
-
-        async def _fast_coroutine():
-            await asyncio.sleep(0)          # yield once to let the cloud call start
-            fast_finished_at.append(time.monotonic())
-            return "fast done"
-
-        with (
-            patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info),
-            patch(_PATCH_GET_API_KEY, return_value="test-api-key"),
-            patch(_PATCH_FLOWPAD_CLIENT, return_value=mock_client),
-        ):
-            start = time.monotonic()
-            cloud_resp, fast_result = await asyncio.gather(
-                node.search_cloud_errors_action(),
-                _fast_coroutine(),
-            )
-            elapsed = time.monotonic() - start
-
-        # Cloud call succeeded
-        self.assertEqual(cloud_resp.status, "SUCCESS")
-        # Fast coroutine also completed
-        self.assertEqual(fast_result, "fast done")
-        # The fast coroutine finished well before the cloud delay expired
-        self.assertLess(fast_finished_at[0] - start, SLOW_DELAY * 0.9)
-        # Total wall time is bounded by the cloud delay, not doubled
-        self.assertLess(elapsed, SLOW_DELAY + 0.5)
+    assert cloud_resp.status == "SUCCESS"
+    assert fast_result == "fast done"
+    assert fast_finished_at[0] - start < SLOW_DELAY * 0.9
+    assert elapsed < SLOW_DELAY + 0.5
 
 
 # ─── _apply_cloud_results integration tests ─────────────────────────────────
-#
-# These create real ClaudeErrorRecord files on disk (in a temp directory),
-# call search_cloud_errors_action with a mocked cloud response, and verify
-# that the records are updated correctly.
 
 
 def _create_error_record(records_root: Path, fingerprint: str):
@@ -235,189 +227,177 @@ def _reload_record(backing, rec_id):
     return rec
 
 
-class TestApplyCloudResults(unittest.IsolatedAsyncioTestCase):
-    """Verify that _apply_cloud_results (called inside search_cloud_errors_action)
-    persists fix / ignore decisions to on-disk ClaudeErrorRecord files."""
+async def _run_search_with_cloud_results(tmp_dir, fingerprints, cloud_results):
+    """Helper: create records, run search action with mocked cloud, return rec_ids."""
+    rec_ids = {}
+    for fp in fingerprints:
+        rec_id, _backing = _create_error_record(tmp_dir, fp)
+        rec_ids[fp] = rec_id
 
-    async def _run_search_with_cloud_results(self, tmp_dir, fingerprints, cloud_results):
-        """Helper: create records, run search action with mocked cloud, return rec_ids.
+    node = _make_compute_node()
+    mock_info = _make_request_info({"fingerprints": fingerprints})
 
-        Caller MUST have set_default_records_root(tmp_dir) before calling so
-        that both the action and subsequent reloads see the same root.
-        """
-        from flow_sdk.fs_records.claude.claude_error import ClaudeErrorRecord
+    async def _fake_post(path, data):
+        return {"results": cloud_results}
 
-        rec_ids = {}
-        for fp in fingerprints:
-            rec_id, _backing = _create_error_record(tmp_dir, fp)
-            rec_ids[fp] = rec_id
+    mock_client = MagicMock()
+    mock_client.set_api_key = MagicMock()
+    mock_client.post = _fake_post
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        node = _make_compute_node()
-        mock_info = _make_request_info({"fingerprints": fingerprints})
+    with (
+        patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info),
+        patch(_PATCH_GET_API_KEY, return_value="test-key"),
+        patch(_PATCH_FLOWPAD_CLIENT, return_value=mock_client),
+    ):
+        resp = await node.search_cloud_errors_action()
 
-        async def _fake_post(path, data):
-            return {"results": cloud_results}
-
-        mock_client = MagicMock()
-        mock_client.set_api_key = MagicMock()
-        mock_client.post = _fake_post
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with (
-            patch(_PATCH_GET_CURRENT_REQUEST_INFO, return_value=mock_info),
-            patch(_PATCH_GET_API_KEY, return_value="test-key"),
-            patch(_PATCH_FLOWPAD_CLIENT, return_value=mock_client),
-        ):
-            resp = await node.search_cloud_errors_action()
-
-        self.assertEqual(resp.status, "SUCCESS")
-        return rec_ids
-
-    async def test_fix_saves_instruction_and_triaged_at(self):
-        """Cloud 'fix' result → record.fix.instruction, record.fix.message, record.triaged_at set."""
-        import tempfile
-        from flow_sdk.fs_records.claude.claude_error import Fix
-        from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
-
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_dir = Path(tmp)
-            original_root = get_default_records_root()
-            set_default_records_root(tmp_dir)
-            try:
-                fp = "fix_test_fp_001"
-                cloud_results = [{
-                    "fingerprint": fp,
-                    "action": "fix",
-                    "instruction": "Run migrations",
-                    "message": "Known schema drift",
-                }]
-                rec_ids = await self._run_search_with_cloud_results(tmp_dir, [fp], cloud_results)
-
-                rec = _reload_record(None, rec_ids[fp])
-                self.assertIsInstance(rec.fix, Fix)
-                self.assertEqual(rec.fix.instruction, "Run migrations")
-                self.assertEqual(rec.fix.message, "Known schema drift")
-                self.assertTrue(rec.triaged_at, "triaged_at should be set")
-                self.assertEqual(str(rec.error_status), "open")  # fix doesn't change status
-            finally:
-                set_default_records_root(original_root)
-
-    async def test_ignore_marks_record_ignored(self):
-        """Cloud 'ignore' result → record.error_status = IGNORED, triaged_at set."""
-        import tempfile
-        from flow_sdk.fs_records.claude.claude_error import ErrorStatus
-        from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
-
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_dir = Path(tmp)
-            original_root = get_default_records_root()
-            set_default_records_root(tmp_dir)
-            try:
-                fp = "ignore_test_fp_001"
-                cloud_results = [{
-                    "fingerprint": fp,
-                    "action": "ignore",
-                    "instruction": None,
-                    "message": None,
-                }]
-                rec_ids = await self._run_search_with_cloud_results(tmp_dir, [fp], cloud_results)
-
-                rec = _reload_record(None, rec_ids[fp])
-                self.assertEqual(str(rec.error_status), ErrorStatus.IGNORED)
-                self.assertTrue(rec.triaged_at, "triaged_at should be set")
-            finally:
-                set_default_records_root(original_root)
-
-    async def test_analyse_leaves_record_unchanged(self):
-        """Cloud 'analyse' result → record is not modified."""
-        import tempfile
-        from flow_sdk.fs_records.claude.claude_error import ErrorStatus, Fix
-        from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
-
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_dir = Path(tmp)
-            original_root = get_default_records_root()
-            set_default_records_root(tmp_dir)
-            try:
-                fp = "analyse_test_fp_001"
-                cloud_results = [{
-                    "fingerprint": fp,
-                    "action": "analyse",
-                    "instruction": None,
-                    "message": None,
-                }]
-                rec_ids = await self._run_search_with_cloud_results(tmp_dir, [fp], cloud_results)
-
-                rec = _reload_record(None, rec_ids[fp])
-                self.assertEqual(str(rec.error_status), ErrorStatus.OPEN)
-                self.assertEqual(rec.triaged_at, "")
-                self.assertIsInstance(rec.fix, Fix)
-                self.assertEqual(rec.fix.instruction, "")
-            finally:
-                set_default_records_root(original_root)
-
-    async def test_mixed_results_apply_correctly(self):
-        """Multiple fingerprints with different actions are each handled correctly."""
-        import tempfile
-        from flow_sdk.fs_records.claude.claude_error import ErrorStatus, Fix
-        from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
-
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_dir = Path(tmp)
-            original_root = get_default_records_root()
-            set_default_records_root(tmp_dir)
-            try:
-                fps = ["mix_fix_fp", "mix_ignore_fp", "mix_analyse_fp"]
-                cloud_results = [
-                    {"fingerprint": "mix_fix_fp", "action": "fix", "instruction": "Apply patch", "message": "Patch available"},
-                    {"fingerprint": "mix_ignore_fp", "action": "ignore", "instruction": None, "message": None},
-                    {"fingerprint": "mix_analyse_fp", "action": "analyse", "instruction": None, "message": None},
-                ]
-                rec_ids = await self._run_search_with_cloud_results(tmp_dir, fps, cloud_results)
-
-                # fix
-                rec_fix = _reload_record(None, rec_ids["mix_fix_fp"])
-                self.assertEqual(rec_fix.fix.instruction, "Apply patch")
-                self.assertEqual(rec_fix.fix.message, "Patch available")
-                self.assertEqual(str(rec_fix.error_status), ErrorStatus.OPEN)
-                self.assertTrue(rec_fix.triaged_at)
-
-                # ignore
-                rec_ign = _reload_record(None, rec_ids["mix_ignore_fp"])
-                self.assertEqual(str(rec_ign.error_status), ErrorStatus.IGNORED)
-                self.assertTrue(rec_ign.triaged_at)
-
-                # analyse — untouched
-                rec_ana = _reload_record(None, rec_ids["mix_analyse_fp"])
-                self.assertEqual(str(rec_ana.error_status), ErrorStatus.OPEN)
-                self.assertEqual(rec_ana.triaged_at, "")
-                self.assertEqual(rec_ana.fix.instruction, "")
-            finally:
-                set_default_records_root(original_root)
-
-    async def test_unknown_fingerprint_is_silently_skipped(self):
-        """Cloud result for a fingerprint not on disk is silently skipped."""
-        import tempfile
-        from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
-
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_dir = Path(tmp)
-            original_root = get_default_records_root()
-            set_default_records_root(tmp_dir)
-            try:
-                real_fp = "exists_fp"
-                cloud_results = [
-                    {"fingerprint": "ghost_fp", "action": "fix", "instruction": "X", "message": "Y"},
-                    {"fingerprint": real_fp, "action": "fix", "instruction": "Real fix", "message": "Real msg"},
-                ]
-                rec_ids = await self._run_search_with_cloud_results(tmp_dir, [real_fp], cloud_results)
-
-                rec = _reload_record(None, rec_ids[real_fp])
-                self.assertEqual(rec.fix.instruction, "Real fix")
-            finally:
-                set_default_records_root(original_root)
+    assert resp.status == "SUCCESS"
+    return rec_ids
 
 
-if __name__ == "__main__":
-    unittest.main()
+async def test_fix_saves_instruction_and_triaged_at():
+    """Cloud 'fix' result → record.fix.instruction, record.fix.message, record.triaged_at set."""
+    import tempfile
+    from flow_sdk.fs_records.claude.claude_error import Fix
+    from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        original_root = get_default_records_root()
+        set_default_records_root(tmp_dir)
+        try:
+            fp = "fix_test_fp_001"
+            cloud_results = [{
+                "fingerprint": fp,
+                "action": "fix",
+                "instruction": "Run migrations",
+                "message": "Known schema drift",
+            }]
+            rec_ids = await _run_search_with_cloud_results(tmp_dir, [fp], cloud_results)
+
+            rec = _reload_record(None, rec_ids[fp])
+            assert isinstance(rec.fix, Fix)
+            assert rec.fix.instruction == "Run migrations"
+            assert rec.fix.message == "Known schema drift"
+            assert rec.triaged_at, "triaged_at should be set"
+            assert str(rec.error_status) == "open"  # fix doesn't change status
+        finally:
+            set_default_records_root(original_root)
+
+
+async def test_ignore_marks_record_ignored():
+    """Cloud 'ignore' result → record.error_status = IGNORED, triaged_at set."""
+    import tempfile
+    from flow_sdk.fs_records.claude.claude_error import ErrorStatus
+    from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        original_root = get_default_records_root()
+        set_default_records_root(tmp_dir)
+        try:
+            fp = "ignore_test_fp_001"
+            cloud_results = [{
+                "fingerprint": fp,
+                "action": "ignore",
+                "instruction": None,
+                "message": None,
+            }]
+            rec_ids = await _run_search_with_cloud_results(tmp_dir, [fp], cloud_results)
+
+            rec = _reload_record(None, rec_ids[fp])
+            assert str(rec.error_status) == ErrorStatus.IGNORED
+            assert rec.triaged_at, "triaged_at should be set"
+        finally:
+            set_default_records_root(original_root)
+
+
+async def test_analyse_leaves_record_unchanged():
+    """Cloud 'analyse' result → record is not modified."""
+    import tempfile
+    from flow_sdk.fs_records.claude.claude_error import ErrorStatus, Fix
+    from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        original_root = get_default_records_root()
+        set_default_records_root(tmp_dir)
+        try:
+            fp = "analyse_test_fp_001"
+            cloud_results = [{
+                "fingerprint": fp,
+                "action": "analyse",
+                "instruction": None,
+                "message": None,
+            }]
+            rec_ids = await _run_search_with_cloud_results(tmp_dir, [fp], cloud_results)
+
+            rec = _reload_record(None, rec_ids[fp])
+            assert str(rec.error_status) == ErrorStatus.OPEN
+            assert rec.triaged_at == ""
+            assert isinstance(rec.fix, Fix)
+            assert rec.fix.instruction == ""
+        finally:
+            set_default_records_root(original_root)
+
+
+async def test_mixed_results_apply_correctly():
+    """Multiple fingerprints with different actions are each handled correctly."""
+    import tempfile
+    from flow_sdk.fs_records.claude.claude_error import ErrorStatus, Fix
+    from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        original_root = get_default_records_root()
+        set_default_records_root(tmp_dir)
+        try:
+            fps = ["mix_fix_fp", "mix_ignore_fp", "mix_analyse_fp"]
+            cloud_results = [
+                {"fingerprint": "mix_fix_fp", "action": "fix", "instruction": "Apply patch", "message": "Patch available"},
+                {"fingerprint": "mix_ignore_fp", "action": "ignore", "instruction": None, "message": None},
+                {"fingerprint": "mix_analyse_fp", "action": "analyse", "instruction": None, "message": None},
+            ]
+            rec_ids = await _run_search_with_cloud_results(tmp_dir, fps, cloud_results)
+
+            rec_fix = _reload_record(None, rec_ids["mix_fix_fp"])
+            assert rec_fix.fix.instruction == "Apply patch"
+            assert rec_fix.fix.message == "Patch available"
+            assert str(rec_fix.error_status) == ErrorStatus.OPEN
+            assert rec_fix.triaged_at
+
+            rec_ign = _reload_record(None, rec_ids["mix_ignore_fp"])
+            assert str(rec_ign.error_status) == ErrorStatus.IGNORED
+            assert rec_ign.triaged_at
+
+            rec_ana = _reload_record(None, rec_ids["mix_analyse_fp"])
+            assert str(rec_ana.error_status) == ErrorStatus.OPEN
+            assert rec_ana.triaged_at == ""
+            assert rec_ana.fix.instruction == ""
+        finally:
+            set_default_records_root(original_root)
+
+
+async def test_unknown_fingerprint_is_silently_skipped():
+    """Cloud result for a fingerprint not on disk is silently skipped."""
+    import tempfile
+    from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        original_root = get_default_records_root()
+        set_default_records_root(tmp_dir)
+        try:
+            real_fp = "exists_fp"
+            cloud_results = [
+                {"fingerprint": "ghost_fp", "action": "fix", "instruction": "X", "message": "Y"},
+                {"fingerprint": real_fp, "action": "fix", "instruction": "Real fix", "message": "Real msg"},
+            ]
+            rec_ids = await _run_search_with_cloud_results(tmp_dir, [real_fp], cloud_results)
+
+            rec = _reload_record(None, rec_ids[real_fp])
+            assert rec.fix.instruction == "Real fix"
+        finally:
+            set_default_records_root(original_root)

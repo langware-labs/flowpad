@@ -472,6 +472,75 @@ class AgenticProcess(Entity):
         else:
             await shell.write(data)
 
+    async def stream_transcript(self, timeout: float = 300, poll_interval: float = 0.2):
+        """Async-iterate JSONL transcript entries as they are written by Claude.
+
+        Yields parsed dicts, one per transcript line. Stops automatically when
+        waiting_for_prompt becomes True (Claude finished its turn).
+
+        Args:
+            timeout: Maximum seconds to wait for the process to reach idle.
+            poll_interval: How often (seconds) to check for new transcript data.
+
+        Raises:
+            TimeoutError: if the process does not reach idle within `timeout` seconds.
+        """
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + timeout
+
+        # Wait for session_id to be assigned (set inside start())
+        while not self.session_id:
+            if loop.time() > deadline:
+                raise TimeoutError("stream_transcript: process did not start within timeout")
+            await asyncio.sleep(poll_interval)
+
+        session_id = self.session_id
+
+        # Discover the transcript path via ClaudeSessionRecord (scans ~/.claude/projects/*/
+        # for <session_id>.jsonl — works regardless of whether a Project entity exists).
+        transcript_path = None
+        while transcript_path is None:
+            if loop.time() > deadline:
+                raise TimeoutError("stream_transcript: transcript file did not appear within timeout")
+            record = ClaudeSessionRecord.discover_one(session_id)
+            if record and record.jsonl_path:
+                transcript_path = Path(record.jsonl_path)
+            else:
+                await asyncio.sleep(poll_interval)
+
+        offset = 0
+        while True:
+            # Read any new bytes since last poll
+            try:
+                with open(transcript_path, "rb") as fh:
+                    fh.seek(offset)
+                    new_bytes = fh.read()
+                    offset += len(new_bytes)
+            except OSError:
+                new_bytes = b""
+
+            for raw_line in new_bytes.decode("utf-8", errors="replace").splitlines():
+                raw_line = raw_line.strip()
+                if not raw_line:
+                    continue
+                try:
+                    yield json.loads(raw_line)
+                except json.JSONDecodeError:
+                    pass
+
+            from flow_sdk.fs_records.agent_status import _tail_status as _dbg_tail
+            _dbg_status = _dbg_tail(transcript_path) if transcript_path else "no-path"
+            _dbg_elapsed = loop.time() - (deadline - timeout)
+            print(f"  [stream_transcript] elapsed={_dbg_elapsed:.1f}s tail_status={_dbg_status!r} waiting={self.waiting_for_prompt} lifecycle={self.status!r}")
+
+            if self.waiting_for_prompt:
+                return
+
+            if loop.time() > deadline:
+                raise TimeoutError(f"stream_transcript: process did not reach idle within {timeout}s")
+
+            await asyncio.sleep(poll_interval)
+
     def stream(self, instruction: str):
         """Stream live output as StreamEvent items from the JSONL transcript.
 
