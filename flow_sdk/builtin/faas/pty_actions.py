@@ -255,6 +255,8 @@ class PtyActionsMixin:
         name: str | None = None,
         working_dir: str | None = None,
         on_exit: Callable[[int | None], None] | None = None,
+        spawn_args: list[str] | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> bool:
         """Start a PTY session for machine use with proper output routing.
 
@@ -377,6 +379,8 @@ class PtyActionsMixin:
                 cols=cols,
                 working_dir=working_dir,
                 on_exit=on_exit,
+                spawn_args=spawn_args,
+                extra_env=extra_env,
             )
             logging.info(f"[PTY] Machine PTY session created: {pty_key}")
         except Exception as e:
@@ -457,6 +461,8 @@ class PtyActionsMixin:
         name: str | None = None,
         working_dir: str | None = None,
         on_exit=None,
+        spawn_args: list[str] | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> "PtySession":
         """Create a new PTY session and return its handle.
 
@@ -470,6 +476,8 @@ class PtyActionsMixin:
             name=name,
             working_dir=working_dir,
             on_exit=on_exit,
+            spawn_args=spawn_args,
+            extra_env=extra_env,
         )
         if not success:
             raise RuntimeError(f"Failed to create PTY session for shell {shell_id}")

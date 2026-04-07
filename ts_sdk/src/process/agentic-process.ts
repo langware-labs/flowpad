@@ -86,6 +86,8 @@ export interface IAgenticProcess extends IEntity {
   readonly worker_status?: ProcessorStatus;
   session_id?: string | null;
   use_worker_history?: boolean;
+  /** False=direct PTY spawn (default), True=legacy zsh intermediary */
+  shell_mode?: boolean;
   /** Shell entity ID linked to this process */
   shell_id?: string | null;
   /** Whether this process is visible in the tabs view */
@@ -223,6 +225,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       },
       workdir: options.workdir,
       visible: workerOptions?.visible,
+      shell_mode: options.shellMode,
     }).save(options.scope ?? []);
 
     if (workerOptions?.headless) {
@@ -445,6 +448,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Whether worker manages its own history */
   use_worker_history?: boolean;
 
+  /** False=direct PTY spawn (default), True=legacy zsh intermediary */
+  shell_mode?: boolean;
+
   /** Shell entity ID linked to this process */
   shell_id?: string | null;
 
@@ -521,6 +527,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.workerStatus = (entity.worker_status as ProcessorStatus) ?? ProcessorStatus.IDLE;
     this.session_id = entity.session_id;
     this.use_worker_history = entity.use_worker_history;
+    this.shell_mode = entity.shell_mode;
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;
     this.sidecar_shell_id = entity.sidecar_shell_id;

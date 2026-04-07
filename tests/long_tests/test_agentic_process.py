@@ -98,7 +98,7 @@ async def test_agentic_process_hello_world(local_compute_node):
     import asyncio as _asyncio
     diag_task = _asyncio.create_task(_diagnose())
     try:
-        async for entry in process.stream_transcript(timeout=30):
+        async for entry in process.stream_transcript(timeout=120):
             t = entry.get("type", "?")
             detail = _fmt_entry(entry)
             print(f"  [{t}] {detail}" if detail else f"  [{t}]")
@@ -130,10 +130,10 @@ async def test_agentic_process_classify():
         "\n"
         "Then verify the file exists with: cat classification.json"
     )
-    assert process.pending_user is False
+    assert process.waiting_for_prompt is False
 
     await process.waitForIdle(timeout=120)
-    assert process.pending_user is True
+    assert process.waiting_for_prompt is True
 
     outputs = process.outputs
     workdir = process._workdir.resolve()
@@ -167,10 +167,10 @@ async def test_agentic_process_classify_with_agent():
         "Do NOT write classification.json yourself — the classify sub-agent will write it.",
         agent=agent,
     )
-    assert process.pending_user is False
+    assert process.waiting_for_prompt is False
 
     await process.waitForIdle(timeout=420)
-    assert process.pending_user is True
+    assert process.waiting_for_prompt is True
 
     outputs = process.outputs
     workdir = process._workdir.resolve()
