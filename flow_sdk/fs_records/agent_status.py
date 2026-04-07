@@ -149,6 +149,14 @@ def _tail_status(path: "str | _Path") -> AgenticProcessStatus:
     except OSError:
         return AgenticProcessStatus.INIT
 
+    # Entry types that carry no session-state signal and must not influence last_type.
+    # e.g. permission-mode is written as both a session prologue and epilogue (after
+    # last-prompt) by Claude Code; treating it as last_type would mask terminal signals.
+    _IGNORED_TYPES: frozenset[str] = frozenset({
+        "permission-mode",
+        "file-history-snapshot",
+    })
+
     last_type: str | None = None
     last_stop_reason: str | None = None
     for line in reversed(chunk.splitlines()):
@@ -160,6 +168,8 @@ def _tail_status(path: "str | _Path") -> AgenticProcessStatus:
         except Exception:
             continue
         t = entry.get("type", "")
+        if t in _IGNORED_TYPES:
+            continue
         if last_type is None:
             last_type = t
         if t == "assistant" and last_stop_reason is None:

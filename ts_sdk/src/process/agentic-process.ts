@@ -94,6 +94,8 @@ export interface IAgenticProcess extends IEntity {
   sidecar_shell_id?: string | null;
   /** Backend TTL live field: true if a PTY session is actually alive (30s TTL) */
   is_active?: boolean;
+  /** True when Claude has finished its turn and is waiting for user input */
+  waiting_for_prompt?: boolean;
   /** @internal — use AgenticProcess.cliOptions getter/setter instead */
   cli_config?: Record<string, any>;
   /** Extra directories passed to Claude via --add-dir */
@@ -458,6 +460,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Backend TTL live field: true if a PTY session is actually alive (30s TTL) */
   is_active: boolean = false;
 
+  /** True when Claude has finished its turn and is waiting for user input */
+  waiting_for_prompt: boolean = false;
+
   /** Deserialize cli_config into a live ClaudeCliOptions instance.
    *
    * Mirrors Python AgenticProcess.cli_options property exactly:
@@ -520,6 +525,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.visible = entity.visible;
     this.sidecar_shell_id = entity.sidecar_shell_id;
     this.is_active = entity.is_active ?? false;
+    this.waiting_for_prompt = entity.waiting_for_prompt ?? false;
   }
 
   /**
@@ -1329,6 +1335,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       } else if (this.workerStatus === ProcessorStatus.ERROR || this.workerStatus === ProcessorStatus.INTERRUPTED) {
         this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
       }
+    }
+    if (data.waiting_for_prompt !== undefined) {
+      this.waiting_for_prompt = data.waiting_for_prompt;
     }
   }
 

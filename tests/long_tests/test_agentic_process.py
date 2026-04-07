@@ -33,6 +33,32 @@ SAMPLE_SESSION = (
 )
 
 
+def _fmt_entry(entry: dict) -> str:
+    """Format a transcript entry for console output."""
+    t = entry.get("type", "?")
+    if t == "assistant":
+        msg = entry.get("message", {})
+        content = msg.get("content", [])
+        if isinstance(content, list):
+            parts = []
+            for block in content:
+                if block.get("type") == "text":
+                    parts.append(block["text"][:120].replace("\n", " "))
+                elif block.get("type") == "tool_use":
+                    parts.append(f"[tool: {block.get('name')}]")
+            return " | ".join(parts) if parts else "(empty)"
+        return str(content)[:120]
+    if t == "user":
+        msg = entry.get("message", {})
+        content = msg.get("content", "")
+        if isinstance(content, list):
+            return " ".join(c.get("content", "") if isinstance(c.get("content"), str) else "" for c in content)[:120]
+        return str(content)[:120]
+    if t == "progress":
+        return entry.get("toolName", "") or ""
+    return ""
+
+
 @pytest.mark.asyncio
 @pytest.mark.timeout(180)
 async def test_agentic_process_hello_world(local_compute_node):
@@ -40,23 +66,55 @@ async def test_agentic_process_hello_world(local_compute_node):
     process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
     assert process.waiting_for_prompt is False
 
-    result:ApiResponse = await process.prompt("Create a text file named hello.txt with the content 'Hello World'.")
+    result: ApiResponse = await process.prompt("Create a text file named hello.txt with the content 'Hello World'.")
     assert isinstance(result, ApiSuccessResponse)
     assert process.waiting_for_prompt is False
 
-    await process.waitForIdle(timeout=10)
+    async def _diagnose():
+        """Print Claude process vitals every 5s while stream_transcript runs."""
+        import asyncio, psutil
+        from flow_sdk.builtin.shell import Shell
+        while True:
+            await asyncio.sleep(5)
+            shell = await process.shell()
+            worker_pid = shell.worker_pid if shell else None
+            worker_alive = await shell.worker_alive() if shell else False
+            shell_status = shell.status if shell else "no shell"
+            # Try to get exit code if process already died
+            exit_code = None
+            if worker_pid and not worker_alive:
+                try:
+                    p = psutil.Process(worker_pid)
+                    exit_code = p.status()
+                except psutil.NoSuchProcess:
+                    exit_code = "process gone"
+            worker_status = process._discover_status_from_transcript()
+            print(
+                f"  [diag] status={process.status!r} shell={shell_status!r} "
+                f"pid={worker_pid} alive={worker_alive} exit={exit_code!r} "
+                f"worker_status={worker_status!r} waiting={process.waiting_for_prompt}"
+            )
+
+    import asyncio as _asyncio
+    diag_task = _asyncio.create_task(_diagnose())
+    try:
+        async for entry in process.stream_transcript(timeout=30):
+            t = entry.get("type", "?")
+            detail = _fmt_entry(entry)
+            print(f"  [{t}] {detail}" if detail else f"  [{t}]")
+    finally:
+        diag_task.cancel()
+
     assert process.waiting_for_prompt is True
 
-    outputs = process.outputs
-    assert len(outputs) >= 1
-
-    text_outputs = [o for o in outputs if o.type == "text_file"]
-    assert len(text_outputs) >= 1
-
-    output = text_outputs[0]
-    assert output.type == "text_file"
-    content = await output.content()
-    assert "hello" in content.lower()
+    # With no workdir set, Claude runs inside the process output_dir.
+    # Verify hello.txt landed there.
+    from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
+    proc_record = await process.get_record()
+    assert proc_record is not None, "AgenticProcessRecord not found"
+    hello = proc_record.output_dir / "hello.txt"
+    assert hello.exists(), f"hello.txt not found in output_dir {proc_record.output_dir}"
+    assert "hello" in hello.read_text().lower()
 
 
 @pytest.mark.asyncio

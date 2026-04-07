@@ -132,7 +132,7 @@ class FsRecordsActionsMixin:
                     "scope": getattr(ent, "scope", "") or "",
                     "created_at": (d.isoformat() if (d := getattr(ent, "created_date", None)) else ""),
                     "modified_at": (d.isoformat() if (d := getattr(ent, "updated_date", None)) else ""),
-                    "source_path": self._resolve_source_path(ent),
+                    "source_path": await self._resolve_source_path(ent),
                     "labels": getattr(ent, "labels", None) or [],
                 }
             for extra_field in ("session_id", "worker_session_id"):
