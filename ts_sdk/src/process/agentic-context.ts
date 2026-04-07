@@ -78,6 +78,8 @@ export interface AgenticContext {
 export interface IAgenticProcessOptions extends AgenticContext {
   /** Parent entities to scope this process under (e.g. a Workflow TypeId) */
   scope?: import('../models/TypeId').TypeId[];
+  /** False=direct PTY spawn (default), True=legacy zsh intermediary. */
+  shellMode?: boolean;
 }
 
 /**

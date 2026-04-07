@@ -168,6 +168,7 @@ class AgenticProcess(Entity):
     status: str = APIField(default=AgenticProcessLifecycleStatus.NEW.value)
     session_id: str | None = APIField(default=None)
     use_worker_history: bool = APIField(default=False)
+    shell_mode: bool = APIField(default=False, description="False=direct PTY spawn (default), True=legacy zsh intermediary")
     project_id: str | None = APIField(default=None)
     project_encoded_name: str | None = APIField(default=None)
     compute_node_id: str | None = APIField(default=None)
@@ -259,6 +260,7 @@ class AgenticProcess(Entity):
         self,
         instruction: str | None = None,
         visible: bool | None = None,
+        agent=None,
     ) -> ApiSuccessResponse | ApiFailResponse:
         """Open (or reopen) this AgenticProcess — starts fresh or resumes automatically.
 
@@ -295,6 +297,10 @@ class AgenticProcess(Entity):
             # Build the CLI command from cli_config + entity fields
             cmd = self.cli_options
 
+            # Inject agent into CLI command if provided
+            if agent is not None and hasattr(agent, "to_agents_json"):
+                cmd.agents_json = {**(cmd.agents_json or {}), **agent.to_agents_json()}
+
             # Server-restart resume: process had a shell but cli_config didn't encode resume
             if not cmd.resume and self.shell_id:
                 cmd.resume = self._is_exist_claude_resume_session(self.session_id)
@@ -326,14 +332,31 @@ class AgenticProcess(Entity):
             # can observe STARTING and avoid issuing a second open.
             await self.save()
             on_exit = self._make_pty_exit_callback()
-            await shell.start(on_exit=on_exit)
-            worker_is_alive = await shell.worker_alive()
+            worker_is_alive = False
+
+            if self.shell_mode:
+                # Legacy path — zsh intermediary
+                await shell.start(on_exit=on_exit)
+                worker_is_alive = await shell.worker_alive()
+                if not worker_is_alive:
+                    execution_info = await shell.launch(cmd, instruction=instruction)
+                    logger.info(
+                        "AgenticProcess %s worker launched (shell): pid=%s name=%r",
+                        self.id, execution_info.pid, execution_info.name,
+                    )
+            else:
+                # Direct path — Claude IS the PTY process (no zsh intermediary)
+                spawn_argv, spawn_env = cmd.to_spawn_args(instruction=instruction)
+                await shell.start(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
+                worker_is_alive = await shell.worker_alive()
+                if not worker_is_alive:
+                    execution_info = await shell.set_worker_pid_direct(cmd)
+                    logger.info(
+                        "AgenticProcess %s worker launched (direct PTY): pid=%s name=%r",
+                        self.id, execution_info.pid, execution_info.name,
+                    )
+
             if not worker_is_alive:
-                execution_info = await shell.launch(cmd, instruction=instruction)
-                logger.info(
-                    "AgenticProcess %s worker launched: pid=%s name=%r",
-                    self.id, execution_info.pid, execution_info.name,
-                )
                 # Start background task to detect completion via transcript polling.
                 asyncio.create_task(
                     _poll_for_completion(self.id, self.session_id),
@@ -441,19 +464,23 @@ class AgenticProcess(Entity):
 
     # ── Execution ─────────────────────────────────────────────────────────────
 
-    async def prompt(self, instruction: str) -> ApiSuccessResponse | ApiFailResponse:
+    async def prompt(self, instruction: str, agent=None) -> ApiSuccessResponse | ApiFailResponse:
         """Schedule a Claude run with *instruction* and return immediately.
 
         Routing:
           worker alive → write instruction to PTY stdin (continues session)
           worker dead  → call start(instruction) (fresh or auto-resume)
+
+        Args:
+            instruction: The prompt text to send.
+            agent: Optional AgentRecord to configure Claude with (passed via --agents flag).
         """
         if not self.exist_in_db:
             return ApiFailResponse(message=f"AgenticProcess {self.id} not found in database")
         if await self.is_running():
             await self.send(instruction)
             return ApiSuccessResponse(data={"status": "sent"})
-        return await self.start(instruction=instruction)
+        return await self.start(instruction=instruction, agent=agent)
 
     async def send(self, data: str | bytes) -> None:
         """Write text or raw bytes to the live PTY stdin.
