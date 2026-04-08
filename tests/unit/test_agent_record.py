@@ -121,7 +121,7 @@ class TestAgentRecord:
         )
         agent.prompt_text = "You are an analyzer."
 
-        result = agent.to_agents_json()
+        result = agent.to_agents_cli_json()
         assert "analyzer" in result
         entry = result["analyzer"]
         assert entry["description"] == "Analyze things"
@@ -160,7 +160,7 @@ class TestAgentRecord:
         )
         original.prompt_text = "System prompt here."
 
-        json_out = original.to_agents_json()
+        json_out = original.to_agents_cli_json()
         entry = json_out["roundtrip"]
         restored = AgentRecord.from_agents_json("roundtrip", entry)
 

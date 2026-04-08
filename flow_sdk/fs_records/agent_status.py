@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import time as _time
+from datetime import datetime as _datetime
 from pathlib import Path as _Path
 from flow_sdk._compat import StrEnum
 
@@ -34,6 +35,8 @@ class AgenticProcessStatus(StrEnum):
     THINKING     = "thinking"     # assistant streaming / generating text
     TOOL_CALL    = "tool_call"    # Claude finished its turn and dispatched tool(s)
     TOOL_RUNNING = "tool_running" # tool is actively executing (progress events)
+    API_ERROR    = "api_error"    # Anthropic API returned an error (e.g. 529), Claude is retrying
+    API_TIMEOUT  = "api_timeout"  # JSONL stalled in WAITING state — connection hang / model slow to start
 
     # Workflow-level — set by ProcessorState, not transcript-derivable
     RUNNING      = "running"      # generic busy / backward compat
@@ -50,6 +53,8 @@ _RUNNING_STATUSES: frozenset[AgenticProcessStatus] = frozenset({
     AgenticProcessStatus.THINKING,
     AgenticProcessStatus.TOOL_CALL,
     AgenticProcessStatus.TOOL_RUNNING,
+    AgenticProcessStatus.API_ERROR,
+    AgenticProcessStatus.API_TIMEOUT,
     AgenticProcessStatus.RUNNING,
     AgenticProcessStatus.PAUSED,
     AgenticProcessStatus.STEPPING,
@@ -119,6 +124,15 @@ def _last_user_text(chunk: str) -> str:
     return ""
 
 
+class ApiErrorTimeoutError(TimeoutError):
+    """Raised by stream_transcript when it times out while the process is in API_ERROR state.
+
+    This means the Anthropic API returned repeated errors (e.g. HTTP 529 overloaded)
+    and Claude was still retrying when the timeout expired. This is an infrastructure
+    issue, not a logic failure — tests should skip rather than fail on this exception.
+    """
+
+
 def _tail_status(path: "str | _Path") -> AgenticProcessStatus:
     """Derive AgenticProcessStatus from the last 4 KB of a JSONL transcript.
 
@@ -158,7 +172,9 @@ def _tail_status(path: "str | _Path") -> AgenticProcessStatus:
     })
 
     last_type: str | None = None
+    last_subtype: str | None = None
     last_stop_reason: str | None = None
+    last_user_ts: float | None = None
     for line in reversed(chunk.splitlines()):
         line = line.strip()
         if not line:
@@ -172,6 +188,17 @@ def _tail_status(path: "str | _Path") -> AgenticProcessStatus:
             continue
         if last_type is None:
             last_type = t
+            if t == "system":
+                last_subtype = entry.get("subtype")
+            if t == "user":
+                ts_str = entry.get("timestamp", "")
+                if ts_str:
+                    try:
+                        last_user_ts = _datetime.fromisoformat(
+                            ts_str.replace("Z", "+00:00")
+                        ).timestamp()
+                    except Exception:
+                        pass
         if t == "assistant" and last_stop_reason is None:
             last_stop_reason = entry.get("message", {}).get("stop_reason")
         if last_type and last_stop_reason is not None:
@@ -195,6 +222,8 @@ def _tail_status(path: "str | _Path") -> AgenticProcessStatus:
         return AgenticProcessStatus.EMPTY
 
     # Granular active states (only when file is still being written)
+    if last_type == "system" and last_subtype == "api_error":
+        return AgenticProcessStatus.API_ERROR
     if last_type == "assistant" and last_stop_reason is None:
         return AgenticProcessStatus.THINKING
     if last_type == "assistant" and last_stop_reason == "tool_use":
@@ -202,6 +231,8 @@ def _tail_status(path: "str | _Path") -> AgenticProcessStatus:
     if last_type == "progress":
         return AgenticProcessStatus.TOOL_RUNNING
     if last_type == "user":
+        if last_user_ts and (_time.time() - last_user_ts) > 30:
+            return AgenticProcessStatus.API_TIMEOUT
         return AgenticProcessStatus.WAITING
 
     return AgenticProcessStatus.RUNNING

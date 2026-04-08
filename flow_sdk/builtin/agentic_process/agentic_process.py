@@ -84,6 +84,14 @@ async def _poll_for_completion(agentic_process_id: str, session_id: str | None) 
             except ValueError:
                 continue
 
+            if status_enum == AgenticProcessStatus.API_TIMEOUT:
+                _AgenticProcess = globals().get("AgenticProcess")
+                if _AgenticProcess:
+                    proc = await _AgenticProcess.get_by_id(agentic_process_id)
+                    if proc:
+                        await proc._on_timeout()
+                continue  # keep polling — visible may recover; invisible will go INACTIVE
+
             if status_enum not in TERMINAL:
                 continue  # still running or unknown
 
@@ -178,6 +186,7 @@ class AgenticProcess(Entity):
     is_active: bool = APIField(default=False)
     queue: dict | None = APIField(default=None)
     additional_dirs: list[str] = APIField(default_factory=list, description="Extra directories passed to Claude via --add-dir")
+    embedded_agent_ids: list[str] = APIField(default_factory=list, description="Agent ids injected via --agents at session launch")
     worker_type: WorkerType | None = APIField(default=None, validation_alias="workerType")
 
     # ── Construction ──────────────────────────────────────────────────────────
@@ -260,7 +269,6 @@ class AgenticProcess(Entity):
         self,
         instruction: str | None = None,
         visible: bool | None = None,
-        agent=None,
     ) -> ApiSuccessResponse | ApiFailResponse:
         """Open (or reopen) this AgenticProcess — starts fresh or resumes automatically.
 
@@ -296,10 +304,6 @@ class AgenticProcess(Entity):
 
             # Build the CLI command from cli_config + entity fields
             cmd = self.cli_options
-
-            # Inject agent into CLI command if provided
-            if agent is not None and hasattr(agent, "to_agents_json"):
-                cmd.agents_json = {**(cmd.agents_json or {}), **agent.to_agents_json()}
 
             # Server-restart resume: process had a shell but cli_config didn't encode resume
             if not cmd.resume and self.shell_id:
@@ -464,7 +468,7 @@ class AgenticProcess(Entity):
 
     # ── Execution ─────────────────────────────────────────────────────────────
 
-    async def prompt(self, instruction: str, agent=None) -> ApiSuccessResponse | ApiFailResponse:
+    async def prompt(self, instruction: str) -> ApiSuccessResponse | ApiFailResponse:
         """Schedule a Claude run with *instruction* and return immediately.
 
         Routing:
@@ -473,14 +477,13 @@ class AgenticProcess(Entity):
 
         Args:
             instruction: The prompt text to send.
-            agent: Optional AgentRecord to configure Claude with (passed via --agents flag).
         """
         if not self.exist_in_db:
             return ApiFailResponse(message=f"AgenticProcess {self.id} not found in database")
         if await self.is_running():
             await self.send(instruction)
             return ApiSuccessResponse(data={"status": "sent"})
-        return await self.start(instruction=instruction, agent=agent)
+        return await self.start(instruction=instruction)
 
     async def send(self, data: str | bytes) -> None:
         """Write text or raw bytes to the live PTY stdin.
@@ -535,6 +538,8 @@ class AgenticProcess(Entity):
             else:
                 await asyncio.sleep(poll_interval)
 
+        from flow_sdk.fs_records.agent_status import _tail_status as _tail_status_fn, AgenticProcessStatus as _APS
+
         offset = 0
         while True:
             # Read any new bytes since last poll
@@ -551,16 +556,28 @@ class AgenticProcess(Entity):
                 if not raw_line:
                     continue
                 try:
-                    yield json.loads(raw_line)
+                    entry = json.loads(raw_line)
                 except json.JSONDecodeError:
-                    pass
+                    continue
+                # api_error means Anthropic is overloaded and Claude is retrying.
+                # Extend the deadline so the retry can complete — up to 120s extra.
+                if entry.get("type") == "system" and entry.get("subtype") == "api_error":
+                    extended = loop.time() + 120
+                    if extended > deadline:
+                        logger.info(
+                            "stream_transcript: api_error detected (attempt=%s), extending deadline by %.0fs",
+                            entry.get("retryAttempt", "?"),
+                            extended - deadline,
+                        )
+                        deadline = extended
+                yield entry
 
-            from flow_sdk.fs_records.agent_status import _tail_status as _dbg_tail
-            _dbg_status = _dbg_tail(transcript_path) if transcript_path else "no-path"
+            tail_status = _tail_status_fn(transcript_path) if transcript_path else None
             _dbg_elapsed = loop.time() - (deadline - timeout)
-            print(f"  [stream_transcript] elapsed={_dbg_elapsed:.1f}s tail_status={_dbg_status!r} waiting={self.waiting_for_prompt} lifecycle={self.status!r}")
+            _terminal = tail_status in {_APS.COMPLETE, _APS.INTERRUPTED, _APS.INACTIVE}
+            print(f"  [stream_transcript] elapsed={_dbg_elapsed:.1f}s tail_status={tail_status!r} waiting={_terminal} lifecycle={self.status!r}")
 
-            if self.waiting_for_prompt:
+            if _terminal:
                 return
 
             if loop.time() > deadline:
@@ -652,12 +669,44 @@ class AgenticProcess(Entity):
 
     # ── State ─────────────────────────────────────────────────────────────────
 
+    def load_embedded_agent(self, agent: "Any") -> None:
+        """Embed an agent into this process so it is registered via --agents at launch.
+
+        Accepts an AgentRecord, any object with to_agents_json(), or a name string.
+        Adds the agent's name to the persisted embedded_agent_ids list and stores
+        the agent object in the in-memory _embedded_agents list.
+        """
+        from flow_sdk.fs_records.agent_record import AgentRecord
+        _agents: list = object.__getattribute__(self, "__dict__").setdefault("_embedded_agents", [])
+        if isinstance(agent, str):
+            rec = AgentRecord.load_agent(agent) or AgentRecord(name=agent, id=agent)
+        elif isinstance(agent, AgentRecord):
+            rec = agent
+        else:
+            # duck-type: anything with to_agents_json
+            rec = agent
+        _agents.append(rec)
+        name = rec.name if hasattr(rec, "name") else str(agent)
+        if name and name not in (self.embedded_agent_ids or []):
+            self.embedded_agent_ids = list(self.embedded_agent_ids or []) + [name]
+
+    def get_agents_json(self) -> "dict | None":
+        """Return merged --agents JSON from all embedded agents, or None if none loaded."""
+        _agents: list = object.__getattribute__(self, "__dict__").get("_embedded_agents", [])
+        if not _agents:
+            return None
+        result: dict = {}
+        for rec in _agents:
+            result.update(rec.to_agents_cli_json())
+        return result or None
+
     @property
     def cli_options(self) -> "ClaudeCliOptions":
         """Deserialize cli_config into a live ClaudeCliOptions.
 
         session_id and workdir are injected from entity fields (not stored in cli_config).
         Bundled system_assets dir is always prepended; additional_dirs follow.
+        Embedded agents are injected via --agents.
         Callers add runtime env vars via add_env() before calling to_shell_string().
         """
         import flow_sdk
@@ -669,7 +718,15 @@ class AgenticProcess(Entity):
         core_dir = str(Path(flow_sdk.__file__).parent / "system_assets" / "core")
         extra = [d for d in (self.additional_dirs or []) if d != core_dir]
         cmd.add_dirs = [core_dir] + extra
+        agents_json = self.get_agents_json()
+        if agents_json:
+            cmd.agents_json = agents_json
         return cmd
+
+    @property
+    def cmd_line(self) -> str:
+        """Return the full CLI command string that would be used to launch this process."""
+        return self.cli_options.to_shell_string()
 
     def to_dict(self) -> dict:
         d = super().to_dict()
@@ -798,6 +855,23 @@ class AgenticProcess(Entity):
             self.additional_dirs = list(self.additional_dirs or []) + [path]
             await self.save()
         return ApiSuccessResponse()
+
+    # ── Timeout handling ──────────────────────────────────────────────────────
+
+    async def _on_timeout(self) -> None:
+        """Called when API_TIMEOUT is detected (no LLM response for 30s after user prompt).
+
+        Invisible processes: kills the worker (SIGTERM → SIGKILL) so they don't
+        linger consuming resources. The JSONL will eventually go stale → INACTIVE.
+
+        Visible processes: worker is left alive (API may recover); the UI shows a
+        toast with Terminate / Keep Waiting options.
+        """
+        if self.visible:
+            return
+        shell = await self.shell()
+        if shell:
+            await shell.terminate_worker()
 
     # ── Close ─────────────────────────────────────────────────────────────────
 
