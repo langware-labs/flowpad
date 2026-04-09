@@ -39,3 +39,22 @@ class CrudAction(StrEnum):
     READ = "read"
     UPDATE = "update"
     DELETE = "delete"
+
+
+class NotificationType(StrEnum):
+    """High-level category of a cross-user notification."""
+    RESOURCE_ACTION = "resource_action"
+    ALERT = "alert"
+    USER_MESSAGE = "user_message"
+
+
+class DeliveryMethod(StrEnum):
+    EMAIL = "email"
+    SLACK = "slack"
+    JIRA = "jira"
+
+
+class NotificationStatus(StrEnum):
+    PENDING = "pending"
+    SENT = "sent"
+    RECEIVED = "received"

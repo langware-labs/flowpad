@@ -114,10 +114,10 @@ async def _process_manifest(
     # --- Create Bookmark ---
     nav_path = f"/dock/tasks/{task_type_id_str}"
     notif_title = f"New task from {sender_name}"
-    existing_bookmark = await Bookmark.get_one({"title": notif_title, "bookmark_type": "cross_notification"})
+    existing_bookmark = await Bookmark.get_one({"title": notif_title, "bookmark_type": "notification"})
     if existing_bookmark is None:
         bookmark = Bookmark.model_validate({
-            "bookmark_type": "cross_notification",
+            "bookmark_type": "notification",
             "title": notif_title,
             "content": data.get("message") or "",
             "status": BookmarkStatus.OPEN,
@@ -129,7 +129,7 @@ async def _process_manifest(
     # Fire in-app WebSocket sync event
     try:
         send_resource_sync(
-            type="cross_notification",
+            type="notification",
             id=task_id,
             operation=SyncOperation.CREATE,
             data={

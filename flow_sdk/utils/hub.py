@@ -25,8 +25,8 @@ def hub_base_url() -> Optional[str]:
 def hub_graph_url(path: str) -> Optional[str]:
     """Build a full hub graph URL for the given relative path, or None if hub is not configured.
 
-    Example: hub_graph_url("cross_notification/send")
-      → "http://localhost:8093/api/v1/graph/cross_notification/send"
+    Example: hub_graph_url("notification/send")
+      → "http://localhost:8093/api/v1/graph/notification/send"
     """
     base = hub_base_url()
     if not base:

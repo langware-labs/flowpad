@@ -1,3 +1,3 @@
 # builtin package — Asset entity removed
 from flow_sdk.builtin.spec import Spec
-from flow_sdk.builtin.cross_notification import CrossUserNotification
+from flow_sdk.core.network.connection import Notification

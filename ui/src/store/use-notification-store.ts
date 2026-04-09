@@ -239,8 +239,8 @@ export function initNotificationListener(): () => void {
         }
       }
 
-      // Handle cross_notification events — incoming shared task/spec notifications
-      if (rsType === 'cross_notification' && rsOp === 'create') {
+      // Handle notification events — incoming shared task/spec notifications
+      if (rsType === 'notification' && rsOp === 'create') {
         const crossEventData = rsData?.event_data as Record<string, unknown> | undefined;
         const taskTypeId = crossEventData?.task_type_id as string | undefined;
         const specType = (crossEventData?.spec_type as string | undefined) ?? 'plan';
