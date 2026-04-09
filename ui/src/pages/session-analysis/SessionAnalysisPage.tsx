@@ -5,7 +5,8 @@ import { useProcessState } from '@src/hooks/use-process-state';
 import { useResources, SystemResourceType } from '@src/hooks/use-resources';
 import {
   AgenticProcess,
-  ProcessorStatus,
+  isProcessActive,
+  ProcessStatus,
   ProcessResult,
   dataContext,
   fsManager,
@@ -118,10 +119,7 @@ export function SessionAnalysisPage() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   const processState = useProcessState(activeProcess);
-  const isRunning =
-    processState.status === ProcessorStatus.RUNNING ||
-    processState.status === ProcessorStatus.STEPPING ||
-    processState.status === ProcessorStatus.PAUSED;
+  const isRunning = isProcessActive(processState.status);
   const { statusMessage, activityLabel, elapsedTime } = useWorkflowProgressInfo(activeProcess, isRunning);
 
   const paths = dataContext.bootstrapInfo?.desktop_info?.paths;
@@ -382,9 +380,7 @@ export function SessionAnalysisPage() {
         if (running.source_session_id) {
           setActiveSessionId(running.source_session_id);
         }
-        const isActiveStatus = [ProcessorStatus.RUNNING, ProcessorStatus.STEPPING, ProcessorStatus.PAUSED].includes(
-          process.status,
-        );
+        const isActiveStatus = isProcessActive(process.status);
         if (!isActiveStatus && running.status === 'running') {
           try {
             running.status = 'complete';

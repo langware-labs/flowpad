@@ -10,7 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess, ProcessError, RunResult
-from flow_sdk.fs_records.agentic_process_record import AgenticProcessStatus
+from flow_sdk.fs_records.agent_status import AgenticProcessStatus
+from flow_sdk.fs_records.agentic_process_lifecycle import AgenticProcessLifecycleStatus
 from flow_sdk.fs_store.record import (
     get_default_records_data_root,
     get_default_records_root,
@@ -39,9 +40,9 @@ def _proc(**kwargs) -> AgenticProcess:
 # ---------------------------------------------------------------------------
 
 def test_defaults():
-    """New process has idle status, no session_id, no shell_id."""
+    """New process has NEW lifecycle status, no session_id, no shell_id."""
     proc = AgenticProcess()
-    assert proc.status == AgenticProcessStatus.IDLE.value
+    assert proc.status == AgenticProcessLifecycleStatus.NEW.value
     assert proc.session_id is None
     assert proc.shell_id is None
 
@@ -86,11 +87,9 @@ async def test_is_running_returns_false_when_no_shell():
 
 @pytest.mark.asyncio
 async def test_wait_returns_when_no_transcript():
-    """wait() returns quickly when no transcript exists (is_idle returns False, but no session)."""
+    """wait() returns quickly when lifecycle has already failed and no transcript exists."""
     proc = _proc()
-    # No session_id → _discover_status_from_transcript returns None → is_idle=False
-    # But with a terminal status set directly, wait() should return.
-    proc.status = AgenticProcessStatus.COMPLETE.value
+    proc.status = AgenticProcessLifecycleStatus.FAILED.value
     await proc.wait(timeout=2.0)
 
 
@@ -250,14 +249,13 @@ def test_stream_raises_not_implemented():
 # ---------------------------------------------------------------------------
 
 def test_is_idle_true_when_not_running():
-    """is_idle is True when status is not RUNNING."""
+    """is_idle is True when lifecycle is NEW."""
     proc = _proc()
-    # Default status is IDLE — not running
     assert proc.is_idle is True
 
 
 def test_is_idle_false_when_running():
-    """is_idle is False when status is RUNNING."""
+    """is_idle is False when lifecycle is LIVE."""
     proc = _proc()
-    proc.status = AgenticProcessStatus.RUNNING.value
+    proc.status = AgenticProcessLifecycleStatus.LIVE.value
     assert proc.is_idle is False

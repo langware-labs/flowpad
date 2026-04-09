@@ -2,7 +2,7 @@
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
 
-import { dataContext, fsStore, Shell, type AgenticProcess } from '@sdk';
+import { dataContext, fsStore, isProcessLive, Shell, type AgenticProcess } from '@sdk';
 import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
 import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
@@ -264,7 +264,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const [shellReady, setShellReady] = useState(false);
   // Keep shellRef in sync so callbacks and hooks that capture shellRef still work.
   shellRef.current = shell;
-  const processIsActive = process?.is_active ?? false;
+  const processIsActive = isProcessLive(process?.status ?? '');
 
   // Notify parent when the worker session ID becomes known (or clears)
   useEffect(() => {
@@ -329,7 +329,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     if (!sidecarShellId) {
       // Create a plain Shell entity and let SidecarShellTerminal start its PTY
       // process.compute_node_id may be a TypeId object (deepAssign converts "type-UUID" strings).
-      // Extract the plain UUID (.id) to pass to Shell so startPty() constructs valid ActionInfo URLs.
+      // Extract the plain UUID (.id) to pass to Shell so attachPty() constructs valid ActionInfo URLs.
       const rawCnId = process.compute_node_id ?? shellRef.current?.compute_node_id ?? null;
       if (!rawCnId) return;
       const computeNodeId: string | null =

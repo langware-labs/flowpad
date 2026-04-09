@@ -1,9 +1,10 @@
-import { AgenticProcess } from '@sdk';
+import { AgenticProcess, claudeSessionManager } from '@sdk';
 import { render, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTerminalName } from '@src/components/terminal/TabbedTerminal';
 import type { TraceFilters, ColVisibility } from '@src/components/terminal/interactive-terminal/InteractiveTerminal';
+import { ProcessToolbar } from '@src/components/terminal/interactive-terminal/ProcessToolbar';
 
 const mockOpenNewShell = vi.fn();
 
@@ -12,19 +13,6 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
     navigation: { openNewShell: mockOpenNewShell, openShell: vi.fn(), openShellProcess: vi.fn() },
   }),
 }));
-
-vi.mock('@sdk', async () => {
-  const actual = await vi.importActual<any>('@sdk');
-  return {
-    ...actual,
-    claudeSessionManager: {
-      forkSession: vi.fn(),
-      restartSession: vi.fn(),
-    },
-  };
-});
-
-import { ProcessToolbar } from '@src/components/terminal/interactive-terminal/ProcessToolbar';
 
 function makeProcess(overrides: Partial<AgenticProcess> = {}): AgenticProcess {
   return {
@@ -52,6 +40,7 @@ const defaultColVis: ColVisibility = { trace: true, time: true, annotations: tru
 describe('ProcessToolbar "Open terminal" button', () => {
   beforeEach(() => {
     mockOpenNewShell.mockClear();
+    vi.spyOn(claudeSessionManager, 'forkSession').mockResolvedValue(undefined as any);
   });
 
   it('opens a new terminal with cwd when workdir is set', () => {

@@ -322,7 +322,6 @@ class DesktopActionsMixin:
         """Generate an AMD execution plan from user content.
 
         This is a stub implementation for the desktop version.
-        The production version uses AgenticProcessor with planner skills.
 
         POST body:
             content: The content to create a plan for

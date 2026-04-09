@@ -240,7 +240,7 @@ export class NavigationActions {
     try {
       const { process: agenticProcess, shell } = await AgenticProcess.spawn(
         { workdir: options?.cwd || dataContext.project?.fs_storage_mount_path },
-        { watchProcessor: false, watchProcess: false, visible: true },
+        { watchProcess: false, visible: true },
       );
       if (!shell) {
         console.error('[NavigationActions] AgenticProcess created without shell:', agenticProcess.id);

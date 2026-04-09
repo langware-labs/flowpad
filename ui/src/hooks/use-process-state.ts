@@ -1,24 +1,24 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
-import { AgenticProcess, ProcessorStatus } from '@sdk';
+import { AgenticProcess, ProcessStatus } from '@sdk';
 
 /**
  * Hook for subscribing to AgenticProcess status via WebSocket entity updates.
  * Uses useSyncExternalStore for optimal React 18+ integration.
  *
  * @param process - The AgenticProcess to track (can be null)
- * @returns Current status, completion status, and error
+ * @returns Current lifecycle status, completion status, and error
  */
 export function useProcessState(process: AgenticProcess | null | undefined): {
-  status: ProcessorStatus;
+  status: ProcessStatus;
   completed: boolean;
   error: Error | null;
 } {
   const snapshotRef = useRef<{
-    status: ProcessorStatus;
+    status: ProcessStatus;
     completed: boolean;
     error: Error | null;
   }>({
-    status: ProcessorStatus.IDLE,
+    status: ProcessStatus.NEW,
     completed: false,
     error: null,
   });
@@ -26,12 +26,12 @@ export function useProcessState(process: AgenticProcess | null | undefined): {
   useEffect(() => {
     if (process) {
       snapshotRef.current = {
-        status: process.status ?? ProcessorStatus.IDLE,
+        status: process.status ?? ProcessStatus.NEW,
         completed: process.completed,
         error: process.error,
       };
     } else {
-      snapshotRef.current = { status: ProcessorStatus.IDLE, completed: false, error: null };
+      snapshotRef.current = { status: ProcessStatus.NEW, completed: false, error: null };
     }
   }, [process]);
 
@@ -49,7 +49,7 @@ export function useProcessState(process: AgenticProcess | null | undefined): {
   const getSnapshot = useCallback(() => {
     if (!process) return snapshotRef.current;
     const next = {
-      status: process.status ?? ProcessorStatus.IDLE,
+      status: process.status ?? ProcessStatus.NEW,
       completed: process.completed,
       error: process.error,
     };

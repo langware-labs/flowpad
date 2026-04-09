@@ -23,7 +23,7 @@ export function useForkInTerminal() {
           const workdir = cwd || dataContext.project?.fs_storage_mount_path;
           const { process: agenticProcess } = await AgenticProcess.spawn(
             { ...(workdir ? { workdir } : {}) },
-            { visible: true, watchProcessor: false, watchProcess: false },
+            { visible: true, watchProcess: false },
           );
           navigation.openDockPointer(agenticProcess.dockPointer);
         } catch (error) {

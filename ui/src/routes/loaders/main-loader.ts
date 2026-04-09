@@ -3,8 +3,10 @@ import {
   ContextEntitiesEnum,
   dataContext,
   initSdk,
-  ProcessorStatus,
+  isProcessActive,
+  isProcessStartable,
   Project,
+  QueryFilter,
   QueryRequest,
   Shell,
   ShellStatus,
@@ -21,13 +23,6 @@ import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
 
 // Get allowed view types from the ViewType enum
 const ALLOWED_VIEWS = new Set(Object.values(ViewType));
-const INACTIVE_PROCESS_STATUSES = new Set([
-  ProcessorStatus.COMPLETE,
-  ProcessorStatus.ERROR,
-  ProcessorStatus.INTERRUPTED,
-  ProcessorStatus.INACTIVE,
-]);
-
 /**
  * Ensure compute node is loaded for the current project
  * Project setup is handled by initSdk -> initContext -> setupProject
@@ -75,7 +70,7 @@ function getDockViewType(args: LoaderArgs): ViewType | undefined {
  */
 function resolveDefaultShell(shells: Shell[], processes: AgenticProcess[]): string | null {
   const hiddenStatuses = new Set<string>([ShellStatus.CLOSED, ShellStatus.CLOSING, ShellStatus.ERROR]);
-  const activeProcesses = processes.filter((p) => !INACTIVE_PROCESS_STATUSES.has(p.status as ProcessorStatus));
+  const activeProcesses = processes.filter((p) => isProcessActive(p.status));
   const isAlive = (s: Shell) => !hiddenStatuses.has(s.status as ShellStatus);
 
   const resolveUrl = (shell: Shell) => {
@@ -128,7 +123,7 @@ async function loadShell(pointer: string | undefined): Promise<void> {
   // useActiveTerminals has data on first render without extra fetches.
   const [shells, processes] = await Promise.all([
     Shell.query<Shell>(new QueryRequest({ type: Shell.type, scope: [] })),
-    AgenticProcess.query<AgenticProcess>(new QueryRequest({ type: AgenticProcess.type, scope: [] })),
+    AgenticProcess.query<AgenticProcess>(new QueryRequest({ type: AgenticProcess.type, scope: [], query: new QueryFilter({ match: { visible: true } as Record<string, unknown> }) })),
   ]);
 
   _perfLog(`loadShell queries done (${shells.length} shells, ${processes.length} processes)`);
@@ -156,15 +151,29 @@ async function loadShell(pointer: string | undefined): Promise<void> {
       throw redirect('/dock/shell');
     }
 
-    let shell: import('@sdk/entities/shell').Shell;
+    let shell: import('@sdk/entities/shell').Shell | null = null;
     try {
-      await process.start({ visible: true });
-      shell = (await process.shell())!;
+      if (isProcessStartable(process.status)) {
+        await process.start({ visible: true });
+      }
+      shell = await process.shell();
+      if (!shell) {
+        await process.start({ visible: true });
+        shell = await process.shell();
+      }
     } catch {
       toast({ title: 'Session unavailable', description: 'This process has been terminated.', variant: 'destructive' });
       // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw redirect('/dock/shell');
     }
+
+    if (!shell) {
+      toast({ title: 'Session unavailable', description: 'No shell is linked to this process.', variant: 'destructive' });
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw redirect('/dock/shell');
+    }
+
+    await shell.attachPty({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: process.workdir ?? undefined });
 
     dataContext.setActiveShellId(shell.id);
     await dataContext.setContextEntityTypeId(

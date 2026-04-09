@@ -92,7 +92,7 @@ agent = AgentRecord.from_file("/path/to/my-agent.md")
 agent = AgentRecord.from_markdown(text, name="my-agent")
 
 # Serialize for Claude CLI --agents flag
-agents_json = agent.to_agents_json()
+agents_json = agent.to_agents_cli_json()
 # → {"session-analyzer": {"description": "...", "prompt": "...", "model": "sonnet"}}
 ```
 
