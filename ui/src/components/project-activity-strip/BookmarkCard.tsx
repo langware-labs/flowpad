@@ -1,5 +1,7 @@
 import { Badge } from '@src/components/ui/badge';
 import type { Bookmark } from '@sdk';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Clock, FileText, GitBranch, Play, StickyNote, X } from 'lucide-react';
 
 function formatTimeAgo(value?: string | null): string {
@@ -34,7 +36,9 @@ export function BookmarkCard({
   onOpenSession?: (bookmark: Bookmark) => void;
   onForkSession?: (bookmark: Bookmark) => void;
 }) {
+  const { navigation } = useDockNavigation();
   const isTerminalAnnotation = bookmark.bookmark_type === 'terminal_annotation' && !!bookmark.session_id;
+  const navPath = bookmark.data?.navigation_path as string | undefined;
   const isClosed = bookmark.status === 'closed';
   const contentPreview = bookmark.content
     ? bookmark.content.length > 120
@@ -42,8 +46,23 @@ export function BookmarkCard({
       : bookmark.content
     : null;
 
+  const handleCardClick = () => {
+    if (!navPath) return;
+    const match = navPath.match(/^\/dock\/([^/]+)\/(.+)$/);
+    if (match) {
+      try {
+        navigation.openDock(DockPointer.fromUrl(match[1], match[2]));
+      } catch {
+        // ignore navigation errors
+      }
+    }
+  };
+
   return (
-    <div className="bookmark-card">
+    <div
+      className={`bookmark-card${navPath ? ' cursor-pointer' : ''}`}
+      onClick={navPath ? handleCardClick : undefined}
+    >
       <div className="bookmark-card-header">
         {isTerminalAnnotation
           ? <StickyNote className="h-4 w-4 shrink-0 text-yellow-400" />

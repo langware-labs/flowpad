@@ -31,3 +31,11 @@ class EnvOpType(StrEnum):
     CREATED = "created"  # Notification: env var was created
     UPDATED = "updated"  # Notification: env var was updated
     DELETED = "deleted"  # Notification: env var was deleted
+
+
+class CrudAction(StrEnum):
+    """Standard CRUD action names for cross-user notifications."""
+    CREATE = "create"
+    READ = "read"
+    UPDATE = "update"
+    DELETE = "delete"

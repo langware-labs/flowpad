@@ -51,6 +51,7 @@ dependencies = [
     "appdirs",
     "colorama",
     "apscheduler~=3.10",
+    "sendgrid",
 ]
 
 [project.urls]
