@@ -37,8 +37,11 @@ def hub_graph_url(path: str) -> Optional[str]:
 
 
 def _auth_headers() -> dict[str, str]:
-    from flow_sdk.cli.auth import get_api_key
-    api_key = get_api_key()
+    import os
+    api_key = os.environ.get("FLOWPAD_CLOUD_API_KEY") or None
+    if not api_key:
+        from flow_sdk.cli.auth import get_api_key
+        api_key = get_api_key()
     return {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
 
