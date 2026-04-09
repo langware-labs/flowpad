@@ -19,6 +19,9 @@ os.environ["TESTING"] = "true"
 # Ensure tests use a separate DB path (prevents conflicts with a running dev server)
 if not os.environ.get("SQLITE_DATABASE_PATH"):
     os.environ["SQLITE_DATABASE_PATH"] = "/tmp/flowpad_test.db"
+# Isolate filesystem records from dev/prod data
+if not os.environ.get("FS_RECORD_PATH"):
+    os.environ["FS_RECORD_PATH"] = "/tmp/flowpad_test_records"
 
 from pytest_asyncio import is_async_test
 

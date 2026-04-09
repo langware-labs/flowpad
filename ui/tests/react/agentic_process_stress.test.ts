@@ -15,7 +15,7 @@
  *   resolvedStatus ghost-running correction works.
  */
 
-import { AgenticProcess, ConnectionManager, dataManager, ProcessorStatus, Shell, TypeId } from '@sdk';
+import { AgenticProcess, ConnectionManager, dataManager, ProcessStatus, Shell, TypeId } from '@sdk';
 import { v4 as uuidv4 } from 'uuid';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiTestSetup, createAgenticProcess, getTestSignupInfo } from '../utils/test-utils';
@@ -288,46 +288,53 @@ describe('AgenticProcess WS entity updates — integration', () => {
     unsub();
   });
 
-  it('ghost-running: status=running + is_active=false → resolvedStatus=idle', async () => {
+  it('status stays lifecycle-owned even when is_active is false', async () => {
     const process = new AgenticProcess({
       id: uuidv4(),
       compute_node_id: uuidv4(),
-      status: ProcessorStatus.RUNNING,
+      status: ProcessStatus.LIVE,
+      worker_status: 'running' as any,
       is_active: false,
     });
     registerProcess(process);
 
-    // Ghost-running: status says running, but PTY is dead → resolvedStatus = idle
-    expect(process.resolvedStatus).toBe(ProcessorStatus.IDLE);
+    expect(process.status).toBe(ProcessStatus.LIVE);
+    expect(process.workerStatus).toBe('running');
     expect(process.is_active).toBe(false);
   });
 
-  it('active running process: status=running + is_active=true → resolvedStatus=running', async () => {
+  it('worker_status remains transcript-owned when process is live', async () => {
     const process = new AgenticProcess({
       id: uuidv4(),
       compute_node_id: uuidv4(),
-      status: ProcessorStatus.RUNNING,
+      status: ProcessStatus.LIVE,
+      worker_status: 'running' as any,
       is_active: true,
     });
     registerProcess(process);
 
-    expect(process.resolvedStatus).toBe(ProcessorStatus.RUNNING);
+    expect(process.status).toBe(ProcessStatus.LIVE);
+    expect(process.workerStatus).toBe('running');
     expect(process.is_active).toBe(true);
   });
 
-  it('resolvedStatus updates when onEntityUpdate is called (simulates WS entity event)', async () => {
+  it('status and worker_status update independently on entity events', async () => {
     const process = new AgenticProcess({ id: uuidv4(), compute_node_id: uuidv4(), is_active: true });
     registerProcess(process);
 
-    const statuses: ProcessorStatus[] = [];
-    process.on('state_change', () => statuses.push(process.resolvedStatus));
+    const statuses: Array<{ status: ProcessStatus; workerStatus: string }> = [];
+    process.on('state_change', () => statuses.push({ status: process.status, workerStatus: process.workerStatus }));
 
-    // Simulate WS entity updates (replaces the old _handleStateUpdate)
-    (process as any).onEntityUpdate({ status: ProcessorStatus.RUNNING });
-    (process as any).onEntityUpdate({ status: ProcessorStatus.IDLE });
+    (process as any).onEntityUpdate({ status: ProcessStatus.STARTING });
+    (process as any).onEntityUpdate({ worker_status: 'running' });
+    (process as any).onEntityUpdate({ status: ProcessStatus.LIVE });
+    (process as any).onEntityUpdate({ worker_status: 'idle' });
 
-    expect(statuses.length).toBe(2);
-    expect(statuses[0]).toBe(ProcessorStatus.RUNNING);
-    expect(statuses[1]).toBe(ProcessorStatus.IDLE);
+    expect(statuses).toEqual([
+      { status: ProcessStatus.STARTING, workerStatus: 'idle' },
+      { status: ProcessStatus.STARTING, workerStatus: 'running' },
+      { status: ProcessStatus.LIVE, workerStatus: 'running' },
+      { status: ProcessStatus.LIVE, workerStatus: 'idle' },
+    ]);
   });
 });

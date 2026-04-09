@@ -258,6 +258,7 @@ class AgenticProcess(Entity):
             "id": self.id,
             "status": self.status,
             "shell_id": self.shell_id,
+            "pty_id": shell.pty_pid or shell.id,
             "session_id": self.session_id,
             "compute_node_id": self.compute_node_id,
             "shell": shell.model_dump(mode="json"),
@@ -286,7 +287,7 @@ class AgenticProcess(Entity):
 
             if self.status == AgenticProcessLifecycleStatus.STARTING.value and self.shell_id:
                 shell = await self.shell()
-                if shell is not None:
+                if shell is not None and shell.is_alive:
                     return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=False))
 
             # Resolve compute node: if not yet assigned, look up the @local node (desktop only).

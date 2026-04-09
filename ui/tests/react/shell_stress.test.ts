@@ -20,14 +20,19 @@ import { apiTestSetup, get_local_compute_node, getTestSignupInfo } from '../util
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Fire PTY start via API. */
-async function startPtyRaw(computeNodeId: string, shellId: string, connectionId: string): Promise<void> {
-  await apiClient.post(`${GRAPH_API_PREFIX}/compute_node/${computeNodeId}/terminal-command/start`, {
-    shell_id: shellId,
+/** Create a shell entity and open its PTY via the backend shell/open action. */
+async function openShellRaw(computeNode: { id: string; typeId?: TypeId }, shellId: string, connectionId: string): Promise<Shell> {
+  const shell = Shell.create(computeNode as any, { name: 'Stress Shell' });
+  (shell as any).id = shellId;
+  await shell.save(computeNode.typeId ?? new TypeId('compute_node', computeNode.id));
+  const result = await apiClient.post(`${GRAPH_API_PREFIX}/shell/${shellId}/open`, {
     connection_id: connectionId,
     rows: 24,
     cols: 80,
   });
+  shell.pty_pid = result?.pty_id ?? shellId;
+  registerShell(shell);
+  return shell;
 }
 
 /** Send a newline to ensure bash emits a prompt. */
@@ -63,12 +68,10 @@ function registerShell(shell: Shell): void {
  */
 async function spawnShell(computeNode: { id: string }, connectionId: string, waitMs = 800): Promise<Shell> {
   const shellId = uuidv4();
-  await startPtyRaw(computeNode.id, shellId, connectionId);
+  const shell = await openShellRaw(computeNode as any, shellId, connectionId);
   await new Promise((r) => setTimeout(r, 400)); // let bash start before sending newline
   await sendNewline(computeNode.id, shellId);
   await new Promise((r) => setTimeout(r, waitMs));
-  const shell = Object.assign(new Shell(), { id: shellId, compute_node_id: computeNode.id });
-  registerShell(shell);
   return shell;
 }
 
@@ -394,7 +397,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     await computeNode.setup();
 
     const shellId = uuidv4();
-    await startPtyRaw(computeNode.id, shellId, manager.id);
+    await openShellRaw(computeNode as any, shellId, manager.id);
     await new Promise((r) => setTimeout(r, 400));
 
     const shell = Object.assign(new Shell(), { id: shellId, compute_node_id: computeNode.id });
@@ -413,7 +416,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     await computeNode.setup();
 
     const shellId = uuidv4();
-    await startPtyRaw(computeNode.id, shellId, manager.id);
+    await openShellRaw(computeNode as any, shellId, manager.id);
     await new Promise((r) => setTimeout(r, 300));
 
     // 20 rapid newlines

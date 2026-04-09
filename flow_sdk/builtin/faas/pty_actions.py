@@ -668,16 +668,16 @@ class PtyActionsMixin:
             return ApiFailResponse(message="Invalid request context")
 
         request_message_id = request_info.request_message_id
-        shell_id = body.get("shell_id")
+        pty_id = body.get("pty_id") or body.get("shell_id")
         since_seq = body.get("since_seq")
 
-        if not shell_id:
+        if not pty_id:
             logging.error("[PTY] Missing required parameters")
             response_msg = ResponseMessage(
-                session_id=shell_id,
+                session_id=pty_id,
                 message_id=request_message_id,
                 response_message_id=request_message_id,
-                error="Missing required parameters (shell_id)",
+                error="Missing required parameters (pty_id or shell_id)",
             )
             return ApiFailResponse(message="Missing required parameters", data=response_msg.model_dump())
 
@@ -685,7 +685,7 @@ class PtyActionsMixin:
         if not request_info.request_connection_id:
             logging.error("[PTY] No WebSocket connection available")
             response_msg = ResponseMessage(
-                session_id=shell_id,
+                session_id=pty_id,
                 message_id=request_message_id,
                 response_message_id=request_message_id,
                 error="No WebSocket connection available",
@@ -695,16 +695,16 @@ class PtyActionsMixin:
         request_connection_id = request_info.request_connection_id
         logging.info(f"[PTY] Attaching with connection_id: {request_connection_id}")
 
-        pty_handle = self.get_pty(shell_id)
+        pty_handle = self.get_pty(pty_id)
         if not pty_handle:
             # Session not found or expired (expected after server restart)
-            logging.debug(f"[PTY] Session {shell_id} not found")
+            logging.debug(f"[PTY] Session {pty_id} not found")
             status_msg = PtySessionStatusMessage(
-                shell_id=shell_id,
+                shell_id=pty_id,
                 status="not_found",
             )
             response_msg = ResponseMessage(
-                session_id=shell_id,
+                session_id=pty_id,
                 message_id=request_message_id,
                 response_message_id=request_message_id,
                 content=status_msg,  # Pass instance, not dict
@@ -718,19 +718,19 @@ class PtyActionsMixin:
         # seq), which would cause the client's dedup to reject the replay.
         replay_chunks = []
         if since_seq is not None:
-            logging.info(f"[PTY] Snapshotting replay buffer from seq {since_seq}, shell_id={shell_id}")
+            logging.info(f"[PTY] Snapshotting replay buffer from seq {since_seq}, shell_id={pty_id}")
             replay_chunks = pty_handle.snapshot(since_seq)
-            logging.info(f"[PTY] Snapshotted {len(replay_chunks)} chunks for shell_id={shell_id}")
+            logging.info(f"[PTY] Snapshotted {len(replay_chunks)} chunks for shell_id={pty_id}")
 
         # Attach to session (updates connection_id — live output starts flowing)
         try:
             await pty_handle.attach(request_connection_id)
-            logging.info(f"[PTY] Attached to session {shell_id} with connection_id {request_connection_id}")
+            logging.info(f"[PTY] Attached to session {pty_id} with connection_id {request_connection_id}")
 
         except Exception as e:
             logging.error(f"[PTY] Failed to attach to session: {e}", exc_info=True)
             response_msg = ResponseMessage(
-                session_id=shell_id,
+                session_id=pty_id,
                 message_id=request_message_id,
                 response_message_id=request_message_id,
                 error=f"Failed to attach to session: {e}",
@@ -744,7 +744,7 @@ class PtyActionsMixin:
                 for i, chunk in enumerate(replay_chunks):
                     pty_msg = PtyOutputMessage(
                         provider_node_id=self.node_provider_id,
-                        shell_id=shell_id,
+                        shell_id=pty_id,
                         data=base64.b64encode(chunk.data).decode("utf-8"),
                         seq=chunk.seq,
                         timestamp_ms=int(chunk.timestamp * 1000),
@@ -756,7 +756,7 @@ class PtyActionsMixin:
                         logging.info(f"[PTY] Sending replay chunk {i + 1}/{len(replay_chunks)}, seq={chunk.seq}")
                         await handler.send_message(
                             ResponseMessage(
-                                session_id=shell_id,
+                                session_id=pty_id,
                                 message_id=replay_msg_id,
                                 response_message_id=replay_msg_id,  # Use unique ID, not request_message_id
                                 content=pty_msg,
@@ -768,20 +768,20 @@ class PtyActionsMixin:
         # Send status message
         latest_seq = pty_handle.latest_seq
         status_msg = PtySessionStatusMessage(
-            shell_id=shell_id,
+            shell_id=pty_id,
             status="reattached",
             latest_seq=latest_seq,
         )
 
-        logging.info(f"[PTY] Session {shell_id} reattached successfully")
+        logging.info(f"[PTY] Session {pty_id} reattached successfully")
         response_msg = ResponseMessage(
-            session_id=shell_id,
+            session_id=pty_id,
             message_id=request_message_id,
             response_message_id=request_message_id,
             content=status_msg,  # Pass instance, not dict
         )
         return ApiSuccessResponse(
-            message=f"[PTY] Session reattached: shell_id: {shell_id}",
+            message=f"[PTY] Session reattached: shell_id: {pty_id}",
             data=response_msg.model_dump(),
         )
 

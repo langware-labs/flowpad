@@ -14,6 +14,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import platform
 import shutil
 import subprocess
@@ -38,6 +39,8 @@ _FLOWPAD_HOME: Path = Path.home() / ".flow"
 _DEFAULT_RECORDS_ROOT: Path = _FLOWPAD_HOME / "records"
 _DEFAULT_RECORDS_DATA_ROOT: Path = _FLOWPAD_HOME / "records_data"
 
+ENV_FS_RECORD_PATH = "FS_RECORD_PATH"
+
 
 def get_flowpad_home() -> Path:
     """Return the flowpad home directory (~/.flow by default)."""
@@ -45,7 +48,15 @@ def get_flowpad_home() -> Path:
 
 
 def get_default_records_root() -> Path:
-    """Return the default root for record metadata storage."""
+    """Return the default root for record metadata storage.
+
+    Resolution order:
+    1. ``FS_RECORD_PATH`` env var (allows tests and explicit overrides)
+    2. ``_DEFAULT_RECORDS_ROOT`` (set by ``set_default_records_root()`` or config)
+    """
+    env_path = os.environ.get(ENV_FS_RECORD_PATH)
+    if env_path:
+        return Path(env_path)
     return _DEFAULT_RECORDS_ROOT
 
 
