@@ -116,6 +116,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   const [pendingTabCreation, setPendingTabCreation] = useState<{
     kind: 'claude' | 'terminal';
     targetShellId: string | null;
+    targetProcessId: string | null;
   } | null>(null);
 
   // Scroll state
@@ -164,29 +165,33 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   const handleStartClaude = useCallback(async () => {
     if (tabCreationLockRef.current) return;
     tabCreationLockRef.current = true;
-    setPendingTabCreation({ kind: 'claude', targetShellId: null });
+    setPendingTabCreation({ kind: 'claude', targetShellId: null, targetProcessId: null });
     const result = await navigation.openNewClaudeProcess();
-    if (!result?.shellId) {
+    if (!result) {
       clearPendingTabCreation();
       return;
     }
     // Set pending tab first so the tab strip shows the new tab immediately,
     // then navigate — keeping openDock outside the async spawn body prevents
     // React Router from cancelling the navigation due to in-flight re-renders.
-    setPendingTabCreation({ kind: 'claude', targetShellId: result.shellId });
+    setPendingTabCreation({
+      kind: 'claude',
+      targetShellId: result.shellId,
+      targetProcessId: result.processId,
+    });
     navigation.openDock(result.dockPointer);
   }, [clearPendingTabCreation, navigation]);
 
   const handleStartTerminal = useCallback(async () => {
     if (tabCreationLockRef.current) return;
     tabCreationLockRef.current = true;
-    setPendingTabCreation({ kind: 'terminal', targetShellId: null });
+    setPendingTabCreation({ kind: 'terminal', targetShellId: null, targetProcessId: null });
     const result = await navigation.openNewShell();
     if (!result?.shellId) {
       clearPendingTabCreation();
       return;
     }
-    setPendingTabCreation({ kind: 'terminal', targetShellId: result.shellId });
+    setPendingTabCreation({ kind: 'terminal', targetShellId: result.shellId, targetProcessId: null });
   }, [clearPendingTabCreation, navigation]);
 
   // Navigate to a tab via its entity's dockPointer
@@ -248,8 +253,12 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   );
 
   useEffect(() => {
-    if (!pendingTabCreation?.targetShellId) return;
-    const session = visibleSessions.find((s) => s.shellId === pendingTabCreation.targetShellId);
+    if (!pendingTabCreation) return;
+    const session = visibleSessions.find((s) => {
+      if (pendingTabCreation.targetShellId && s.shellId === pendingTabCreation.targetShellId) return true;
+      if (pendingTabCreation.targetProcessId && s.agenticProcess?.id === pendingTabCreation.targetProcessId) return true;
+      return false;
+    });
     if (session) {
       dataContext.setActiveShellId(session.shellId);
       clearPendingTabCreation();

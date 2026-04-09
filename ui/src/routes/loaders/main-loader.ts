@@ -113,7 +113,6 @@ async function loadShell(pointer: string | undefined): Promise<void> {
     const cwd = dataContext.project?.fs_storage_mount_path ?? undefined;
     const newShell = Shell.create(cn, { name, workdir: cwd });
     await newShell.save(cn.typeId);
-    await newShell.start({ cols: 80, rows: 24, workdir: cwd });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw redirect(`/dock/shell/${newShell.dockPointer.pointer}`);
   }
