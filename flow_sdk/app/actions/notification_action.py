@@ -200,12 +200,13 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     notification = await notification.save(someone_typeid)
 
     from flow_sdk.utils.hub import hub_base_url
+    base = hub_base_url()
     return ApiSuccessResponse(data={
         "sent": bool(hub_notification_id),
         "spec_id": spec.id,
         "task_id": task.id,
         "notification_id": notification.id,
-        "notify_url": f"{hub_base_url()}/notify/{notification.id}" if hub_notification_id else None,
+        "notify_url": f"{base}/notify/{notification.id}" if hub_notification_id and base else None,
     })
 
 
