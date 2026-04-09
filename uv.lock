@@ -831,6 +831,7 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "pywinpty", marker = "sys_platform == 'win32'" },
     { name = "requests" },
+    { name = "sendgrid" },
     { name = "sqlalchemy" },
     { name = "tiktoken" },
     { name = "typer" },
@@ -887,6 +888,7 @@ requires-dist = [
     { name = "python-dotenv" },
     { name = "pywinpty", marker = "sys_platform == 'win32'" },
     { name = "requests" },
+    { name = "sendgrid" },
     { name = "sqlalchemy", specifier = "~=2.0.27" },
     { name = "tiktoken" },
     { name = "typer", specifier = ">=0.9.0" },
@@ -2688,6 +2690,15 @@ wheels = [
 ]
 
 [[package]]
+name = "python-http-client"
+version = "3.3.7"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/56/fa/284e52a8c6dcbe25671f02d217bf2f85660db940088faf18ae7a05e97313/python_http_client-3.3.7.tar.gz", hash = "sha256:bf841ee45262747e00dec7ee9971dfb8c7d83083f5713596488d67739170cea0", size = 9377, upload-time = "2022-03-09T20:23:56.386Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/29/31/9b360138f4e4035ee9dac4fe1132b6437bd05751aaf1db2a2d83dc45db5f/python_http_client-3.3.7-py3-none-any.whl", hash = "sha256:ad371d2bbedc6ea15c26179c6222a78bc9308d272435ddf1d5c84f068f249a36", size = 8352, upload-time = "2022-03-09T20:23:54.862Z" },
+]
+
+[[package]]
 name = "python-multipart"
 version = "0.0.22"
 source = { registry = "https://pypi.org/simple" }
@@ -3172,6 +3183,20 @@ wheels = [
 ]
 
 [[package]]
+name = "sendgrid"
+version = "7.0.0rc2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "python-http-client" },
+    { name = "requests" },
+    { name = "starkbank-ecdsa" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/25/53/680df7978430cb7b60648a36555ebee38817e783a1945e33df8e9fba2f54/sendgrid-7.0.0rc2.tar.gz", hash = "sha256:b65d6229dc0e4732341fad3fafeab7508a3e10d1c1ec965fb1d3f0c7618989da", size = 248441, upload-time = "2024-10-24T13:29:07.902Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/95/d8/8e8f589395b148370cbcf196ba91f20b982dc75c9ab344d7324971fdc0d2/sendgrid-7.0.0rc2-py3-none-any.whl", hash = "sha256:edc31fc7715756b6343657e8b94af107fb449143faf3adbc04a0cb9df9667e61", size = 1094198, upload-time = "2024-10-24T13:29:06.19Z" },
+]
+
+[[package]]
 name = "setuptools"
 version = "82.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3381,6 +3406,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/8b/8d/00d280c03ffd39aae
 wheels = [
     { url = "https://files.pythonhosted.org/packages/96/7f/832f015020844a8b8f7a9cbc103dd76ba8e3875004c41e08440ea3a2b41a/sse_starlette-3.2.0-py3-none-any.whl", hash = "sha256:5876954bd51920fc2cd51baee47a080eb88a37b5b784e615abb0b283f801cdbf", size = 12763, upload-time = "2026-01-17T13:11:03.775Z" },
 ]
+
+[[package]]
+name = "starkbank-ecdsa"
+version = "2.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a3/f8/a6091be6a60ed4df9ac806c89fbc5fe1a3416d0284f3ba70aa09a3419428/starkbank-ecdsa-2.2.0.tar.gz", hash = "sha256:9399c3371b899d4a235b68a1ed7919d202fbf024bd2c863ae8ebdad343c2a63a", size = 14690, upload-time = "2022-10-24T18:36:05.27Z" }
 
 [[package]]
 name = "starlette"
