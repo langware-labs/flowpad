@@ -142,8 +142,22 @@ export class SystemToolsService extends EventEmitter {
     connectionManager.on('on_flow_data', (_typeId: unknown, flowData: Record<string, unknown>) => {
       if (flowData?.element_type !== 'progress_report') return;
       const attrs = flowData?.attributes as Record<string, unknown> | undefined;
-      if (!attrs || !this.activityProgress) return;
-      if (attrs.job_name !== this.currentActivity) return;
+      if (!attrs) return;
+
+      const jobName = attrs.job_name as SystemActivity | undefined;
+      if (!jobName) return;
+
+      // Auto-initialize if state was lost (e.g. page refresh while job was running)
+      if (!this.activityProgress || this.currentActivity !== jobName) {
+        this.currentActivity = jobName;
+        this.activityProgress = {
+          total: (attrs.total as number) ?? 0,
+          done: [],
+          current: null,
+          pending: [],
+        };
+        this.emit('state_changed');
+      }
 
       if (attrs.sub_activity_name != null) {
         // Sub-activity event: per-record progress within a type
