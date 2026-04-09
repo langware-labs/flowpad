@@ -44,6 +44,7 @@ from .routes import (
     detection_router,
     directory_router,
     hooks_router,
+    notify_router,
     search_router,
     testing_router,
     ui_router,
@@ -98,6 +99,36 @@ async def _on_server_startup():
 
     _asyncio.create_task(_asyncio.to_thread(_warm_schema))
 
+    await _start_notification_scanner()
+    await _start_cloud_ws_listener()
+
+
+async def _start_notification_scanner() -> None:
+    """Scan for incoming notifications on startup."""
+    try:
+        from flow_sdk.fs_records.cross_notification_scanner import scan_incoming_notifications
+        from flow_sdk.builtin.user import User as _User
+        import asyncio as _asyncio
+        local_user = await _User.get_one({"uname": "local"})
+        if local_user:
+            _asyncio.create_task(scan_incoming_notifications(local_user.id))
+    except Exception as e:
+        print(f"  Notification scanner: failed to start ({e})")
+
+
+async def _start_cloud_ws_listener() -> None:
+    """Connect to flowpad.ai cloud WebSocket to receive real-time push notifications."""
+    try:
+        from flow_sdk.builtin.user import User as _User
+        import asyncio as _asyncio
+        local_user = await _User.get_one({"uname": "local"})
+        if local_user:
+            from flow_sdk.cloud.ws_client import start_cloud_ws_listener
+            _asyncio.create_task(start_cloud_ws_listener(local_user.id))
+            print("  Cloud WS listener: started")
+    except Exception as e:
+        print(f"  Cloud WS listener: failed to start ({e})")
+
 
 async def _shutdown_extras():
     """Clean up server.json and stop cron scheduler."""
@@ -130,6 +161,7 @@ server.add_router(watch_router)
 server.add_router(websocket_router)
 server.add_router(webhook_api_router)
 server.add_router(assets_router)
+server.add_router(notify_router, prefix="/api/v1")
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)
 
