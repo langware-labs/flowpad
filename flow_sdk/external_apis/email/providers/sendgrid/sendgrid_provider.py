@@ -86,10 +86,12 @@ class SendGridAPIClient:
             if response.status_code == 202:
                 return {}
 
-            return await response.json()
+            body = response.json()
+            service_log.error(f"SendGrid error {response.status_code}: {body}")
+            raise RuntimeError(f"SendGrid rejected email ({response.status_code}): {body}")
         except Exception as e:
             service_log.error(f"Error sending email using sendgrid: {e}")
-            return None
+            raise
 
 
 class SendGridEmailSender(EmailProvider):

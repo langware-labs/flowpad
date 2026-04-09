@@ -20,7 +20,8 @@ import { useFS } from '@src/hooks/useFS';
 import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
 import { planNotePlugins } from './plan-note-plugin';
 import { Button } from '@src/components/ui/button';
-import { ShieldOff, StickyNote, X } from 'lucide-react';
+import { SendPlanNotificationDialog } from './SendPlanNotificationDialog';
+import { Send, ShieldOff, StickyNote, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@src/lib/utils';
 import { AgenticProcess, TypeId } from '@sdk';
@@ -51,6 +52,7 @@ export const PlanEditor: React.FC = () => {
 
   // State
   const [isExecuting, setIsExecuting] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
 
   // Auto-download file content if not cached
   useEffect(() => {
@@ -160,6 +162,18 @@ export const PlanEditor: React.FC = () => {
             Update Plan
           </Button>
 
+          {/* Share as Task */}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={isExecuting}
+            onClick={() => setShowShareDialog(true)}
+            title="Package this plan as a spec and share it as a task with someone"
+          >
+            <Send className="mr-2 h-4 w-4" />
+            Share as Task
+          </Button>
+
           {/* Cancel */}
           <Button
             size="sm"
@@ -173,6 +187,13 @@ export const PlanEditor: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      <SendPlanNotificationDialog
+        open={showShareDialog}
+        onClose={() => setShowShareDialog(false)}
+        planFilePath={filePath}
+        planContent={fileContent}
+      />
 
       {/* Editor body */}
       <div className="min-h-0 flex-1 overflow-auto">

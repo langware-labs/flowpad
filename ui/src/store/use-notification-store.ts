@@ -238,6 +238,25 @@ export function initNotificationListener(): () => void {
           });
         }
       }
+
+      // Handle notification events — incoming shared task/spec notifications
+      if (rsType === 'notification' && rsOp === 'create') {
+        const crossEventData = rsData?.event_data as Record<string, unknown> | undefined;
+        const taskTypeId = crossEventData?.task_type_id as string | undefined;
+        const specType = (crossEventData?.spec_type as string | undefined) ?? 'plan';
+        const senderName = (crossEventData?.sender_name as string | undefined) ?? 'Someone';
+
+        useNotificationStore.getState().addNotification({
+          category: ViewType.TASKS,
+          title: `New ${specType} from ${senderName}`,
+          navigationPath: taskTypeId ? `/dock/${ViewType.TASKS}/${taskTypeId}` : undefined,
+          metadata: {
+            event_type: 'cross_notification',
+            task_id: crossEventData?.task_id,
+            spec_id: crossEventData?.spec_id,
+          },
+        });
+      }
     }
 
     // Future: Add handlers for other notification types here

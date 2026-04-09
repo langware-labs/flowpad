@@ -40,8 +40,12 @@ export function LearningCard({
   const latestEvent = workerSessionId ? sessionLatestEvent?.get(workerSessionId) ?? null : null;
   const eventCount = workerSessionId ? sessionEventCounts?.get(workerSessionId) ?? 0 : 0;
 
+  const handleCardClick = () => {
+    navigation.openDock(DockPointer.forTasks(task.typeId?.toString()));
+  };
+
   return (
-    <div className="learning-card">
+    <div className="learning-card cursor-pointer" onClick={handleCardClick}>
       <div className="learning-card-header">
         {isRunning && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-amber-500" />}
         {isComplete && <Check className="h-4 w-4 shrink-0 text-green-500" />}
@@ -125,7 +129,8 @@ export function LearningCard({
               key={idx}
               type="button"
               className="learning-card-artifact-link"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 if (artifact.skillDockPath) {
                   navigation.openDock(DockPointer.forSkills(artifact.skillDockPath));
                 } else {
@@ -148,7 +153,8 @@ export function LearningCard({
               key={idx}
               type="button"
               className="learning-card-artifact-link"
-              onClick={() => {
+              onClick={(e) => {
+                e.stopPropagation();
                 if (artifact.skillDockPath) {
                   navigation.openDock(DockPointer.forSkills(artifact.skillDockPath));
                 } else {

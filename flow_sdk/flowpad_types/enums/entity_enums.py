@@ -31,3 +31,30 @@ class EnvOpType(StrEnum):
     CREATED = "created"  # Notification: env var was created
     UPDATED = "updated"  # Notification: env var was updated
     DELETED = "deleted"  # Notification: env var was deleted
+
+
+class CrudAction(StrEnum):
+    """Standard CRUD action names for cross-user notifications."""
+    CREATE = "create"
+    READ = "read"
+    UPDATE = "update"
+    DELETE = "delete"
+
+
+class NotificationType(StrEnum):
+    """High-level category of a cross-user notification."""
+    RESOURCE_ACTION = "resource_action"
+    ALERT = "alert"
+    USER_MESSAGE = "user_message"
+
+
+class DeliveryMethod(StrEnum):
+    EMAIL = "email"
+    SLACK = "slack"
+    JIRA = "jira"
+
+
+class NotificationStatus(StrEnum):
+    PENDING = "pending"
+    SENT = "sent"
+    RECEIVED = "received"

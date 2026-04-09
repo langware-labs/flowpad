@@ -1,6 +1,8 @@
 import { Notification, useNotificationStore } from '@src/store/use-notification-store';
+import { ViewType } from '@src/types/ViewType';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { Bell, ExternalLink, Sparkles, X } from 'lucide-react';
 import { useCallback } from 'react';
 
@@ -71,7 +73,8 @@ function NotificationItem({ notification, onNavigate, onDismiss }: NotificationI
 
   return (
     <div
-      className={`group flex items-center gap-3 rounded-lg border px-3 py-2 transition-colors hover:bg-accent/50 ${statusStyles[status]}`}
+      className={`group flex items-center gap-3 rounded-lg border px-3 py-2 transition-colors hover:bg-accent/50 ${statusStyles[status]}${notification.navigationPath ? ' cursor-pointer' : ''}`}
+      onClick={notification.navigationPath ? () => onNavigate(notification) : undefined}
     >
       <div className="flex-shrink-0">{icon}</div>
 
@@ -133,12 +136,13 @@ export function NotificationFeed() {
         if (claudeSessionId) {
           resumeInTerminal(claudeSessionId, metadata?.cwd);
         }
-        // } else if (eventType === 'skill_ready' && metadata?.cwd) {
-        //   // Navigate to execute flow view
-        //   navigation.openDock(DockPointer.forExecuteFlow({ vfsAbsPath: metadata.cwd }));
-        // } else if (notification.category === ViewType.EXECUTE_FLOW && notification.navigationPath) {
-        //   // Generic execute flow navigation
-        //   navigation.openDock(DockPointer.forExecuteFlow({ vfsAbsPath: notification.navigationPath }));
+      } else if (eventType === 'cross_notification') {
+        const taskTypeId = notification.metadata?.task_id as string | undefined;
+        if (taskTypeId) {
+          navigation.openDock(DockPointer.fromUrl(ViewType.TASKS, taskTypeId));
+        } else {
+          navigation.openTab(ViewType.TASKS);
+        }
       } else {
         // Fallback: open the category tab
         navigation.openTab(notification.category);
