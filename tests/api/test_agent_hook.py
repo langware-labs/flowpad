@@ -419,10 +419,14 @@ def test_sniffer_webhook_e2e_via_websocket():
             assert resp.status_code == 200, f"listen failed: {resp.text}"
 
             # 5. Receive flow_data_msg on WebSocket
-            msg = ws.receive_json()
-            assert msg["message_type"] == "flow_data_msg", (
-                f"Expected flow_data_msg, got: {json.dumps(msg, indent=2)}"
-            )
+            # Drain any background data_op_msg events (e.g. from the startup scanner)
+            # before asserting on the expected flow_data_msg.
+            for _ in range(10):
+                msg = ws.receive_json()
+                if msg["message_type"] == "flow_data_msg":
+                    break
+            else:
+                raise AssertionError(f"Expected flow_data_msg, got: {json.dumps(msg, indent=2)}")
             # Verify the flow_data contains the webhook payload
             flow_data = msg["flow_data"]
             assert flow_data["attributes"]["webhook_type"] == "hook_op"
