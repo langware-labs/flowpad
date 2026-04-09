@@ -19,12 +19,13 @@ import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { TaskStatusTabs } from './TaskStatusTabs';
 import { TaskCard } from './TaskCard';
 import { TaskDetailPanel } from './TaskDetailPanel';
+import { SharedTaskView } from './SharedTaskView';
 import { BulkReminderButton } from './BulkReminderButton';
 import { BULK_SELECT_MIN_TASKS, isTaskActive, isTaskArchived, isTaskPending, type TaskTab } from './constants';
 import './TaskBar.css';
 
 export function TaskBar() {
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
 
   const [selectedTab, setSelectedTab] = useState<TaskTab>('active');
   const [search, setSearch] = useState('');
@@ -46,6 +47,19 @@ export function TaskBar() {
     refetch,
     excludeTasks,
   });
+
+  // ── Auto-expand task from dock pointer (e.g. navigated via bookmark click) ──
+  useEffect(() => {
+    const pointer = currentDock?.pointer;
+    if (!pointer || !tasks?.length) return;
+    // pointer is a task ID like "620ffea5-..." or a typeId like "task-620ffea5-..."
+    const rawId = pointer.startsWith('task-') ? pointer.slice(5) : pointer;
+    const found = tasks.find((t) => t.id === rawId || t.id === pointer);
+    console.log('[TaskBar] pointer expand:', { rawId, found_spec_id: found?.spec_id, found_id: found?.id, isSharedTask: !!(found?.spec_id) });
+    if (found && expandedTask?.id !== found.id) {
+      setExpandedTask(found);
+    }
+  }, [currentDock?.pointer, tasks]);
 
   // ── TTL-based auto-archiving ──
   const autoArchivedRef = useRef<Set<string>>(new Set());
@@ -178,7 +192,9 @@ export function TaskBar() {
     [getSelectedTasks, exitBulkMode, bulkReminder],
   );
 
-  const isSlid = expandedTask != null;
+  const isSharedTask = !!(expandedTask?.spec_id);
+  console.log('[TaskBar] render:', { expandedTask_id: expandedTask?.id, spec_id: expandedTask?.spec_id, isSharedTask });
+  const isSlid = expandedTask != null && !isSharedTask;
   const showBulkSelectButton = filteredTasks.length >= BULK_SELECT_MIN_TASKS;
   const removeLabel = isOnArchivedTab ? 'Delete' : 'Archive';
   const RemoveIcon = isOnArchivedTab ? Trash2 : Archive;
@@ -249,39 +265,46 @@ export function TaskBar() {
         )}
       </div>
 
-      {/* Slider track */}
-      <div className="min-h-0 flex-1 overflow-hidden">
-        <div className="task-bar-slider-track" style={{ transform: isSlid ? 'translateX(-50%)' : 'translateX(0)' }}>
-          {/* Panel 1: Task list */}
-          <div className="task-bar-panel">
-            <div className="flex-1 space-y-0.5 overflow-y-auto p-2">
-              {filteredTasks.length === 0 ? (
-                <div className="task-bar-empty">
-                  <span>No {selectedTab} tasks</span>
-                </div>
-              ) : (
-                filteredTasks.map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    onExpand={handleExpand}
-                    onRemove={(t) => void handleRemove(t)}
-                    onSetReminder={(t, d) => void handleSetReminder(t, d)}
-                    bulkMode={bulkMode}
-                    isSelected={!!(task.id && selectedIds.has(task.id))}
-                    onToggleSelect={handleToggleSelect}
-                  />
-                ))
-              )}
+      {/* Full-screen shared task view (for notification tasks with spec) */}
+      {isSharedTask && expandedTask ? (
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <SharedTaskView task={expandedTask} onClose={handleCollapse} />
+        </div>
+      ) : (
+        /* Slider track (regular tasks) */
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <div className="task-bar-slider-track" style={{ transform: isSlid ? 'translateX(-50%)' : 'translateX(0)' }}>
+            {/* Panel 1: Task list */}
+            <div className="task-bar-panel">
+              <div className="flex-1 space-y-0.5 overflow-y-auto p-2">
+                {filteredTasks.length === 0 ? (
+                  <div className="task-bar-empty">
+                    <span>No {selectedTab} tasks</span>
+                  </div>
+                ) : (
+                  filteredTasks.map((task) => (
+                    <TaskCard
+                      key={task.id}
+                      task={task}
+                      onExpand={handleExpand}
+                      onRemove={(t) => void handleRemove(t)}
+                      onSetReminder={(t, d) => void handleSetReminder(t, d)}
+                      bulkMode={bulkMode}
+                      isSelected={!!(task.id && selectedIds.has(task.id))}
+                      onToggleSelect={handleToggleSelect}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Panel 2: Task detail */}
+            <div className="task-bar-panel">
+              {expandedTask && <TaskDetailPanel task={expandedTask} onClose={handleCollapse} />}
             </div>
           </div>
-
-          {/* Panel 2: Task detail */}
-          <div className="task-bar-panel">
-            {expandedTask && <TaskDetailPanel task={expandedTask} onClose={handleCollapse} />}
-          </div>
         </div>
-      </div>
+      )}
 
       {/* Bulk remove confirmation */}
       <ConfirmDialog
