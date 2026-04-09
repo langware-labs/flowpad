@@ -1,4 +1,4 @@
-import { InstructionElement, ProcessorStatus } from '@sdk';
+import { InstructionElement, ProcessStatus } from '@sdk';
 import { useCallback, useEffect, useRef } from 'react';
 import { AMDEditorProvider, useAMDEditor } from './AMDEditorContext';
 import { AMDEditorInner } from './AMDEditorInner';
@@ -13,7 +13,7 @@ interface AMDEditorProps {
   /** Hide the header and toolbar (session mode) */
   hideHeader?: boolean;
   /** Optional process state for live execution tracking */
-  processState?: { status: ProcessorStatus } | null;
+  processState?: { status: ProcessStatus } | null;
   /** Set of completed instruction IDs for status display */
   completedInstructions?: Set<string>;
   /** Called when a new element is added via the editor UI */

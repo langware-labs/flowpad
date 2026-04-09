@@ -1,11 +1,11 @@
-import { ProcessorStatus, isProcessorRunning } from '@sdk';
+import { ProcessStatus, isProcessActive } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
 import { Maximize2 } from 'lucide-react';
 import { StatusIndicator } from './shared/status-indicator';
 
 interface CompactProgressBarProps {
-  status: ProcessorStatus;
+  status: ProcessStatus;
   filePath?: string;
   onExpand?: () => void;
   flowDataCount?: number;
@@ -26,9 +26,9 @@ export function CompactProgressBar({
   activityLabel,
   tokenUsage,
 }: CompactProgressBarProps) {
-  const isRunning = isProcessorRunning(status);
-  const isComplete = status === ProcessorStatus.COMPLETE;
-  const isError = status === ProcessorStatus.ERROR;
+  const isRunning = isProcessActive(status);
+  const isComplete = status === ProcessStatus.STOPPED;
+  const isError = status === ProcessStatus.FAILED;
   const fileName = filePath ? getFileName(filePath) : 'Instruction';
 
   return (

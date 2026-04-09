@@ -1,6 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
-import { useSessionAnalyze } from '@src/hooks/use-session-analyze';
 
 const {
   mockToast,
@@ -23,6 +22,10 @@ const {
   },
 }));
 
+// Only override the specific SDK exports that need to be controllable —
+// dataContext (a MobX computed that cannot be spied on), fsManager.mkdir,
+// ProcessResult.getById, AgenticProcess.spawn, and Task (constructor + save).
+// All other SDK exports remain real.
 vi.mock('@sdk', async (importOriginal) => {
   const orig = await importOriginal<typeof import('@sdk')>();
   return {
@@ -52,6 +55,8 @@ vi.mock('@sdk/react/hooks', async (importOriginal) => ({
 vi.mock('@src/hooks/use-toast', () => ({
   useToast: () => ({ toast: mockToast }),
 }));
+
+import { useSessionAnalyze } from '@src/hooks/use-session-analyze';
 
 beforeEach(() => {
   vi.clearAllMocks();

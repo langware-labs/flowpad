@@ -3,7 +3,7 @@ import {
   AgenticProcess,
   dataContext,
   dataManager,
-  ProcessorStatus,
+  ProcessStatus,
   QueryFilter,
   QueryRequest,
   TypeId,
@@ -411,8 +411,8 @@ export function SessionViewer() {
   }, [abortProcess]);
 
   const displayStatus =
-    completed && status !== ProcessorStatus.COMPLETE && status !== ProcessorStatus.ERROR
-      ? ProcessorStatus.COMPLETE
+    completed && status !== ProcessStatus.STOPPED && status !== ProcessStatus.FAILED
+      ? ProcessStatus.STOPPED
       : status;
 
   // Show empty state if no active process

@@ -119,7 +119,13 @@ class Shell(Entity):
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     async def start(
-        self, rows: int = 24, cols: int = 80, on_exit=None, connection_id: str | None = None
+        self,
+        rows: int = 24,
+        cols: int = 80,
+        on_exit=None,
+        connection_id: str | None = None,
+        spawn_args: list[str] | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> bool:
         """Spawn the OS PTY. Idempotent — no-op if already alive.
 
@@ -154,6 +160,8 @@ class Shell(Entity):
             name=self.name,
             working_dir=self.workdir,
             on_exit=on_exit,
+            spawn_args=spawn_args,
+            extra_env=extra_env,
         )
 
         self.status = "running"
@@ -316,6 +324,31 @@ class Shell(Entity):
             started_at=datetime.now(timezone.utc).isoformat(),
         )
 
+    async def set_worker_pid_direct(self, cmd: "WorkerCLIOptions") -> "WorkerExecutionInfo":
+        """Record worker_pid when Claude IS the PTY process (direct spawn, no polling).
+
+        Used by AgenticProcess when shell_mode=False. The PTY PID is Claude's PID directly,
+        so we read it immediately from the provider without any child-process hunting.
+        """
+        from flow_sdk.builtin.cli_workers.base import WorkerExecutionInfo
+
+        cn = self.compute_node
+        pty_pid = cn.compute_provider.get_pty_shell_pid(cn.node_provider_id, self.id)
+        executable = cmd._build_worker_args()[0]  # "claude"
+        self.worker_pid = pty_pid
+        self.worker_name = executable
+        try:
+            self.last_launch_cmd = cmd.to_json()
+        except Exception:
+            pass
+        await self.save()
+        return WorkerExecutionInfo(
+            pid=pty_pid,
+            name=executable,
+            cmd=None,
+            started_at=datetime.now(timezone.utc).isoformat(),
+        )
+
     async def worker_alive(self) -> bool:
         """True if worker_pid process is still running (psutil.pid_exists).
 
@@ -388,8 +421,7 @@ class Shell(Entity):
         self.last_active_at = datetime.now(timezone.utc).isoformat()
         await self.save()
         try:
-            from flow_sdk.fs_records.shell_record import ShellRecord  # noqa: PLC0415
-            record = ShellRecord.discover_one(self.id)
+            record = await self.get_record()
             if record:
                 record.sync_from_entity(self)
         except Exception:
@@ -504,9 +536,7 @@ class Shell(Entity):
     async def close(self) -> ApiResponse:
         """Kill PTY + delete disk record + delete entity. Permanent teardown."""
         try:
-            from flow_sdk.fs_records.shell_record import ShellRecord  # noqa: PLC0415
-
-            record = ShellRecord.discover_one(self.id)
+            record = await self.get_record()
             if record:
                 await record.delete()
         except Exception as e:
@@ -593,9 +623,7 @@ class Shell(Entity):
             self.last_active_at = datetime.now(timezone.utc).isoformat()
             await self.save()
             try:
-                from flow_sdk.fs_records.shell_record import ShellRecord  # noqa: PLC0415
-
-                record = ShellRecord.discover_one(self.id)
+                record = await self.get_record()
                 if record:
                     record.sync_from_entity(self)
             except Exception:
@@ -635,9 +663,7 @@ class Shell(Entity):
 
         pty_file_b64 = None
         try:
-            from flow_sdk.fs_records.shell_record import ShellRecord
-
-            record = ShellRecord.discover_one(self.id)
+            record = await self.get_record()
             if record and record.pty_stream_ref.exists():
                 pty_file_b64 = base64.b64encode(record.pty_stream_ref.read_bytes()).decode("ascii")
         except Exception as e:

@@ -84,6 +84,14 @@ async def _poll_for_completion(agentic_process_id: str, session_id: str | None) 
             except ValueError:
                 continue
 
+            if status_enum == AgenticProcessStatus.API_TIMEOUT:
+                _AgenticProcess = globals().get("AgenticProcess")
+                if _AgenticProcess:
+                    proc = await _AgenticProcess.get_by_id(agentic_process_id)
+                    if proc:
+                        await proc._on_timeout()
+                continue  # keep polling — visible may recover; invisible will go INACTIVE
+
             if status_enum not in TERMINAL:
                 continue  # still running or unknown
 
@@ -168,6 +176,7 @@ class AgenticProcess(Entity):
     status: str = APIField(default=AgenticProcessLifecycleStatus.NEW.value)
     session_id: str | None = APIField(default=None)
     use_worker_history: bool = APIField(default=False)
+    shell_mode: bool = APIField(default=False, description="False=direct PTY spawn (default), True=legacy zsh intermediary")
     project_id: str | None = APIField(default=None)
     project_encoded_name: str | None = APIField(default=None)
     compute_node_id: str | None = APIField(default=None)
@@ -177,6 +186,7 @@ class AgenticProcess(Entity):
     is_active: bool = APIField(default=False)
     queue: dict | None = APIField(default=None)
     additional_dirs: list[str] = APIField(default_factory=list, description="Extra directories passed to Claude via --add-dir")
+    embedded_agent_ids: list[str] = APIField(default_factory=list, description="Agent ids injected via --agents at session launch")
     worker_type: WorkerType | None = APIField(default=None, validation_alias="workerType")
 
     # ── Construction ──────────────────────────────────────────────────────────
@@ -326,14 +336,31 @@ class AgenticProcess(Entity):
             # can observe STARTING and avoid issuing a second open.
             await self.save()
             on_exit = self._make_pty_exit_callback()
-            await shell.start(on_exit=on_exit)
-            worker_is_alive = await shell.worker_alive()
+            worker_is_alive = False
+
+            if self.shell_mode:
+                # Legacy path — zsh intermediary
+                await shell.start(on_exit=on_exit)
+                worker_is_alive = await shell.worker_alive()
+                if not worker_is_alive:
+                    execution_info = await shell.launch(cmd, instruction=instruction)
+                    logger.info(
+                        "AgenticProcess %s worker launched (shell): pid=%s name=%r",
+                        self.id, execution_info.pid, execution_info.name,
+                    )
+            else:
+                # Direct path — Claude IS the PTY process (no zsh intermediary)
+                spawn_argv, spawn_env = cmd.to_spawn_args(instruction=instruction)
+                await shell.start(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
+                worker_is_alive = await shell.worker_alive()
+                if not worker_is_alive:
+                    execution_info = await shell.set_worker_pid_direct(cmd)
+                    logger.info(
+                        "AgenticProcess %s worker launched (direct PTY): pid=%s name=%r",
+                        self.id, execution_info.pid, execution_info.name,
+                    )
+
             if not worker_is_alive:
-                execution_info = await shell.launch(cmd, instruction=instruction)
-                logger.info(
-                    "AgenticProcess %s worker launched: pid=%s name=%r",
-                    self.id, execution_info.pid, execution_info.name,
-                )
                 # Start background task to detect completion via transcript polling.
                 asyncio.create_task(
                     _poll_for_completion(self.id, self.session_id),
@@ -426,6 +453,19 @@ class AgenticProcess(Entity):
                 raise TimeoutError(f"Process did not reach terminal state within {timeout}s")
             await asyncio.sleep(2.0)
 
+    async def waitForIdle(self, timeout: float | None = None) -> None:
+        """Block until waiting_for_prompt is True.
+
+        Polling interval: 2s. Raises TimeoutError if timeout elapses first.
+        """
+        deadline = (asyncio.get_event_loop().time() + timeout) if timeout else None
+        while True:
+            if self.waiting_for_prompt:
+                return
+            if deadline and asyncio.get_event_loop().time() > deadline:
+                raise TimeoutError(f"Process did not reach idle state within {timeout}s")
+            await asyncio.sleep(2.0)
+
     # ── Execution ─────────────────────────────────────────────────────────────
 
     async def prompt(self, instruction: str) -> ApiSuccessResponse | ApiFailResponse:
@@ -434,7 +474,12 @@ class AgenticProcess(Entity):
         Routing:
           worker alive → write instruction to PTY stdin (continues session)
           worker dead  → call start(instruction) (fresh or auto-resume)
+
+        Args:
+            instruction: The prompt text to send.
         """
+        if not self.exist_in_db:
+            return ApiFailResponse(message=f"AgenticProcess {self.id} not found in database")
         if await self.is_running():
             await self.send(instruction)
             return ApiSuccessResponse(data={"status": "sent"})
@@ -456,6 +501,89 @@ class AgenticProcess(Entity):
             await shell.write_raw(data)
         else:
             await shell.write(data)
+
+    async def stream_transcript(self, timeout: float = 300, poll_interval: float = 0.2):
+        """Async-iterate JSONL transcript entries as they are written by Claude.
+
+        Yields parsed dicts, one per transcript line. Stops automatically when
+        waiting_for_prompt becomes True (Claude finished its turn).
+
+        Args:
+            timeout: Maximum seconds to wait for the process to reach idle.
+            poll_interval: How often (seconds) to check for new transcript data.
+
+        Raises:
+            TimeoutError: if the process does not reach idle within `timeout` seconds.
+        """
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + timeout
+
+        # Wait for session_id to be assigned (set inside start())
+        while not self.session_id:
+            if loop.time() > deadline:
+                raise TimeoutError("stream_transcript: process did not start within timeout")
+            await asyncio.sleep(poll_interval)
+
+        session_id = self.session_id
+
+        # Discover the transcript path via ClaudeSessionRecord (scans ~/.claude/projects/*/
+        # for <session_id>.jsonl — works regardless of whether a Project entity exists).
+        transcript_path = None
+        while transcript_path is None:
+            if loop.time() > deadline:
+                raise TimeoutError("stream_transcript: transcript file did not appear within timeout")
+            record = ClaudeSessionRecord.discover_one(session_id)
+            if record and record.jsonl_path:
+                transcript_path = Path(record.jsonl_path)
+            else:
+                await asyncio.sleep(poll_interval)
+
+        from flow_sdk.fs_records.agent_status import _tail_status as _tail_status_fn, AgenticProcessStatus as _APS
+
+        offset = 0
+        while True:
+            # Read any new bytes since last poll
+            try:
+                with open(transcript_path, "rb") as fh:
+                    fh.seek(offset)
+                    new_bytes = fh.read()
+                    offset += len(new_bytes)
+            except OSError:
+                new_bytes = b""
+
+            for raw_line in new_bytes.decode("utf-8", errors="replace").splitlines():
+                raw_line = raw_line.strip()
+                if not raw_line:
+                    continue
+                try:
+                    entry = json.loads(raw_line)
+                except json.JSONDecodeError:
+                    continue
+                # api_error means Anthropic is overloaded and Claude is retrying.
+                # Extend the deadline so the retry can complete — up to 120s extra.
+                if entry.get("type") == "system" and entry.get("subtype") == "api_error":
+                    extended = loop.time() + 120
+                    if extended > deadline:
+                        logger.info(
+                            "stream_transcript: api_error detected (attempt=%s), extending deadline by %.0fs",
+                            entry.get("retryAttempt", "?"),
+                            extended - deadline,
+                        )
+                        deadline = extended
+                yield entry
+
+            tail_status = _tail_status_fn(transcript_path) if transcript_path else None
+            _dbg_elapsed = loop.time() - (deadline - timeout)
+            _terminal = tail_status in {_APS.COMPLETE, _APS.INTERRUPTED, _APS.INACTIVE}
+            print(f"  [stream_transcript] elapsed={_dbg_elapsed:.1f}s tail_status={tail_status!r} waiting={_terminal} lifecycle={self.status!r}")
+
+            if _terminal:
+                return
+
+            if loop.time() > deadline:
+                raise TimeoutError(f"stream_transcript: process did not reach idle within {timeout}s")
+
+            await asyncio.sleep(poll_interval)
 
     def stream(self, instruction: str):
         """Stream live output as StreamEvent items from the JSONL transcript.
@@ -541,12 +669,44 @@ class AgenticProcess(Entity):
 
     # ── State ─────────────────────────────────────────────────────────────────
 
+    def load_embedded_agent(self, agent: "Any") -> None:
+        """Embed an agent into this process so it is registered via --agents at launch.
+
+        Accepts an AgentRecord, any object with to_agents_json(), or a name string.
+        Adds the agent's name to the persisted embedded_agent_ids list and stores
+        the agent object in the in-memory _embedded_agents list.
+        """
+        from flow_sdk.fs_records.agent_record import AgentRecord
+        _agents: list = object.__getattribute__(self, "__dict__").setdefault("_embedded_agents", [])
+        if isinstance(agent, str):
+            rec = AgentRecord.load_agent(agent) or AgentRecord(name=agent, id=agent)
+        elif isinstance(agent, AgentRecord):
+            rec = agent
+        else:
+            # duck-type: anything with to_agents_json
+            rec = agent
+        _agents.append(rec)
+        name = rec.name if hasattr(rec, "name") else str(agent)
+        if name and name not in (self.embedded_agent_ids or []):
+            self.embedded_agent_ids = list(self.embedded_agent_ids or []) + [name]
+
+    def get_agents_json(self) -> "dict | None":
+        """Return merged --agents JSON from all embedded agents, or None if none loaded."""
+        _agents: list = object.__getattribute__(self, "__dict__").get("_embedded_agents", [])
+        if not _agents:
+            return None
+        result: dict = {}
+        for rec in _agents:
+            result.update(rec.to_agents_cli_json())
+        return result or None
+
     @property
     def cli_options(self) -> "ClaudeCliOptions":
         """Deserialize cli_config into a live ClaudeCliOptions.
 
         session_id and workdir are injected from entity fields (not stored in cli_config).
         Bundled system_assets dir is always prepended; additional_dirs follow.
+        Embedded agents are injected via --agents.
         Callers add runtime env vars via add_env() before calling to_shell_string().
         """
         import flow_sdk
@@ -558,12 +718,21 @@ class AgenticProcess(Entity):
         core_dir = str(Path(flow_sdk.__file__).parent / "system_assets" / "core")
         extra = [d for d in (self.additional_dirs or []) if d != core_dir]
         cmd.add_dirs = [core_dir] + extra
+        agents_json = self.get_agents_json()
+        if agents_json:
+            cmd.agents_json = agents_json
         return cmd
+
+    @property
+    def cmd_line(self) -> str:
+        """Return the full CLI command string that would be used to launch this process."""
+        return self.cli_options.to_shell_string()
 
     def to_dict(self) -> dict:
         d = super().to_dict()
         computed = self._discover_status_from_transcript()
         d["worker_status"] = str(computed) if computed else AgenticProcessStatus.IDLE.value
+        d["waiting_for_prompt"] = self._waiting_for_prompt_from_status(computed)
         return d
 
     @model_serializer(mode="wrap")
@@ -575,7 +744,20 @@ class AgenticProcess(Entity):
             return None
         computed = self._discover_status_from_transcript()
         data["worker_status"] = str(computed) if computed else AgenticProcessStatus.IDLE.value
+        data["waiting_for_prompt"] = self._waiting_for_prompt_from_status(computed)
         return data
+
+    def _waiting_for_prompt_from_status(self, computed: "AgenticProcessStatus | None") -> bool:
+        """Compute waiting_for_prompt from an already-resolved transcript status."""
+        if self.status != AgenticProcessLifecycleStatus.LIVE.value:
+            return False
+        if computed is None:
+            return not bool(self.session_id)
+        return computed in {
+            AgenticProcessStatus.COMPLETE,
+            AgenticProcessStatus.INTERRUPTED,
+            AgenticProcessStatus.IDLE,
+        }
 
     def _discover_status_from_transcript(self) -> AgenticProcessStatus | None:
         """Derive status from the Claude session transcript record."""
@@ -590,6 +772,29 @@ class AgenticProcess(Entity):
             "status": self.status,
             "worker_status": str(worker_status) if worker_status else AgenticProcessStatus.IDLE.value,
         })
+
+    @property
+    def waiting_for_prompt(self) -> bool:
+        """True when the process is live and ready for the user's next prompt.
+
+        Covers:
+        - complete: Claude finished its turn cleanly (end_turn)
+        - interrupted: user hit Escape, Claude stopped mid-run, back at prompt
+        - idle (no session linked): process is live but never been given a prompt
+        """
+        if self.status != AgenticProcessLifecycleStatus.LIVE.value:
+            return False
+        worker_status = self._discover_status_from_transcript()
+        if worker_status is None:
+            # No transcript found. If session_id is unset the process was never
+            # prompted — it is waiting. If session_id is set, Claude was just
+            # launched and the transcript hasn't been written yet — still busy.
+            return not bool(self.session_id)
+        return worker_status in {
+            AgenticProcessStatus.COMPLETE,
+            AgenticProcessStatus.INTERRUPTED,
+            AgenticProcessStatus.IDLE,
+        }
 
     @property
     def is_idle(self) -> bool:
@@ -650,6 +855,23 @@ class AgenticProcess(Entity):
             self.additional_dirs = list(self.additional_dirs or []) + [path]
             await self.save()
         return ApiSuccessResponse()
+
+    # ── Timeout handling ──────────────────────────────────────────────────────
+
+    async def _on_timeout(self) -> None:
+        """Called when API_TIMEOUT is detected (no LLM response for 30s after user prompt).
+
+        Invisible processes: kills the worker (SIGTERM → SIGKILL) so they don't
+        linger consuming resources. The JSONL will eventually go stale → INACTIVE.
+
+        Visible processes: worker is left alive (API may recover); the UI shows a
+        toast with Terminate / Keep Waiting options.
+        """
+        if self.visible:
+            return
+        shell = await self.shell()
+        if shell:
+            await shell.terminate_worker()
 
     # ── Close ─────────────────────────────────────────────────────────────────
 
@@ -749,7 +971,7 @@ class AgenticProcess(Entity):
 
         record = None
         try:
-            record = AgenticProcessRecord.discover_one(self.id)
+            record = await self.get_record()
         except Exception:
             pass
 
@@ -816,11 +1038,16 @@ class AgenticProcess(Entity):
         cn_id = self.compute_node_id
         if cn_id and "-" in cn_id:
             cn_id = cn_id.split("-", 1)[1]
-
+        workdir = self.workdir
+        if not self.workdir:
+            rec = await self.get_record()
+            if not rec:
+                raise NotADirectoryError("No workdir on for process and no record, can not open shell")
+            workdir = str(rec.output_dir)
         shell = Shell(
             compute_node_id=cn_id,
             name=session_name,
-            workdir=self.workdir,
+            workdir=workdir,
             tab_order=tab_order,
         )
         await shell.save()

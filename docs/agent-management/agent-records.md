@@ -403,7 +403,7 @@ AgentRecord.load_agent(name, project_dir=None)
 `to_agents_json()` produces the dict passed to the `--agents` CLI flag:
 
 ```python
-agent.to_agents_json()
+agent.to_agents_cli_json()
 # Returns: {"my-agent": {"prompt": "...", "description": "...", "permissionMode": "...", ...}}
 ```
 
