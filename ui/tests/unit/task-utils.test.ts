@@ -1,5 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { getAnalysisPath, openAnalysisReport } from '@src/components/task-bar/task-utils';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 // vi.mock factories are hoisted, so shared state must use vi.hoisted
 const { mockDataContext, mockFromMachinePath, mockForFile } = vi.hoisted(() => ({
@@ -8,6 +7,9 @@ const { mockDataContext, mockFromMachinePath, mockForFile } = vi.hoisted(() => (
   mockForFile: vi.fn((path: string) => ({ type: 'file', path })),
 }));
 
+// Only mock the specific parts of @sdk that need to be controllable —
+// dataContext (a MobX computed that cannot be spied on) and VFSPath.fromMachinePath.
+// All other SDK exports remain real.
 vi.mock('@sdk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@sdk')>()),
   dataContext: mockDataContext,
@@ -17,6 +19,8 @@ vi.mock('@sdk', async (importOriginal) => ({
 vi.mock('@src/navigation/DockPointer', () => ({
   DockPointer: { forFile: mockForFile },
 }));
+
+import { getAnalysisPath, openAnalysisReport } from '@src/components/task-bar/task-utils';
 
 beforeEach(() => {
   vi.clearAllMocks();

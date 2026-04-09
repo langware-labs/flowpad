@@ -1,27 +1,22 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// Mock the APIEntity module before any imports that use it
-vi.mock('@sdk/APIEntity', async () => {
-  const { ActionInfo } = await import('@sdk/models/ActionInfo');
-  return {
-    dataManager: {
-      callAction: vi.fn(),
-    },
-    APIEntity: class MockAPIEntity {},
-    registerEntity: () => (target: any) => target,
-    ActionInfo,
-  };
-});
-
-// Import after mock is set up (vi.mock is hoisted)
-import { dataManager } from '@sdk/APIEntity';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { dataManager } from '@sdk';
 import { ClaudeSessionFsRecord } from '@sdk/resource_management/fs_records/claude/claude-session';
 
-const mockCallAction = vi.mocked(dataManager.callAction);
+// Spy on the real dataManager.callAction instead of mocking the entire module
+let callActionSpy: ReturnType<typeof vi.spyOn>;
+
+beforeEach(() => {
+  callActionSpy = vi.spyOn(dataManager, 'callAction').mockResolvedValue(undefined as any);
+});
+
+afterEach(() => {
+  callActionSpy?.mockRestore();
+});
 
 describe('ClaudeSessionFsRecord.fetchTranscript', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    callActionSpy.mockResolvedValue(undefined as any);
   });
 
   it('fetchTranscript_calls_dataManager_with_correct_ActionInfo', async () => {
@@ -29,12 +24,12 @@ describe('ClaudeSessionFsRecord.fetchTranscript', () => {
       { entry_type: 'user', entry_uuid: 'u1', timestamp: '2026-01-01T00:00:00Z', session_id: 'sid' },
       { entry_type: 'assistant', entry_uuid: 'a1', timestamp: '2026-01-01T00:00:01Z', session_id: 'sid' },
     ];
-    mockCallAction.mockResolvedValueOnce(mockEntries);
+    callActionSpy.mockResolvedValueOnce(mockEntries as any);
 
     const result = await ClaudeSessionFsRecord.fetchTranscript('sid');
 
-    expect(mockCallAction).toHaveBeenCalledTimes(1);
-    const action = mockCallAction.mock.calls[0][0];
+    expect(callActionSpy).toHaveBeenCalledTimes(1);
+    const action = callActionSpy.mock.calls[0][0];
     expect(action.name).toBe('session-transcript');
     expect(action.targetEntity?.type).toBe('compute_node');
     expect(action.targetEntity?.id).toBe('@local');
@@ -44,16 +39,16 @@ describe('ClaudeSessionFsRecord.fetchTranscript', () => {
   });
 
   it('fetchTranscript_passes_project_option', async () => {
-    mockCallAction.mockResolvedValueOnce([]);
+    callActionSpy.mockResolvedValueOnce([] as any);
 
     await ClaudeSessionFsRecord.fetchTranscript('sid', { project: '/my/project' });
 
-    const action = mockCallAction.mock.calls[0][0];
+    const action = callActionSpy.mock.calls[0][0];
     expect(action.queryParameters).toEqual({ session_id: 'sid', project: '/my/project' });
   });
 
   it('fetchTranscript_returns_empty_on_error', async () => {
-    mockCallAction.mockRejectedValueOnce(new Error('network failure'));
+    callActionSpy.mockRejectedValueOnce(new Error('network failure'));
 
     const result = await ClaudeSessionFsRecord.fetchTranscript('sid');
 
@@ -61,7 +56,7 @@ describe('ClaudeSessionFsRecord.fetchTranscript', () => {
   });
 
   it('fetchTranscript_returns_empty_when_null_result', async () => {
-    mockCallAction.mockResolvedValueOnce(null);
+    callActionSpy.mockResolvedValueOnce(null as any);
 
     const result = await ClaudeSessionFsRecord.fetchTranscript('sid');
 

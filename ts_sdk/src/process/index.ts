@@ -9,15 +9,10 @@
 // Shared types (canonical source - breaks circular dependency)
 export {
   ProcessStatus,
-  ProcessorStatus,
   parseUIUri,
   isProcessActive,
   isProcessStartable,
   isProcessLive,
-  isProcessorRunning,
-  isProcessorBusy,
-  isProcessorIdle,
-  isProcessorTerminal,
 } from './agentic-types';
 export type { ParsedUIUri, UIComponentPayload } from './agentic-types';
 

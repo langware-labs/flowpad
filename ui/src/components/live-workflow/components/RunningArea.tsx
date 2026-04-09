@@ -1,4 +1,4 @@
-import { FlowData, FlowElementTypes, ProcessorStatus } from '@sdk';
+import { FlowData, FlowElementTypes, ProcessStatus } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { ArrowDown, Clock, Square, Zap } from 'lucide-react';
 import { FusionSpinner } from '@src/components/icons/FusionSpinner';
@@ -11,7 +11,7 @@ import ShellSection from '@src/components/ShellSection';
 
 interface RunningAreaProps {
   flowData: readonly FlowData[];
-  status: ProcessorStatus;
+  status: ProcessStatus;
   isRunning: boolean;
   elapsedTime: string | null;
   statusMessage: string | null;
@@ -102,8 +102,8 @@ export function RunningArea({
 
   // Get terminal-style status color
   const getStatusColor = () => {
-    if (status === ProcessorStatus.ERROR) return 'text-red-600 dark:text-red-400';
-    if (status === ProcessorStatus.COMPLETE) return 'text-emerald-600 dark:text-emerald-400';
+    if (status === ProcessStatus.FAILED) return 'text-red-600 dark:text-red-400';
+    if (status === ProcessStatus.STOPPED) return 'text-emerald-600 dark:text-emerald-400';
     if (isRunning) return 'text-amber-600 dark:text-amber-400';
     return 'text-zinc-500';
   };
@@ -195,18 +195,18 @@ export function RunningArea({
             <span
               className={cn(
                 'inline-block h-1.5 w-1.5 rounded-full',
-                status === ProcessorStatus.ERROR
+                status === ProcessStatus.FAILED
                   ? 'bg-red-500'
-                  : status === ProcessorStatus.COMPLETE
+                  : status === ProcessStatus.STOPPED
                     ? 'bg-emerald-500'
                     : 'bg-zinc-400 dark:bg-zinc-600',
               )}
             />
           )}
           <span className={getStatusColor()}>
-            {status === ProcessorStatus.COMPLETE
+            {status === ProcessStatus.STOPPED
               ? 'DONE'
-              : status === ProcessorStatus.ERROR
+              : status === ProcessStatus.FAILED
                 ? 'ERR'
                 : isRunning
                   ? activityLabel?.toUpperCase() || 'EXEC'

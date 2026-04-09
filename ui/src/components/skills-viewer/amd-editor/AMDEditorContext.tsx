@@ -3,7 +3,7 @@ import {
   InstructionElement,
   InstructionElementParser,
   InstructionElementType,
-  ProcessorStatus,
+  ProcessStatus,
   SkillParser,
 } from '@sdk';
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
@@ -63,7 +63,7 @@ interface AMDEditorContextValue {
   setShowCompleted: (show: boolean) => void;
 
   /** Process status for execution tracking */
-  processState: { status: ProcessorStatus } | null;
+  processState: { status: ProcessStatus } | null;
   /** Get execution status for an instruction by its ID */
   getInstructionStatus: (instructionId: string) => InstructionStatus;
 }
@@ -73,7 +73,7 @@ const AMDEditorContext = createContext<AMDEditorContextValue | null>(null);
 interface AMDEditorProviderProps {
   children: React.ReactNode;
   /** Optional process state for execution tracking */
-  processState?: { status: ProcessorStatus } | null;
+  processState?: { status: ProcessStatus } | null;
   /** Set of completed instruction IDs */
   completedInstructions?: Set<string>;
   /** Called when a new element is added via addElement */
@@ -312,7 +312,7 @@ export function AMDEditorProvider({
         return 'idle';
       }
 
-      if (processState.status === ProcessorStatus.ERROR) {
+      if (processState.status === ProcessStatus.FAILED) {
         return 'error';
       }
 

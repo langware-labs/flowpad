@@ -86,6 +86,8 @@ export interface IAgenticProcess extends IEntity {
   readonly worker_status?: ProcessorStatus;
   session_id?: string | null;
   use_worker_history?: boolean;
+  /** False=direct PTY spawn (default), True=legacy zsh intermediary */
+  shell_mode?: boolean;
   /** Shell entity ID linked to this process */
   shell_id?: string | null;
   /** Whether this process is visible in the tabs view */
@@ -94,6 +96,8 @@ export interface IAgenticProcess extends IEntity {
   sidecar_shell_id?: string | null;
   /** Backend TTL live field: true if a PTY session is actually alive (30s TTL) */
   is_active?: boolean;
+  /** True when Claude has finished its turn and is waiting for user input */
+  waiting_for_prompt?: boolean;
   /** @internal — use AgenticProcess.cliOptions getter/setter instead */
   cli_config?: Record<string, any>;
   /** Extra directories passed to Claude via --add-dir */
@@ -221,6 +225,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       },
       workdir: options.workdir,
       visible: workerOptions?.visible,
+      shell_mode: options.shellMode,
     }).save(options.scope ?? []);
 
     if (workerOptions?.headless) {
@@ -443,6 +448,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Whether worker manages its own history */
   use_worker_history?: boolean;
 
+  /** False=direct PTY spawn (default), True=legacy zsh intermediary */
+  shell_mode?: boolean;
+
   /** Shell entity ID linked to this process */
   shell_id?: string | null;
 
@@ -457,6 +465,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /** Backend TTL live field: true if a PTY session is actually alive (30s TTL) */
   is_active: boolean = false;
+
+  /** True when Claude has finished its turn and is waiting for user input */
+  waiting_for_prompt: boolean = false;
 
   /** Deserialize cli_config into a live ClaudeCliOptions instance.
    *
@@ -516,10 +527,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.workerStatus = (entity.worker_status as ProcessorStatus) ?? ProcessorStatus.IDLE;
     this.session_id = entity.session_id;
     this.use_worker_history = entity.use_worker_history;
+    this.shell_mode = entity.shell_mode;
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;
     this.sidecar_shell_id = entity.sidecar_shell_id;
     this.is_active = entity.is_active ?? false;
+    this.waiting_for_prompt = entity.waiting_for_prompt ?? false;
   }
 
   /**
@@ -1329,6 +1342,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       } else if (this.workerStatus === ProcessorStatus.ERROR || this.workerStatus === ProcessorStatus.INTERRUPTED) {
         this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
       }
+    }
+    if (data.waiting_for_prompt !== undefined) {
+      this.waiting_for_prompt = data.waiting_for_prompt;
     }
   }
 
