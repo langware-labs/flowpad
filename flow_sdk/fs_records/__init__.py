@@ -6,11 +6,13 @@ from .agent_record import AgentRecord as AgentRecord
 from .agentic_process_record import AgenticProcessRecord as AgenticProcess  # noqa: F401 — backward compat alias
 from .agentic_process_record import AgenticProcessRecord as AgenticProcessRecord
 from .agent_status import AgenticProcessStatus as AgenticProcessStatus
+from .agentic_process_lifecycle import AgenticProcessLifecycleStatus as AgenticProcessLifecycleStatus
+from .agentic_process_lifecycle import is_active as is_process_active
+from .agentic_process_lifecycle import is_startable as is_process_startable
 from .agent_status import is_running as is_running
 from .agent_status import is_busy as is_busy
 from .agent_status import is_idle as is_idle
 from .agent_status import is_terminal as is_terminal
-from .agentic_process_record import AgenticProcessStatus as ProcessorStatus  # backward compat
 from .artifact import Artifact as Artifact
 from .markdown_record import MarkdownRecord as MarkdownRecord
 from . import asset_record as _asset_record  # noqa: F401 — trigger "asset" type_registry

@@ -110,7 +110,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
   /** True once this shell's tab has been the active tab at least once. */
   private _hasEverBeenActive = false;
 
-  /** True once startPty() has finished its replay phase and the output gate is open. */
+  /** True once attachPty() has finished its replay phase and the output gate is open. */
   private _replayDone = false;
 
   get dockPointer(): DockPointerData {
@@ -128,7 +128,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     return this._pty?.isLive ?? false;
   }
 
-  /** True once startPty() has finished its replay phase and the output gate is open. */
+  /** True once attachPty() has finished its replay phase and the output gate is open. */
   get replayDone(): boolean {
     return this._replayDone;
   }
@@ -287,10 +287,10 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
     // ONLY NOW flip replayDone — InteractiveTerminal's 'connected' event handler
     // resets xterm, writes getPtyChunks() for the replay, and subscribes onOutput().
-    const _t0 = (typeof window !== 'undefined' ? window : globalThis) as Record<string, unknown>;
+        const _t0 = (typeof window !== 'undefined' ? window : globalThis) as Record<string, unknown>;
     if (_t0.__shellNavT0 !== undefined)
       console.log(
-        `[PERF] +${(performance.now() - (_t0.__shellNavT0 as number)).toFixed(0)}ms shell.startPty() replayDone=true (shell=${this.id.slice(0, 8)})`,
+        `[PERF] +${(performance.now() - (_t0.__shellNavT0 as number)).toFixed(0)}ms shell.attachPty() replayDone=true (shell=${this.id.slice(0, 8)})`,
       );
     this._replayDone = true;
     this.emit('status', 'connected');

@@ -1,4 +1,4 @@
-import { FlowData, ProcessorStatus } from '@sdk';
+import { FlowData, ProcessStatus } from '@sdk';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { ScrollArea } from '@src/components/ui/scroll-area';
 import { cn } from '@src/lib/utils';
@@ -8,7 +8,7 @@ import { StatusBadge } from './shared/status-indicator';
 interface FullProgressModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  status: ProcessorStatus;
+  status: ProcessStatus;
   filePath?: string;
   flowData?: readonly FlowData[];
   flowDataCount?: number;
@@ -25,7 +25,7 @@ export function FullProgressModal({
   className,
 }: FullProgressModalProps) {
   const fileName = filePath ? getFileName(filePath) : 'Instruction';
-  const isError = status === ProcessorStatus.ERROR;
+  const isError = status === ProcessStatus.FAILED;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

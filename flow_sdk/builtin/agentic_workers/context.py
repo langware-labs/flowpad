@@ -17,7 +17,6 @@ class AgenticContext(BaseModel):
     """Execution context for AgenticProcessor.
 
     This is the ONLY context needed - no bloated entities.
-    Provides clean interface for AgenticProcessor to execute using ClaudeSDKClient directly.
     """
 
     model_config = ConfigDict(

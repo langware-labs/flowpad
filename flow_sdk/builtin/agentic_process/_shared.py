@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
-    from flow_sdk.fs_records.agentic_process_record import AgenticProcessStatus
+    from flow_sdk.fs_records.agent_status import AgenticProcessStatus
 
 
 def _now_iso() -> str:

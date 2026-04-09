@@ -1,5 +1,5 @@
-import type { AgenticProcess } from '../../agentic_processor/agentic-process';
-import type { AgenticContext, PermissionMode } from '../../agentic_processor/agentic-context';
+import type { AgenticProcess } from '../../process/agentic-process';
+import type { AgenticContext, PermissionMode } from '../../process/agentic-context';
 
 /**
  * Typed representation of a `claude …` CLI invocation.

@@ -157,6 +157,47 @@ class ClaudeCliOptions(WorkerCLIOptions):
         })
         return d
 
+    def to_spawn_args(self, instruction: str | None = None) -> tuple[list[str], dict[str, str]]:
+        """Build argv list and env dict for PtyProcess.spawn() — no shell intermediary.
+
+        Builds argv directly (each flag and value as separate elements) rather than
+        going through shell-string quoting.
+        """
+        argv: list[str] = ["claude"]
+
+        if self.permission_mode == "bypassPermissions":
+            argv.append("--dangerously-skip-permissions")
+        if self.chrome:
+            argv.append("--chrome")
+        if self.debug:
+            argv.append("--debug")
+        if self.worktree:
+            argv.append("--worktree")
+
+        if self.resume and self.session_id:
+            if self.fork_session_id:
+                argv.extend(["--resume", self.fork_session_id, "--fork-session", "--session-id", self.session_id])
+            else:
+                argv.extend(["--resume", self.session_id])
+        elif self.session_id:
+            argv.extend(["--session-id", self.session_id])
+
+        if self.model:
+            argv.extend(["--model", self.model])
+        if self.agents_json:
+            import json as _json
+            argv.extend(["--agents", _json.dumps(self.agents_json)])
+        if self.print_mode:
+            argv.append("-p")
+
+        if instruction:
+            argv.extend(["--", instruction])
+
+        for d in self.add_dirs:
+            argv.extend(["--add-dir", d])
+
+        return argv, dict(self.env_vars)
+
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "ClaudeCliOptions":
         return cls(

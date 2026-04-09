@@ -534,7 +534,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
   /**
    * Notify all watched queries for an entity's type that results have changed.
-   * Use after mutating an entity in-place (e.g. after startPty sets shell_id)
+   * Use after mutating an entity in-place (e.g. after attachPty wires shell state)
    * so React hooks re-render without waiting for a WS update or re-query.
    */
   public notifyEntityChanged(entity: T): void {

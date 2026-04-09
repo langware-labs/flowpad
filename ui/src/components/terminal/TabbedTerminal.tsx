@@ -1,6 +1,6 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { useActiveTerminals } from '@src/hooks/useActiveTerminals';
-import { dataContext, isProcessorRunning, ProcessorStatus, ShellStatus, type AgenticProcess } from '@sdk';
+import { dataContext, isProcessLive, ShellStatus, type AgenticProcess } from '@sdk';
 import { useContext } from '@src/hooks/useContext';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Button } from '@src/components/ui/button';
@@ -57,7 +57,7 @@ function formatDateTime(date: Date | string | undefined | null): string {
 const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: string }> = ({ process, statusReason }) => {
   const workdir = process.workdir;
   const isActive = process.is_active;
-  const status = isProcessorRunning(process.status) ? process.workerStatus : process.status;
+  const status = isProcessLive(process.status) ? process.workerStatus : process.status;
   const workerSessionId = process.session_id ?? null;
 
   return (
@@ -350,9 +350,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
     // Rule 5: skip if no change
     if (shell.name === newName) return;
 
-    // Rule 3: skip if agentic process is not idle
-    if (session.agenticProcess && isProcessorRunning(session.agenticProcess.status)) return;
-
     // Guard: reject TypeId-formatted strings (e.g. "claude-<uuid>", "shell-<uuid>")
     if (/^[a-z][a-z0-9-]*-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(newName)) return;
 
@@ -363,10 +360,10 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
 
     void shell.updateDisplay({ name: newName, is_pty: !injectRename });
 
-    // Rule 4: inject /rename for Claude processes — only when user-initiated,
+    // Inject /rename only when user-initiated AND Claude is at the prompt (waiting_for_prompt),
     // never when the title came from xterm (PTY escape sequence), to avoid a loop
     // where Claude sets the title → we inject /rename → Claude sets the title again.
-    if (injectRename && session.agenticProcess && shell.connected) {
+    if (injectRename && session.agenticProcess?.waiting_for_prompt) {
       void shell.sendInput(`/rename ${newName}\r`);
     }
   };

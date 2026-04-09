@@ -40,13 +40,6 @@ import flow_sdk.service_log as service_log
 from flow_sdk.db import DBEntity
 from flow_sdk.db.db_entity import EntityExpansion
 from flow_sdk.db.drivers.db_driver import RelationshipDirection
-from flow_sdk.request_context.methods import (
-    delete_user_credentials,
-    get_current_service_config,
-    get_entity_embedded_storage,
-    get_entity_storage,
-    set_user_credentials,
-)
 from .blob_index_entity_model import BLOB_INDEX_VFS_PATH, BlobIndexEntity
 from .entity_env.env_types import EntityEnvVars, EnvVar, EnvVarType
 
@@ -212,23 +205,28 @@ class Entity(DBEntity):
                 content=content,
             ))
 
+    async def get_record(self) -> "Record | None":
+        """Return the fs-record associated with this entity, or None if none exists."""
+        from flow_sdk.fs_store import Record  # noqa: PLC0415 — lazy, avoids circular import
+        type_name = self.get_type()
+        record_cls = SchemaRegistry.get_record_cls(type_name)
+        if record_cls is None:
+            return None
+        return record_cls.discover_one(self.id)
+
     async def updateSearchIndex(self) -> None:
         """Write this entity's searchable content into the FTS5 table.
 
         Content is sourced from the linked record's search_content. No-op if entity
         has no linked record or record returns None.
         """
-        type_name = self.get_type()
-        record_cls = SchemaRegistry.get_record_cls(type_name)
-        if record_cls is None:
-            return
-        record = record_cls.discover_one(self.id)
+        record = await self.get_record()
         if record is None:
             return
         content = record.search_content
         if content is None:
             return
-        await self._fts_upsert(type_name, content)
+        await self._fts_upsert(self.get_type(), content)
 
     async def removeSearchIndex(self) -> None:
         """Remove this entity from the FTS5 table."""
@@ -280,11 +278,7 @@ class Entity(DBEntity):
 
     async def check_and_refresh_record(self) -> bool:
         """If record is stale, run discover + index. Returns True if refresh happened."""
-        type_name = self.get_type()
-        record_cls = SchemaRegistry.get_record_cls(type_name)
-        if record_cls is None:
-            return False
-        record = record_cls.discover_one(self.id)
+        record = await self.get_record()
         if record is None:
             return False
         ttl = getattr(type(record), '_record_ttl', 30.0)
@@ -309,10 +303,12 @@ class Entity(DBEntity):
 
     @property
     def current_config(self):
+        from flow_sdk.request_context.methods import get_current_service_config  # noqa: PLC0415
         return get_current_service_config()
 
     @property
     def fs_storage(self):
+        from flow_sdk.request_context.methods import get_entity_storage  # noqa: PLC0415
         entity_storage = get_entity_storage(self.typeid, entity=self)
         if not entity_storage:
             raise ValueError(f"Entity storage not found for {self.typeid}")
@@ -320,6 +316,7 @@ class Entity(DBEntity):
 
     @property
     def embedded_storage(self):
+        from flow_sdk.request_context.methods import get_entity_embedded_storage  # noqa: PLC0415
         entity_storage = get_entity_embedded_storage(self.typeid)
         if not entity_storage:
             raise ValueError(f"Entity blob storage not found for {self.typeid}")
@@ -757,6 +754,7 @@ class Entity(DBEntity):
         return triggers
 
     async def save_oauth_credentials(self, oauth_name: str, credentials: str, foreign_key: str = None) -> None:
+        from flow_sdk.request_context.methods import set_user_credentials  # noqa: PLC0415
         await set_user_credentials(self, oauth_name, credentials, foreign_key)
 
         if self.env_vars is None:
@@ -797,6 +795,7 @@ class Entity(DBEntity):
             return False
 
         try:
+            from flow_sdk.request_context.methods import delete_user_credentials  # noqa: PLC0415
             await delete_user_credentials(self, provider_id)
         except Exception as e:
             service_log.error(f"Error deleting OAuth credentials {e}")

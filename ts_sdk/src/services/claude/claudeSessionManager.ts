@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 
-import type { AgenticProcess } from '../../agentic_processor/agentic-process';
-import type { AgenticContext } from '../../agentic_processor/agentic-context';
+import type { AgenticProcess } from '../../process/agentic-process';
+import type { AgenticContext } from '../../process/agentic-context';
 
 /**
  * ClaudeSessionManager — Singleton coordinator for Claude session lifecycle.

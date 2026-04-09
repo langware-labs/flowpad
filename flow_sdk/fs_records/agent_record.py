@@ -239,7 +239,7 @@ class AgentRecord(Record):
 
     # -- Claude Code --agents JSON -----------------------------------------
 
-    def to_agents_json(self) -> dict[str, dict[str, Any]]:
+    def to_agents_cli_json(self) -> dict[str, dict[str, Any]]:
         """Build ``{name: {description, prompt, ...}}`` dict for ``--agents`` flag."""
         entry: dict[str, Any] = {}
         # prompt always included
@@ -348,6 +348,18 @@ class AgentRecord(Record):
         elif self.record_dir is not None and self.name:
             from flow_sdk.fs_store.fs_ref import FSRef
             FSRef(self.record_dir / f"{self.name}.md").write(self._render_markdown())
+
+    def clone(self, base_dir: "str | Path") -> "AgentRecord":
+        """Install this agent into base_dir/.claude/agents/<name>.md.
+
+        base_dir is the project root (e.g. tmp_path).  The flat .md file is
+        written to base_dir/.claude/agents/<name>.md — the format Claude CLI
+        discovers when base_dir is passed via --add-dir.
+        """
+        md_path = Path(base_dir) / ".claude" / "agents" / f"{self.name}.md"
+        md_path.parent.mkdir(parents=True, exist_ok=True)
+        md_path.write_text(self._render_markdown())
+        return AgentRecord.from_file(md_path)
 
     # -- Loader helpers ----------------------------------------------------
 
