@@ -11,8 +11,8 @@ File layout (all inside the git repo, committed and pushed):
   tasks/spec/<spec-title>/spec.md           — spec content (markdown + frontmatter)
 
 Routes:
-  POST /api/v1/graph/cross_notification/send
-  POST /api/v1/graph/cross_notification/open-task
+  POST /api/v1/graph/notification/send
+  POST /api/v1/graph/notification/open-task
 """
 
 import asyncio
@@ -24,18 +24,19 @@ from typing import Optional
 
 from flow_sdk._compat import UTC
 from flow_sdk.actions.action_registry import action
-from flow_sdk.builtin.cross_notification import (
-    CrossUserNotification,
+from flow_sdk.core.network.connection import Notification
+from flow_sdk.flowpad_types.enums.entity_enums import (
     CrudAction,
     DeliveryMethod,
     NotificationStatus,
+    NotificationType,
 )
 from flow_sdk.builtin.spec import Spec
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse, ApiResponse
-from flow_sdk.utils.git import find_local_repo_for_url, find_project_root, git_add_commit_push, git_remote_url
+from flow_sdk.utils.git import find_local_repo_for_url, find_project_root, git_add_commit_push, git_pull, git_remote_url
 from flow_sdk.utils.hub import hub_post
 
 logger = logging.getLogger(__name__)
@@ -168,7 +169,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         )
 
     # 5. Post to hub
-    hub_data = await hub_post("cross_notification/send", {
+    hub_data = await hub_post("notification/send", {
         "recipient_email": recipient_email,
         "sender_id": sender_id,
         "sender_name": sender_name,
@@ -183,20 +184,23 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     })
     hub_notification_id: Optional[str] = (hub_data or {}).get("notification_id")
 
-    # 6. Save CrossUserNotification locally
-    notification = CrossUserNotification.model_validate({
+    # 6. Save Notification locally
+    notification = Notification.model_validate({
+        "notification_type": NotificationType.RESOURCE_ACTION,
+        "notification_target": f"task-@{task.id}",
+        "notification_subtype": CrudAction.CREATE,
         "recipient_id": resolved_recipient_id,
         "sender_id": sender_id,
-        "project_url": project_url,
-        "spec_id": spec.id,
-        "target_id": task.id,
-        "action": CrudAction.CREATE,
-        "status": NotificationStatus.SENT if hub_notification_id else NotificationStatus.PENDING,
-        "message": message,
         "delivery_method": DeliveryMethod.EMAIL,
+        "notification_status": NotificationStatus.SENT if hub_notification_id else NotificationStatus.PENDING,
+        "message": message,
+        "metadata": {
+            "project_url": project_url,
+            "spec_id": spec.id,
+            "sender_name": sender_name,
+        },
     })
-    notification.id = hub_notification_id or CrossUserNotification.allocate_id(notification.model_dump())
-    notification.sent_at = datetime.now(UTC)
+    notification.id = hub_notification_id or Notification.allocate_id(notification.model_dump())
     notification = await notification.save(someone_typeid)
 
     from flow_sdk.utils.hub import hub_base_url
@@ -231,7 +235,7 @@ async def handle_open_task(project_url: str, task_id: str) -> ApiResponse:
     return ApiSuccessResponse(data={"navigation_path": nav_path})
 
 
-@action.post(action_name="send", types=["cross_notification"])
+@action.post(action_name="send", types=["notification"])
 async def send_notification() -> ApiResponse:
     try:
         request_info = get_current_request_info()
@@ -246,7 +250,7 @@ async def send_notification() -> ApiResponse:
         return ApiFailResponse(message=f"Failed to send notification: {str(e)}")
 
 
-@action.post(action_name="open-task", types=["cross_notification"])
+@action.post(action_name="open-task", types=["notification"])
 async def open_task_notification() -> ApiResponse:
     try:
         request_info = get_current_request_info()
