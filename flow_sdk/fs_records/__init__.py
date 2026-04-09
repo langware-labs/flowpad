@@ -56,6 +56,7 @@ from .session_classification import SessionClassification as SessionClassificati
 from .shell_record import ShellRecord as ShellRecord
 from .shell_record import ShellStatus as ShellStatus
 from .skill_record import SkillRecord as SkillRecord
+from .spec_record import SpecRecord as SpecRecord
 from .task import TaskResource as TaskResource
 from .task import TaskStatus as TaskStatus
 from .task import TaskType as TaskType

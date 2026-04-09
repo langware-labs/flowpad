@@ -517,6 +517,7 @@ class ServiceConfig(BaseSettings):
     email_provider: str = EmailProviderType.MOCK.value
     no_reply_email: str = "no-reply@example.com"
     sendgrid_api_key: str | None = None
+    flowpad_hub_url: str | None = None
 
     # Search / LLM
     google_search_url: str | None = None
