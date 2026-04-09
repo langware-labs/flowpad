@@ -3,7 +3,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { TraceGutterEntry } from './use-trace-gutter';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { FileText, X } from 'lucide-react';
 
 function formatTimeAgo(timestamp: string): string {
@@ -64,6 +64,13 @@ export const TraceGutter = React.memo(function TraceGutter({
 
   const panelRef = useRef<HTMLDivElement | null>(null);
   const gutterRef = useRef<HTMLDivElement | null>(null);
+  // null = show all entries; set = show only this group's entries
+  const [selectedEntries, setSelectedEntries] = useState<TraceGutterEntry[] | null>(null);
+
+  // Reset selection when panel closes
+  useEffect(() => {
+    if (!expanded) setSelectedEntries(null);
+  }, [expanded]);
 
   // Close on click outside both the panel and the gutter column
   useEffect(() => {
@@ -118,7 +125,7 @@ export const TraceGutter = React.memo(function TraceGutter({
               group={group}
               cellHeight={cellHeight}
               expanded={expanded}
-              onOpen={onOpen}
+              onOpen={() => { setSelectedEntries(group.entries); onOpen(); }}
             />
           ))}
         </div>
@@ -137,7 +144,9 @@ export const TraceGutter = React.memo(function TraceGutter({
           >
             {/* Panel header with X button */}
             <div className="flex shrink-0 items-center justify-between border-b border-border px-2 py-1">
-              <span className="text-xs font-medium text-muted-foreground">Trace events</span>
+              <span className="text-xs font-medium text-muted-foreground">
+                {selectedEntries ? `${selectedEntries.length} event${selectedEntries.length === 1 ? '' : 's'}` : 'Trace events'}
+              </span>
               <button
                 className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
                 onClick={onClose}
@@ -147,7 +156,7 @@ export const TraceGutter = React.memo(function TraceGutter({
               </button>
             </div>
             <div className="overflow-y-auto">
-              {entries.map((entry) => (
+              {(selectedEntries ?? entries).map((entry) => (
                 <ExpandedEventLine key={entry.event.id} entry={entry} projectEncodedName={projectEncodedName} />
               ))}
             </div>
@@ -211,7 +220,7 @@ function GutterDot({
 
   const dot = (
     <div
-      className="absolute flex cursor-pointer items-center justify-center gap-0.5 rounded hover:bg-accent"
+      className="absolute flex cursor-pointer items-center justify-center rounded hover:bg-accent"
       onClick={(e) => { e.stopPropagation(); onOpen(); }}
       style={{
         top: group.row * cellHeight + (cellHeight - 14) / 2,
@@ -220,14 +229,15 @@ function GutterDot({
         height: 14,
       }}
     >
-      <Icon className={cn('h-3.5 w-3.5 shrink-0', colorClass)} />
-      {count > 1 && (
+      {count > 1 ? (
         <span
-          className="font-mono font-semibold text-muted-foreground"
-          style={{ fontSize: 9, lineHeight: '14px' }}
+          className="flex items-center justify-center rounded-full border border-muted-foreground/40 font-mono font-semibold text-muted-foreground"
+          style={{ fontSize: 9, lineHeight: '12px', minWidth: 16, height: 12, paddingInline: 3 }}
         >
           {count}
         </span>
+      ) : (
+        <Icon className={cn('h-3.5 w-3.5 shrink-0', colorClass)} />
       )}
     </div>
   );
@@ -282,6 +292,8 @@ function ExpandedEventLine({
   const colorClass = getEventColor(entry.event);
   const oneLiner = getOneLiner(entry.event);
   const timeAgo = formatTimeAgo(entry.event.timestamp);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const shortType =
     entry.event.event_type.length > 16
@@ -296,8 +308,17 @@ function ExpandedEventLine({
     navigation.openLens('claude', 'transcript', lensPointer.ref, lensPointer.options);
   };
 
+  const handleOpenChange = (open: boolean) => {
+    if (open) {
+      if (closeTimer.current) clearTimeout(closeTimer.current);
+      setDetailsOpen(true);
+    } else {
+      closeTimer.current = setTimeout(() => setDetailsOpen(false), 1000);
+    }
+  };
+
   return (
-    <Tooltip>
+    <Tooltip open={detailsOpen} onOpenChange={handleOpenChange}>
       <TooltipTrigger asChild>
         <div className="group flex cursor-default items-start gap-1 overflow-hidden px-2 py-0.5 hover:bg-accent">
           {/* Text block */}
