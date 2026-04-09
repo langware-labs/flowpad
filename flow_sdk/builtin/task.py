@@ -25,7 +25,7 @@ class TaskType(StrEnum):
 
 class Task(Entity):
     type: str = APIField(default="task")
-    title: str = APIField()
+    title: str = APIField("")
     description: Optional[str] = APIField(None, blob=True)
     status: str = APIField(TaskStatus.TO_DO)
     last_viewed_at: Optional[datetime] = APIField(None)

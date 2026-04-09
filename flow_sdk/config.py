@@ -59,6 +59,7 @@ PLATFORM_LINUX = "linux"
 # Environment variable names
 ENV_DESKTOP_DB = "DESKTOP_DB"
 ENV_SQLITE_DATABASE_PATH = "SQLITE_DATABASE_PATH"
+ENV_FS_RECORD_PATH = "FS_RECORD_PATH"
 
 
 # ---------------------------------------------------------------------------
@@ -699,6 +700,14 @@ class ServiceConfig(BaseSettings):
             db_info = f"SQLite at {sqlite_db_path}"
         else:
             db_info = f"{self.db_driver} database driver"
+
+        # Configure records root path (prod vs dev).
+        # Tests override this via FS_RECORD_PATH env var set before import.
+        if ENV_FS_RECORD_PATH not in os.environ:
+            records_folder_name = "dev_records" if _is_dev_mode() else "records"
+            records_root = Path.home() / ".flow" / records_folder_name
+            records_root.mkdir(parents=True, exist_ok=True)
+            os.environ[ENV_FS_RECORD_PATH] = str(records_root)
 
         # Force local compute provider for desktop
         self.default_compute_provider = ComputeProviderType.LOCAL_MACHINE

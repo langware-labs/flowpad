@@ -45,8 +45,16 @@ export interface IShellConnectionOptions {
   rows: number;
   isActive?: boolean; // deferred activation gate (default: true)
   workdir?: string;
+  ptyId?: string;
   force?: boolean; // reset seq + replayDone and re-attach (absorbs restart())
   timeout?: number; // WS request timeout ms (default: 30 000)
+}
+
+export interface IShellStartOptions {
+  cols?: number;
+  rows?: number;
+  workdir?: string;
+  timeout?: number;
 }
 
 export interface IShell extends IEntity {
@@ -112,6 +120,15 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
   /** True once attachPty() has finished its replay phase and the output gate is open. */
   private _replayDone = false;
+
+  /** Backend-owned PTY handle currently attached in this browser client. */
+  private _attachedPtyId: string | null = null;
+
+  /** In-flight attach dedupe guard. */
+  private _attachPromise: Promise<void> | null = null;
+
+  /** PTY currently being attached. */
+  private _attachingPtyId: string | null = null;
 
   get dockPointer(): DockPointerData {
     return new DockPointerData(ViewType.SHELL, this.typeId?.toString());
@@ -207,6 +224,27 @@ export class Shell extends APIEntity<Shell> implements IShell {
     return this._pty?.onOutput(fn);
   }
 
+  /**
+   * Backend-owned shell start. The frontend only opens the shell and then
+   * attaches to the PTY handle returned by the backend.
+   */
+  async start(opts: IShellStartOptions = {}): Promise<string> {
+    const cols = opts.cols ?? Shell.DEFAULT_COLS;
+    const rows = opts.rows ?? Shell.DEFAULT_ROWS;
+    const workdir = opts.workdir ?? this.workdir ?? undefined;
+    const { ConnectionManager } = await import('../websocket');
+    const connection_id = ConnectionManager.getInstance().id;
+    const action = new ActionInfo('open', Shell.type, this.id, 'POST');
+    action.bodyParameters = { connection_id, cols, rows, ...(workdir ? { working_dir: workdir } : {}) };
+    const result = await dataManager.callAction<any, Record<string, unknown> | null>(action);
+    if (!result) throw new Error(`Shell ${this.id} could not be opened`);
+    Object.assign(this, result);
+    this.pty_pid = (result.pty_id as string | undefined) ?? (result.pty_pid as string | undefined) ?? this.id;
+    if (workdir !== undefined) this.workdir = workdir;
+    await this.attachPty({ cols, rows, workdir, timeout: opts.timeout, ptyId: this.pty_pid ?? this.id });
+    return this.pty_pid ?? this.id;
+  }
+
   // ── PTY lifecycle entry point ─────────────────────────────────────────────
 
   /**
@@ -223,7 +261,8 @@ export class Shell extends APIEntity<Shell> implements IShell {
    * replay write, then subscribe onOutput() for live output.
    */
   async attachPty(opts: IShellConnectionOptions): Promise<void> {
-    const { cols, rows, isActive = true, workdir, force = false, timeout } = opts;
+    const { cols, rows, isActive = true, ptyId, force = false, timeout } = opts;
+    const targetPtyId = ptyId ?? this.pty_pid ?? this.id;
 
     if (isActive) this._hasEverBeenActive = true;
     if (!this._hasEverBeenActive) return; // still deferred
@@ -233,94 +272,90 @@ export class Shell extends APIEntity<Shell> implements IShell {
       _ensureStaticListeners();
     }
 
-    if (force) {
-      this._pty?.clear();
-      this._replayDone = false;
+    if (force) this._restart();
+
+    if (this._attachPromise && this._attachingPtyId === targetPtyId && !force) {
+      console.warn(`[Shell] duplicate attach ignored while attach is in flight (shell=${this.id}, pty_id=${targetPtyId})`);
+      return this._attachPromise;
     }
 
-    if (this._pty?.started && this._replayDone) return; // already fully connected
+    if (this._pty?.started && this._replayDone && this._attachedPtyId === targetPtyId && !force) {
+      console.warn(`[Shell] duplicate attach ignored (shell=${this.id}, pty_id=${targetPtyId})`);
+      return;
+    }
 
     if (!this.compute_node_id) return;
 
-    if (this._lastPtySeq > 0) this._resetPtySeq();
-    if (!this._pty) this._pty = new PtyConnection();
+    const attachWork = (async () => {
+      if (this._attachedPtyId !== targetPtyId) {
+        if (this._pty) this._pty.clear();
+        this._replayDone = false;
+      }
+      if (this._lastPtySeq > 0) this._resetPtySeq();
+      if (!this._pty) this._pty = new PtyConnection();
 
-    // _reattach() sends replay WS messages → appendOutput() stores each chunk
-    // in _pty.chunks — no external subscriber exists yet (onOutput() is gated)
-    const latestSeq = await this._reattach(this._lastPtySeq, timeout);
+      // _reattach() sends replay WS messages → appendOutput() stores each chunk
+      // in _pty.chunks — no external subscriber exists yet (onOutput() is gated)
+      const latestSeq = await this._reattach(targetPtyId, this._lastPtySeq, timeout);
+      if (latestSeq === undefined) {
+        this._replayDone = false;
+        this._attachedPtyId = null;
+        throw new Error(`PTY ${targetPtyId} not found for shell ${this.id}`);
+      }
 
-    // Drain replay: the server streams pty_output_msg messages before the
-    // attach response, but they may arrive as separate macrotasks that haven't
-    // been processed yet when _reattach() resolves. Poll until _pty.lastSeq
-    // reaches latestSeq (or the deadline) before signaling replayDone.
-    if (latestSeq !== undefined && latestSeq > 0 && this._pty.lastSeq < latestSeq) {
-      await new Promise<void>((resolve) => {
-        const deadline = Date.now() + 2000;
-        const check = () => {
-          if (this._pty!.lastSeq >= latestSeq || Date.now() >= deadline) {
-            resolve();
-          } else {
-            setTimeout(check, 5);
-          }
-        };
-        setTimeout(check, 0); // yield one macrotask so pending WS messages can be processed
-      });
-    }
-
-    await this._ensurePty(cols, rows, workdir);
-
-    // If the first attach returned not_found (server restarted, PTY was gone),
-    // _ensurePty created a fresh PTY — reattach now to fetch its replay buffer.
-    if (latestSeq === undefined) {
-      const newLatestSeq = await this._reattach(0, timeout);
-      if (newLatestSeq !== undefined && newLatestSeq > 0 && this._pty!.lastSeq < newLatestSeq) {
+      // Drain replay: the server streams pty_output_msg messages before the
+      // attach response, but they may arrive as separate macrotasks that haven't
+      // been processed yet when _reattach() resolves. Poll until _pty.lastSeq
+      // reaches latestSeq (or the deadline) before signaling replayDone.
+      if (latestSeq > 0 && this._pty.lastSeq < latestSeq) {
         await new Promise<void>((resolve) => {
           const deadline = Date.now() + 2000;
           const check = () => {
-            if (this._pty!.lastSeq >= newLatestSeq || Date.now() >= deadline) resolve();
-            else setTimeout(check, 5);
+            if (this._pty!.lastSeq >= latestSeq || Date.now() >= deadline) {
+              resolve();
+            } else {
+              setTimeout(check, 5);
+            }
           };
-          setTimeout(check, 0);
+          setTimeout(check, 0); // yield one macrotask so pending WS messages can be processed
         });
       }
-    }
 
-    // ONLY NOW flip replayDone — InteractiveTerminal's 'connected' event handler
-    // resets xterm, writes getPtyChunks() for the replay, and subscribes onOutput().
-        const _t0 = (typeof window !== 'undefined' ? window : globalThis) as Record<string, unknown>;
-    if (_t0.__shellNavT0 !== undefined)
-      console.log(
-        `[PERF] +${(performance.now() - (_t0.__shellNavT0 as number)).toFixed(0)}ms shell.attachPty() replayDone=true (shell=${this.id.slice(0, 8)})`,
-      );
-    this._replayDone = true;
-    this.emit('status', 'connected');
+      // ONLY NOW flip replayDone — InteractiveTerminal's 'connected' event handler
+      // resets xterm, writes getPtyChunks() for the replay, and subscribes onOutput().
+      const _t0 = (typeof window !== 'undefined' ? window : globalThis) as Record<string, unknown>;
+      if (_t0.__shellNavT0 !== undefined)
+        console.log(
+          `[PERF] +${(performance.now() - (_t0.__shellNavT0 as number)).toFixed(0)}ms shell.attachPty() replayDone=true (shell=${this.id.slice(0, 8)})`,
+        );
+      this._attachedPtyId = targetPtyId;
+      this._replayDone = true;
+      this.emit('status', 'connected');
+    })();
+
+    this._attachingPtyId = targetPtyId;
+    this._attachPromise = attachWork.finally(() => {
+      if (this._attachPromise === attachWork) {
+        this._attachPromise = null;
+        this._attachingPtyId = null;
+      }
+    });
+    return this._attachPromise;
   }
 
   // ── Private PTY lifecycle ─────────────────────────────────────────────────
 
-  private async _startPty(cols: number, rows: number, workingDir?: string): Promise<void> {
-    if (!this.compute_node_id) throw new Error('Shell has no compute_node_id');
-    this._pty = new PtyConnection();
-    this._pty.computeNodeId = this.compute_node_id;
-    this._pty.shellId = this.id;
-    const { ConnectionManager } = await import('../websocket');
-    const connection_id = ConnectionManager.getInstance().id;
-    const action = new ActionInfo('terminal-command', 'compute_node', this.compute_node_id, 'POST');
-    action.subpath = 'start';
-    action.bodyParameters = {
-      shell_id: this.id,
-      cols,
-      rows,
-      connection_id,
-      ...(this.name && { name: this.name }),
-      ...(workingDir && { working_dir: workingDir }),
-    };
-    await dataManager.callAction<any, any>(action);
-    this._pty.started = true;
-    ptyOrphanBuffer.flush(this.id, this._pty);
+  /** Reset local PTY attach state so the next attach performs a full replay. */
+  private _restart(): void {
+    this._pty?.clear();
+    this._replayDone = false;
+    this._attachedPtyId = null;
+    this._attachPromise = null;
+    this._attachingPtyId = null;
+    this.emit('status', 'disconnected');
   }
 
-  private async _reattach(sinceSeq = 0, timeout?: number): Promise<number | undefined> {
+  private async _reattach(ptyId: string, sinceSeq = 0, timeout?: number): Promise<number | undefined> {
     if (!this.compute_node_id) return;
     if (!this._pty) this._pty = new PtyConnection();
     this._pty.computeNodeId = this.compute_node_id;
@@ -329,7 +364,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     const connection_id = ConnectionManager.getInstance().id;
     const action = new ActionInfo('terminal-command', 'compute_node', this.compute_node_id, 'POST');
     action.subpath = 'attach';
-    action.bodyParameters = { shell_id: this.id, since_seq: sinceSeq, connection_id };
+    action.bodyParameters = { shell_id: this.id, pty_id: ptyId, since_seq: sinceSeq, connection_id };
     const result = await dataManager.callActionOverWS<any, any>(
       action,
       timeout !== undefined ? { timeout } : undefined,
@@ -342,33 +377,8 @@ export class Shell extends APIEntity<Shell> implements IShell {
     }
 
     this._pty.started = true;
+    ptyOrphanBuffer.flush(this.id, this._pty);
     return result?.latest_seq;
-  }
-
-  private async _recover(): Promise<void> {
-    if (this.status === ShellStatus.ERROR || this.status === ShellStatus.CLOSING) return;
-    if (this._pty?.started) {
-      const alive = await this._pty.testPty();
-      if (alive) return;
-      this._pty.started = false;
-    }
-    await this._startPty(80, 24);
-  }
-
-  /** Start PTY if not already running; recover silently if server-side PTY is dead. */
-  private async _ensurePty(cols: number, rows: number, workingDir?: string): Promise<void> {
-    if (!this._pty?.started) {
-      await this._startPty(cols, rows, workingDir);
-    }
-    // If started but server-side PTY has died, sendInput will auto-recover on first keystroke.
-  }
-
-  private async _open(opts?: { connection_id?: string; cols?: number; rows?: number }): Promise<void> {
-    const action = new ActionInfo('open', Shell.type, this.id, 'POST');
-    action.bodyParameters = opts ?? {};
-    const result = await dataManager.callAction<any, any>(action);
-    this.status = ShellStatus.RUNNING;
-    this.pty_pid = result?.pty_pid ?? this.id;
   }
 
   // ── Public I/O and display methods ───────────────────────────────────────
@@ -387,8 +397,9 @@ export class Shell extends APIEntity<Shell> implements IShell {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('PTY session not found')) {
-        await this._recover();
-        await dataManager.callActionOverWS<any, any>(action);
+        if (this._pty) this._pty.started = false;
+        this._replayDone = false;
+        this._attachedPtyId = null;
       } else {
         throw e;
       }
@@ -424,7 +435,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     if (this.status === ShellStatus.ERROR) return;
     if (!this._hasEverBeenActive) return;
     const workdir = this.workdir ?? dataContext.project?.fs_storage_mount_path ?? undefined;
-    void this.attachPty({ cols: 80, rows: 24, workdir });
+    void this.start({ cols: 80, rows: 24, workdir });
   }
 
   async close(): Promise<void> {
@@ -502,7 +513,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     if (!computeNodeId) throw new Error('[Shell.newLiveShell] No compute node');
     const shell = new Shell({ name: opts?.name ?? 'shell', workdir: opts?.workdir, compute_node_id: computeNodeId });
     await shell.save();
-    await shell.attachPty({ cols: opts?.cols ?? 80, rows: opts?.rows ?? 24 });
+    await shell.start({ cols: opts?.cols ?? 80, rows: opts?.rows ?? 24, workdir: opts?.workdir });
     return shell;
   }
 

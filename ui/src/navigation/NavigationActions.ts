@@ -264,10 +264,10 @@ export class NavigationActions {
       const { nextTerminalName } = await import('@src/components/terminal/TabbedTerminal');
       const shells = await Shell.list(cn.id);
       const name = nextTerminalName(shells.map((s) => ({ name: s.name ?? '' })));
-      const newShell = Shell.create(cn, { name });
-      await newShell.save(cn.typeId);
       const cwd = options?.cwd || dataContext.project?.fs_storage_mount_path || undefined;
-      await newShell.attachPty({ cols: 80, rows: 24, workdir: cwd });
+      const newShell = Shell.create(cn, { name, workdir: cwd });
+      await newShell.save(cn.typeId);
+      await newShell.start({ cols: 80, rows: 24, workdir: cwd });
       const openedShell = await this.openShell(newShell.id, options);
       return { shellId: openedShell?.id ?? newShell.id };
     } catch (error) {

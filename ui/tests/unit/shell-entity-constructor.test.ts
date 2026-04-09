@@ -77,20 +77,30 @@ describe('Shell entity constructor', () => {
       name: 'Terminal 1',
     });
     vi.spyOn(ConnectionManager, 'getInstance').mockReturnValue({ id: 'ws-connection-id', on: vi.fn() } as any);
-    // _reattach() uses callActionOverWS; return not_found so _startPty is called
-    vi.spyOn(dataManager, 'callActionOverWS').mockResolvedValue({ status: 'not_found' });
-    const callActionSpy = vi.spyOn(dataManager, 'callAction').mockResolvedValue({});
+    const attachSpy = vi.spyOn(shell, 'attachPty').mockResolvedValue(undefined);
+    const callActionSpy = vi.spyOn(dataManager, 'callAction').mockResolvedValue({
+      id: '26dc80b4-2a76-48e9-b141-e7443563d8c2',
+      compute_node_id: 'c9ed243c-a3be-4985-9858-7a0821ec9e9f',
+      name: 'Terminal 1',
+      workdir: '/tmp',
+      pty_id: 'pty-terminal-1',
+    } as any);
 
-    await shell.attachPty({ cols: 80, rows: 24, workdir: '/tmp' });
+    await shell.start({ cols: 80, rows: 24, workdir: '/tmp' });
 
     expect(callActionSpy).toHaveBeenCalledTimes(1);
     expect(callActionSpy.mock.calls[0]?.[0].bodyParameters).toMatchObject({
-      shell_id: '26dc80b4-2a76-48e9-b141-e7443563d8c2',
       cols: 80,
       rows: 24,
       connection_id: 'ws-connection-id',
-      name: 'Terminal 1',
       working_dir: '/tmp',
+    });
+    expect(attachSpy).toHaveBeenCalledWith({
+      cols: 80,
+      rows: 24,
+      workdir: '/tmp',
+      timeout: undefined,
+      ptyId: 'pty-terminal-1',
     });
   });
 });

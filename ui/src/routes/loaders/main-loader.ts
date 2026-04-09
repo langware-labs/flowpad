@@ -4,7 +4,6 @@ import {
   dataContext,
   initSdk,
   isProcessActive,
-  isProcessStartable,
   Project,
   QueryFilter,
   QueryRequest,
@@ -111,10 +110,10 @@ async function loadShell(pointer: string | undefined): Promise<void> {
     const shells = await Shell.query<Shell>(new QueryRequest({ type: Shell.type, scope: [] }));
     const { nextTerminalName } = await import('@src/components/terminal/TabbedTerminal');
     const name = nextTerminalName(shells.map((s) => ({ name: s.name ?? '' })));
-    const newShell = Shell.create(cn, { name });
-    await newShell.save(cn.typeId);
     const cwd = dataContext.project?.fs_storage_mount_path ?? undefined;
-    await newShell.attachPty({ cols: 80, rows: 24, workdir: cwd });
+    const newShell = Shell.create(cn, { name, workdir: cwd });
+    await newShell.save(cn.typeId);
+    await newShell.start({ cols: 80, rows: 24, workdir: cwd });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw redirect(`/dock/shell/${newShell.dockPointer.pointer}`);
   }
@@ -153,14 +152,8 @@ async function loadShell(pointer: string | undefined): Promise<void> {
 
     let shell: import('@sdk/entities/shell').Shell | null = null;
     try {
-      if (isProcessStartable(process.status)) {
-        await process.start({ visible: true });
-      }
+      await process.start({ visible: true });
       shell = await process.shell();
-      if (!shell) {
-        await process.start({ visible: true });
-        shell = await process.shell();
-      }
     } catch {
       toast({ title: 'Session unavailable', description: 'This process has been terminated.', variant: 'destructive' });
       // eslint-disable-next-line @typescript-eslint/only-throw-error
@@ -172,8 +165,6 @@ async function loadShell(pointer: string | undefined): Promise<void> {
       // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw redirect('/dock/shell');
     }
-
-    await shell.attachPty({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: process.workdir ?? undefined });
 
     dataContext.setActiveShellId(shell.id);
     await dataContext.setContextEntityTypeId(
@@ -214,7 +205,7 @@ async function loadShell(pointer: string | undefined): Promise<void> {
     }
 
     // Plain shell — no linked process
-    await shell.attachPty({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: shell.workdir ?? undefined });
+    await shell.start({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: shell.workdir ?? undefined });
     dataContext.setActiveShellId(shell.id);
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
     if (shell.project_id) {
