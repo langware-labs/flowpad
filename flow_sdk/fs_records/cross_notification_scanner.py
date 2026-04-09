@@ -108,15 +108,8 @@ async def _process_manifest(
     task_type_id_str = f"task-{task.id}"
 
     # --- Resolve project_url for the consolidated click handler ---
-    import subprocess as _subprocess
-    try:
-        _result = _subprocess.run(
-            ["git", "remote", "get-url", "origin"],
-            cwd=str(project_root), capture_output=True, text=True, timeout=5,
-        )
-        project_url = _result.stdout.strip() if _result.returncode == 0 else ""
-    except Exception:
-        project_url = ""
+    from flow_sdk.utils.git import git_remote_url
+    project_url = git_remote_url(str(project_root))
 
     # --- Create Bookmark ---
     nav_path = f"/dock/tasks/{task_type_id_str}"

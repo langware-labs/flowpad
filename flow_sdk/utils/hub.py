@@ -15,21 +15,25 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-def hub_base_url() -> str:
-    """Return the hub base URL from config (no trailing slash)."""
+def hub_base_url() -> Optional[str]:
+    """Return the hub base URL from config, or None if not configured."""
     from flow_sdk.config import default_service_config
-    return default_service_config.flowpad_cloud_url.rstrip("/")
+    url = default_service_config.flowpad_hub_url
+    return url.rstrip("/") if url else None
 
 
-def hub_graph_url(path: str) -> str:
-    """Build a full hub graph URL for the given relative path.
+def hub_graph_url(path: str) -> Optional[str]:
+    """Build a full hub graph URL for the given relative path, or None if hub is not configured.
 
     Example: hub_graph_url("cross_notification/send")
-      → "https://flowpad.ai/api/v1/graph/cross_notification/send"
+      → "http://localhost:8093/api/v1/graph/cross_notification/send"
     """
+    base = hub_base_url()
+    if not base:
+        return None
     from flow_sdk.api.api_request import APIRequest
     full_path = f"{APIRequest.api_prefix}{APIRequest.graph_prefix}/{path.lstrip('/')}"
-    return f"{hub_base_url()}{full_path}"
+    return f"{base}{full_path}"
 
 
 def _auth_headers() -> dict[str, str]:
@@ -41,11 +45,12 @@ def _auth_headers() -> dict[str, str]:
 async def hub_post(path: str, payload: dict[str, Any]) -> Optional[dict[str, Any]]:
     """POST to a hub graph endpoint. Returns the response `data` dict on success, None on failure.
 
-    Args:
-        path: Relative graph path, e.g. "cross_notification/send"
-        payload: JSON body to send.
+    Returns None immediately if FLOWPAD_HUB_URL is not configured.
     """
     url = hub_graph_url(path)
+    if not url:
+        logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping POST to %s", path)
+        return None
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(url, json=payload, headers=_auth_headers())

@@ -117,17 +117,17 @@ async def _start_notification_scanner() -> None:
 
 
 async def _start_cloud_ws_listener() -> None:
-    """Connect to flowpad.ai cloud WebSocket to receive real-time push notifications."""
-    try:
-        from flow_sdk.builtin.user import User as _User
-        import asyncio as _asyncio
-        local_user = await _User.get_one({"uname": "local"})
-        if local_user:
-            from flow_sdk.cloud.ws_client import start_cloud_ws_listener
-            _asyncio.create_task(start_cloud_ws_listener(local_user.id))
-            print("  Cloud WS listener: started")
-    except Exception as e:
-        print(f"  Cloud WS listener: failed to start ({e})")
+    """Stub: real-time cloud push notifications not yet implemented.
+
+    TODO: Connect to flowpad.ai cloud WebSocket to receive cross-notification
+    push events in real time. For now, notifications reach the recipient via
+    the email deep-link → git pull → manifest scanner path.
+    """
+    import logging as _logging
+    _logging.getLogger(__name__).info(
+        "Cloud WS listener: not started (real-time push from cloud is a stub — "
+        "notifications arrive via email deep-link + git pull instead)"
+    )
 
 
 async def _shutdown_extras():
