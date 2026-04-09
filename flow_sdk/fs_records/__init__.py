@@ -59,5 +59,3 @@ from .task import TaskStatus as TaskStatus
 from .task import TaskType as TaskType
 from .text_file_record import TextFileRecord as TextFileRecord
 from .workflow_record import WorkflowRecord as WorkflowRecord
-from .spec_record import SpecRecord as SpecRecord
-from .cross_notification_record import CrossNotificationRecord as CrossNotificationRecord
