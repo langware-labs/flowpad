@@ -94,12 +94,15 @@ class Project(Entity):
 
     @classmethod
     def allocate_id(cls, data: dict) -> str:
-        """Deterministic UUID5 keyed on the project work directory."""
+        """Deterministic UUID5 keyed on the project work directory.
+
+        The deterministic ID takes priority over any client-provided id, because
+        the frontend always assigns a random UUID4 to new entities before saving.
+        Only fall back to the provided id (or a fresh UUID4) when no mount path
+        is available to derive a stable key from.
+        """
         import uuid
         from flow_sdk.fs_store.identifier import is_valid_uuid
-        rid = data.get("id") or ""
-        if rid and is_valid_uuid(rid):
-            return rid
         mount_path = data.get("fs_storage_mount_path") or data.get("real_path")
         if not mount_path:
             name = data.get("name", "")
@@ -107,6 +110,9 @@ class Project(Entity):
                 mount_path = name
         if mount_path:
             return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{mount_path}"))
+        rid = data.get("id") or ""
+        if rid and is_valid_uuid(rid):
+            return rid
         return str(uuid.uuid4())
 
     @property

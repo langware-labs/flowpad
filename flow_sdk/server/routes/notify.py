@@ -27,8 +27,7 @@ router = APIRouter()
 
 def _get_ui_port() -> int:
     import os
-    info = load_server_info()
-    return int(info.get("port") or os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    return int(os.environ.get("VITE_PORT") or os.environ.get("LOCAL_SERVER_PORT", "9007"))
 
 
 _REDIRECT_HTML = """<!DOCTYPE html>
