@@ -178,12 +178,25 @@ export class SystemToolsService extends EventEmitter {
         };
       } else {
         // Job-level event: number of types completed
+        const jobDone = attrs.done as number;
+        const jobTotal = attrs.total as number;
         this.activityProgress = {
           ...this.activityProgress,
-          jobDone: attrs.done as number,
-          jobTotal: attrs.total as number,
+          jobDone,
+          jobTotal,
           jobText: attrs.text as string | undefined,
         };
+        // Auto-clear when the job reports completion. A short delay lets a
+        // normal scan→index transition (resetAndRescan) call _setActivity('index')
+        // first, in which case currentActivity will no longer match and we skip.
+        if (jobTotal > 0 && jobDone >= jobTotal) {
+          setTimeout(() => {
+            if (this.currentActivity === jobName) {
+              this._setActivity(null);
+              void dataManager.refreshScanInfo();
+            }
+          }, 500);
+        }
       }
       this._emitProgressThrottled();
     });
