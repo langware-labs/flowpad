@@ -1,6 +1,7 @@
 import { Badge } from '@src/components/ui/badge';
 import type { Bookmark } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { openTaskNotification } from '@sdk/entities/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Clock, FileText, GitBranch, Play, StickyNote, X } from 'lucide-react';
 
@@ -47,6 +48,19 @@ export function BookmarkCard({
     : null;
 
   const handleCardClick = () => {
+    if (bookmark.bookmark_type === 'cross_notification') {
+      const projectUrl = bookmark.data?.project_url as string | undefined;
+      const taskId = bookmark.data?.task_id as string | undefined;
+      void openTaskNotification(projectUrl ?? '', taskId ?? '')
+        .then((path) => {
+          const match = path.match(/^\/dock\/([^/]+)\/(.+)$/);
+          if (match) navigation.openDock(DockPointer.fromUrl(match[1], match[2]));
+        })
+        .catch(() => {
+          if (taskId) navigation.openDock(DockPointer.fromUrl('tasks', `task-${taskId}`));
+        });
+      return;
+    }
     if (!navPath) return;
     const match = navPath.match(/^\/dock\/([^/]+)\/(.+)$/);
     if (match) {
