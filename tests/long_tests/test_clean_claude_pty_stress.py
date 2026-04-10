@@ -41,6 +41,7 @@ pytestmark = pytest.mark.skipif(
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.compute.providers.desktop.pty_replay_buffer import replay_buffer
+from flow_sdk.config import FLOWPAD_TEMP_DIR
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -193,7 +194,7 @@ def _capture_reference_screen_sync() -> dict:
     }
     proc = ptyprocess.PtyProcess.spawn(
         ["claude", "--dangerously-skip-permissions"],
-        cwd="/tmp",
+        cwd=FLOWPAD_TEMP_DIR,
         dimensions=(24, 80),
         env=env,
     )
@@ -271,7 +272,7 @@ async def test_clean_claude_pty_stress(bootstrapped_client):
         process = AgenticProcess(
             compute_node_id=f"compute_node-{cn.id}",
             cli_config={"permission_mode": "bypassPermissions"},
-            workdir="/tmp",
+            workdir=FLOWPAD_TEMP_DIR,
             visible=True,
         )
         await process.save([])

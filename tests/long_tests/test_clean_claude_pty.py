@@ -25,7 +25,7 @@ from flow_sdk.compute.providers.desktop.pty_replay_buffer import replay_buffer
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(15)
-async def test_clean_claude_pty(bootstrapped_client):
+async def test_clean_claude_pty(bootstrapped_client, tmp_path):
     """PTY output on AgenticProcess.start() must not contain leaked paste markers."""
     cn = await ComputeNode.get_one({"uname": "local"})
     assert cn, "No @local compute node found"
@@ -33,7 +33,7 @@ async def test_clean_claude_pty(bootstrapped_client):
     process = AgenticProcess(
         compute_node_id=f"compute_node-{cn.id}",
         cli_config={"permission_mode": "bypassPermissions"},
-        workdir="/tmp",
+        workdir=str(tmp_path),
         visible=True,
     )
     await process.save([])
