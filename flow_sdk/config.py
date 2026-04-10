@@ -170,9 +170,7 @@ def init_temp_dir():
     if FLOWPAD_TEMP_DIR:
         logging.info(f"Temporary directory already set: {FLOWPAD_TEMP_DIR}")
     else:
-        temp_dir = tempfile.gettempdir()
-        # Create a flowpad directory in the temp directory
-        FLOWPAD_TEMP_DIR = os.path.join(temp_dir, "flowpad_temp")
+        FLOWPAD_TEMP_DIR = str(Path(tempfile.gettempdir()) / "flowpad_temp")
         logging.info(f"Using temporary directory: {FLOWPAD_TEMP_DIR}")
 
     # Create the temp directory
