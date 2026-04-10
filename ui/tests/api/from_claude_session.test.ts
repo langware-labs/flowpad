@@ -16,9 +16,12 @@ const API = `${GRAPH_API_PREFIX}/${ComputeNode.type}/@local`;
 
 /** Fetch one claude_session record ID from FTS index (fast). */
 async function findAnyCloudeSessionId(): Promise<string | null> {
-  const resp = await apiClient.get<any>(`${API}/fs-records/search?q=claude&type=claude_session&limit=1`);
+  // Backend search parameter is record_type (not type)
+  const resp = await apiClient.get<any>(`${API}/fs-records/search?q=claude&record_type=claude_session&limit=1`);
   const results: any[] = resp?.data?.results ?? resp?.results ?? [];
-  return results[0]?.record_id ?? null;
+  // Verify we got a real claude_session record (not some other type)
+  const sessionRecord = results.find((r: any) => r.record_type === 'claude_session');
+  return sessionRecord?.record_id ?? null;
 }
 
 describe('AgenticProcess.fromClaudeSession', () => {
@@ -43,7 +46,7 @@ describe('AgenticProcess.fromClaudeSession', () => {
       }
       throw e;
     }
-    expect(proc.worker_session_id).toBe(sessionId);
+    expect(proc.session_id).toBe(sessionId);
     expect((proc as any).cli_config?.resume).toBe(true);
   }, 15000);
 
@@ -64,9 +67,9 @@ describe('AgenticProcess.fromClaudeSession', () => {
       }
       throw e;
     }
-    await proc.open();
+    await proc.start();
 
-    const shell = await proc.getShell();
+    const shell = await proc.shell();
     expect(shell).not.toBeNull();
 
     // Wait for PTY to produce output

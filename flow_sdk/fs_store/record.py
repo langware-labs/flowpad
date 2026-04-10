@@ -14,6 +14,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import platform
 import shutil
 import subprocess
@@ -34,18 +35,48 @@ T = TypeVar("T", bound="Record")
 _META_JSON = "metadata.json"
 _DATA_JSON = "data.json"  # backward-compat: used by resource_record_list
 
-_DEFAULT_RECORDS_ROOT: Path = Path.home() / ".flow" / "records"
+_FLOWPAD_HOME: Path = Path.home() / ".flow"
+_DEFAULT_RECORDS_ROOT: Path = _FLOWPAD_HOME / "records"
+_DEFAULT_RECORDS_DATA_ROOT: Path = _FLOWPAD_HOME / "records_data"
+
+ENV_FS_RECORD_PATH = "FS_RECORD_PATH"
+
+
+def get_flowpad_home() -> Path:
+    """Return the flowpad home directory (~/.flow by default)."""
+    return _FLOWPAD_HOME
 
 
 def get_default_records_root() -> Path:
-    """Return the default root for record storage."""
+    """Return the default root for record metadata storage.
+
+    Resolution order:
+    1. ``FS_RECORD_PATH`` env var (allows tests and explicit overrides)
+    2. ``_DEFAULT_RECORDS_ROOT`` (set by ``set_default_records_root()`` or config)
+    """
+    env_path = os.environ.get(ENV_FS_RECORD_PATH)
+    if env_path:
+        return Path(env_path)
     return _DEFAULT_RECORDS_ROOT
+
+
+def get_default_records_data_root() -> Path:
+    """Return the default root for record data/blob storage (~/.flow/records_data)."""
+    return _DEFAULT_RECORDS_DATA_ROOT
 
 
 def set_default_records_root(path: Path) -> None:
     """Override the default records root (primarily for testing)."""
     global _DEFAULT_RECORDS_ROOT
     _DEFAULT_RECORDS_ROOT = path
+    # Sync the env var so get_default_records_root() — which checks it first — stays consistent.
+    os.environ[ENV_FS_RECORD_PATH] = str(path)
+
+
+def set_default_records_data_root(path: Path) -> None:
+    """Override the default records data root (primarily for testing)."""
+    global _DEFAULT_RECORDS_DATA_ROOT
+    _DEFAULT_RECORDS_DATA_ROOT = path
 
 
 class RecordStatus(str, Enum):
@@ -1903,7 +1934,7 @@ class Record:
                 await driver.fts_delete(entity.id)
             await entity.delete()
 
-    async def sync_to_db(self, fts_batch: "list | None" = None) -> None:
+    async def sync_to_db(self, fts_batch: "list | None" = None, notify: bool = True) -> None:
         """Create or update the corresponding Entity in SQLite.
 
         If ``fts_batch`` is provided the FtsEntry is appended to it instead of
@@ -1916,7 +1947,7 @@ class Record:
 
         try:
             # Step 1: Entity row (delegates to Entity.from_record)
-            entity = await Entity.from_record(self)
+            entity = await Entity.from_record(self, notify=notify)
 
             # Write entity's db_json() back to metadata.json so disk reflects entity state,
             # then write the hash sentinel (sync_from_entity handles both).

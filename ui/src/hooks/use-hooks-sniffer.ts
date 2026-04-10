@@ -4,12 +4,12 @@ import {
   type FlowData,
   type HooksSnifferStatus,
   snifferManager,
+  TypeId,
   VFSPath,
   getTranscriptDockPointer,
   getTriggerLogDockPointer,
   parseTranscriptPath,
 } from '@sdk';
-import { defineGlobal } from '@sdk/utils';
 import { useContext, useEntityData } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { useClaudeProjectList } from './use-claude-projects';
@@ -40,7 +40,6 @@ export type SnifferEvent = {
   triggerLogDockPointer: { ref: string; options: Record<string, string> } | null;
 };
 
-const SNIFFER_CLEAR_EVENT = 'hooks-sniffer-clear';
 const MAX_EVENTS_STORAGE_KEY = 'flowpad-sniffer-max-events';
 const DEFAULT_MAX_EVENTS = 100;
 
@@ -104,7 +103,6 @@ function saveMaxEvents(val: number): void {
 export function useHooksSniffer() {
   const [hookId, setHookId] = useState<string | null>(() => dataContext.snifferHook?.entity.id ?? null);
   const [isToggling, setIsToggling] = useState(false);
-  const [hookEntity, setHookEntity] = useState<AgentHook | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [maxEvents, setMaxEventsRaw] = useState(loadMaxEvents);
   const pausedSnapshot = useRef<readonly any[]>([]);
@@ -118,11 +116,23 @@ export function useHooksSniffer() {
     });
   }, []);
 
-  const { flowData, clear: clearFlowData } = useEntityData(hookEntity?.typeId);
+  const { flowData } = useEntityData(hookId ? new TypeId(AgentHook.type, hookId) : null);
   const { projects } = useClaudeProjectList();
   const { computeNode, snifferEnabled, isBootstrapping } = useContext();
   const isLoading = isBootstrapping;
   const status: HooksSnifferStatus = { enabled: snifferEnabled, hook_id: hookId };
+
+  // Sync hookId from snifferManager when snifferEnabled changes (e.g., after page refresh + bootstrap).
+  // The lazy useState initializer runs before bootstrap completes so hookId starts null;
+  // only this effect bridges the gap between dataContext.snifferEnabled becoming true and hookId being set.
+  useEffect(() => {
+    if (snifferEnabled) {
+      const entityId = snifferManager.entity?.id ?? null;
+      setHookId(entityId);
+    } else {
+      setHookId(null);
+    }
+  }, [snifferEnabled]);
   const sessionToProjectRef = useRef<Map<string, string | null>>(new Map());
 
   const projectFlowDataCounts = useMemo(() => {
@@ -198,76 +208,33 @@ export function useHooksSniffer() {
   }, [flowData, projects]);
 
   const clear = useCallback(() => {
-    clearFlowData();
     sessionToProjectRef.current.clear();
     globalIndexOffsetRef.current = 0;
-    if (hookEntity && 'flowDataStream' in hookEntity) {
-      (hookEntity as any).flowDataStream.clear();
+    const entity = snifferManager.entity;
+    if (entity && 'flowDataStream' in entity) {
+      // stream.clear() emits 'clear' → useEntityData resets all React consumers automatically
+      (entity as any).flowDataStream.clear();
     }
-    // Broadcast to all other hook instances so they clear too
-    window.dispatchEvent(new CustomEvent(SNIFFER_CLEAR_EVENT));
-  }, [clearFlowData, hookEntity]);
-
-  // Listen for clear from other instances of this hook
-  useEffect(() => {
-    const handler = () => {
-      clearFlowData();
-      globalIndexOffsetRef.current = 0;
-    };
-    window.addEventListener(SNIFFER_CLEAR_EVENT, handler);
-    return () => window.removeEventListener(SNIFFER_CLEAR_EVENT, handler);
-  }, [clearFlowData]);
+  }, []);
 
   // Trim the underlying stream when it exceeds maxEvents
   useEffect(() => {
-    if (!hookEntity || !('flowDataStream' in hookEntity)) return;
-    const stream = (hookEntity as any).flowDataStream;
+    const entity = snifferManager.entity;
+    if (!entity || !('flowDataStream' in entity)) return;
+    const stream = (entity as any).flowDataStream;
     const items: any[] = stream._ownItems;
     if (items && items.length > maxEvents) {
       const trimCount = items.length - maxEvents;
       globalIndexOffsetRef.current += trimCount;
       items.splice(0, trimCount);
     }
-  }, [flowData, hookEntity, maxEvents]);
+  }, [flowData, maxEvents]);
 
   useEffect(() => {
     if (isPaused) {
       pausedSnapshot.current = flowData;
     }
   }, [flowData, isPaused]);
-
-  useEffect(() => {
-    let unwatch: (() => Promise<void>) | null = null;
-    let cancelled = false;
-
-    if (!snifferEnabled || !hookId) {
-      setHookEntity(null);
-      clear();
-      return undefined;
-    }
-
-    // Entity should already be in cache from bootstrap. Fall back to creating
-    // without uname so the cache key matches the backend's flow-data target.
-    const cached = AgentHook.getByIdFromCache(hookId);
-    const entity = cached ?? new AgentHook({ id: hookId, name: 'Hooks Sniffer' });
-    setHookEntity(entity);
-    defineGlobal('sniffer', entity);
-
-    void entity.watch().then((unsub) => {
-      if (cancelled) {
-        void unsub();
-        return;
-      }
-      unwatch = unsub;
-    });
-
-    return () => {
-      cancelled = true;
-      if (unwatch) {
-        void unwatch();
-      }
-    };
-  }, [snifferEnabled, hookId, clear]);
 
   const events = useMemo(() => {
     const items = isPaused ? pausedSnapshot.current : flowData;
@@ -426,10 +393,14 @@ export function useHooksSniffer() {
       });
     });
 
-    // Assign globally-increasing index (survives trimming)
+    // Assign globally-increasing index (survives trimming) and derive a stable id from it.
+    // Using idx (not positional index) for the id ensures the id is stable when items
+    // are trimmed from the front of the stream — deduplication in consumers (useProcessSniffer,
+    // useClaudeSessionTrace) relies on this stability.
     const offset = globalIndexOffsetRef.current;
     for (let i = 0; i < parsed.length; i++) {
       parsed[i].idx = offset + i + 1;
+      parsed[i].id = `${parsed[i].timestamp}-idx${parsed[i].idx}`;
     }
 
     return parsed;
@@ -440,8 +411,8 @@ export function useHooksSniffer() {
   const enable = useCallback(async () => {
     setIsToggling(true);
     try {
-      const nextStatus = await snifferManager.enable();
-      if (nextStatus.hook_id) setHookId(nextStatus.hook_id);
+      await snifferManager.enable();   // entity.watch() fully awaited inside
+      setHookId(snifferManager.entity?.id ?? null);
     } finally {
       setIsToggling(false);
     }
@@ -450,12 +421,14 @@ export function useHooksSniffer() {
   const disable = useCallback(async () => {
     setIsToggling(true);
     try {
-      await snifferManager.disable();
-      clear();
+      await snifferManager.disable();  // unwatch + clear inside
+      setHookId(null);
+      sessionToProjectRef.current.clear();
+      globalIndexOffsetRef.current = 0;
     } finally {
       setIsToggling(false);
     }
-  }, [clear]);
+  }, []);
 
   const togglePause = useCallback(() => {
     setIsPaused((prev) => !prev);

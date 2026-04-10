@@ -195,7 +195,8 @@ export function useAnnotationGutter(
     if (!replayComplete || !targetTimestamp || scrollFiredRef.current) return;
     if (!adapter || !terminalReady) return;
 
-    const targetBookmark = sessionBookmarks.find((m) => m.created_date === targetTimestamp);
+    const normalizeTs = (ts: unknown) => String(ts ?? '').replace('+00:00', 'Z');
+    const targetBookmark = sessionBookmarks.find((m) => normalizeTs(m.created_date) === normalizeTs(targetTimestamp));
     if (!targetBookmark) return;
 
     const absRow = targetBookmark.data?.line as number | undefined;

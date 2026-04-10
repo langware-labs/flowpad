@@ -4,21 +4,6 @@ import { renderHook } from '@testing-library/react';
 // Controllable mock for useEntitiesQuery — lets us push new data mid-test
 const useEntitiesQueryMock = vi.fn(() => ({ data: [], refetch: vi.fn() }));
 
-// Mock dependencies
-vi.mock('@sdk', () => ({
-  Memo: vi.fn().mockImplementation((data) => ({
-    ...data,
-    save: vi.fn(),
-    delete: vi.fn(),
-  })),
-  Annotation: vi.fn().mockImplementation((data) => ({
-    ...data,
-    save: vi.fn(),
-    delete: vi.fn(),
-  })),
-  QueryRequest: vi.fn().mockImplementation((opts: any) => ({ name: opts?.name, type: opts?.type })),
-}));
-
 vi.mock('@sdk/react/hooks', () => ({
   useEntitiesQuery: (...args: any[]) => useEntitiesQueryMock(...args),
 }));

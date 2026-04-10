@@ -1,11 +1,13 @@
 /**
  * TasksViewer - Full dock view for creating/editing tasks.
  * Opened at dock/tasks/<task-id> or dock/tasks (new).
+ * For shared tasks (spec_id set), renders SharedTaskView instead of the edit form.
  */
 
 import { useState, useCallback, useMemo } from 'react';
 import { Task, TypeId, isTypeId, dataManager, QueryRequest } from '@sdk';
 import { useEntity, useProject } from '@sdk/react/hooks';
+import { SharedTaskView } from '@src/components/task-bar/SharedTaskView';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
@@ -39,7 +41,7 @@ export function TasksViewer() {
 
   const isEditing = !!existingTask;
 
-  // Form state
+  // Form state (must be declared before any early return — React hooks rule)
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState('open');
@@ -105,6 +107,11 @@ export function TasksViewer() {
     await dataManager.query(new QueryRequest({ type: Task.type, scope }), true);
     navigation.goBack();
   }, [existingTask, project?.typeId, navigation]);
+
+  // Shared tasks (sent via notification) show the SharedTaskView instead of the edit form
+  if (existingTask?.spec_id) {
+    return <SharedTaskView task={existingTask} onClose={() => navigation.goBack()} />;
+  }
 
   return (
     <div className="flex h-full flex-col">

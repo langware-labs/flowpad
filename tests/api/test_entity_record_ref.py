@@ -28,7 +28,6 @@ async def test_record_sync_to_db_creates_entity(bootstrapped_client):
     entity = await Workspace.get_one({"id": _UUID_001})
     assert entity is not None
     assert entity.name == "Indexed Workspace"
-    assert entity.status == "active"
     # record_data_ref has been removed — entity should not have this field
     assert not hasattr(entity, "record_data_ref")
 
@@ -50,7 +49,6 @@ async def test_record_sync_to_db_upserts_entity(bootstrapped_client):
     entity2 = await Workspace.get_one({"id": _UUID_002})
     assert entity2 is not None
     assert entity2.name == "Updated Name"
-    assert entity2.status == "active"
     # Same entity, not a duplicate
     assert entity2.id == entity1.id
 

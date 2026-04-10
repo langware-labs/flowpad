@@ -56,7 +56,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
 
   const fetchStatus = useCallback(async () => {
     if (!computeNodeId || !workdir) return;
-    const action = new ActionInfo('git-status', 'compute_node', computeNodeId, 'GET');
+    const action = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'GET');
+    action.subpath = 'status';
     action.queryParameters = { workdir };
     try {
       const result = await dataManager.callAction<null, GitStatusData>(action);

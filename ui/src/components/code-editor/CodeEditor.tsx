@@ -1,23 +1,13 @@
+import { dataContext, detectLanguage, downloadFile, EditorLanguage, FSItem, fsManager, Shell, VFSPath } from '@sdk';
 import { TabbedTerminal } from '@src/components/terminal';
-import { InputDialog } from '@src/components/ui/input-dialog';
-import { TabInfo, useEditorStore } from '@src/store/use-editor-store';
-import {
-  dataContext,
-  detectLanguage,
-  downloadFile,
-  EditorLanguage,
-  FSItem,
-  fsManager,
-  Shell,
-  VFSPath,
-} from '@sdk';
 import { Button } from '@src/components/ui/button';
-import { ScrollArea } from '@src/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { InputDialog } from '@src/components/ui/input-dialog';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@src/components/ui/resizable';
-import { ScrollBar } from '@src/components/ui/scroll-area';
+import { ScrollArea, ScrollBar } from '@src/components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useFS } from '@src/hooks/useFS';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { TabInfo, useEditorStore } from '@src/store/use-editor-store';
 import { ChevronDown, ChevronUp, Download, Eye, EyeOff, Pin, TerminalIcon, X } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DirectoryTree, ItemHandler } from '../directory-tree';
@@ -379,21 +369,24 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
 
       // Find or create the 'run' shell on demand
       const cn = dataContext.computeNode;
-      if (!cn) { console.error('[CodeEditor] No compute node'); return; }
+      if (!cn) {
+        console.error('[CodeEditor] No compute node');
+        return;
+      }
 
       let runShell: Shell | null = null;
       const shells = await Shell.list(cn.id);
-      runShell = shells.find(s => s.name === 'Run') ?? null;
+      runShell = shells.find((s) => s.name === 'Run') ?? null;
 
       if (!runShell) {
-        runShell = Shell.create(cn, { name: 'Run' });
+        runShell = Shell.create(cn, { name: 'Run', workdir: dataContext.project?.fs_storage_mount_path || undefined });
         await runShell.save(cn.typeId);
       }
 
       setActiveTerminalSessionId(runShell.id);
 
       if (!runShell.pty?.isLive) {
-        await runShell.startPty(80, 24);
+        await runShell.start({ cols: 80, rows: 24, workdir: runShell.workdir ?? dataContext.project?.fs_storage_mount_path ?? undefined });
       }
       await runShell.resize(80, 24);
       await runShell.sendInput(command.trim() + '\r');

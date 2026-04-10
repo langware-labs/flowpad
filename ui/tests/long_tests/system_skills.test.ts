@@ -8,7 +8,7 @@
  * Timeout: 180s (real Claude subprocess)
  */
 
-import { FlowData, apiClient, dataContext } from '@sdk';
+import { FlowData, apiClient } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, get_local_compute_node, getTestSignupInfo } from '../utils/test-utils';
 import * as os from 'os';
@@ -18,10 +18,8 @@ import * as fs from 'fs';
 const SYSTEM_SKILLS = ['flow', 'compile-workflow', 'session_analysis'];
 
 describe('system skills visible via --add-dir', () => {
-  beforeEach(async () => {
-    const { baseUrl, token } = await getTestSignupInfo();
-    apiTestSetup(baseUrl, token);
-    await dataContext.init();
+  beforeEach(async (ctx: any) => {
+    await apiTestSetup(getTestSignupInfo(), ctx.task.name);
   });
 
   it('lists system skills in Claude subprocess', async () => {
@@ -31,8 +29,7 @@ describe('system skills visible via --add-dir', () => {
     const workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'flow-skills-test-'));
 
     // Create process with a fresh workdir
-    const processor = await computeNode.createAgenticProcessor();
-    const agenticProcess = await processor.createProcess({
+    const agenticProcess = await computeNode.createProcess({
       workdir,
       permissionMode: 'bypassPermissions',
     });

@@ -51,9 +51,8 @@ def _server_env(port: int, db_path: str) -> dict:
     env = os.environ.copy()
     env["SQLITE_DATABASE_PATH"] = db_path
     env["MINIHUB_HOST"] = "127.0.0.1"
-    env["MINIHUB_PORT"] = str(port)
+    env["LOCAL_SERVER_PORT"] = str(port)
     env["FLOWPAD_SKIP_LOCK"] = "true"
-    env["FLOWPAD_DEV"] = "false"
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     env["PYTHONPATH"] = f"{repo_root}{os.pathsep}{env.get('PYTHONPATH', '')}"
     return env
@@ -147,7 +146,13 @@ async def _open_shell_via_ws(ws, shell_id: str, conn_id: str) -> dict:
     ))
     for _ in range(10):
         msg = await _recv(ws, timeout=15)
-        if msg.get("status") in ("SUCCESS", "FAIL"):
+        status = msg.get("status")
+        if status not in ("SUCCESS", "FAIL"):
+            content = msg.get("content")
+            if isinstance(content, dict):
+                status = content.get("status")
+        if status in ("SUCCESS", "FAIL"):
+            msg["status"] = status
             return msg
     raise AssertionError("Shell.open() response not received")
 
@@ -204,8 +209,13 @@ async def _attach_via_ws(ws, cn_id: str, shell_id: str, since_seq: int = 0) -> d
         # ResponseMessage unwrapped by ws_rest: {"message_type": "response_msg", "content": {...}}
         if msg.get("message_type") == "response_msg":
             content = msg.get("content", {})
-            if isinstance(content, dict) and content.get("status") in ("reattached", "not_found"):
-                return msg
+            if isinstance(content, dict):
+                cst = content.get("status")
+                if cst in ("SUCCESS", "FAIL"):
+                    msg["status"] = cst
+                    return msg
+                if cst in ("reattached", "not_found"):
+                    return msg
     raise AssertionError("terminal-command/attach response not received")
 
 

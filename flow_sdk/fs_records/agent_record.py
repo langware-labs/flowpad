@@ -22,8 +22,9 @@ from flow_sdk.fs_store.record import Scope, _META_JSON
 def _agent_search_dirs() -> list[Path]:
     """Return directories to scan for agent .md files.
 
-    Scans user-level (~/.claude/agents) and the cwd/.claude/agents if present
-    (covers project-level agents when the server runs from the project dir).
+    Scans user-level (~/.claude/agents), all known Claude projects
+    (<project>/.claude/agents), cwd-level, and any extra dirs from
+    FLOWPAD_AGENT_DIRS (colon-separated).
     """
     import os
     dirs: list[Path] = []
@@ -36,6 +37,11 @@ def _agent_search_dirs() -> list[Path]:
             dirs.append(p)
 
     _add(Path.home() / ".claude" / "agents")
+
+    from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
+    for real in iter_claude_project_paths():
+        _add(real / ".claude" / "agents")
+
     _add(Path(os.getcwd()) / ".claude" / "agents")
 
     for extra in os.environ.get("FLOWPAD_AGENT_DIRS", "").split(":"):
@@ -107,16 +113,21 @@ class AgentRecord(Record):
         return ""
 
     @property
-    def main_ref(self) -> "Any":  # FSRef | None
-        """Primary content ref: the agent's .md file."""
+    def agent_doc(self) -> "Any":  # FrontMatterFsRef | None
+        """FrontMatterFsRef pointing to the agent's .md file."""
+        from flow_sdk.fs_store.fs_ref import FrontMatterFsRef
         ar = self.asset_ref
         if ar is not None:
-            return ar
+            return FrontMatterFsRef(ar._path)
         rd = self.record_dir
-        if rd is None or not self.name:
-            return None
-        from flow_sdk.fs_store.fs_ref import TextFsRef
-        return TextFsRef(rd / f"{self.name}.md")
+        if rd is not None and self.name:
+            return FrontMatterFsRef(rd / f"{self.name}.md")
+        return None
+
+    @property
+    def main_ref(self) -> "Any":  # FrontMatterFsRef | None
+        """Primary content ref: delegates to agent_doc."""
+        return self.agent_doc
 
     def meta_dict(self) -> dict:
         result = super().meta_dict()
@@ -149,18 +160,16 @@ class AgentRecord(Record):
     @property
     def prompt(self) -> str:
         """Read the system prompt from the companion markdown file."""
-        md_name = f"{self.name}.md" if self.name else None
-        if md_name:
-            content = self.read_file(md_name)
-            if content is not None:
-                return _extract_body(content)
+        doc = self.agent_doc
+        if doc is not None and doc.exists():
+            return doc.read_body()
         return getattr(self, "prompt_text", "") or ""
 
     @prompt.setter
     def prompt(self, value: str) -> None:
-        md_name = f"{self.name}.md" if self.name else None
-        if md_name and self.record_dir is not None:
-            self.write_file(md_name, self._render_markdown(body=value))
+        doc = self.agent_doc
+        if doc is not None:
+            doc.write_body(value)
         else:
             object.__setattr__(self, "prompt_text", value)
             dirty = object.__getattribute__(self, "_dirty_keys")
@@ -227,13 +236,13 @@ class AgentRecord(Record):
         p = Path(path)
         text = p.read_text(encoding="utf-8")
         rec = cls.from_markdown(text, name=p.stem)
-        from flow_sdk.fs_store.fs_ref import FSRef
-        rec.asset_ref = FSRef(p)
+        from flow_sdk.fs_store.fs_ref import FrontMatterFsRef
+        rec.asset_ref = FrontMatterFsRef(p)
         return rec
 
     # -- Claude Code --agents JSON -----------------------------------------
 
-    def to_agents_json(self) -> dict[str, dict[str, Any]]:
+    def to_agents_cli_json(self) -> dict[str, dict[str, Any]]:
         """Build ``{name: {description, prompt, ...}}`` dict for ``--agents`` flag."""
         entry: dict[str, Any] = {}
         # prompt always included
@@ -329,19 +338,28 @@ class AgentRecord(Record):
         if body:
             object.__getattribute__(rec, "__dict__")["prompt_text"] = body
         # _record_folder_ref stays None so save() targets records_root shadow.
-        from flow_sdk.fs_store.fs_ref import TextFsRef
-        object.__setattr__(rec, "_asset_ref", TextFsRef(md_file.resolve()))
+        from flow_sdk.fs_store.fs_ref import FrontMatterFsRef
+        object.__setattr__(rec, "_asset_ref", FrontMatterFsRef(md_file.resolve()))
         return rec
 
     def save(self) -> None:
         """Save both record.json and the companion .md file."""
         super().save()
-        ar = self.asset_ref
-        if ar is not None:
-            ar.write(self._render_markdown())
-        elif self.record_dir is not None and self.name:
-            from flow_sdk.fs_store.fs_ref import FSRef
-            FSRef(self.record_dir / f"{self.name}.md").write(self._render_markdown())
+        doc = self.agent_doc
+        if doc is not None:
+            doc.write_doc(body=self.prompt, frontmatter=self._frontmatter_fields())
+
+    def clone(self, base_dir: "str | Path") -> "AgentRecord":
+        """Install this agent into base_dir/.claude/agents/<name>.md.
+
+        base_dir is the project root (e.g. tmp_path).  The flat .md file is
+        written to base_dir/.claude/agents/<name>.md — the format Claude CLI
+        discovers when base_dir is passed via --add-dir.
+        """
+        md_path = Path(base_dir) / ".claude" / "agents" / f"{self.name}.md"
+        md_path.parent.mkdir(parents=True, exist_ok=True)
+        md_path.write_text(self._render_markdown())
+        return AgentRecord.from_file(md_path)
 
     # -- Loader helpers ----------------------------------------------------
 
@@ -391,7 +409,7 @@ class AgentRecord(Record):
         """Load from system_assets/agents/<name>/."""
         import flow_sdk
 
-        source = Path(flow_sdk.__file__).parent / "system_assets" / "agents" / name
+        source = Path(flow_sdk.__file__).parent / "system_assets" / "available" / "agents" / name
         if source.is_dir():
             return AgentRecord.load_from_dir(source)
         # Also check workspace

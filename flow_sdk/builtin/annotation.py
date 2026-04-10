@@ -10,7 +10,7 @@ class Annotation(Entity):
     target_type: str = APIField("")
     target_id: str = APIField("")
     content: str = APIField("")      # max 50 chars
-    session_id: str = APIField("")   # Claude session ID (worker_session_id)
+    session_id: str = APIField("")   # Claude session ID
     iso_timestamp: str = APIField("")
     data: Optional[Dict[str, Any]] = APIField(default_factory=dict)  # PTY: seq, seqOffset, line
     _api_visible: ClassVar[bool] = True

@@ -44,6 +44,7 @@ from .routes import (
     detection_router,
     directory_router,
     hooks_router,
+    notify_router,
     search_router,
     testing_router,
     ui_router,
@@ -60,7 +61,10 @@ async def _on_server_startup():
 
     print(f"  Database path: {SQLITE_DATABASE_PATH}")
 
-    port = int(os.environ.get("MINIHUB_PORT", os.environ.get("LOCAL_SERVER_PORT", "9007")))
+    if os.environ.get("FLOWPAD_SKIP_LOCK", "").lower() == "true":
+        return
+
+    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
     set_server_info(
         {
             "port": port,
@@ -95,6 +99,36 @@ async def _on_server_startup():
 
     _asyncio.create_task(_asyncio.to_thread(_warm_schema))
 
+    await _start_notification_scanner()
+    await _start_cloud_ws_listener()
+
+
+async def _start_notification_scanner() -> None:
+    """Scan for incoming notifications on startup."""
+    try:
+        from flow_sdk.fs_records.cross_notification_scanner import scan_incoming_notifications
+        from flow_sdk.builtin.user import User as _User
+        import asyncio as _asyncio
+        local_user = await _User.get_one({"uname": "local"})
+        if local_user:
+            _asyncio.create_task(scan_incoming_notifications(local_user.id))
+    except Exception as e:
+        print(f"  Notification scanner: failed to start ({e})")
+
+
+async def _start_cloud_ws_listener() -> None:
+    """Stub: real-time cloud push notifications not yet implemented.
+
+    TODO: Connect to flowpad.ai cloud WebSocket to receive cross-notification
+    push events in real time. For now, notifications reach the recipient via
+    the email deep-link → git pull → manifest scanner path.
+    """
+    import logging as _logging
+    _logging.getLogger(__name__).info(
+        "Cloud WS listener: not started (real-time push from cloud is a stub — "
+        "notifications arrive via email deep-link + git pull instead)"
+    )
+
 
 async def _shutdown_extras():
     """Clean up server.json and stop cron scheduler."""
@@ -127,6 +161,7 @@ server.add_router(watch_router)
 server.add_router(websocket_router)
 server.add_router(webhook_api_router)
 server.add_router(assets_router)
+server.add_router(notify_router, prefix="/api/v1")
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)
 

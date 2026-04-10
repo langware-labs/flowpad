@@ -25,7 +25,7 @@ class TaskType(StrEnum):
 
 class Task(Entity):
     type: str = APIField(default="task")
-    title: str = APIField()
+    title: str = APIField("")
     description: Optional[str] = APIField(None, blob=True)
     status: str = APIField(TaskStatus.TO_DO)
     last_viewed_at: Optional[datetime] = APIField(None)
@@ -42,4 +42,7 @@ class Task(Entity):
     tags: List[str] = APIField([])
     links: Optional[Dict[str, str]] = APIField(None)
     metadata: Optional[Dict[str, Any]] = APIField(None)
+    spec_id: Optional[str] = APIField(None)
+    shared_by_id: Optional[str] = APIField(None)
+    conversation: Optional[str] = APIField(None)
     _api_visible: ClassVar[bool] = True

@@ -12,10 +12,12 @@
  * clicking back to Session 1.
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+import { useEntityData } from '@src/hooks/flow-hooks';
+import { TypeId, dataManager } from '@sdk';
 
-// ── Mocks ───────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 // Minimal FlowData stand-in
 interface FakeFlowData {
@@ -26,8 +28,21 @@ interface FakeFlowData {
 // Per-entity fake: flowDataStream + event emitter
 function makeFakeEntity(items: FakeFlowData[]) {
   const listeners: Record<string, Array<(...args: any[]) => void>> = {};
+  const streamListeners: Record<string, Array<(...args: any[]) => void>> = {};
   return {
-    flowDataStream: { items: [...items], isComplete: false },
+    flowDataStream: {
+      items: [...items],
+      isComplete: false,
+      on(event: string, handler: (...args: any[]) => void) {
+        (streamListeners[event] ??= []).push(handler);
+      },
+      off(event: string, handler: (...args: any[]) => void) {
+        streamListeners[event] = (streamListeners[event] ?? []).filter((h) => h !== handler);
+      },
+      emitStream(event: string, ...args: any[]) {
+        for (const h of streamListeners[event] ?? []) h(...args);
+      },
+    },
     on(event: string, handler: (...args: any[]) => void) {
       (listeners[event] ??= []).push(handler);
       return () => {
@@ -44,28 +59,20 @@ function makeFakeEntity(items: FakeFlowData[]) {
 // Cache map keyed by stringified TypeId
 const entityCache = new Map<string, ReturnType<typeof makeFakeEntity>>();
 
-vi.mock('@sdk', async (importOriginal) => {
-  const actual = await importOriginal<Record<string, unknown>>();
-  return {
-    ...actual,
-    dataManager: {
-      ...((actual.dataManager as Record<string, unknown>) ?? {}),
-      getByTypeIdFromCache(typeId: { toString(): string }) {
-        return entityCache.get(typeId.toString()) ?? null;
-      },
-    },
-  };
+// Spy on dataManager.getByTypeIdFromCache to return test entities from entityCache
+let getByTypeIdFromCacheSpy: ReturnType<typeof vi.spyOn>;
+
+beforeEach(() => {
+  getByTypeIdFromCacheSpy = vi.spyOn(dataManager, 'getByTypeIdFromCache' as any).mockImplementation(
+    (typeId: { toString(): string }) => entityCache.get(typeId.toString()) ?? null,
+  );
 });
-
-// ── Import after mocks are wired ────────────────────────────────────────────
-
-import { useEntityData } from '@src/hooks/flow-hooks';
-import { TypeId } from '@sdk';
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 afterEach(() => {
   entityCache.clear();
+  getByTypeIdFromCacheSpy?.mockRestore();
 });
 
 // Valid UUIDs required by TypeId validation

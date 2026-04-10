@@ -160,7 +160,7 @@ async def handle_record_action():
     if rec_cls is None:
         return ApiFailResponse(message=f"No Record class for type {entity.type}")
 
-    rec = rec_cls.discover_one(entity.id)
+    rec = await entity.get_record()
     if rec is None:
         # Try by uname as well
         if getattr(entity, "uname", None):
@@ -211,6 +211,10 @@ async def handle_create_entity(request: Request):
         err_msg = f"Invalid request data, missing required field: {e}"
         service_log.highlighted_error(err_msg)
         raise HTTPException(status_code=400, detail=err_msg)
+
+    # Reject agent creation without a name
+    if request_info.direct_resource_type == "agent" and not getattr(entity, "name", None):
+        raise HTTPException(status_code=400, detail="Agent must have a name")
 
     someone_typeid = request_info.someone_typeid
     if not someone_typeid:

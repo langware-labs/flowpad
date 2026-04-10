@@ -10,8 +10,11 @@ import {
   ErrorStatus,
   useClaudeErrorRecords,
   type ClaudeErrorRecord,
+  type CloudSearchResult,
   type ErrorOccurrence,
 } from '@src/hooks/useClaudeErrorRecords';
+import { useContext } from '@src/hooks/useContext';
+import { CloudSearchResultsModal } from './CloudSearchResultsModal';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -27,6 +30,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@src/components/ui/alert-dialog';
+
 import {
   AlarmClock,
   AlertTriangle,
@@ -37,15 +41,17 @@ import {
   EyeOff,
   FileText,
   ListTodo,
+  Loader2,
   OctagonAlert,
   RefreshCw,
   RotateCcw,
+  Search,
   Terminal,
   Trash2,
   Webhook,
   Wrench,
 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   STATUS_SLUG_MAP,
   UNKNOWN_TIMESTAMP,
@@ -234,20 +240,52 @@ function ErrorCard({
   const isHook = error.error_category === ErrorCategory.HOOK;
   const Icon = isHook ? AlertTriangle : OctagonAlert;
   const iconColor = isHook ? 'text-amber-400' : 'text-orange-400';
+  const needsTruncation =
+    error.error_msg.length > 120 ||
+    (error.fix.message && error.fix.message.length > 120) ||
+    (error.fix.instruction && error.fix.instruction.length > 120) ||
+    (error.traceback && error.traceback.length > 0);
+  const trim = (s: string) => (!expanded && s.length > 120 ? s.slice(0, 120) + '...' : s);
+
+  const handleCardClick = useCallback((e: React.MouseEvent) => {
+    // Don't toggle if clicking a button, link, or interactive element
+    if ((e.target as HTMLElement).closest('button, a, [role="button"]')) return;
+    if (needsTruncation) setExpanded((v) => !v);
+  }, [needsTruncation]);
 
   return (
-    <div className={cn(
-      'rounded-md border border-border bg-card p-3',
-      'border-l-2',
-      isHook ? 'border-l-amber-500' : 'border-l-orange-500',
-    )}>
+    <div
+      className={cn(
+        'rounded-md border border-border bg-card p-3',
+        'border-l-2',
+        isHook ? 'border-l-amber-500' : 'border-l-orange-500',
+        needsTruncation && 'cursor-pointer',
+      )}
+      onClick={handleCardClick}
+    >
       <div className="flex gap-2">
-        <Icon className={cn('mt-1.5 h-4 w-4 shrink-0', iconColor)} />
+        {/* Left gutter: icon + expand/collapse chevron */}
+        <div className="flex shrink-0 flex-col items-center">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Icon className={cn('h-4 w-4 cursor-default', iconColor)} />
+            </TooltipTrigger>
+            <TooltipContent>fingerprint: {error.fingerprint}</TooltipContent>
+          </Tooltip>
+          {needsTruncation && (
+            <span className="text-muted-foreground/50">
+              {expanded
+                ? <ChevronDown className="h-3.5 w-3.5" />
+                : <ChevronRight className="h-3.5 w-3.5" />
+              }
+            </span>
+          )}
+        </div>
         {/* Occurrence counter in grouped mode */}
         {grouped && error.occurrence_count > 1 && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="mt-1 flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-muted px-1 text-[10px] font-bold text-muted-foreground">
+              <span className="flex h-5 min-w-[20px] shrink-0 items-center justify-center rounded-full bg-muted px-1 text-[10px] font-bold text-muted-foreground">
                 {error.occurrence_count}
               </span>
             </TooltipTrigger>
@@ -260,78 +298,88 @@ function ErrorCard({
 
         {/* Left: text content */}
         <div className="min-w-0 flex-1">
-          {/* Header: error message as title, status badge */}
-          <div className="flex flex-wrap items-center gap-1">
-            {isHook && <span className="text-xs font-medium">{error.hook}</span>}
-            {isHook && error.event && (
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{error.event}</span>
-            )}
-            {statusBadge(error.error_status)}
-          </div>
+          {/* Header row: hook name + event badge + status (hooks only) */}
+          {isHook && (
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="text-xs font-medium">{error.hook}</span>
+              {error.event && (
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{error.event}</span>
+              )}
+              {statusBadge(error.error_status)}
+            </div>
+          )}
+          {/* Status badge for non-hook errors */}
+          {!isHook && statusBadge(error.error_status) && (
+            <div className="flex items-center gap-1">{statusBadge(error.error_status)}</div>
+          )}
 
           {/* Error message (root cause) */}
-          <p className={cn('mt-1 font-mono text-xs', isHook ? 'text-amber-400/90' : 'text-foreground/75')}>
-            {error.error_msg}
+          <p className={cn('font-mono text-xs', isHook ? 'text-amber-400/90' : 'text-foreground/75', (isHook || statusBadge(error.error_status)) && 'mt-0.5')}>
+            {trim(error.error_msg)}
           </p>
 
-          {/* Hook events where this error occurs */}
-          {isHook && (() => {
-            // Use the record-level hooks list (accumulates all distinct hook names).
-            // Fall back to the legacy single hook field for older records.
-            const display: string[] =
-              error.hooks?.length > 0
-                ? error.hooks
-                : error.hook
-                  ? [error.hook]
-                  : [];
-            return display.length > 0 ? (
-              <div className="mt-1 flex flex-wrap items-center gap-1">
-                <span className="text-[10px] text-muted-foreground">Hooks:</span>
-                {display.map((h) => (
-                  <span key={h} className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                    {h}
-                  </span>
-                ))}
-              </div>
-            ) : null;
-          })()}
-
-          {/* Occurrence info */}
-          <p className="mt-0.5 text-[10px] text-muted-foreground">
-            Seen {error.occurrence_count} time{error.occurrence_count !== 1 ? 's' : ''} across{' '}
-            {error.session_ids.length} session{error.session_ids.length !== 1 ? 's' : ''}
-          </p>
-          <p className="mt-0.5 text-[10px] text-muted-foreground/60">
-            {error.first_seen && error.first_seen !== UNKNOWN_TIMESTAMP && (
-              <span>
-                First: {new Date(error.first_seen).toLocaleString()} ({timeAgo(new Date(error.first_seen))})
-              </span>
-            )}
-            {error.first_seen &&
-              error.first_seen !== UNKNOWN_TIMESTAMP &&
-              error.last_seen &&
-              error.last_seen !== UNKNOWN_TIMESTAMP && <span className="mx-1.5">·</span>}
+          {/* Occurrence info — compact single line */}
+          <p className="text-[10px] text-muted-foreground">
+            {error.occurrence_count}× across {error.session_ids.length} session{error.session_ids.length !== 1 ? 's' : ''}
             {error.last_seen && error.last_seen !== UNKNOWN_TIMESTAMP && (
-              <span>
-                Last: {new Date(error.last_seen).toLocaleString()} ({timeAgo(new Date(error.last_seen))})
-              </span>
+              <span className="text-muted-foreground/60"> · {timeAgo(new Date(error.last_seen))}</span>
             )}
           </p>
 
-          {/* Expandable traceback */}
-          {error.traceback && error.traceback.length > 0 && (
-            <button
-              className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
-              onClick={() => setExpanded(!expanded)}
-            >
-              {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-              Traceback ({error.traceback.length} lines)
-            </button>
+          {/* Expanded-only details */}
+          {expanded && (
+            <>
+              {/* Hook events where this error occurs */}
+              {isHook && (() => {
+                const display: string[] =
+                  error.hooks?.length > 0
+                    ? error.hooks
+                    : error.hook
+                      ? [error.hook]
+                      : [];
+                return display.length > 0 ? (
+                  <div className="mt-1 flex flex-wrap items-center gap-1">
+                    <span className="text-[10px] text-muted-foreground">Hooks:</span>
+                    {display.map((h) => (
+                      <span key={h} className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        {h}
+                      </span>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
+
+              {/* Fix message & instruction — full width, readable */}
+              {error.error_status === ErrorStatus.OPEN && (error.fix.message || error.fix.instruction) && (
+                <div className="mt-1.5 rounded-md border border-blue-500/20 bg-blue-500/5 px-2.5 py-1.5">
+                  {error.fix.message && (
+                    <p className="text-xs font-medium text-blue-400">{error.fix.message}</p>
+                  )}
+                  {error.fix.instruction && (
+                    <p className="mt-0.5 text-xs text-muted-foreground">{error.fix.instruction}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Traceback */}
+              {error.traceback && error.traceback.length > 0 && (
+                <>
+                  <p className="mt-1.5 text-[10px] text-muted-foreground">
+                    Traceback ({error.traceback.length} lines)
+                  </p>
+                  <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted p-2 text-[10px] leading-relaxed text-muted-foreground">
+                    {error.traceback.join('\n')}
+                  </pre>
+                </>
+              )}
+            </>
           )}
-          {expanded && error.traceback && (
-            <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted p-2 text-[10px] leading-relaxed text-muted-foreground">
-              {error.traceback.join('\n')}
-            </pre>
+
+          {/* Collapsed: show trimmed fix hint if available */}
+          {!expanded && error.error_status === ErrorStatus.OPEN && (error.fix.message || error.fix.instruction) && (
+            <p className="text-[10px] text-blue-400/70">
+              {trim(error.fix.message || error.fix.instruction || '')}
+            </p>
           )}
         </div>
 
@@ -417,15 +465,44 @@ function OccurrenceCard({
   const isHook = parentError.error_category === ErrorCategory.HOOK;
   const Icon = isHook ? AlertTriangle : OctagonAlert;
   const iconColor = isHook ? 'text-amber-400' : 'text-orange-400';
+  const needsTruncation =
+    occurrence.error_msg.length > 120 ||
+    (occurrence.traceback && occurrence.traceback.length > 0);
+  const trim = (s: string) => (!expanded && s.length > 120 ? s.slice(0, 120) + '...' : s);
+
+  const handleCardClick = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button, a, [role="button"]')) return;
+    if (needsTruncation) setExpanded((v) => !v);
+  }, [needsTruncation]);
 
   return (
-    <div className={cn(
-      'rounded-md border border-border bg-card p-2.5',
-      'border-l-2',
-      isHook ? 'border-l-amber-500' : 'border-l-orange-500',
-    )}>
+    <div
+      className={cn(
+        'rounded-md border border-border bg-card p-2.5',
+        'border-l-2',
+        isHook ? 'border-l-amber-500' : 'border-l-orange-500',
+        needsTruncation && 'cursor-pointer',
+      )}
+      onClick={handleCardClick}
+    >
       <div className="flex gap-2">
-        <Icon className={cn('mt-1.5 h-3.5 w-3.5 shrink-0', iconColor)} />
+        {/* Left gutter: icon + expand/collapse chevron */}
+        <div className="flex shrink-0 flex-col items-center">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Icon className={cn('h-3.5 w-3.5 cursor-default', iconColor)} />
+            </TooltipTrigger>
+            <TooltipContent>fingerprint: {parentError.fingerprint}</TooltipContent>
+          </Tooltip>
+          {needsTruncation && (
+            <span className="text-muted-foreground/50">
+              {expanded
+                ? <ChevronDown className="h-3.5 w-3.5" />
+                : <ChevronRight className="h-3.5 w-3.5" />
+              }
+            </span>
+          )}
+        </div>
 
         {/* Left: text content */}
         <div className="min-w-0 flex-1">
@@ -435,36 +512,41 @@ function OccurrenceCard({
           </div>
 
           {/* Error message (root cause) first */}
-          <p className={cn('mt-1 font-mono text-xs', isHook ? 'text-amber-400/90' : 'text-foreground/75')}>
-            {occurrence.error_msg}
+          <p className={cn('mt-0.5 font-mono text-xs', isHook ? 'text-amber-400/90' : 'text-foreground/75')}>
+            {trim(occurrence.error_msg)}
           </p>
 
-          {/* Hook where this occurrence happened */}
-          {isHook && (occurrence.hook || parentError.hook) && (
-            <div className="mt-1 flex flex-wrap items-center gap-1">
-              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                {occurrence.hook || parentError.hook}
-              </span>
-            </div>
-          )}
+          {/* Timestamp — compact */}
           {occurrence.timestamp && occurrence.timestamp !== UNKNOWN_TIMESTAMP && (
-            <p className="mt-0.5 text-[10px] text-muted-foreground/60">
-              {new Date(occurrence.timestamp).toLocaleString()} ({timeAgo(new Date(occurrence.timestamp))})
+            <p className="text-[10px] text-muted-foreground/60">
+              {timeAgo(new Date(occurrence.timestamp))}
             </p>
           )}
-          {occurrence.traceback && occurrence.traceback.length > 0 && (
-            <button
-              className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
-              onClick={() => setExpanded(!expanded)}
-            >
-              {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-              Traceback ({occurrence.traceback.length} lines)
-            </button>
+
+          {/* Expanded-only details */}
+          {expanded && (
+            <>
+              {/* Hook where this occurrence happened */}
+              {isHook && (occurrence.hook || parentError.hook) && (
+                <div className="mt-1 flex flex-wrap items-center gap-1">
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    {occurrence.hook || parentError.hook}
+                  </span>
+                </div>
+              )}
+            </>
           )}
-          {expanded && occurrence.traceback && (
-            <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted p-2 text-[10px] leading-relaxed text-muted-foreground">
-              {occurrence.traceback.join('\n')}
-            </pre>
+
+          {/* Traceback — only visible when expanded */}
+          {expanded && occurrence.traceback && occurrence.traceback.length > 0 && (
+            <>
+              <p className="mt-1.5 text-[10px] text-muted-foreground">
+                Traceback ({occurrence.traceback.length} lines)
+              </p>
+              <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted p-2 text-[10px] leading-relaxed text-muted-foreground">
+                {occurrence.traceback.join('\n')}
+              </pre>
+            </>
           )}
         </div>
 
@@ -549,11 +631,23 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
     reopenError,
     createTaskForError,
     clearAll,
+    searchCloudForErrors,
+    fixAllCloud,
   } = useClaudeErrorRecords();
 
+  const { cloudLoginAvailable } = useContext();
   const { navigation } = useDockNavigation();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
+
+  // Cloud search state
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [isSearchingCloud, setIsSearchingCloud] = useState(false);
+  const [cloudResultsModal, setCloudResultsModal] = useState<{
+    ignored: number;
+    fixResults: CloudSearchResult[];
+    remaining: number;
+  } | null>(null);
 
   // Apply initial status slug from URL on mount
   useMemo(() => {
@@ -619,7 +713,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
   );
 
   const handleOpenHook = useCallback(
-    (hookName: string, eventType: string) => {
+    (_hookName: string, eventType: string) => {
       navigation.openDock(
         new DockPointer(ViewType.HOOKS, undefined, {
           hookId: '',
@@ -632,9 +726,11 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
 
   const handleCreateTask = useCallback(
     (error: ClaudeErrorRecord) => {
-      void createTaskForError(error).then(({ taskId, shellId: shellId }) => {
+      const instruction = error.fix?.instruction;
+      void createTaskForError(error, instruction ? { instruction } : undefined).then(({ taskId, shellId }) => {
         if (taskId && shellId) {
-          toast({ title: 'Session started', description: 'Claude is investigating the error.' });
+          const description = instruction ? 'Claude is applying the fix.' : 'Claude is investigating the error.';
+          toast({ title: 'Session started', description });
           void navigation.openSession(shellId, { skipPermissions: true });
         } else {
           toast({ title: 'Failed to start session', variant: 'destructive' });
@@ -654,7 +750,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
         } catch {
           /* not found */
         }
-        if (shell?.pty?.isLive) {
+        if ((shell as { pty?: { isLive?: boolean } } | null)?.pty?.isLive) {
           void navigation.openSession(error.worker_session_id, { skipPermissions: true });
         } else if (error.claude_session_id) {
           void navigation.openShell(error.worker_session_id, {
@@ -674,6 +770,41 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
   const handleIgnoreTillNow = useCallback((fp: string) => void ignoreTillNow(fp), [ignoreTillNow]);
   const handleSnooze = useCallback((fp: string, until: Date) => void ignoreUntil(fp, until), [ignoreUntil]);
   const handleReopen = useCallback((fp: string) => void reopenError(fp), [reopenError]);
+
+  const handleSearchCloud = useCallback(async () => {
+    if (!cloudLoginAvailable) {
+      setShowLoginModal(true);
+      return;
+    }
+    const openFingerprints = allErrors
+      .filter((e) => e.error_status === ErrorStatus.OPEN)
+      .map((e) => e.fingerprint);
+    if (openFingerprints.length === 0) return;
+    setIsSearchingCloud(true);
+    setCloudResultsModal(null);
+    try {
+      const results = await searchCloudForErrors(openFingerprints);
+      const toIgnore = results.filter((r) => r.action === 'ignore');
+      const toFix = results.filter((r) => r.action === 'fix');
+      const toAnalyse = results.filter((r) => r.action === 'analyse');
+      setCloudResultsModal({ ignored: toIgnore.length, fixResults: toFix, remaining: toAnalyse.length });
+    } catch (e) {
+      toast({ title: 'Cloud search failed', description: String(e), variant: 'destructive' });
+    } finally {
+      setIsSearchingCloud(false);
+    }
+  }, [cloudLoginAvailable, allErrors, searchCloudForErrors]);
+
+  // Auto-trigger cloud search on mount (e.g. navigating to this URL)
+  const autoSearched = useRef(false);
+  useEffect(() => {
+    if (autoSearched.current) return;
+    if (isLoading || isSearchingCloud) return;
+    const hasOpen = allErrors.some((e) => e.error_status === ErrorStatus.OPEN);
+    if (!hasOpen) return;
+    autoSearched.current = true;
+    void handleSearchCloud();
+  }, [isLoading, isSearchingCloud, allErrors, handleSearchCloud]);
 
   return (
     <div className="flex h-full flex-col">
@@ -718,6 +849,20 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
                 </Tooltip>
               ))}
             </div>
+            {(statusCounts[ErrorStatus.OPEN] ?? 0) > 0 && (
+              <Button
+                size="sm"
+                className="h-8 gap-1.5 bg-blue-600 px-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 active:bg-blue-700"
+                disabled={isSearchingCloud}
+                onClick={() => void handleSearchCloud()}
+              >
+                {isSearchingCloud
+                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  : <Search className="h-3.5 w-3.5" />
+                }
+                Search Flowpad
+              </Button>
+            )}
             <Button variant="ghost" size="sm" className="h-7 gap-1.5" onClick={handleRefresh} disabled={isRefreshing}>
               <RefreshCw className={cn('h-3.5 w-3.5', isRefreshing && 'animate-spin')} />
               Refresh
@@ -738,7 +883,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleClearAll}>Clear All</AlertDialogAction>
+                  <AlertDialogAction onClick={() => void handleClearAll()}>Clear All</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
@@ -787,6 +932,49 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
         </div>
       </div>
 
+      {/* Login required modal for cloud search */}
+      <AlertDialog open={showLoginModal} onOpenChange={setShowLoginModal}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Login required</AlertDialogTitle>
+            <AlertDialogDescription>
+              Login is required to search Flowpad database
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setShowLoginModal(false);
+                void (async () => {
+                  const { oauthService, OAUTH_PROVIDERS } = await import('@sdk/services/oauth/oauth-service');
+                  await oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
+                })();
+              }}
+            >
+              Login
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Cloud search results modal */}
+      {cloudResultsModal && (
+        <CloudSearchResultsModal
+          open={!!cloudResultsModal}
+          onClose={() => setCloudResultsModal(null)}
+          ignored={cloudResultsModal.ignored}
+          fixResults={cloudResultsModal.fixResults}
+          fixErrors={allErrors.filter((e) =>
+            cloudResultsModal.fixResults.some((r) => r.fingerprint === e.fingerprint),
+          )}
+          remaining={cloudResultsModal.remaining}
+          onFixAll={async (fps) => {
+            await fixAllCloud(fps);
+          }}
+        />
+      )}
+
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4">
         {isLoading && (
@@ -827,7 +1015,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
                 {widerSpan && (
                   <button
                     className="mt-3 rounded bg-muted px-3 py-1 text-xs font-medium transition-colors hover:bg-muted/80"
-                    onClick={() => setTimeSpan(widerSpan!.value)}
+                    onClick={() => setTimeSpan(widerSpan.value)}
                   >
                     {widerCount} error{widerCount !== 1 ? 's' : ''} in the last {widerSpan.label} — switch
                   </button>

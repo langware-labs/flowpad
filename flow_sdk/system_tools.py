@@ -151,6 +151,130 @@ async def backup_db() -> BackupResult:
 
 
 # ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
+
+
+def find_last_valid_db_backup() -> Path | None:
+    """Return the path of the most recent valid DB file from the backups folder.
+
+    Scans two backup layouts (newest first):
+      - flowpad_db_YYYYMMDD_HHMMSS        (plain backup files)
+      - archive_YYYYMMDD_HHMMSS/flowpad_db (archive folders)
+
+    Returns None if no valid backup is found.
+    """
+    backup_folder = get_backup_folder()
+    candidates: list[Path] = []
+
+    for entry in backup_folder.iterdir():
+        if entry.is_file() and entry.name.startswith("flowpad_db_"):
+            candidates.append(entry)
+        elif entry.is_dir() and entry.name.startswith("archive_"):
+            db_inside = entry / "flowpad_db"
+            if db_inside.exists():
+                candidates.append(db_inside)
+
+    # Sort newest-first by the timestamp embedded in the parent name
+    candidates.sort(key=lambda p: p.parent.name if p.name == "flowpad_db" else p.name, reverse=True)
+
+    for candidate in candidates:
+        if validate_db(candidate):
+            logger.info(f"find_last_valid_db_backup: found valid backup at {candidate}")
+            return candidate
+
+    logger.warning("find_last_valid_db_backup: no valid backup found")
+    return None
+
+
+def ensure_db() -> bool:
+    """Validate the current DB and recover if corrupted.
+
+    Recovery order:
+      1. Restore from the latest valid backup (if one exists).
+      2. If no backup, delete the malformed file so the server initialises a fresh DB,
+         and write a RecordError so the incident is visible in the UI.
+
+    Synchronous — safe to call before the server initialises the DB layer.
+    Returns True if the DB is healthy or was recovered, False only if reinitialising fresh.
+    """
+    db_path = get_db_path()
+    if validate_db(db_path):
+        return True
+
+    logger.warning(f"ensure_db: DB is corrupted at {db_path}, attempting recovery...")
+
+    backup = find_last_valid_db_backup()
+    if backup is not None:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(backup, db_path)
+        logger.info(f"ensure_db: restored from {backup}")
+        return True
+
+    # No valid backup — delete so the server starts fresh
+    logger.error("ensure_db: no valid backup found — reinitialising fresh DB")
+    try:
+        db_path.unlink(missing_ok=True)
+    except OSError as e:
+        logger.error(f"ensure_db: failed to remove malformed DB: {e}")
+
+    _write_db_corruption_error(db_path)
+    return False
+
+
+def _write_db_corruption_error(db_path: Path) -> None:
+    """Write a RecordError recording the DB corruption incident."""
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    from flow_sdk.fs_records.record_error import RecordError  # noqa: PLC0415
+
+    try:
+        rec = RecordError(
+            trigger="ensure_db",
+            error_type="DatabaseCorruption",
+            error_message=(
+                f"Database at {db_path} was malformed and no valid backup was found. "
+                "The database has been reinitialised fresh — all previous data is lost."
+            ),
+            occurred_at=datetime.now(timezone.utc).isoformat(),
+        )
+        rec.save()
+        logger.info("ensure_db: corruption RecordError written")
+    except Exception as e:
+        logger.error(f"ensure_db: failed to write RecordError: {e}")
+
+
+def validate_db(db_path: Path | None = None) -> bool:
+    """Check whether the SQLite DB file is intact.
+
+    Completely independent — uses only stdlib sqlite3, no SDK imports.
+    Returns True if the database is healthy, False if it is corrupted or missing.
+    """
+    import sqlite3 as stdlib_sqlite3  # noqa: PLC0415
+
+    path = db_path or get_db_path()
+    if not path.exists():
+        logger.warning(f"validate_db: file not found at {path}")
+        return False
+
+    try:
+        conn = stdlib_sqlite3.connect(str(path))
+        try:
+            rows = conn.execute("PRAGMA integrity_check").fetchall()
+            # SQLite returns [('ok',)] when healthy; any other rows mean corruption.
+            ok = len(rows) == 1 and rows[0][0] == "ok"
+            if not ok:
+                issues = [r[0] for r in rows]
+                logger.warning(f"validate_db: integrity_check failed — {issues}")
+            return ok
+        finally:
+            conn.close()
+    except stdlib_sqlite3.DatabaseError as exc:
+        logger.warning(f"validate_db: could not open database — {exc}")
+        return False
+
+
+# ---------------------------------------------------------------------------
 # Clear all data (DB + index)
 # ---------------------------------------------------------------------------
 
@@ -227,7 +351,7 @@ async def archive() -> ArchiveResult:
     # Copy records root
     records_root = get_default_records_root()
     if records_root.exists():
-        shutil.copytree(records_root, archive_dir / "records", dirs_exist_ok=True)
+        shutil.copytree(records_root, archive_dir / "records", dirs_exist_ok=True, ignore_dangling_symlinks=True)
 
     logger.info(f"Archive created at: {archive_dir}")
     return ArchiveResult(

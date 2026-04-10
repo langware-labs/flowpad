@@ -307,7 +307,6 @@ class BuiltinEntityType(Enum):
     COMMENT = "comment"
     AGENT_HOOK = "agent_hook"
     TRIGGER = "trigger"
-    AGENTIC_PROCESSOR = "agentic_processor"
     AGENTIC_PROCESS = "agentic_process"
     PROCESS_RESULT = "process_result"
     WORKFLOW = "workflow"

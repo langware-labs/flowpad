@@ -3,8 +3,7 @@ import {
   InstructionElement,
   InstructionElementParser,
   InstructionElementType,
-  ProcessState,
-  ProcessorStatus,
+  ProcessStatus,
   SkillParser,
 } from '@sdk';
 import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
@@ -63,8 +62,8 @@ interface AMDEditorContextValue {
   /** Toggle showing/hiding completed instructions */
   setShowCompleted: (show: boolean) => void;
 
-  /** Process state for execution tracking */
-  processState: ProcessState | null;
+  /** Process status for execution tracking */
+  processState: { status: ProcessStatus } | null;
   /** Get execution status for an instruction by its ID */
   getInstructionStatus: (instructionId: string) => InstructionStatus;
 }
@@ -74,7 +73,7 @@ const AMDEditorContext = createContext<AMDEditorContextValue | null>(null);
 interface AMDEditorProviderProps {
   children: React.ReactNode;
   /** Optional process state for execution tracking */
-  processState?: ProcessState | null;
+  processState?: { status: ProcessStatus } | null;
   /** Set of completed instruction IDs */
   completedInstructions?: Set<string>;
   /** Called when a new element is added via addElement */
@@ -313,36 +312,10 @@ export function AMDEditorProvider({
         return 'idle';
       }
 
-      // Check if there was an error on this instruction
-      if (processState.status === ProcessorStatus.ERROR && processState.error) {
-        // Check if current instruction matches (via currentInstructionId or stack)
-        if (processState.currentInstructionId === instructionId) {
-          return 'error';
-        }
-        const currentInStack = processState.stack.find((frame) => frame.instructionId === instructionId);
-        if (currentInStack) {
-          return 'error';
-        }
+      if (processState.status === ProcessStatus.FAILED) {
+        return 'error';
       }
 
-      // Check if this instruction is currently executing via currentInstructionId (for top-level flow-do)
-      if (
-        processState.currentInstructionId === instructionId &&
-        (processState.status === ProcessorStatus.RUNNING || processState.status === ProcessorStatus.STEPPING)
-      ) {
-        return 'executing';
-      }
-
-      // Check if this instruction is currently executing (in the stack) for nested instructions
-      const isInStack = processState.stack.some((frame) => frame.instructionId === instructionId);
-      if (
-        isInStack &&
-        (processState.status === ProcessorStatus.RUNNING || processState.status === ProcessorStatus.STEPPING)
-      ) {
-        return 'executing';
-      }
-
-      // Check if this instruction has completed
       if (completedInstructions.has(instructionId)) {
         return 'completed';
       }

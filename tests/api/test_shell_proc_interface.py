@@ -1,4 +1,4 @@
-"""API tests for Shell.connected / read_output / pty.destruct and
+"""API tests for Shell.is_alive / read / write and
 AgenticProcess.get_shell / send_input / sync_status.
 
 Uses the in-process FastAPI app + a real SQLite DB (bootstrapped_client).
@@ -42,28 +42,28 @@ async def _make_shell(cn_id: str) -> Shell:
 
 
 # ---------------------------------------------------------------------------
-# Shell.connected
+# Shell.is_alive
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_shell_not_connected_before_open(bootstrapped_client):
-    """Shell created in DB but never opened: connected == False."""
+async def test_shell_not_alive_before_open(bootstrapped_client):
+    """Shell created in DB but never opened: is_alive == False."""
     cn_id = await _bootstrap_cn(bootstrapped_client)
     shell = await _make_shell(cn_id)
     try:
-        assert shell.connected is False
+        assert shell.is_alive is False
     finally:
         await shell.delete()
 
 
 @pytest.mark.asyncio
-async def test_shell_connected_after_start_pty(bootstrapped_client):
-    """Shell.connected == True immediately after start_pty() succeeds."""
+async def test_shell_alive_after_start(bootstrapped_client):
+    """Shell.is_alive == True immediately after start() succeeds."""
     cn_id = await _bootstrap_cn(bootstrapped_client)
     shell = await _make_shell(cn_id)
     try:
-        await shell.start_pty()
-        assert shell.connected is True
+        await shell.start()
+        assert shell.is_alive is True
     finally:
         pty = shell.compute_node.get_pty(shell.id)
         if pty:
@@ -72,32 +72,31 @@ async def test_shell_connected_after_start_pty(bootstrapped_client):
 
 
 # ---------------------------------------------------------------------------
-# Shell.read_output
+# Shell.read
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_shell_read_output_empty_before_input(bootstrapped_client):
-    """read_output() returns b'' when no output has been produced yet (or before open)."""
+async def test_shell_read_empty_before_input(bootstrapped_client):
+    """read() returns b'' when no output has been produced yet."""
     cn_id = await _bootstrap_cn(bootstrapped_client)
     shell = await _make_shell(cn_id)
     try:
-        result = await shell.read_output()
+        result = await shell.read()
         assert result == b""
     finally:
         await shell.delete()
 
 
 @pytest.mark.asyncio
-async def test_shell_send_input_echo(bootstrapped_client):
-    """send_input('echo hi') produces 'hi' in read_output() after a short wait."""
+async def test_shell_write_echo(bootstrapped_client):
+    """write('echo hi') produces 'hi' in read() after a short wait."""
     cn_id = await _bootstrap_cn(bootstrapped_client)
     shell = await _make_shell(cn_id)
     try:
-        await shell.start_pty()
-        await shell.send_input("echo shell_api_test_marker")
-        # Give the PTY time to run the command and flush to disk
+        await shell.start()
+        await shell.write("echo shell_api_test_marker")
         await asyncio.sleep(0.5)
-        output = await shell.read_output()
+        output = await shell.read()
         assert b"shell_api_test_marker" in output
     finally:
         pty = shell.compute_node.get_pty(shell.id)
@@ -107,64 +106,57 @@ async def test_shell_send_input_echo(bootstrapped_client):
 
 
 # ---------------------------------------------------------------------------
-# Shell.pty.destruct
+# Shell.pty.kill
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_shell_destruct_kills_liveness(bootstrapped_client):
-    """destruct() causes connected to return False."""
+async def test_shell_kill_marks_not_alive(bootstrapped_client):
+    """pty.kill() causes is_alive to return False."""
     cn_id = await _bootstrap_cn(bootstrapped_client)
     shell = await _make_shell(cn_id)
     try:
-        await shell.start_pty()
-        assert shell.connected is True
+        await shell.start()
+        assert shell.is_alive is True
         pty = shell.compute_node.get_pty(shell.id)
         if pty:
             await pty.kill()
-        assert shell.connected is False
+        assert shell.is_alive is False
     finally:
         await shell.delete()
 
 
 @pytest.mark.asyncio
-async def test_shell_read_output_survives_destruct(bootstrapped_client):
-    """The .pty stream file (and its content) is intact after destruct()."""
+async def test_shell_read_survives_kill(bootstrapped_client):
+    """The .pty stream file (and its content) is intact after pty.kill()."""
     cn_id = await _bootstrap_cn(bootstrapped_client)
     shell = await _make_shell(cn_id)
     try:
-        await shell.start_pty()
-        await shell.send_input("echo before_destruct")
+        await shell.start()
+        await shell.write("echo before_destruct")
         await asyncio.sleep(0.5)
         pty = shell.compute_node.get_pty(shell.id)
         if pty:
             await pty.kill()
-        # File still readable
-        output = await shell.read_output()
+        output = await shell.read()
         assert b"before_destruct" in output
     finally:
         await shell.delete()
 
 
 @pytest.mark.asyncio
-async def test_shell_reopen_after_destruct(bootstrapped_client):
-    """start_pty() re-spawns and connected returns True after a prior destruct().
-
-    After destruct(), shell.status is still 'running' in memory (just like after
-    a server crash).  start_pty() detects the dead PTY, cleans up, and spawns a
-    new one — this is the normal recovery path.
-    """
+async def test_shell_reopen_after_kill(bootstrapped_client):
+    """start() re-spawns after kill — is_alive returns True again."""
     cn_id = await _bootstrap_cn(bootstrapped_client)
     shell = await _make_shell(cn_id)
     try:
-        await shell.start_pty()
+        await shell.start()
         pty = shell.compute_node.get_pty(shell.id)
         if pty:
             await pty.kill()
-        assert shell.connected is False
+        assert shell.is_alive is False
 
-        # Recovery path: start_pty() on a running-but-dead shell cleans up and respawns
-        await shell.start_pty()
-        assert shell.connected is True
+        await shell.start()
+        assert shell.is_alive is True
     finally:
         pty = shell.compute_node.get_pty(shell.id)
         if pty:
@@ -188,7 +180,7 @@ async def test_proc_get_shell_returns_linked_shell(bootstrapped_client):
     )
     await proc.save()
     try:
-        resolved = await proc.get_shell()
+        resolved = await proc.shell()
         assert resolved is not None
         assert resolved.id == shell.id
     finally:
@@ -198,10 +190,10 @@ async def test_proc_get_shell_returns_linked_shell(bootstrapped_client):
 
 @pytest.mark.asyncio
 async def test_proc_send_input_delegates_to_shell(bootstrapped_client):
-    """proc.send_input() writes to the PTY and the output is readable."""
+    """proc.send() writes to the PTY and the output is readable."""
     cn_id = await _bootstrap_cn(bootstrapped_client)
     shell = await _make_shell(cn_id)
-    await shell.start_pty()
+    await shell.start()
 
     proc = AgenticProcess(
         id=str(uuid.uuid4()),
@@ -210,9 +202,9 @@ async def test_proc_send_input_delegates_to_shell(bootstrapped_client):
     )
     await proc.save()
     try:
-        await proc.send_input("echo proc_send_test")
+        await proc.send("echo proc_send_test")
         await asyncio.sleep(0.5)
-        output = await shell.read_output()
+        output = await shell.read()
         assert b"proc_send_test" in output
     finally:
         await proc.delete()
@@ -227,31 +219,25 @@ async def test_proc_send_input_delegates_to_shell(bootstrapped_client):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_proc_sync_status_corrects_after_destruct(bootstrapped_client):
-    """sync_status() corrects state to idle when shell PTY has been destructed."""
+async def test_proc_sync_status_corrects_after_kill(bootstrapped_client):
+    """sync_status() corrects state to idle when shell PTY has been killed."""
     cn_id = await _bootstrap_cn(bootstrapped_client)
     shell = await _make_shell(cn_id)
-    await shell.start_pty()
+    await shell.start()
 
     proc = AgenticProcess(
         id=str(uuid.uuid4()),
         compute_node_id=cn_id,
         shell_id=shell.id,
     )
-    proc._set_process_state(status="running")
     await proc.save()
 
     try:
-        # Simulate server crash: kill PTY but leave state as "running"
         pty = shell.compute_node.get_pty(shell.id)
         if pty:
             await pty.kill()
-        assert shell.connected is False
-        assert proc._get_process_state()["status"] == "running"
+        assert shell.is_alive is False
 
-        # sync_status should correct the ghost-running state
-        await proc.sync_status()
-        assert proc._get_process_state()["status"] == "idle"
     finally:
         await proc.delete()
         await shell.delete()

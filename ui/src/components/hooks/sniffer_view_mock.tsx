@@ -1,5 +1,5 @@
 import { useContext } from '@sdk/react/hooks';
-import { useHooksSniffer } from '@src/hooks/use-hooks-sniffer';
+import { useSnifferContext } from '@src/contexts/SnifferContext';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -9,7 +9,7 @@ import { useMemo, useState } from 'react';
 
 export function HooksSnifferViewMock() {
   const { snifferEnabled } = useContext();
-  const { events, isLoading, isToggling, isPaused, enable, disable, togglePause, clear } = useHooksSniffer();
+  const { events, isLoading, isToggling, isPaused, enable, disable, togglePause, clear } = useSnifferContext();
   const [selectedRaw, setSelectedRaw] = useState<string | null>(null);
 
   const summary = useMemo(() => {

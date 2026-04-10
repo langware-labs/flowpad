@@ -219,7 +219,7 @@ def test_pipeline_agent_to_worker_args(tmp_path):
         model=agent.data.get("model"),
         permission_mode=agent.data.get("permission_mode", "bypassPermissions"),
     )
-    agents_json = agent.to_agents_json()
+    agents_json = agent.to_agents_cli_json()
     worker = ClaudeCLIWorker()
     args = worker.build_args("claude", "Create a skill", "sess-42", ctx, agents_json=agents_json)
 

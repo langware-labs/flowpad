@@ -2,12 +2,15 @@
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
 
-import { claudeSessionManager, connectionManager, dataContext, fsStore, Shell, type AgenticProcess } from '@sdk';
-import { ClaudeSessionEvent } from '@sdk/services/claude';
+import { dataContext, fsStore, isProcessLive, Shell, type AgenticProcess } from '@sdk';
 import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
 import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
-import { PtySyncProvider, usePtySyncSession } from './PtySyncContext';
+import { useInputDir } from '@src/hooks/use-input-dir';
+import { useSettings } from '@src/hooks/use-settings';
+import { useAgenticQueue } from '@src/hooks/useAgenticQueue';
+import { useFS } from '@src/hooks/useFS';
+import { useShell } from '@src/hooks/useShell';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -15,34 +18,30 @@ import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
-import { ProcessToolbar } from './ProcessToolbar';
-import { TraceGutter } from './TraceGutter';
 import { AnnotationGutter } from './AnnotationGutter';
-import { TimeGutter, calcTimeGutterWidth } from './TimeGutter';
 import { ColumnHeaderBar } from './ColumnHeaderBar';
-import { useTraceGutter } from './use-trace-gutter';
-import { useAnnotationGutter, getAnchors } from './use-annotation-gutter';
-import { useTimeGutter } from './use-time-gutter';
-import { useInputDir } from '@src/hooks/use-input-dir';
-import { useFS } from '@src/hooks/useFS';
-import { useShell } from '@src/hooks/useShell';
+import { PaneBar } from './PaneBar';
+import { PaneSelectorBar } from './PaneSelectorBar';
+import { PaneView } from './PaneView';
+import { ProcessToolbar } from './ProcessToolbar';
+import { PtySyncProvider, usePtySyncSession } from './PtySyncContext';
+import {
+  GitPanel,
+  InputFilesPanel,
+  PromptIndexPanel,
+  QueuePanel,
+  SideTabId,
+  SideWindow,
+  type PromptEntry,
+} from './side-windows';
+import { SidecarShellTerminal } from './SidecarShellTerminal';
 import { TerminalBottomRibbon } from './TerminalBottomRibbon';
 import { TerminalSearchBar } from './TerminalSearchBar';
-import { useAgenticQueue } from '@src/hooks/useAgenticQueue';
-import { SidecarShellTerminal } from './SidecarShellTerminal';
-import { PaneSelectorBar } from './PaneSelectorBar';
-import { PaneBar } from './PaneBar';
-import { PaneView } from './PaneView';
-import {
-  SideWindow,
-  SideTabId,
-  GitPanel,
-  PromptIndexPanel,
-  type PromptEntry,
-  InputFilesPanel,
-  QueuePanel,
-} from './side-windows';
-import { useSettings } from '@src/hooks/use-settings';
+import { calcTimeGutterWidth, TimeGutter } from './TimeGutter';
+import { TraceGutter } from './TraceGutter';
+import { getAnchors, useAnnotationGutter } from './use-annotation-gutter';
+import { useTimeGutter } from './use-time-gutter';
+import { useTraceGutter } from './use-trace-gutter';
 
 export interface TraceFilters {
   events: boolean;
@@ -55,7 +54,16 @@ export interface TraceFilters {
   promptAnnotations: boolean;
 }
 
-const DEFAULT_FILTERS: TraceFilters = { events: true, time: false, index: false, line: false, absLine: false, debugTime: false, refTime: false, promptAnnotations: false };
+const DEFAULT_FILTERS: TraceFilters = {
+  events: true,
+  time: false,
+  index: false,
+  line: false,
+  absLine: false,
+  debugTime: false,
+  refTime: false,
+  promptAnnotations: false,
+};
 const LS_KEY = 'traceFilters';
 
 export interface ColVisibility {
@@ -68,21 +76,35 @@ const DEFAULT_COL_VIS: ColVisibility = { trace: true, time: true, annotations: t
 const COL_VIS_LS_KEY = 'colVisibility';
 
 function loadColVis(): ColVisibility {
-  try { return { ...DEFAULT_COL_VIS, ...JSON.parse(localStorage.getItem(COL_VIS_LS_KEY) ?? 'null') }; }
-  catch { return DEFAULT_COL_VIS; }
+  try {
+    return { ...DEFAULT_COL_VIS, ...JSON.parse(localStorage.getItem(COL_VIS_LS_KEY) ?? 'null') };
+  } catch {
+    return DEFAULT_COL_VIS;
+  }
 }
 
 function saveColVis(v: ColVisibility): void {
-  try { localStorage.setItem(COL_VIS_LS_KEY, JSON.stringify(v)); } catch { /* ignore */ }
+  try {
+    localStorage.setItem(COL_VIS_LS_KEY, JSON.stringify(v));
+  } catch {
+    /* ignore */
+  }
 }
 
 function loadTraceFilters(): TraceFilters {
-  try { return { ...DEFAULT_FILTERS, ...JSON.parse(localStorage.getItem(LS_KEY) ?? 'null') }; }
-  catch { return DEFAULT_FILTERS; }
+  try {
+    return { ...DEFAULT_FILTERS, ...JSON.parse(localStorage.getItem(LS_KEY) ?? 'null') };
+  } catch {
+    return DEFAULT_FILTERS;
+  }
 }
 
 function saveTraceFilters(f: TraceFilters): void {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(f)); } catch { /* ignore */ }
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(f));
+  } catch {
+    /* ignore */
+  }
 }
 
 // Static terminal color themes (never change at runtime)
@@ -138,10 +160,10 @@ const LIGHT_THEME = {
 
 type SideTabState = { tabs: SideTabId[]; active: SideTabId | null };
 type SideTabAction =
-  | { type: 'open';   tab: SideTabId }   // add tab (if not present) and activate it
-  | { type: 'close';  tab: SideTabId }   // remove tab; activate previous or null
-  | { type: 'select'; tab: SideTabId }   // activate an already-open tab
-  | { type: 'toggle'; tab: SideTabId };  // open+activate if closed; close if already active
+  | { type: 'open'; tab: SideTabId } // add tab (if not present) and activate it
+  | { type: 'close'; tab: SideTabId } // remove tab; activate previous or null
+  | { type: 'select'; tab: SideTabId } // activate an already-open tab
+  | { type: 'toggle'; tab: SideTabId }; // open+activate if closed; close if already active
 
 function sideTabReducer(state: SideTabState, action: SideTabAction): SideTabState {
   switch (action.type) {
@@ -242,12 +264,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const [shellReady, setShellReady] = useState(false);
   // Keep shellRef in sync so callbacks and hooks that capture shellRef still work.
   shellRef.current = shell;
-  const processIsActive = process?.is_active ?? false;
+  const processIsActive = isProcessLive(process?.status ?? '');
 
   // Notify parent when the worker session ID becomes known (or clears)
   useEffect(() => {
-    onWorkerSessionId?.(process?.worker_session_id ?? null);
-  }, [process?.worker_session_id, onWorkerSessionId]);
+    onWorkerSessionId?.(process?.session_id ?? null);
+  }, [process?.session_id, onWorkerSessionId]);
   const [cellHeight, setCellHeight] = useState(0);
   const [traceFilters, setTraceFiltersState] = useState<TraceFilters>(() => loadTraceFilters());
   const [gutterExpanded, setGutterExpanded] = useState(false);
@@ -307,11 +329,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     if (!sidecarShellId) {
       // Create a plain Shell entity and let SidecarShellTerminal start its PTY
       // process.compute_node_id may be a TypeId object (deepAssign converts "type-UUID" strings).
-      // Extract the plain UUID (.id) to pass to Shell so startPty() constructs valid ActionInfo URLs.
+      // Extract the plain UUID (.id) to pass to Shell so attachPty() constructs valid ActionInfo URLs.
       const rawCnId = process.compute_node_id ?? shellRef.current?.compute_node_id ?? null;
       if (!rawCnId) return;
       const computeNodeId: string | null =
-        typeof rawCnId === 'object' ? (rawCnId as unknown as { id: string }).id ?? null : rawCnId;
+        typeof rawCnId === 'object' ? ((rawCnId as unknown as { id: string }).id ?? null) : rawCnId;
       if (!computeNodeId) return;
       const workdir = process.workdir ?? shellRef.current?.workdir ?? undefined;
       const shell = new Shell({ compute_node_id: computeNodeId, workdir: workdir ?? null });
@@ -320,17 +342,20 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       await process.save();
       setActivePane('shell');
     } else {
-      setActivePane((p) => p === 'shell' ? 'claude' : 'shell');
+      setActivePane((p) => (p === 'shell' ? 'claude' : 'shell'));
     }
   }, [process, sidecarShellId]);
 
-  const handlePaneSelect = useCallback((pane: 'claude' | 'shell') => {
-    if (pane === 'claude') {
-      void handleKillSidecar();
-    } else {
-      setActivePane('shell');
-    }
-  }, [handleKillSidecar]);
+  const handlePaneSelect = useCallback(
+    (pane: 'claude' | 'shell') => {
+      if (pane === 'claude') {
+        void handleKillSidecar();
+      } else {
+        setActivePane('shell');
+      }
+    },
+    [handleKillSidecar],
+  );
 
   // Reset to claude pane when sidecar is killed externally
   useEffect(() => {
@@ -357,11 +382,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             const ext = imageType.split('/')[1] ?? 'png';
             const filename = `screenshot-${new Date().toISOString().replace(/[:.]/g, '-')}.${ext}`;
             const file = new File([blob], filename, { type: imageType });
-            const uploads = await fsStore.getState().uploadFiles(
-              inputDirInfo.computeNodeTypeId,
-              inputDirInfo.absPath,
-              [file],
-            );
+            const uploads = await fsStore
+              .getState()
+              .uploadFiles(inputDirInfo.computeNodeTypeId, inputDirInfo.absPath, [file]);
             await Promise.all(uploads.map((u) => u.waitForCompletion()));
             const fullPath = `${inputDirInfo.absPath}/${filename}`;
             await shellRef.current?.sendInput(`\nFile ${filename} is available here: ${fullPath}\n`);
@@ -381,13 +404,14 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const metricsCellHeight = metrics?.cellHeight ?? cellHeight;
   const rows = metrics?.visibleRows ?? terminalRef.current?.rows ?? 24;
 
-  const { entries: gutterEntries, totalTraceEvents, historicalCount, liveCount, sessionStartTime, allEvents: allTraceEvents } = useTraceGutter(
-    process?.worker_session_id,
-    terminalReady,
-    ptySyncRef.current,
-    shellReady,
-    ptySyncSnapshot.version,
-  );
+  const {
+    entries: gutterEntries,
+    totalTraceEvents,
+    historicalCount,
+    liveCount,
+    sessionStartTime,
+    allEvents: allTraceEvents,
+  } = useTraceGutter(process?.session_id, terminalReady, ptySyncRef.current, shellReady, ptySyncSnapshot.version);
   const lastMessageTime = useMemo(() => {
     const last = allTraceEvents
       .filter((e) => e.source === 'transcript')
@@ -399,28 +423,50 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // Reserve gutter space based on user settings even before process resolves,
   // so xterm fits at the correct width from the start (avoids layout shift).
   const reserveGutterSpace = traceFilters.events && colVis.trace;
-  const showTimeGutter = !!process && colVis.time && (traceFilters.time || traceFilters.index || traceFilters.line || traceFilters.absLine || traceFilters.debugTime || traceFilters.refTime);
-  const reserveTimeGutterSpace = colVis.time && (traceFilters.time || traceFilters.index || traceFilters.line || traceFilters.absLine || traceFilters.debugTime || traceFilters.refTime);
+  const showTimeGutter =
+    !!process &&
+    colVis.time &&
+    (traceFilters.time ||
+      traceFilters.index ||
+      traceFilters.line ||
+      traceFilters.absLine ||
+      traceFilters.debugTime ||
+      traceFilters.refTime);
+  const reserveTimeGutterSpace =
+    colVis.time &&
+    (traceFilters.time ||
+      traceFilters.index ||
+      traceFilters.line ||
+      traceFilters.absLine ||
+      traceFilters.debugTime ||
+      traceFilters.refTime);
   const timeGutterWidth = showTimeGutter || reserveTimeGutterSpace ? calcTimeGutterWidth(traceFilters) : 0;
 
-  const { elements: rawAnnotationElements, createBookmark, createComment, deleteBookmark, pendingScrollLine, sessionAnnotations } =
-    useAnnotationGutter(
-      process?.worker_session_id,
-      terminalReady,
-      ptySyncSnapshot.adapter,
-      ptySyncRef.current,
-      targetTimestamp,
-      shellReady,
-      ptySyncSnapshot.version,
-      process?.workdir ?? undefined,
-    );
+  const {
+    elements: rawAnnotationElements,
+    createBookmark,
+    createComment,
+    deleteBookmark,
+    pendingScrollLine,
+    sessionAnnotations,
+  } = useAnnotationGutter(
+    process?.session_id,
+    terminalReady,
+    ptySyncSnapshot.adapter,
+    ptySyncRef.current,
+    targetTimestamp,
+    shellReady,
+    ptySyncSnapshot.version,
+    process?.workdir ?? undefined,
+  );
   const annotationElements = useMemo(
-    () => traceFilters.promptAnnotations
-      ? rawAnnotationElements
-      : rawAnnotationElements.filter((el) => el.kind !== 'prompt'),
+    () =>
+      traceFilters.promptAnnotations
+        ? rawAnnotationElements
+        : rawAnnotationElements.filter((el) => el.kind !== 'prompt'),
     [rawAnnotationElements, traceFilters.promptAnnotations],
   );
-  const showAnnotationGutter = !!process?.worker_session_id && colVis.annotations;
+  const showAnnotationGutter = !!process?.session_id && colVis.annotations;
   const reserveAnnotationSpace = colVis.annotations;
 
   const mergedPrompts = useMemo<PromptEntry[]>(() => {
@@ -452,12 +498,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     return [...annotationPrompts, ...dedupedTrace].sort((a, b) => a.time.localeCompare(b.time));
   }, [rawAnnotationElements, gutterEntries]);
 
-  const timeGutterRows = useTimeGutter(
-    ptySyncSnapshot.vt,
-    viewportY,
-    rows,
-    ptySyncSnapshot.version,
-  );
+  const timeGutterRows = useTimeGutter(ptySyncSnapshot.vt, viewportY, rows, ptySyncSnapshot.version);
 
   const scrollAnnotationToLine = useCallback((absoluteLine: number) => {
     ptySyncRef.current.getSnapshot().adapter?.scrollToRow(absoluteLine);
@@ -500,8 +541,16 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         ptySyncRef.current.finalizeDefaultSegment(lastEventMs);
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionAnnotations, terminalReady, shellReady, ptySyncSnapshot.adapter, sessionStartTime, allTraceEvents, bufferFlushCount]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    sessionAnnotations,
+    terminalReady,
+    shellReady,
+    ptySyncSnapshot.adapter,
+    sessionStartTime,
+    allTraceEvents,
+    bufferFlushCount,
+  ]);
 
   // Refit terminal when annotation gutter or file panel appears/disappears
   useEffect(() => {
@@ -556,7 +605,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             if (shell?.connected) {
               void shell.resize(term.cols, term.rows);
             }
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
         });
       }
     }, 150);
@@ -608,7 +659,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (disposed) return;
       if (active) {
         const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
-        if (t0 !== undefined) console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms xterm initializeTerminal (active)`);
+        if (t0 !== undefined)
+          console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms xterm initializeTerminal (active)`);
       }
 
       const term = new XTerm({
@@ -656,7 +708,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         fitAddonRef.current = fit;
         if (active) {
           const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
-          if (t0 !== undefined) console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms term.open() done (active)`);
+          if (t0 !== undefined)
+            console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms term.open() done (active)`);
         }
       } catch (e) {
         console.error('[InteractiveTerminal] Failed to open terminal:', e);
@@ -692,22 +745,23 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
             // Init Phase-1 segment for trace event row bucketing.
             // startTime is set to now; recalibrated below once shell entity loads.
-            ptySyncRef.current.initSegments(
-              Date.now(),
-              Math.max(3, term.rows - 4),
-              adapter?.getEvictionOffset() ?? 0,
-            );
+            ptySyncRef.current.initSegments(Date.now(), Math.max(3, term.rows - 4), adapter?.getEvictionOffset() ?? 0);
 
             if (active) {
               const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
-              if (t0 !== undefined) console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms setTerminalReady(true) (active)`);
+              if (t0 !== undefined)
+                console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms setTerminalReady(true) (active)`);
             }
             setTerminalReady(true);
             term.focus();
 
             requestAnimationFrame(() => {
               if (!disposed) {
-                try { fit.fit(); } catch { /* ignore */ }
+                try {
+                  fit.fit();
+                } catch {
+                  /* ignore */
+                }
               }
             });
           } catch (e) {
@@ -807,7 +861,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     [sessionId],
   );
 
-  // PTY connect and WS reconnect are handled by process.open() (called in loader)
+  // PTY connect and WS reconnect are handled by process.start() (called in loader)
   // and Shell's built-in auto-reconnect (ConnectionManager on_reconnected listener).
 
   // Ref so the output handler always reads the latest bufferSyncUpdates without
@@ -837,7 +891,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         term.write(data, () => {
           if (!anchorsResolvedRef.current) {
             ptySyncRef.current.notifyBufferReady();
-            setBufferFlushCount(c => c + 1);
+            setBufferFlushCount((c) => c + 1);
           }
         });
       } catch (e) {
@@ -858,7 +912,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     }, 16);
 
     const handlePtyData = (data: string, seq?: number) => {
-      if (data.includes('\x1b[3J')) console.log('[PTY] ESC[3J (clear scrollback) received, seq:', seq, 'size:', data.length);
+      if (data.includes('\x1b[3J'))
+        console.log('[PTY] ESC[3J (clear scrollback) received, seq:', seq, 'size:', data.length);
       if (data.includes('\x1b[2J')) console.log('[PTY] ESC[2J (clear screen) received, seq:', seq);
       if (data.includes('\x1b[H')) console.log('[PTY] ESC[H (cursor home) received, seq:', seq);
       if (seq !== undefined) {
@@ -871,7 +926,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         return;
       }
 
-      console.log("############### applying buffering from BSU to ESU")
+      console.log('############### applying buffering from BSU to ESU');
       if (!inSync) {
         const bsuIdx = data.indexOf(BSU);
         if (bsuIdx >= 0) {
@@ -895,7 +950,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (inSync) {
         const esuIdx = syncBuf.indexOf(ESU);
         if (esuIdx >= 0) {
-          if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+          if (syncTimer) {
+            clearTimeout(syncTimer);
+            syncTimer = null;
+          }
           const endIdx = esuIdx + ESU.length;
           const syncData = syncBuf.slice(0, endIdx);
           const remainder = syncBuf.slice(endIdx);
@@ -926,7 +984,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         term.write('', () => {
           anchorsResolvedRef.current = false;
           ptySyncRef.current.notifyBufferReady();
-          setBufferFlushCount(c => c + 1);
+          setBufferFlushCount((c) => c + 1);
         });
       }
 
@@ -944,9 +1002,14 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       unsubOutput?.();
       unsubOutput = undefined;
       setShellReady(false);
-      if (syncTimer) { clearTimeout(syncTimer); syncTimer = null; }
+      if (syncTimer) {
+        clearTimeout(syncTimer);
+        syncTimer = null;
+      }
       if (syncBuf && terminalRef.current) {
-        try { terminalRef.current.write(syncBuf); } catch {}
+        try {
+          terminalRef.current.write(syncBuf);
+        } catch {}
         syncBuf = '';
         inSync = false;
       }
@@ -966,7 +1029,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       clearInterval(scrollInterval);
       if (syncTimer) clearTimeout(syncTimer);
       if (syncBuf && terminalRef.current) {
-        try { terminalRef.current.write(syncBuf); } catch {}
+        try {
+          terminalRef.current.write(syncBuf);
+        } catch {}
         syncBuf = '';
         inSync = false;
       }
@@ -994,20 +1059,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   useEffect(() => {
     if (!process) return;
 
-    const handleRestarted = ({ process: restartedProcess }: { process: AgenticProcess }) => {
-      if (restartedProcess.id !== process.id) return;
-
+    const handleRestarted = () => {
       const term = terminalRef.current;
       const fit = fitAddonRef.current;
-      if (term) {
-        term.clear();
-      }
       ptySyncRef.current.resetSession();
 
       // connect({ force: true }) resets seq + replayDone, then re-attaches
       // and re-subscribes the output handler once replayDone flips true again.
       const shell = shellRef.current;
-      void shell?.startPty({ cols: term?.cols ?? 80, rows: term?.rows ?? 24, force: true });
+      void shell?.attachPty({ cols: term?.cols ?? 80, rows: term?.rows ?? 24, force: true });
 
       // Re-fit after a frame so xterm recalculates row/col geometry
       requestAnimationFrame(() => {
@@ -1023,14 +1083,16 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             if (shell?.connected) {
               void shell.resize(term.cols, term.rows);
             }
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
         }
       });
     };
 
-    claudeSessionManager.on(ClaudeSessionEvent.SESSION_RESTARTED, handleRestarted);
+    process.on('restarted', handleRestarted);
     return () => {
-      claudeSessionManager.off(ClaudeSessionEvent.SESSION_RESTARTED, handleRestarted);
+      process.off('restarted', handleRestarted);
     };
   }, [process]);
 
@@ -1116,35 +1178,29 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     terminalRef.current?.focus();
   };
 
-  const handleFileDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    if (!inputDirInfo) return;
-    const files = Array.from(e.dataTransfer.files);
-    if (!files.length) return;
-    const uploads = await fsStore.getState().uploadFiles(
-      inputDirInfo.computeNodeTypeId,
-      inputDirInfo.absPath,
-      files,
-    );
-    await Promise.all(uploads.map((u) => u.waitForCompletion()));
-    for (const file of files) {
-      const fullPath = `${inputDirInfo.absPath}/${file.name}`;
-      await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${fullPath}\n`);
-    }
-    openSideTab(SideTabId.Files);
-  }, [inputDirInfo, openSideTab]);
+  const handleFileDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      if (!inputDirInfo) return;
+      const files = Array.from(e.dataTransfer.files);
+      if (!files.length) return;
+      const uploads = await fsStore.getState().uploadFiles(inputDirInfo.computeNodeTypeId, inputDirInfo.absPath, files);
+      await Promise.all(uploads.map((u) => u.waitForCompletion()));
+      for (const file of files) {
+        const fullPath = `${inputDirInfo.absPath}/${file.name}`;
+        await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${fullPath}\n`);
+      }
+      openSideTab(SideTabId.Files);
+    },
+    [inputDirInfo, openSideTab],
+  );
 
   // Compute synthetic shell-pane active state for the ribbon
-  const ribbonOpenTabs = sidecarShellId
-    ? [...sideWindowTabs, SideTabId.Shell]
-    : sideWindowTabs;
-  const ribbonActiveSideTab = activePane === 'shell' && sidecarShellId
-    ? SideTabId.Shell
-    : activeSideTab;
+  const ribbonOpenTabs = sidecarShellId ? [...sideWindowTabs, SideTabId.Shell] : sideWindowTabs;
+  const ribbonActiveSideTab = activePane === 'shell' && sidecarShellId ? SideTabId.Shell : activeSideTab;
 
   return (
     <div className={`relative flex h-full flex-col ${className}`} onDragOver={(e) => e.preventDefault()}>
-
       {/* Top bar — ProcessToolbar (Claude pane) or PaneBar (Shell pane) */}
       {process && activePane === 'claude' && (
         <ProcessToolbar
@@ -1161,12 +1217,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           shell={shell}
         />
       )}
-      {activePane === 'shell' && sidecarShellId && (
-        <PaneBar label="Shell" onClose={() => void handleKillSidecar()} />
-      )}
+      {activePane === 'shell' && sidecarShellId && <PaneBar label="Shell" onClose={() => void handleKillSidecar()} />}
 
       <PtySyncProvider session={ptySyncRef.current}>
-
         {/* Column header — only for Claude pane */}
         {process && activePane === 'claude' ? (
           <ColumnHeaderBar
@@ -1188,11 +1241,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         ) : null}
 
         <div className="flex min-h-0 flex-1">
-
           {/* Left pane selector strip — only when sidecar exists */}
-          {sidecarShellId && (
-            <PaneSelectorBar activePane={activePane} onSelect={handlePaneSelect} />
-          )}
+          {sidecarShellId && <PaneSelectorBar activePane={activePane} onSelect={handlePaneSelect} />}
 
           {/* Claude pane — kept mounted, hidden when shell is active (preserves xterm) */}
           <div
@@ -1207,7 +1257,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
               <div
                 className="absolute inset-0 flex"
                 style={{
-                  paddingLeft: (showGutter || reserveGutterSpace ? 48 : 0) + (showTimeGutter || reserveTimeGutterSpace ? timeGutterWidth : 0),
+                  paddingLeft:
+                    (showGutter || reserveGutterSpace ? 48 : 0) +
+                    (showTimeGutter || reserveTimeGutterSpace ? timeGutterWidth : 0),
                   paddingRight: showAnnotationGutter || reserveAnnotationSpace ? 24 : 0,
                 }}
               >
@@ -1217,7 +1269,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                   onClick={handleContainerClick}
                   tabIndex={0}
                   onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => { void handleFileDrop(e); }}
+                  onDrop={(e) => {
+                    void handleFileDrop(e);
+                  }}
                 >
                   {searchOpen && (
                     <div onClick={(e) => e.stopPropagation()}>
@@ -1234,7 +1288,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
               </div>
               {/* Gutters — absolutely positioned over padded areas */}
               {showGutter && (
-                <div className="absolute left-0 top-0 bottom-0" style={{ width: 48, zIndex: gutterExpanded ? 50 : 1 }}>
+                <div className="absolute bottom-0 left-0 top-0" style={{ width: 48, zIndex: gutterExpanded ? 50 : 1 }}>
                   <TraceGutter
                     entries={gutterEntries}
                     totalTraceEvents={totalTraceEvents}
@@ -1252,7 +1306,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                 </div>
               )}
               {showTimeGutter && (
-                <div className="absolute top-0 bottom-0" style={{ left: 48, width: timeGutterWidth, zIndex: 1 }}>
+                <div className="absolute bottom-0 top-0" style={{ left: 48, width: timeGutterWidth, zIndex: 1 }}>
                   <TimeGutter
                     rows={timeGutterRows}
                     cellHeight={metricsCellHeight}
@@ -1264,7 +1318,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                 </div>
               )}
               {showAnnotationGutter && (
-                <div className="absolute right-0 top-0 bottom-0" style={{ width: 24, zIndex: 1 }}>
+                <div className="absolute bottom-0 right-0 top-0" style={{ width: 24, zIndex: 1 }}>
                   <AnnotationGutter
                     elements={annotationElements}
                     viewportY={viewportY}
@@ -1302,18 +1356,23 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                   />
                 )}
                 {activeSideTab === SideTabId.Prompts && (
-                  <PromptIndexPanel
-                    prompts={mergedPrompts}
-                    onScrollToLine={scrollAnnotationToLine}
-                  />
+                  <PromptIndexPanel prompts={mergedPrompts} onScrollToLine={scrollAnnotationToLine} />
                 )}
                 {activeSideTab === SideTabId.Queue && process && (
                   <QueuePanel
                     queue={queue}
-                    onAdd={(e) => { void addEntry(e); }}
-                    onRemove={(i) => { void removeEntry(i); }}
-                    onMove={(i, d) => { void moveEntry(i, d); }}
-                    onSetEnabled={(v) => { void setEnabled(v); }}
+                    onAdd={(e) => {
+                      void addEntry(e);
+                    }}
+                    onRemove={(i) => {
+                      void removeEntry(i);
+                    }}
+                    onMove={(i, d) => {
+                      void moveEntry(i, d);
+                    }}
+                    onSetEnabled={(v) => {
+                      void setEnabled(v);
+                    }}
                   />
                 )}
                 {activeSideTab === SideTabId.Files && inputDirInfo && (
@@ -1329,14 +1388,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           {/* Shell pane — full content area when active */}
           {activePane === 'shell' && sidecarShellId && (
             <PaneView>
-              <SidecarShellTerminal
-                shellId={sidecarShellId}
-                active={true}
-                className="min-h-0 flex-1"
-              />
+              <SidecarShellTerminal shellId={sidecarShellId} active={true} className="min-h-0 flex-1" />
             </PaneView>
           )}
-
         </div>
       </PtySyncProvider>
 
@@ -1346,8 +1400,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           isActive={processIsActive}
           promptCount={mergedPrompts.length}
           queue={queue}
-          onQueueAdd={(e) => { void addEntry(e); }}
-          onQueueRemove={(i) => { void removeEntry(i); }}
+          onQueueAdd={(e) => {
+            void addEntry(e);
+          }}
+          onQueueRemove={(i) => {
+            void removeEntry(i);
+          }}
           openTabs={ribbonOpenTabs}
           activeSideTab={ribbonActiveSideTab}
           onOpenSideTab={(tab) => {

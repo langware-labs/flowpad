@@ -92,10 +92,13 @@ class ClaudeCliOptions(WorkerCLIOptions):
             args.append("--worktree")
 
         if self.resume and self.session_id:
-            args.append(f"--resume {shlex.quote(self.session_id)}")
             if self.fork_session_id:
+                # Fork: --resume <source> --fork-session --session-id <new>
+                args.append(f"--resume {shlex.quote(self.fork_session_id)}")
                 args.append("--fork-session")
-                args.append(f"--session-id {shlex.quote(self.fork_session_id)}")
+                args.append(f"--session-id {shlex.quote(self.session_id)}")
+            else:
+                args.append(f"--resume {shlex.quote(self.session_id)}")
         elif self.session_id:
             args.append(f"--session-id {shlex.quote(self.session_id)}")
 
@@ -110,6 +113,27 @@ class ClaudeCliOptions(WorkerCLIOptions):
             args.append("-p")
 
         return args
+
+    def to_shell_string(self, instruction: str | None = None) -> str:
+        """Build shell command with --add-dir flags appended after the instruction.
+
+        Claude CLI requires that the prompt/instruction appear before --add-dir
+        flags when both are present. This override separates --add-dir from the
+        other args so _build_posix can insert the instruction first.
+        """
+        import sys
+
+        args = self._build_worker_args()
+        if sys.platform == "win32":
+            return self._build_win32(args, instruction)
+
+        main_args = [a for a in args if not a.startswith("--add-dir ")]
+        add_dir_args = [a for a in args if a.startswith("--add-dir ")]
+
+        cmd = self._build_posix(main_args, instruction)
+        if add_dir_args:
+            cmd += " " + " ".join(add_dir_args)
+        return cmd
 
     # ------------------------------------------------------------------
     # Serialisation
@@ -132,6 +156,47 @@ class ClaudeCliOptions(WorkerCLIOptions):
             "add_dirs": self.add_dirs,
         })
         return d
+
+    def to_spawn_args(self, instruction: str | None = None) -> tuple[list[str], dict[str, str]]:
+        """Build argv list and env dict for PtyProcess.spawn() — no shell intermediary.
+
+        Builds argv directly (each flag and value as separate elements) rather than
+        going through shell-string quoting.
+        """
+        argv: list[str] = ["claude"]
+
+        if self.permission_mode == "bypassPermissions":
+            argv.append("--dangerously-skip-permissions")
+        if self.chrome:
+            argv.append("--chrome")
+        if self.debug:
+            argv.append("--debug")
+        if self.worktree:
+            argv.append("--worktree")
+
+        if self.resume and self.session_id:
+            if self.fork_session_id:
+                argv.extend(["--resume", self.fork_session_id, "--fork-session", "--session-id", self.session_id])
+            else:
+                argv.extend(["--resume", self.session_id])
+        elif self.session_id:
+            argv.extend(["--session-id", self.session_id])
+
+        if self.model:
+            argv.extend(["--model", self.model])
+        if self.agents_json:
+            import json as _json
+            argv.extend(["--agents", _json.dumps(self.agents_json)])
+        if self.print_mode:
+            argv.append("-p")
+
+        if instruction:
+            argv.extend(["--", instruction])
+
+        for d in self.add_dirs:
+            argv.extend(["--add-dir", d])
+
+        return argv, dict(self.env_vars)
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "ClaudeCliOptions":

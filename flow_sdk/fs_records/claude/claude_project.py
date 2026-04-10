@@ -12,6 +12,9 @@ O(1) by ``discover_one()``.
 
 from __future__ import annotations
 
+import json
+import shutil
+import uuid
 from pathlib import Path
 from typing import ClassVar
 
@@ -19,6 +22,11 @@ from flow_sdk.fs_store import Record, RecordType
 from .claude_session import ClaudeSessionRecord
 
 _CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
+_TEMP_PATH_PREFIXES = ("/tmp/", "/var/folders/", "/private/var/folders/", "/private/tmp/")
+
+
+def _project_id(encoded: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{encoded}"))
 
 
 class ClaudeProjectFsRecord(Record):
@@ -37,7 +45,6 @@ class ClaudeProjectFsRecord(Record):
         super().__init__(**kwargs)
         encoded_path = self.data.get("encoded_path", "")
         if encoded_path:
-            self.id = encoded_path
             if not self.name:
                 self.name = self.data.get("real_path", "") or encoded_path
             # External-source records (from ~/.claude/projects/) are read-only;
@@ -67,6 +74,24 @@ class ClaudeProjectFsRecord(Record):
     # -- External source: ~/.claude/projects/ --
 
     @classmethod
+    def _is_valid_project_dir(cls, d: Path) -> bool:
+        real = "/" + d.name.lstrip("-").replace("-", "/")
+        return not real.startswith(_TEMP_PATH_PREFIXES)
+
+    @classmethod
+    def _from_claude_dir(cls, d: Path) -> "ClaudeProjectFsRecord":
+        encoded = d.name
+        real = "/" + encoded.lstrip("-").replace("-", "/")
+        session_count = sum(1 for f in d.glob("*.jsonl"))
+        return cls(
+            id=_project_id(encoded),
+            encoded_path=encoded,
+            real_path=real,
+            session_count=session_count,
+            path=str(d),
+        )
+
+    @classmethod
     def _external_source_iter(cls, limit: int | None = None):
         """Yield projects discovered from ``~/.claude/projects/``."""
         projects_dir = _CLAUDE_PROJECTS_DIR
@@ -74,13 +99,9 @@ class ClaudeProjectFsRecord(Record):
             return
         count = 0
         for d in sorted(projects_dir.iterdir()):
-            if not d.is_dir():
+            if not d.is_dir() or not cls._is_valid_project_dir(d):
                 continue
-            encoded = d.name
-            real = "/" + encoded.lstrip("-").replace("-", "/")
-            session_count = sum(1 for f in d.glob("*.jsonl"))
-            yield cls(encoded_path=encoded, real_path=real,
-                      session_count=session_count, path=str(d))
+            yield cls._from_claude_dir(d)
             count += 1
             if limit is not None and count >= limit:
                 return
@@ -90,16 +111,65 @@ class ClaudeProjectFsRecord(Record):
         projects_dir = _CLAUDE_PROJECTS_DIR
         if not projects_dir.is_dir():
             return 0
-        count = sum(1 for d in projects_dir.iterdir() if d.is_dir())
+        count = sum(1 for d in projects_dir.iterdir() if d.is_dir() and cls._is_valid_project_dir(d))
         return min(count, limit) if limit is not None else count
 
     @classmethod
-    def _external_source_find_one(cls, uid: str) -> ClaudeProjectFsRecord | None:
-        """O(1): the uid for Claude-projects is the encoded directory name."""
-        candidate = _CLAUDE_PROJECTS_DIR / uid
-        if not candidate.is_dir():
+    def clean_temp_projects(cls) -> int:
+        """Remove temp-path project entries from both discovery sources.
+
+        Source 1: ``~/.claude/projects/<encoded>/`` — identified via encoded dir name.
+        Source 2: ``records_root/project/<dir>/`` — identified via fs_storage_mount_path
+                  in metadata.json.
+
+        Returns the total number of directories removed.
+        """
+        removed = 0
+
+        # Source 1: ~/.claude/projects/
+        projects_dir = _CLAUDE_PROJECTS_DIR
+        if projects_dir.is_dir():
+            for d in list(projects_dir.iterdir()):
+                if d.is_dir() and not cls._is_valid_project_dir(d):
+                    shutil.rmtree(d, ignore_errors=True)
+                    removed += 1
+
+        # Source 2: records_root/project/
+        from flow_sdk.fs_store.record import get_default_records_root
+        records_project_dir = get_default_records_root() / RecordType.PROJECT
+        if records_project_dir.is_dir():
+            for d in list(records_project_dir.iterdir()):
+                if not d.is_dir():
+                    continue
+                mount_path = cls._read_mount_path(d)
+                if mount_path and mount_path.startswith(_TEMP_PATH_PREFIXES):
+                    shutil.rmtree(d, ignore_errors=True)
+                    removed += 1
+
+        return removed
+
+    @classmethod
+    def _read_mount_path(cls, record_dir: Path) -> str | None:
+        """Read fs_storage_mount_path from a records_root project directory."""
+        for filename, key in (("metadata.json", "data"), ("state.json", "meta")):
+            f = record_dir / filename
+            if f.exists():
+                try:
+                    obj = json.loads(f.read_text())
+                    return obj.get(key, {}).get("fs_storage_mount_path")
+                except Exception:
+                    pass
+        return None
+
+    @classmethod
+    def _external_source_find_one(cls, uid: str) -> "ClaudeProjectFsRecord | None":
+        """Find a Claude-project record by UUID (O(N) fallback before first index run)."""
+        projects_dir = _CLAUDE_PROJECTS_DIR
+        if not projects_dir.is_dir():
             return None
-        real = "/" + uid.lstrip("-").replace("-", "/")
-        session_count = sum(1 for f in candidate.glob("*.jsonl"))
-        return cls(encoded_path=uid, real_path=real,
-                   session_count=session_count, path=str(candidate))
+        for d in projects_dir.iterdir():
+            if not d.is_dir():
+                continue
+            if _project_id(d.name) == uid:
+                return cls._from_claude_dir(d)
+        return None

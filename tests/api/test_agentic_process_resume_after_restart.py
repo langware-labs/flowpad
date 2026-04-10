@@ -3,12 +3,12 @@ Regression test: AgenticProcess.open() resumes after server restart.
 
 Bug scenario
 ============
-1. AgenticProcess is RUNNING (worker_session_id set, shell_id set, shell.status="running").
+1. AgenticProcess is RUNNING (session_id set, shell_id set, shell.status="running").
 2. Server restarts — PTY dies, in-memory session_manager cleared.
 3. User refreshes page → loader calls process.open().
 4. BEFORE FIX: open() (formerly start()) returns "Shell session already active"
    (shell.status=="running"). Claude is never resumed.
-5. AFTER FIX: open() detects stale PTY via Shell.start_pty()'s alive-check,
+5. AFTER FIX: open() detects stale PTY via Shell.start()'s alive-check,
    cleans up, and restarts with `claude --resume <session_id>`.
 
 These tests reproduce the entity-state and server-side aspects of the bug
@@ -92,8 +92,8 @@ async def _create_post_restart_state(client, compute_node_id: str, session_id: s
         json={
             "compute_node_id": f"compute_node-{compute_node_id}",
             "shell_id": shell_id,
-            "worker_session_id": session_id,
-            "state": {"status": "running"},   # <-- stale: Claude exited at restart
+            "session_id": session_id,
+            "status": "running",   # <-- stale: Claude exited at restart
         },
     )
     assert proc_resp.status_code == 200, proc_resp.text
@@ -129,11 +129,11 @@ async def test_loader_sees_no_error_signal_after_restart(bootstrapped_client):
     proc = ApiResponse(**proc_resp.json()).data
 
     # Process looks RUNNING → loader does NOT call process.open()
-    assert proc["state"]["status"] == "running", (
+    assert proc["status"] == "running", (
         "Process shows RUNNING after restart — loader has no reason to call open()"
     )
     assert proc["shell_id"] == shell_id, "shell_id is set — loader will look up the shell"
-    assert proc["worker_session_id"] == session_id, "worker_session_id preserved"
+    assert proc["session_id"] == session_id, "session_id preserved"
 
     # --- Simulate loader: GET shell ---
     shell_resp = await bootstrapped_client.get(f"/api/v1/graph/shell/{shell_id}")
@@ -181,16 +181,16 @@ async def test_open_correctly_reconnects_claude_session(bootstrapped_client):
             f"open() failed: {open_result.message}\n"
             "After fix: open() must detect dead PTY and resume Claude."
         )
-        assert open_result.data["worker_session_id"] == session_id
+        assert open_result.data["session_id"] == session_id
         assert open_result.data["is_resume"] is True
 
         proc_resp = await bootstrapped_client.get(
             f"/api/v1/graph/agentic_process/{process_id}"
         )
         proc = ApiResponse(**proc_resp.json()).data
-        assert proc["state"]["status"] == "running"
+        assert proc["status"] == "live"
         assert proc["shell_id"] is not None
-        assert proc["worker_session_id"] == session_id
+        assert proc["session_id"] == session_id
 
     finally:
         jsonl_path.unlink(missing_ok=True)
@@ -228,8 +228,8 @@ async def test_open_registers_on_exit_so_status_updates(bootstrapped_client):
             f"/api/v1/graph/agentic_process/{process_id}"
         )
         proc = ApiResponse(**proc_resp.json()).data
-        assert proc["state"]["status"] != "running", (
-            "BUG: process.state.status stays 'running' after the shell closes.\n"
+        assert proc["status"] != "live", (
+            "BUG: process.status stays 'live' after the shell closes.\n"
             "on_exit was never registered because open() was not called properly."
         )
 
@@ -245,7 +245,7 @@ async def test_open_is_idempotent_when_pty_alive(bootstrapped_client):
 
     This is the normal case (no server restart) and must work after the fix.
 
-    After fix: open() detects alive PTY via Shell.start_pty() and returns SUCCESS (no-op).
+    After fix: open() detects alive PTY via Shell.start() and returns SUCCESS (no-op).
     """
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     cn_id = _compute_node_id(bootstrap)
@@ -302,14 +302,14 @@ async def test_open_without_session_transcript_starts_fresh(bootstrapped_client)
     assert open_result.status == "SUCCESS", (
         f"open() returned: {open_result.status} — {open_result.message}"
     )
-    assert open_result.data["worker_session_id"] == session_id
+    assert open_result.data["session_id"] == session_id
     assert open_result.data["is_resume"] is False
 
 
 @pytest.mark.asyncio
 async def test_open_preserves_session_id_after_restart(bootstrapped_client):
     """
-    After server restart, process.open() must preserve the original worker_session_id
+    After server restart, process.open() must preserve the original session_id
     so the Claude transcript is not lost.
 
     """
@@ -332,7 +332,7 @@ async def test_open_preserves_session_id_after_restart(bootstrapped_client):
             f"open() failed: {open_result.message}"
         )
 
-        assert open_result.data["worker_session_id"] == session_id
+        assert open_result.data["session_id"] == session_id
         new_shell_id = open_result.data["shell_id"]
         assert new_shell_id is not None
 
@@ -340,9 +340,9 @@ async def test_open_preserves_session_id_after_restart(bootstrapped_client):
             f"/api/v1/graph/agentic_process/{process_id}"
         )
         proc = ApiResponse(**proc_resp.json()).data
-        assert proc["worker_session_id"] == session_id
+        assert proc["session_id"] == session_id
         assert proc["shell_id"] == new_shell_id
-        assert proc["state"]["status"] == "running"
+        assert proc["status"] == "live"
 
     finally:
         jsonl_path.unlink(missing_ok=True)

@@ -2,7 +2,7 @@
 API tests for AgenticProcess PTY message injection.
 
 Tests that execute-plan and update-plan inject messages into the active PTY
-session via _control_inject_message → _send_command_to_pty.
+session via inject → send.
 """
 
 import uuid
@@ -14,25 +14,26 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.responses.response import ApiResponse, ApiResponseStatus
 
 
+def _str_calls(mock):
+    """Return only the send calls that carried a plain string (not bytes)."""
+    return [c for c in mock.call_args_list if isinstance(c[0][0], str)]
+
+
 @pytest.mark.asyncio
 async def test_execute_plan_injects_to_pty(bootstrapped_client, user):
-    """execute-plan with active PTY sends the plan prompt to _send_command_to_pty."""
+    """execute-plan with active PTY sends the plan prompt via send."""
     client = bootstrapped_client
 
     process = AgenticProcess(
         name="test-pty-inject-execute",
-        worker_session_id=str(uuid.uuid4()),
+        session_id=str(uuid.uuid4()),
         shell_id=str(uuid.uuid4()),
         compute_node_id=f"compute_node-{uuid.uuid4()}",
     )
     await process.save(user.typeid)
 
     try:
-        with patch.object(
-            AgenticProcess, "_send_command_to_pty", new_callable=AsyncMock
-        ) as mock_send, patch.object(
-            AgenticProcess, "_send_pty_raw", new_callable=AsyncMock
-        ):
+        with patch.object(AgenticProcess, "send", new_callable=AsyncMock) as mock_send:
             resp = await client.post(
                 f"/api/v1/graph/agentic_process/{process.id}/execute-plan",
                 json={"file_path": "/some/plan.md", "clear_context": False},
@@ -42,9 +43,9 @@ async def test_execute_plan_injects_to_pty(bootstrapped_client, user):
             assert res.status == ApiResponseStatus.SUCCESS.value
             assert res.data.get("injected") is True
 
-            # Should have called _send_command_to_pty once with the plan prompt
-            assert mock_send.call_count == 1
-            injected_msg = mock_send.call_args[0][1]
+            string_calls = _str_calls(mock_send)
+            assert len(string_calls) == 1
+            injected_msg = string_calls[0][0][0]
             assert "/some/plan.md" in injected_msg
             assert "plan-note" in injected_msg
     finally:
@@ -58,18 +59,14 @@ async def test_execute_plan_clear_context_injects_clear_then_plan(bootstrapped_c
 
     process = AgenticProcess(
         name="test-pty-inject-clear",
-        worker_session_id=str(uuid.uuid4()),
+        session_id=str(uuid.uuid4()),
         shell_id=str(uuid.uuid4()),
         compute_node_id=f"compute_node-{uuid.uuid4()}",
     )
     await process.save(user.typeid)
 
     try:
-        with patch.object(
-            AgenticProcess, "_send_command_to_pty", new_callable=AsyncMock
-        ) as mock_send, patch.object(
-            AgenticProcess, "_send_pty_raw", new_callable=AsyncMock
-        ):
+        with patch.object(AgenticProcess, "send", new_callable=AsyncMock) as mock_send:
             resp = await client.post(
                 f"/api/v1/graph/agentic_process/{process.id}/execute-plan",
                 json={"file_path": "/some/plan.md", "clear_context": True},
@@ -78,36 +75,31 @@ async def test_execute_plan_clear_context_injects_clear_then_plan(bootstrapped_c
             res = ApiResponse(**resp.json())
             assert res.status == ApiResponseStatus.SUCCESS.value
 
-            # Two calls: first /clear, then the plan prompt
-            assert mock_send.call_count == 2
-            first_call_msg = mock_send.call_args_list[0][0][1]
-            second_call_msg = mock_send.call_args_list[1][0][1]
-            assert first_call_msg == "/clear"
-            assert "/some/plan.md" in second_call_msg
-            assert "plan-note" in second_call_msg
+            # Two string calls: first /clear, then the plan prompt
+            string_calls = _str_calls(mock_send)
+            assert len(string_calls) == 2
+            assert string_calls[0][0][0] == "/clear"
+            assert "/some/plan.md" in string_calls[1][0][0]
+            assert "plan-note" in string_calls[1][0][0]
     finally:
         await process.delete()
 
 
 @pytest.mark.asyncio
 async def test_update_plan_injects_to_pty(bootstrapped_client, user):
-    """update-plan with active PTY sends update prompt to _send_command_to_pty."""
+    """update-plan with active PTY sends update prompt via send."""
     client = bootstrapped_client
 
     process = AgenticProcess(
         name="test-pty-inject-update",
-        worker_session_id=str(uuid.uuid4()),
+        session_id=str(uuid.uuid4()),
         shell_id=str(uuid.uuid4()),
         compute_node_id=f"compute_node-{uuid.uuid4()}",
     )
     await process.save(user.typeid)
 
     try:
-        with patch.object(
-            AgenticProcess, "_send_command_to_pty", new_callable=AsyncMock
-        ) as mock_send, patch.object(
-            AgenticProcess, "_send_pty_raw", new_callable=AsyncMock
-        ):
+        with patch.object(AgenticProcess, "send", new_callable=AsyncMock) as mock_send:
             resp = await client.post(
                 f"/api/v1/graph/agentic_process/{process.id}/update-plan",
                 json={"file_path": "/some/plan.md"},
@@ -117,29 +109,27 @@ async def test_update_plan_injects_to_pty(bootstrapped_client, user):
             assert res.status == ApiResponseStatus.SUCCESS.value
             assert res.data.get("ok") is True
 
-            assert mock_send.call_count == 1
-            injected_msg = mock_send.call_args[0][1]
-            assert "plan-note" in injected_msg
+            string_calls = _str_calls(mock_send)
+            assert len(string_calls) == 1
+            assert "plan-note" in string_calls[0][0][0]
     finally:
         await process.delete()
 
 
 @pytest.mark.asyncio
 async def test_inject_no_pty_skips_silently(bootstrapped_client, user):
-    """When no PTY is active, _control_inject_message skips without error."""
+    """When no PTY is active, inject skips without error."""
     client = bootstrapped_client
 
     process = AgenticProcess(
         name="test-no-pty-inject",
-        worker_session_id=str(uuid.uuid4()),
+        session_id=str(uuid.uuid4()),
         # No shell_id set
     )
     await process.save(user.typeid)
 
     try:
-        with patch.object(
-            AgenticProcess, "_send_command_to_pty", new_callable=AsyncMock
-        ) as mock_send:
+        with patch.object(AgenticProcess, "send", new_callable=AsyncMock) as mock_send:
             resp = await client.post(
                 f"/api/v1/graph/agentic_process/{process.id}/execute-plan",
                 json={"file_path": "/some/plan.md", "clear_context": False},
@@ -149,7 +139,7 @@ async def test_inject_no_pty_skips_silently(bootstrapped_client, user):
             assert res.status == ApiResponseStatus.SUCCESS.value
             assert res.data.get("injected") is True
 
-            # Should NOT have called _send_command_to_pty
+            # Should NOT have called send_input
             mock_send.assert_not_called()
     finally:
         await process.delete()

@@ -3,16 +3,25 @@
 import pytest
 
 from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
-from flow_sdk.fs_store.record import get_default_records_root, record_stem, set_default_records_root
+from flow_sdk.fs_store.record import (
+    get_default_records_data_root,
+    get_default_records_root,
+    record_stem,
+    set_default_records_data_root,
+    set_default_records_root,
+)
 
 
 @pytest.fixture(autouse=True)
 def use_tmp_records_root(tmp_path):
-    """Set records root to tmp_path for all tests."""
-    original = get_default_records_root()
+    """Set both records root and records data root to tmp_path for all tests."""
+    orig_root = get_default_records_root()
+    orig_data_root = get_default_records_data_root()
     set_default_records_root(tmp_path)
+    set_default_records_data_root(tmp_path)
     yield tmp_path
-    set_default_records_root(original)
+    set_default_records_root(orig_root)
+    set_default_records_data_root(orig_data_root)
 
 
 def _make_record(**kwargs):

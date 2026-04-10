@@ -370,7 +370,7 @@ class DBEntity(DBBaseRecord):
             owner = owner.typeid
         return await self._db.create(self, owner)
 
-    async def save(self: DBEntityType, owner: Union[DBEntity, TypeId, None] = None) -> DBEntityType:
+    async def save(self: DBEntityType, owner: Union[DBEntity, TypeId, None] = None, notify: bool = True) -> DBEntityType:
         if isinstance(owner, DBEntity):
             owner = owner.typeid
 
@@ -384,13 +384,14 @@ class DBEntity(DBBaseRecord):
             await self._db.update(self, owner)
 
         # Must notify after the entity is saved to the DB and the children are saved
-        if notify_created:
-            op = OperationType.CREATE
-        else:
-            op = OperationType.UPDATE
-        self_op = DataOpMessage(data=self, op=op, to_entity=self.typeid)
-        await self.add_entity_op_notification(self_op)
-        self._notify_observers(self_op)
+        if notify:
+            if notify_created:
+                op = OperationType.CREATE
+            else:
+                op = OperationType.UPDATE
+            self_op = DataOpMessage(data=self, op=op, to_entity=self.typeid)
+            await self.add_entity_op_notification(self_op)
+            self._notify_observers(self_op)
         self._dirty = False
 
         return self

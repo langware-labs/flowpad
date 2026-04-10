@@ -23,7 +23,7 @@ test.describe('Terminal Persistence on Tab Switch', () => {
     // Step 3: navigate to Home via sidebar Home button (client-side React Router nav).
     // This preserves React state (xterm.js PTY sessions stay alive in memory).
     await goHome(page);
-    await expect(page.getByRole('heading', { name: /hey /i })).toBeVisible();
+    await expect(page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first()).toBeVisible();
 
     // Step 4: navigate back to Shell via sidebar Shell button (client-side nav)
     // The Shell button calls navigation.openTab(ViewType.SHELL) → React Router navigate
