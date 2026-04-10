@@ -12,6 +12,7 @@ O(1) by ``discover_one()``.
 
 from __future__ import annotations
 
+import json
 import shutil
 import uuid
 from pathlib import Path
@@ -115,19 +116,50 @@ class ClaudeProjectFsRecord(Record):
 
     @classmethod
     def clean_temp_projects(cls) -> int:
-        """Remove temp-path project directories from ~/.claude/projects/.
+        """Remove temp-path project entries from both discovery sources.
 
-        Returns the number of directories removed.
+        Source 1: ``~/.claude/projects/<encoded>/`` — identified via encoded dir name.
+        Source 2: ``records_root/project/<dir>/`` — identified via fs_storage_mount_path
+                  in metadata.json.
+
+        Returns the total number of directories removed.
         """
-        projects_dir = _CLAUDE_PROJECTS_DIR
-        if not projects_dir.is_dir():
-            return 0
         removed = 0
-        for d in list(projects_dir.iterdir()):
-            if d.is_dir() and not cls._is_valid_project_dir(d):
-                shutil.rmtree(d, ignore_errors=True)
-                removed += 1
+
+        # Source 1: ~/.claude/projects/
+        projects_dir = _CLAUDE_PROJECTS_DIR
+        if projects_dir.is_dir():
+            for d in list(projects_dir.iterdir()):
+                if d.is_dir() and not cls._is_valid_project_dir(d):
+                    shutil.rmtree(d, ignore_errors=True)
+                    removed += 1
+
+        # Source 2: records_root/project/
+        from flow_sdk.fs_store.record import get_default_records_root
+        records_project_dir = get_default_records_root() / RecordType.PROJECT
+        if records_project_dir.is_dir():
+            for d in list(records_project_dir.iterdir()):
+                if not d.is_dir():
+                    continue
+                mount_path = cls._read_mount_path(d)
+                if mount_path and mount_path.startswith(_TEMP_PATH_PREFIXES):
+                    shutil.rmtree(d, ignore_errors=True)
+                    removed += 1
+
         return removed
+
+    @classmethod
+    def _read_mount_path(cls, record_dir: Path) -> str | None:
+        """Read fs_storage_mount_path from a records_root project directory."""
+        for filename, key in (("metadata.json", "data"), ("state.json", "meta")):
+            f = record_dir / filename
+            if f.exists():
+                try:
+                    obj = json.loads(f.read_text())
+                    return obj.get(key, {}).get("fs_storage_mount_path")
+                except Exception:
+                    pass
+        return None
 
     @classmethod
     def _external_source_find_one(cls, uid: str) -> "ClaudeProjectFsRecord | None":
