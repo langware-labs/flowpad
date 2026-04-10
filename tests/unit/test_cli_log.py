@@ -439,9 +439,14 @@ class TestLogDisplay:
 
 
 class TestSettings:
+    def setup_method(self):
+        """Reset settings to default state before each test."""
+        save_settings("info")
+
     def test_default_settings(self):
         """No record on disk returns level=info."""
-        s = load_settings()
+        with mock.patch.object(CliLogSettingsRecord, "discover_one", return_value=None):
+            s = load_settings()
         assert s.level == "info"
 
     def test_settings_roundtrip(self):
