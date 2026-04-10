@@ -12,6 +12,7 @@ O(1) by ``discover_one()``.
 
 from __future__ import annotations
 
+import shutil
 import uuid
 from pathlib import Path
 from typing import ClassVar
@@ -72,6 +73,11 @@ class ClaudeProjectFsRecord(Record):
     # -- External source: ~/.claude/projects/ --
 
     @classmethod
+    def _is_valid_project_dir(cls, d: Path) -> bool:
+        real = "/" + d.name.lstrip("-").replace("-", "/")
+        return not real.startswith(_TEMP_PATH_PREFIXES)
+
+    @classmethod
     def _from_claude_dir(cls, d: Path) -> "ClaudeProjectFsRecord":
         encoded = d.name
         real = "/" + encoded.lstrip("-").replace("-", "/")
@@ -92,7 +98,7 @@ class ClaudeProjectFsRecord(Record):
             return
         count = 0
         for d in sorted(projects_dir.iterdir()):
-            if not d.is_dir():
+            if not d.is_dir() or not cls._is_valid_project_dir(d):
                 continue
             yield cls._from_claude_dir(d)
             count += 1
@@ -104,14 +110,24 @@ class ClaudeProjectFsRecord(Record):
         projects_dir = _CLAUDE_PROJECTS_DIR
         if not projects_dir.is_dir():
             return 0
-        def _keep(d: Path) -> bool:
-            if not d.is_dir():
-                return False
-            real = "/" + d.name.lstrip("-").replace("-", "/")
-            return not real.startswith(_TEMP_PATH_PREFIXES)
-
-        count = sum(1 for d in projects_dir.iterdir() if _keep(d))
+        count = sum(1 for d in projects_dir.iterdir() if d.is_dir() and cls._is_valid_project_dir(d))
         return min(count, limit) if limit is not None else count
+
+    @classmethod
+    def clean_temp_projects(cls) -> int:
+        """Remove temp-path project directories from ~/.claude/projects/.
+
+        Returns the number of directories removed.
+        """
+        projects_dir = _CLAUDE_PROJECTS_DIR
+        if not projects_dir.is_dir():
+            return 0
+        removed = 0
+        for d in list(projects_dir.iterdir()):
+            if d.is_dir() and not cls._is_valid_project_dir(d):
+                shutil.rmtree(d, ignore_errors=True)
+                removed += 1
+        return removed
 
     @classmethod
     def _external_source_find_one(cls, uid: str) -> "ClaudeProjectFsRecord | None":

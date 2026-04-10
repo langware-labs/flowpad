@@ -16,12 +16,21 @@ import pytest
 
 # Set environment variable for testing
 os.environ["TESTING"] = "true"
+
+from flow_sdk.config import FLOWPAD_TEMP_DIR
+
 # Ensure tests use a separate DB path (prevents conflicts with a running dev server)
 if not os.environ.get("SQLITE_DATABASE_PATH"):
-    os.environ["SQLITE_DATABASE_PATH"] = "/tmp/flowpad_test.db"
+    os.environ["SQLITE_DATABASE_PATH"] = str(os.path.join(FLOWPAD_TEMP_DIR, "flowpad_test.db"))
 # Isolate filesystem records from dev/prod data
 if not os.environ.get("FS_RECORD_PATH"):
-    os.environ["FS_RECORD_PATH"] = "/tmp/flowpad_test_records"
+    os.environ["FS_RECORD_PATH"] = str(os.path.join(FLOWPAD_TEMP_DIR, "flowpad_test_records"))
+
+
+def pytest_configure(config):
+    """Root all tmp_path fixtures under FLOWPAD_TEMP_DIR."""
+    if not getattr(config.option, "basetemp", None):
+        config.option.basetemp = FLOWPAD_TEMP_DIR
 
 from pytest_asyncio import is_async_test
 
@@ -50,6 +59,15 @@ def async_context(func):
 
 
 # ==================== Session-scoped fixtures ====================
+
+@pytest.fixture(scope="session", autouse=True)
+def clean_claude_temp_projects():
+    """Remove temp-path Claude projects before and after the test session."""
+    from flow_sdk.fs_records.claude.claude_project import ClaudeProjectFsRecord
+    ClaudeProjectFsRecord.clean_temp_projects()
+    yield
+    ClaudeProjectFsRecord.clean_temp_projects()
+
 
 @pytest.fixture(scope="session", autouse=True)
 def load_env():
