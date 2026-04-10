@@ -98,7 +98,7 @@ def test_yields_real_path_from_jsonl(tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(
         "flow_sdk.fs_records._claude_projects._CLAUDE_PROJECTS", projects_root
     )
-    result = list(iter_claude_project_paths())
+    result = list(iter_claude_project_paths(include_temp=True))
     assert result == [real_dir]
 
 
@@ -137,7 +137,7 @@ def test_deduplicates_same_real_path(tmp_path: Path, monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(
         "flow_sdk.fs_records._claude_projects._CLAUDE_PROJECTS", projects_root
     )
-    result = list(iter_claude_project_paths())
+    result = list(iter_claude_project_paths(include_temp=True))
     assert len(result) == 1
     assert result[0] == real_dir
 
@@ -171,7 +171,7 @@ def test_hyphenated_project_name_resolved_correctly(
     monkeypatch.setattr(
         "flow_sdk.fs_records._claude_projects._CLAUDE_PROJECTS", projects_root
     )
-    result = list(iter_claude_project_paths())
+    result = list(iter_claude_project_paths(include_temp=True))
     assert result == [real_dir]
 
 

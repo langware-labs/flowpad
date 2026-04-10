@@ -22,7 +22,7 @@ import { InstructionFile } from '../models/workflow/InstructionFile';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
-import { ProcessStatus, ProcessorStatus, isProcessLive, isProcessorRunning, isProcessorTerminal } from './agentic-types';
+import { ProcessStatus, ProcessorStatus, isProcessorRunning, isProcessorTerminal } from './agentic-types';
 
 /**
  * Result returned by AgenticProcess.spawn().
@@ -1084,19 +1084,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       throw new Error('Process is stopping');
     }
 
-    if (isProcessLive(this.status) && this.shell_id) {
-      const existingShell = await this.shell();
-      if (existingShell) {
-        await existingShell.attachPty({ cols: 80, rows: 24, timeout: options?.ptyTimeout });
-        return true;
-      }
-    }
-
     const actionInfo = new ActionInfo('open', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = options ?? {};
     const result = await dataManager.callAction<
       unknown,
-      { shell_id: string; session_id: string; status?: string; shell: Record<string, unknown> } | null
+      { shell_id: string; pty_id: string; session_id: string; status?: string; shell: Record<string, unknown> } | null
     >(actionInfo);
     if (!result) throw new Error('Process could not be opened (process may be terminated)');
     if (result.status) {
@@ -1107,7 +1099,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     dataManager.updateEntityFromJson(result.shell);
     const shell = await dataManager.getByTypeId<Shell>(new TypeId(Shell.type, result.shell_id));
     if (!shell) throw new Error(`Shell ${result.shell_id} not found after start()`);
-    await shell.attachPty({ cols: 80, rows: 24, timeout: options?.ptyTimeout });
+    shell.pty_pid = result.pty_id;
+    await shell.attachPty({ cols: 80, rows: 24, timeout: options?.ptyTimeout, ptyId: result.pty_id });
     return true;
   }
 
