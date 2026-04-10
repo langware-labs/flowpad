@@ -379,14 +379,14 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
       runShell = shells.find((s) => s.name === 'Run') ?? null;
 
       if (!runShell) {
-        runShell = Shell.create(cn, { name: 'Run' });
+        runShell = Shell.create(cn, { name: 'Run', workdir: dataContext.project?.fs_storage_mount_path || undefined });
         await runShell.save(cn.typeId);
       }
 
       setActiveTerminalSessionId(runShell.id);
 
       if (!runShell.pty?.isLive) {
-        await runShell.attachPty({ cols: 80, rows: 24 });
+        await runShell.start({ cols: 80, rows: 24, workdir: runShell.workdir ?? dataContext.project?.fs_storage_mount_path ?? undefined });
       }
       await runShell.resize(80, 24);
       await runShell.sendInput(command.trim() + '\r');

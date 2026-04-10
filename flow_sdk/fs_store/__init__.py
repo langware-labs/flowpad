@@ -6,6 +6,7 @@ from .exceptions import ReadOnlyRecordError as ReadOnlyRecordError
 from .factory.type_registry import type_registry as type_registry
 from .fs_ref import BinaryFsRef as BinaryFsRef
 from .fs_ref import FSRef as FSRef
+from .fs_ref import FrontMatterFsRef as FrontMatterFsRef
 from .fs_ref import JSONFsRef as JSONFsRef
 from .fs_ref import TextFsRef as TextFsRef
 from .json_file_record_store import JsonFileRecordStore as JsonFileRecordStore

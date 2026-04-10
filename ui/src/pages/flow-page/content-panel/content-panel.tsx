@@ -161,10 +161,9 @@ export function ContentPanel() {
     const pointer = currentDock.pointer;
     const shellUuid = pointer ? pointer.replace(/^[a-z_]+-/, '') : '';
 
-    // No pointer -> redirect to first alive tab
+    // No pointer is loader-owned. Let the route loader resolve the default
+    // shell/process target so we do not race explicit tab navigation.
     if (!pointer) {
-      const aliveTab = terminalTabs.find((t) => !t.isDisabled);
-      if (aliveTab) navigateToTab(aliveTab);
       return;
     }
 

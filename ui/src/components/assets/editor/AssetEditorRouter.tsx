@@ -1,6 +1,7 @@
 import { MarkdownAssetEditor } from './markdown/MarkdownAssetEditor';
 import { DocsAssetEditor } from './docs/DocsAssetEditor';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
+import { AgentAssetEditor } from './agent/AgentAssetEditor';
 
 interface AssetEditorRouterProps {
   /** Pointer in the format "editor/<type>/<vfsPath>" */
@@ -30,10 +31,11 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
       return <SkillAssetEditor sourcePath={vfsPath} />;
     case 'docs':
       return <DocsAssetEditor sourcePath={vfsPath} />;
+    case 'agent':
+      return <AgentAssetEditor sourcePath={vfsPath} />;
     case 'claude_md':
     case 'claude_memory':
     case 'claude_rules':
-    case 'agent':
     case 'command':
     case 'plan':
     case 'workflow':

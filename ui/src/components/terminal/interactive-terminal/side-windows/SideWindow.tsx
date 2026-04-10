@@ -22,6 +22,9 @@ export const SideWindow: React.FC<SideWindowProps> = ({ tabs, activeTab, onSelec
             const descriptor = SIDE_TABS[tabId];
             const Icon = descriptor.icon;
             const isActive = tabId === activeTab;
+            const words = descriptor.label.split(' ');
+            const displayLabel = words.length > 2 ? words.slice(0, 2).join(' ') + '…' : descriptor.label;
+            const isTruncated = words.length > 2;
             return (
               <Tooltip key={tabId}>
                 <TooltipTrigger asChild>
@@ -35,7 +38,7 @@ export const SideWindow: React.FC<SideWindowProps> = ({ tabs, activeTab, onSelec
                     onClick={() => onSelect(tabId)}
                   >
                     <Icon className="h-3 w-3" />
-                    <span className="text-[11px]">{descriptor.label}</span>
+                    <span className="text-[11px]">{displayLabel}</span>
                     <button
                       className="ml-0.5 rounded hover:text-foreground"
                       onClick={(e) => { e.stopPropagation(); onClose(tabId); }}
@@ -46,7 +49,7 @@ export const SideWindow: React.FC<SideWindowProps> = ({ tabs, activeTab, onSelec
                   </div>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" className="text-xs">
-                  {descriptor.description}
+                  {isTruncated ? descriptor.label : descriptor.description}
                 </TooltipContent>
               </Tooltip>
             );

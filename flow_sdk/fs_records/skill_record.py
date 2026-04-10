@@ -95,28 +95,21 @@ class SkillRecord(Record):
     # -- FSRef accessors --
 
     @property
-    def main_ref(self) -> "Any":  # TextFsRef | None
-        """Primary content ref: SKILL.md inside the skill folder."""
-        from flow_sdk.fs_store.fs_ref import TextFsRef
+    def skill_doc(self) -> "Any":  # FrontMatterFsRef | None
+        """FrontMatterFsRef pointing to SKILL.md inside the skill folder."""
+        from flow_sdk.fs_store.fs_ref import FrontMatterFsRef
         ar = self.asset_ref
         if ar is not None:
-            return TextFsRef(ar._path / "SKILL.md")
+            return FrontMatterFsRef(ar._path / "SKILL.md")
         rd = self.record_dir
         if rd is not None:
-            return TextFsRef(rd / "SKILL.md")
+            return FrontMatterFsRef(rd / "SKILL.md")
         return None
 
     @property
-    def skill_doc(self) -> "Any":  # FSRef | None
-        """FSRef pointing to SKILL.md inside the skill folder."""
-        ar = self.asset_ref
-        if ar is not None:
-            return ar.child("SKILL.md")
-        rd = self.record_dir
-        if rd is not None:
-            from flow_sdk.fs_store.fs_ref import FSRef
-            return FSRef(rd / "SKILL.md")
-        return None
+    def main_ref(self) -> "Any":  # FrontMatterFsRef | None
+        """Primary content ref: delegates to skill_doc."""
+        return self.skill_doc
 
     @property
     def skill_yaml(self) -> "Any":  # FSRef | None
@@ -165,7 +158,16 @@ class SkillRecord(Record):
         base_dir: Path | None = ar._path if ar is not None else self.record_dir
         if base_dir is None:
             return {}
-        return _load_skill_yaml_from_dir(base_dir)
+        # Prefer skill.yaml / skill.yml (existing priority)
+        for name in ("skill.yaml", "skill.yml"):
+            p = base_dir / name
+            if p.exists():
+                return _load_skill_yaml_from_dir(base_dir)
+        # Fall back to SKILL.md frontmatter via skill_doc
+        doc = self.skill_doc
+        if doc is not None:
+            return doc.read_frontmatter()
+        return {}
 
     def meta_dict(self) -> dict:
         result = super().meta_dict()

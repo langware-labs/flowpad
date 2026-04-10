@@ -522,6 +522,9 @@ class Shell(Entity):
         """
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
+        working_dir = body.get("working_dir")
+        if working_dir:
+            self.workdir = working_dir
         try:
             await self.start(
                 rows=body.get("rows", 24),
@@ -530,7 +533,9 @@ class Shell(Entity):
             )
         except RuntimeError as e:
             return ApiFailResponse(message=str(e))
-        return ApiSuccessResponse(data=self.model_dump(mode="json"))
+        payload = self.model_dump(mode="json")
+        payload["pty_id"] = self.pty_pid or self.id
+        return ApiSuccessResponse(data=payload)
 
     @action.post(action_name="close")
     async def close(self) -> ApiResponse:

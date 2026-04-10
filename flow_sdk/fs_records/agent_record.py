@@ -113,16 +113,21 @@ class AgentRecord(Record):
         return ""
 
     @property
-    def main_ref(self) -> "Any":  # FSRef | None
-        """Primary content ref: the agent's .md file."""
+    def agent_doc(self) -> "Any":  # FrontMatterFsRef | None
+        """FrontMatterFsRef pointing to the agent's .md file."""
+        from flow_sdk.fs_store.fs_ref import FrontMatterFsRef
         ar = self.asset_ref
         if ar is not None:
-            return ar
+            return FrontMatterFsRef(ar._path)
         rd = self.record_dir
-        if rd is None or not self.name:
-            return None
-        from flow_sdk.fs_store.fs_ref import TextFsRef
-        return TextFsRef(rd / f"{self.name}.md")
+        if rd is not None and self.name:
+            return FrontMatterFsRef(rd / f"{self.name}.md")
+        return None
+
+    @property
+    def main_ref(self) -> "Any":  # FrontMatterFsRef | None
+        """Primary content ref: delegates to agent_doc."""
+        return self.agent_doc
 
     def meta_dict(self) -> dict:
         result = super().meta_dict()
@@ -155,18 +160,16 @@ class AgentRecord(Record):
     @property
     def prompt(self) -> str:
         """Read the system prompt from the companion markdown file."""
-        md_name = f"{self.name}.md" if self.name else None
-        if md_name:
-            content = self.read_file(md_name)
-            if content is not None:
-                return _extract_body(content)
+        doc = self.agent_doc
+        if doc is not None and doc.exists():
+            return doc.read_body()
         return getattr(self, "prompt_text", "") or ""
 
     @prompt.setter
     def prompt(self, value: str) -> None:
-        md_name = f"{self.name}.md" if self.name else None
-        if md_name and self.record_dir is not None:
-            self.write_file(md_name, self._render_markdown(body=value))
+        doc = self.agent_doc
+        if doc is not None:
+            doc.write_body(value)
         else:
             object.__setattr__(self, "prompt_text", value)
             dirty = object.__getattribute__(self, "_dirty_keys")
@@ -233,8 +236,8 @@ class AgentRecord(Record):
         p = Path(path)
         text = p.read_text(encoding="utf-8")
         rec = cls.from_markdown(text, name=p.stem)
-        from flow_sdk.fs_store.fs_ref import FSRef
-        rec.asset_ref = FSRef(p)
+        from flow_sdk.fs_store.fs_ref import FrontMatterFsRef
+        rec.asset_ref = FrontMatterFsRef(p)
         return rec
 
     # -- Claude Code --agents JSON -----------------------------------------
@@ -335,19 +338,16 @@ class AgentRecord(Record):
         if body:
             object.__getattribute__(rec, "__dict__")["prompt_text"] = body
         # _record_folder_ref stays None so save() targets records_root shadow.
-        from flow_sdk.fs_store.fs_ref import TextFsRef
-        object.__setattr__(rec, "_asset_ref", TextFsRef(md_file.resolve()))
+        from flow_sdk.fs_store.fs_ref import FrontMatterFsRef
+        object.__setattr__(rec, "_asset_ref", FrontMatterFsRef(md_file.resolve()))
         return rec
 
     def save(self) -> None:
         """Save both record.json and the companion .md file."""
         super().save()
-        ar = self.asset_ref
-        if ar is not None:
-            ar.write(self._render_markdown())
-        elif self.record_dir is not None and self.name:
-            from flow_sdk.fs_store.fs_ref import FSRef
-            FSRef(self.record_dir / f"{self.name}.md").write(self._render_markdown())
+        doc = self.agent_doc
+        if doc is not None:
+            doc.write_doc(body=self.prompt, frontmatter=self._frontmatter_fields())
 
     def clone(self, base_dir: "str | Path") -> "AgentRecord":
         """Install this agent into base_dir/.claude/agents/<name>.md.

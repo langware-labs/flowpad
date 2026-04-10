@@ -20,9 +20,15 @@ describe('AgenticProcess.start (open action)', () => {
   let notifyChangedSpy: ReturnType<typeof vi.spyOn>;
   let getByTypeIdSpy: ReturnType<typeof vi.spyOn>;
 
-  const fakeShell = { type: 'shell', id: '00000000-0000-4000-8000-000000000002', name: 'test-shell', startPty: vi.fn().mockResolvedValue(undefined), attachPty: vi.fn().mockResolvedValue(undefined) };
+  const fakeShell = {
+    type: 'shell',
+    id: '00000000-0000-4000-8000-000000000002',
+    name: 'test-shell',
+    attachPty: vi.fn().mockResolvedValue(undefined),
+  };
   const fakeActionResult = {
     shell_id: '00000000-0000-4000-8000-000000000002',
+    pty_id: 'pty-00000000-0000-4000-8000-000000000002',
     session_id: 'worker-session-xyz',
     shell: fakeShell,
   };
@@ -49,6 +55,12 @@ describe('AgenticProcess.start (open action)', () => {
     await expect(agenticProcess.start()).resolves.toBe(true);
     expect(agenticProcess.shell_id).toBe('00000000-0000-4000-8000-000000000002');
     expect(agenticProcess.session_id).toBe('worker-session-xyz');
+    expect(fakeShell.attachPty).toHaveBeenCalledWith({
+      cols: 80,
+      rows: 24,
+      timeout: undefined,
+      ptyId: 'pty-00000000-0000-4000-8000-000000000002',
+    });
   });
 
   it('dataManager does not have a getEntityById method (verifies the broken API)', () => {

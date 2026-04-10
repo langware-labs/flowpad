@@ -46,16 +46,25 @@ def _real_path_from_jsonl(project_dir: Path) -> Path | None:
     return None
 
 
-def iter_claude_project_paths() -> Iterator[Path]:
+def iter_claude_project_paths(include_temp: bool = False) -> Iterator[Path]:
     """Yield the real filesystem path for each known Claude project.
 
     Uses 'cwd' from session JSONL files as the authoritative source.
     Falls back to the encoded-name decode for projects with no JSONL files
     (e.g. brand-new projects or memory-only entries).
     Only yields paths that exist on disk.
+
+    Args:
+        include_temp: If False (default), skip paths inside the system
+            temporary directory.  Old agentic-process runs leave orphaned
+            ``flow-process-*`` temp dirs registered here; excluding them
+            prevents their ``.claude/agents/`` contents from polluting
+            agent discovery and the scan index.
     """
     if not _CLAUDE_PROJECTS.is_dir():
         return
+
+    from flow_sdk.utils.file_system import is_temp_path  # noqa: PLC0415
 
     seen: set[Path] = set()
     for project_dir in sorted(_CLAUDE_PROJECTS.iterdir()):
@@ -67,6 +76,9 @@ def iter_claude_project_paths() -> Iterator[Path]:
             # Fallback: decode encoded name (correct for paths without hyphens)
             encoded = project_dir.name
             real = Path("/" + encoded.lstrip("-").replace("-", "/"))
+
+        if not include_temp and is_temp_path(real):
+            continue
 
         rp = real.resolve()
         if rp in seen:

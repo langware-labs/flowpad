@@ -11,14 +11,23 @@ This repo uses git symlinks. On Windows, enable symlink support so they are chec
 git config --global core.symlinks true
 ```
 
+### Local Environment
+
+Ports are configured in `.env.local` (repo root) and `ui/.env.local`:
+
+| Variable | File | Purpose |
+|----------|------|---------|
+| `LOCAL_SERVER_PORT` | `.env.local` | Backend server port |
+| `VITE_PORT` | `.env.local` | Frontend dev server port |
+
 ### Backend
 
 ```bash
-# Install Python dependencies and start the backend server (port 9007)
-uv run -m server.run
+# Install Python dependencies and start the backend server
+uv run -m flow_sdk.server.run
 ```
 
-The server runs at `http://localhost:9007`. Bootstrap endpoint: `http://localhost:9007/api/v1/graph/bootstrap`
+The server runs at `http://localhost:$LOCAL_SERVER_PORT`. Bootstrap endpoint: `http://localhost:$LOCAL_SERVER_PORT/api/v1/graph/bootstrap`
 
 ### Frontend
 
@@ -26,11 +35,11 @@ The server runs at `http://localhost:9007`. Bootstrap endpoint: `http://localhos
 # Install Node dependencies
 cd ui && npm install
 
-# Start the Vite dev server (port 4097)
+# Start the Vite dev server
 npm run dev
 ```
 
-The frontend runs at `http://localhost:4097` and calls the backend at `http://localhost:9007` via the `__API_URL__` define in `vite.config.ts`.
+The frontend runs at `http://localhost:$VITE_PORT` and calls the backend at `http://localhost:$LOCAL_SERVER_PORT` via the `__API_URL__` define in `vite.config.ts`.
 
 ### Building for pip install
 
@@ -269,7 +278,7 @@ The process module lives under `ts_sdk/src/process/`. Shared types are extracted
 - API tests run in ~6s. If a test run seems to hang, check for piped commands (`| tail`, `| head`) that buffer all output — use direct output instead.
 - The SQLite DB at `/tmp/flowpad_test.db` persists between test runs. The `clean_db` session fixture in `tests/api/conftest.py` deletes it at session start. If you see stale entities leaking between tests, that's the cause.
 - Frontend react/unit tests use 15s timeouts (`hookTimeout` and `testTimeout` in `ui/tests/react/vitest.config.ts`).
-- Some react tests (useFS, reactivity) require a running backend at `localhost:9007` — they can't reach it from jsdom.
+- Some react tests (useFS, reactivity) require a running backend at `localhost:$LOCAL_SERVER_PORT` — they can't reach it from jsdom.
 
 ## Work Standards
 

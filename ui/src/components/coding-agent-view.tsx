@@ -71,10 +71,10 @@ export function CodingAgentView() {
         }
 
         if (!shell) {
-          shell = Shell.create(cn, { name: 'Claude CLI' });
+          shell = Shell.create(cn, { name: 'Claude CLI', workdir: dataContext.project?.fs_storage_mount_path ?? undefined });
           (shell as any).id = sessionId;
           await shell.save(cn.typeId);
-          await shell.attachPty({ cols: 80, rows: 24 });
+          await shell.start({ cols: 80, rows: 24, workdir: shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? undefined });
 
           // Wait for PTY to be live before sending command
           const waitForPtyReady = () => {

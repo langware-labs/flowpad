@@ -1,4 +1,5 @@
 import { APIEntity, registerEntity } from '../APIEntity';
+import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
 import { ViewType } from '../utils/ui/view-types';
 
@@ -40,6 +41,12 @@ export class Skill extends APIEntity<Skill> {
       return new DockPointerData(ViewType.ASSETS, `editor/skill/${this.source_path.replace(/^\//, '')}`);
     }
     return this.dockPointer;
+  }
+
+  /** FrontMatterFsRef for SKILL.md. Resolves compute node from dataContext. */
+  get doc(): FrontMatterFsRef {
+    const mdPath = (this.source_path ?? '').replace(/\/$/, '') + '/SKILL.md';
+    return new FrontMatterFsRef(mdPath);
   }
 
   static async create(name: string, description?: string): Promise<Skill> {

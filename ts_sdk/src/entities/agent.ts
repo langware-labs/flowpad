@@ -1,4 +1,5 @@
 import { APIEntity, registerEntity } from '../APIEntity';
+import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
 import { ViewType } from '../utils/ui/view-types';
 import { ComputeNodeSize } from './compute-node';
@@ -71,7 +72,6 @@ export class Agent extends APIEntity<Agent> {
   static type: string = 'agent';
   name?: string;
   description?: string;
-
   source_path?: string;
 
   // Legacy cloud fields — kept for UI compat only
@@ -96,6 +96,11 @@ export class Agent extends APIEntity<Agent> {
       return new DockPointerData(ViewType.ASSETS, `editor/agent/${this.source_path.replace(/^\//, '')}`);
     }
     return this.dockPointer;
+  }
+
+  /** FrontMatterFsRef for the agent .md file. Resolves compute node from dataContext. */
+  get doc(): FrontMatterFsRef {
+    return new FrontMatterFsRef(this.source_path ?? '');
   }
 
 }
