@@ -224,11 +224,19 @@ class DesktopActionsMixin:
     async def _desktop_pick_folder(self) -> ApiResponse:
         """Open a native OS folder-picker dialog and return the selected path.
 
+        Accepts an optional JSON body: {"initial_dir": "/path/to/open"}.
+
         Returns:
             ApiSuccessResponse with {"path": "/selected/path"} or {"path": null} if cancelled.
         """
         try:
-            selected_path = await self.compute_provider.pick_folder(self.verified_node_provider_id)
+            from flow_sdk.request_context.methods import get_current_request_info
+            request_info = get_current_request_info()
+            body = await request_info.get_post_data() if request_info else {}
+            initial_dir: str | None = body.get("initial_dir") if isinstance(body, dict) else None
+            selected_path = await self.compute_provider.pick_folder(
+                self.verified_node_provider_id, initial_dir=initial_dir
+            )
             return ApiSuccessResponse(data={"path": selected_path})
         except Exception as e:
             logging.exception(f"Failed to open folder picker: {e}")
@@ -314,7 +322,6 @@ class DesktopActionsMixin:
         """Generate an AMD execution plan from user content.
 
         This is a stub implementation for the desktop version.
-        The production version uses AgenticProcessor with planner skills.
 
         POST body:
             content: The content to create a plan for

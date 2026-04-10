@@ -1,5 +1,5 @@
-import type { AgenticProcess } from '../../agentic_processor/agentic-process';
-import type { AgenticContext, PermissionMode } from '../../agentic_processor/agentic-context';
+import type { AgenticProcess } from '../../process/agentic-process';
+import type { AgenticContext, PermissionMode } from '../../process/agentic-context';
 
 /**
  * Typed representation of a `claude …` CLI invocation.
@@ -135,7 +135,7 @@ export class ClaudeCliCommand {
   static fromProcess(process: AgenticProcess): ClaudeCliCommand {
     const ctx = process.context_data ?? {};
     const cmd = new ClaudeCliCommand();
-    cmd.sessionId = process.worker_session_id ?? undefined;
+    cmd.sessionId = process.session_id ?? undefined;
     cmd.model = (ctx.model as string) || undefined;
     cmd.permissionMode = (ctx.permission_mode as PermissionMode) || undefined;
     cmd.chrome = (ctx.chrome as boolean) || undefined;

@@ -483,7 +483,7 @@ async def is_cloud_login_available() -> bool:
     """Check if cloud login is available by checking stored credentials."""
     try:
         from flow_sdk.cli.auth import is_logged_in
-        return is_logged_in()
+        return await asyncio.to_thread(is_logged_in)
     except Exception:
         return False
 
@@ -827,65 +827,6 @@ async def get_or_create_local_compute_node(
 
 
 # ---------------------------------------------------------------------------
-# System agent entity bootstrap
-# ---------------------------------------------------------------------------
-
-
-async def sync_system_agent_entities(desktop_user: Optional[Entity] = None) -> None:
-    """Create or update Agent entities for each system agent .md file.
-
-    Each Agent entity has record_data_ref = "agent/<name>" linking it to
-    the AgentRecord on disk. Existing entities are skipped (idempotent).
-    Agent lookups are parallelized with asyncio.gather.
-    """
-    import flow_sdk
-    from flow_sdk.builtin.agent import Agent
-    from flow_sdk.fs_records.agent_record import AgentRecord
-
-    agents_dir = Path(flow_sdk.__file__).parent / "system_assets" / "agents"
-    if not agents_dir.is_dir():
-        return
-
-    # Collect agent records from disk (fast, sync)
-    agent_records: list[tuple[str, AgentRecord]] = []
-    for agent_dir in sorted(agents_dir.iterdir()):
-        if not agent_dir.is_dir():
-            continue
-        record = AgentRecord.load_from_dir(agent_dir)
-        if not record or not record.name:
-            continue
-        agent_records.append((record.name, record))
-
-    if not agent_records:
-        return
-
-    # Parallel lookup: check which agents already exist
-    names = [name for name, _ in agent_records]
-    existing_results = await asyncio.gather(
-        *[Agent.get_by_uname(name) for name in names],
-        return_exceptions=True,
-    )
-
-    # Create only missing agents (sequentially to avoid write conflicts)
-    for (name, record), existing in zip(agent_records, existing_results):
-        if isinstance(existing, Exception):
-            logging.warning(f"Failed to look up Agent entity for '{name}': {existing}")
-            continue
-        if existing:
-            continue
-        try:
-            agent_entity = Agent(
-                uname=name,
-                name=name,
-                description=record.data.get("description"),
-                visitor_role="owner",
-            )
-            await agent_entity.save(owner=desktop_user)
-            logging.info(f"Created system Agent entity: {name}")
-        except Exception as e:
-            logging.warning(f"Failed to create Agent entity for '{name}': {e}")
-
-
 # ---------------------------------------------------------------------------
 # File system setup (migrated from desktop_loader.py:init_desktop_entities)
 # ---------------------------------------------------------------------------
@@ -1126,8 +1067,6 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         _t.time("get_or_create_local_workspace")
         compute_node = await get_or_create_local_compute_node(local_project=project, desktop_user=user)
         _t.time("get_or_create_local_compute_node")
-        await sync_system_agent_entities(desktop_user=user)
-        _t.time("sync_system_agent_entities")
 
         # Get desktop info (LLM providers, installed agents, paths)
         desktop_info = await get_desktop_info()

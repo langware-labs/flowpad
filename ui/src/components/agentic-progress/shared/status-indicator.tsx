@@ -1,16 +1,16 @@
-import { ProcessorStatus } from '@sdk';
-import { Check, Circle, Loader2, Pause, AlertCircle, XCircle } from 'lucide-react';
+import { ProcessStatus } from '@sdk';
+import { Check, Circle, Loader2, AlertCircle } from 'lucide-react';
 import { cn } from '@src/lib/utils';
 
 interface StatusIndicatorProps {
-  status: ProcessorStatus;
+  status: ProcessStatus;
   showLabel?: boolean;
   size?: 'sm' | 'md' | 'lg';
   className?: string;
 }
 
 const statusConfig: Record<
-  ProcessorStatus,
+  ProcessStatus,
   {
     icon: typeof Check;
     color: string;
@@ -19,49 +19,44 @@ const statusConfig: Record<
     animate?: boolean;
   }
 > = {
-  [ProcessorStatus.IDLE]: {
+  [ProcessStatus.NEW]: {
     icon: Circle,
     color: 'text-gray-400',
     bgColor: 'bg-gray-100 dark:bg-gray-800',
-    label: 'Ready',
+    label: 'New',
   },
-  [ProcessorStatus.RUNNING]: {
+  [ProcessStatus.STARTING]: {
+    icon: Loader2,
+    color: 'text-blue-500',
+    bgColor: 'bg-blue-100 dark:bg-blue-900/30',
+    label: 'Starting',
+    animate: true,
+  },
+  [ProcessStatus.LIVE]: {
     icon: Loader2,
     color: 'text-blue-500',
     bgColor: 'bg-blue-100 dark:bg-blue-900/30',
     label: 'Running',
     animate: true,
   },
-  [ProcessorStatus.STEPPING]: {
+  [ProcessStatus.STOPPING]: {
     icon: Loader2,
-    color: 'text-blue-500',
-    bgColor: 'bg-blue-100 dark:bg-blue-900/30',
-    label: 'Stepping',
-    animate: true,
-  },
-  [ProcessorStatus.PAUSED]: {
-    icon: Pause,
     color: 'text-yellow-500',
     bgColor: 'bg-yellow-100 dark:bg-yellow-900/30',
-    label: 'Paused',
+    label: 'Stopping',
+    animate: true,
   },
-  [ProcessorStatus.COMPLETE]: {
+  [ProcessStatus.STOPPED]: {
     icon: Check,
     color: 'text-green-500',
     bgColor: 'bg-green-100 dark:bg-green-900/30',
     label: 'Complete',
   },
-  [ProcessorStatus.ERROR]: {
+  [ProcessStatus.FAILED]: {
     icon: AlertCircle,
     color: 'text-red-500',
     bgColor: 'bg-red-100 dark:bg-red-900/30',
     label: 'Error',
-  },
-  [ProcessorStatus.TERMINATED]: {
-    icon: XCircle,
-    color: 'text-gray-500',
-    bgColor: 'bg-gray-100 dark:bg-gray-800',
-    label: 'Terminated',
   },
 };
 
@@ -72,7 +67,7 @@ const sizeConfig = {
 };
 
 export function StatusIndicator({ status, showLabel = false, size = 'md', className }: StatusIndicatorProps) {
-  const config = statusConfig[status];
+  const config = statusConfig[status] ?? statusConfig[ProcessStatus.NEW];
   const sizes = sizeConfig[size];
   const Icon = config.icon;
 
@@ -84,8 +79,8 @@ export function StatusIndicator({ status, showLabel = false, size = 'md', classN
   );
 }
 
-export function StatusBadge({ status, className }: { status: ProcessorStatus; className?: string }) {
-  const config = statusConfig[status];
+export function StatusBadge({ status, className }: { status: ProcessStatus; className?: string }) {
+  const config = statusConfig[status] ?? statusConfig[ProcessStatus.NEW];
   const Icon = config.icon;
 
   return (

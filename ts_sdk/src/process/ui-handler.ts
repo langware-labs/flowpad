@@ -1,5 +1,5 @@
 import { FlowData } from '../flow_processing';
-import { UIComponentPayload } from './agentic-processor';
+import { UIComponentPayload } from './agentic-types';
 
 /**
  * Parsed UI Component from FlowData

@@ -23,7 +23,9 @@ import {
   DropdownMenuLabel,
 } from '@src/components/ui/dropdown-menu';
 import { BugPlay, ExternalLink, Filter, GitFork, Info, RotateCcw, ScrollText, SlidersHorizontal, SquareTerminal, X } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useToast } from '@src/hooks/use-toast';
+import { ToastAction } from '@src/components/ui/toast';
 import { RestartRequiredOverlay } from './RestartRequiredOverlay';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useDevMode } from '@src/contexts/dev-mode-context';
@@ -54,7 +56,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const devMode = useDevMode();
   const [showPtyViewer, setShowPtyViewer] = useState(false);
 
-  const hasSession = !!process.worker_session_id;
+  const hasSession = !!process.session_id;
   const canFork = hasSession && sessionTraceCount && sessionTraceCount > 0;
   const canToggle = hasSession;
   const workdir = process.workdir ?? '';
@@ -79,6 +81,34 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
     setPendingDebug(currentDebug);
   }, [currentChrome, currentDanger, currentDebug]);
 
+  // Toast when API_TIMEOUT detected — auto-dismisses if status recovers
+  const { toast, dismiss } = useToast();
+  const apiTimeoutToastId = useRef<string | null>(null);
+  useEffect(() => {
+    if (process.workerStatus === 'api_timeout') {
+      if (apiTimeoutToastId.current) return; // already shown
+      const { id } = toast({
+        title: 'Agent is taking a long time to respond',
+        description: 'The Anthropic API may be slow or unresponsive.',
+        duration: Infinity,
+        action: (
+          <div className="flex gap-2">
+            <ToastAction altText="Terminate" onClick={() => { void process.close(); dismiss(id); apiTimeoutToastId.current = null; }}>
+              Terminate
+            </ToastAction>
+            <ToastAction altText="Keep Waiting" onClick={() => { dismiss(id); apiTimeoutToastId.current = null; }}>
+              Keep Waiting
+            </ToastAction>
+          </div>
+        ),
+      });
+      apiTimeoutToastId.current = id;
+    } else if (apiTimeoutToastId.current) {
+      dismiss(apiTimeoutToastId.current);
+      apiTimeoutToastId.current = null;
+    }
+  }, [process.workerStatus]);
+
   const hasPendingChanges =
     pendingChrome !== currentChrome || pendingDanger !== currentDanger || pendingDebug !== currentDebug;
 
@@ -89,9 +119,9 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
       updatedCli.chrome = pendingChrome;
       updatedCli.permission_mode = pendingDanger ? 'bypassPermissions' : 'askUser';
       updatedCli.debug = pendingDebug;
-      process.cli_config = updatedCli.toJson();
+      process.cliOptions = updatedCli;
       await process.save();
-      await claudeSessionManager.restartSession(process);
+      await process.restart();
     } finally {
       setIsApplying(false);
     }
@@ -118,7 +148,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
     if (isRestarting) return;
     setIsRestarting(true);
     try {
-      await claudeSessionManager.restartSession(process);
+      await process.restart();
     } finally {
       setIsRestarting(false);
     }
@@ -320,7 +350,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
             disabled={false}
             onClick={() => {
               void (async () => {
-                const sessionId = process.worker_session_id!;
+                const sessionId = process.session_id!;
                 const record = await ClaudeSessionRecord.discover(sessionId).catch(() => null);
                 const projectEncodedName = record?.project_encoded_name ?? workdir.replace(/\//g, '-');
                 navigation.openLens('claude', 'transcript', `${projectEncodedName}/${sessionId}`);
@@ -499,17 +529,18 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
   if (chrome) parts.push('--chrome');
   if (debug) parts.push('--debug');
   if (worktree) parts.push('--worktree');
-  parts.push('--session-id', process.worker_session_id || '?');
+  parts.push('--session-id', process.session_id || '?');
   if (model && model !== '(default)') parts.push('--model', model);
   const command = parts.join(' ');
 
   const rows: [string, string][] = [
     ['Process ID', process.id || 'none'],
-    ['Status', process.state?.status || 'unknown'],
+    ['Status', process.status || 'unknown'],
+    ['CLI worker status', process.workerStatus || 'idle'],
     ['Started', startDisplay],
     ['Last message', lastDisplay],
     ['Working Dir', workdir],
-    ['Session ID', process.worker_session_id || 'none'],
+    ['Session ID', process.session_id || 'none'],
     ['PTY ID', process.pty_pid || 'none (detached)'],
     ['Permission', permMode],
     ['Chrome', chrome ? 'enabled' : 'disabled'],

@@ -6,6 +6,7 @@ from .exceptions import ReadOnlyRecordError as ReadOnlyRecordError
 from .factory.type_registry import type_registry as type_registry
 from .fs_ref import BinaryFsRef as BinaryFsRef
 from .fs_ref import FSRef as FSRef
+from .fs_ref import FrontMatterFsRef as FrontMatterFsRef
 from .fs_ref import JSONFsRef as JSONFsRef
 from .fs_ref import TextFsRef as TextFsRef
 from .json_file_record_store import JsonFileRecordStore as JsonFileRecordStore
@@ -28,6 +29,12 @@ from .record import (
     get_default_records_root as get_default_records_root,
 )
 from .record import (
+    get_default_records_data_root as get_default_records_data_root,
+)
+from .record import (
+    get_flowpad_home as get_flowpad_home,
+)
+from .record import (
     parse_record_stem as parse_record_stem,
 )
 from .record import (
@@ -35,6 +42,9 @@ from .record import (
 )
 from .record import (
     set_default_records_root as set_default_records_root,
+)
+from .record import (
+    set_default_records_data_root as set_default_records_data_root,
 )
 from .record_list import ListMode as ListMode
 from .record_list import RecordList as RecordList

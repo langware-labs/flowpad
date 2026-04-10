@@ -5,7 +5,7 @@ Usage::
     from flow_sdk.builtin.cli_workers import factory, ClaudeCliOptions
 
     cmd = factory({"resume": True}, worker_type="claude")
-    cmd.session_id = process.worker_session_id
+    cmd.session_id = process.session_id
     cmd.workdir = process.workdir
     cmd.add_env("FLOWPAD_EXECUTION_SCOPE", scope_json)
     shell_str = cmd.to_shell_string(instruction="fix the bug")

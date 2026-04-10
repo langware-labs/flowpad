@@ -69,6 +69,21 @@ function loadStoredDeduplicate(): boolean {
   return true;
 }
 
+/** Result from the Flowpad cloud known-issues search. */
+export interface CloudSearchResult {
+  fingerprint: string;
+  /** "fix" = a tested fix instruction is available; "ignore" = safe to ignore; "analyse" = no known resolution */
+  action: 'ignore' | 'fix' | 'analyse';
+  instruction: string | null;
+  message: string | null;
+}
+
+/** Cloud fix suggestion */
+export interface Fix {
+  instruction: string;
+  message: string;
+}
+
 export interface ErrorOccurrence {
   timestamp: string;
   session_id: string;
@@ -105,6 +120,7 @@ export interface ClaudeErrorRecord {
   claude_session_id: string;
   triaged_at: string;
   notes: string;
+  fix: Fix;
 }
 
 // ─── Hook ────────────────────────────────────────────────────────────────────
@@ -308,7 +324,10 @@ export function useClaudeErrorRecords() {
   );
 
   const createTaskForError = useCallback(
-    async (error: ClaudeErrorRecord): Promise<{ taskId: string | null; shellId: string | null }> => {
+    async (
+      error: ClaudeErrorRecord,
+      options?: { instruction?: string },
+    ): Promise<{ taskId: string | null; shellId: string | null }> => {
       if (!projectTypeId) return { taskId: null, shellId: null };
       try {
         const task = new Task({
@@ -354,7 +373,9 @@ export function useClaudeErrorRecords() {
           .filter(Boolean)
           .join('\n');
 
-        const instruction = `Investigate this error. Analyze the issue, find root cause and solution, explain them to the user and fix the error if it is possible\n\n${errorDetails}`;
+        const instruction =
+          options?.instruction ??
+          `Investigate this error. Analyze the issue, find root cause and solution, explain them to the user and fix the error if it is possible\n\n${errorDetails}`;
 
         const { process, shell } = await AgenticProcess.spawn(
           { permissionMode: 'bypassPermissions', workdir },
@@ -368,7 +389,7 @@ export function useClaudeErrorRecords() {
             error_status: ErrorStatus.TASK_CREATED,
             linked_task_id: taskId,
             worker_session_id: shellId ?? '',
-            claude_session_id: process.worker_session_id ?? '',
+            claude_session_id: process.session_id ?? '',
             triaged_at: new Date().toISOString(),
           });
         }
@@ -385,15 +406,48 @@ export function useClaudeErrorRecords() {
   const clearAll = useCallback(async () => {
     if (!computeNode?.typeId?.id) return null;
     const info = new ActionInfo('clear-debug-errors', 'compute_node', computeNode.typeId.id, 'POST');
-    const result = await dataManager.callAction(info);
-    await refetch();
-    return result?.data as {
+    const result = await dataManager.callAction<unknown, {
       deleted_debug_logs: number;
       truncated_debug_logs: number;
       skipped_debug_logs: string[];
       deleted_error_records: number;
-    } | null;
+    }>(info);
+    await refetch();
+    return result ?? null;
   }, [computeNode?.typeId?.id, refetch]);
+
+  /**
+   * Query the Flowpad cloud known-issues database for a batch of fingerprints.
+   * The server applies results (ignore / save fix) to local records automatically.
+   * Returns one result per fingerprint with action: 'fix' | 'ignore' | 'analyse'.
+   */
+  const searchCloudForErrors = useCallback(
+    async (fingerprints: string[]): Promise<CloudSearchResult[]> => {
+      if (!computeNode?.typeId?.id || fingerprints.length === 0) return [];
+      const info = new ActionInfo('search-cloud-errors', 'compute_node', computeNode.typeId.id, 'POST');
+      info.bodyParameters = { fingerprints };
+      const result = await dataManager.callAction<string[], { results: CloudSearchResult[] }>(info);
+      await refetch();
+      return result?.results ?? [];
+    },
+    [computeNode?.typeId?.id, refetch],
+  );
+
+  /**
+   * Spawn an AgenticProcess for each fingerprint using the cloud fix instruction stored on the record.
+   * Returns per-fingerprint spawn results from the server.
+   */
+  const fixAllCloud = useCallback(
+    async (fingerprints: string[]): Promise<Array<{ fingerprint: string; status: string; shell_id?: string; worker_session_id?: string }>> => {
+      if (!computeNode?.typeId?.id || fingerprints.length === 0) return [];
+      const info = new ActionInfo('fix-all-cloud-errors', 'compute_node', computeNode.typeId.id, 'POST');
+      info.bodyParameters = { fingerprints };
+      const result = await dataManager.callAction<unknown, { spawned: Array<{ fingerprint: string; status: string; shell_id?: string; worker_session_id?: string }> }>(info);
+      await refetch();
+      return result?.spawned ?? [];
+    },
+    [computeNode?.typeId?.id, refetch],
+  );
 
   return {
     allErrors,
@@ -420,5 +474,8 @@ export function useClaudeErrorRecords() {
     linkTask,
     createTaskForError,
     clearAll,
+    // Cloud search
+    searchCloudForErrors,
+    fixAllCloud,
   };
 }

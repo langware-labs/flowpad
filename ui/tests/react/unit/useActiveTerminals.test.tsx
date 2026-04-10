@@ -2,88 +2,34 @@ import { act, renderHook } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mock @sdk to avoid ShellManager/ConnectionManager side effects.
-// All shared state lives on globalThis since vi.mock factories are hoisted.
-vi.mock('@sdk', () => {
-  const g = globalThis as any;
-  g.__atShared = g.__atShared ?? {
-    watchCallbacks: new Map(),
-    shellSave: vi.fn(async () => {}),
-    shellOpen: vi.fn(async () => {}),
-    procSave: vi.fn(async () => {}),
-    shellCreate: vi.fn(() => ({
-      id: 'new-shell-id',
-      save: g.__atShared.shellSave,
-      open: g.__atShared.shellOpen,
-    })),
-  };
-  const s = g.__atShared;
-  return {
-    AgenticProcess: class AgenticProcess {
-      static type = 'agentic_process';
-    },
-    ProcessorStatus: {
-      IDLE: 'idle',
-      RUNNING: 'running',
-      PAUSED: 'paused',
-      STEPPING: 'stepping',
-      COMPLETE: 'complete',
-      ERROR: 'error',
-      TERMINATED: 'terminated',
-    },
-    QueryRequest: class QueryRequest {
-      type: string;
-      scope: any[];
-      name: string;
-      query: any;
-      callback: any;
-      constructor(opts: any) {
-        this.type = opts.type;
-        this.scope = opts.scope ?? [];
-        this.name = opts.name ?? '';
-        this.query = opts.query;
-        this.callback = opts.callback;
-      }
-    },
-    QueryFilter: class QueryFilter {
-      match: any;
-      constructor(opts: any) { this.match = opts?.match; }
-    },
-    Shell: { type: 'shell', create: s.shellCreate },
-    ShellStatus: {
-      IDLE: 'idle',
-      RUNNING: 'running',
-      CLOSED: 'closed',
-    },
-    ComputeNode: { getLocal: vi.fn(async () => ({ id: 'cn-local' })) },
-    dataManager: {
-      watchQuery: vi.fn(async (request: any) => {
-        if (request.callback) {
-          s.watchCallbacks.set(request.name, request.callback);
-        }
-        return () => {};
-      }),
-      query: vi.fn(async () => []),
-    },
-  };
-});
+// Initialize shared test state before any mocks are set up.
+// vi.hoisted runs before vi.mock factories.
+const __atShared = vi.hoisted(() => ({
+  watchCallbacks: new Map<string, (entities: any[]) => void>(),
+  shellSave: vi.fn(async () => {}),
+  shellOpen: vi.fn(async () => {}),
+  procSave: vi.fn(async () => {}),
+  shellCreate: vi.fn(() => ({
+    id: 'new-shell-id',
+    save: vi.fn(async () => {}),
+    open: vi.fn(async () => {}),
+  })),
+}));
 
 // Mock @sdk/react/hooks with a minimal useEntitiesQuery backed by shared watchCallbacks
 vi.mock('@sdk/react/hooks', () => {
   const react = require('react');
   function useEntitiesQuery(request: any) {
-    const g = globalThis as any;
-    const s = g.__atShared;
     const stateRef = react.useRef({ data: [] as any[], isLoading: true });
     const subscribe = react.useCallback(
       (cb: () => void) => {
         // Register a callback that the test can fire to deliver data
-        s.watchCallbacks.set(request.name, (entities: any[]) => {
+        __atShared.watchCallbacks.set(request.name, (entities: any[]) => {
           stateRef.current = { data: [...entities], isLoading: false };
           cb();
         });
         return () => {
-          s.watchCallbacks.delete(request.name);
+          __atShared.watchCallbacks.delete(request.name);
         };
       },
       [request.type, request.name],
@@ -98,7 +44,7 @@ import { useActiveTerminals } from '@src/hooks/useActiveTerminals';
 
 // Access shared test state
 function shared() {
-  return (globalThis as any).__atShared as {
+  return __atShared as {
     watchCallbacks: Map<string, (entities: any[]) => void>;
     shellSave: ReturnType<typeof vi.fn>;
     shellOpen: ReturnType<typeof vi.fn>;
@@ -123,7 +69,7 @@ function makeProcess(overrides: Record<string, any> = {}) {
   return {
     id: overrides.id ?? 'proc-1',
     type: 'agentic_process',
-    state: overrides.state ?? { status: 'running' },
+    status: overrides.status ?? 'live',
     shell_id: overrides.shell_id ?? null,
     pty_pid: overrides.pty_pid ?? null,
     save: shared().procSave,
@@ -152,7 +98,7 @@ describe('useActiveTerminals', () => {
     // Deliver process data - linked to sh-1
     await act(async () => {
       shared().watchCallbacks.get('useActiveTerminals:processes')?.([
-        makeProcess({ id: 'proc-1', shell_id: 'sh-1', state: { status: 'running' } }),
+        makeProcess({ id: 'proc-1', shell_id: 'sh-1', status: 'live' }),
       ]);
     });
 
@@ -177,7 +123,7 @@ describe('useActiveTerminals', () => {
 
     await act(async () => {
       shared().watchCallbacks.get('useActiveTerminals:processes')?.([
-        makeProcess({ id: 'proc-orphan', shell_id: null, state: { status: 'running' } }),
+        makeProcess({ id: 'proc-orphan', shell_id: null, status: 'live' }),
       ]);
     });
 
@@ -221,7 +167,7 @@ describe('useActiveTerminals', () => {
 
     await act(async () => {
       shared().watchCallbacks.get('useActiveTerminals:processes')?.([
-        makeProcess({ id: 'proc-1', shell_id: 'sh-main', sidecar_shell_id: 'sh-sidecar', state: { status: 'running' } }),
+        makeProcess({ id: 'proc-1', shell_id: 'sh-main', sidecar_shell_id: 'sh-sidecar', status: 'live' }),
       ]);
     });
 

@@ -73,13 +73,8 @@ class ClaudeRulesRecord(Record):
                     return
 
         # Project-level rules: <real_project>/.claude/rules/*.md
-        if not _CLAUDE_PROJECTS.is_dir():
-            return
-        for project_dir in sorted(_CLAUDE_PROJECTS.iterdir()):
-            if not project_dir.is_dir():
-                continue
-            encoded = project_dir.name
-            real_path = Path("/" + encoded.lstrip("-").replace("-", "/"))
+        from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
+        for real_path in iter_claude_project_paths():
             rules_dir = real_path / ".claude" / "rules"
             if not rules_dir.is_dir():
                 continue
@@ -95,15 +90,11 @@ class ClaudeRulesRecord(Record):
         user_rules_dir = _CLAUDE_HOME / "rules"
         if user_rules_dir.is_dir():
             count += sum(1 for _ in user_rules_dir.glob("*.md"))
-        if _CLAUDE_PROJECTS.is_dir():
-            for project_dir in _CLAUDE_PROJECTS.iterdir():
-                if not project_dir.is_dir():
-                    continue
-                encoded = project_dir.name
-                real_path = Path("/" + encoded.lstrip("-").replace("-", "/"))
-                rules_dir = real_path / ".claude" / "rules"
-                if rules_dir.is_dir():
-                    count += sum(1 for _ in rules_dir.glob("*.md"))
+        from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
+        for real_path in iter_claude_project_paths():
+            rules_dir = real_path / ".claude" / "rules"
+            if rules_dir.is_dir():
+                count += sum(1 for _ in rules_dir.glob("*.md"))
         return min(count, limit) if limit is not None else count
 
     @classmethod

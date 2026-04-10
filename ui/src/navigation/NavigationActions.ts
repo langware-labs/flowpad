@@ -1,4 +1,15 @@
-import { AgenticProcess, CodeRef, dataContext, DockPointerData, FSItem, type IDockPointer, QueryRequest, Shell, TypeId, ViewType } from '@sdk';
+import {
+  AgenticProcess,
+  CodeRef,
+  dataContext,
+  DockPointerData,
+  FSItem,
+  type IDockPointer,
+  QueryRequest,
+  Shell,
+  TypeId,
+  ViewType,
+} from '@sdk';
 import { NavigateFunction } from 'react-router';
 import { DockPointer } from './DockPointer';
 import { FileOptions, TabOptions } from './types';
@@ -14,6 +25,8 @@ function toStringRecord(obj?: Record<string, unknown>): Record<string, string> |
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
+let pendingDockNavigationUrl: string | null = null;
+
 /**
  * NavigationActions - Navigation actions implementation
  *
@@ -23,7 +36,35 @@ function toStringRecord(obj?: Record<string, unknown>): Record<string, string> |
  * Uses relative navigation: takes current URL and replaces the dock portion
  */
 export class NavigationActions {
-  constructor(private navigate: NavigateFunction) {}
+  constructor(
+    private navigate: NavigateFunction,
+    private currentDock: DockPointer | null = null,
+  ) {
+    NavigationActions.clearCommittedPendingNavigation();
+  }
+
+  private static getCurrentBrowserUrl(): string {
+    return `${window.location.pathname}${window.location.search}`;
+  }
+
+  private static clearCommittedPendingNavigation(): void {
+    if (pendingDockNavigationUrl && pendingDockNavigationUrl === NavigationActions.getCurrentBrowserUrl()) {
+      pendingDockNavigationUrl = null;
+    }
+  }
+
+  private markPendingNavigation(targetUrl: string): void {
+    pendingDockNavigationUrl = targetUrl;
+    window.setTimeout(() => {
+      if (pendingDockNavigationUrl === targetUrl && NavigationActions.getCurrentBrowserUrl() !== targetUrl) {
+        pendingDockNavigationUrl = null;
+      }
+    }, 1000);
+  }
+
+  static resetPendingNavigationForTests(): void {
+    pendingDockNavigationUrl = null;
+  }
 
   // ========== Core Navigation ==========
 
@@ -38,17 +79,26 @@ export class NavigationActions {
   openDock(pointer: DockPointer | null): void;
   openDock(pointer: IDockPointer, extraOptions?: Record<string, string>): void;
   openDock(pointer: IDockPointer | DockPointer | null, extraOptions?: Record<string, string>): void {
+    NavigationActions.clearCommittedPendingNavigation();
     const currentPath = window.location.pathname;
+    const currentUrl = NavigationActions.getCurrentBrowserUrl();
 
     if (pointer === null) {
-      // Navigate to base URL (strip dock portion)
+      if (this.currentDock === null) return; // already not on a dock URL
       const baseUrl = stripDockPortion(currentPath);
+      if (currentUrl === baseUrl || pendingDockNavigationUrl === baseUrl) return;
+      this.markPendingNavigation(baseUrl);
       void this.navigate(baseUrl);
       return;
     }
 
     const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
-    const dock = extraOptions ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout) : base;
+    const dock = extraOptions
+      ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout)
+      : base;
+
+    if (this.currentDock?.equals(dock)) return; // already at this pointer, no-op
+
     const { viewType, pointer: pointerValue, layout } = dock.toUrlSegments();
     const searchParams = dock.toSearchParams();
 
@@ -60,12 +110,15 @@ export class NavigationActions {
       layout,
     );
 
+    if (currentUrl === fullUrl || pendingDockNavigationUrl === fullUrl) return;
+
     // For react-router with a basename, we need to navigate relative to the base.
     // Extract just the dock portion (everything from /dock/ or /dev/) from the full URL.
     // This allows navigation to work correctly when the app is mounted at a sub-path.
     const basePath = stripDockPortion(currentPath);
     const url = basePath && fullUrl.startsWith(basePath) ? fullUrl.substring(basePath.length) : fullUrl;
 
+    this.markPendingNavigation(fullUrl);
     void this.navigate(url);
   }
 
@@ -136,9 +189,12 @@ export class NavigationActions {
     this.openDock(new DockPointerData(ViewType.SHELL));
   }
 
-  async openShell(shellId: string, options?: { startClaude?: boolean; cwd?: string; startCommand?: string; skipPermissions?: boolean }): Promise<Shell | null> {
+  async openShell(
+    shellId: string,
+    options?: { startClaude?: boolean; cwd?: string; startCommand?: string; skipPermissions?: boolean },
+  ): Promise<Shell | null> {
     const extraOptions = toStringRecord(options);
-    const shell = Shell.getByIdFromCache(shellId) ?? await Shell.getById(shellId);
+    const shell = Shell.getByIdFromCache(shellId) ?? (await Shell.getById(shellId));
     if (!shell) {
       return null;
     }
@@ -148,7 +204,8 @@ export class NavigationActions {
 
   async openShellProcess(agenticProcessId: string, options?: { t?: string }): Promise<AgenticProcess | null> {
     const extraOptions = toStringRecord(options);
-    const process = AgenticProcess.getByIdFromCache(agenticProcessId) ?? await AgenticProcess.getById(agenticProcessId);
+    const process =
+      AgenticProcess.getByIdFromCache(agenticProcessId) ?? (await AgenticProcess.getById(agenticProcessId));
     if (!process) {
       return null;
     }
@@ -166,14 +223,14 @@ export class NavigationActions {
 
   /** Open an AgenticProcess in a terminal tab. Route loader calls open(). */
   async openProcessTab(processId: string, options?: Record<string, string>): Promise<void> {
-    const process = AgenticProcess.getByIdFromCache(processId) ?? await AgenticProcess.getById(processId);
+    const process = AgenticProcess.getByIdFromCache(processId) ?? (await AgenticProcess.getById(processId));
     if (!process) return;
     this.openDock(process.dockPointer, options);
   }
 
   /** Open a plain Shell in a terminal tab. */
   async openShellTab(shellId: string): Promise<void> {
-    const shell = Shell.getByIdFromCache(shellId) ?? await Shell.getById(shellId);
+    const shell = Shell.getByIdFromCache(shellId) ?? (await Shell.getById(shellId));
     if (!shell) return;
     this.openDock(shell.dockPointer);
   }
@@ -211,36 +268,46 @@ export class NavigationActions {
     }
   }
 
-  async openNewClaudeProcess(options?: { cwd?: string }): Promise<{ processId: string; shellId: string; dockPointer: IDockPointer } | null> {
+  async openNewClaudeProcess(options?: {
+    cwd?: string;
+  }): Promise<{ processId: string; shellId: string | null; dockPointer: IDockPointer } | null> {
     try {
-      const { process: agenticProcess, shell } = await AgenticProcess.spawn(
-        { workdir: options?.cwd || dataContext.project?.fs_storage_mount_path },
-        { watchProcessor: false, watchProcess: false, visible: true },
-      );
-      if (!shell) {
-        console.error('[NavigationActions] AgenticProcess created without shell:', agenticProcess.id);
+      const computeNode = dataContext.computeNode;
+      if (!computeNode) {
+        console.error('[NavigationActions] No compute node');
         return null;
       }
-      return { processId: agenticProcess.id, shellId: shell.id, dockPointer: agenticProcess.dockPointer };
+      const agenticProcess = await computeNode.createProcess(
+        { workdir: options?.cwd || dataContext.project?.fs_storage_mount_path },
+        { watchProcess: false, visible: true },
+      );
+      return {
+        processId: agenticProcess.id,
+        shellId: agenticProcess.shell_id ?? null,
+        dockPointer: agenticProcess.dockPointer,
+      };
     } catch (error) {
       console.error('[NavigationActions] Error creating AgenticProcess:', error);
       return null;
     }
   }
 
-  async openNewShell(options?: { cwd?: string; startCommand?: string; }): Promise<{ shellId: string } | null> {
+  async openNewShell(options?: { cwd?: string; startCommand?: string }): Promise<{ shellId: string } | null> {
     try {
       const cn = dataContext.computeNode;
-      if (!cn) { console.error('[NavigationActions] No compute node'); this.openShellView(); return null; }
+      if (!cn) {
+        console.error('[NavigationActions] No compute node');
+        this.openShellView();
+        return null;
+      }
       const { nextTerminalName } = await import('@src/components/terminal/TabbedTerminal');
       const shells = await Shell.list(cn.id);
-      const name = nextTerminalName(shells.map(s => ({ name: s.name ?? '' })));
-      const newShell = Shell.create(cn, { name });
-      await newShell.save(cn.typeId);
+      const name = nextTerminalName(shells.map((s) => ({ name: s.name ?? '' })));
       const cwd = options?.cwd || dataContext.project?.fs_storage_mount_path || undefined;
-      await newShell.startPty({ cols: 80, rows: 24, workdir: cwd });
-      const openedShell = await this.openShell(newShell.id, options);
-      return { shellId: openedShell?.id ?? newShell.id };
+      const newShell = Shell.create(cn, { name, workdir: cwd });
+      await newShell.save(cn.typeId);
+      await this.openShell(newShell.id, options);
+      return { shellId: newShell.id };
     } catch (error) {
       console.error('[NavigationActions] Error creating terminal:', error);
       this.openShellView();
@@ -373,7 +440,17 @@ export class NavigationActions {
    * @param query - Optional initial query string
    * @param filters - Optional filter options
    */
-  openSearch(query?: string, filters?: { record_type?: string; status?: string; scope?: string; time_preset?: string; time_start?: string; time_end?: string }): void {
+  openSearch(
+    query?: string,
+    filters?: {
+      record_type?: string;
+      status?: string;
+      scope?: string;
+      time_preset?: string;
+      time_start?: string;
+      time_end?: string;
+    },
+  ): void {
     const pointer = DockPointer.forSearch(query, filters);
     this.openDock(pointer);
   }

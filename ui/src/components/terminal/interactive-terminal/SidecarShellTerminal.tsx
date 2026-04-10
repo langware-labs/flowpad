@@ -1,13 +1,12 @@
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
 
-import { Shell } from '@sdk';
+import { dataContext, Shell } from '@sdk';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { dataContext } from '@sdk';
 
 const DARK_THEME = {
   background: '#1e1e1e',
@@ -63,11 +62,7 @@ interface SidecarShellTerminalProps {
   className?: string;
 }
 
-export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({
-  shellId,
-  active,
-  className = '',
-}) => {
+export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shellId, active, className = '' }) => {
   const { resolvedTheme } = useTheme();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<XTerm | null>(null);
@@ -86,11 +81,13 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({
 
   // Load shell entity
   useEffect(() => {
-    Shell.getById(shellId).then((s) => {
-      shellRef.current = s ?? null;
-    }).catch(() => {
-      shellRef.current = null;
-    });
+    Shell.getById(shellId)
+      .then((s) => {
+        shellRef.current = s ?? null;
+      })
+      .catch(() => {
+        shellRef.current = null;
+      });
   }, [shellId]);
 
   // Terminal init/dispose
@@ -152,7 +149,13 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({
       setTerminalReady(false);
       if (terminalRef.current) {
         const t = terminalRef.current;
-        setTimeout(() => { try { t.dispose(); } catch { /* ignore */ } }, 10);
+        setTimeout(() => {
+          try {
+            t.dispose();
+          } catch {
+            /* ignore */
+          }
+        }, 10);
         terminalRef.current = null;
         fitAddonRef.current = null;
       }
@@ -183,7 +186,7 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({
       const cols = terminalRef.current?.cols || 80;
       const rows = terminalRef.current?.rows || 24;
       const workingDir = shell.workdir || dataContext.project?.fs_storage_mount_path || undefined;
-      await shell.startPty({ cols, rows, workdir: workingDir });
+      await shell.start({ cols, rows, workdir: workingDir });
     };
 
     void connect();
@@ -212,12 +215,18 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({
       }
       const term = terminalRef.current;
       if (term) {
-        try { term.write(data); } catch { /* ignore */ }
+        try {
+          term.write(data);
+        } catch {
+          /* ignore */
+        }
       }
     };
 
     const unsub = shell?.onOutput(handleData);
-    return () => { unsub?.(); };
+    return () => {
+      unsub?.();
+    };
   }, [shellId, terminalReady]);
 
   // ResizeObserver
@@ -230,7 +239,11 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({
       const fit = fitAddonRef.current;
       const term = terminalRef.current;
       if (!fit || !term) return;
-      try { fit.fit(); } catch { return; }
+      try {
+        fit.fit();
+      } catch {
+        return;
+      }
       const shell = shellRef.current;
       if (shell?.connected) {
         void shell.resize(term.cols, term.rows);
@@ -257,7 +270,9 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({
         if (shell?.connected) {
           void shell.resize(term.cols, term.rows);
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     });
   }, [active, terminalReady]);
 

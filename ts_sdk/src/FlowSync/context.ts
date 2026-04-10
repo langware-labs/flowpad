@@ -13,7 +13,7 @@ import {
   Visitor,
   WebDomain,
 } from '..';
-import { AgenticProcess } from '../agentic_processor/agentic-process';
+import { AgenticProcess } from '../process/agentic-process';
 import { APIEntity, dataManager } from '../APIEntity';
 import { ComputeNode } from '../entities/compute_node';
 import { Flow } from '../entities/flow';

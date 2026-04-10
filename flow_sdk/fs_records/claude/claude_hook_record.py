@@ -152,6 +152,25 @@ class ClaudeHookRecord(Record):
         return rec
 
     @classmethod
+    def discovery_items_count(cls, limit: int | None = None) -> int:
+        count = len(ClaudeHookRecordList())
+        return min(count, limit) if limit is not None else count
+
+    @classmethod
+    def discover_iter(cls, limit: int | None = None, scope: "Scope | None" = None, **kwargs: Any) -> Iterator[ClaudeHookRecord]:
+        rl = ClaudeHookRecordList(search_paths=kwargs.get("search_paths"))
+        count = 0
+        for rec in rl:
+            if scope is not None:
+                scope_val = scope.value if hasattr(scope, "value") else str(scope)
+                if _scope_str(rec.scope) != scope_val:
+                    continue
+            yield rec
+            count += 1
+            if limit is not None and count >= limit:
+                return
+
+    @classmethod
     def discover(
         cls,
         scope: Scope | None = None,

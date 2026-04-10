@@ -1,6 +1,23 @@
 import contextlib
 import os
+import tempfile
 from pathlib import Path
+
+# Resolved once at import time — covers macOS /var/folders → /private/var/folders
+_SYSTEM_TEMP_DIR = Path(tempfile.gettempdir()).resolve()
+
+
+def is_temp_path(path: Path | str) -> bool:
+    """Return True if *path* lives inside the system temporary directory.
+
+    Handles macOS where ``tempfile.gettempdir()`` returns an unresolved symlink
+    (``/var/folders/...``) while actual paths start with ``/private/var/folders/...``.
+    Also covers ``/tmp`` on Linux and ``%TEMP%`` on Windows via the same resolve.
+    """
+    try:
+        return Path(path).resolve().is_relative_to(_SYSTEM_TEMP_DIR)
+    except (OSError, ValueError):
+        return False
 
 
 def __root_folder():

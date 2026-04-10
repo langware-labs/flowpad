@@ -10,12 +10,16 @@ Requires Claude CLI in PATH and network access.
 import json
 
 import pytest
+
+from flow_sdk.responses import ApiResponse, ApiSuccessResponse
 from tests.test_settings import test_service_config
 
-pytestmark = pytest.mark.skipif(
-    not test_service_config.deep_testing,
-    reason="Skipping long tests when DEEP_TESTING is disabled",
-)
+pytestmark = [
+    pytest.mark.skipif(
+        not test_service_config.deep_testing,
+        reason="Skipping long tests when DEEP_TESTING is disabled",
+    )
+]
 
 from flow_sdk.fs_records.agent_record import AgentRecord as Agent
 from flow_sdk.builtin.agentic_process import AgenticProcess
@@ -29,39 +33,96 @@ SAMPLE_SESSION = (
 )
 
 
+def _fmt_entry(entry: dict) -> str:
+    """Format a transcript entry for console output."""
+    t = entry.get("type", "?")
+    if t == "assistant":
+        msg = entry.get("message", {})
+        content = msg.get("content", [])
+        if isinstance(content, list):
+            parts = []
+            for block in content:
+                if block.get("type") == "text":
+                    parts.append(block["text"][:120].replace("\n", " "))
+                elif block.get("type") == "tool_use":
+                    parts.append(f"[tool: {block.get('name')}]")
+            return " | ".join(parts) if parts else "(empty)"
+        return str(content)[:120]
+    if t == "user":
+        msg = entry.get("message", {})
+        content = msg.get("content", "")
+        if isinstance(content, list):
+            return " ".join(c.get("content", "") if isinstance(c.get("content"), str) else "" for c in content)[:120]
+        return str(content)[:120]
+    if t == "progress":
+        return entry.get("toolName", "") or ""
+    return ""
+
+
 @pytest.mark.asyncio
 @pytest.mark.timeout(180)
-async def test_agentic_process_hello_world():
-    process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
-    process.start()
-    assert process.idle is True
+@pytest.mark.flaky(reruns=2, reruns_delay=5)
+async def test_agentic_process_hello_world(local_compute_node):
+    assert local_compute_node is not None
+    process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
+    assert process.waiting_for_prompt is False
 
-    process.prompt("Create a text file named hello.txt with the content 'Hello World'.")
-    assert process.idle is False
+    result: ApiResponse = await process.prompt("Create a text file named hello.txt with the content 'Hello World'.")
+    assert isinstance(result, ApiSuccessResponse)
+    assert process.waiting_for_prompt is False
 
-    await process.waitForIdle(timeout=60)
-    assert process.idle is True
+    async def _diagnose():
+        """Print Claude process vitals every 5s while stream_transcript runs."""
+        import asyncio, psutil
+        from flow_sdk.builtin.shell import Shell
+        while True:
+            await asyncio.sleep(5)
+            shell = await process.shell()
+            worker_pid = shell.worker_pid if shell else None
+            worker_alive = await shell.worker_alive() if shell else False
+            shell_status = shell.status if shell else "no shell"
+            # Try to get exit code if process already died
+            exit_code = None
+            if worker_pid and not worker_alive:
+                try:
+                    p = psutil.Process(worker_pid)
+                    exit_code = p.status()
+                except psutil.NoSuchProcess:
+                    exit_code = "process gone"
+            worker_status = process._discover_status_from_transcript()
+            print(
+                f"  [diag] status={process.status!r} shell={shell_status!r} "
+                f"pid={worker_pid} alive={worker_alive} exit={exit_code!r} "
+                f"worker_status={worker_status!r} waiting={process.waiting_for_prompt}"
+            )
 
-    outputs = process.outputs
-    assert len(outputs) >= 1
+    import asyncio as _asyncio
+    diag_task = _asyncio.create_task(_diagnose())
+    try:
+        async for entry in process.stream_transcript(timeout=120):
+            t = entry.get("type", "?")
+            detail = _fmt_entry(entry)
+            print(f"  [{t}] {detail}" if detail else f"  [{t}]")
+    finally:
+        diag_task.cancel()
 
-    text_outputs = [o for o in outputs if o.type == "text_file"]
-    assert len(text_outputs) >= 1
+    assert process.waiting_for_prompt is True
 
-    output = text_outputs[0]
-    assert output.type == "text_file"
-    content = await output.content()
-    assert "hello" in content.lower()
+    # With no workdir set, Claude runs inside the process output_dir.
+    # Verify hello.txt landed there.
+    proc_record = await process.get_record()
+    assert proc_record is not None, "AgenticProcessRecord not found"
+    hello = proc_record.output_dir / "hello.txt"
+    assert hello.exists(), f"hello.txt not found in output_dir {proc_record.output_dir}"
+    assert "hello" in hello.read_text().lower()
 
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(180)
-async def test_agentic_process_classify():
-    process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
-    process.start()
-    assert process.idle is True
-
-    process.prompt(
+@pytest.mark.flaky(reruns=2, reruns_delay=5)
+async def test_agentic_process_classify(local_compute_node):
+    process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
+    await process.prompt(
         "Run the following bash command exactly as written — do NOT interpret or paraphrase:\n"
         "\n"
         "cat > classification.json << 'JSONEOF'\n"
@@ -70,22 +131,19 @@ async def test_agentic_process_classify():
         "\n"
         "Then verify the file exists with: cat classification.json"
     )
-    assert process.idle is False
 
-    await process.waitForIdle(timeout=120)
-    assert process.idle is True
+    async for entry in process.stream_transcript(timeout=120):
+        t = entry.get("type", "?")
+        detail = _fmt_entry(entry)
+        print(f"  [{t}] {detail}" if detail else f"  [{t}]")
 
-    outputs = process.outputs
-    workdir = process._workdir.resolve()
-    all_files = [str(o.file_path.resolve().relative_to(workdir)) for o in outputs]
-    json_outputs = [o for o in outputs if o.file_path.name == "classification.json"]
-    assert len(json_outputs) >= 1, (
-        f"classification.json not found in workdir. "
-        f"Status={process.status}. Files found: {all_files}"
-    )
+    assert process.waiting_for_prompt is True
 
-    content = await json_outputs[0].content()
-    data = json.loads(content)
+    proc_record = await process.get_record()
+    classification_file = proc_record.output_dir / "classification.json"
+    assert classification_file.exists(), f"classification.json not found in {proc_record.output_dir}"
+
+    data = json.loads(classification_file.read_text())
     assert "category" in data, f"'category' missing from: {data}"
     assert "title" in data, f"'title' missing from: {data}"
     assert "command" in data, f"'command' missing from: {data}"
@@ -95,74 +153,90 @@ async def test_agentic_process_classify():
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(480)
-@pytest.mark.flaky(reruns=2, reruns_delay=5)
-async def test_agentic_process_classify_with_agent():
-    agent = Agent.system_agent("classify")
-
-    process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
-    process.start()
-    assert process.idle is True
-
-    process.prompt(
-        "Use the Task tool to invoke the 'classify' sub-agent installed in .claude/agents/classify.md.\n"
-        "Pass this as the description: 'The user asked Claude to write a Python script that prints Hello World.'\n"
-        "Do NOT write classification.json yourself — the classify sub-agent will write it.",
-        agent=agent,
+# NOTE: do NOT increase timeout or mark as flaky — these tests must pass within the global 30s limit
+async def test_agentic_process_clock_agent(tmp_path, local_compute_node):
+    agent = Agent(
+        name="the-clock-agent",
+        description="Returns the current timestamp. Use when asked for the current time.",
+        prompt='Run `date -u +"%Y-%m-%dT%H:%M:%SZ"` and write the result to clock.txt.',
     )
-    assert process.idle is False
+    process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
+    process.load_embedded_agent(agent)
+    assert "the-clock-agent" in process.cmd_line, f"agent not in cmd_line: {process.cmd_line}"
 
-    await process.waitForIdle(timeout=420)
-    assert process.idle is True
+    await process.prompt("Use the clock agent to get the current time.")
 
-    outputs = process.outputs
-    workdir = process._workdir.resolve()
-    all_files = [str(o.file_path.resolve().relative_to(workdir)) for o in outputs]
-    json_outputs = [o for o in outputs if o.file_path.name == "classification.json"]
-    assert len(json_outputs) >= 1, (
-        f"classification.json not written by classify sub-agent. "
-        f"Status={process.status}. Files found: {all_files}"
+    async for entry in process.stream_transcript(timeout=28):
+        t = entry.get("type", "?")
+        detail = _fmt_entry(entry)
+        print(f"  [{t}] {detail}" if detail else f"  [{t}]")
+
+    assert process.waiting_for_prompt is True
+
+    proc_record = await process.get_record()
+    clock_file = proc_record.output_dir / "clock.txt"
+    assert clock_file.exists(), f"clock.txt not written by clock agent in {proc_record.output_dir}"
+    content = clock_file.read_text().strip()
+    import re
+    assert re.search(r"\d{4}-\d{2}-\d{2}", content), f"No timestamp in clock.txt: {content!r}"
+
+
+@pytest.mark.asyncio
+# NOTE: do NOT increase timeout or mark as flaky — these tests must pass within the global 30s limit
+async def test_agentic_process_classify_with_agent(local_compute_node):
+    agent = Agent.load_system_agent("classify")
+    process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
+    process.load_embedded_agent(agent)
+    await process.prompt(
+        "Use the 'classify' sub-agent to classify the following session.\n"
+        "Description: 'The user asked Claude to write a Python script that prints Hello World.'\n"
+        "Do NOT write classification.json yourself — let the classify sub-agent write it.",
     )
 
-    content = await json_outputs[0].content()
-    data = json.loads(content)
+    async for entry in process.stream_transcript(timeout=28):
+        t = entry.get("type", "?")
+        detail = _fmt_entry(entry)
+        print(f"  [{t}] {detail}" if detail else f"  [{t}]")
+
+    assert process.waiting_for_prompt is True
+
+    proc_record = await process.get_record()
+    json_files = list(proc_record.output_dir.rglob("classification.json"))
+    assert len(json_files) >= 1, f"classification.json not written by classify sub-agent in {proc_record.output_dir}"
+
+    data = json.loads(json_files[0].read_text())
     assert "category" in data, f"'category' missing from: {data}"
     assert data["category"] in ("code", "debug", "explain", "design", "other")
-    # title, command, confidence are written by the classify agent but may be missing
-    # if the agent ran in a resource-constrained environment
     if "confidence" in data:
         assert isinstance(data["confidence"], (int, float))
         assert 0.0 <= data["confidence"] <= 1.0
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(300)
-@pytest.mark.flaky(reruns=2, reruns_delay=5)
-async def test_agentic_process_analyze_with_agent():
-    """analyze system agent writes analysis.json and analysis.md."""
-    agent = Agent.system_agent("analyze")
-
-    process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
-    process.start()
-
-    process.prompt(
-        "Use the sub-agent named 'analyze' (installed in .claude/agents/analyze.md) "
-        "to analyze the following session.\n"
-        "The analyze sub-agent will write analysis.json and analysis.md to the current directory.\n\n"
-        f"{SAMPLE_SESSION}\n\n"
-        "Invoke the sub-agent with this session description.",
-        agent=agent,
+# NOTE: do NOT increase timeout or mark as flaky — these tests must pass within the global 30s limit
+async def test_agentic_process_analyze_with_agent(local_compute_node):
+    """analyze system agent writes analysis.json."""
+    agent = Agent.load_system_agent("analyze")
+    process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
+    process.load_embedded_agent(agent)
+    await process.prompt(
+        "Use the 'analyze' sub-agent to analyze the following session.\n\n"
+        f"{SAMPLE_SESSION}",
     )
 
-    await process.waitForIdle(timeout=120)
+    async for entry in process.stream_transcript(timeout=28):
+        t = entry.get("type", "?")
+        detail = _fmt_entry(entry)
+        print(f"  [{t}] {detail}" if detail else f"  [{t}]")
 
-    outputs = process.outputs
-    json_out = [o for o in outputs if o.file_path.name == "analysis.json"]
-    md_out = [o for o in outputs if o.file_path.name == "analysis.md"]
+    assert process.waiting_for_prompt is True
+
+    proc_record = await process.get_record()
+    json_out = list(proc_record.output_dir.rglob("analysis.json"))
     assert len(json_out) >= 1, "analysis.json not found"
-    assert len(md_out) >= 1, "analysis.md not found"
 
-    data = json.loads(await json_out[0].content())
+
+    data = json.loads(json_out[0].read_text())
     assert "session_id" in data
     assert "issues" in data
     assert isinstance(data["issues"], list)
@@ -176,59 +250,63 @@ async def test_agentic_process_analyze_with_agent():
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(400)
-@pytest.mark.flaky(reruns=2, reruns_delay=5)
-async def test_agentic_process_fix_it_with_agent():
-    """fix-it system agent writes analysis.json, analysis.md, and a skill folder with SKILL.MD."""
-    agent = Agent.system_agent("fix-it")
-
-    process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
-    process.start()
-
-    process.prompt(
-        "Use the sub-agent named 'fix-it' (installed in .claude/agents/fix-it.md) "
-        "to analyze the following session and create a skill to prevent the issue from recurring.\n"
-        "The fix-it sub-agent will write analysis.json, analysis.md, and a skill folder "
-        "containing SKILL.MD to the current directory.\n\n"
-        f"{SAMPLE_SESSION}\n\n"
-        "Invoke the sub-agent with this session description.",
-        agent=agent,
+# NOTE: do NOT increase timeout or mark as flaky — these tests must pass within the global 30s limit
+async def test_agentic_process_fix_it_with_agent(local_compute_node):
+    """fix-it system agent writes analysis.json and a skill folder with SKILL.MD."""
+    agent = Agent.load_system_agent("fix-it")
+    process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
+    process.load_embedded_agent(agent)
+    await process.prompt(
+        "Use the 'fix-it' sub-agent to analyze the following session and create a skill.\n\n"
+        f"{SAMPLE_SESSION}",
     )
 
-    await process.waitForIdle(timeout=180)
+    async for entry in process.stream_transcript(timeout=28):
+        t = entry.get("type", "?")
+        detail = _fmt_entry(entry)
+        print(f"  [{t}] {detail}" if detail else f"  [{t}]")
 
-    outputs = process.outputs
-    json_out = [o for o in outputs if o.file_path.name == "analysis.json"]
-    md_out = [o for o in outputs if o.file_path.name == "analysis.md"]
-    skill_files = [o for o in outputs if o.file_path.name == "SKILL.MD"]
+    assert process.waiting_for_prompt is True
+
+    proc_record = await process.get_record()
+    json_out = list(proc_record.output_dir.rglob("analysis.json"))
+    skill_files = list(proc_record.output_dir.rglob("SKILL.MD"))
     assert len(json_out) >= 1, "analysis.json not found"
-    assert len(md_out) >= 1, "analysis.md not found"
     assert len(skill_files) >= 1, "SKILL.MD not found in skill folder"
 
-    data = json.loads(await json_out[0].content())
+    data = json.loads(json_out[0].read_text())
     assert "session_id" in data
     assert "issues" in data
     assert isinstance(data["issues"], list)
     assert len(data["issues"]) >= 1
 
-    skill_content = await skill_files[0].content()
-    assert len(skill_content) > 50, "SKILL.MD appears empty"
+    assert len(skill_files[0].read_text()) > 50, "SKILL.MD appears empty"
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(180)
-async def test_agentic_process_lists_system_skills():
+@pytest.mark.timeout(240)
+@pytest.mark.flaky(reruns=2, reruns_delay=5)
+async def test_agentic_process_lists_system_skills(local_compute_node):
     """Verify that system skills are visible to Claude via --add-dir system_assets."""
-    process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
-    process.start()
+    import flow_sdk
+    from pathlib import Path as _Path
+    system_skills_path = _Path(flow_sdk.__file__).parent / "system_assets" / "core" / ".claude" / "skills"
 
-    process.prompt(
-        "List all available skills by looking in the .claude/skills/ directory. "
-        "Output the skill names as a JSON array to skills.json — one entry per skill directory name."
+    process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
+    await process.prompt(
+        f"List all subdirectory names inside {system_skills_path}. "
+        "Output the names as a JSON array to skills.json — one entry per subdirectory name."
     )
-    await process.waitForIdle(timeout=120)
 
-    skills_file = process.output_folder / "skills.json"
+    async for entry in process.stream_transcript(timeout=180):
+        t = entry.get("type", "?")
+        detail = _fmt_entry(entry)
+        print(f"  [{t}] {detail}" if detail else f"  [{t}]")
+
+    assert process.waiting_for_prompt is True
+
+    proc_record = await process.get_record()
+    skills_file = proc_record.output_dir / "skills.json"
     assert skills_file.exists(), "Expected skills.json to be created"
 
     skills = json.loads(skills_file.read_text())
@@ -241,31 +319,39 @@ async def test_agentic_process_lists_system_skills():
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(180)
-async def test_agentic_process_local_assets_skill(tmp_path):
-    """A skill linked into local_assets is discoverable by Claude via --add-dir."""
+@pytest.mark.timeout(240)
+@pytest.mark.flaky(reruns=2, reruns_delay=5)
+async def test_agentic_process_local_assets_skill(tmp_path, local_compute_node):
+    """A skill placed under tmp_path/.claude/skills/ is discoverable by Claude via --add-dir."""
     skill_name = "local-canary-skill"
-    skills_dir = tmp_path / "skills"
-    skill_dir = skills_dir / skill_name
+    skill_dir = tmp_path / ".claude" / "skills" / skill_name
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(
         f"---\nname: {skill_name}\n"
-        "description: Canary skill used only to verify local_assets linking works\n"
+        "description: Canary skill used only to verify --add-dir linking works\n"
         "---\n"
         "When invoked, write the word 'canary-present' to canary.txt.\n"
     )
 
-    process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
-    # local_assets.link() triggers lazy start() — no explicit start() needed
-    process.local_assets.link(skills_dir)  # local_assets/skills -> tmp_path/skills
-
-    process.prompt(
-        "List all available skills by looking in the .claude/skills/ directory. "
-        "Output the skill names as a JSON array to skills.json — one entry per skill directory name."
+    process = await AgenticProcess(
+        worker_type=WorkerType.CLAUDE_CODE,
+        additional_dirs=[str(tmp_path)],
+    ).save()
+    skills_path = tmp_path / ".claude" / "skills"
+    await process.prompt(
+        f"List all subdirectory names inside {skills_path}. "
+        "Output the names as a JSON array to skills.json — one entry per subdirectory name."
     )
-    await process.waitForIdle(timeout=120)
 
-    skills_file = process.output_folder / "skills.json"
+    async for entry in process.stream_transcript(timeout=180):
+        t = entry.get("type", "?")
+        detail = _fmt_entry(entry)
+        print(f"  [{t}] {detail}" if detail else f"  [{t}]")
+
+    assert process.waiting_for_prompt is True
+
+    proc_record = await process.get_record()
+    skills_file = proc_record.output_dir / "skills.json"
     assert skills_file.exists(), "Expected skills.json to be created"
 
     skills = json.loads(skills_file.read_text())

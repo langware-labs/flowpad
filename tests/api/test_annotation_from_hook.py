@@ -65,7 +65,7 @@ async def test_annotation_created_on_user_prompt_submit(bootstrapped_client, use
     from flow_sdk.builtin.agentic_process import AgenticProcess
     process = AgenticProcess(
         name="test-process-for-annotation",
-        worker_session_id=session_id,
+        session_id=session_id,
     )
     await process.save(user.typeid)
 
@@ -316,7 +316,7 @@ async def test_annotation_created_on_exit_plan_mode(bootstrapped_client, user):
     from flow_sdk.builtin.agentic_process import AgenticProcess
     process = AgenticProcess(
         name="test-process-plan",
-        worker_session_id=session_id,
+        session_id=session_id,
     )
     await process.save(user.typeid)
 
@@ -367,7 +367,7 @@ async def test_plan_annotation_includes_file_path_from_write(bootstrapped_client
     from flow_sdk.builtin.agentic_process import AgenticProcess
     process = AgenticProcess(
         name="test-process-plan-path",
-        worker_session_id=session_id,
+        session_id=session_id,
     )
     await process.save(user.typeid)
 
@@ -414,7 +414,7 @@ async def test_plan_annotation_no_file_path_when_write_is_not_plan(bootstrapped_
     from flow_sdk.builtin.agentic_process import AgenticProcess
     process = AgenticProcess(
         name="test-process-plan-nopath",
-        worker_session_id=session_id,
+        session_id=session_id,
     )
     await process.save(user.typeid)
 

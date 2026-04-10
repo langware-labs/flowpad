@@ -15,14 +15,7 @@
  *   resolvedStatus ghost-running correction works.
  */
 
-import {
-  AgenticProcess,
-  ConnectionManager,
-  dataManager,
-  ProcessorStatus,
-  Shell,
-  TypeId,
-} from '@sdk';
+import { AgenticProcess, ConnectionManager, dataManager, ProcessStatus, Shell, TypeId } from '@sdk';
 import { v4 as uuidv4 } from 'uuid';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiTestSetup, createAgenticProcess, getTestSignupInfo } from '../utils/test-utils';
@@ -74,7 +67,9 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
     await apiTestSetup(info, ctx.task.name);
     manager = ConnectionManager.getInstance();
     await vi.waitFor(
-      () => { if (!manager.connected) throw new Error('WS not connected'); },
+      () => {
+        if (!manager.connected) throw new Error('WS not connected');
+      },
       { timeout: 5000, interval: 200 },
     );
   });
@@ -89,7 +84,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
     // Before open: no shell
     expect(process.shell_id).toBeFalsy();
 
-    await process.open();
+    await process.start();
     const shellId = process.shell_id;
     expect(shellId).toBeTruthy();
 
@@ -109,7 +104,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
     // Idle before PTY
     expect(process.resolvedStatus).toBe(ProcessorStatus.IDLE);
 
-    await process.open();
+    await process.start();
 
     // After open(), is_active may be set by WS; resolvedStatus returns the actual status
     // (ghost-running correction: if running+is_active=false → idle)
@@ -123,7 +118,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
       model: 'claude-haiku-4-5-20251001',
     });
     const process = await createIdleProcess();
-    await process.open();
+    await process.start();
     const shellId = process.shell_id;
 
     const typeId = new TypeId(Shell.type, shellId!);
@@ -131,7 +126,7 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
     expect(shell).not.toBeNull();
 
     // Connect shell to start receiving PTY output
-    await shell!.startPty({ cols: 80, rows: 24 });
+    await shell!.attachPty({ cols: 80, rows: 24 });
     await waitForShellReady(shell!, 15000);
 
     // Wait for Claude Code to start up before sending prompt
@@ -151,14 +146,14 @@ describe.skip('AgenticProcess PTY lifecycle — integration', () => {
       model: 'claude-haiku-4-5-20251001',
     });
     const process = await createIdleProcess();
-    await process.open();
+    await process.start();
     const shellId = process.shell_id;
 
     const typeId = new TypeId(Shell.type, shellId!);
     const shell = await dataManager.getByTypeId<Shell>(typeId);
     expect(shell).not.toBeNull();
 
-    await shell!.startPty({ cols: 80, rows: 24 });
+    await shell!.attachPty({ cols: 80, rows: 24 });
     await waitForShellReady(shell!, 15000);
     await new Promise((r) => setTimeout(r, 3000));
 
@@ -193,7 +188,9 @@ describe.skip('AgenticProcess restore from DB — integration', () => {
     await apiTestSetup(info, ctx.task.name);
     manager = ConnectionManager.getInstance();
     await vi.waitFor(
-      () => { if (!manager.connected) throw new Error('WS not connected'); },
+      () => {
+        if (!manager.connected) throw new Error('WS not connected');
+      },
       { timeout: 5000, interval: 200 },
     );
   });
@@ -211,9 +208,9 @@ describe.skip('AgenticProcess restore from DB — integration', () => {
       model: 'claude-haiku-4-5-20251001',
     });
     const process = await createIdleProcess();
-    await process.open();
+    await process.start();
     const shellId = process.shell_id;
-    const workerSessionId = process.worker_session_id;
+    const workerSessionId = process.session_id;
     const processId = process.id;
 
     expect(shellId).toBeTruthy();
@@ -227,10 +224,10 @@ describe.skip('AgenticProcess restore from DB — integration', () => {
     const typeId = new TypeId(AgenticProcess.type, processId);
     const restoredProcess = await dataManager.getByTypeId<AgenticProcess>(typeId);
     expect(restoredProcess).not.toBeNull();
-    expect(restoredProcess!.worker_session_id).toBe(workerSessionId);
+    expect(restoredProcess!.session_id).toBe(workerSessionId);
 
-    // 4. Reopen on restored process — open() resumes the Claude session
-    await restoredProcess!.open();
+    // 4. Reopen on restored process — start() resumes the Claude session
+    await restoredProcess!.start();
     const newShellId = restoredProcess!.shell_id;
     expect(newShellId).toBeTruthy();
 
@@ -239,7 +236,7 @@ describe.skip('AgenticProcess restore from DB — integration', () => {
     const newShell = await dataManager.getByTypeId<Shell>(newShellTypeId);
     expect(newShell).not.toBeNull();
 
-    await newShell!.startPty({ cols: 80, rows: 24 });
+    await newShell!.attachPty({ cols: 80, rows: 24 });
     await waitForShellReady(newShell!, 15000);
     await new Promise((r) => setTimeout(r, 3000));
 
@@ -291,69 +288,53 @@ describe('AgenticProcess WS entity updates — integration', () => {
     unsub();
   });
 
-  it('ghost-running: state=running + is_active=false → resolvedStatus=idle', async () => {
+  it('status stays lifecycle-owned even when is_active is false', async () => {
     const process = new AgenticProcess({
       id: uuidv4(),
       compute_node_id: uuidv4(),
-      state: {
-        status: ProcessorStatus.RUNNING,
-        index: 0,
-        totalInstructions: 0,
-        currentInstructionId: null,
-        variables: {},
-        waitingForInput: false,
-        inputId: null,
-        stack: [],
-        debug: { enabled: false, breakpoints: [], stepMode: null },
-        error: null,
-        mdoContent: null,
-      },
+      status: ProcessStatus.LIVE,
+      worker_status: 'running' as any,
       is_active: false,
     });
     registerProcess(process);
 
-    // Ghost-running: state says running, but PTY is dead → resolvedStatus = idle
-    expect(process.resolvedStatus).toBe(ProcessorStatus.IDLE);
+    expect(process.status).toBe(ProcessStatus.LIVE);
+    expect(process.workerStatus).toBe('running');
     expect(process.is_active).toBe(false);
   });
 
-  it('active running process: state=running + is_active=true → resolvedStatus=running', async () => {
+  it('worker_status remains transcript-owned when process is live', async () => {
     const process = new AgenticProcess({
       id: uuidv4(),
       compute_node_id: uuidv4(),
-      state: {
-        status: ProcessorStatus.RUNNING,
-        index: 0,
-        totalInstructions: 0,
-        currentInstructionId: null,
-        variables: {},
-        waitingForInput: false,
-        inputId: null,
-        stack: [],
-        debug: { enabled: false, breakpoints: [], stepMode: null },
-        error: null,
-        mdoContent: null,
-      },
+      status: ProcessStatus.LIVE,
+      worker_status: 'running' as any,
       is_active: true,
     });
     registerProcess(process);
 
-    expect(process.resolvedStatus).toBe(ProcessorStatus.RUNNING);
+    expect(process.status).toBe(ProcessStatus.LIVE);
+    expect(process.workerStatus).toBe('running');
     expect(process.is_active).toBe(true);
   });
 
-  it('resolvedStatus updates when _handleStateUpdate is called (simulates WS state event)', async () => {
+  it('status and worker_status update independently on entity events', async () => {
     const process = new AgenticProcess({ id: uuidv4(), compute_node_id: uuidv4(), is_active: true });
     registerProcess(process);
 
-    const statuses: ProcessorStatus[] = [];
-    process.on('state_change', () => statuses.push(process.resolvedStatus));
+    const statuses: Array<{ status: ProcessStatus; workerStatus: string }> = [];
+    process.on('state_change', () => statuses.push({ status: process.status, workerStatus: process.workerStatus }));
 
-    process._handleStateUpdate({ status: ProcessorStatus.RUNNING });
-    process._handleStateUpdate({ status: ProcessorStatus.IDLE });
+    (process as any).onEntityUpdate({ status: ProcessStatus.STARTING });
+    (process as any).onEntityUpdate({ worker_status: 'running' });
+    (process as any).onEntityUpdate({ status: ProcessStatus.LIVE });
+    (process as any).onEntityUpdate({ worker_status: 'idle' });
 
-    expect(statuses.length).toBe(2);
-    expect(statuses[0]).toBe(ProcessorStatus.RUNNING);
-    expect(statuses[1]).toBe(ProcessorStatus.IDLE);
+    expect(statuses).toEqual([
+      { status: ProcessStatus.STARTING, workerStatus: 'idle' },
+      { status: ProcessStatus.STARTING, workerStatus: 'running' },
+      { status: ProcessStatus.LIVE, workerStatus: 'running' },
+      { status: ProcessStatus.LIVE, workerStatus: 'idle' },
+    ]);
   });
 });

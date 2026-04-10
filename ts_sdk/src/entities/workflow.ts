@@ -177,8 +177,8 @@ export class Workflow extends APIEntity<Workflow> {
    * Start an agentic process for this workflow and return the process + shellId.
    * Mirrors the doRun logic in WorkflowEditor.
    */
-  async run(): Promise<{ process: import('../agentic_processor/agentic-process').AgenticProcess; shell: import('./shell').Shell }> {
-    const { AgenticProcess } = await import('../agentic_processor/agentic-process');
+  async run(): Promise<{ process: import('../process/agentic-process').AgenticProcess; shell: import('./shell').Shell }> {
+    const { AgenticProcess } = await import('../process/agentic-process');
     const { dataContext } = await import('../FlowSync/context');
 
     const systemSkills = dataContext.bootstrapInfo?.desktop_info?.paths?.system_skills;

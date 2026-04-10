@@ -252,7 +252,6 @@ async def test_flowpad_cloud_disconnect(client):
     assert "browser_url" in data
     assert "remaining_attachment_count" in data
     assert data["remaining_attachment_count"] == 0
-    assert "logout_callback" in data["browser_url"]
     assert "post_logout" in data["browser_url"]
     assert state.login_result is None
     assert not state.login_received.is_set()

@@ -1,7 +1,7 @@
 export * from './cli_workers';
 export * from './claude_hook_events';
 export * from './agent_hooks/index';
-export * from './agentic_processor/index';
+export * from './process/index';
 export * from './alert';
 export * from './APIEntity';
 export * from './ApiResponse';
@@ -27,3 +27,4 @@ export * from './sentry';
 export * from './types/index';
 export * from './schema/index';
 export * from './pipeline/index';
+export { FrontMatterFsRef } from './fs/FrontMatterFsRef';

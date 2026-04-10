@@ -13,7 +13,7 @@ test.describe('Landing to New Chat', () => {
 
     // Step 1: navigate to landing page and validate it
     await gotoLanding(page);
-    await expect(page.getByRole('heading', { name: /hey /i })).toBeVisible();
+    await expect(page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first()).toBeVisible();
     // Wait for page to settle before interacting
     await page.waitForLoadState('networkidle').catch(() => {});
 

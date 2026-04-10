@@ -1,7 +1,6 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { useActiveTerminals } from '@src/hooks/useActiveTerminals';
-import { dataContext, ProcessorStatus, ShellStatus, type AgenticProcess } from '@sdk';
-import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
+import { dataContext, isProcessLive, ShellStatus, type AgenticProcess } from '@sdk';
 import { useContext } from '@src/hooks/useContext';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Button } from '@src/components/ui/button';
@@ -12,7 +11,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@src/components/ui/context-menu';
-import { ChevronLeft, ChevronRight, FolderGit2, Loader2, ScrollText, SquareTerminal, X, XCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FolderGit2, Loader2, SquareTerminal, X, XCircle } from 'lucide-react';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import InteractiveTerminal from './interactive-terminal';
@@ -58,8 +57,8 @@ function formatDateTime(date: Date | string | undefined | null): string {
 const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: string }> = ({ process, statusReason }) => {
   const workdir = process.workdir;
   const isActive = process.is_active;
-  const status = process.resolvedStatus;
-  const workerSessionId = process.worker_session_id ?? null;
+  const status = isProcessLive(process.status) ? process.workerStatus : process.status;
+  const workerSessionId = process.session_id ?? null;
 
   return (
     <div className="space-y-1.5 min-w-[220px]">
@@ -117,6 +116,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   const [pendingTabCreation, setPendingTabCreation] = useState<{
     kind: 'claude' | 'terminal';
     targetShellId: string | null;
+    targetProcessId: string | null;
   } | null>(null);
 
   // Scroll state
@@ -165,29 +165,33 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   const handleStartClaude = useCallback(async () => {
     if (tabCreationLockRef.current) return;
     tabCreationLockRef.current = true;
-    setPendingTabCreation({ kind: 'claude', targetShellId: null });
+    setPendingTabCreation({ kind: 'claude', targetShellId: null, targetProcessId: null });
     const result = await navigation.openNewClaudeProcess();
-    if (!result?.shellId) {
+    if (!result) {
       clearPendingTabCreation();
       return;
     }
     // Set pending tab first so the tab strip shows the new tab immediately,
     // then navigate — keeping openDock outside the async spawn body prevents
     // React Router from cancelling the navigation due to in-flight re-renders.
-    setPendingTabCreation({ kind: 'claude', targetShellId: result.shellId });
+    setPendingTabCreation({
+      kind: 'claude',
+      targetShellId: result.shellId,
+      targetProcessId: result.processId,
+    });
     navigation.openDock(result.dockPointer);
   }, [clearPendingTabCreation, navigation]);
 
   const handleStartTerminal = useCallback(async () => {
     if (tabCreationLockRef.current) return;
     tabCreationLockRef.current = true;
-    setPendingTabCreation({ kind: 'terminal', targetShellId: null });
+    setPendingTabCreation({ kind: 'terminal', targetShellId: null, targetProcessId: null });
     const result = await navigation.openNewShell();
     if (!result?.shellId) {
       clearPendingTabCreation();
       return;
     }
-    setPendingTabCreation({ kind: 'terminal', targetShellId: result.shellId });
+    setPendingTabCreation({ kind: 'terminal', targetShellId: result.shellId, targetProcessId: null });
   }, [clearPendingTabCreation, navigation]);
 
   // Navigate to a tab via its entity's dockPointer
@@ -249,8 +253,12 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   );
 
   useEffect(() => {
-    if (!pendingTabCreation?.targetShellId) return;
-    const session = visibleSessions.find((s) => s.shellId === pendingTabCreation.targetShellId);
+    if (!pendingTabCreation) return;
+    const session = visibleSessions.find((s) => {
+      if (pendingTabCreation.targetShellId && s.shellId === pendingTabCreation.targetShellId) return true;
+      if (pendingTabCreation.targetProcessId && s.agenticProcess?.id === pendingTabCreation.targetProcessId) return true;
+      return false;
+    });
     if (session) {
       dataContext.setActiveShellId(session.shellId);
       clearPendingTabCreation();
@@ -267,17 +275,18 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
     selectTab(activeShellId, { navigate: false });
   }, [activeShellId, hasActiveTab, hasTabOverflow, canScrollLeft, selectTab]);
 
-  // --- Context menu handlers ---
-
-  const closeShell = useCallback(
+  const closeTab = useCallback(
     async (shellId: string): Promise<void> => {
       const session = sessions.find((s) => s.shellId === shellId);
-      if (!session?.shell || ([ShellStatus.CLOSING, ShellStatus.CLOSED] as string[]).includes(session.shell.status)) return;
+      if (!session) return;
       try {
-        await session.agenticProcess?.exit();
-        await session.shell.close();
+        if (session.agenticProcess) {
+          await session.agenticProcess.close();
+        } else if (session.shell) {
+          await session.shell.close();
+        }
       } catch (error) {
-        console.error('[TabbedTerminal] Failed to close shell session:', shellId, error);
+        console.error('[TabbedTerminal] Failed to close tab:', shellId, error);
       }
     },
     [sessions],
@@ -285,52 +294,37 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
 
   const handleCloseTab = useCallback(
     (shellId: string) => {
-      void closeShell(shellId);
       if (activeShellId === shellId) {
         const idx = visibleSessions.findIndex((s) => s.shellId === shellId);
         const remaining = visibleSessions.filter((s) => s.shellId !== shellId && !s.isDisabled);
-        if (remaining.length > 0) {
-          const nextIdx = Math.min(idx, remaining.length - 1);
-          selectTab(remaining[nextIdx].shellId);
-        } else {
-          navigation.openShellView();
-        }
+        remaining.length > 0 ? selectTab(remaining[Math.min(idx, remaining.length - 1)].shellId) : navigation.openShellView();
       }
+      void closeTab(shellId);
     },
-    [activeShellId, visibleSessions, closeShell, selectTab, navigation],
+    [activeShellId, visibleSessions, closeTab, selectTab, navigation],
   );
 
   const handleCloseAll = useCallback(() => {
-    visibleSessions.forEach((session) => {
-      void closeShell(session.shellId);
-    });
+    void Promise.all(visibleSessions.map((s) => closeTab(s.shellId)));
     navigation.openShellView();
-  }, [visibleSessions, closeShell, navigation]);
+  }, [visibleSessions, closeTab, navigation]);
 
   const handleCloseAllButThis = useCallback(
     (shellId: string) => {
-      visibleSessions.forEach((session) => {
-        if (session.shellId !== shellId) {
-          void closeShell(session.shellId);
-        }
-      });
+      void Promise.all(visibleSessions.filter((s) => s.shellId !== shellId).map((s) => closeTab(s.shellId)));
       selectTab(shellId);
     },
-    [visibleSessions, closeShell, selectTab],
+    [visibleSessions, closeTab, selectTab],
   );
 
   const handleCloseToTheRight = useCallback(
     (shellId: string) => {
       const idx = visibleSessions.findIndex((s) => s.shellId === shellId);
       const toClose = visibleSessions.slice(idx + 1);
-      toClose.forEach((session) => {
-        void closeShell(session.shellId);
-      });
-      if (toClose.some((s) => s.shellId === activeShellId)) {
-        selectTab(shellId);
-      }
+      void Promise.all(toClose.map((s) => closeTab(s.shellId)));
+      if (toClose.some((s) => s.shellId === activeShellId)) selectTab(shellId);
     },
-    [visibleSessions, activeShellId, closeShell, selectTab],
+    [visibleSessions, activeShellId, closeTab, selectTab],
   );
 
   const handleTabDoubleClick = (shellId: string, currentName: string) => {
@@ -365,9 +359,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
     // Rule 5: skip if no change
     if (shell.name === newName) return;
 
-    // Rule 3: skip if agentic process is not idle
-    if (session.agenticProcess && session.agenticProcess.resolvedStatus !== ProcessorStatus.IDLE) return;
-
     // Guard: reject TypeId-formatted strings (e.g. "claude-<uuid>", "shell-<uuid>")
     if (/^[a-z][a-z0-9-]*-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(newName)) return;
 
@@ -378,10 +369,10 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
 
     void shell.updateDisplay({ name: newName, is_pty: !injectRename });
 
-    // Rule 4: inject /rename for Claude processes — only when user-initiated,
+    // Inject /rename only when user-initiated AND Claude is at the prompt (waiting_for_prompt),
     // never when the title came from xterm (PTY escape sequence), to avoid a loop
     // where Claude sets the title → we inject /rename → Claude sets the title again.
-    if (injectRename && session.agenticProcess && shell.connected) {
+    if (injectRename && session.agenticProcess?.waiting_for_prompt) {
       void shell.sendInput(`/rename ${newName}\r`);
     }
   };
@@ -436,7 +427,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   const modKey = /Mac/i.test(osPlatform) ? 'Ctrl' : /Win/i.test(osPlatform) ? 'Meta' : 'Alt';
   const modLabel = /Mac/i.test(osPlatform) ? 'Ctrl' : /Win/i.test(osPlatform) ? 'Win' : 'Alt';
 
-  // Intercept mod+W (close tab), mod+T (new terminal), mod+C (new Claude), mod+PgUp/PgDn (cycle tabs)
+  // Intercept mod+W (close tab), mod+T (new Claude), mod+PgUp/PgDn (cycle tabs)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const modPressed = modKey === 'Ctrl' ? e.ctrlKey : modKey === 'Meta' ? e.metaKey : e.altKey;
@@ -445,9 +436,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
         e.preventDefault();
         void handleCloseTab(activeShellId);
       } else if (e.key === 't' || e.key === 'T') {
-        e.preventDefault();
-        void handleStartTerminal();
-      } else if (e.key === 'c' || e.key === 'C') {
         e.preventDefault();
         void handleStartClaude();
       } else if (e.key === 'PageUp') {
@@ -582,25 +570,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
                     </span>
                   )}
 
-                  {session.agenticProcess?.worker_session_id && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void (async () => {
-                          const sessionId = session.agenticProcess!.worker_session_id!;
-                          const workdir = session.agenticProcess!.workdir ?? '';
-                          const record = await ClaudeSessionRecord.discover(sessionId).catch(() => null);
-                          const projectEncodedName = record?.project_encoded_name ?? workdir.replace(/\//g, '-');
-                          navigation.openLens('claude', 'transcript', `${projectEncodedName}/${sessionId}`);
-                        })();
-                      }}
-                      className="rounded p-0.5 opacity-0 transition-opacity hover:bg-accent group-hover:opacity-100"
-                      aria-label="Open transcript"
-                      title="Open transcript"
-                    >
-                      <ScrollText className="h-3 w-3" />
-                    </button>
-                  )}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();

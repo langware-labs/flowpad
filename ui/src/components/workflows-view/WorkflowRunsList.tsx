@@ -1,17 +1,10 @@
 import { Button } from '@src/components/ui/button';
 import { useProcessState } from '@src/hooks/use-process-state';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { ProcessorStatus } from '@sdk';
+import { isProcessActive, ProcessStatus } from '@sdk';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { FolderOpen, Loader2, Terminal } from 'lucide-react';
 import type { ProcessEntry } from './workflow-run-store';
-
-const ACTIVE_STATUSES = new Set([
-  ProcessorStatus.IDLE,
-  ProcessorStatus.INITIALIZING,
-  ProcessorStatus.RUNNING,
-  ProcessorStatus.WAITING_FOR_INPUT,
-]);
 
 interface WorkflowRunsListProps {
   entries: ProcessEntry[];
@@ -55,9 +48,9 @@ function WorkflowRunItem({
   computeNodeId: string | undefined;
 }) {
   const { navigation } = useDockNavigation();
-  const { state } = useProcessState(entry.process);
-  const isRunning = ACTIVE_STATUSES.has(state.status);
-  const isError = state.status === ProcessorStatus.ERROR || state.status === ProcessorStatus.TERMINATED;
+  const state = useProcessState(entry.process);
+  const isRunning = isProcessActive(state.status);
+  const isError = state.status === ProcessStatus.FAILED;
 
   const handleOpenSession = () => {
     navigation.openDock(entry.process.dockPointer);

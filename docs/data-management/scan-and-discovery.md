@@ -595,12 +595,12 @@ def matches(self, record: Record) -> bool:
         return False
     if self.types is not None and record.type not in self.types:
         return False
-    if self.status is not None:
-        rec_status = str(record.status) if record.status else ""
-        if isinstance(self.status, list):
-            if rec_status not in self.status:
+    if self.worker_status is not None:
+        rec_status = str(record.worker_status) if record.worker_status else ""
+        if isinstance(self.worker_status, list):
+            if rec_status not in self.worker_status:
                 return False
-        elif rec_status != self.status:
+        elif rec_status != self.worker_status:
             return False
     if self.created_after is not None:
         ca = record.created_at

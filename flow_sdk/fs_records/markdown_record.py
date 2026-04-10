@@ -6,9 +6,11 @@ Supports discovery of .md files across a project directory.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
-from typing import Any, ClassVar
+
+from typing import Any, ClassVar, Iterator
 
 from flow_sdk.fs_store import Record, RecordType
 
@@ -17,6 +19,75 @@ from ._frontmatter import (
     _extract_frontmatter,
     _yaml_load,
 )
+
+_WALK_IGNORED: frozenset[str] = frozenset({
+    ".git", "node_modules", ".venv", "venv", "__pycache__",
+    ".tox", "dist", "build", ".eggs", ".mypy_cache", ".pytest_cache",
+    ".ruff_cache", ".next", ".nuxt", "coverage", ".cache",
+})
+
+
+_DOCS_WALK_MAX_DEPTH = 3
+
+
+def _find_docs_subdirs(root: Path) -> list[Path]:
+    """Return all directories named 'docs' anywhere under root.
+
+    Skips common noise directories (node_modules, .git, build outputs, etc.)
+    and stops at _DOCS_WALK_MAX_DEPTH levels deep to keep the walk fast.
+    """
+    found: list[Path] = []
+    root_depth = len(root.parts)
+    try:
+        for dirpath, dirnames, _ in os.walk(root, topdown=True):
+            p = Path(dirpath)
+            depth = len(p.parts) - root_depth
+            if depth >= _DOCS_WALK_MAX_DEPTH:
+                dirnames.clear()
+                continue
+            dirnames[:] = [d for d in dirnames if d not in _WALK_IGNORED]
+            if p.name == "docs":
+                found.append(p)
+    except PermissionError:
+        pass
+    return found
+
+
+def _doc_search_dirs() -> list[Path]:
+    """Return directories to scan for doc .md files.
+
+    Scans user-level (~/.claude/docs), all known Claude projects
+    (every 'docs' directory anywhere in each project tree, plus
+    <project>/.claude/docs), cwd-level, and any extra dirs from
+    FLOWPAD_DOC_DIRS (colon-separated).
+    """
+    dirs: list[Path] = []
+    seen: set[Path] = set()
+
+    def _add(p: Path) -> None:
+        rp = p.resolve()
+        if rp not in seen and rp.is_dir():
+            seen.add(rp)
+            dirs.append(p)
+
+    _add(Path.home() / ".claude" / "docs")
+
+    from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
+    for real in iter_claude_project_paths():
+        for docs_dir in _find_docs_subdirs(real):
+            _add(docs_dir)
+        _add(real / ".claude" / "docs")
+
+    _add(Path(os.getcwd()) / ".claude" / "docs")
+    for docs_dir in _find_docs_subdirs(Path(os.getcwd())):
+        _add(docs_dir)
+
+    for extra in os.environ.get("FLOWPAD_DOC_DIRS", "").split(":"):
+        if extra.strip():
+            _add(Path(extra.strip()))
+
+    return dirs
+
 
 # Map from directory name to asset_type
 _DIR_TO_ASSET_TYPE: dict[str, str] = {
@@ -156,12 +227,47 @@ class MarkdownRecord(Record):
 
     @property
     def search_content(self) -> str | None:
-        """Searchable text for FTS indexing: links (title/tags now in dedicated columns)."""
+        """Searchable text for FTS indexing: body text + wiki links."""
         parts: list[str] = []
+        ar = self.asset_ref
+        if ar is not None and ar.exists():
+            try:
+                body = _extract_body(Path(ar.path).read_text(encoding="utf-8"))
+                if body:
+                    parts.append(body)
+            except Exception:
+                pass
         links = getattr(self, "links", None) or []
         if links:
             parts.append(" ".join(str(l) for l in links))
         return " ".join(parts) if parts else None
+
+    @classmethod
+    def _external_source_count(cls, limit: int | None = None) -> int:
+        seen: set[str] = set()
+        for docs_dir in _doc_search_dirs():
+            for md_file in docs_dir.rglob("*.md"):
+                seen.add(str(md_file.resolve()))
+        count = len(seen)
+        return min(count, limit) if limit is not None else count
+
+    @classmethod
+    def _external_source_iter(cls, limit: int | None = None) -> Iterator["MarkdownRecord"]:
+        seen: set[str] = set()
+        count = 0
+        for docs_dir in _doc_search_dirs():
+            for md_file in sorted(docs_dir.rglob("*.md")):
+                key = str(md_file.resolve())
+                if key in seen:
+                    continue
+                seen.add(key)
+                try:
+                    yield cls.from_file(md_file)
+                    count += 1
+                    if limit is not None and count >= limit:
+                        return
+                except Exception:
+                    continue
 
     @classmethod
     def discover(cls, project_dir: str | Path = "", **kwargs) -> list["MarkdownRecord"]:

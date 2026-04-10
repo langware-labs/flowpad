@@ -59,6 +59,7 @@ PLATFORM_LINUX = "linux"
 # Environment variable names
 ENV_DESKTOP_DB = "DESKTOP_DB"
 ENV_SQLITE_DATABASE_PATH = "SQLITE_DATABASE_PATH"
+ENV_FS_RECORD_PATH = "FS_RECORD_PATH"
 
 
 # ---------------------------------------------------------------------------
@@ -169,9 +170,7 @@ def init_temp_dir():
     if FLOWPAD_TEMP_DIR:
         logging.info(f"Temporary directory already set: {FLOWPAD_TEMP_DIR}")
     else:
-        temp_dir = tempfile.gettempdir()
-        # Create a flowpad directory in the temp directory
-        FLOWPAD_TEMP_DIR = os.path.join(temp_dir, "flowpad_temp")
+        FLOWPAD_TEMP_DIR = str(Path(tempfile.gettempdir()) / "flowpad_temp")
         logging.info(f"Using temporary directory: {FLOWPAD_TEMP_DIR}")
 
     # Create the temp directory
@@ -516,6 +515,7 @@ class ServiceConfig(BaseSettings):
     email_provider: str = EmailProviderType.MOCK.value
     no_reply_email: str = "no-reply@example.com"
     sendgrid_api_key: str | None = None
+    flowpad_hub_url: str | None = None
 
     # Search / LLM
     google_search_url: str | None = None
@@ -699,6 +699,14 @@ class ServiceConfig(BaseSettings):
             db_info = f"SQLite at {sqlite_db_path}"
         else:
             db_info = f"{self.db_driver} database driver"
+
+        # Configure records root path (prod vs dev).
+        # Tests override this via FS_RECORD_PATH env var set before import.
+        if ENV_FS_RECORD_PATH not in os.environ:
+            records_folder_name = "dev_records" if _is_dev_mode() else "records"
+            records_root = Path.home() / ".flow" / records_folder_name
+            records_root.mkdir(parents=True, exist_ok=True)
+            os.environ[ENV_FS_RECORD_PATH] = str(records_root)
 
         # Force local compute provider for desktop
         self.default_compute_provider = ComputeProviderType.LOCAL_MACHINE

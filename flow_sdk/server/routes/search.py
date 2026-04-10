@@ -29,7 +29,7 @@ async def _reindex_all() -> int:
     return total
 
 
-def _entity_source_path(ent) -> str:
+async def _entity_source_path(ent) -> str:
     """Resolve source_path for an entity: check common fields, then fall back to its record."""
     path = (
         getattr(ent, "source_path", None)
@@ -42,17 +42,17 @@ def _entity_source_path(ent) -> str:
         return path
     try:
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-        record_cls = SchemaRegistry.get_record_cls(ent.type or ent.get_type())
-        if record_cls:
-            rec = record_cls.discover_one(ent.id)
+        rec = await ent.get_record()
+        if rec is None:
             # For record types where entity ID (UUID) differs from record ID (name),
             # fall back to looking up by name (e.g. agent records keyed by agent name).
-            if rec is None:
+            record_cls = SchemaRegistry.get_record_cls(ent.type or ent.get_type())
+            if record_cls:
                 ent_name = getattr(ent, "name", None) or getattr(ent, "uname", None)
                 if ent_name:
                     rec = record_cls.discover_one(ent_name)
-            if rec:
-                return getattr(rec, "source_path", None) or ""
+        if rec:
+            return getattr(rec, "source_path", None) or ""
     except Exception:
         pass
     return ""
@@ -77,7 +77,7 @@ def _apply_scope_filter(entities: list, scope: str | None, project_ids: str | No
     return entities
 
 
-def _entity_to_result(ent) -> dict:
+async def _entity_to_result(ent) -> dict:
     name = (
         getattr(ent, "name", None)
         or getattr(ent, "uname", None)
@@ -91,12 +91,12 @@ def _entity_to_result(ent) -> dict:
         "snippet": getattr(ent, "_fts_snippet", None),
         "status": getattr(ent, "status", None) or "",
         "scope": getattr(ent, "scope", "") or "",
-        "source_path": _entity_source_path(ent) or name or ent.id,
+        "source_path": await _entity_source_path(ent) or name or ent.id,
         "created_at": str(getattr(ent, "created_date", "") or ""),
         "modified_at": str(getattr(ent, "updated_date", "") or ""),
     }
     # Extra fields for per-type column rendering
-    for field in ("uname", "title", "description", "file_path", "filename", "work_dir", "project_encoded", "project_encoded_name", "worker_session_id", "asset_type"):
+    for field in ("uname", "title", "description", "file_path", "filename", "work_dir", "project_encoded", "project_encoded_name", "session_id", "asset_type"):
         val = getattr(ent, field, None)
         if val:
             result[field] = val
@@ -173,7 +173,7 @@ async def search_records(
 
         total_count = len(all_entities)
         page = all_entities[offset:offset + limit]
-        results = [_entity_to_result(e) for e in page]
+        results = [await _entity_to_result(e) for e in page]
         return JSONResponse(content={
             "status": "SUCCESS",
             "data": {"results": results, "query": "", "total": total_count, "indexer_ready": True},
@@ -201,7 +201,7 @@ async def search_records(
     # Apply offset slice
     entities = entities[offset:]
 
-    results = [_entity_to_result(e) for e in entities]
+    results = [await _entity_to_result(e) for e in entities]
 
     return JSONResponse(content={
         "status": "SUCCESS",

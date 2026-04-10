@@ -20,12 +20,19 @@ import { apiTestSetup, get_local_compute_node, getTestSignupInfo } from '../util
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Fire PTY start via API. */
-async function startPtyRaw(computeNodeId: string, shellId: string, connectionId: string): Promise<void> {
-  await apiClient.post(
-    `${GRAPH_API_PREFIX}/compute_node/${computeNodeId}/terminal-command/start`,
-    { shell_id: shellId, connection_id: connectionId, rows: 24, cols: 80 },
-  );
+/** Create a shell entity and open its PTY via the backend shell/open action. */
+async function openShellRaw(computeNode: { id: string; typeId?: TypeId }, shellId: string, connectionId: string): Promise<Shell> {
+  const shell = Shell.create(computeNode as any, { name: 'Stress Shell' });
+  (shell as any).id = shellId;
+  await shell.save(computeNode.typeId ?? new TypeId('compute_node', computeNode.id));
+  const result = await apiClient.post(`${GRAPH_API_PREFIX}/shell/${shellId}/open`, {
+    connection_id: connectionId,
+    rows: 24,
+    cols: 80,
+  });
+  shell.pty_pid = result?.pty_id ?? shellId;
+  registerShell(shell);
+  return shell;
 }
 
 /** Send a newline to ensure bash emits a prompt. */
@@ -59,18 +66,12 @@ function registerShell(shell: Shell): void {
  * Mirrors the timing from pty_corruption.test.ts: 400ms before newline (bash startup),
  * then `waitMs` more (server stores output with seq numbers).
  */
-async function spawnShell(
-  computeNode: { id: string },
-  connectionId: string,
-  waitMs = 800,
-): Promise<Shell> {
+async function spawnShell(computeNode: { id: string }, connectionId: string, waitMs = 800): Promise<Shell> {
   const shellId = uuidv4();
-  await startPtyRaw(computeNode.id, shellId, connectionId);
-  await new Promise((r) => setTimeout(r, 400));  // let bash start before sending newline
+  const shell = await openShellRaw(computeNode as any, shellId, connectionId);
+  await new Promise((r) => setTimeout(r, 400)); // let bash start before sending newline
   await sendNewline(computeNode.id, shellId);
   await new Promise((r) => setTimeout(r, waitMs));
-  const shell = Object.assign(new Shell(), { id: shellId, compute_node_id: computeNode.id });
-  registerShell(shell);
   return shell;
 }
 
@@ -176,10 +177,10 @@ describe('Shell SDK lifecycle — unit tests', () => {
     (shell as any).emit('status', 'connected');
     expect(counts).toEqual([1, 1, 1]);
 
-    unsubs[1]();  // remove middle listener
+    unsubs[1](); // remove middle listener
 
     (shell as any).emit('status', 'connected');
-    expect(counts).toEqual([2, 1, 2]);  // index 1 stopped
+    expect(counts).toEqual([2, 1, 2]); // index 1 stopped
 
     unsubs[0]();
     unsubs[2]();
@@ -208,7 +209,7 @@ describe('Shell SDK lifecycle — unit tests', () => {
     (shell as any)._pty = new PtyConnection();
 
     (shell as any)._pty.appendOutput(btoa('first'), 5, Date.now());
-    (shell as any)._pty.appendOutput(btoa('dupe'), 5, Date.now());  // same seq → ignored
+    (shell as any)._pty.appendOutput(btoa('dupe'), 5, Date.now()); // same seq → ignored
 
     expect(shell.getPtyChunks()).toHaveLength(1);
     const decoder = new TextDecoder();
@@ -224,7 +225,6 @@ describe('Shell SDK lifecycle — unit tests', () => {
     expect(chunk).not.toBeUndefined();
     expect(chunk!.seq).toBe(7);
   });
-
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -239,7 +239,9 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     await apiTestSetup(info, ctx.task.name);
     manager = ConnectionManager.getInstance();
     await vi.waitFor(
-      () => { if (!manager.connected) throw new Error('WS not connected'); },
+      () => {
+        if (!manager.connected) throw new Error('WS not connected');
+      },
       { timeout: 5000, interval: 200 },
     );
   });
@@ -261,7 +263,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     }
 
     // Connect all 5 concurrently — this is the actual stress target
-    await Promise.all(shells.map((s) => s.startPty({ cols: 80, rows: 24 })));
+    await Promise.all(shells.map((s) => s.attachPty({ cols: 80, rows: 24 })));
 
     // All should have replayDone=true and at least 1 replay chunk
     for (const shell of shells) {
@@ -282,7 +284,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     for (let cycle = 0; cycle < 4; cycle++) {
       const shell = await spawnShell(computeNode, manager.id, 600);
 
-      await shell.startPty({ cols: 80, rows: 24 });
+      await shell.attachPty({ cols: 80, rows: 24 });
 
       expect(shell.replayDone).toBe(true);
       expect(shell.getPtyChunks().length).toBeGreaterThan(0);
@@ -306,7 +308,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     const shell = await spawnShell(computeNode, manager.id, 600);
 
     // Initial connect
-    await shell.startPty({ cols: 80, rows: 24 });
+    await shell.attachPty({ cols: 80, rows: 24 });
     expect(shell.replayDone).toBe(true);
     expect(shell.getPtyChunks().length).toBeGreaterThan(0);
 
@@ -321,7 +323,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
 
     // Force re-attach by clearing pty.started
     if ((shell as any)._pty) (shell as any)._pty.started = false;
-    await shell.startPty({ cols: 80, rows: 24 });
+    await shell.attachPty({ cols: 80, rows: 24 });
 
     expect(shell.replayDone).toBe(true);
     expect(shell.getPtyChunks().length).toBeGreaterThan(0);
@@ -337,13 +339,13 @@ describe('Shell / PTY lifecycle stress — integration', () => {
 
     // Shell 1: open, connect, close PTY
     const shell1 = await spawnShell(computeNode, manager.id, 500);
-    await shell1.startPty({ cols: 80, rows: 24 });
+    await shell1.attachPty({ cols: 80, rows: 24 });
     expect(shell1.replayDone).toBe(true);
     await closePtyRaw(computeNode.id, shell1.id);
 
     // Shell 2: fresh shell, no state from shell1
     const shell2 = await spawnShell(computeNode, manager.id, 600);
-    await shell2.startPty({ cols: 80, rows: 24 });
+    await shell2.attachPty({ cols: 80, rows: 24 });
 
     expect(shell2.replayDone).toBe(true);
     expect(shell2.getPtyChunks().length).toBeGreaterThan(0);
@@ -354,7 +356,10 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     expect(unsub).not.toBeUndefined();
 
     const decoder = new TextDecoder();
-    const replayText = shell2.getPtyChunks().map((c) => decoder.decode(c.data)).join('');
+    const replayText = shell2
+      .getPtyChunks()
+      .map((c) => decoder.decode(c.data))
+      .join('');
     expect(replayText.length).toBeGreaterThan(0);
     // liveData only receives post-connect output, not replay bytes
     expect(liveData.join('')).toBe('');
@@ -370,15 +375,11 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     await computeNode.setup();
 
     const shell = await spawnShell(computeNode, manager.id, 500);
-    await shell.startPty({ cols: 80, rows: 24 });
+    await shell.attachPty({ cols: 80, rows: 24 });
     expect(shell.replayDone).toBe(true);
 
     // Fire several resizes rapidly while bash is live
-    await Promise.all([
-      shell.resize(120, 30),
-      shell.resize(100, 25),
-      shell.resize(80, 24),
-    ]);
+    await Promise.all([shell.resize(120, 30), shell.resize(100, 25), shell.resize(80, 24)]);
 
     // Seq ordering must be preserved
     const seqs = shell.getPtyChunks().map((c) => c.seq);
@@ -396,7 +397,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     await computeNode.setup();
 
     const shellId = uuidv4();
-    await startPtyRaw(computeNode.id, shellId, manager.id);
+    await openShellRaw(computeNode as any, shellId, manager.id);
     await new Promise((r) => setTimeout(r, 400));
 
     const shell = Object.assign(new Shell(), { id: shellId, compute_node_id: computeNode.id });
@@ -415,7 +416,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     await computeNode.setup();
 
     const shellId = uuidv4();
-    await startPtyRaw(computeNode.id, shellId, manager.id);
+    await openShellRaw(computeNode as any, shellId, manager.id);
     await new Promise((r) => setTimeout(r, 300));
 
     // 20 rapid newlines
@@ -428,7 +429,7 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     const shell = Object.assign(new Shell(), { id: shellId, compute_node_id: computeNode.id });
     registerShell(shell);
 
-    await shell.startPty({ cols: 80, rows: 24 });
+    await shell.attachPty({ cols: 80, rows: 24 });
     expect(shell.replayDone).toBe(true);
 
     const seqs = shell.getPtyChunks().map((c) => c.seq);
@@ -451,8 +452,8 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     const shellA = await spawnShell(computeNode, manager.id, 600);
     const shellB = await spawnShell(computeNode, manager.id, 600);
 
-    await shellA.startPty({ cols: 80, rows: 24 });
-    await shellB.startPty({ cols: 80, rows: 24 });
+    await shellA.attachPty({ cols: 80, rows: 24 });
+    await shellB.attachPty({ cols: 80, rows: 24 });
 
     const bEvents: string[] = [];
     const unsubB = shellB.onOutput((d) => bEvents.push(d));
@@ -471,9 +472,6 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     }
 
     unsubB?.();
-    await Promise.all([
-      closePtyRaw(computeNode.id, shellA.id),
-      closePtyRaw(computeNode.id, shellB.id),
-    ]);
+    await Promise.all([closePtyRaw(computeNode.id, shellA.id), closePtyRaw(computeNode.id, shellB.id)]);
   }, 25000);
 });

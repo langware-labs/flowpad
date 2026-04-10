@@ -77,6 +77,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   streams: WSStream[] = [];
   saveIntervalMs: number = 5000;
   isPopupOpen = false;
+  dataOpQueryInvalidation = false;
   private subscriptions: SubscriptionMap<T> = new SubscriptionMap<T>();
   private watches: WatchMap = new WatchMap();
   private watchedQueries: WatchQueryMap<T> = new WatchQueryMap<T>();
@@ -326,7 +327,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // Get entity from cache
     const entity = this.getByTypeIdFromCache<T>(typeId);
     if (!entity) {
-      console.warn(`[DataManager.onFlowData] Entity not found in cache for typeId: ${typeId.toString()}`);
+      console.debug(`[DataManager.onFlowData] Entity not found in cache for typeId: ${typeId.toString()}`);
       return;
     }
 
@@ -367,8 +368,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // Handle delete operation by removing from all query results
     if (op === 'delete') {
       this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
-    } else {
-      // For non-delete operations, find all watched queries and potentially update them
+    } else if (op === 'create' || this.dataOpQueryInvalidation) {
+      // For create operations, always update watched queries so new entities appear in lists.
+      // For other ops (update), only invalidate if dataOpQueryInvalidation is enabled.
       const watchedQueries = this.watchedQueries.getWatchCallbacksByType(typeId.type);
 
       for (const watchedQuery of watchedQueries) {
@@ -532,7 +534,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
   /**
    * Notify all watched queries for an entity's type that results have changed.
-   * Use after mutating an entity in-place (e.g. after startPty sets shell_id)
+   * Use after mutating an entity in-place (e.g. after attachPty wires shell state)
    * so React hooks re-render without waiting for a WS update or re-query.
    */
   public notifyEntityChanged(entity: T): void {

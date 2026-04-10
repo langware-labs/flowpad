@@ -58,7 +58,8 @@ def test_instruction_single_line_posix():
 def test_instruction_multiline_posix():
     cmd = _EchoCmd(workdir="/proj")
     result = cmd.to_shell_string(instruction="line one\nline two")
-    assert "EOF" in result
+    # Uses ANSI-C quoting ($'...') with \n escape for multiline args
+    assert "$'" in result
     assert "line one" in result
     assert "line two" in result
 

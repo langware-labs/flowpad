@@ -273,7 +273,7 @@ describe('fs-records full cycle: scan → index → search', () => {
       record_id: string;
       record_type: string;
       name: string;
-      text: string;
+      snippet: string | null;
       status: string;
       scope: string;
       created_at: string;
@@ -287,7 +287,7 @@ describe('fs-records full cycle: scan → index → search', () => {
       expect(result).toHaveProperty('record_id');
       expect(result).toHaveProperty('record_type');
       expect(result).toHaveProperty('name');
-      expect(result).toHaveProperty('text');
+      expect(result).toHaveProperty('snippet');
       expect(result).toHaveProperty('status');
       expect(result).toHaveProperty('scope');
       expect(result).toHaveProperty('created_at');

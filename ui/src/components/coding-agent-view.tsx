@@ -1,6 +1,6 @@
+import { dataContext, Shell } from '@sdk';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { InteractiveTerminal } from '@src/components/terminal';
-import { dataContext, Shell } from '@sdk';
 import { DockPointer, useDockNavigation } from '@src/navigation';
 import { ViewType } from '@src/types/ViewType';
 import { useEffect, useRef } from 'react';
@@ -71,10 +71,10 @@ export function CodingAgentView() {
         }
 
         if (!shell) {
-          shell = Shell.create(cn, { name: 'Claude CLI' });
+          shell = Shell.create(cn, { name: 'Claude CLI', workdir: dataContext.project?.fs_storage_mount_path ?? undefined });
           (shell as any).id = sessionId;
           await shell.save(cn.typeId);
-          await shell.startPty({ cols: 80, rows: 24 });
+          await shell.start({ cols: 80, rows: 24, workdir: shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? undefined });
 
           // Wait for PTY to be live before sending command
           const waitForPtyReady = () => {

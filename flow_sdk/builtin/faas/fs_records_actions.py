@@ -36,7 +36,7 @@ class FsRecordsActionsMixin:
         return getattr(ent, "name", None) or getattr(ent, "title", "") or ""
 
     @staticmethod
-    def _resolve_source_path(ent) -> str:
+    async def _resolve_source_path(ent) -> str:
         """Resolve the on-disk path for an entity, with a record-level fallback."""
         path = (
             getattr(ent, "source_file", None)
@@ -47,15 +47,15 @@ class FsRecordsActionsMixin:
             return path
         try:
             from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-            record_cls = SchemaRegistry.get_record_cls(ent.type or ent.get_type())
-            if record_cls:
-                rec = record_cls.discover_one(ent.id)
-                if rec is None:
+            rec = await ent.get_record()
+            if rec is None:
+                record_cls = SchemaRegistry.get_record_cls(ent.type or ent.get_type())
+                if record_cls:
                     ent_name = getattr(ent, "name", None) or getattr(ent, "uname", None)
                     if ent_name:
                         rec = record_cls.discover_one(ent_name)
-                if rec:
-                    return getattr(rec, "source_path", None) or ""
+            if rec:
+                return getattr(rec, "source_path", None) or ""
         except Exception:
             pass
         return ""
@@ -85,9 +85,9 @@ class FsRecordsActionsMixin:
                             "fts_description": getattr(ent, "_fts_description", None),
                             "status": ent_status,
                             "scope": getattr(ent, "scope", "") or "",
-                            "created_at": str(getattr(ent, "created_date", "") or ""),
-                            "modified_at": str(getattr(ent, "updated_date", "") or ""),
-                            "source_path": self._resolve_source_path(ent),
+                            "created_at": (d.isoformat() if (d := getattr(ent, "created_date", None)) else ""),
+                            "modified_at": (d.isoformat() if (d := getattr(ent, "updated_date", None)) else ""),
+                            "source_path": await self._resolve_source_path(ent),
                             "labels": getattr(ent, "labels", None) or [],
                         }
                     for extra_field in ("session_id", "worker_session_id"):
@@ -130,9 +130,9 @@ class FsRecordsActionsMixin:
                     "fts_description": getattr(ent, "_fts_description", None),
                     "status": ent_status,
                     "scope": getattr(ent, "scope", "") or "",
-                    "created_at": str(getattr(ent, "created_date", "") or ""),
-                    "modified_at": str(getattr(ent, "updated_date", "") or ""),
-                    "source_path": self._resolve_source_path(ent),
+                    "created_at": (d.isoformat() if (d := getattr(ent, "created_date", None)) else ""),
+                    "modified_at": (d.isoformat() if (d := getattr(ent, "updated_date", None)) else ""),
+                    "source_path": await self._resolve_source_path(ent),
                     "labels": getattr(ent, "labels", None) or [],
                 }
             for extra_field in ("session_id", "worker_session_id"):

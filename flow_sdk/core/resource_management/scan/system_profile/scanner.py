@@ -1100,16 +1100,31 @@ def list_projects_fast() -> dict:
         session_files = list(project_dir.glob("*.jsonl"))
         session_count = len(session_files)
 
-        # Get latest modified time from directory
+        # Use the most recently modified session file as the activity timestamp.
+        # Falls back to directory mtime only when there are no session files.
         try:
-            modified_at = datetime.fromtimestamp(
-                project_dir.stat().st_mtime
-            ).isoformat()
+            if session_files:
+                modified_at = datetime.fromtimestamp(
+                    max(f.stat().st_mtime for f in session_files)
+                ).isoformat()
+            else:
+                modified_at = datetime.fromtimestamp(
+                    project_dir.stat().st_mtime
+                ).isoformat()
         except Exception:
             modified_at = None
 
         # Try to get cwd from first session file (fast, just check first line)
         cwd = get_project_cwd(project_dir)
+
+        # Skip temp/ephemeral directories — these are test artifacts, not real projects
+        if cwd and (
+            cwd.startswith("/tmp/")
+            or cwd.startswith("/private/tmp/")
+            or cwd.startswith("/private/var/folders/")
+            or cwd == "/"
+        ):
+            continue
 
         projects.append(
             {

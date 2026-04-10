@@ -17,7 +17,7 @@ from io import BytesIO
 from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Literal
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.faas.pty_session import PtySession
+    from flow_sdk.builtin.faas.pty_session import Pty as PtySession
 
 import anyio
 import psutil
@@ -561,6 +561,8 @@ class LocalComputeProvider(ComputeProvider):
         cols: int = 80,
         working_dir: str | None = None,
         on_exit: Callable[[int | None], None] | None = None,
+        spawn_args: list[str] | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Get or create a PTY session for the given provider node and session ID.
 
@@ -592,75 +594,81 @@ class LocalComputeProvider(ComputeProvider):
         pty_key = (provider_node_id, session_id)
 
         if pty_key not in self._pty_sessions:
-            # Determine shell command - use user's default shell or system default
-            if sys.platform == PLATFORM_WIN32:
-                # Windows: prefer PowerShell, fallback to cmd.exe
-                shell_cmd = None
-
-                # Try to find PowerShell using PATH (works regardless of install location)
-                for pwsh_name in ["pwsh", "powershell"]:
-                    found_pwsh = shutil.which(pwsh_name)
-                    if found_pwsh:
-                        shell_cmd = found_pwsh
-                        break
-
-                # If PowerShell not found in PATH, try common locations
-                if shell_cmd is None:
-                    system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR", "C:\\Windows")
-                    program_files = os.environ.get("ProgramFiles", "C:\\Program Files")
-
-                    pwsh_paths = [
-                        os.path.join(program_files, "PowerShell", "7", "pwsh.exe"),
-                        os.path.join(system_root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
-                    ]
-                    for path in pwsh_paths:
-                        if os.path.exists(path):
-                            shell_cmd = path
-                            break
-
-                # Fallback to cmd.exe
-                if shell_cmd is None:
-                    shell_cmd = os.environ.get("COMSPEC")
-                    if not shell_cmd:
-                        system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR", "C:\\Windows")
-                        shell_cmd = os.path.join(system_root, "System32", "cmd.exe")
-            else:
-                # Unix-like: use user's default shell
-                user_shell = os.environ.get("SHELL", "")
-                if user_shell and os.path.exists(user_shell):
-                    shell_cmd = user_shell
-                elif sys.platform == "darwin":
-                    # macOS defaults to zsh
-                    shell_cmd = "/bin/zsh"
-                else:
-                    # Linux/Unix - try bash, fallback to sh
-                    shell_cmd = "/bin/bash" if os.path.exists("/bin/bash") else "/bin/sh"
-
             # Create environment — strip CLAUDECODE* to prevent nesting detection
             env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDECODE")}
             env["TERM"] = "xterm-256color"
             env["FLOWPAD_PTY_SESSION_ID"] = session_id
 
-            # Configure spawn arguments (command + flags) based on shell type
-            if sys.platform == PLATFORM_WIN32:
-                # Windows: PowerShell or cmd.exe
-                if shell_cmd and ("powershell" in shell_cmd.lower() or "pwsh" in shell_cmd.lower()):
-                    spawn_args = [shell_cmd, "-NoProfile", "-NoLogo"]
-                else:
-                    spawn_args = [shell_cmd]
+            if spawn_args is not None:
+                # Direct spawn: caller provides exact argv (e.g. Claude CLI directly)
+                final_spawn_args = spawn_args
+                if extra_env:
+                    env.update(extra_env)
             else:
-                # Unix: configure based on shell type
-                if shell_cmd.endswith("zsh"):
-                    # zsh: interactive shell (no -l to avoid .zprofile/.zlogin blocking)
-                    # The parent env already carries PATH and user settings.
-                    spawn_args = [shell_cmd]
-                    env["ZSH_DISABLE_COMPFIX"] = "true"
-                    env["ZDOTDIR"] = os.path.expanduser("~")
-                elif shell_cmd.endswith("bash"):
-                    # bash: skip profile files to avoid system messages
-                    spawn_args = [shell_cmd, "--norc", "--noprofile"]
+                # Shell spawn: detect and configure the user's default shell
+                if sys.platform == PLATFORM_WIN32:
+                    # Windows: prefer PowerShell, fallback to cmd.exe
+                    shell_cmd = None
+
+                    # Try to find PowerShell using PATH (works regardless of install location)
+                    for pwsh_name in ["pwsh", "powershell"]:
+                        found_pwsh = shutil.which(pwsh_name)
+                        if found_pwsh:
+                            shell_cmd = found_pwsh
+                            break
+
+                    # If PowerShell not found in PATH, try common locations
+                    if shell_cmd is None:
+                        system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR", "C:\\Windows")
+                        program_files = os.environ.get("ProgramFiles", "C:\\Program Files")
+
+                        pwsh_paths = [
+                            os.path.join(program_files, "PowerShell", "7", "pwsh.exe"),
+                            os.path.join(system_root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+                        ]
+                        for path in pwsh_paths:
+                            if os.path.exists(path):
+                                shell_cmd = path
+                                break
+
+                    # Fallback to cmd.exe
+                    if shell_cmd is None:
+                        shell_cmd = os.environ.get("COMSPEC")
+                        if not shell_cmd:
+                            system_root = os.environ.get("SystemRoot") or os.environ.get("WINDIR", "C:\\Windows")
+                            shell_cmd = os.path.join(system_root, "System32", "cmd.exe")
                 else:
-                    spawn_args = [shell_cmd]
+                    # Unix-like: use user's default shell
+                    user_shell = os.environ.get("SHELL", "")
+                    if user_shell and os.path.exists(user_shell):
+                        shell_cmd = user_shell
+                    elif sys.platform == "darwin":
+                        # macOS defaults to zsh
+                        shell_cmd = "/bin/zsh"
+                    else:
+                        # Linux/Unix - try bash, fallback to sh
+                        shell_cmd = "/bin/bash" if os.path.exists("/bin/bash") else "/bin/sh"
+
+                # Configure spawn arguments (command + flags) based on shell type
+                if sys.platform == PLATFORM_WIN32:
+                    # Windows: PowerShell or cmd.exe
+                    if shell_cmd and ("powershell" in shell_cmd.lower() or "pwsh" in shell_cmd.lower()):
+                        final_spawn_args = [shell_cmd, "-NoProfile", "-NoLogo"]
+                    else:
+                        final_spawn_args = [shell_cmd]
+                else:
+                    # Unix: configure based on shell type
+                    if shell_cmd.endswith("zsh"):
+                        # zsh: interactive shell (no -l to avoid .zprofile/.zlogin blocking)
+                        # The parent env already carries PATH and user settings.
+                        final_spawn_args = [shell_cmd]
+                        env["ZSH_DISABLE_COMPFIX"] = "true"
+                        env["ZDOTDIR"] = os.path.expanduser("~")
+                    elif shell_cmd.endswith("bash"):
+                        # bash: skip profile files to avoid system messages
+                        final_spawn_args = [shell_cmd, "--norc", "--noprofile"]
+                    else:
+                        final_spawn_args = [shell_cmd]
 
             # Spawn PTY using ptyprocess/winpty (cross-platform)
             pty_working_dir = working_dir if working_dir else self._node_dirs.get(provider_node_id, self._default_working_dir)
@@ -669,7 +677,7 @@ class LocalComputeProvider(ComputeProvider):
 
             try:
                 pty_process = PtyProcess.spawn(  # type: ignore[union-attr]
-                    spawn_args,
+                    final_spawn_args,
                     cwd=pty_working_dir,
                     env=env,
                     dimensions=(rows, cols),
@@ -905,20 +913,29 @@ class LocalComputeProvider(ComputeProvider):
         pid = self._pty_sessions[pty_key].get("pid")
         return self._is_process_alive(pid) if pid else False
 
-    async def pick_folder(self, provider_node_id: str) -> str | None:
-        """Open a native OS folder-picker dialog on the local machine."""
+    async def pick_folder(self, provider_node_id: str, initial_dir: str | None = None) -> str | None:
+        """Open a native OS folder-picker dialog on the local machine.
+
+        Args:
+            provider_node_id: The local compute node provider ID.
+            initial_dir: Optional path to open the dialog at initially.
+        """
         import subprocess
 
         if sys.platform == PLATFORM_DARWIN:
             # Activate Finder to bring the dialog in front, close any Finder
             # windows so only the picker is visible, then choose folder.
+            if initial_dir:
+                default_location = f'default location POSIX file "{initial_dir}"'
+            else:
+                default_location = ""
             apple_script = (
                 'tell application "Finder"\n'
                 "    activate\n"
                 "    close every window\n"
                 "end tell\n"
                 "delay 0.1\n"
-                "set theFolder to choose folder\n"
+                f"set theFolder to choose folder {default_location}\n"
                 "return POSIX path of theFolder"
             )
             result = subprocess.run(
@@ -930,9 +947,13 @@ class LocalComputeProvider(ComputeProvider):
             return None
 
         elif sys.platform == PLATFORM_WIN32:
+            selected_path_line = (
+                f'$d.SelectedPath = "{initial_dir}"; ' if initial_dir else ""
+            )
             ps_script = (
                 "Add-Type -AssemblyName System.Windows.Forms; "
                 "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                f"{selected_path_line}"
                 "if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath } else { '' }"
             )
             result = subprocess.run(
@@ -944,9 +965,13 @@ class LocalComputeProvider(ComputeProvider):
 
         else:
             # Linux — try zenity, then kdialog
+            zenity_args = ["zenity", "--file-selection", "--directory"]
+            kdialog_start = initial_dir or "."
+            if initial_dir:
+                zenity_args += ["--filename", initial_dir.rstrip("/") + "/"]
             for args in (
-                ["zenity", "--file-selection", "--directory"],
-                ["kdialog", "--getexistingdirectory", "."],
+                zenity_args,
+                ["kdialog", "--getexistingdirectory", kdialog_start],
             ):
                 try:
                     result = subprocess.run(args, capture_output=True, text=True, timeout=120)

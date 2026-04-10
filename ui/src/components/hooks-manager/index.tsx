@@ -10,7 +10,7 @@ import { HookForm } from './HookForm';
 import { HooksBrowser } from '../hooks-view/HooksBrowser';
 import { TriggerForm } from './TriggerForm';
 import { ToastTitle, ToastDescription, ErrorMessage } from './constants';
-import { useHooksSniffer } from '@src/hooks/use-hooks-sniffer';
+import { useSnifferContext } from '@src/contexts/SnifferContext';
 
 interface HooksManagerProps {
   entityTypeId?: TypeId;
@@ -103,7 +103,7 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
   const { toast } = useToast();
   const { project } = useProject();
   const { snifferEnabled } = useContext();
-  const { isLoading: snifferLoading, isToggling: snifferToggling, enable: snifferEnable, disable: snifferDisable } = useHooksSniffer();
+  const { isLoading: snifferLoading, isToggling: snifferToggling, enable: snifferEnable, disable: snifferDisable } = useSnifferContext();
 
   const fetchHooks = useCallback(async () => {
     try {

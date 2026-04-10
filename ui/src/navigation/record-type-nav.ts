@@ -75,12 +75,58 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     primaryAction: async (r, navigation) => {
       const sessionId = r.session_id;
       if (sessionId) {
-        await navigation.openClaudeSession(sessionId);
+        const p = await AgenticProcess.fromClaudeSession(sessionId);
+        navigation.openDockPointer(p.dockPointer, r.created_at ? { t: r.created_at } : undefined);
       }
     },
   },
   command: {
-    dockPointer: (r) => r.source_path ? DockPointer.forFile(r.source_path) : null,
+    dockPointer: (r) => r.source_path
+      ? new DockPointer(ViewType.ASSETS, `editor/command/${r.source_path.replace(/^\//, '')}`)
+      : null,
+  },
+  comment: {
+    primaryAction: async (r, navigation) => {
+      const sessionId = r.session_id;
+      if (sessionId) {
+        await navigation.openClaudeSession(sessionId);
+      }
+    },
+  },
+  docs: {
+    dockPointer: (r) => r.source_path
+      ? new DockPointer(ViewType.ASSETS, `editor/docs/${r.source_path.replace(/^\//, '')}`)
+      : null,
+  },
+  plan: {
+    dockPointer: (r) => r.source_path
+      ? new DockPointer(ViewType.ASSETS, `editor/plan/${r.source_path.replace(/^\//, '')}`)
+      : null,
+  },
+  workflow: {
+    dockPointer: (r) => r.source_path
+      ? new DockPointer(ViewType.ASSETS, `editor/workflow/${r.source_path.replace(/^\//, '')}`)
+      : null,
+  },
+  claude_md: {
+    dockPointer: (r) => r.source_path
+      ? new DockPointer(ViewType.ASSETS, `editor/claude_md/${r.source_path.replace(/^\//, '')}`)
+      : null,
+  },
+  claude_memory: {
+    dockPointer: (r) => r.source_path
+      ? new DockPointer(ViewType.ASSETS, `editor/claude_memory/${r.source_path.replace(/^\//, '')}`)
+      : null,
+  },
+  claude_rules: {
+    dockPointer: (r) => r.source_path
+      ? new DockPointer(ViewType.ASSETS, `editor/claude_rules/${r.source_path.replace(/^\//, '')}`)
+      : null,
+  },
+  asset: {
+    dockPointer: (r) => r.source_path
+      ? new DockPointer(ViewType.ASSETS, `editor/asset/${r.source_path.replace(/^\//, '')}`)
+      : null,
   },
   claude_settings: {
     dockPointer: () => DockPointer.forSettings(),
@@ -97,7 +143,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   agentic_process: {
     dockPointer: (r) => new AgenticProcess({
       id: r.record_id,
-      worker_session_id: (r as any).worker_session_id ?? undefined,
+      session_id: (r as any).session_id ?? undefined,
       project_encoded_name: (r as any).project_encoded_name ?? undefined,
     }).searchDockPointer,
   },
@@ -129,8 +175,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
           const cwd = record?.cwd ?? undefined;
           const computeNode = dataContext.computeNode;
           if (!computeNode) throw new Error('[Fork] No compute node');
-          const processor = await computeNode.createAgenticProcessor();
-          const p = await processor.createProcess(cwd ? { workdir: cwd } : {});
+          const p = await computeNode.createProcess(cwd ? { workdir: cwd } : {});
           void navigation.openShellProcess(p.id);
         },
       },

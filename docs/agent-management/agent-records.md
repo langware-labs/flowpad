@@ -320,7 +320,7 @@ def discover_status(self, worker_session_id: str | None = None) -> ProcessorStat
     session = ClaudeSessionFsRecord.discover_one(sid)
     if not session:
         return ProcessorStatus.IDLE
-    return ProcessorStatus(session.status)
+    return ProcessorStatus(session.worker_status)
 ```
 
 This is the same logic as the entity's `_discover_status_from_transcript()` — the record delegates to `ClaudeSessionFsRecord.status`.
@@ -403,7 +403,7 @@ AgentRecord.load_agent(name, project_dir=None)
 `to_agents_json()` produces the dict passed to the `--agents` CLI flag:
 
 ```python
-agent.to_agents_json()
+agent.to_agents_cli_json()
 # Returns: {"my-agent": {"prompt": "...", "description": "...", "permissionMode": "...", ...}}
 ```
 

@@ -98,13 +98,22 @@ export function useEntityData(entityTypeId: TypeId | null | undefined): UseEntit
       setFlowData([...apiEntity.flowDataStream.items]);
     };
 
+    // Subscribe to stream clear — propagates flowDataStream.clear() into React state
+    const handleClear = () => {
+      setFlowData([]);
+      setIsComplete(false);
+    };
+
     // Use entity's event system
     const unsubData = (entity as any).on('flow_data', handleFlowData);
     const unsubComplete = (entity as any).on('complete', handleComplete);
+    const stream = (apiEntity as any).flowDataStream;
+    stream.on('clear', handleClear);
 
     return () => {
       unsubData?.();
       unsubComplete?.();
+      stream.off('clear', handleClear);
     };
   }, [entityTypeId?.toString()]);
 

@@ -187,8 +187,8 @@ def test_shell_status_default_idle():
 
 
 @pytest.mark.asyncio
-async def test_shell_open_recovers_dead_running_session():
-    """open() on a running shell with no live PTY spawns a new PTY (recovery path)."""
+async def test_shell_start_recovers_dead_running_session():
+    """start() on a running shell with no live PTY spawns a new PTY (recovery path)."""
     from flow_sdk.builtin.shell import Shell
 
     entity = Shell()
@@ -196,9 +196,9 @@ async def test_shell_open_recovers_dead_running_session():
     entity.compute_node_id = "00000000-0000-0000-0000-000000000099"
 
     # No existing PTY → compute_node.get_pty() returns None → create_pty() spawns a new one.
-    result = await entity.open()
-    assert result.status == "SUCCESS"
-    assert entity.connected is True
+    spawned = await entity.start()
+    assert spawned is True
+    assert entity.is_alive is True
     # Cleanup
     pty = entity.compute_node.get_pty(entity.id)
     if pty:
