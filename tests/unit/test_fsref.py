@@ -5,7 +5,7 @@ Direct disk validation via Path on every mutating op.
 """
 import pytest
 from pathlib import Path
-from flow_sdk.fs_store.fs_ref import FSRef, JSONFsRef, TextFsRef
+from flow_sdk.fs_store.fs_ref import FSRef, JSONFsRef, TextFsRef, FrontMatterFsRef
 
 
 @pytest.fixture
@@ -238,7 +238,7 @@ class TestMainRef:
         assert isinstance(mr, JSONFsRef)
         assert mr.path.endswith("metadata.json")
 
-    def test_skill_record_main_ref_returns_text_fsref(self, tmp_path):
+    def test_skill_record_main_ref_returns_frontmatter_fsref(self, tmp_path):
         from flow_sdk.fs_records.skill_record import SkillRecord
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
@@ -246,10 +246,10 @@ class TestMainRef:
         rec = SkillRecord.load_record(skill_dir)
         mr = rec.main_ref
         assert mr is not None
-        assert isinstance(mr, TextFsRef)
+        assert isinstance(mr, FrontMatterFsRef)
         assert "SKILL.md" in mr.path
 
-    def test_agent_record_main_ref_returns_text_fsref(self, tmp_path):
+    def test_agent_record_main_ref_returns_frontmatter_fsref(self, tmp_path):
         from flow_sdk.fs_records.agent_record import AgentRecord
         folder = tmp_path / "agent-@myagent"
         folder.mkdir()
@@ -258,5 +258,5 @@ class TestMainRef:
         rec.path = str(folder)
         mr = rec.main_ref
         assert mr is not None
-        assert isinstance(mr, TextFsRef)
+        assert isinstance(mr, FrontMatterFsRef)
         assert "myagent.md" in mr.path

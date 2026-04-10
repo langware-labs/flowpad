@@ -4,7 +4,7 @@ import { InputDialog } from '@src/components/ui/input-dialog';
 import { useToast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext, Project, Skill } from '@sdk';
+import { Agent, dataContext, Project, Skill } from '@sdk';
 import apiClient from '@sdk/client';
 import { BookOpen } from 'lucide-react';
 import React, { useCallback, useState } from 'react';
@@ -83,6 +83,14 @@ export function AssetsPage() {
         await project.save([]);
         await project.setupForDesktop();
         toast({ title: 'Project created' });
+      } else if (newTypeTarget === 'agent') {
+        const agent = new Agent({ name: name.trim() });
+        const saved = await agent.save([]);
+        toast({ title: 'Agent created' });
+        if (saved.source_path) {
+          navigation.openDock(DockPointer.forAssetEditor('agent', saved.source_path));
+          return;
+        }
       } else {
         toast({ title: `Creation of "${newTypeTarget}" not supported yet`, variant: 'destructive' });
         return;

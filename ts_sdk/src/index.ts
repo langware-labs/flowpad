@@ -27,3 +27,4 @@ export * from './sentry';
 export * from './types/index';
 export * from './schema/index';
 export * from './pipeline/index';
+export { FrontMatterFsRef } from './fs/FrontMatterFsRef';

@@ -69,6 +69,8 @@ def set_default_records_root(path: Path) -> None:
     """Override the default records root (primarily for testing)."""
     global _DEFAULT_RECORDS_ROOT
     _DEFAULT_RECORDS_ROOT = path
+    # Sync the env var so get_default_records_root() — which checks it first — stays consistent.
+    os.environ[ENV_FS_RECORD_PATH] = str(path)
 
 
 def set_default_records_data_root(path: Path) -> None:
