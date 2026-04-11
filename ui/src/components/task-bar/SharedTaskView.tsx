@@ -59,8 +59,10 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
     ].join('\n');
 
     try {
+      const workdir = (task.metadata as Record<string, unknown> | undefined)?.project_root as string | undefined
+        ?? dataContext.project?.fs_storage_mount_path;
       const { process: agenticProcess } = await AgenticProcess.spawn(
-        { workdir: dataContext.project?.fs_storage_mount_path },
+        { workdir },
         { instruction: prompt, visible: true },
       );
       navigation.openDock(agenticProcess.dockPointer);
