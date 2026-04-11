@@ -72,7 +72,8 @@ export function SendNotificationDialog({ task, open, onClose }: SendNotification
         task_title: task.title || '',
         task_id: task.id ?? null,
         message: message.trim() || null,
-        plan_id: (task.metadata as Record<string, unknown> | undefined)?.plan_id ?? null,
+        plan_id: null,
+        project_path: null,
       });
 
       setSuccess(true);

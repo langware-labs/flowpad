@@ -74,6 +74,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     task_title = (body.get("task_title") or spec_title).strip()
     message = (body.get("message") or "").strip() or None
     plan_id = (body.get("plan_id") or "").strip() or None
+    project_path = (body.get("project_path") or "").strip() or None
 
     if not recipient_id:
         return ApiFailResponse(message="recipient_id is required")
@@ -99,7 +100,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     sender_id: Optional[str] = local_user.id if local_user else None
     sender_name: str = (local_user.name or local_user.email or "") if local_user else ""
 
-    project_root = find_project_root(plan_id) if plan_id else None
+    project_root = find_project_root(project_path) if project_path else None
     project_url = git_remote_url(project_root) if project_root else ""
 
     # 1. Create Spec entity
