@@ -33,11 +33,13 @@ interface SendPlanNotificationDialogProps {
   onClose: () => void;
   planFilePath: string;
   planContent: string;
+  workdir?: string | null;
 }
 
 export function SendPlanNotificationDialog({
   open,
   onClose,
+  workdir,
   planFilePath,
   planContent,
 }: SendPlanNotificationDialogProps) {
@@ -80,7 +82,8 @@ export function SendPlanNotificationDialog({
         task_title: specTitle.trim(),
         task_id: null,
         message: message.trim() || null,
-        plan_id: planFilePath,
+        plan_id: null,
+        project_path: workdir ?? null,
       });
 
       setSuccess(true);
