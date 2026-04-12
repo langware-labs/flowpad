@@ -36,7 +36,7 @@ from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse, ApiResponse
-from flow_sdk.utils.git import find_local_repo_for_url, find_project_root, git_add_commit_push, git_pull, git_remote_url
+from flow_sdk.utils.git import find_local_repo_for_url, find_project_root, git_add_commit_push, git_current_branch, git_pull, git_remote_url
 from flow_sdk.utils.hub import hub_base_url, hub_post
 from flow_sdk.builtin.bookmark import Bookmark
 
@@ -141,6 +141,8 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         spec_dir_name = _unique_dir_name(_meaningful_name(spec_title), spec_root)
         task_dir_name = _unique_dir_name(_meaningful_name(task_title), tasks_root)
 
+        spec_file_path = f"tasks/spec/{spec_dir_name}/spec.md"
+
         spec_dir = spec_root / spec_dir_name
         spec_dir.mkdir(parents=True, exist_ok=True)
         (spec_dir / "spec.md").write_text(
@@ -179,6 +181,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
             })
 
     # 5. Post to hub
+    branch = git_current_branch(project_root) if project_root else ""
     hub_configured = bool(hub_base_url())
     hub_data = await hub_post("notification/send", {
         "recipient_email": recipient_email,
@@ -192,6 +195,8 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         "spec_type": spec_type,
         "message": message,
         "project_url": project_url,
+        "branch": branch,
+        "spec_file_path": spec_file_path if project_root else "",
     })
     hub_notification_id: Optional[str] = (hub_data or {}).get("notification_id")
     email_error: Optional[str] = None

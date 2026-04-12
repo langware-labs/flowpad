@@ -71,14 +71,13 @@ _ERROR_HTML = """<!DOCTYPE html>
 </body>
 </html>"""
 
-
-async def _pull_and_scan(project_url: str) -> Tuple[bool, str]:
+async def _pull_and_scan(project_url: str, branch: str = "") -> Tuple[bool, str]:
     """Find the local repo for project_url, git pull, then run the notification scanner."""
     repo_path = find_local_repo_for_url(project_url) if project_url else None
     if not repo_path:
         return False, f"No local clone found for {project_url}"
 
-    pull_ok, pull_msg = await git_pull(repo_path)
+    pull_ok, pull_msg = await git_pull(repo_path, branch=branch or None)
     if not pull_ok:
         logger.warning("[notify] git pull did not succeed for %s: %s", repo_path, pull_msg)
 
@@ -110,7 +109,7 @@ def _summarise_pull(pull_ok: bool, pull_msg: str) -> str:
     return "Pulled successfully"
 
 
-async def handle_notification_deep_link(project_url: str, task_id: str) -> HTMLResponse:
+async def handle_notification_deep_link(project_url: str, task_id: str, branch: str = "") -> HTMLResponse:
     """Pull the repo, scan for notifications, return a redirect HTML page."""
     port = _get_ui_port()
 
@@ -129,7 +128,7 @@ async def handle_notification_deep_link(project_url: str, task_id: str) -> HTMLR
             port=port,
         ), status_code=404)
 
-    pull_ok, pull_msg = await _pull_and_scan(project_url)
+    pull_ok, pull_msg = await _pull_and_scan(project_url, branch=branch)
     pull_summary = _summarise_pull(pull_ok, pull_msg)
 
     if task_id:
@@ -150,6 +149,7 @@ async def notification_deep_link(request: Request) -> HTMLResponse:
     return await handle_notification_deep_link(
         project_url=request.query_params.get("project_url", ""),
         task_id=request.query_params.get("task_id", ""),
+        branch=request.query_params.get("branch", ""),
     )
 
 
