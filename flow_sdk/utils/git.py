@@ -1,12 +1,21 @@
 import asyncio
 import logging
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
 
 from .file_system import ROOT_FOLDER
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class GitPushResult:
+    ok: bool
+    message: str
+    warning: Optional[str] = None
+
 
 commit_hash = None  # Global variable to store the commit hash
 
@@ -100,11 +109,8 @@ async def git_pull(repo_path: str) -> Tuple[bool, str]:
         return False, f"Git pull error: {e}"
 
 
-async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: str) -> None:
-    """Stage the given paths, commit if anything is staged, and push to origin.
-
-    Fire-and-forget: logs warnings on failure but never raises.
-    """
+async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: str) -> GitPushResult:
+    """Stage the given paths, commit if anything is staged, and push to origin."""
     try:
         def _run(args, cwd):
             return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=30)
@@ -118,20 +124,26 @@ async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: 
         )
         if staged.returncode == 0:
             logger.info("[git] nothing staged, skipping commit+push")
-            return
+            return GitPushResult(ok=True, message="Nothing to commit")
 
         await asyncio.to_thread(_run, ["git", "commit", "-m", commit_message, "--", *paths], repo_path)
 
+        pull_warning: Optional[str] = None
         pull_result = await asyncio.to_thread(
             _run, ["git", "pull", "--rebase", "origin", "HEAD"], repo_path
         )
         if pull_result.returncode != 0:
-            logger.warning("[git] pull --rebase before push failed: %s", pull_result.stderr or pull_result.stdout)
+            pull_warning = (pull_result.stderr or pull_result.stdout or "").strip()
+            logger.warning("[git] pull --rebase before push failed: %s", pull_warning)
 
         result = await asyncio.to_thread(_run, ["git", "push", "origin", "HEAD"], repo_path)
         if result.returncode != 0:
-            logger.warning("[git] push failed: %s", result.stderr or result.stdout)
+            err = (result.stderr or result.stdout or "").strip()
+            logger.warning("[git] push failed: %s", err)
+            return GitPushResult(ok=False, message=err, warning=pull_warning)
         else:
             logger.info("[git] push succeeded")
+            return GitPushResult(ok=True, message="Pushed successfully", warning=pull_warning)
     except Exception as e:
         logger.warning("[git] push error (non-fatal): %s", e)
+        return GitPushResult(ok=False, message=str(e))

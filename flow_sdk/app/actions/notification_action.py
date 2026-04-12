@@ -37,7 +37,8 @@ from flow_sdk.builtin.user import User
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse, ApiResponse
 from flow_sdk.utils.git import find_local_repo_for_url, find_project_root, git_add_commit_push, git_pull, git_remote_url
-from flow_sdk.utils.hub import hub_post
+from flow_sdk.utils.hub import hub_base_url, hub_post
+from flow_sdk.builtin.bookmark import Bookmark
 
 logger = logging.getLogger(__name__)
 
@@ -163,13 +164,22 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
             encoding="utf-8",
         )
 
-    # 4. Git push (fire-and-forget)
+    # 4. Git push — if it fails, abort before sending the email
     if project_root:
-        asyncio.ensure_future(
-            git_add_commit_push(project_root, ["tasks"], f"chore: share task '{task_title}'")
-        )
+        push_result = await git_add_commit_push(project_root, ["tasks"], f"chore: share task '{task_title}'")
+        git_error: Optional[str] = None
+        if not push_result.ok and push_result.message and "Nothing to commit" not in push_result.message:
+            git_error = push_result.message
+        elif push_result.warning:
+            git_error = push_result.warning
+        if git_error:
+            return ApiSuccessResponse(data={
+                "sent": False,
+                "git_error": git_error,
+            })
 
     # 5. Post to hub
+    hub_configured = bool(hub_base_url())
     hub_data = await hub_post("notification/send", {
         "recipient_email": recipient_email,
         "sender_id": sender_id,
@@ -184,6 +194,9 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         "project_url": project_url,
     })
     hub_notification_id: Optional[str] = (hub_data or {}).get("notification_id")
+    email_error: Optional[str] = None
+    if hub_configured and not hub_notification_id:
+        email_error = f"Email to {recipient_email} could not be sent — the notification service did not confirm delivery."
 
     # 6. Save Notification locally
     notification = Notification.model_validate({
@@ -204,10 +217,28 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     notification.id = hub_notification_id or Notification.allocate_id(notification.model_dump())
     notification = await notification.save(someone_typeid)
 
-    from flow_sdk.utils.hub import hub_base_url
+    # 7. If hub failed (hub is configured but delivery not confirmed), add a bookmark so the
+    #    user sees it in the activity panel and can follow up.
+    if email_error:
+        failure_bookmark = Bookmark.model_validate({
+            "bookmark_type": "notification_failed",
+            "title": f"Email not sent: {task_title}",
+            "content": f"Task was created but the notification email to {recipient_email} could not be confirmed. You may want to follow up manually.",
+            "source": "notification",
+            "data": {
+                "task_id": task.id,
+                "recipient_email": recipient_email,
+                "task_title": task_title,
+                "notification_id": notification.id,
+            },
+            "status": "open",
+        })
+        await failure_bookmark.save(someone_typeid)
+
     base = hub_base_url()
     return ApiSuccessResponse(data={
         "sent": bool(hub_notification_id),
+        "email_error": email_error,
         "spec_id": spec.id,
         "task_id": task.id,
         "notification_id": notification.id,
@@ -223,7 +254,9 @@ async def handle_open_task(project_url: str, task_id: str) -> ApiResponse:
         return ApiFailResponse(message=f"No local clone found for {project_url}")
 
     repo_path = find_local_repo_for_url(project_url)
-    await git_pull(repo_path)
+    pull_ok, pull_msg = await git_pull(repo_path)
+    git_error: Optional[str] = None if pull_ok else pull_msg
+
     try:
         from flow_sdk.fs_records.cross_notification_scanner import scan_incoming_notifications
         local_user = await User.get_one({"uname": "local"})
@@ -233,7 +266,7 @@ async def handle_open_task(project_url: str, task_id: str) -> ApiResponse:
         pass
 
     nav_path = f"/dock/tasks/task-{task_id}" if task_id else "/dock/tasks"
-    return ApiSuccessResponse(data={"navigation_path": nav_path})
+    return ApiSuccessResponse(data={"navigation_path": nav_path, "git_error": git_error})
 
 
 @action.post(action_name="send", types=["notification"])
