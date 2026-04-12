@@ -1,5 +1,7 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { MarkdownAssetEditor } from '@src/components/assets/editor/markdown/MarkdownAssetEditor';
+import { AssetExecutionPanel } from '@src/components/assets/execution-panel/AssetExecutionPanel';
+import { AgentToolbar, useAgentExecution } from './AgentToolbar';
 
 interface AgentAssetEditorProps {
   /** Absolute machine path to the agent .md file */
@@ -7,13 +9,29 @@ interface AgentAssetEditorProps {
 }
 
 /**
- * Thin wrapper around MarkdownAssetEditor for agent assets.
+ * Agent asset editor with a Run toolbar button and streaming execution panel.
  *
- * The agent's source_path IS the .md file (unlike skills, which point to a folder).
- * No path transformation needed — passes sourcePath directly to the generic editor.
+ * - toolbar slot: AgentToolbar (Run/Stop button)
+ * - execution panel: slides in when Run is clicked, shows streamed agent output
  */
 export function AgentAssetEditor({ sourcePath }: AgentAssetEditorProps) {
   const { computeNode } = useAgentContext();
+  const execution = useAgentExecution(sourcePath);
+
   if (!computeNode?.typeId) return null;
-  return <MarkdownAssetEditor sourcePath={sourcePath} />;
+
+  return (
+    <div className="flex h-full flex-col overflow-hidden">
+      <MarkdownAssetEditor
+        sourcePath={sourcePath}
+        toolbar={<AgentToolbar execution={execution} />}
+      />
+      {execution.panelOpen && (
+        <AssetExecutionPanel
+          execution={execution}
+          onClose={() => execution.setPanelOpen(false)}
+        />
+      )}
+    </div>
+  );
 }
