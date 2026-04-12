@@ -303,6 +303,7 @@ export function HomeLanding() {
       await target.setupForDesktop();
       await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, target.typeId);
       await dataContext.refreshProject();
+      dataContext.setWorkdir(target.fs_storage_mount_path ?? null);
     },
     [currentProjectPath],
   );
