@@ -5,7 +5,10 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useContext } from '@sdk/react/hooks';
 import { sendNotification } from '@sdk/entities/notifications';
+import { oauthService, OAUTH_PROVIDERS } from '@sdk';
+import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
@@ -23,7 +26,6 @@ function extractTitle(markdown: string, filePath: string): string {
     const stripped = line.replace(/^#+\s*/, '').trim();
     if (stripped) return stripped;
   }
-  // Fall back to file stem (last path segment without extension)
   const stem = filePath.split('/').pop()?.replace(/\.md$/, '') ?? 'Untitled Plan';
   return stem;
 }
@@ -43,6 +45,7 @@ export function SendPlanNotificationDialog({
   planFilePath,
   planContent,
 }: SendPlanNotificationDialogProps) {
+  const { cloudLoginAvailable } = useContext();
   const [recipientId, setRecipientId] = useState('');
   const [specTitle, setSpecTitle] = useState('');
   const [specContent, setSpecContent] = useState('');
@@ -87,6 +90,7 @@ export function SendPlanNotificationDialog({
       });
 
       setSuccess(true);
+      toast.success('Task shared successfully!');
       setTimeout(() => {
         onClose();
       }, 1200);
@@ -167,7 +171,21 @@ export function SendPlanNotificationDialog({
           <Button variant="outline" onClick={handleClose} disabled={sending}>
             Cancel
           </Button>
-          <Button onClick={() => void handleSend()} disabled={!canSend}>
+          <Button
+            onClick={() => {
+              if (!cloudLoginAvailable) {
+                // Register callback to run after OAuth login completes (before page reload)
+                (window as any).__postCloudLoginCallback = async () => {
+                  await handleSend();
+                  await new Promise(resolve => setTimeout(resolve, 1500));
+                };
+                void oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
+                return;
+              }
+              void handleSend();
+            }}
+            disabled={!canSend}
+          >
             {sending ? 'Sending...' : 'Share as Task'}
           </Button>
         </DialogFooter>
