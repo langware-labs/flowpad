@@ -1,6 +1,6 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { useActiveTerminals } from '@src/hooks/useActiveTerminals';
-import { AgenticProcess, dataContext, isProcessLive, ShellStatus } from '@sdk';
+import { dataContext, isProcessLive, ShellStatus, type AgenticProcess } from '@sdk';
 import { useContext } from '@src/hooks/useContext';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Button } from '@src/components/ui/button';
@@ -16,7 +16,7 @@ import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import InteractiveTerminal from './interactive-terminal';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { HistoryModal, type HistoryEntry } from './HistoryModal';
+import { HistoryModal } from './HistoryModal';
 
 interface TabbedTerminalProps {
   className?: string;
@@ -761,14 +761,9 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
       <HistoryModal
         open={historyModalOpen}
         onOpenChange={setHistoryModalOpen}
-        onSelect={(entry: HistoryEntry) => {
+        onSelect={(p) => {
           setHistoryModalOpen(false);
-          if (entry.processId) {
-            void navigation.openShellProcess(entry.processId);
-          } else {
-            void AgenticProcess.openRecordInTerminal({ id: entry.sessionId, session_id: entry.sessionId })
-              .then((p) => navigation.openDock(p.dockPointer));
-          }
+          void navigation.openShellProcess(p.id);
         }}
       />
     </div>

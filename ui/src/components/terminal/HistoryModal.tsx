@@ -1,23 +1,8 @@
-import { AgenticProcess, APIEntity, QueryFilter, QueryRequest, registerEntity } from '@sdk';
+import { AgenticProcess, QueryFilter, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { IEntity } from '@sdk/IEntity';
 import React, { useMemo } from 'react';
-
-/** Minimal entity wrapper so EntityFactory can deserialize claude_session responses. */
-class ClaudeSession extends APIEntity<ClaudeSession> {
-  static override type = 'claude_session';
-  name?: string | null;
-  cwd?: string | null;
-
-  constructor(entity: Partial<IEntity & { name?: string; cwd?: string }> = {}) {
-    super(entity);
-    this.name = (entity as any).name ?? null;
-    this.cwd = (entity as any).cwd ?? null;
-  }
-}
-registerEntity(ClaudeSession);
 
 function timeAgo(date: Date | string | number | undefined | null): string {
   if (!date) return '—';
@@ -32,10 +17,10 @@ function timeAgo(date: Date | string | number | undefined | null): string {
   return `${days}d ago`;
 }
 
-const closedProcessQuery = new QueryRequest({
+const closedQuery = new QueryRequest({
   type: 'agentic_process',
   scope: [],
-  name: 'historyClosedProcesses',
+  name: 'closedAgenticProcesses',
   query: new QueryFilter({
     match: {
       op: '$OR',
@@ -48,73 +33,30 @@ const closedProcessQuery = new QueryRequest({
   }),
 });
 
-const sessionQuery = new QueryRequest({
-  type: 'claude_session',
-  scope: [],
-  name: 'historyClaudeSessions',
-  query: new QueryFilter({ limit: 50, order_by: { updated_date: 'desc' } }),
-});
-
-export interface HistoryEntry {
-  key: string;
-  displayName: string;
-  updatedAt: number;
-  processId?: string;   // set when a stopped AgenticProcess exists for this session
-  sessionId: string;    // always the claude_session UUID
-}
-
-export function useHistoryEntries(): HistoryEntry[] {
-  const { data: closedProcesses = [] } = useEntitiesQuery<AgenticProcess>(closedProcessQuery);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: rawSessions = [] } = useEntitiesQuery<any>(sessionQuery as any);
-
-  return useMemo(() => {
-    const entries = new Map<string, HistoryEntry>();
-
-    // Seed from stopped/failed processes (keyed by session_id)
-    for (const p of closedProcesses) {
-      if (!p.session_id) continue;
-      entries.set(p.session_id, {
-        key: p.session_id,
-        displayName: p.session_id,  // overridden below by session name
-        updatedAt: p.updated_date ? new Date(p.updated_date).getTime() : 0,
-        processId: p.id,
-        sessionId: p.session_id,
-      });
-    }
-
-    // Merge sessions: update names and add sessions without a stopped process
-    for (const s of rawSessions) {
-      const sessionName: string | null | undefined = s.name;
-      const updatedAt: number = s.updated_date ? new Date(s.updated_date).getTime() : 0;
-      const existing = entries.get(s.id);
-      if (existing) {
-        if (sessionName) existing.displayName = sessionName;
-        if (updatedAt > existing.updatedAt) existing.updatedAt = updatedAt;
-      } else {
-        entries.set(s.id, {
-          key: s.id,
-          displayName: sessionName || s.id,
-          updatedAt,
-          sessionId: s.id,
-        });
-      }
-    }
-
-    return Array.from(entries.values())
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, 10);
-  }, [closedProcesses, rawSessions]);
+export function useClosedAgenticProcesses(): AgenticProcess[] {
+  const { data = [] } = useEntitiesQuery<AgenticProcess>(closedQuery);
+  return useMemo(
+    () =>
+      data
+        .filter((p) => p.session_id != null)
+        .sort((a, b) => {
+          const ta = a.updated_date ? new Date(a.updated_date).getTime() : 0;
+          const tb = b.updated_date ? new Date(b.updated_date).getTime() : 0;
+          return tb - ta;
+        })
+        .slice(0, 10),
+    [data],
+  );
 }
 
 interface HistoryModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSelect: (entry: HistoryEntry) => void;
+  onSelect: (process: AgenticProcess) => void;
 }
 
 export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps) {
-  const entries = useHistoryEntries();
+  const processes = useClosedAgenticProcesses();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -122,19 +64,19 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
         <DialogHeader>
           <DialogTitle className="text-sm font-semibold">Recent Sessions</DialogTitle>
         </DialogHeader>
-        {entries.length === 0 ? (
-          <p className="py-4 text-center text-xs text-muted-foreground">No recent sessions</p>
+        {processes.length === 0 ? (
+          <p className="py-4 text-center text-xs text-muted-foreground">No recent closed sessions</p>
         ) : (
           <ul className="mt-1 flex flex-col gap-0.5">
-            {entries.map((entry) => (
-              <li key={entry.key}>
+            {processes.map((p) => (
+              <li key={p.id}>
                 <button
                   className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
-                  onClick={() => onSelect(entry)}
+                  onClick={() => onSelect(p)}
                 >
                   <ClaudeIcon className="h-3.5 w-3.5 shrink-0 text-orange-500" />
-                  <span className="min-w-0 flex-1 truncate font-medium">{entry.displayName}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(entry.updatedAt)}</span>
+                  <span className="min-w-0 flex-1 truncate font-medium">{p.name ?? p.session_id ?? p.id}</span>
+                  <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(p.updated_date)}</span>
                 </button>
               </li>
             ))}

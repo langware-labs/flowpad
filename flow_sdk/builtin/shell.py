@@ -723,6 +723,18 @@ class Shell(Entity):
             except Exception:
                 pass
 
+            # Propagate name change to the linked AgenticProcess so the name
+            # survives shell deletion when the process is closed.
+            if self.name and "name" in body:
+                try:
+                    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+                    proc = await AgenticProcess.get_by_prop("shell_id", self.id, "agentic_process")
+                    if proc and proc.name != self.name:
+                        proc.name = self.name
+                        await proc.save()
+                except Exception:
+                    pass
+
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
     @action.get(action_name="fetch-pty-sequence")
