@@ -80,6 +80,61 @@ class Shell(Entity):
         if pty:
             await pty.kill()
 
+    @staticmethod
+    def _argv_flag_value(argv: list[str], flag: str) -> str | None:
+        """Return the value immediately following *flag* in argv, if present."""
+        try:
+            idx = argv.index(flag)
+        except ValueError:
+            return None
+        next_idx = idx + 1
+        if next_idx >= len(argv):
+            return None
+        return argv[next_idx]
+
+    @classmethod
+    def _cmdline_matches_expected(
+        cls,
+        cmdline: list[str],
+        *,
+        expected_exe: str | None,
+        expected_session_id: str | None = None,
+    ) -> bool:
+        """Return True when cmdline matches the expected executable/session."""
+        if expected_exe:
+            actual_exe = os.path.basename(cmdline[0]) if cmdline else None
+            if actual_exe != os.path.basename(expected_exe):
+                return False
+
+        if expected_session_id:
+            actual_session_id = cls._argv_flag_value(cmdline, "--session-id") or cls._argv_flag_value(cmdline, "--resume")
+            if actual_session_id != expected_session_id:
+                return False
+
+        return True
+
+    def _live_pty_matches_spawn_args(self, spawn_args: list[str]) -> bool:
+        """True if the current live PTY already runs the requested direct worker."""
+        if not self.compute_node_id or not spawn_args:
+            return False
+
+        cn = self.compute_node
+        pty_pid = cn.compute_provider.get_pty_shell_pid(cn.node_provider_id, self.id)
+        if pty_pid is None or not psutil.pid_exists(pty_pid):
+            return False
+
+        try:
+            cmdline = psutil.Process(pty_pid).cmdline()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return False
+
+        expected_session_id = self._argv_flag_value(spawn_args, "--session-id") or self._argv_flag_value(spawn_args, "--resume")
+        return self._cmdline_matches_expected(
+            cmdline,
+            expected_exe=spawn_args[0],
+            expected_session_id=expected_session_id,
+        )
+
     # ── Properties ────────────────────────────────────────────────────────────
 
     @property
@@ -143,12 +198,20 @@ class Shell(Entity):
         existing = cn.get_pty(self.id)
 
         if existing and existing.is_alive:
+            if spawn_args is not None and not self._live_pty_matches_spawn_args(spawn_args):
+                await existing.kill()
+                existing = None
+            else:
+                if connection_id:
+                    await existing.attach(connection_id)
+                return False
+
+        if existing and not existing.is_alive:
+            await existing.kill()
+        elif existing:
             if connection_id:
                 await existing.attach(connection_id)
             return False
-
-        if existing:
-            await existing.kill()
         elif self.status in ("running", "closed"):
             await self._cleanup_stale_session()
 
@@ -167,6 +230,8 @@ class Shell(Entity):
         self.status = "running"
         self.pty_pid = self.id
         self.last_active_at = datetime.now(timezone.utc).isoformat()
+        self.worker_pid = None
+        self.worker_name = None
         await self.save()
         return True
 
@@ -350,7 +415,7 @@ class Shell(Entity):
         )
 
     async def worker_alive(self) -> bool:
-        """True if worker_pid process is still running (psutil.pid_exists).
+        """True if worker_pid process is still running and matches worker_name.
 
         Raises:
             RuntimeError: If the PTY session itself is dead.
@@ -363,7 +428,25 @@ class Shell(Entity):
             if pty_handle is not None and not pty_handle.is_alive:
                 raise RuntimeError("PTY session is not alive")
 
-        return psutil.pid_exists(self.worker_pid)
+        if not psutil.pid_exists(self.worker_pid):
+            return False
+
+        if self.worker_name:
+            try:
+                cmdline = psutil.Process(self.worker_pid).cmdline()
+                expected_session_id = None
+                if isinstance(self.last_launch_cmd, dict):
+                    expected_session_id = self.last_launch_cmd.get("session_id")
+                if not self._cmdline_matches_expected(
+                    cmdline,
+                    expected_exe=self.worker_name,
+                    expected_session_id=expected_session_id,
+                ):
+                    return False
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                return False
+
+        return True
 
     async def _poll_for_worker_pid(
         self, shell_pid: int | None, executable: str, timeout: float = 1.0
