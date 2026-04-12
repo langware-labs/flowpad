@@ -121,6 +121,13 @@ async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: 
             return
 
         await asyncio.to_thread(_run, ["git", "commit", "-m", commit_message], repo_path)
+
+        pull_result = await asyncio.to_thread(
+            _run, ["git", "pull", "--rebase", "origin", "HEAD"], repo_path
+        )
+        if pull_result.returncode != 0:
+            logger.warning("[git] pull --rebase before push failed: %s", pull_result.stderr or pull_result.stdout)
+
         result = await asyncio.to_thread(_run, ["git", "push", "origin", "HEAD"], repo_path)
         if result.returncode != 0:
             logger.warning("[git] push failed: %s", result.stderr or result.stdout)
