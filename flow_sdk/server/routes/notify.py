@@ -71,14 +71,13 @@ _ERROR_HTML = """<!DOCTYPE html>
 </body>
 </html>"""
 
-
-async def _pull_and_scan(project_url: str) -> Tuple[bool, str]:
+async def _pull_and_scan(project_url: str, branch: str = "") -> Tuple[bool, str]:
     """Find the local repo for project_url, git pull, then run the notification scanner."""
     repo_path = find_local_repo_for_url(project_url) if project_url else None
     if not repo_path:
         return False, f"No local clone found for {project_url}"
 
-    pull_ok, pull_msg = await git_pull(repo_path)
+    pull_ok, pull_msg = await git_pull(repo_path, branch=branch or None)
     if not pull_ok:
         logger.warning("[notify] git pull did not succeed for %s: %s", repo_path, pull_msg)
 
@@ -94,7 +93,23 @@ async def _pull_and_scan(project_url: str) -> Tuple[bool, str]:
     return pull_ok, pull_msg
 
 
-async def handle_notification_deep_link(project_url: str, task_id: str) -> HTMLResponse:
+def _summarise_pull(pull_ok: bool, pull_msg: str) -> str:
+    """Return a short human-readable summary of a git pull result."""
+    msg = pull_msg.strip()
+    if not pull_ok:
+        # Surface just the first meaningful error line, not the full trace
+        first_line = next((l.strip() for l in msg.splitlines() if l.strip()), msg)
+        return f"Pull failed: {first_line}"
+    if "already up to date" in msg.lower():
+        return "Already up to date"
+    # Look for the stats summary line: "X files changed, Y insertions(+)…"
+    for line in msg.splitlines():
+        if "file" in line and ("changed" in line or "insertion" in line or "deletion" in line):
+            return line.strip()
+    return "Pulled successfully"
+
+
+async def handle_notification_deep_link(project_url: str, task_id: str, branch: str = "") -> HTMLResponse:
     """Pull the repo, scan for notifications, return a redirect HTML page."""
     port = _get_ui_port()
 
@@ -113,14 +128,15 @@ async def handle_notification_deep_link(project_url: str, task_id: str) -> HTMLR
             port=port,
         ), status_code=404)
 
-    pull_ok, pull_msg = await _pull_and_scan(project_url)
+    pull_ok, pull_msg = await _pull_and_scan(project_url, branch=branch)
+    pull_summary = _summarise_pull(pull_ok, pull_msg)
 
     if task_id:
         redirect_url = f"http://localhost:{port}/dock/tasks/task-{task_id}"
-        status_message = f"Git pull: {pull_msg} — Opening task..."
+        status_message = f"{pull_summary} — Opening task..."
     else:
         redirect_url = f"http://localhost:{port}/dock/tasks"
-        status_message = f"Git pull: {pull_msg} — Opening Tasks..."
+        status_message = f"{pull_summary} — Opening Tasks..."
 
     return HTMLResponse(content=_REDIRECT_HTML.format(
         redirect_url=redirect_url, status_message=status_message,
@@ -133,6 +149,7 @@ async def notification_deep_link(request: Request) -> HTMLResponse:
     return await handle_notification_deep_link(
         project_url=request.query_params.get("project_url", ""),
         task_id=request.query_params.get("task_id", ""),
+        branch=request.query_params.get("branch", ""),
     )
 
 
