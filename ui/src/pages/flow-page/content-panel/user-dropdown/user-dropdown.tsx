@@ -239,19 +239,24 @@ export function UserDropdown() {
           <>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Avatar
-                  className={`h-8 w-8 cursor-pointer transition-opacity hover:opacity-80${!isConnected ? ' ring-2 ring-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] animate-pulse' : ''}`}
-                  title={!isConnected ? 'Service unavailable' : undefined}
-                  data-testid="agent-page-user-avatar"
-                >
-                  <AvatarFallback>
-                    {user.name
-                      ?.split(' ')
-                      .map((n: string) => n[0])
-                      .join('')
-                      .toUpperCase() || '?'}
-                  </AvatarFallback>
-                </Avatar>
+                <div className="relative cursor-pointer">
+                  <Avatar
+                    className={`h-8 w-8 transition-opacity hover:opacity-80${!isConnected ? ' ring-2 ring-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] animate-pulse' : ''}`}
+                    title={!isConnected ? 'Service unavailable' : undefined}
+                    data-testid="agent-page-user-avatar"
+                  >
+                    <AvatarFallback>
+                      {user.name
+                        ?.split(' ')
+                        .map((n: string) => n[0])
+                        .join('')
+                        .toUpperCase() || '?'}
+                    </AvatarFallback>
+                  </Avatar>
+                  {cloudLoginAvailable && (
+                    <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-background" />
+                  )}
+                </div>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 {isOwner && agentId && (
