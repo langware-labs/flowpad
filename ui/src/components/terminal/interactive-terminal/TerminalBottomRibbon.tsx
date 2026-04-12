@@ -2,6 +2,7 @@ import React from 'react';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
+import { FileText } from 'lucide-react';
 import { QueueButton } from './QueueButton';
 import type { QueueEntry, QueueState } from '@src/hooks/useAgenticQueue';
 import { SIDE_TABS, SideTabId, type SideTabId as SideTabIdType } from './side-windows';
@@ -16,6 +17,8 @@ interface TerminalBottomRibbonProps {
   openTabs: SideTabIdType[];
   activeSideTab: SideTabIdType | null;
   onOpenSideTab: (tab: SideTabIdType) => void;
+  hasLastPlan?: boolean;
+  onOpenLastPlan?: () => void;
 }
 
 const QueueNextLabel: React.FC<{ queue: QueueState }> = ({ queue }) => {
@@ -57,6 +60,8 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   openTabs,
   activeSideTab,
   onOpenSideTab,
+  hasLastPlan = false,
+  onOpenLastPlan,
 }) => {
   return (
     <div className="flex items-center border-t bg-muted/30 px-4 py-1.5">
@@ -74,6 +79,26 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
               onOpenPanel={() => onOpenSideTab(SideTabId.Queue)}
             />
             <QueueNextLabel queue={queue} />
+          </TooltipProvider>
+        )}
+        {hasLastPlan && onOpenLastPlan && (
+          <TooltipProvider delayDuration={400}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onOpenLastPlan}
+                  className="h-6 gap-1.5 px-2 text-[11px] text-blue-400 border-blue-400/40 hover:border-blue-400 hover:text-blue-300"
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  Open Plan
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                Open the latest plan
+              </TooltipContent>
+            </Tooltip>
           </TooltipProvider>
         )}
       </div>
