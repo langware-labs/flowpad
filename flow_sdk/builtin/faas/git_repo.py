@@ -58,6 +58,11 @@ class GitHasCommitData(_CamelModel):
     has_commit: bool
 
 
+class GitDiffData(_CamelModel):
+    diff: str | None = None
+    error: str | None = None
+
+
 # ---------------------------------------------------------------------------
 # GitRepo
 # ---------------------------------------------------------------------------
@@ -219,11 +224,21 @@ class GitRepo:
     # Dispatch — routes git-ops sub-paths to the appropriate operation
     # ------------------------------------------------------------------
 
-    async def dispatch(self, sub: str) -> "ApiResponse":
+    async def get_diff(self, filepath: str) -> GitDiffData:
+        """Return the unstaged git diff for a single file."""
+        if not await self.is_init():
+            return GitDiffData(error="not a git repository")
+        diff_output, rc = await self._run_git("diff", "--", filepath)
+        if rc != 0:
+            return GitDiffData(error=f"git diff failed for {filepath}")
+        return GitDiffData(diff=diff_output)
+
+    async def dispatch(self, sub: str, **kwargs: str | None) -> "ApiResponse":
         """Route a git-ops sub-path to the appropriate git operation.
 
         Sub-paths:
             status              → get_status()           → GitStatus (camelCase)
+            diff?filepath=...   → get_diff(filepath)     → GitDiffData
             branch              → get_branch()           → {branch}
             is-init             → is_init()              → {isInit}
             is-linked-worktree  → is_linked_worktree()   → {isLinkedWorktree}
@@ -233,6 +248,11 @@ class GitRepo:
 
         if sub == "status":
             return ApiSuccessResponse(data=(await self.get_status()).model_dump(by_alias=True))
+        if sub == "diff":
+            filepath = kwargs.get("filepath") or ""
+            if not filepath:
+                return ApiFailResponse(message="filepath parameter is required")
+            return ApiSuccessResponse(data=(await self.get_diff(filepath)).model_dump(by_alias=True))
         if sub == "branch":
             return ApiSuccessResponse(data=GitBranchData(branch=await self.get_branch()).model_dump(by_alias=True))
         if sub == "is-init":

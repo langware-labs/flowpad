@@ -681,8 +681,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         if not workdir:
             return ApiFailResponse(message="workdir parameter is required")
 
+        filepath = request_info.get_param("filepath") if request_info else None
         from flow_sdk.builtin.faas.git_repo import GitRepo
-        return await GitRepo(workdir, self).dispatch(segments[0] if segments else "")
+        return await GitRepo(workdir, self).dispatch(segments[0] if segments else "", filepath=filepath)
 
     @asynccontextmanager
     async def ready_session(self):

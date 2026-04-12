@@ -84,6 +84,7 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         project.markAsExpanded();
         if (!userPersistedProject) {
           await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, project.typeId);
+          dataContext.setWorkdir(project.fs_storage_mount_path ?? null);
         }
       }
 

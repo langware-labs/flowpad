@@ -3,6 +3,7 @@ import { GitBranch, RefreshCw } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { GitFileDiffModal } from './GitFileDiffModal';
 
 interface GitFile {
   status: string;
@@ -51,6 +52,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
   const [loading, setLoading] = useState(true);
   const [initing, setIniting] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
   const fetchStatus = useCallback(async () => {
@@ -178,7 +180,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
             const name = basename(f.path);
             const dir = dirname(f.path);
             return (
-              <div key={`${f.path}-${i}`} className="flex items-center gap-2 rounded px-2 py-1 hover:bg-muted/50">
+              <button key={`${f.path}-${i}`} className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-left hover:bg-muted/50" onClick={() => setSelectedFile(f.path)}>
                 <span className={`shrink-0 text-[10px] font-bold ${statusColor(f.status)}`}>
                   {f.status}
                 </span>
@@ -196,7 +198,7 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
                     <span className="text-red-500">-{f.deletions}</span>
                   )}
                 </div>
-              </div>
+              </button>
             );
           };
           return (
@@ -225,6 +227,15 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
           );
         })()}
       </div>
+      {selectedFile && (
+        <GitFileDiffModal
+          computeNodeId={computeNodeId}
+          workdir={workdir}
+          filepath={selectedFile}
+          open={!!selectedFile}
+          onClose={() => setSelectedFile(null)}
+        />
+      )}
     </div>
   );
 };
