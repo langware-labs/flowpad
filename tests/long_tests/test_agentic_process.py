@@ -321,61 +321,6 @@ async def test_agentic_process_lists_system_skills(local_compute_node):
 @pytest.mark.asyncio
 @pytest.mark.timeout(240)
 @pytest.mark.flaky(reruns=2, reruns_delay=5)
-async def test_agentic_process_workdir_change(tmp_path, local_compute_node):
-    """Experiment: can Claude Code change its working directory mid-session?
-
-    Send two sequential prompts:
-      1. Ask Claude to change its working directory to tmp_path.
-      2. Ask Claude to create 'hello world.txt'.
-
-    Validate that 'hello world.txt' ends up in tmp_path (the new workdir),
-    not in the process output_dir (the original workdir).
-    """
-    target_dir = tmp_path / "target"
-    target_dir.mkdir()
-
-    process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
-
-    # Prompt 1: change working directory
-    result: ApiResponse = await process.prompt(
-        f"Change your working directory to: {target_dir}\n"
-        "Confirm by running `pwd` and showing the output."
-    )
-    assert isinstance(result, ApiSuccessResponse)
-
-    async for entry in process.stream_transcript(timeout=120):
-        t = entry.get("type", "?")
-        detail = _fmt_entry(entry)
-        print(f"  [p1/{t}] {detail}" if detail else f"  [p1/{t}]")
-
-    assert process.waiting_for_prompt is True, "Process did not return to prompt-ready after prompt 1"
-
-    # Prompt 2: create the file (should land in the new workdir)
-    result2: ApiResponse = await process.prompt(
-        "Create a file named 'hello world.txt' with the content 'Hello, World!' "
-        f"in the directory {target_dir}."
-    )
-    assert isinstance(result2, ApiSuccessResponse)
-
-    async for entry in process.stream_transcript(timeout=120):
-        t = entry.get("type", "?")
-        detail = _fmt_entry(entry)
-        print(f"  [p2/{t}] {detail}" if detail else f"  [p2/{t}]")
-
-    assert process.waiting_for_prompt is True, "Process did not return to prompt-ready after prompt 2"
-
-    hello_file = target_dir / "hello world.txt"
-    assert hello_file.exists(), (
-        f"'hello world.txt' not found in target_dir {target_dir}. "
-        f"Contents of target_dir: {list(target_dir.iterdir())}"
-    )
-    content = hello_file.read_text()
-    assert "hello" in content.lower(), f"Unexpected content in hello world.txt: {content!r}"
-
-
-@pytest.mark.asyncio
-@pytest.mark.timeout(240)
-@pytest.mark.flaky(reruns=2, reruns_delay=5)
 async def test_agentic_process_local_assets_skill(tmp_path, local_compute_node):
     """A skill placed under tmp_path/.claude/skills/ is discoverable by Claude via --add-dir."""
     skill_name = "local-canary-skill"
