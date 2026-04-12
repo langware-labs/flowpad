@@ -120,7 +120,7 @@ async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: 
             logger.info("[git] nothing staged, skipping commit+push")
             return
 
-        await asyncio.to_thread(_run, ["git", "commit", "-m", commit_message], repo_path)
+        await asyncio.to_thread(_run, ["git", "commit", "-m", commit_message, "--", *paths], repo_path)
 
         pull_result = await asyncio.to_thread(
             _run, ["git", "pull", "--rebase", "origin", "HEAD"], repo_path
