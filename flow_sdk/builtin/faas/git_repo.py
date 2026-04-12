@@ -58,6 +58,10 @@ class GitHasCommitData(_CamelModel):
     has_commit: bool
 
 
+class GitFileDiff(_CamelModel):
+    diff: str
+
+
 # ---------------------------------------------------------------------------
 # GitRepo
 # ---------------------------------------------------------------------------
@@ -215,11 +219,24 @@ class GitRepo:
             files=files,
         )
 
+    async def get_file_diff(self, file_path: str, status: str) -> GitFileDiff:
+        """Return the unified diff for a single file in the working tree.
+
+        For untracked files (status '?') uses --no-index to show the full
+        file as an addition.  For all other statuses, diffs HEAD against
+        the working tree (covers both staged and unstaged changes).
+        """
+        if status == "?":
+            diff, _ = await self._run_git("diff", "--no-index", "/dev/null", f"'{file_path}'")
+        else:
+            diff, _ = await self._run_git("diff", "HEAD", "--", f"'{file_path}'")
+        return GitFileDiff(diff=diff)
+
     # ------------------------------------------------------------------
     # Dispatch — routes git-ops sub-paths to the appropriate operation
     # ------------------------------------------------------------------
 
-    async def dispatch(self, sub: str) -> "ApiResponse":
+    async def dispatch(self, sub: str, query_params: dict | None = None) -> "ApiResponse":
         """Route a git-ops sub-path to the appropriate git operation.
 
         Sub-paths:
@@ -228,8 +245,11 @@ class GitRepo:
             is-init             → is_init()              → {isInit}
             is-linked-worktree  → is_linked_worktree()   → {isLinkedWorktree}
             has-commit          → has_commit()           → {hasCommit}
+            diff                → get_file_diff()        → {diff}  (requires ?file=&status=)
         """
         from flow_sdk.responses.response import ApiSuccessResponse, ApiFailResponse  # noqa: PLC0415
+
+        params = query_params or {}
 
         if sub == "status":
             return ApiSuccessResponse(data=(await self.get_status()).model_dump(by_alias=True))
@@ -241,6 +261,12 @@ class GitRepo:
             return ApiSuccessResponse(data=GitIsLinkedWorktreeData(is_linked_worktree=await self.is_linked_worktree()).model_dump(by_alias=True))
         if sub == "has-commit":
             return ApiSuccessResponse(data=GitHasCommitData(has_commit=await self.has_commit()).model_dump(by_alias=True))
+        if sub == "diff":
+            file_path = params.get("file", "")
+            status = params.get("status", "M")
+            if not file_path:
+                return ApiFailResponse(message="Missing required query parameter: file", status_code=400)
+            return ApiSuccessResponse(data=(await self.get_file_diff(file_path, status)).model_dump(by_alias=True))
         return ApiFailResponse(message=f"Unknown git-ops sub-path: '{sub}'", status_code=404)
 
 
