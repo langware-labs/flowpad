@@ -4,6 +4,9 @@ export interface OAuthWindow {
   get isOpen(): boolean;
 }
 
+// Shared reference so it survives across BrowserAuthWindow instances (e.g. logout → login)
+let _sharedPopup: Window | null = null;
+
 export class BrowserAuthWindow implements OAuthWindow {
   private _window: Window | null = null;
   private _openedExternal: boolean = false;
@@ -19,6 +22,20 @@ export class BrowserAuthWindow implements OAuthWindow {
       return;
     }
 
+    // If a popup from a previous flow (e.g. logout page) is still open, blank it immediately
+    // before navigating — otherwise the old content flashes while the new page loads.
+    if (_sharedPopup && !_sharedPopup.closed) {
+      try {
+        _sharedPopup.document.body.innerHTML = '';
+      } catch {
+        // Cross-origin at this point — can't blank, just proceed
+      }
+      _sharedPopup.location.href = url;
+      _sharedPopup.focus();
+      this._window = _sharedPopup;
+      return;
+    }
+
     // Fallback: open popup window
     const width = 500;
     const height = window.screen.height;
@@ -31,6 +48,7 @@ export class BrowserAuthWindow implements OAuthWindow {
       console.error(`[BrowserAuthWindow] Failed to open popup window`);
       return null;
     }
+    _sharedPopup = this._window;
   }
 
   close(): void {
@@ -38,6 +56,7 @@ export class BrowserAuthWindow implements OAuthWindow {
       this._window.close();
       this._window = null;
     }
+    _sharedPopup = null;
     this._openedExternal = false;
   }
 

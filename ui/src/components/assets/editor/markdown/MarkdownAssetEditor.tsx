@@ -17,6 +17,8 @@ type ViewMode = 'editor' | 'markdown';
 interface MarkdownAssetEditorProps {
   /** Absolute machine path to the .md file */
   sourcePath: string;
+  /** Optional asset-specific toolbar actions rendered in the header */
+  toolbar?: React.ReactNode;
 }
 
 /**
@@ -27,7 +29,7 @@ interface MarkdownAssetEditorProps {
  * - Fields are rendered dynamically from whatever keys exist in the frontmatter.
  * - Body is edited via Milkdown (uncontrolled after first mount).
  */
-export function MarkdownAssetEditor({ sourcePath }: MarkdownAssetEditorProps) {
+export function MarkdownAssetEditor({ sourcePath, toolbar }: MarkdownAssetEditorProps) {
   const { computeNode } = useAgentContext();
   const typeIdStr = computeNode?.typeId?.toString();
 
@@ -57,12 +59,12 @@ export function MarkdownAssetEditor({ sourcePath }: MarkdownAssetEditorProps) {
     );
   }
 
-  return <MarkdownEditorContent fsRef={fsRef} sourcePath={sourcePath} />;
+  return <MarkdownEditorContent fsRef={fsRef} sourcePath={sourcePath} toolbar={toolbar} />;
 }
 
 // ── Editor content ────────────────────────────────────────────────────────────
 
-function MarkdownEditorContent({ fsRef, sourcePath }: { fsRef: FsRef; sourcePath: string }) {
+function MarkdownEditorContent({ fsRef, sourcePath, toolbar }: { fsRef: FsRef; sourcePath: string; toolbar?: React.ReactNode }) {
   const { navigation, currentDock } = useDockNavigation();
   const [viewMode, setViewMode] = useState<ViewMode>('editor');
 
@@ -114,6 +116,7 @@ function MarkdownEditorContent({ fsRef, sourcePath }: { fsRef: FsRef; sourcePath
           onViewModeChange={setViewMode}
           onBack={() => navigation.openTab(ViewType.ASSETS)}
           onOpenExternal={handleOpenExternal}
+          actions={toolbar}
         />
         <div className="flex flex-1 items-center justify-center">
           <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -134,6 +137,7 @@ function MarkdownEditorContent({ fsRef, sourcePath }: { fsRef: FsRef; sourcePath
           onViewModeChange={setViewMode}
           onBack={() => navigation.openTab(ViewType.ASSETS)}
           onOpenExternal={handleOpenExternal}
+          actions={toolbar}
         />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
           <p className="text-sm text-muted-foreground">{loadError.message}</p>
@@ -157,6 +161,7 @@ function MarkdownEditorContent({ fsRef, sourcePath }: { fsRef: FsRef; sourcePath
         onViewModeChange={setViewMode}
         onBack={() => navigation.openTab(ViewType.ASSETS)}
         onOpenExternal={handleOpenExternal}
+        actions={toolbar}
       />
 
       {hasFields && (
@@ -237,9 +242,10 @@ interface EditorHeaderProps {
   onViewModeChange: (mode: ViewMode) => void;
   onBack: () => void;
   onOpenExternal: () => void;
+  actions?: React.ReactNode;
 }
 
-function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, onBack, onOpenExternal }: EditorHeaderProps) {
+function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, onBack, onOpenExternal, actions }: EditorHeaderProps) {
   return (
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
       <Button variant="ghost" size="sm" onClick={onBack} className="-ml-1 flex-shrink-0">
@@ -272,6 +278,8 @@ function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, on
           </button>
         ))}
       </div>
+
+      {actions && <div className="flex flex-shrink-0 items-center gap-1">{actions}</div>}
 
       <button
         title="Copy path to clipboard"

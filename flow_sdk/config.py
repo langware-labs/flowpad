@@ -117,7 +117,6 @@ class StorageProvider(StrEnum):
 
 class EmailProviderType(StrEnum):
     """Email provider types."""
-    SENDGRID = "sendgrid"
     MOCK = "mock"
 
 
@@ -514,7 +513,6 @@ class ServiceConfig(BaseSettings):
     # Email (stub for desktop)
     email_provider: str = EmailProviderType.MOCK.value
     no_reply_email: str = "no-reply@example.com"
-    sendgrid_api_key: str | None = None
     flowpad_hub_url: str | None = None
 
     # Search / LLM

@@ -7,37 +7,40 @@ interface GitFileDiffModalProps {
   computeNodeId: string;
   workdir: string;
   filepath: string;
+  status?: string;
   open: boolean;
   onClose: () => void;
 }
 
-interface GitDiffData {
-  diff: string | null;
-  error: string | null;
+interface GitFileDiff {
+  diff: string;
 }
 
 export const GitFileDiffModal: React.FC<GitFileDiffModalProps> = ({
   computeNodeId,
   workdir,
   filepath,
+  status = 'M',
   open,
   onClose,
 }) => {
-  const [diffData, setDiffData] = useState<GitDiffData | null>(null);
+  const [diffData, setDiffData] = useState<GitFileDiff | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open || !computeNodeId || !workdir || !filepath) return;
     setLoading(true);
     setDiffData(null);
+    setError(null);
     const action = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'GET');
     action.subpath = 'diff';
-    action.queryParameters = { workdir, filepath };
-    dataManager.callAction<null, GitDiffData>(action)
+    action.queryParameters = { workdir, file: filepath, status };
+    dataManager.callAction<null, GitFileDiff>(action)
       .then((result) => { setDiffData(result ?? null); })
-      .catch(() => { setDiffData({ diff: null, error: 'Failed to fetch diff' }); })
+      .catch(() => { setError('Failed to fetch diff'); })
       .finally(() => { setLoading(false); });
-  }, [open, computeNodeId, workdir, filepath]);
+  }, [open, computeNodeId, workdir, filepath, status]);
 
   const filename = filepath.split('/').pop() ?? filepath;
 
@@ -58,13 +61,13 @@ export const GitFileDiffModal: React.FC<GitFileDiffModalProps> = ({
                 <span className="text-sm">Loading diff…</span>
               </div>
             </div>
-          ) : diffData?.error ? (
+          ) : error ? (
             <div className="flex h-full items-center justify-center p-4 text-destructive text-sm">
-              {diffData.error}
+              {error}
             </div>
           ) : diffData?.diff === '' ? (
             <div className="flex h-full items-center justify-center p-4 text-muted-foreground text-sm">
-              No unstaged changes — file may be untracked or already staged.
+              No changes to show.
             </div>
           ) : diffData?.diff ? (
             <DiffContent diffString={diffData.diff} />
