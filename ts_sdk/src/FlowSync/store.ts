@@ -81,8 +81,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   private subscriptions: SubscriptionMap<T> = new SubscriptionMap<T>();
   private watches: WatchMap = new WatchMap();
   private watchedQueries: WatchQueryMap<T> = new WatchQueryMap<T>();
-  private defaultConnectionReconnectingBackoff = 1024;
-  private connectionReconnectingBackoff = 1024;
   private streamingRequestsCount: number = 0;
   scanInfo: ScanInfo | null = null;
 
@@ -207,7 +205,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   private onConnectionOpen() {
-    this.connectionReconnectingBackoff = this.defaultConnectionReconnectingBackoff;
     // Reset watch counts so watch() re-POSTs to the backend with the new connection_id.
     // After a reconnect the backend has lost all watch registrations.
     const watchedTypeIds = Array.from(this.watches.keys());
@@ -218,10 +215,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   private onConnectionClose() {
-    setTimeout(() => {
-      void ConnectionManager.getInstance().connect();
-    }, this.connectionReconnectingBackoff);
-    this.connectionReconnectingBackoff *= 2;
+    // Reconnection is handled solely by ConnectionManager.reconnect().
+    // Do not call connect() here — a second caller races with ConnectionManager
+    // and creates duplicate WebSocket instances (same connection_id, two sockets).
   }
   public async createStream(config: IStreamConfig): Promise<WSStream | null> {
     const connection_manager = ConnectionManager.getInstance();

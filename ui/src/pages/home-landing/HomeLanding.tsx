@@ -587,7 +587,7 @@ export function HomeLanding() {
           )}
 
           {/* Inline search results */}
-          <div className="w-full max-w-3xl self-center min-h-0 flex-1 overflow-hidden">
+          <div className="w-full max-w-3xl self-center min-h-0 flex-1 relative z-10">
             <InlineSearchResults
               query={searchQuery}
               filters={searchFilters}
