@@ -103,6 +103,7 @@ async def _process_manifest(
         "title": task_title,
         "spec_id": spec_id,
         "shared_by_id": sender_id,
+        "metadata": {"project_root": str(project_root)},
     })
     task = await task.save(owner_typeid)
     task_type_id_str = f"task-{task.id}"

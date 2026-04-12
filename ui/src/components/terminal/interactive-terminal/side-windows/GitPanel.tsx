@@ -1,6 +1,7 @@
 import { ActionInfo, dataManager, Shell } from '@sdk';
-import { GitBranch, RefreshCw } from 'lucide-react';
+import { GitBranch, RefreshCw, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { GitFileDiffModal } from './GitFileDiffModal';
@@ -47,12 +48,222 @@ function dirname(p: string): string {
   return idx > 0 ? p.slice(0, idx) : '';
 }
 
+// ---------------------------------------------------------------------------
+// Shiki singleton
+// ---------------------------------------------------------------------------
+
+let shikiHighlighter: Highlighter | null = null;
+let shikiLoadingPromise: Promise<void> | null = null;
+
+function ensureShiki(): Promise<void> {
+  if (!shikiLoadingPromise) {
+    shikiLoadingPromise = createHighlighter({ themes: ['dark-plus', 'light-plus'], langs: ['text'] })
+      .then((h) => { shikiHighlighter = h; })
+      .catch(() => { shikiLoadingPromise = null; });
+  }
+  return shikiLoadingPromise;
+}
+
+// ---------------------------------------------------------------------------
+// FileDiffModal — simple portal-based modal (avoids Radix Dialog z-index issues)
+// ---------------------------------------------------------------------------
+
+interface FileDiffModalProps {
+  file: GitFile;
+  computeNodeId: string;
+  workdir: string;
+  onClose: () => void;
+}
+
+const FileDiffModal: React.FC<FileDiffModalProps> = ({ file, computeNodeId, workdir, onClose }) => {
+  const { resolvedTheme } = useTheme();
+  const [diff, setDiff] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const editorInstancesRef = useRef<Map<string, editor.IStandaloneDiffEditor>>(new Map());
+
+  // Fetch diff on mount
+  useEffect(() => {
+    const rawPath = file.path.includes(' → ') ? file.path.split(' → ')[1]! : file.path;
+
+    const action = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'GET');
+    action.subpath = 'diff';
+    action.queryParameters = { workdir, file: rawPath, status: file.status };
+
+    dataManager.callAction<null, { diff: string }>(action)
+      .then((result) => { setDiff(result?.diff ?? ''); })
+      .catch((e: unknown) => { setError(String(e)); })
+      .finally(() => setLoading(false));
+  }, [file, computeNodeId, workdir]);
+
+  // Dispose editors on unmount
+  useEffect(() => {
+    const instances = editorInstancesRef.current;
+    return () => {
+      instances.forEach((e) => { try { e.dispose(); } catch { /* ignore */ } });
+      instances.clear();
+    };
+  }, []);
+
+  const parsedDiff: DiffFile[] = React.useMemo(() => {
+    if (!diff) return [];
+    try { return gitDiffParser.parse(diff); } catch { return []; }
+  }, [diff]);
+
+  const handleEditorMount = useCallback(
+    (diffEditor: editor.IStandaloneDiffEditor, monaco: Monaco, key: string) => {
+      editorInstancesRef.current.set(key, diffEditor);
+      void ensureShiki().then(() => {
+        if (!shikiHighlighter) return;
+        monaco.languages.register({ id: 'text' });
+        shikiToMonaco(shikiHighlighter, monaco);
+        monaco.editor.setTheme(resolvedTheme === 'dark' ? 'dark-plus' : 'light-plus');
+      });
+    },
+    [resolvedTheme],
+  );
+
+  const renderHunk = useCallback(
+    (hunk: Hunk, hunkIndex: number, fileIndex: number) => {
+      const key = `f${fileIndex}-h${hunkIndex}`;
+      const originalLines = hunk.changes
+        .filter((c: Change) => c.type === 'delete' || c.type === 'normal')
+        .map((c: Change) => `${c.type === 'delete' ? '-' : ' '}${c.content}`)
+        .join('\n');
+      const modifiedLines = hunk.changes
+        .filter((c: Change) => c.type === 'insert' || c.type === 'normal')
+        .map((c: Change) => `${c.type === 'insert' ? '+' : ' '}${c.content}`)
+        .join('\n');
+      const header = `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`;
+      const original = `${header}\n${originalLines}`;
+      const modified = `${header}\n${modifiedLines}`;
+      const lineHeight = 20;
+      const padding = 16;
+      const height = Math.max(original.split('\n').length, modified.split('\n').length) * lineHeight + padding * 2;
+
+      return (
+        <div key={key} className="border-t first:border-t-0">
+          <div className="bg-muted/50 px-3 py-1 text-[10px] text-muted-foreground font-mono">
+            {header}
+          </div>
+          <DiffEditor
+            height={`${height}px`}
+            language="text"
+            original={original}
+            modified={modified}
+            onMount={(e, m) => handleEditorMount(e, m, key)}
+            theme={resolvedTheme === 'dark' ? 'dark-plus' : 'light-plus'}
+            options={{
+              renderSideBySide: true,
+              readOnly: true,
+              fontSize: 12,
+              lineHeight,
+              minimap: { enabled: false },
+              scrollBeyondLastLine: false,
+              automaticLayout: true,
+              wordWrap: 'on',
+              padding: { top: padding, bottom: padding },
+              lineNumbers: 'on',
+              glyphMargin: false,
+              scrollbar: { alwaysConsumeMouseWheel: false },
+            }}
+          />
+        </div>
+      );
+    },
+    [handleEditorMount, resolvedTheme],
+  );
+
+  const title = file.path.includes(' → ') ? file.path : basename(file.path);
+
+  const modal = (
+    <div
+      style={{ position: 'fixed', inset: 0, zIndex: 9999 }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      {/* Backdrop */}
+      <div style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)' }} />
+
+      {/* Panel */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '5%',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          width: '90vw',
+          maxWidth: '1100px',
+          maxHeight: '90vh',
+          display: 'flex',
+          flexDirection: 'column',
+          borderRadius: '8px',
+          overflow: 'hidden',
+          boxShadow: '0 24px 48px rgba(0,0,0,0.4)',
+        }}
+        className="border bg-background"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <div className="flex items-center gap-2">
+            <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-sm font-medium font-mono">{title}</span>
+            <span className={`text-[10px] font-bold ${statusColor(file.status)}`}>
+              {file.status}
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded p-1 hover:bg-muted/70 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {loading ? (
+            <div className="flex h-40 items-center justify-center">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+            </div>
+          ) : error ? (
+            <p className="p-4 text-sm text-destructive">{error}</p>
+          ) : parsedDiff.length > 0 ? (
+            <div className="space-y-4 p-4">
+              {parsedDiff.map((fileDiff, fi) => (
+                <div key={fi} className="overflow-hidden rounded-lg border">
+                  <div className="border-b bg-muted px-4 py-2 text-xs font-medium font-mono">
+                    {fileDiff.newPath || fileDiff.oldPath}
+                  </div>
+                  <div>
+                    {fileDiff.hunks.map((hunk, hi) => renderHunk(hunk, hi, fi))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">
+              No diff to display
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  return createPortal(modal, document.body);
+};
+
+// ---------------------------------------------------------------------------
+// GitPanel
+// ---------------------------------------------------------------------------
+
 export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, sidecarShellId }) => {
   const [data, setData] = useState<GitStatusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [initing, setIniting] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<GitFile | null>(null);
   const mountedRef = useRef(true);
 
   const fetchStatus = useCallback(async () => {
@@ -104,6 +315,39 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
       if (mountedRef.current) setIniting(false);
     }
   }, [sidecarShellId, workdir, fetchStatus]);
+
+  const renderFileRow = (f: GitFile, i: number) => {
+    const name = basename(f.path);
+    const dir = dirname(f.path);
+    return (
+      <button
+        key={`${f.path}-${i}`}
+        className="flex w-full items-center gap-2 rounded px-2 py-1 text-left hover:bg-muted/50 cursor-pointer"
+        onClick={() => setSelectedFile(f)}
+      >
+        <span className={`shrink-0 text-[10px] font-bold ${statusColor(f.status)}`}>
+          {f.status}
+        </span>
+        <div className="min-w-0 flex-1">
+          <span className="text-xs font-medium">{name}</span>
+          {dir && (
+            <span className="ml-1 text-[10px] text-muted-foreground">{dir}</span>
+          )}
+        </div>
+        <div className="shrink-0 flex items-center gap-0.5 text-[10px]">
+          {f.insertions != null && f.insertions > 0 && (
+            <span className="text-green-500">+{f.insertions}</span>
+          )}
+          {f.deletions != null && f.deletions > 0 && (
+            <span className="text-red-500">-{f.deletions}</span>
+          )}
+        </div>
+      </button>
+    );
+  };
+
+  const changed = data?.files.filter(f => f.status !== '?') ?? [];
+  const newFiles = data?.files.filter(f => f.status === '?') ?? [];
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -173,65 +417,39 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
           </div>
         ) : !data || !data.files || data.files.length === 0 ? (
           <p className="mt-4 px-2 text-center text-xs text-muted-foreground">No changes</p>
-        ) : (() => {
-          const changed = data.files.filter(f => f.status !== '?');
-          const newFiles = data.files.filter(f => f.status === '?');
-          const renderFile = (f: GitFile, i: number) => {
-            const name = basename(f.path);
-            const dir = dirname(f.path);
-            return (
-              <button key={`${f.path}-${i}`} className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1 text-left hover:bg-muted/50" onClick={() => setSelectedFile(f.path)}>
-                <span className={`shrink-0 text-[10px] font-bold ${statusColor(f.status)}`}>
-                  {f.status}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <span className="text-xs font-medium">{name}</span>
-                  {dir && (
-                    <span className="ml-1 text-[10px] text-muted-foreground">{dir}</span>
-                  )}
+        ) : (
+          <div className="flex flex-col gap-2">
+            {changed.length > 0 && (
+              <div>
+                <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Changes ({changed.length})
+                </p>
+                <div className="flex flex-col gap-0.5">
+                  {changed.map((f, i) => renderFileRow(f, i))}
                 </div>
-                <div className="shrink-0 flex items-center gap-0.5 text-[10px]">
-                  {f.insertions != null && f.insertions > 0 && (
-                    <span className="text-green-500">+{f.insertions}</span>
-                  )}
-                  {f.deletions != null && f.deletions > 0 && (
-                    <span className="text-red-500">-{f.deletions}</span>
-                  )}
+              </div>
+            )}
+            {newFiles.length > 0 && (
+              <div>
+                <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  New Files ({newFiles.length})
+                </p>
+                <div className="flex flex-col gap-0.5">
+                  {newFiles.map((f, i) => renderFileRow(f, i))}
                 </div>
-              </button>
-            );
-          };
-          return (
-            <div className="flex flex-col gap-2">
-              {changed.length > 0 && (
-                <div>
-                  <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Changes ({changed.length})
-                  </p>
-                  <div className="flex flex-col gap-0.5">
-                    {changed.map((f, i) => renderFile(f, i))}
-                  </div>
-                </div>
-              )}
-              {newFiles.length > 0 && (
-                <div>
-                  <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    New Files ({newFiles.length})
-                  </p>
-                  <div className="flex flex-col gap-0.5">
-                    {newFiles.map((f, i) => renderFile(f, i))}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Diff modal — rendered via portal so it's always on top */}
       {selectedFile && (
         <GitFileDiffModal
           computeNodeId={computeNodeId}
           workdir={workdir}
-          filepath={selectedFile}
+          filepath={selectedFile.path}
+          status={selectedFile.status}
           open={!!selectedFile}
           onClose={() => setSelectedFile(null)}
         />
