@@ -2,11 +2,17 @@ import { dataManager } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import type { ITask } from './task';
 
-export async function openTaskNotification(projectUrl: string, taskId: string): Promise<string> {
+export async function openTaskNotification(
+  projectUrl: string,
+  taskId: string,
+): Promise<{ navigation_path: string; git_error?: string | null }> {
   const action = new ActionInfo('open-task', 'notification', null, 'POST');
   action.bodyParameters = { project_url: projectUrl, task_id: taskId };
-  const res = await dataManager.callAction<undefined, { navigation_path: string }>(action);
-  return res?.navigation_path ?? (taskId ? `/dock/tasks/task-${taskId}` : '/dock/tasks');
+  const res = await dataManager.callAction<undefined, { navigation_path: string; git_error?: string | null }>(action);
+  return {
+    navigation_path: res?.navigation_path ?? (taskId ? `/dock/tasks/task-${taskId}` : '/dock/tasks'),
+    git_error: res?.git_error ?? null,
+  };
 }
 
 export async function sendReply(task: ITask, message: string): Promise<void> {
@@ -34,9 +40,10 @@ export interface SendNotificationParams {
   project_path?: string | null;
 }
 
-export async function sendNotification(params: SendNotificationParams): Promise<void> {
+export async function sendNotification(params: SendNotificationParams): Promise<{ git_error?: string | null; sent?: boolean; email_error?: string | null }> {
   const action = new ActionInfo('send', 'notification', null, 'POST');
   action.bodyParameters = { sub_action: 'send', ...params };
-  await dataManager.callAction(action);
+  const res = await dataManager.callAction<undefined, { git_error?: string | null; sent?: boolean; email_error?: string | null }>(action);
+  return { git_error: res?.git_error ?? null, sent: res?.sent, email_error: res?.email_error ?? null };
 }
 

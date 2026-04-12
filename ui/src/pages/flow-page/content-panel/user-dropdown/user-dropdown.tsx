@@ -8,6 +8,7 @@ import {
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
 import { SettingsPane } from '@src/components/ui/settings-pane';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
 
 import { AccountInfo } from '@src/components/account/account-info';
@@ -237,8 +238,11 @@ export function UserDropdown() {
       <div className="flex flex-col items-center gap-2">
         {user ? (
           <>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <TooltipProvider>
+              <Tooltip>
+                <DropdownMenu>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
                 <div className="relative cursor-pointer">
                   <Avatar
                     className={`h-8 w-8 transition-opacity hover:opacity-80${!isConnected ? ' ring-2 ring-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] animate-pulse' : ''}`}
@@ -257,8 +261,10 @@ export function UserDropdown() {
                     <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-background" />
                   )}
                 </div>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">{cloudLoginAvailable ? 'Logged in' : 'Not logged in'}</TooltipContent>
+                  <DropdownMenuContent align="end">
                 {isOwner && agentId && (
                   <>
                     <DropdownMenuItem onClick={() => setIsSettingsOpen(true)} className="cursor-pointer">
@@ -297,20 +303,29 @@ export function UserDropdown() {
                     Logout
                   </DropdownMenuItem>
                 )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </Tooltip>
+            </TooltipProvider>
           </>
         ) : (
-          <Button
-            variant="default"
-            size="sm"
-            onClick={() => {
-              trackEvent({ event: 'login_clicked', event_source: 'page_header' });
-              navigator.navigateToLogin();
-            }}
-          >
-            Login
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => {
+                    trackEvent({ event: 'login_clicked', event_source: 'page_header' });
+                    navigator.navigateToLogin();
+                  }}
+                >
+                  Login
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Not logged in</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
       </div>
     </>
