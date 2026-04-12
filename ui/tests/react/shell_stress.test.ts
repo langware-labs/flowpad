@@ -11,7 +11,6 @@
  */
 
 import { apiClient, ConnectionManager, dataManager, GRAPH_API_PREFIX, Shell, TypeId } from '@sdk';
-import { PtyConnection } from '@sdk/services/shell/ptyConnection';
 import { v4 as uuidv4 } from 'uuid';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiTestSetup, get_local_compute_node, getTestSignupInfo } from '../utils/test-utils';
@@ -84,15 +83,14 @@ describe('Shell SDK lifecycle — unit tests', () => {
 
   it('connect({ force }) resets replayDone to false and fires status event', () => {
     const shell = new Shell({ id: uuidv4(), compute_node_id: uuidv4() });
-    (shell as any)._pty = new PtyConnection();
-    (shell as any)._replayDone = true;
+    (shell.ptyConnection as any)._replayDone = true;
     (shell as any).emit('status', 'connected');
 
     const events: string[] = [];
     shell.on('status', (s: string) => events.push(s));
 
-    // _restart() is the private method called by startPty({ force: true })
-    (shell as any)._restart();
+    // _doReset() is called by attach({ force: true }) — resets replayDone and emits disconnect
+    (shell.ptyConnection as any)._doReset();
 
     expect(shell.replayDone).toBe(false);
     expect(events).toContain('disconnected');
@@ -100,63 +98,60 @@ describe('Shell SDK lifecycle — unit tests', () => {
 
   it('connect({ force }) resets seq to 0 (ensures full replay on next connect)', () => {
     const shell = new Shell({ id: uuidv4(), compute_node_id: uuidv4() });
-    (shell as any)._pty = new PtyConnection();
-    (shell as any)._pty.lastSeq = 42;
-    (shell as any)._replayDone = true;
+    shell.ptyConnection.lastSeq = 42;
+    (shell.ptyConnection as any)._replayDone = true;
 
-    (shell as any)._restart();
+    (shell.ptyConnection as any)._doReset();
 
-    expect((shell as any)._pty.lastSeq).toBe(0);
+    expect(shell.ptyConnection.lastSeq).toBe(0);
   });
 
   // ── onOutput() gate across lifecycle ──────────────────────────────────────
 
   it('onOutput() → undefined → live → unsub cycle is clean', () => {
     const shell = new Shell({ id: uuidv4(), compute_node_id: uuidv4() });
-    (shell as any)._pty = new PtyConnection();
 
     // Gate closed during replay
     expect(shell.onOutput(() => {})).toBeUndefined();
 
     // Gate opens after connect
-    (shell as any)._replayDone = true;
+    (shell.ptyConnection as any)._replayDone = true;
     (shell as any).emit('status', 'connected');
     const received: string[] = [];
     const unsub = shell.onOutput((d) => received.push(d));
     expect(unsub).not.toBeUndefined();
 
-    (shell as any)._pty.appendOutput(btoa('hello'), 1, Date.now());
+    shell.ptyConnection.appendOutput(btoa('hello'), 1, Date.now());
     expect(received).toHaveLength(1);
     expect(received[0]).toBe('hello');
 
     // Unsubscribe — no more events
     unsub!();
-    (shell as any)._pty.appendOutput(btoa('world'), 2, Date.now());
+    shell.ptyConnection.appendOutput(btoa('world'), 2, Date.now());
     expect(received).toHaveLength(1);
   });
 
   it('onOutput gate works across a full restart cycle', () => {
     const shell = new Shell({ id: uuidv4(), compute_node_id: uuidv4() });
-    (shell as any)._pty = new PtyConnection();
-    (shell as any)._replayDone = true;
+    (shell.ptyConnection as any)._replayDone = true;
     (shell as any).emit('status', 'connected');
 
     const unsub = shell.onOutput(() => {});
     expect(unsub).not.toBeUndefined();
 
-    // _restart() closes the gate (called internally by startPty({ force: true }))
-    (shell as any)._restart();
+    // _doReset() closes the gate (called by attach({ force: true }))
+    (shell.ptyConnection as any)._doReset();
     expect(shell.onOutput(() => {})).toBeUndefined();
 
-    // Re-open gate (simulates next startPty() completing)
-    (shell as any)._replayDone = true;
+    // Re-open gate (simulates next attach() completing)
+    (shell.ptyConnection as any)._replayDone = true;
     (shell as any).emit('status', 'connected');
 
     const live: string[] = [];
     const unsub2 = shell.onOutput((d) => live.push(d));
     expect(unsub2).not.toBeUndefined();
 
-    (shell as any)._pty.appendOutput(btoa('after-restart'), 10, Date.now());
+    shell.ptyConnection.appendOutput(btoa('after-restart'), 10, Date.now());
     expect(live[0]).toBe('after-restart');
 
     unsub?.();
@@ -190,12 +185,11 @@ describe('Shell SDK lifecycle — unit tests', () => {
 
   it('getPtyChunks() returns chunks in ascending seq order', () => {
     const shell = new Shell({ id: uuidv4(), compute_node_id: uuidv4() });
-    (shell as any)._pty = new PtyConnection();
 
     // Insert in ascending seq order (appendOutput dedupes: seq <= lastSeq is rejected)
-    (shell as any)._pty.appendOutput(btoa('A'), 1, Date.now());
-    (shell as any)._pty.appendOutput(btoa('B'), 2, Date.now());
-    (shell as any)._pty.appendOutput(btoa('C'), 3, Date.now());
+    shell.ptyConnection.appendOutput(btoa('A'), 1, Date.now());
+    shell.ptyConnection.appendOutput(btoa('B'), 2, Date.now());
+    shell.ptyConnection.appendOutput(btoa('C'), 3, Date.now());
 
     const chunks = shell.getPtyChunks();
     expect(chunks.map((c) => c.seq)).toEqual([1, 2, 3]);
@@ -206,10 +200,9 @@ describe('Shell SDK lifecycle — unit tests', () => {
 
   it('appendOutput dedupes: same seq received twice, only first is stored', () => {
     const shell = new Shell({ id: uuidv4(), compute_node_id: uuidv4() });
-    (shell as any)._pty = new PtyConnection();
 
-    (shell as any)._pty.appendOutput(btoa('first'), 5, Date.now());
-    (shell as any)._pty.appendOutput(btoa('dupe'), 5, Date.now()); // same seq → ignored
+    shell.ptyConnection.appendOutput(btoa('first'), 5, Date.now());
+    shell.ptyConnection.appendOutput(btoa('dupe'), 5, Date.now()); // same seq → ignored
 
     expect(shell.getPtyChunks()).toHaveLength(1);
     const decoder = new TextDecoder();
@@ -218,9 +211,8 @@ describe('Shell SDK lifecycle — unit tests', () => {
 
   it('getPtyChunk(seq) returns the right chunk', () => {
     const shell = new Shell({ id: uuidv4(), compute_node_id: uuidv4() });
-    (shell as any)._pty = new PtyConnection();
 
-    (shell as any)._pty.appendOutput(btoa('x'), 7, Date.now());
+    shell.ptyConnection.appendOutput(btoa('x'), 7, Date.now());
     const chunk = shell.getPtyChunk(7);
     expect(chunk).not.toBeUndefined();
     expect(chunk!.seq).toBe(7);
@@ -313,16 +305,16 @@ describe('Shell / PTY lifecycle stress — integration', () => {
     expect(shell.getPtyChunks().length).toBeGreaterThan(0);
 
     // Restart — replayDone goes false, seq resets
-    (shell as any)._restart();
+    (shell.ptyConnection as any)._doReset();
     expect(shell.replayDone).toBe(false);
-    expect((shell as any)._pty!.lastSeq).toBe(0);
+    expect(shell.ptyConnection.lastSeq).toBe(0);
 
     // More output so there's something new to replay
     await sendNewline(computeNode.id, shell.id);
     await new Promise((r) => setTimeout(r, 500));
 
     // Force re-attach by clearing pty.started
-    if ((shell as any)._pty) (shell as any)._pty.started = false;
+    shell.ptyConnection.started = false;
     await shell.attachPty({ cols: 80, rows: 24 });
 
     expect(shell.replayDone).toBe(true);

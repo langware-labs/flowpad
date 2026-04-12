@@ -309,12 +309,20 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     const typeId = new TypeId('shell', shellId);
     const ref = this.entities.get(typeId);
     const shell = ref?.entity as any;
-    if (typeof shell?.routePtyOutput === 'function') {
+    if (shell?.ptyConnection) {
+      // Fast path: route directly through PtyConnection (always present on Shell).
+      const decoded = shell.ptyConnection.routeOutput(msg.data ?? '', msg.seq, msg.timestamp_ms);
+      if (decoded !== null) {
+        this.emit('on_pty_decoded', shellId, decoded);
+      }
+    } else if (typeof shell?.routePtyOutput === 'function') {
+      // Compat path: non-Shell entities that implement routePtyOutput.
       const decoded = shell.routePtyOutput(msg.data ?? '', msg.seq, msg.timestamp_ms);
       if (decoded !== null) {
         this.emit('on_pty_decoded', shellId, decoded);
       }
     } else {
+      // Shell not yet in entity cache — buffer for when it arrives.
       ptyOrphanBuffer.buffer(shellId, msg.data ?? '', msg.seq, msg.timestamp_ms);
     }
   }

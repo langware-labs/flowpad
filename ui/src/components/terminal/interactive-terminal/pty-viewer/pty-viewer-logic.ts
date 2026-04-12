@@ -314,12 +314,12 @@ export async function fetchReplayChunks(shell: Shell): Promise<PtySequenceData> 
 
 /** Count xterm chunks in browser memory. */
 export function getXtermChunkCount(shell: Shell): number {
-  return shell.getPtyChunks().length;
+  return shell.ptyConnection.getSortedChunks().length;
 }
 
 /** Return the set of seq numbers currently in _pty.chunks (xterm memory). */
 export function getXtermSeqs(shell: Shell): Set<number> {
-  return new Set(shell.getPtyChunks().map((c) => c.seq));
+  return new Set(shell.ptyConnection.getSortedChunks().map((c) => c.seq));
 }
 
 /** Format timestamp as relative time from base (ms), or absolute time. */

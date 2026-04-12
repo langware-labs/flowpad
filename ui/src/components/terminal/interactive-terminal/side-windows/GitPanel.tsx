@@ -171,35 +171,59 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
           </div>
         ) : !data || !data.files || data.files.length === 0 ? (
           <p className="mt-4 px-2 text-center text-xs text-muted-foreground">No changes</p>
-        ) : (
-          <div className="flex flex-col gap-0.5">
-            {data.files.map((f, i) => {
-              const name = basename(f.path);
-              const dir = dirname(f.path);
-              return (
-                <div key={`${f.path}-${i}`} className="flex items-center gap-2 rounded px-2 py-1 hover:bg-muted/50">
-                  <span className={`shrink-0 text-[10px] font-bold ${statusColor(f.status)}`}>
-                    {f.status}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <span className="text-xs font-medium">{name}</span>
-                    {dir && (
-                      <span className="ml-1 text-[10px] text-muted-foreground">{dir}</span>
-                    )}
-                  </div>
-                  <div className="shrink-0 flex items-center gap-0.5 text-[10px]">
-                    {f.insertions != null && f.insertions > 0 && (
-                      <span className="text-green-500">+{f.insertions}</span>
-                    )}
-                    {f.deletions != null && f.deletions > 0 && (
-                      <span className="text-red-500">-{f.deletions}</span>
-                    )}
+        ) : (() => {
+          const changed = data.files.filter(f => f.status !== '?');
+          const newFiles = data.files.filter(f => f.status === '?');
+          const renderFile = (f: GitFile, i: number) => {
+            const name = basename(f.path);
+            const dir = dirname(f.path);
+            return (
+              <div key={`${f.path}-${i}`} className="flex items-center gap-2 rounded px-2 py-1 hover:bg-muted/50">
+                <span className={`shrink-0 text-[10px] font-bold ${statusColor(f.status)}`}>
+                  {f.status}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <span className="text-xs font-medium">{name}</span>
+                  {dir && (
+                    <span className="ml-1 text-[10px] text-muted-foreground">{dir}</span>
+                  )}
+                </div>
+                <div className="shrink-0 flex items-center gap-0.5 text-[10px]">
+                  {f.insertions != null && f.insertions > 0 && (
+                    <span className="text-green-500">+{f.insertions}</span>
+                  )}
+                  {f.deletions != null && f.deletions > 0 && (
+                    <span className="text-red-500">-{f.deletions}</span>
+                  )}
+                </div>
+              </div>
+            );
+          };
+          return (
+            <div className="flex flex-col gap-2">
+              {changed.length > 0 && (
+                <div>
+                  <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Changes ({changed.length})
+                  </p>
+                  <div className="flex flex-col gap-0.5">
+                    {changed.map((f, i) => renderFile(f, i))}
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
+              )}
+              {newFiles.length > 0 && (
+                <div>
+                  <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    New Files ({newFiles.length})
+                  </p>
+                  <div className="flex flex-col gap-0.5">
+                    {newFiles.map((f, i) => renderFile(f, i))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
