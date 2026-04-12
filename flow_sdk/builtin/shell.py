@@ -682,13 +682,17 @@ class Shell(Entity):
         await self.set_env(**vars_dict)
         return ApiSuccessResponse(data={"vars": list(vars_dict.keys())})
 
+    # PTY title values that are generic spinner frames — never overwrite an existing name.
+    _PTY_NAME_BLOCKLIST: ClassVar[set[str]] = {"Claude Code"}
+
     @action.post(action_name="update-display")
     async def update_display(self) -> ApiResponse:
         """HTTP: Update display properties (name, tab_order).
 
         POST body: {name?, tab_order?, is_pty?}
         When is_pty=True the name came from a PTY OSC title escape — ignored
-        if the user already explicitly renamed this shell.
+        if the user already explicitly renamed this shell, or if the incoming
+        name is a generic spinner title and the shell already has a name.
         """
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
@@ -696,10 +700,12 @@ class Shell(Entity):
         is_pty = bool(body.get("is_pty", False))
         changed = False
         if "name" in body:
-            if is_pty and self.user_renamed:
+            incoming = body["name"]
+            is_blocked = is_pty and self.name and any(f in incoming for f in self._PTY_NAME_BLOCKLIST)
+            if is_pty and (self.user_renamed or is_blocked):
                 pass
             else:
-                self.name = body["name"]
+                self.name = incoming
                 if not is_pty:
                     self.user_renamed = True
                 changed = True
