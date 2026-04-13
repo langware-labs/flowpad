@@ -48,6 +48,18 @@ class ClaudeRulesRecord(Record):
         return rec
 
     @property
+    def source_path(self) -> str:
+        ar = object.__getattribute__(self, "_asset_ref")
+        return ar.path if ar is not None else ""
+
+    def meta_dict(self) -> dict:
+        result = super().meta_dict()
+        sp = self.source_path
+        if sp:
+            result["source_path"] = sp
+        return result
+
+    @property
     def search_content(self) -> str | None:
         ar = object.__getattribute__(self, "_asset_ref")
         if ar is None or not ar.exists():
