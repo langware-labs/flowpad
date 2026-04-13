@@ -2,6 +2,7 @@ import errno
 import logging
 import os
 import shutil
+import sys
 from contextlib import asynccontextmanager
 from io import BytesIO
 from typing import Any, AsyncIterator, BinaryIO, List
@@ -247,7 +248,9 @@ class LocalStorageDriver(StorageDriver):
             raise StorageError(f"Failed to stream file: {e}")
 
     def get_storage_path(self, vfs_path: str) -> str:
-        return self._local_full_path(vfs_path)
+        if sys.platform == "win32":
+            return self._local_full_path(vfs_path)
+        return super().get_storage_path(vfs_path)
 
     async def list_dir(self, vfs_path: str | None = None) -> List[FSItem]:
         """List the contents of a directory on the storage device."""
