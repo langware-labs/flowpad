@@ -670,6 +670,28 @@ class AgenticProcess(Entity):
 
     # ── State ─────────────────────────────────────────────────────────────────
 
+    @action.post(action_name="load-embedded-agent")
+    async def load_embedded_agent_action(self, source_vfs_path: str = "") -> "ApiSuccessResponse | ApiFailResponse":
+        """Load an agent from a VFS path and embed it into this process.
+
+        Merges the agent spec into cli_config.agents_json so it survives across
+        HTTP requests without relying on in-memory state.
+        """
+        from flow_sdk.fs_records.agent_record import AgentRecord
+        if not source_vfs_path:
+            return ApiFailResponse(message="source_vfs_path is required")
+        abs_path = Path("/" + source_vfs_path.lstrip("/"))
+        if not abs_path.exists():
+            return ApiFailResponse(message=f"Agent file not found: {abs_path}")
+        agent = AgentRecord.from_file(abs_path)
+        agent_entry = agent.to_agents_cli_json()
+        # Merge into cli_config so the agent is durably stored on the entity.
+        cli_opts = ClaudeCliOptions.from_json(self.cli_config or {})
+        cli_opts.agents_json = {**(cli_opts.agents_json or {}), **agent_entry}
+        self.cli_config = cli_opts.to_json()
+        await self.save()
+        return ApiSuccessResponse(data={"ok": True, "name": agent.name})
+
     def load_embedded_agent(self, agent: "Any") -> None:
         """Embed an agent into this process so it is registered via --agents at launch.
 
