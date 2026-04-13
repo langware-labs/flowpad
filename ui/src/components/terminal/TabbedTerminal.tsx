@@ -761,9 +761,9 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
       <HistoryModal
         open={historyModalOpen}
         onOpenChange={setHistoryModalOpen}
-        onSelect={(p) => {
+        onSelect={(item) => {
           setHistoryModalOpen(false);
-          void navigation.openShellProcess(p.id);
+          navigation.openDockPointer(item.dockPointer);
         }}
       />
     </div>

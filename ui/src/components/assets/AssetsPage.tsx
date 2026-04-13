@@ -1,10 +1,9 @@
 import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/AssetEditorRouter';
-import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { useToast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { Agent, dataContext, Project, Skill } from '@sdk';
+import { Agent, dataContext, Skill } from '@sdk';
 import apiClient from '@sdk/client';
 import { BookOpen } from 'lucide-react';
 import React, { useCallback, useState } from 'react';
@@ -29,6 +28,8 @@ import '@src/components/assets/columns/claudeRulesColumns';
 // Side-effect filter registrations
 import '@src/components/assets/filters/assetFilters';
 import '@src/components/assets/filters/taskFilters';
+
+const CREATABLE_TYPES = new Set(['skill', 'agent']);
 
 function parseAssetPointer(pointer: string | undefined): { mode: 'editor' | 'list' | null; typeName: string | null } {
   if (!pointer) return { mode: null, typeName: null };
@@ -78,11 +79,6 @@ export function AssetsPage() {
           navigation.openDock(DockPointer.forAssetEditor('skill', saved.source_path));
           return;
         }
-      } else if (newTypeTarget === 'project') {
-        const project = new Project({ name: name.trim() });
-        await project.save([]);
-        await project.setupForDesktop();
-        toast({ title: 'Project created' });
       } else if (newTypeTarget === 'agent') {
         const agent = new Agent({ name: name.trim() });
         const saved = await agent.save([]);
@@ -91,9 +87,6 @@ export function AssetsPage() {
           navigation.openDock(DockPointer.forAssetEditor('agent', saved.source_path));
           return;
         }
-      } else {
-        toast({ title: `Creation of "${newTypeTarget}" not supported yet`, variant: 'destructive' });
-        return;
       }
       setRefreshKey(k => k + 1);
     } catch (err) {
@@ -101,7 +94,7 @@ export function AssetsPage() {
       toast({ title: 'Failed to create', variant: 'destructive' });
     }
     setNewTypeTarget(null);
-  }, [newTypeTarget, toast]);
+  }, [newTypeTarget, navigation, toast]);
 
   const handleRowClick = useCallback((result: SearchResult) => {
     navigation.openDock(DockPointer.forAssetEditor(result.record_type, result.source_path));
@@ -146,15 +139,15 @@ export function AssetsPage() {
 
       <div className="flex min-h-0 flex-1">
         {/* Type sidebar */}
-        <div className="w-48 flex-shrink-0 overflow-y-auto border-r">
-          <AssetTypeSidebar selected={selectedType} onSelect={(t) => navigation.openAssetList(t)} onNew={handleNew} />
+        <div className="w-56 flex-shrink-0 overflow-y-auto border-r">
+          <AssetTypeSidebar selected={selectedType} onSelect={(t) => navigation.openAssetList(t)} onNew={handleNew} creatableTypes={CREATABLE_TYPES} />
         </div>
         {/* List view */}
         <div className="min-w-0 flex-1">
           {selectedType ? (
             <AssetListView
               recordType={selectedType}
-              onNew={() => handleNew(selectedType)}
+              onNew={CREATABLE_TYPES.has(selectedType) ? () => handleNew(selectedType) : undefined}
               refreshKey={refreshKey}
               onRowClick={hasEditor(selectedType) ? handleRowClick : undefined}
               filter={assetFilter}
@@ -174,7 +167,7 @@ export function AssetsPage() {
         onOpenChange={setNewTypeDialogOpen}
         title={`New ${newTypeTarget ?? ''}`}
         description={`Enter a name for the new ${newTypeTarget ?? 'item'}.`}
-        placeholder={newTypeTarget === 'project' ? 'Directory path (e.g. /Users/you/myproject)' : 'Name'}
+        placeholder="Name"
         confirmLabel="Create"
         onConfirm={(name) => void handleNewConfirm(name)}
       />

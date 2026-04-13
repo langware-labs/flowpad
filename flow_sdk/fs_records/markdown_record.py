@@ -242,6 +242,14 @@ class MarkdownRecord(Record):
             parts.append(" ".join(str(l) for l in links))
         return " ".join(parts) if parts else None
 
+    def meta_dict(self) -> dict:
+        result = super().meta_dict()
+        sp = self.source_path
+        if sp:
+            result["source_path"] = sp
+        result["name"] = self.name
+        return result
+
     @classmethod
     def _external_source_count(cls, limit: int | None = None) -> int:
         seen: set[str] = set()
@@ -274,11 +282,13 @@ class MarkdownRecord(Record):
         """Discover MarkdownRecords.
 
         If project_dir is given: walk all .md files in that directory tree.
-        Otherwise: fall back to the base Record discovery (scans records root).
+        Otherwise: use _external_source_iter() to discover from source files
+        directly, bypassing the stale records-root cache.
         """
         if not project_dir:
-            # Standard pipeline path — scan ~/.flow/records/docs/ via base class
-            return super().discover(**kwargs)  # type: ignore[return-value]
+            # Always discover from source files — the records-root cache may
+            # have stale metadata (e.g. title="") that would shadow fresh data.
+            return list(cls._external_source_iter())
         results: list[MarkdownRecord] = []
         p = Path(project_dir)
         for md_file in sorted(p.rglob("*.md")):
