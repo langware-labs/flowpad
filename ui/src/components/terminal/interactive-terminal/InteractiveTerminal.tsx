@@ -917,18 +917,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       }
     };
 
-    // Persistent scrollTop watcher — logs scroll resets
-    const vp2 = terminalRef.current?.element?.querySelector('.xterm-viewport') as HTMLElement | null;
-    let prevST2 = vp2?.scrollTop ?? 0;
-    const scrollInterval = setInterval(() => {
-      if (!vp2) return;
-      const st = vp2.scrollTop;
-      if (prevST2 > 500 && st < 50) {
-        console.log('[SCROLL] scrollTop reset!', prevST2, '→', st, 'scrollH:', vp2.scrollHeight);
-      }
-      prevST2 = st;
-    }, 16);
-
     const handlePtyData = (data: string, seq?: number) => {
       if (data.includes('\x1b[3J'))
         console.log('[PTY] ESC[3J (clear scrollback) received, seq:', seq, 'size:', data.length);
@@ -1044,7 +1032,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     return () => {
       unsubStatus();
       unsubOutput?.();
-      clearInterval(scrollInterval);
+
       if (syncTimer) clearTimeout(syncTimer);
       if (syncBuf && terminalRef.current) {
         try {
