@@ -246,6 +246,9 @@ class LocalStorageDriver(StorageDriver):
         except Exception as e:
             raise StorageError(f"Failed to stream file: {e}")
 
+    def get_storage_path(self, vfs_path: str) -> str:
+        return self._local_full_path(vfs_path)
+
     async def list_dir(self, vfs_path: str | None = None) -> List[FSItem]:
         """List the contents of a directory on the storage device."""
         if vfs_path is None:
