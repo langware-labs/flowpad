@@ -92,7 +92,7 @@ except ImportError as e:
 # from builtin.question import Question  # noqa: F401
 
 try:
-    from flow_sdk.builtin.claude_memory_entities import ClaudeMemory, ClaudeRules, ClaudePlan, ClaudeMd  # noqa: F401
+    from flow_sdk.builtin.claude_memory_entities import Markdown, Docs, ClaudeMemory, ClaudeRules, ClaudePlan, ClaudeMd  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import claude memory entities: {e}")
 
