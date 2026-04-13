@@ -153,7 +153,13 @@ export function AssetsPage() {
       <div className="flex min-h-0 flex-1">
         {/* Type sidebar */}
         <div className="w-56 flex-shrink-0 overflow-y-auto border-r">
-          <AssetTypeSidebar selected={selectedType} onSelect={(t) => navigation.openAssetList(t)} onNew={handleNew} creatableTypes={CREATABLE_TYPES} />
+          <AssetTypeSidebar
+            selected={selectedType}
+            onSelect={(t) => navigation.openAssetList(t)}
+            onNew={handleNew}
+            onScanComplete={(type) => { if (type === selectedType) setRefreshKey(k => k + 1); }}
+            creatableTypes={CREATABLE_TYPES}
+          />
         </div>
         {/* List view */}
         <div className="min-w-0 flex-1">

@@ -7,8 +7,8 @@ import { CheckCircle2, File, Loader2, Plus, RefreshCw } from 'lucide-react';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { RecordType } from '@sdk';
 
-function TypeCount({ typeName }: { typeName: string }) {
-  const { total, isLoading } = useAssetSearch({ recordType: typeName, filter: DEFAULT_ASSET_FILTER, page: 1, pageSize: 1 });
+function TypeCount({ typeName, refreshKey }: { typeName: string; refreshKey?: number }) {
+  const { total, isLoading } = useAssetSearch({ recordType: typeName, filter: DEFAULT_ASSET_FILTER, page: 1, pageSize: 1, refreshKey });
   if (isLoading) return null;
   if (!total) return null;
   return (
@@ -22,29 +22,33 @@ interface Props {
   selected: string | null;
   onSelect: (typeName: string) => void;
   onNew?: (typeName: string) => void;
+  onScanComplete?: (typeName: string) => void;
   creatableTypes?: Set<string>;
 }
 
-export function AssetTypeSidebar({ selected, onSelect, onNew, creatableTypes }: Props) {
+export function AssetTypeSidebar({ selected, onSelect, onNew, onScanComplete, creatableTypes }: Props) {
   const { types: allTypes, isLoading } = useAssetTypes();
   const HIDDEN_TYPES = new Set([RecordType.ASSET, RecordType.ANNOTATION]);
   const types = allTypes.filter(t => !HIDDEN_TYPES.has(t.type_name));
   const { indexType } = useSystemTools();
   const [scanningTypes, setScanningTypes] = useState<Set<string>>(new Set());
   const [doneTypes, setDoneTypes] = useState<Record<string, number>>({});
+  const [scanRefreshKeys, setScanRefreshKeys] = useState<Record<string, number>>({});
 
   const handleScan = useCallback(async (typeName: string) => {
     setScanningTypes(prev => new Set(prev).add(typeName));
     try {
       const result = await indexType(typeName);
       setDoneTypes(prev => ({ ...prev, [typeName]: result?.indexed ?? 0 }));
+      setScanRefreshKeys(prev => ({ ...prev, [typeName]: (prev[typeName] ?? 0) + 1 }));
+      onScanComplete?.(typeName);
       setTimeout(() => {
         setDoneTypes(prev => { const next = { ...prev }; delete next[typeName]; return next; });
       }, 2000);
     } finally {
       setScanningTypes(prev => { const next = new Set(prev); next.delete(typeName); return next; });
     }
-  }, [indexType]);
+  }, [indexType, onScanComplete]);
 
   if (isLoading) {
     return (
@@ -79,7 +83,7 @@ export function AssetTypeSidebar({ selected, onSelect, onNew, creatableTypes }: 
               >
                 <Icon className="h-4 w-4 flex-shrink-0" />
                 <span className="truncate">{t.label}</span>
-                <TypeCount typeName={t.type_name} />
+                <TypeCount typeName={t.type_name} refreshKey={scanRefreshKeys[t.type_name]} />
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); void handleScan(t.type_name); }}
