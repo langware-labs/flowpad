@@ -361,21 +361,11 @@ class AgentRecord(Record):
         md_path.write_text(self._render_markdown())
         return AgentRecord.from_file(md_path)
 
-    # -- Loader helpers ----------------------------------------------------
+    # -- External-source hooks (flat .md files in ~/.claude/agents/ etc.) ----
 
     @classmethod
-    def discovery_items_count(cls, limit: int | None = None) -> int:
-        """Count agent .md files across all search dirs (fast, no file reads)."""
-        seen: set[str] = set()
-        for agents_dir in _agent_search_dirs():
-            for f in agents_dir.glob("*.md"):
-                seen.add(str(f.resolve()))
-        count = len(seen)
-        return min(count, limit) if limit is not None else count
-
-    @classmethod
-    def discover_iter(cls, limit: int | None = None, scope: Scope | None = None, **kwargs: Any):
-        """Lazy generator — yields one AgentRecord per .md file."""
+    def _external_source_iter(cls, limit: int | None = None):
+        """Yield AgentRecords from flat .md files in agent search dirs."""
         seen: set[str] = set()
         count = 0
         for agents_dir in _agent_search_dirs():
@@ -391,6 +381,18 @@ class AgentRecord(Record):
                         return
                 except Exception:
                     continue
+
+    @classmethod
+    def _external_source_count(cls, limit: int | None = None) -> int:
+        """Count flat .md agent files across all search dirs (fast, no reads)."""
+        seen: set[str] = set()
+        for agents_dir in _agent_search_dirs():
+            for f in agents_dir.glob("*.md"):
+                seen.add(str(f.resolve()))
+        count = len(seen)
+        return min(count, limit) if limit is not None else count
+
+    # -- Loader helpers ----------------------------------------------------
 
     @classmethod
     def discover(cls, scope: Scope | None = None, **kwargs: Any) -> list["AgentRecord"]:

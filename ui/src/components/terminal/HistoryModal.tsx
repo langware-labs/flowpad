@@ -65,7 +65,7 @@ export function useRecentSessions(): RecentItem[] {
           if (!cancelled && p) {
             resolved.push({
               id: entry.session_id,
-              name: entry.display || entry.name || entry.session_id,
+              name: entry.name || entry.display || entry.session_id,
               time: new Date(entry.timestamp_ms),
               dockPointer: p.dockPointer,
             });
@@ -119,23 +119,23 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm p-4">
+      <DialogContent className="w-full max-w-sm overflow-hidden p-4">
         <DialogHeader>
           <DialogTitle className="text-sm font-semibold">Recent Sessions</DialogTitle>
         </DialogHeader>
         {items.length === 0 ? (
           <p className="py-4 text-center text-xs text-muted-foreground">No recent sessions</p>
         ) : (
-          <ul className="mt-1 flex flex-col gap-0.5">
+          <ul className="mt-1 flex flex-col gap-0.5 overflow-hidden">
             {items.map((item) => (
-              <li key={item.id}>
+              <li key={item.id} className="min-w-0">
                 <button
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
+                  className="flex w-full min-w-0 items-center gap-2 overflow-hidden rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
                   onClick={() => onSelect(item)}
                 >
                   <ClaudeIcon className="h-3.5 w-3.5 shrink-0 text-orange-500" />
                   <span className="min-w-0 flex-1 truncate font-medium">{item.name}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(item.time)}</span>
+                  <span className="ml-2 shrink-0 text-xs text-muted-foreground">{timeAgo(item.time)}</span>
                 </button>
               </li>
             ))}
