@@ -1,12 +1,13 @@
 import { AgenticProcess, QueryFilter, QueryRequest } from '@sdk';
 import type { IDockPointer } from '@sdk';
-import type { ClaudeSessionRecordData } from '@sdk/resource_management/fs_records/claude/claude-session';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { useResources } from '@src/hooks/use-resources';
-import { SystemResourceType } from '@src/store/resource-manager';
+import { useClaudeHistory } from '@src/hooks/useClaudeHistory';
 import React, { useEffect, useMemo, useState } from 'react';
+
+const LIMIT = 10;
+const HISTORY_FETCH = 20;
 
 function timeAgo(date: Date | string | number | undefined | null): string {
   if (!date) return '—';
@@ -28,52 +29,44 @@ export interface RecentItem {
   dockPointer: IDockPointer;
 }
 
-const closedQuery = new QueryRequest({
+const processQuery = new QueryRequest({
   type: 'agentic_process',
   scope: [],
-  name: 'closedAgenticProcesses',
+  name: 'recentAgenticProcesses',
   query: new QueryFilter({
-    match: {
-      op: '$OR',
-      operands: [
-        { op: '$EQ', operands: ['status', 'stopped'] },
-        { op: '$EQ', operands: ['status', 'failed'] },
-      ],
-    } as Record<string, unknown>,
     order_by: { updated_date: 'desc' },
   }),
 });
 
-export function useRecentSessions(limit = 10): RecentItem[] {
-  const { data: processes = [] } = useEntitiesQuery<AgenticProcess>(closedQuery);
-  const { items: sessions } = useResources<ClaudeSessionRecordData>(SystemResourceType.SESSION, { limit: 20 });
+export function useRecentSessions(): RecentItem[] {
+  // List 1: last N agentic_process entities across all projects
+  const { data: processes = [] } = useEntitiesQuery<AgenticProcess>(processQuery);
 
-  // session_ids already covered by an agentic_process entry
-  const processSessionIds = useMemo(
-    () => new Set(processes.map((p) => p.session_id).filter(Boolean)),
-    [processes],
-  );
+  // List 2: last N entries from ~/.claude/history.jsonl across all projects
+  const { entries: historyEntries } = useClaudeHistory(HISTORY_FETCH);
 
-  // Async-resolved dockPointers for orphan claude_sessions (no linked agentic_process)
-  const [orphanItems, setOrphanItems] = useState<RecentItem[]>([]);
+  // Resolve dockPointers for all history entries up front.
+  // Effect only depends on historyEntries — NOT on processes — so that
+  // fromClaudeSession upserts don't retrigger the effect and cause a loop.
+  const [historyItems, setHistoryItems] = useState<RecentItem[]>([]);
 
   useEffect(() => {
-    const orphans = sessions.filter((s) => s.session_id && !processSessionIds.has(s.session_id));
-    if (orphans.length === 0) {
-      setOrphanItems([]);
+    if (historyEntries.length === 0) {
+      setHistoryItems([]);
       return;
     }
     let cancelled = false;
     void (async () => {
       const resolved: RecentItem[] = [];
-      for (const s of orphans) {
+      for (const entry of historyEntries) {
+        if (!entry.session_id) continue;
         try {
-          const p = await AgenticProcess.fromClaudeSession(s.session_id);
+          const p = await AgenticProcess.fromClaudeSession(entry.session_id);
           if (!cancelled && p) {
             resolved.push({
-              id: s.id,
-              name: s.name ?? s.session_id,
-              time: new Date(s.modified_at ?? 0),
+              id: entry.session_id,
+              name: entry.display || entry.name || entry.session_id,
+              time: new Date(entry.timestamp_ms),
               dockPointer: p.dockPointer,
             });
           }
@@ -81,27 +74,38 @@ export function useRecentSessions(limit = 10): RecentItem[] {
           // skip unresolvable sessions
         }
       }
-      if (!cancelled) setOrphanItems(resolved);
+      if (!cancelled) setHistoryItems(resolved);
     })();
     return () => {
       cancelled = true;
     };
-  }, [sessions, processSessionIds]);
+  }, [historyEntries]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return useMemo(() => {
+    // Both sources use session_id as the canonical key so dedup works across types.
+    // Build a display-text lookup from history so process entries can fall back to prompt text.
+    const historyDisplayMap = new Map(historyItems.map((h) => [h.id, h.name]));
+
     const processItems: RecentItem[] = processes
       .filter((p) => p.session_id != null)
       .map((p) => ({
-        id: p.id,
-        name: p.name ?? p.session_id ?? p.id,
+        id: p.session_id!,
+        name: p.name || historyDisplayMap.get(p.session_id!) || p.session_id!,
         time: new Date(p.updated_date ?? 0),
         dockPointer: p.dockPointer,
       }));
 
-    return [...processItems, ...orphanItems]
+    // Merge, sort, then deduplicate by id (prefer the first/latest occurrence).
+    const seen = new Set<string>();
+    return [...processItems, ...historyItems]
       .sort((a, b) => b.time.getTime() - a.time.getTime())
-      .slice(0, limit);
-  }, [processes, orphanItems, limit]);
+      .filter((item) => {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+      })
+      .slice(0, LIMIT);
+  }, [processes, historyItems]);
 }
 
 interface HistoryModalProps {
@@ -120,7 +124,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
           <DialogTitle className="text-sm font-semibold">Recent Sessions</DialogTitle>
         </DialogHeader>
         {items.length === 0 ? (
-          <p className="py-4 text-center text-xs text-muted-foreground">No recent closed sessions</p>
+          <p className="py-4 text-center text-xs text-muted-foreground">No recent sessions</p>
         ) : (
           <ul className="mt-1 flex flex-col gap-0.5">
             {items.map((item) => (

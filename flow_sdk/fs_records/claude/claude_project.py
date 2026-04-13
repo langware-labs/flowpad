@@ -115,8 +115,8 @@ class ClaudeProjectFsRecord(Record):
         return min(count, limit) if limit is not None else count
 
     @classmethod
-    def clean_temp_projects(cls) -> int:
-        """Remove temp-path project entries from both discovery sources.
+    async def clean_temp_projects(cls) -> int:
+        """Remove temp-path project entries from both discovery sources and the DB index.
 
         Source 1: ``~/.claude/projects/<encoded>/`` — identified via encoded dir name.
         Source 2: ``records_root/project/<dir>/`` — identified via fs_storage_mount_path
@@ -131,6 +131,8 @@ class ClaudeProjectFsRecord(Record):
         if projects_dir.is_dir():
             for d in list(projects_dir.iterdir()):
                 if d.is_dir() and not cls._is_valid_project_dir(d):
+                    rec = cls._from_claude_dir(d)
+                    await rec.unindex()
                     shutil.rmtree(d, ignore_errors=True)
                     removed += 1
 
@@ -143,6 +145,11 @@ class ClaudeProjectFsRecord(Record):
                     continue
                 mount_path = cls._read_mount_path(d)
                 if mount_path and mount_path.startswith(_TEMP_PATH_PREFIXES):
+                    try:
+                        rec = cls.load_record(d)
+                        await rec.unindex()
+                    except Exception:
+                        pass
                     shutil.rmtree(d, ignore_errors=True)
                     removed += 1
 
@@ -168,7 +175,7 @@ class ClaudeProjectFsRecord(Record):
         if not projects_dir.is_dir():
             return None
         for d in projects_dir.iterdir():
-            if not d.is_dir():
+            if not d.is_dir() or not cls._is_valid_project_dir(d):
                 continue
             if _project_id(d.name) == uid:
                 return cls._from_claude_dir(d)

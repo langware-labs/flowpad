@@ -63,10 +63,11 @@ def async_context(func):
 @pytest.fixture(scope="session", autouse=True)
 def clean_claude_temp_projects():
     """Remove temp-path Claude projects before and after the test session."""
+    import asyncio
     from flow_sdk.fs_records.claude.claude_project import ClaudeProjectFsRecord
-    ClaudeProjectFsRecord.clean_temp_projects()
+    asyncio.get_event_loop().run_until_complete(ClaudeProjectFsRecord.clean_temp_projects())
     yield
-    ClaudeProjectFsRecord.clean_temp_projects()
+    asyncio.get_event_loop().run_until_complete(ClaudeProjectFsRecord.clean_temp_projects())
 
 
 @pytest.fixture(scope="session", autouse=True)
