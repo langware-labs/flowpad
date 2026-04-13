@@ -122,3 +122,10 @@ class ClaudeMemoryRecord(Record):
         ar = object.__getattribute__(self, "_asset_ref")
         return ar.path if ar is not None else ""
 
+    def meta_dict(self) -> dict:
+        result = super().meta_dict()
+        sp = self.source_path
+        if sp:
+            result["source_path"] = sp
+        return result
+
