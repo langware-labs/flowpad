@@ -1,4 +1,3 @@
-import { v4 as uuidv4 } from 'uuid';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { QueryRequest } from '../FlowSync/query';
 import { ActionInfo, TypeId } from '../models';
@@ -7,7 +6,6 @@ import { ViewType } from '../utils/ui/view-types';
 import { Agent } from './agent';
 import { Artifact, IArtifact } from './artifact';
 import { ComputeNode } from './compute_node';
-import { Flow } from './flow/flow';
 import { Workspace } from './workspace';
 
 @registerEntity
@@ -120,76 +118,6 @@ export class Project extends APIEntity<Project> {
 
     const results = await dataManager.query<Artifact>(query);
     return results;
-  }
-
-  /**
-   * Create a new flow in this project
-   * @param agentId - The ID of the agent to use for the flow
-   * @param sourceVfsPath - Optional VFS path of the source file (e.g., for skills)
-   * @returns TypeId of the created flow
-   */
-  async createFlow(agentId: string, sourceVfsPath?: string): Promise<TypeId> {
-    const processId = uuidv4();
-    const flowTypeId = new TypeId(Flow.type, processId);
-    const createFlowAction = new ActionInfo('create-flow', this.typeId.type, this.typeId.id, 'POST');
-    createFlowAction.bodyParameters = {
-      flow_id: processId,
-      agent_id: agentId,
-      ...(sourceVfsPath && { source_vfs_path: sourceVfsPath }),
-    };
-    createFlowAction.castResponse = true;
-
-    await dataManager.callAction(createFlowAction);
-
-    return flowTypeId;
-  }
-
-  /**
-   * Find an existing flow by its source VFS path
-   * @param sourceVfsPath - The VFS path to search for
-   * @returns The Flow instance if found, or null
-   */
-  async getFlowBySource(sourceVfsPath: string): Promise<Flow | null> {
-    const actionInfo = new ActionInfo('get-flow-by-source', Project.type, this.typeId.id, 'GET');
-    actionInfo.queryParameters = { source_vfs_path: sourceVfsPath };
-
-    const response = await dataManager.callAction<void, Flow | null>(actionInfo);
-
-    if (!response) {
-      return null;
-    }
-
-    // If response contains flow data, convert to Flow instance
-    return dataManager.updateEntityFromJson<Flow>(response);
-  }
-
-  /**
-   * Get or create a flow associated with an FSItem
-   * If a flow exists for the item's VFS path, returns it
-   * Otherwise creates a new flow and returns it
-   * @param item - The FSItem to get/create flow for
-   * @param agentId - The agent ID to use when creating a new flow
-   * @returns The existing or newly created Flow instance
-   */
-  async getOrCreateFlowForItem(item: { vfs_abs_path: string }, agentId: string): Promise<Flow> {
-    const sourceVfsPath = item.vfs_abs_path;
-
-    // First try to find existing flow
-    const existingFlow = await this.getFlowBySource(sourceVfsPath);
-    if (existingFlow) {
-      return existingFlow;
-    }
-
-    // Create new flow with source path
-    const flowTypeId = await this.createFlow(agentId, sourceVfsPath);
-
-    // Fetch and return the created flow
-    const flow = await dataManager.getByTypeId<Flow>(flowTypeId);
-    if (!flow) {
-      throw new Error('Failed to create flow');
-    }
-
-    return flow;
   }
 
   /**

@@ -896,6 +896,17 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * await process.wait();
    * ```
    */
+  /**
+   * Load an agent from a VFS path and embed it into this process.
+   * Mirrors the Python `process.load_embedded_agent()` API.
+   * The agent spec is merged into cli_config on the backend and persisted.
+   */
+  async loadEmbeddedAgent(sourcePath: string): Promise<void> {
+    const actionInfo = new ActionInfo('load-embedded-agent', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { source_vfs_path: sourcePath };
+    await dataManager.callAction(actionInfo);
+  }
+
   async executeInstruction(
     instruction: string,
     options: { sync?: boolean; workerSessionId?: string } = {},

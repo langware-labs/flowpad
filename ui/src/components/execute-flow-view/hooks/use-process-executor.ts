@@ -1,12 +1,8 @@
-import { normalizeVfsPathToLocal } from '@src/hooks/use-fs-item-flows';
 import {
   Agent,
   connectionManager,
-  ContextEntitiesEnum,
-  dataContext,
   InstructionStatus,
   Project,
-  TypeId,
   WorkflowStatus,
 } from '@sdk';
 import { useProcess, useProcessActions } from '@sdk/react/hooks';
@@ -68,19 +64,8 @@ export function useProcessExecutor(agent: Agent | null | undefined, project: Pro
 
     await connectionManager.connect();
 
-    const normalizedFilePath = normalizeVfsPathToLocal(filePath) || filePath;
-    const agentId = agent.id;
-    let flowTypeId: TypeId;
-
-    try {
-      flowTypeId = await project.createFlow(agentId, normalizedFilePath);
-    } catch (error) {
-      console.error('[ExecuteFlow] Failed to create flow:', error);
-      setContext((prev) => (prev ? { ...prev, status: WorkflowStatus.FAILED } : null));
-      return;
-    }
-
-    await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentFlowTypeId, flowTypeId);
+    console.warn('[ExecuteFlow] project.createFlow is no longer supported; execution not started');
+    return;
 
     // Reset all instruction properties for a clean execution state
     const updatedInstructions = rootInstructions.map((inst, idx) => ({

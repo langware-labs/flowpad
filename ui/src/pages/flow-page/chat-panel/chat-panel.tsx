@@ -136,28 +136,11 @@ export function ChatPanel() {
   // Labels from flow options
   const { labels, addLabel, removeLabel } = useEntityLabels(flowTypeId);
 
-  // Wrap sendMessage to create flow if needed (only flow, NOT project)
   const handleSendMessage = useCallback(
     async (message: string, options: ICompletionOptions) => {
-      // If no flow exists, create one using the project's create-flow method
-      if (!flowTypeId && dataContext.project && agentTypeId) {
-        console.log('[ChatPanel] No flow in context, creating new flow via project action...');
-
-        // Use the Project.createFlow method
-        const newFlowTypeId = await dataContext.project.createFlow(agentTypeId.id);
-        console.log('[ChatPanel] Flow created via backend action:', newFlowTypeId.id);
-
-        // Set flow in context
-        const contextEnum = dataContext.activeEntityTypeId2ContextEnum(newFlowTypeId);
-        if (contextEnum) {
-          await dataContext.setContextEntityTypeId(contextEnum, newFlowTypeId);
-        }
-      }
-
-      // Send the message
       return sendMessage?.(message, options);
     },
-    [flowTypeId, sendMessage, agentTypeId],
+    [sendMessage],
   );
 
   // Get flow data from new hooks (standardized architecture)

@@ -1,73 +1,60 @@
-import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { dataManager, Flow, FlowMode, ICompletionOptions, TypeId } from '@sdk';
-import { useProcess, useProcessExecution } from '@sdk/react/hooks';
+import { AgenticProcess, dataContext } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
 import { Play, Square } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 
 // ── Execution hook ─────────────────────────────────────────────────────────────
 
 export interface AgentExecutionHandle {
-  /** The live Flow instance (null until first send) */
-  flow: Flow | null;
+  /** The live AgenticProcess instance (null until first send) */
+  process: AgenticProcess | null;
   isRunning: boolean;
   panelOpen: boolean;
   setPanelOpen: (open: boolean) => void;
-  /** Open panel and create flow on first call; subsequent calls reuse the flow */
+  /** Open panel; process created lazily on first send */
   run: () => void;
   stop: () => void;
   send: (message: string) => Promise<void>;
 }
 
 export function useAgentExecution(sourcePath: string): AgentExecutionHandle {
-  const { agent, project } = useAgentContext();
-
-  const [flowTypeId, setFlowTypeId] = useState<TypeId | null>(null);
+  const [process, setProcess] = useState<AgenticProcess | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
 
-  // Keep a ref to the latest flowTypeId so callbacks don't go stale
-  const flowTypeIdRef = useRef<TypeId | null>(null);
-  flowTypeIdRef.current = flowTypeId;
+  const processRef = useRef<AgenticProcess | null>(null);
+  processRef.current = process;
 
-  const { data: flow } = useProcess(flowTypeId);
-  // Keep a stable ref to the live flow for use inside callbacks
-  const flowRef = useRef<Flow | null>(null);
-  flowRef.current = flow ?? null;
-
-  const { isRunning } = useProcessExecution(flow ?? null);
+  const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
+  const isRunning = !!process && !liveProcess?.waiting_for_prompt;
 
   const run = useCallback(() => {
     setPanelOpen(true);
   }, []);
 
   const stop = useCallback(() => {
-    flowRef.current?.cancel();
+    void processRef.current?.exit();
   }, []);
 
   const send = useCallback(
     async (message: string) => {
-      if (!project || !agent) return;
+      let proc = processRef.current;
 
-      let liveFlow = flowRef.current;
-
-      // First send: create the flow, then fetch the live instance directly —
-      // don't wait for React state to propagate (avoids race condition).
-      if (!flowTypeIdRef.current) {
-        const typeId = await project.createFlow(agent.typeId.id, sourcePath);
-        setFlowTypeId(typeId);
-        flowTypeIdRef.current = typeId;
-        liveFlow = await dataManager.getByTypeId<Flow>(typeId);
+      if (!proc) {
+        proc = await new AgenticProcess({
+          workdir: dataContext.project?.fs_storage_mount_path,
+        }).save([]);
+        await proc.loadEmbeddedAgent(sourcePath);
+        await proc.watch();
+        setProcess(proc);
+        processRef.current = proc;
       }
 
-      if (!liveFlow) return;
-      await liveFlow.sendMessage(message, {
-        processId: liveFlow.id,
-        flowMode: FlowMode.AGENT,
-      } as ICompletionOptions);
+      await proc.executeInstruction(message, { sync: false });
     },
-    [project, agent, sourcePath],
+    [sourcePath],
   );
 
-  return { flow: flow ?? null, isRunning, panelOpen, setPanelOpen, run, stop, send };
+  return { process, isRunning, panelOpen, setPanelOpen, run, stop, send };
 }
 
 // ── Toolbar component ──────────────────────────────────────────────────────────

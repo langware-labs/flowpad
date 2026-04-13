@@ -213,43 +213,6 @@ class Project(Entity):
             data={"compute_node": compute_node.model_dump() if compute_node else None}
         )
 
-    async def _create_process_impl(
-        self,
-        process_id: str = "",
-        agent_id: str | None = None,
-        source_vfs_path: str | None = None,
-    ):
-        return ApiFailResponse(
-            message="_create_process_impl is a cloud-only path and is not supported in the desktop environment."
-        )
-
-    @action.post(action_name="create-process")
-    async def create_process(
-        self,
-        process_id: str = "",
-        agent_id: str | None = None,
-        source_vfs_path: str | None = None,
-    ):
-        return await self._create_process_impl(
-            process_id=process_id,
-            agent_id=agent_id,
-            source_vfs_path=source_vfs_path,
-        )
-
-    @action.post(action_name="create-flow")
-    async def create_flow(
-        self,
-        flow_id: str = "",
-        agent_id: str | None = None,
-        source_vfs_path: str | None = None,
-    ):
-        """Backward-compatible alias for create_process."""
-        return await self._create_process_impl(
-            process_id=flow_id,
-            agent_id=agent_id,
-            source_vfs_path=source_vfs_path,
-        )
-
     async def _get_process_by_source_impl(self, source_vfs_path: str):
         """Find an existing process entity associated with the given source file path."""
         from flow_sdk.builtin.process import Flow

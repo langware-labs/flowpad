@@ -1,12 +1,12 @@
-import { Flow, FlowElementTypes } from '@sdk';
-import { useProcessExecution, useProcessStream } from '@sdk/react/hooks';
+import { AgenticProcess, FlowElementTypes } from '@sdk';
+import { useEntity, useEntityData } from '@sdk/react/hooks';
 import { X } from 'lucide-react';
 import { KeyboardEvent, useEffect, useRef, useState } from 'react';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export interface ExecutionHandle {
-  flow: Flow | null;
+  process: AgenticProcess | null;
   isRunning: boolean;
   send: (message: string) => Promise<void>;
   stop: () => void;
@@ -22,13 +22,14 @@ interface AssetExecutionPanelProps {
 /**
  * Generic streaming execution panel for any asset type.
  *
- * Renders streamed FlowData from a running agent/flow. Reusable — any asset
- * that produces a Flow can plug in via the ExecutionHandle interface.
+ * Renders streamed FlowData from a running AgenticProcess. Reusable — any asset
+ * that produces an AgenticProcess can plug in via the ExecutionHandle interface.
  */
 export function AssetExecutionPanel({ execution, onClose }: AssetExecutionPanelProps) {
-  const { flow, send } = execution;
-  const { isRunning } = useProcessExecution(flow);
-  const { data: items } = useProcessStream(flow);
+  const { process, send } = execution;
+  const { flowData: items } = useEntityData(process?.typeId ?? null);
+  const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
+  const isRunning = !!process && !liveProcess?.waiting_for_prompt;
 
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
