@@ -3,7 +3,7 @@ import { InputDialog } from '@src/components/ui/input-dialog';
 import { useToast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { Agent, dataContext, Skill } from '@sdk';
+import { Agent, dataContext, Skill, Task, Workflow } from '@sdk';
 import apiClient from '@sdk/client';
 import { BookOpen } from 'lucide-react';
 import React, { useCallback, useState } from 'react';
@@ -29,7 +29,7 @@ import '@src/components/assets/columns/claudeRulesColumns';
 import '@src/components/assets/filters/assetFilters';
 import '@src/components/assets/filters/taskFilters';
 
-const CREATABLE_TYPES = new Set(['skill', 'agent']);
+const CREATABLE_TYPES = new Set(['skill', 'agent', 'workflow', 'task']);
 
 function parseAssetPointer(pointer: string | undefined): { mode: 'editor' | 'list' | null; typeName: string | null } {
   if (!pointer) return { mode: null, typeName: null };
@@ -87,6 +87,19 @@ export function AssetsPage() {
           navigation.openDock(DockPointer.forAssetEditor('agent', saved.source_path));
           return;
         }
+      } else if (newTypeTarget === 'workflow') {
+        const saved = await Workflow.create(name.trim());
+        toast({ title: 'Workflow created' });
+        if (saved.source_vfs_path) {
+          navigation.openDock(DockPointer.forAssetEditor('workflow', saved.source_vfs_path));
+          return;
+        }
+      } else if (newTypeTarget === 'task') {
+        const task = new Task({ title: name.trim() });
+        const saved = await task.save();
+        toast({ title: 'Task created' });
+        navigation.openDock(DockPointer.forTasks(saved.id));
+        return;
       }
       setRefreshKey(k => k + 1);
     } catch (err) {

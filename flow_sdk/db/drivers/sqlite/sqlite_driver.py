@@ -16,6 +16,7 @@ from flow_sdk._compat import UTC
 
 from fastapi import HTTPException
 from sqlalchemy import and_, asc, delete, desc, func, or_, select, text, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from flow_sdk.api.api_types.type_id import TypeId
@@ -924,8 +925,26 @@ class SQLiteDBDriver(DBDriver):
                     await self._bulk_update_entity(session, entity)
                 else:
                     self.apply_create_fields(entity)
-                    schema = self._entity_to_schema(entity)
-                    session.add(schema)
+                    data_dict = self._get_entity_data_dict(entity)
+                    entity_type = (entity.type or entity.get_type()).lower()
+                    stmt = sqlite_insert(EntitySchema).values(
+                        id=entity.id,
+                        type=entity_type,
+                        namespace=entity.namespace,
+                        key=entity.key,
+                        uname=entity.uname,
+                        type_uname=self._compute_type_uname(entity_type, entity.uname),
+                        created_by=entity.created_by,
+                        created_date=entity.created_date,
+                        updated_by=entity.updated_by,
+                        updated_date=entity.updated_date,
+                        created_through=entity.created_through,
+                        updated_through=entity.updated_through,
+                        schema_version=entity.schema_version if hasattr(entity, 'schema_version') else None,
+                        data=json.dumps(data_dict, cls=SafeJSONEncoder) if data_dict else None,
+                        record_data_ref=entity.record_data_ref if hasattr(entity, 'record_data_ref') else None,
+                    ).on_conflict_do_nothing(index_elements=['type_uname'])
+                    await session.execute(stmt)
             await session.commit()
 
     async def create(self, entity: DBBaseRecord, owner: TypeId | None = None) -> DBBaseRecord:
