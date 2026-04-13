@@ -20,7 +20,7 @@ from typing import Iterator
 _CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
 _IS_WINDOWS = sys.platform == "win32"
 
-# Match Windows encoded project names: starts with drive letter, e.g. "C-Users-lior-project"
+# Match Windows encoded project names: starts with drive letter, e.g. "C-Users-<user-name>-project"
 _WIN_ENCODED_RE = re.compile(r"^([A-Za-z])-(.*)")
 
 
@@ -80,7 +80,7 @@ def iter_claude_project_paths(include_temp: bool = False) -> Iterator[Path]:
         real = _real_path_from_jsonl(project_dir)
         if real is None:
             # Fallback: decode encoded name (correct for paths without hyphens).
-            # On Windows, Claude encodes "C:\Users\lior\proj" as "C-Users-lior-proj"
+            # On Windows, Claude encodes "C:\Users\<user-name>\proj" as "C-Users-<user-name>-proj"
             # (drive letter without colon). On Unix, "/Users/foo/bar" becomes
             # "-Users-foo-bar".
             encoded = project_dir.name
