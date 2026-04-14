@@ -251,7 +251,7 @@ export function initNotificationListener(): () => void {
           title: `New ${specType} from ${senderName}`,
           navigationPath: taskTypeId ? `/dock/${ViewType.TASKS}/${taskTypeId}` : undefined,
           metadata: {
-            event_type: 'cross_notification',
+            event_type: 'notification',
             task_id: crossEventData?.task_id,
             spec_id: crossEventData?.spec_id,
           },

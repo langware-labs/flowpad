@@ -106,7 +106,7 @@ async def _on_server_startup():
 async def _start_notification_scanner() -> None:
     """Scan for incoming notifications on startup."""
     try:
-        from flow_sdk.fs_records.cross_notification_scanner import scan_incoming_notifications
+        from flow_sdk.fs_records.notification_scanner import scan_incoming_notifications
         from flow_sdk.builtin.user import User as _User
         import asyncio as _asyncio
         local_user = await _User.get_one({"uname": "local"})
@@ -119,7 +119,7 @@ async def _start_notification_scanner() -> None:
 async def _start_cloud_ws_listener() -> None:
     """Stub: real-time cloud push notifications not yet implemented.
 
-    TODO: Connect to flowpad.ai cloud WebSocket to receive cross-notification
+    TODO: Connect to flowpad.ai cloud WebSocket to receive notification
     push events in real time. For now, notifications reach the recipient via
     the email deep-link → git pull → manifest scanner path.
     """

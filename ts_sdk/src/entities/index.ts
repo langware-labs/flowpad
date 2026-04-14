@@ -27,6 +27,7 @@ export * from './project';
 export * from './question';
 export * from './shell';
 export * from './siteconfig';
+export * from './conversation';
 export * from './spec';
 export * from './task';
 export * from './cron-event';

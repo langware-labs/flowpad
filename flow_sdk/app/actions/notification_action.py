@@ -1,21 +1,24 @@
 """Action handler for sending cross-user notifications.
 
 Sender flow:
-  1. Create Spec + Task entities in local DB
-  2. Write spec.md and task manifest to git repo under tasks/
+  1. Create Spec + Task + Conversation entities in local DB
+  2. Write spec.md, task manifest, and conversation.jsonl to git repo under tasks/
   3. Git push
   4. POST notification to Flowpad Hub (which stores it and emails recipient)
 
 File layout (all inside the git repo, committed and pushed):
   tasks/<task-title>/manifest.json          — task metadata for scanner
+  tasks/<task-title>/conversation.jsonl     — messages (one JSON object per line)
   tasks/spec/<spec-title>/spec.md           — spec content (markdown + frontmatter)
 
 Routes:
   POST /api/v1/graph/notification/send
+  POST /api/v1/graph/notification/append-conversation
   POST /api/v1/graph/notification/open-task
 """
 
 import asyncio
+import json as _json
 import logging
 import re
 from datetime import datetime
@@ -31,6 +34,7 @@ from flow_sdk.flowpad_types.enums.entity_enums import (
     NotificationStatus,
     NotificationType,
 )
+from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.spec import Spec
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
@@ -44,10 +48,7 @@ logger = logging.getLogger(__name__)
 
 
 def _unique_dir_name(base_name: str, parent: Path) -> str:
-    """Return a directory name that doesn't already exist under parent.
-
-    Appends a counter (2, 3, …) if the name is already taken.
-    """
+    """Return a directory name that doesn't already exist under parent."""
     if not (parent / base_name).exists():
         return base_name
     counter = 2
@@ -62,12 +63,50 @@ def _meaningful_name(title: str) -> str:
     return name[:60] or "untitled"
 
 
+async def _create_conversation_entity(
+    task: Task,
+    conversation_jsonl_path: Path,
+    initial_messages: list[dict],
+    someone_typeid: str,
+) -> Conversation:
+    """Create a Conversation entity + write initial messages to conversation.jsonl.
+
+    Attaches the conversation as a child of the task in the DB.
+    """
+    from flow_sdk.fs_records.conversation_record import ConversationRecord
+
+    # Write messages to jsonl
+    conversation_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+    if initial_messages:
+        with conversation_jsonl_path.open("w", encoding="utf-8") as fh:
+            for msg in initial_messages:
+                fh.write(_json.dumps(msg, ensure_ascii=False) + "\n")
+    else:
+        conversation_jsonl_path.touch()
+
+    messages_json = _json.dumps(initial_messages) if initial_messages else None
+
+    conv = Conversation.model_validate({
+        "task_id": task.id,
+        "data_path": str(conversation_jsonl_path),
+        "message_count": len(initial_messages),
+        "messages": messages_json,
+    })
+    conv.id = Conversation.allocate_id(conv.model_dump())
+    conv = await conv.save(someone_typeid)
+
+    # DB-level parent-child composition
+    await task.attach_child(conv)
+
+    # Record-level parent-child composition
+    rec = ConversationRecord.from_jsonl(conversation_jsonl_path, task.id, conv.id)
+    rec.save()
+
+    return conv
 
 
 async def handle_send_notification(body: dict, someone_typeid: str) -> ApiResponse:
-    """Create Spec + Task, write to git repo, push, post to hub."""
-    import json as _json
-
+    """Create Spec + Task + Conversation, write to git repo, push, post to hub."""
     recipient_id = (body.get("recipient_id") or "").strip()
     spec_title = (body.get("spec_title") or "").strip()
     spec_content = (body.get("spec_content") or "").strip()
@@ -115,25 +154,18 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     spec.id = Spec.allocate_id(spec.model_dump())
     spec = await spec.save(someone_typeid)
 
-    # 2. Create Task entity
-    initial_conversation = None
-    if message:
-        initial_conversation = _json.dumps([{
-            "role": "sender",
-            "content": message,
-            "sender_id": sender_id or "",
-            "timestamp": datetime.now(UTC).isoformat(),
-        }])
+    # 2. Create Task entity (conversation_id set after Conversation is created)
     task = Task.model_validate({
         "title": task_title,
         "spec_id": spec.id,
         "shared_by_id": sender_id,
-        "conversation": initial_conversation,
     })
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
 
-    # 3. Write spec + manifest to git repo
+    # 3. Write spec + manifest + conversation.jsonl to git repo
+    conversation_id: Optional[str] = None
+    spec_file_path = ""
     if project_root:
         tasks_root = Path(project_root) / "tasks"
         spec_root = tasks_root / "spec"
@@ -153,6 +185,29 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
 
         task_dir = tasks_root / task_dir_name
         task_dir.mkdir(parents=True, exist_ok=True)
+
+        # 3a. Create Conversation entity + conversation.jsonl
+        initial_messages = []
+        if message:
+            initial_messages = [{
+                "role": "sender",
+                "content": message,
+                "sender_id": sender_id or "",
+                "timestamp": datetime.now(UTC).isoformat(),
+            }]
+        conv = await _create_conversation_entity(
+            task,
+            task_dir / "conversation.jsonl",
+            initial_messages,
+            someone_typeid,
+        )
+        conversation_id = conv.id
+
+        # Update task with conversation_id
+        task.conversation_id = conversation_id
+        task = await task.save(someone_typeid)
+
+        # 3b. Write manifest
         (task_dir / "manifest.json").write_text(
             _json.dumps({
                 "task_id": task.id,
@@ -161,6 +216,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
                 "spec_dir": spec_dir_name,
                 "shared_by_id": sender_id,
                 "sender_name": sender_name,
+                "conversation_id": conversation_id,
                 "created_at": datetime.now(UTC).isoformat(),
             }, indent=2, default=str),
             encoding="utf-8",
@@ -175,10 +231,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         elif push_result.warning:
             git_error = push_result.warning
         if git_error:
-            return ApiSuccessResponse(data={
-                "sent": False,
-                "git_error": git_error,
-            })
+            return ApiSuccessResponse(data={"sent": False, "git_error": git_error})
 
     # 5. Post to hub
     branch = git_current_branch(project_root) if project_root else ""
@@ -196,7 +249,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         "message": message,
         "project_url": project_url,
         "branch": branch,
-        "spec_file_path": spec_file_path if project_root else "",
+        "spec_file_path": spec_file_path,
     })
     hub_notification_id: Optional[str] = (hub_data or {}).get("notification_id")
     email_error: Optional[str] = None
@@ -222,8 +275,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     notification.id = hub_notification_id or Notification.allocate_id(notification.model_dump())
     notification = await notification.save(someone_typeid)
 
-    # 7. If hub failed (hub is configured but delivery not confirmed), add a bookmark so the
-    #    user sees it in the activity panel and can follow up.
+    # 7. If hub failed, add a bookmark so the user sees it in the activity panel.
     if email_error:
         failure_bookmark = Bookmark.model_validate({
             "bookmark_type": "notification_failed",
@@ -246,8 +298,73 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         "email_error": email_error,
         "spec_id": spec.id,
         "task_id": task.id,
+        "conversation_id": conversation_id,
         "notification_id": notification.id,
         "notify_url": f"{base}/notify/{notification.id}" if hub_notification_id and base else None,
+    })
+
+
+async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResponse:
+    """Append a reply to an existing task's Conversation entity and conversation.jsonl."""
+    task_id = (body.get("task_id") or "").strip()
+    message = (body.get("message") or "").strip()
+
+    if not task_id:
+        return ApiFailResponse(message="task_id is required")
+    if not message:
+        return ApiFailResponse(message="message is required")
+
+    task = await Task.get_one({"id": task_id})
+    if not task:
+        return ApiFailResponse(message=f"Task not found: {task_id}")
+
+    local_user = await User.get_one({"uname": "local"})
+    sender_id: Optional[str] = local_user.id if local_user else None
+
+    # Find the Conversation entity (child of this task)
+    conv = await Conversation.get_one({"task_id": task_id})
+    if not conv:
+        return ApiFailResponse(message=f"No conversation found for task {task_id}")
+
+    new_msg = {
+        "role": "recipient",
+        "content": message,
+        "sender_id": sender_id or "",
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+
+    # Append to conversation.jsonl
+    if conv.data_path:
+        from flow_sdk.fs_records.conversation_record import ConversationRecord
+        rec = ConversationRecord.from_jsonl(Path(conv.data_path), task_id, conv.id)
+        rec.append_message(new_msg)
+
+    # Update the Conversation entity
+    existing_msgs: list = []
+    if conv.messages:
+        try:
+            existing_msgs = _json.loads(conv.messages)
+        except Exception:
+            existing_msgs = []
+    existing_msgs.append(new_msg)
+    conv.messages = _json.dumps(existing_msgs)
+    conv.message_count = len(existing_msgs)
+    conv = await conv.save(someone_typeid)
+
+    # Git push the updated conversation.jsonl
+    project_root_str = (task.metadata or {}).get("project_root")
+    if project_root_str:
+        project_root = Path(project_root_str)
+        await git_add_commit_push(
+            project_root,
+            ["tasks"],
+            f"chore: update conversation for task '{task.title}'",
+        )
+
+    return ApiSuccessResponse(data={
+        "task_id": task_id,
+        "conversation_id": conv.id,
+        "message_count": conv.message_count,
     })
 
 
@@ -263,7 +380,7 @@ async def handle_open_task(project_url: str, task_id: str) -> ApiResponse:
     git_error: Optional[str] = None if pull_ok else pull_msg
 
     try:
-        from flow_sdk.fs_records.cross_notification_scanner import scan_incoming_notifications
+        from flow_sdk.fs_records.notification_scanner import scan_incoming_notifications
         local_user = await User.get_one({"uname": "local"})
         if local_user:
             asyncio.ensure_future(scan_incoming_notifications(local_user.id))
@@ -287,6 +404,21 @@ async def send_notification() -> ApiResponse:
     except Exception as e:
         logger.error(f"[notification_action] send error: {e}", exc_info=True)
         return ApiFailResponse(message=f"Failed to send notification: {str(e)}")
+
+
+@action.post(action_name="append-conversation", types=["notification"])
+async def append_conversation() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info:
+            return ApiFailResponse(message="No request info found")
+        if not request_info.someone_typeid:
+            return ApiFailResponse(message="No authenticated user in request context")
+        body = await request_info.get_post_data() or {}
+        return await handle_append_conversation(body, request_info.someone_typeid)
+    except Exception as e:
+        logger.error(f"[notification_action] append-conversation error: {e}", exc_info=True)
+        return ApiFailResponse(message=f"Failed to append conversation: {str(e)}")
 
 
 @action.post(action_name="open-task", types=["notification"])

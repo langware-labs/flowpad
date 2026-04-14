@@ -16,15 +16,8 @@ export async function openTaskNotification(
 }
 
 export async function sendReply(task: ITask, message: string): Promise<void> {
-  const action = new ActionInfo('send', 'notification', null, 'POST');
-  action.bodyParameters = {
-    recipient_id: task.shared_by_id ?? '',
-    spec_title: task.title ?? 'Re: task',
-    spec_content: message,
-    spec_type: 'support_ticket',
-    task_title: task.title ?? 'Re: task',
-    message,
-  };
+  const action = new ActionInfo('append-conversation', 'notification', null, 'POST');
+  action.bodyParameters = { task_id: task.id, message };
   await dataManager.callAction(action);
 }
 

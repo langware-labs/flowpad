@@ -3,12 +3,7 @@
 On the RECIPIENT side: walks known Claude project roots looking for
 tasks/*/manifest.json files that were committed by the sender. If the
 manifest identifies this user as the recipient (via sender + notification
-data), creates the Task and Spec entities in the local DB.
-
-In the new architecture, notifications are stored in the flowpad.ai cloud.
-The scanner falls back to local manifest discovery after a git pull:
-  - If a notification_id is present in the manifest, fetch details from cloud
-  - Otherwise, use the manifest data directly
+data), creates the Task, Spec, and Conversation entities in the local DB.
 
 Called on: server startup, after git_pull, on-demand via API.
 """
@@ -20,7 +15,8 @@ import logging
 from pathlib import Path
 
 from flow_sdk import service_log
-from flow_sdk.builtin.bookmark import Bookmark, BookmarkStatus
+from flow_sdk.builtin.bookmark import Bookmark, BookmarkStatus, BookmarkType
+from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.spec import Spec
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
@@ -53,7 +49,7 @@ async def scan_incoming_notifications(local_user_id: str) -> list[str]:
             try:
                 await _process_manifest(manifest_file, task_dir, project_root, local_user_id, processed_ids)
             except Exception as e:
-                service_log.error(f"cross_notification_scanner: error processing {manifest_file}: {e}")
+                service_log.error(f"notification_scanner: error processing {manifest_file}: {e}")
 
     return processed_ids
 
@@ -72,9 +68,10 @@ async def _process_manifest(
     if not task_id:
         return
 
-    # Skip if already imported
-    existing_task = await Task.get_by_id(task_id)
+    # If already imported, sync the conversation.jsonl → Conversation entity if it changed
+    existing_task = await Task.get_one({"id": task_id})
     if existing_task is not None:
+        await _sync_conversation(existing_task, task_dir)
         return
 
     sender_id = data.get("shared_by_id") or data.get("sender_id")
@@ -82,6 +79,7 @@ async def _process_manifest(
     spec_id = data.get("spec_id")
     spec_dir_name = data.get("spec_dir")
     task_title = data.get("title") or "Shared task"
+    conversation_id = data.get("conversation_id")
 
     # Don't import tasks that were created by the local user (sender)
     if sender_id == local_user_id:
@@ -91,11 +89,18 @@ async def _process_manifest(
     owner_typeid = local_user.typeid if local_user else None
 
     # --- Create Spec entity from disk ---
-    spec_entity = None
     if spec_id and spec_dir_name:
         spec_file = project_root / "tasks" / "spec" / spec_dir_name / "spec.md"
         if spec_file.exists():
-            spec_entity = await _create_spec_from_file(spec_file, spec_id, owner_typeid)
+            await _create_spec_from_file(spec_file, spec_id, owner_typeid)
+
+    # --- Create Conversation entity + record ---
+    conv = await _create_conversation_from_disk(
+        task_dir=task_dir,
+        task_id=task_id,
+        conversation_id=conversation_id,
+        owner_typeid=owner_typeid,
+    )
 
     # --- Create Task entity ---
     task = Task.model_validate({
@@ -103,9 +108,15 @@ async def _process_manifest(
         "title": task_title,
         "spec_id": spec_id,
         "shared_by_id": sender_id,
+        "conversation_id": conv.id if conv else None,
         "metadata": {"project_root": str(project_root)},
     })
     task = await task.save(owner_typeid)
+
+    # DB-level parent-child composition: task → conversation
+    if conv:
+        await task.attach_child(conv)
+
     task_type_id_str = f"task-{task.id}"
 
     # --- Resolve project_url for the consolidated click handler ---
@@ -115,12 +126,12 @@ async def _process_manifest(
     # --- Create Bookmark ---
     nav_path = f"/dock/tasks/{task_type_id_str}"
     notif_title = f"New task from {sender_name}"
-    existing_bookmark = await Bookmark.get_one({"title": notif_title, "bookmark_type": "notification"})
+    existing_bookmark = await Bookmark.get_one({"title": notif_title, "bookmark_type": BookmarkType.NOTIFICATION})
     if existing_bookmark is None:
         bookmark = Bookmark.model_validate({
-            "bookmark_type": "notification",
+            "bookmark_type": BookmarkType.NOTIFICATION,
             "title": notif_title,
-            "content": data.get("message") or "",
+            "content": "",
             "status": BookmarkStatus.OPEN,
             "data": {"navigation_path": nav_path, "task_id": task_id, "project_url": project_url},
         })
@@ -144,10 +155,101 @@ async def _process_manifest(
             },
         )
     except Exception as e:
-        logger.warning(f"cross_notification_scanner: send_resource_sync failed: {e}")
+        logger.warning(f"notification_scanner: send_resource_sync failed: {e}")
 
     processed_ids.append(task_id)
-    service_log.info(f"cross_notification_scanner: imported task {task_id} from {task_dir.name}")
+    service_log.info(f"notification_scanner: imported task {task_id} from {task_dir.name}")
+
+
+async def _create_conversation_from_disk(
+    task_dir: Path,
+    task_id: str,
+    conversation_id: str | None,
+    owner_typeid,
+) -> Conversation | None:
+    """Create a Conversation entity from conversation.jsonl on disk (recipient side)."""
+    from flow_sdk.fs_records.conversation_record import ConversationRecord
+
+    jsonl_path = task_dir / "conversation.jsonl"
+
+    # Read messages from jsonl if it exists
+    messages: list[dict] = []
+    if jsonl_path.exists():
+        try:
+            for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line:
+                    messages.append(json.loads(line))
+        except Exception as e:
+            logger.warning(f"notification_scanner: could not read {jsonl_path}: {e}")
+
+    # Ensure the jsonl file exists (create empty if not)
+    if not jsonl_path.exists():
+        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
+        jsonl_path.touch()
+
+    conv = Conversation.model_validate({
+        "task_id": task_id,
+        "data_path": str(jsonl_path),
+        "message_count": len(messages),
+        "messages": json.dumps(messages) if messages else None,
+    })
+    if conversation_id:
+        conv.id = conversation_id
+    else:
+        conv.id = Conversation.allocate_id(conv.model_dump())
+
+    conv = await conv.save(owner_typeid)
+
+    # Record-level parent-child composition
+    rec = ConversationRecord.from_jsonl(jsonl_path, task_id, conv.id)
+    rec.save()
+
+    return conv
+
+
+async def _sync_conversation(task: Task, task_dir: Path) -> None:
+    """For an already-imported task, sync conversation.jsonl → Conversation entity."""
+    if not task.conversation_id:
+        return
+
+    conv = await Conversation.get_one({"id": task.conversation_id})
+    if not conv or not conv.data_path:
+        return
+
+    jsonl_path = Path(conv.data_path)
+    if not jsonl_path.exists():
+        return
+
+    messages: list[dict] = []
+    try:
+        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line:
+                messages.append(json.loads(line))
+    except Exception:
+        return
+
+    new_messages_json = json.dumps(messages) if messages else None
+    if new_messages_json == conv.messages and len(messages) == conv.message_count:
+        return  # nothing changed
+
+    local_user = await User.get_one({"uname": "local"})
+    owner_typeid = local_user.typeid if local_user else None
+
+    conv.messages = new_messages_json
+    conv.message_count = len(messages)
+    await conv.save(owner_typeid)
+
+    try:
+        send_resource_sync(
+            type="conversation",
+            id=conv.id,
+            operation=SyncOperation.UPDATE,
+            data={"event_data": {"task_id": task.id, "conversation_id": conv.id}},
+        )
+    except Exception as e:
+        logger.warning(f"notification_scanner: send_resource_sync (conv update) failed: {e}")
 
 
 async def _create_spec_from_file(spec_file: Path, spec_id: str, owner_typeid) -> Spec | None:
@@ -181,5 +283,5 @@ async def _create_spec_from_file(spec_file: Path, spec_id: str, owner_typeid) ->
         })
         return await spec.save(owner_typeid)
     except Exception as e:
-        logger.warning(f"cross_notification_scanner: could not create Spec from {spec_file}: {e}")
+        logger.warning(f"notification_scanner: could not create Spec from {spec_file}: {e}")
         return None
