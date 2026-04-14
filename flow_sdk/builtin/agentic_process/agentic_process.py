@@ -68,9 +68,9 @@ async def _poll_for_completion(agentic_process_id: str, session_id: str | None) 
 
     TERMINAL = {AgenticProcessStatus.COMPLETE, AgenticProcessStatus.ERROR, AgenticProcessStatus.INTERRUPTED}
 
-    await asyncio.sleep(5)  # give Claude time to start and write the first JSONL entry
-    for _ in range(360):  # poll up to 30 min (360 * 5 s)
-        await asyncio.sleep(5)
+    await asyncio.sleep(1)  # give Claude time to start and write the first JSONL entry
+    for _ in range(1800):  # poll up to 30 min (1800 * 1 s)
+        await asyncio.sleep(1)
         try:
             if not session_id:
                 break

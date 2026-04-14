@@ -28,7 +28,7 @@ class ClaudeCliOptions(WorkerCLIOptions):
         cmd.add_env("FLOWPAD_EXECUTION_SCOPE", scope_json)
         shell_str = cmd.to_shell_string()
         # → cd '/proj' && CLAUDE_PROJECT_DIR='/proj' FLOWPAD_EXECUTION_SCOPE='...'
-        #   claude --dangerously-skip-permissions --debug --resume 'abc-123'
+        #   claude --dangerously-skip-permissions --resume 'abc-123'
 
     Fork example::
 
@@ -46,7 +46,7 @@ class ClaudeCliOptions(WorkerCLIOptions):
         resume: bool = False,
         fork_session_id: str | None = None,
         model: str | None = None,
-        debug: bool = True,
+        debug: bool = False,
         permission_mode: str = "bypassPermissions",
         chrome: bool = False,
         worktree: bool = False,
@@ -205,7 +205,7 @@ class ClaudeCliOptions(WorkerCLIOptions):
             resume=bool(data.get("resume", False)),
             fork_session_id=data.get("fork_session_id"),
             model=data.get("model"),
-            debug=bool(data.get("debug", True)),
+            debug=bool(data.get("debug", False)),
             permission_mode=data.get("permission_mode", "bypassPermissions"),
             chrome=bool(data.get("chrome", False)),
             worktree=bool(data.get("worktree", False)),

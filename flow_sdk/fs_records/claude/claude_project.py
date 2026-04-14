@@ -13,6 +13,7 @@ O(1) by ``discover_one()``.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import uuid
 from pathlib import Path
@@ -23,6 +24,14 @@ from .claude_session import ClaudeSessionRecord
 
 _CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 _TEMP_PATH_PREFIXES = ("/tmp/", "/var/folders/", "/private/var/folders/", "/private/tmp/")
+_HOME_STR: str = str(Path.home())
+# Prefixes (applied to os.path.normpath(mount_path)) that identify system artifacts.
+# The stored paths use a buggy double-slash form (/Users/foo//flow/records/...) which
+# normpath collapses to /Users/foo/flow/records/... — so we check both variants.
+_FLOW_RECORDS_NORM_PREFIXES: tuple[str, ...] = (
+    _HOME_STR + "/.flow/records/",
+    _HOME_STR + "/flow/records/",
+)
 
 
 def _project_id(encoded: str) -> str:
@@ -79,6 +88,14 @@ class ClaudeProjectFsRecord(Record):
         return not real.startswith(_TEMP_PATH_PREFIXES)
 
     @classmethod
+    def _is_valid_mount_path(cls, path: str) -> bool:
+        """Return False for system/temp paths that should never appear as user projects."""
+        if path.startswith(_TEMP_PATH_PREFIXES):
+            return False
+        normalized = os.path.normpath(path) + os.sep
+        return not normalized.startswith(_FLOW_RECORDS_NORM_PREFIXES)
+
+    @classmethod
     def _from_claude_dir(cls, d: Path) -> "ClaudeProjectFsRecord":
         encoded = d.name
         real = "/" + encoded.lstrip("-").replace("-", "/")
@@ -115,6 +132,72 @@ class ClaudeProjectFsRecord(Record):
         return min(count, limit) if limit is not None else count
 
     @classmethod
+    def discovery_items_count(cls, limit=None) -> int:
+        """Count discoverable projects, excluding system/temp-path garbage entries."""
+        from flow_sdk.fs_store.record import get_default_records_root, _NAME_SEP  # noqa: PLC0415
+
+        record_type = str(getattr(cls, "_record_type", ""))
+        type_dir = get_default_records_root() / record_type
+        count = 0
+        if type_dir.is_dir():
+            for e in type_dir.iterdir():
+                if not e.is_dir() or _NAME_SEP not in e.name:
+                    continue
+                mount_path = cls._read_mount_path(e)
+                if mount_path and not cls._is_valid_mount_path(mount_path):
+                    continue
+                count += 1
+        count += cls._external_source_count()
+        return min(count, limit) if limit is not None else count
+
+    @classmethod
+    def discover_iter(cls, limit=None, scope=None, **kwargs):
+        """Like the base discover_iter, but skips records_root projects whose
+        ``fs_storage_mount_path`` points at a system/temp location (e.g. agentic
+        process output dirs).  Phase 2 (external ~/.claude/projects/) is already
+        filtered by ``_is_valid_project_dir``; this covers Phase 1.
+        """
+        from flow_sdk.fs_store.record import get_default_records_root, _NAME_SEP, _META_JSON, _migrate_old_format  # noqa: PLC0415
+        import json as _json  # noqa: PLC0415
+
+        record_type = str(getattr(cls, "_record_type", ""))
+        seen_ids: set[str] = set()
+        count = 0
+
+        # Phase 1: records_root — filter out system-path garbage projects
+        type_dir = get_default_records_root() / record_type
+        if type_dir.is_dir():
+            for entry in sorted(type_dir.iterdir()):
+                if not entry.is_dir() or _NAME_SEP not in entry.name:
+                    continue
+                meta_file = entry / _META_JSON
+                if not meta_file.exists() and _migrate_old_format(entry) is None:
+                    continue
+                # Check mount path before loading the full record (cheap read)
+                mount_path = cls._read_mount_path(entry)
+                if mount_path and not cls._is_valid_mount_path(mount_path):
+                    continue
+                try:
+                    rec = cls.load_record(entry)
+                    seen_ids.add(rec.id)
+                    yield rec
+                    count += 1
+                    if limit is not None and count >= limit:
+                        return
+                except (_json.JSONDecodeError, OSError, ValueError):
+                    continue
+
+        # Phase 2: external source (deduped)
+        remaining = None if limit is None else max(0, limit - count)
+        for rec in cls._external_source_iter(limit=remaining):
+            if rec.id not in seen_ids:
+                seen_ids.add(rec.id)
+                yield rec
+                count += 1
+                if limit is not None and count >= limit:
+                    return
+
+    @classmethod
     async def clean_temp_projects(cls) -> int:
         """Remove temp-path project entries from both discovery sources and the DB index.
 
@@ -144,7 +227,7 @@ class ClaudeProjectFsRecord(Record):
                 if not d.is_dir():
                     continue
                 mount_path = cls._read_mount_path(d)
-                if mount_path and mount_path.startswith(_TEMP_PATH_PREFIXES):
+                if mount_path and not cls._is_valid_mount_path(mount_path):
                     try:
                         rec = cls.load_record(d)
                         await rec.unindex()
