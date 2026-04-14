@@ -82,7 +82,7 @@ async def _pull_and_scan(project_url: str, branch: str = "") -> Tuple[bool, str]
         logger.warning("[notify] git pull did not succeed for %s: %s", repo_path, pull_msg)
 
     try:
-        from flow_sdk.fs_records.cross_notification_scanner import scan_incoming_notifications
+        from flow_sdk.fs_records.notification_scanner import scan_incoming_notifications
         from flow_sdk.builtin.user import User
         local_user = await User.get_one({"uname": "local"})
         if local_user:

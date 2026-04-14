@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Badge } from '@src/components/ui/badge';
 import type { Bookmark } from '@sdk';
+import { BookmarkType } from '@sdk/entities/bookmark';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { openTaskNotification } from '@sdk/entities/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -49,7 +50,7 @@ export function BookmarkCard({
 }) {
   const { navigation } = useDockNavigation();
   const [gitError, setGitError] = useState<string | null>(null);
-  const isTerminalAnnotation = bookmark.bookmark_type === 'terminal_annotation' && !!bookmark.session_id;
+  const isTerminalAnnotation = bookmark.bookmark_type === BookmarkType.TERMINAL_ANNOTATION && !!bookmark.session_id;
   const navPath = bookmark.data?.navigation_path as string | undefined;
   const isClosed = bookmark.status === 'closed';
   const contentPreview = bookmark.content
@@ -59,7 +60,7 @@ export function BookmarkCard({
     : null;
 
   const handleCardClick = () => {
-    if (bookmark.bookmark_type === 'cross_notification') {
+    if (bookmark.bookmark_type === BookmarkType.NOTIFICATION) {
       const projectUrl = bookmark.data?.project_url as string | undefined;
       const taskId = bookmark.data?.task_id as string | undefined;
       void openTaskNotification(projectUrl ?? '', taskId ?? '')
@@ -108,8 +109,8 @@ export function BookmarkCard({
       </AlertDialogContent>
     </AlertDialog>
     <div
-      className={`bookmark-card${navPath || bookmark.bookmark_type === 'cross_notification' ? ' cursor-pointer' : ''}`}
-      onClick={navPath || bookmark.bookmark_type === 'cross_notification' ? handleCardClick : undefined}
+      className={`bookmark-card${navPath || bookmark.bookmark_type === BookmarkType.NOTIFICATION ? ' cursor-pointer' : ''}`}
+      onClick={navPath || bookmark.bookmark_type === BookmarkType.NOTIFICATION ? handleCardClick : undefined}
     >
       <div className="bookmark-card-header">
         {isTerminalAnnotation

@@ -105,6 +105,7 @@ class RecordType(StrEnum):
     ASSET = "asset"
     DOCS = "docs"
     SPEC = "spec"
+    CONVERSATION = "conversation"
 
 
 class SkillitRecordType(StrEnum):

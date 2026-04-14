@@ -1,4 +1,5 @@
 import { Annotation, Bookmark, QueryRequest } from '@sdk';
+import { BookmarkType } from '@sdk/entities/bookmark';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import type { PtySyncSnapshot, PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import type { PtyAnchor } from '@sdk/pty-sync/PtySegment.js';
@@ -119,7 +120,7 @@ export function useAnnotationGutter(
     () =>
       workerSessionId
         ? allBookmarks.filter(
-            (m) => m.bookmark_type === 'terminal_annotation' && m.session_id === workerSessionId,
+            (m) => m.bookmark_type === BookmarkType.TERMINAL_ANNOTATION && m.session_id === workerSessionId,
           )
         : [],
     [allBookmarks, workerSessionId],
@@ -210,7 +211,7 @@ export function useAnnotationGutter(
     async (absoluteLine: number, content: string) => {
       if (!workerSessionId) return;
       const bookmark = new Bookmark({
-        bookmark_type: 'terminal_annotation',
+        bookmark_type: BookmarkType.TERMINAL_ANNOTATION,
         session_id: workerSessionId,
         work_dir: workdir,
         data: { line: absoluteLine },
