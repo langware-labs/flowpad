@@ -8,6 +8,7 @@ Requires Claude CLI in PATH and network access.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -31,6 +32,16 @@ SAMPLE_SESSION = (
     "made an incorrect fix, then corrected itself after the user pointed out the error. "
     "The session ended with the correct fix applied."
 )
+
+_AGENTIC_PATTERN = "agentic"
+
+
+def _agentic_project_dirs() -> set[str]:
+    """Return the set of ~/.claude/projects/ dir names that look like agentic-process paths."""
+    claude_projects = Path.home() / ".claude" / "projects"
+    if not claude_projects.is_dir():
+        return set()
+    return {d.name for d in claude_projects.iterdir() if d.is_dir() and _AGENTIC_PATTERN in d.name}
 
 
 def _fmt_entry(entry: dict) -> str:
@@ -62,8 +73,10 @@ def _fmt_entry(entry: dict) -> str:
 @pytest.mark.asyncio
 @pytest.mark.timeout(180)
 @pytest.mark.flaky(reruns=2, reruns_delay=5)
-async def test_agentic_process_hello_world(local_compute_node):
+async def test_agentic_process_hello_world(local_project, local_compute_node):
     assert local_compute_node is not None
+    agentic_dirs_before = _agentic_project_dirs()
+
     process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
     assert process.waiting_for_prompt is False
 
@@ -81,7 +94,6 @@ async def test_agentic_process_hello_world(local_compute_node):
             worker_pid = shell.worker_pid if shell else None
             worker_alive = await shell.worker_alive() if shell else False
             shell_status = shell.status if shell else "no shell"
-            # Try to get exit code if process already died
             exit_code = None
             if worker_pid and not worker_alive:
                 try:
@@ -108,19 +120,24 @@ async def test_agentic_process_hello_world(local_compute_node):
 
     assert process.waiting_for_prompt is True
 
-    # With no workdir set, Claude runs inside the process output_dir.
-    # Verify hello.txt landed there.
-    proc_record = await process.get_record()
-    assert proc_record is not None, "AgenticProcessRecord not found"
-    hello = proc_record.output_dir / "hello.txt"
-    assert hello.exists(), f"hello.txt not found in output_dir {proc_record.output_dir}"
+    # Claude runs in the @local project workdir — verify hello.txt landed there.
+    assert process.workdir, "process.workdir should be set after start()"
+    workdir = Path(process.workdir)
+    hello = workdir / "hello.txt"
+    assert hello.exists(), f"hello.txt not found in workdir {workdir}"
     assert "hello" in hello.read_text().lower()
+
+    # Verify no new agentic-process entries were created in ~/.claude/projects/
+    new_agentic = _agentic_project_dirs() - agentic_dirs_before
+    assert not new_agentic, (
+        f"New agentic-process project dirs appeared in ~/.claude/projects/: {new_agentic}"
+    )
 
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(180)
 @pytest.mark.flaky(reruns=2, reruns_delay=5)
-async def test_agentic_process_classify(local_compute_node):
+async def test_agentic_process_classify(local_project, local_compute_node):
     process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
     await process.prompt(
         "Run the following bash command exactly as written — do NOT interpret or paraphrase:\n"
@@ -139,9 +156,10 @@ async def test_agentic_process_classify(local_compute_node):
 
     assert process.waiting_for_prompt is True
 
-    proc_record = await process.get_record()
-    classification_file = proc_record.output_dir / "classification.json"
-    assert classification_file.exists(), f"classification.json not found in {proc_record.output_dir}"
+    assert process.workdir, "process.workdir should be set after start()"
+    workdir = Path(process.workdir)
+    classification_file = workdir / "classification.json"
+    assert classification_file.exists(), f"classification.json not found in {workdir}"
 
     data = json.loads(classification_file.read_text())
     assert "category" in data, f"'category' missing from: {data}"
@@ -154,7 +172,7 @@ async def test_agentic_process_classify(local_compute_node):
 
 @pytest.mark.asyncio
 # NOTE: do NOT increase timeout or mark as flaky — these tests must pass within the global 30s limit
-async def test_agentic_process_clock_agent(tmp_path, local_compute_node):
+async def test_agentic_process_clock_agent(local_project, local_compute_node):
     agent = Agent(
         name="the-clock-agent",
         description="Returns the current timestamp. Use when asked for the current time.",
@@ -173,9 +191,10 @@ async def test_agentic_process_clock_agent(tmp_path, local_compute_node):
 
     assert process.waiting_for_prompt is True
 
-    proc_record = await process.get_record()
-    clock_file = proc_record.output_dir / "clock.txt"
-    assert clock_file.exists(), f"clock.txt not written by clock agent in {proc_record.output_dir}"
+    assert process.workdir, "process.workdir should be set after start()"
+    workdir = Path(process.workdir)
+    clock_file = workdir / "clock.txt"
+    assert clock_file.exists(), f"clock.txt not written by clock agent in {workdir}"
     content = clock_file.read_text().strip()
     import re
     assert re.search(r"\d{4}-\d{2}-\d{2}", content), f"No timestamp in clock.txt: {content!r}"
@@ -183,7 +202,7 @@ async def test_agentic_process_clock_agent(tmp_path, local_compute_node):
 
 @pytest.mark.asyncio
 # NOTE: do NOT increase timeout or mark as flaky — these tests must pass within the global 30s limit
-async def test_agentic_process_classify_with_agent(local_compute_node):
+async def test_agentic_process_classify_with_agent(local_project, local_compute_node):
     agent = Agent.load_system_agent("classify")
     process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
     process.load_embedded_agent(agent)
@@ -200,9 +219,10 @@ async def test_agentic_process_classify_with_agent(local_compute_node):
 
     assert process.waiting_for_prompt is True
 
-    proc_record = await process.get_record()
-    json_files = list(proc_record.output_dir.rglob("classification.json"))
-    assert len(json_files) >= 1, f"classification.json not written by classify sub-agent in {proc_record.output_dir}"
+    assert process.workdir, "process.workdir should be set after start()"
+    workdir = Path(process.workdir)
+    json_files = list(workdir.rglob("classification.json"))
+    assert len(json_files) >= 1, f"classification.json not written by classify sub-agent in {workdir}"
 
     data = json.loads(json_files[0].read_text())
     assert "category" in data, f"'category' missing from: {data}"
@@ -214,7 +234,7 @@ async def test_agentic_process_classify_with_agent(local_compute_node):
 
 @pytest.mark.asyncio
 # NOTE: do NOT increase timeout or mark as flaky — these tests must pass within the global 30s limit
-async def test_agentic_process_analyze_with_agent(local_compute_node):
+async def test_agentic_process_analyze_with_agent(local_project, local_compute_node):
     """analyze system agent writes analysis.json."""
     agent = Agent.load_system_agent("analyze")
     process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
@@ -231,10 +251,10 @@ async def test_agentic_process_analyze_with_agent(local_compute_node):
 
     assert process.waiting_for_prompt is True
 
-    proc_record = await process.get_record()
-    json_out = list(proc_record.output_dir.rglob("analysis.json"))
+    assert process.workdir, "process.workdir should be set after start()"
+    workdir = Path(process.workdir)
+    json_out = list(workdir.rglob("analysis.json"))
     assert len(json_out) >= 1, "analysis.json not found"
-
 
     data = json.loads(json_out[0].read_text())
     assert "session_id" in data
@@ -251,7 +271,7 @@ async def test_agentic_process_analyze_with_agent(local_compute_node):
 
 @pytest.mark.asyncio
 # NOTE: do NOT increase timeout or mark as flaky — these tests must pass within the global 30s limit
-async def test_agentic_process_fix_it_with_agent(local_compute_node):
+async def test_agentic_process_fix_it_with_agent(local_project, local_compute_node):
     """fix-it system agent writes analysis.json and a skill folder with SKILL.MD."""
     agent = Agent.load_system_agent("fix-it")
     process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
@@ -268,9 +288,10 @@ async def test_agentic_process_fix_it_with_agent(local_compute_node):
 
     assert process.waiting_for_prompt is True
 
-    proc_record = await process.get_record()
-    json_out = list(proc_record.output_dir.rglob("analysis.json"))
-    skill_files = list(proc_record.output_dir.rglob("SKILL.MD"))
+    assert process.workdir, "process.workdir should be set after start()"
+    workdir = Path(process.workdir)
+    json_out = list(workdir.rglob("analysis.json"))
+    skill_files = list(workdir.rglob("SKILL.MD"))
     assert len(json_out) >= 1, "analysis.json not found"
     assert len(skill_files) >= 1, "SKILL.MD not found in skill folder"
 
@@ -286,7 +307,7 @@ async def test_agentic_process_fix_it_with_agent(local_compute_node):
 @pytest.mark.asyncio
 @pytest.mark.timeout(240)
 @pytest.mark.flaky(reruns=2, reruns_delay=5)
-async def test_agentic_process_lists_system_skills(local_compute_node):
+async def test_agentic_process_lists_system_skills(local_project, local_compute_node):
     """Verify that system skills are visible to Claude via --add-dir system_assets."""
     import flow_sdk
     from pathlib import Path as _Path
@@ -305,8 +326,9 @@ async def test_agentic_process_lists_system_skills(local_compute_node):
 
     assert process.waiting_for_prompt is True
 
-    proc_record = await process.get_record()
-    skills_file = proc_record.output_dir / "skills.json"
+    assert process.workdir, "process.workdir should be set after start()"
+    workdir = Path(process.workdir)
+    skills_file = workdir / "skills.json"
     assert skills_file.exists(), "Expected skills.json to be created"
 
     skills = json.loads(skills_file.read_text())
@@ -321,7 +343,7 @@ async def test_agentic_process_lists_system_skills(local_compute_node):
 @pytest.mark.asyncio
 @pytest.mark.timeout(240)
 @pytest.mark.flaky(reruns=2, reruns_delay=5)
-async def test_agentic_process_local_assets_skill(tmp_path, local_compute_node):
+async def test_agentic_process_local_assets_skill(tmp_path, local_project, local_compute_node):
     """A skill placed under tmp_path/.claude/skills/ is discoverable by Claude via --add-dir."""
     skill_name = "local-canary-skill"
     skill_dir = tmp_path / ".claude" / "skills" / skill_name
@@ -350,8 +372,9 @@ async def test_agentic_process_local_assets_skill(tmp_path, local_compute_node):
 
     assert process.waiting_for_prompt is True
 
-    proc_record = await process.get_record()
-    skills_file = proc_record.output_dir / "skills.json"
+    assert process.workdir, "process.workdir should be set after start()"
+    workdir = Path(process.workdir)
+    skills_file = workdir / "skills.json"
     assert skills_file.exists(), "Expected skills.json to be created"
 
     skills = json.loads(skills_file.read_text())

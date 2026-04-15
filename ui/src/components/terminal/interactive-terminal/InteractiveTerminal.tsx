@@ -225,7 +225,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   className = '',
   active = false,
   onTitleChange,
-  process,
+  process: propProcess,
   embedded,
   onClose,
   onWorkerSessionId,
@@ -233,7 +233,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // _flow is used only in the React.memo comparator below
   void _flow;
 
-  const { agenticProcessTypeId } = useContext();
+  const { agenticProcessTypeId, agenticProcess: contextProcess } = useContext();
+  // Prop takes precedence (e.g. WorkflowsPage passes an explicit process).
+  // For TabbedTerminal, no prop is passed — fall back to the context process
+  // set by the loader, which is always authoritative for the active tab.
+  const process = propProcess ?? contextProcess ?? undefined;
   const { navigation } = useDockNavigation();
   const { resolvedTheme } = useTheme();
   const [searchParams] = useSearchParams();

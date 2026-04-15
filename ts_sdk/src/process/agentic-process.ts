@@ -1114,7 +1114,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     }
     this.shell_id = result.shell_id;
     this.session_id = result.session_id;
-    dataManager.notifyEntityChanged(this);
     dataManager.updateEntityFromJson(result.shell);
     const shell = await dataManager.getByTypeId<Shell>(new TypeId(Shell.type, result.shell_id));
     if (!shell) throw new Error(`Shell ${result.shell_id} not found after start()`);

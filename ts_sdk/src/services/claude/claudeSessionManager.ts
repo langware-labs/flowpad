@@ -50,7 +50,7 @@ export class ClaudeSessionManager extends EventEmitter {
     if (!computeNode) throw new Error('No compute node available');
 
     const process = await computeNode.createProcess(context);
-    await process.start({ ...options, visible: true });
+    await process.start(options);
     return process;
   }
 }
