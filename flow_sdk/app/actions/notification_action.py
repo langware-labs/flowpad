@@ -98,9 +98,11 @@ async def _create_conversation_entity(
     # DB-level parent-child composition
     await task.attach_child(conv)
 
-    # Record-level parent-child composition
+    # Record-level parent-child composition (conversation → task via parent_ref)
     rec = ConversationRecord.from_jsonl(conversation_jsonl_path, task.id, conv.id)
     rec.save()
+    # Bidirectional: add conversation to task's children_refs
+    rec.link_to_parent_record()
 
     return conv
 
@@ -162,6 +164,15 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     })
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
+
+    # 2a. Register task on hub so the recipient can load it via the hub graph API.
+    # The hub's generic create endpoint stores it in Neo4j with owner access for the sender.
+    await hub_post("task", {
+        "id": task.id,
+        "title": task_title,
+        "task_type": task.task_type,
+        "status": task.status,
+    })
 
     # 3. Write spec + manifest + conversation.jsonl to git repo
     conversation_id: Optional[str] = None
@@ -236,7 +247,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     # 5. Post to hub
     branch = git_current_branch(project_root) if project_root else ""
     hub_configured = bool(hub_base_url())
-    hub_data = await hub_post("notification/send", {
+    hub_data = await hub_post("notification/notify", {
         "recipient_email": recipient_email,
         "sender_id": sender_id,
         "sender_name": sender_name,
@@ -435,3 +446,34 @@ async def open_task_notification() -> ApiResponse:
     except Exception as e:
         logger.error(f"[notification_action] open-task error: {e}", exc_info=True)
         return ApiFailResponse(message=f"Failed to open task: {str(e)}")
+
+
+async def handle_refresh_notifications(project_path: str) -> ApiResponse:
+    """Git pull the project repo and run the incoming notification scanner."""
+    import asyncio as _asyncio
+    project_root = find_project_root(project_path) if project_path else None
+    if project_root:
+        await git_pull(project_root)
+    try:
+        from flow_sdk.fs_records.notification_scanner import scan_incoming_notifications
+        local_user = await User.get_one({"uname": "local"})
+        if local_user:
+            await _asyncio.ensure_future(scan_incoming_notifications(local_user.id))
+    except Exception as e:
+        logger.warning(f"[notification_action] scan error (non-fatal): {e}")
+    return ApiSuccessResponse(data={"refreshed": True})
+
+
+@action.post(action_name="refresh", types=["notification"])
+async def refresh_notifications() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info:
+            return ApiFailResponse(message="No request info found")
+        body = await request_info.get_post_data() or {}
+        return await handle_refresh_notifications(
+            project_path=(body.get("project_path") or "").strip(),
+        )
+    except Exception as e:
+        logger.error(f"[notification_action] refresh error: {e}", exc_info=True)
+        return ApiFailResponse(message=f"Failed to refresh: {str(e)}")

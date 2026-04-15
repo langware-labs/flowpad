@@ -40,3 +40,9 @@ export async function sendNotification(params: SendNotificationParams): Promise<
   return { git_error: res?.git_error ?? null, sent: res?.sent, email_error: res?.email_error ?? null };
 }
 
+export async function refreshNotifications(projectPath?: string): Promise<void> {
+  const action = new ActionInfo('refresh', 'notification', null, 'POST');
+  action.bodyParameters = { project_path: projectPath ?? '' };
+  await dataManager.callAction(action);
+}
+

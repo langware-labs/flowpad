@@ -201,9 +201,11 @@ async def _create_conversation_from_disk(
 
     conv = await conv.save(owner_typeid)
 
-    # Record-level parent-child composition
+    # Record-level parent-child composition (conversation → task via parent_ref)
     rec = ConversationRecord.from_jsonl(jsonl_path, task_id, conv.id)
     rec.save()
+    # Bidirectional: add conversation to task's children_refs
+    rec.link_to_parent_record()
 
     return conv
 
