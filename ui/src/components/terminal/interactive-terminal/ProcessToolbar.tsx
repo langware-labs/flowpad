@@ -8,7 +8,7 @@
  * surfaced via RestartRequiredOverlay.
  */
 
-import { AgenticProcess, claudeSessionManager, type Shell } from '@sdk';
+import { AgenticProcess, type Shell } from '@sdk';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -137,7 +137,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
     if (isForking) return;
     setIsForking(true);
     try {
-      const newProcess = await claudeSessionManager.forkSession(process);
+      const newProcess = await process.fork(true);
       void navigation.openShellProcess(newProcess.id);
     } finally {
       setIsForking(false);
