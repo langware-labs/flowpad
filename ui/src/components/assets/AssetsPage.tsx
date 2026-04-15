@@ -139,7 +139,7 @@ export function AssetsPage() {
       {/* Header */}
       <div className="flex h-[52px] flex-shrink-0 items-center border-b px-3">
         <BookOpen className="h-4 w-4 text-muted-foreground" />
-        <span className="ml-2 text-sm font-medium">Assets</span>
+        <span className="ml-2 text-sm font-medium">Wiki</span>
         <div className="ml-auto">
           <ScopeFilterBar
             scope={assetFilter.scope}

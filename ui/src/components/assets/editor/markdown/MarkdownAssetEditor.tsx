@@ -250,7 +250,7 @@ function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, on
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
       <Button variant="ghost" size="sm" onClick={onBack} className="-ml-1 flex-shrink-0">
         <ArrowLeft className="mr-1 h-4 w-4" />
-        Assets
+        Wiki
       </Button>
 
       <div className="min-w-0 flex-1">
