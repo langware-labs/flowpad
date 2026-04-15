@@ -1114,6 +1114,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     }
     this.shell_id = result.shell_id;
     this.session_id = result.session_id;
+    dataManager.notifyEntityChanged(this);
     dataManager.updateEntityFromJson(result.shell);
     const shell = await dataManager.getByTypeId<Shell>(new TypeId(Shell.type, result.shell_id));
     if (!shell) throw new Error(`Shell ${result.shell_id} not found after start()`);
@@ -1125,6 +1126,29 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     }
     await shell.attachPty({ cols: 80, rows: 24, timeout: options?.ptyTimeout, ptyId: result.pty_id });
     return true;
+  }
+
+  /**
+   * Fork this session into a new sibling AgenticProcess.
+   *
+   * Creates a new process that resumes from this session's conversation history
+   * but diverges into a fresh session ID — equivalent to running:
+   *   claude --resume <this.session_id> --fork-session
+   *
+   * @param visible - Whether the new process should appear in the tabs view (default: false).
+   *                  Pass true when forking from the UI toolbar.
+   * @returns The new AgenticProcess, already opened with a live PTY.
+   */
+  async fork(visible = false): Promise<AgenticProcess> {
+    const actionInfo = new ActionInfo('fork', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { visible };
+    const data = await dataManager.callAction<{ visible: boolean }, Record<string, unknown>>(actionInfo);
+    if (!data?.id) throw new Error('Fork failed: backend returned no process data');
+    dataManager.updateEntityFromJson(data);
+    const newProcess = await dataManager.getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, data.id as string));
+    if (!newProcess) throw new Error(`Fork failed: new process ${data.id} not found after registration`);
+    await newProcess.start();
+    return newProcess;
   }
 
   /**

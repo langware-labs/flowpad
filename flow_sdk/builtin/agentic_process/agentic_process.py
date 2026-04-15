@@ -313,9 +313,12 @@ class AgenticProcess(Entity):
             if cmd.fork_session_id:
                 cmd.fork_session_id = await self._find_resumable_session(cmd.fork_session_id)
 
-            # When resuming, ensure CLAUDE_PROJECT_DIR points to where the session lives.
+            # When resuming or forking, ensure CLAUDE_PROJECT_DIR points to where
+            # the source session's transcript lives. For a fork, self.session_id is
+            # the brand-new UUID with no transcript yet; use fork_session_id instead.
             if cmd.resume and self.session_id:
-                session_rec = self._discover_claude_record_session(self.session_id)
+                lookup_id = cmd.fork_session_id or self.session_id
+                session_rec = self._discover_claude_record_session(lookup_id)
                 if session_rec and session_rec.cwd:
                     cmd.env_vars["CLAUDE_PROJECT_DIR"] = session_rec.cwd
                     cmd.workdir = session_rec.cwd
@@ -437,6 +440,32 @@ class AgenticProcess(Entity):
         if isinstance(exit_result, ApiFailResponse) and "No active shell" not in exit_result.message:
             return exit_result
         return await self.start()
+
+    @action.post(action_name="fork")
+    async def fork_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Create a sibling process that shares this session's conversation history.
+
+        Equivalent to: claude --resume <this.session_id> --fork-session
+        Returns the new AgenticProcess entity data so the caller can open it.
+        `visible` (bool, default False) controls whether the new process appears in the tabs view.
+        """
+        try:
+            request_info = get_current_request_info()
+            body = await request_info.get_post_data() if request_info else {}
+            visible = bool((body or {}).get("visible", False))
+            owner = request_info.someone_typeid if request_info else None
+
+            new_proc = AgenticProcess.fork(
+                session_id=self.session_id,
+                workdir=self.workdir,
+                compute_node_id=self.compute_node_id,
+                visible=visible,
+            )
+            await new_proc.save(owner)
+            return ApiSuccessResponse(data={"id": new_proc.id, "type": new_proc.type})
+        except Exception as e:
+            logger.exception("AgenticProcess %s fork_action error: %s", self.id, e)
+            return ApiFailResponse(message=str(e))
 
     async def wait(self, timeout: float | None = None) -> None:
         """Block until worker_status reaches a terminal state (complete / error / interrupted).

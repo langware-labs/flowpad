@@ -127,6 +127,129 @@ def test_fork_factory_does_not_set_session_id():
     assert proc.session_id is None
 
 
+def test_fork_factory_passes_workdir():
+    """AgenticProcess.fork() passes workdir to the new instance."""
+    proc = AgenticProcess.fork("src-session-456", workdir="/project/dir")
+    assert proc.workdir == "/project/dir"
+
+
+def test_fork_factory_passes_compute_node_id():
+    """AgenticProcess.fork() passes compute_node_id to the new instance."""
+    proc = AgenticProcess.fork("src-session-456", compute_node_id="node-abc")
+    assert proc.compute_node_id == "node-abc"
+
+
+# ---------------------------------------------------------------------------
+# CLAUDE_PROJECT_DIR lookup uses source session on fork
+# ---------------------------------------------------------------------------
+
+def test_claude_project_dir_lookup_uses_fork_session_id():
+    """When forking, CLAUDE_PROJECT_DIR lookup uses fork_session_id, not the new session_id."""
+    from unittest.mock import MagicMock
+    from flow_sdk.builtin.cli_workers.claude_cli import ClaudeCliOptions
+
+    proc = _proc(session_id="new-session-uuid")
+    # Simulate cli_options with fork_session_id set
+    cmd = ClaudeCliOptions(
+        session_id="new-session-uuid",
+        resume=True,
+        fork_session_id="src-session-uuid",
+        workdir="/project",
+    )
+
+    fake_record = MagicMock()
+    fake_record.cwd = "/project/dir"
+
+    calls = []
+
+    def fake_discover(session_id):
+        calls.append(session_id)
+        return fake_record if session_id == "src-session-uuid" else None
+
+    with patch.object(proc, "_discover_claude_record_session", side_effect=fake_discover):
+        lookup_id = cmd.fork_session_id or proc.session_id
+        session_rec = proc._discover_claude_record_session(lookup_id)
+
+    assert calls == ["src-session-uuid"], "Should look up the source session, not the new one"
+    assert session_rec is fake_record
+
+
+# ---------------------------------------------------------------------------
+# fork action
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_fork_action_creates_sibling_with_fork_session_id():
+    """fork_action() calls AgenticProcess.fork() with source session_id and returns ApiSuccessResponse."""
+    source = _proc(session_id="source-session-abc", workdir="/project")
+
+    fake_new_proc = MagicMock()
+    fake_new_proc.id = "new-proc-id"
+    fake_new_proc.type = "agentic_process"
+    fake_new_proc.save = AsyncMock()
+
+    with patch.object(AgenticProcess, "fork", return_value=fake_new_proc) as mock_fork, \
+         patch("flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info", return_value=None):
+        result = await source.fork_action()
+
+    mock_fork.assert_called_once_with(
+        session_id="source-session-abc",
+        workdir="/project",
+        compute_node_id=source.compute_node_id,
+        visible=False,
+    )
+    fake_new_proc.save.assert_awaited_once_with(None)
+    from flow_sdk.responses.response import ApiSuccessResponse
+    assert isinstance(result, ApiSuccessResponse)
+    assert result.data == {"id": "new-proc-id", "type": "agentic_process"}
+
+
+@pytest.mark.asyncio
+async def test_fork_action_visible_false_by_default():
+    """fork_action() defaults visible=False when request body is absent."""
+    source = _proc(session_id="src-sess", workdir="/project")
+
+    fake_new_proc = MagicMock()
+    fake_new_proc.save = AsyncMock()
+    fake_new_proc.to_dict = MagicMock(return_value={"id": "x"})
+
+    with patch.object(AgenticProcess, "fork", return_value=fake_new_proc) as mock_fork, \
+         patch("flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info", return_value=None):
+        await source.fork_action()
+
+    mock_fork.assert_called_once_with(
+        session_id="src-sess",
+        workdir="/project",
+        compute_node_id=source.compute_node_id,
+        visible=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_fork_action_visible_true_when_passed():
+    """fork_action() passes visible=True when request body contains visible: true."""
+    source = _proc(session_id="src-sess", workdir="/project")
+
+    fake_new_proc = MagicMock()
+    fake_new_proc.save = AsyncMock()
+    fake_new_proc.to_dict = MagicMock(return_value={"id": "x"})
+
+    mock_req = MagicMock()
+    mock_req.someone_typeid = None
+    mock_req.get_post_data = AsyncMock(return_value={"visible": True})
+
+    with patch.object(AgenticProcess, "fork", return_value=fake_new_proc) as mock_fork, \
+         patch("flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info", return_value=mock_req):
+        await source.fork_action()
+
+    mock_fork.assert_called_once_with(
+        session_id="src-sess",
+        workdir="/project",
+        compute_node_id=source.compute_node_id,
+        visible=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # context manager
 # ---------------------------------------------------------------------------
