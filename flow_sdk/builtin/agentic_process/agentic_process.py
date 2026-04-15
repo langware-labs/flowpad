@@ -1007,6 +1007,15 @@ class AgenticProcess(Entity):
                 if ancestor:
                     self.project_id = ancestor.id
 
+        # Fall back to @local project when no ancestor project is found
+        if not self.project_id:
+            local_project = await Project.get_by_uname("local")
+            if not local_project:
+                raise RuntimeError(
+                    "No project found for agentic process and no @local project available"
+                )
+            self.project_id = local_project.id
+
         if self.project_id and (not self.workdir or not self.project_encoded_name):
             project = await Project.get_by_id(self.project_id)
             if project and project.fs_storage_mount_path:
@@ -1091,11 +1100,10 @@ class AgenticProcess(Entity):
         if cn_id and "-" in cn_id:
             cn_id = cn_id.split("-", 1)[1]
         workdir = self.workdir
-        if not self.workdir:
-            rec = await self.get_record()
-            if not rec:
-                raise NotADirectoryError("No workdir on for process and no record, can not open shell")
-            workdir = str(rec.output_dir)
+        if not workdir:
+            raise NotADirectoryError(
+                f"AgenticProcess {self.id} has no workdir after project resolution"
+            )
         shell = Shell(
             compute_node_id=cn_id,
             name=session_name,

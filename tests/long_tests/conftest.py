@@ -30,6 +30,26 @@ def pytest_runtest_makereport(item, call):
 
 
 @pytest.fixture()
+async def local_project(initialize_test_db, tmp_path):
+    """Create an @local Project with tmp_path as its workdir, cleaned up after the test."""
+    from flow_sdk.builtin.project import Project
+
+    existing = await Project.get_by_uname("local")
+    if existing:
+        yield existing
+        return
+
+    project = Project(
+        uname="local",
+        name="local",
+        fs_storage_mount_path=str(tmp_path),
+    )
+    await project.save()
+    yield project
+    await project.delete()
+
+
+@pytest.fixture()
 async def local_compute_node(initialize_test_db):
     """Get or create the @local ComputeNode. Deletes it after the test only if this fixture created it."""
     from flow_sdk.builtin.faas.compute_node import ComputeNode

@@ -103,7 +103,7 @@ const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) =
 const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabButton }) => {
   const { tabs: sessions } = useActiveTerminals();
   const { flow } = useAgentContext();
-  const { activeShellId: contextShellId } = useContext();
+  const { activeShellId: contextShellId, agenticProcess: contextAgenticProcess } = useContext();
   const _perfLoggedRef = useRef(false);
   if (!_perfLoggedRef.current) {
     _perfLoggedRef.current = true;
@@ -205,7 +205,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
       // before the loader's async work (entity queries). The loader will
       // later call setActiveShellId with the same value (no-op).
       dataContext.setActiveShellId(shellId);
-      const entity = session.agenticProcess ?? session.shell;
+      const entity = session.shell;
       if (entity) navigation.openDock(entity.dockPointer);
     },
     [sessions, navigation],
@@ -282,8 +282,9 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
       const session = sessions.find((s) => s.shellId === shellId);
       if (!session) return;
       try {
-        if (session.agenticProcess) {
-          await session.agenticProcess.close();
+        const sessionProcess = session.shellId === activeShellId ? contextAgenticProcess : undefined;
+        if (sessionProcess) {
+          await sessionProcess.close();
         } else if (session.shell) {
           await session.shell.close();
         }
@@ -374,7 +375,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
     // Inject /rename only when user-initiated AND Claude is at the prompt (waiting_for_prompt),
     // never when the title came from xterm (PTY escape sequence), to avoid a loop
     // where Claude sets the title → we inject /rename → Claude sets the title again.
-    if (injectRename && session.agenticProcess?.waiting_for_prompt) {
+    if (injectRename && session.shellId === activeShellId && contextAgenticProcess?.waiting_for_prompt) {
       void shell.sendInput(`/rename ${newName}\r`);
     }
   };
@@ -535,6 +536,9 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
               const displayName = getDisplayName(session);
               const isDisabled = session.isDisabled;
               const isClosing = session.shell?.status === ShellStatus.CLOSING;
+              // Use context process for the active tab (always authoritative);
+              // inactive tabs have no reliable process reference.
+              const sessionProcess = session.shellId === activeShellId ? contextAgenticProcess : undefined;
 
               const tabContent = (
                 <div
@@ -557,7 +561,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
                       isClosing ? 'bg-amber-500/70' : isDisabled ? 'bg-red-500/70' : 'bg-green-500/70'
                     }`}
                   />
-                  {Boolean(session.agenticProcess?.cliOptions?.worktree) && (
+                  {Boolean(sessionProcess?.cliOptions?.worktree) && (
                     <FolderGit2 className="h-3 w-3 shrink-0 text-amber-500" />
                   )}
                   {editingShellId === session.shellId ? (
@@ -606,10 +610,10 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
                         {tabContent}
                       </ContextMenuTrigger>
                     </TooltipTrigger>
-                    {session.agenticProcess ? (
+                    {sessionProcess ? (
                       <TooltipContent side="bottom" className="p-2.5 bg-popover text-popover-foreground border shadow-md">
                         <ProcessInfoTooltip
-                          process={session.agenticProcess}
+                          process={sessionProcess}
                           statusReason={isDisabled ? session.statusReason : undefined}
                         />
                       </TooltipContent>
@@ -749,7 +753,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
                         if (session.isDisabled) return;
                         onTabRename(session, title, false);
                       }}
-                      process={session.agenticProcess}
                     />
                   )}
                 </div>
