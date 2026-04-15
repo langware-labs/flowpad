@@ -33,15 +33,21 @@ SAMPLE_SESSION = (
     "The session ended with the correct fix applied."
 )
 
-_AGENTIC_PATTERN = "agentic"
-
-
 def _agentic_project_dirs() -> set[str]:
-    """Return the set of ~/.claude/projects/ dir names that look like agentic-process paths."""
+    """Return dirs in ~/.claude/projects/ that encode an agentic-process records path.
+
+    The bad entries encode a path like:
+      ~/.flow/records/agentic_process/<stem>/output
+    which Claude CLI encodes by replacing all non-alphanumeric chars with '-', producing
+    names containing 'flow-records-agentic'.
+    """
     claude_projects = Path.home() / ".claude" / "projects"
     if not claude_projects.is_dir():
         return set()
-    return {d.name for d in claude_projects.iterdir() if d.is_dir() and _AGENTIC_PATTERN in d.name}
+    return {
+        d.name for d in claude_projects.iterdir()
+        if d.is_dir() and "flow-records-agentic" in d.name
+    }
 
 
 def _fmt_entry(entry: dict) -> str:
