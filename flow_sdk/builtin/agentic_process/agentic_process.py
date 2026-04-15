@@ -316,7 +316,7 @@ class AgenticProcess(Entity):
             # When resuming or forking, ensure CLAUDE_PROJECT_DIR points to where
             # the source session's transcript lives. For a fork, self.session_id is
             # the brand-new UUID with no transcript yet; use fork_session_id instead.
-            if cmd.resume and self.session_id:
+            if cmd.fork_session_id or (cmd.resume and self.session_id):
                 lookup_id = cmd.fork_session_id or self.session_id
                 session_rec = self._discover_claude_record_session(lookup_id)
                 if session_rec and session_rec.cwd:

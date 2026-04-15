@@ -9,6 +9,7 @@
  */
 
 import { AgenticProcess, type Shell } from '@sdk';
+import { ProcessorStatus } from '@sdk/process/agentic-types.js';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -40,8 +41,6 @@ interface ProcessToolbarProps {
   onColVisChange: (v: ColVisibility) => void;
   sessionStartTime?: string | null;
   lastMessageTime?: string | null;
-  /** Combined historical + live trace event count — used to gate the fork button. */
-  sessionTraceCount?: number;
   /** Embedded mode: hide nav-out buttons (Open Terminal, Fork). */
   embedded?: boolean;
   /** Called when the close button is clicked (only shown when embedded=true). */
@@ -50,14 +49,18 @@ interface ProcessToolbarProps {
   shell?: Shell | null;
 }
 
-export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, colVis, onColVisChange, sessionStartTime, lastMessageTime, sessionTraceCount, embedded, onClose, shell }: ProcessToolbarProps) {
+export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, colVis, onColVisChange, sessionStartTime, lastMessageTime, embedded, onClose, shell }: ProcessToolbarProps) {
   const handleInjectPrompt = useCallback((text: string) => void shell?.sendInput(text + '\r'), [shell]);
   const { navigation } = useDockNavigation();
   const devMode = useDevMode();
   const [showPtyViewer, setShowPtyViewer] = useState(false);
 
   const hasSession = !!process.session_id;
-  const canFork = hasSession && sessionTraceCount && sessionTraceCount > 0;
+  const workerStatus = process.workerStatus;
+  const canFork = hasSession
+    && workerStatus !== ProcessorStatus.INIT
+    && workerStatus !== ProcessorStatus.EMPTY
+    && workerStatus !== ProcessorStatus.IDLE;
   const canToggle = hasSession;
   const workdir = process.workdir ?? '';
 
@@ -320,7 +323,12 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
           <IconToggleButton
             icon={<GitFork className="h-3.5 w-3.5" />}
             active={false}
-            tooltip={canFork ? 'Fork session — new tab, same settings' : hasSession ? 'No messages yet — start a conversation first' : 'Launch a session first'}
+            tooltip={
+              isForking ? 'Forking…'
+              : canFork ? 'Fork session — new tab, same conversation history'
+              : !hasSession ? 'Launch a session first'
+              : 'Send a message first — fork requires conversation history'
+            }
             disabled={!canFork || isForking}
             onClick={() => void handleFork()}
           />
@@ -447,18 +455,22 @@ function IconToggleButton({
 }) {
   return (
     <Tooltip>
+      {/* Wrap in span so tooltip fires even when the button is disabled
+          (disabled elements swallow pointer events and never trigger the tooltip). */}
       <TooltipTrigger asChild>
-        <button
-          className={`inline-flex h-7 w-7 items-center justify-center rounded transition-colors
-            ${disabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-accent cursor-pointer'}
-            ${active && activeClassName ? activeClassName : 'text-muted-foreground'}
-          `}
-          disabled={disabled}
-          onClick={onClick}
-          aria-pressed={active}
-        >
-          {icon}
-        </button>
+        <span className="inline-flex" style={disabled ? { pointerEvents: 'auto' } : undefined}>
+          <button
+            className={`inline-flex h-7 w-7 items-center justify-center rounded transition-colors
+              ${disabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-accent cursor-pointer'}
+              ${active && activeClassName ? activeClassName : 'text-muted-foreground'}
+            `}
+            disabled={disabled}
+            onClick={onClick}
+            aria-pressed={active}
+          >
+            {icon}
+          </button>
+        </span>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="text-xs">
         {tooltip}

@@ -1221,7 +1221,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           onColVisChange={setColVis}
           sessionStartTime={sessionStartTime}
           lastMessageTime={lastMessageTime}
-          sessionTraceCount={totalTraceEvents}
           embedded={embedded}
           onClose={onClose}
           shell={shell}
