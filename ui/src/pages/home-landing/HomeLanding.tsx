@@ -22,6 +22,7 @@ import { useActAccordingToClassification } from '@src/hooks/use-act-according-to
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
 import { useForkInTerminal } from '@src/hooks/use-fork-in-terminal';
 import { Annotation, claudeSessionManager, ContextEntitiesEnum, dataContext, Project, QueryRequest } from '@sdk';
+import { refreshNotifications } from '@sdk/entities/notifications';
 import { useAuth, useProject } from '@sdk/react/hooks';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useToast } from '@src/hooks/use-toast';
@@ -423,6 +424,7 @@ export function HomeLanding() {
             onRemindBookmark={(m, mins) => void remindBookmark(m, mins)}
             onOpenSession={(m) => m.session_id && resumeInTerminal(m.session_id, m.work_dir ?? undefined, m.created_date ?? undefined)}
             onForkSession={(m) => forkInTerminal(m.work_dir ?? undefined)}
+            onRefresh={() => refreshNotifications(currentProject?.fs_storage_mount_path ?? undefined)}
             sessionEventCounts={sessionEventCounts}
             snifferEvents={snifferEvents}
           />

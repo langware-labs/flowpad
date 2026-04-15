@@ -133,12 +133,27 @@ class ConversationRecord(Record):
 
     @classmethod
     def from_jsonl(cls, jsonl_path: Path, task_id: str, record_id: str) -> "ConversationRecord":
-        """Construct a ConversationRecord from a jsonl file path."""
+        """Construct a ConversationRecord from a jsonl file path.
+
+        Passes parent_ref and data_ref as constructor kwargs so that
+        Record.__init__ stores them in __dict__ — making them appear in
+        to_dict() and therefore in metadata.json on save().
+        """
+        data_ref = RecordDataRef(
+            id=record_id,
+            type=RecordType.CONVERSATION,
+            path=str(jsonl_path),
+            format="jsonl",
+        )
+        parent_ref = RecordRef(id=task_id, type=RecordType.TASK)
+
         rec = cls(
             id=record_id,
             task_id=task_id,
             data_path=str(jsonl_path),
             name=f"conversation-{task_id[:8]}",
+            data_ref=data_ref,
+            parent_ref=parent_ref,
         )
         object.__setattr__(rec, "_asset_ref", FSRef(str(jsonl_path)))
         return rec
