@@ -1761,7 +1761,14 @@ class Record:
         meta_file = self._save_split_format(folder)
         self.path = str(folder)
         self.source_file = str(meta_file)
-        self._get_state().save(meta=self.to_dict())
+        state_meta = self.to_dict()
+        try:
+            _asset_ref = object.__getattribute__(self, "_asset_ref")
+        except AttributeError:
+            _asset_ref = None
+        if _asset_ref is not None:
+            state_meta["asset_ref"] = _asset_ref.path
+        self._get_state().save(meta=state_meta)
         self._bump_manifest("add" if first_save else "update")
 
     # -- Auto-sync (fs_sync behavior from FsRecord) --
