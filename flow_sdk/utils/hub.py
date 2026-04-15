@@ -3,6 +3,9 @@
 Provides a thin async HTTP client for making authenticated requests to the
 hub's graph API. All hub calls should go through these helpers so the base
 URL and auth header are managed in one place.
+
+URL structure follows the Flowpad Hub API guidelines:
+  /api/v1/graph/[{scope_type}/{scope_id}/...]{entity_type}[/{entity_id}][/{action}]
 """
 
 from __future__ import annotations
@@ -22,17 +25,52 @@ def hub_base_url() -> Optional[str]:
     return url.rstrip("/") if url else None
 
 
-def hub_graph_url(path: str) -> Optional[str]:
-    """Build a full hub graph URL for the given relative path, or None if hub is not configured.
+def hub_graph_url(
+    entity_type: str,
+    entity_id: str | None = None,
+    action: str | None = None,
+    sub_path: str | None = None,
+    *,
+    scope: list[tuple[str, str]] | None = None,
+) -> Optional[str]:
+    """Build a full hub graph URL per API guidelines, or None if hub is not configured.
 
-    Example: hub_graph_url("notification/send")
-      → "http://localhost:8093/api/v1/graph/notification/send"
+    URL pattern:
+      /api/v1/graph/[{scope_type}/{scope_id}/...]{entity_type}[/{entity_id}][/{action}[/{sub_path}]]
+
+    Examples:
+      hub_graph_url("notification")
+        → ".../api/v1/graph/notification"                           (list / create)
+      hub_graph_url("notification", "notif-123")
+        → ".../api/v1/graph/notification/notif-123"                 (get / update / delete)
+      hub_graph_url("notification", "notif-123", "open")
+        → ".../api/v1/graph/notification/notif-123/open"            (action on entity)
+      hub_graph_url("workspace", "ws-123", "fs", "download/report.pdf")
+        → ".../api/v1/graph/workspace/ws-123/fs/download/report.pdf" (fs action with sub_path)
+      hub_graph_url("page", "pg-456", scope=[("workspace", "ws-123")])
+        → ".../api/v1/graph/workspace/ws-123/page/pg-456"           (scoped entity)
     """
+    if sub_path and not action:
+        raise ValueError(
+            f"sub_path '{sub_path}' requires an action "
+            f"(URL pattern: {{entity_type}}/{{entity_id}}/{{action}}/{{sub_path}})"
+        )
     base = hub_base_url()
     if not base:
         return None
     from flow_sdk.api.api_request import APIRequest
-    full_path = f"{APIRequest.api_prefix}{APIRequest.graph_prefix}/{path.lstrip('/')}"
+    segments: list[str] = []
+    if scope:
+        for scope_type, scope_id in scope:
+            segments.extend([scope_type, scope_id])
+    segments.append(entity_type)
+    if entity_id:
+        segments.append(entity_id)
+    if action:
+        segments.append(action)
+    if sub_path:
+        segments.append(sub_path.lstrip("/"))
+    full_path = f"{APIRequest.api_prefix}{APIRequest.graph_prefix}/{'/'.join(segments)}"
     return f"{base}{full_path}"
 
 
@@ -49,22 +87,73 @@ def _auth_headers() -> dict[str, str]:
     return {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
 
-async def hub_post(path: str, payload: dict[str, Any]) -> Optional[dict[str, Any]]:
+async def hub_get(
+    entity_type: str,
+    entity_id: str | None = None,
+    action: str | None = None,
+    sub_path: str | None = None,
+    *,
+    scope: list[tuple[str, str]] | None = None,
+) -> Optional[dict[str, Any]]:
+    """GET a hub graph endpoint. Returns the response `data` dict on success, None on failure.
+
+    Returns None immediately if FLOWPAD_HUB_URL is not configured.
+
+    Args:
+        entity_type: The entity type (e.g. "notification", "task").
+        entity_id:   The entity ID. Required when action is given.
+        action:      Optional action name (requires entity_id).
+        sub_path:    Optional sub-path appended after action (e.g. "download/report.pdf" for fs).
+        scope:       Optional list of (entity_type, entity_id) pairs that prefix the path.
+    """
+    url = hub_graph_url(entity_type, entity_id, action, sub_path, scope=scope)
+    if not url:
+        logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping GET %s/%s", entity_type, entity_id)
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url, headers=_auth_headers())
+            if resp.status_code == 200:
+                return resp.json().get("data") or {}
+            logger.warning("[hub] GET %s returned %s: %s", url, resp.status_code, resp.text[:200])
+            return None
+    except Exception as e:
+        logger.warning("[hub] GET %s error (non-fatal): %s", url, e)
+        return None
+
+
+async def hub_post(
+    entity_type: str,
+    payload: dict[str, Any],
+    entity_id: str | None = None,
+    action: str | None = None,
+    sub_path: str | None = None,
+    *,
+    scope: list[tuple[str, str]] | None = None,
+) -> Optional[dict[str, Any]]:
     """POST to a hub graph endpoint. Returns the response `data` dict on success, None on failure.
 
     Returns None immediately if FLOWPAD_HUB_URL is not configured.
+
+    Args:
+        entity_type: The entity type (e.g. "notification", "task").
+        payload:     The JSON body to POST.
+        entity_id:   The entity ID. Required when action is given.
+        action:      Optional action name (requires entity_id).
+        sub_path:    Optional sub-path appended after action (e.g. "upload/report.pdf" for fs).
+        scope:       Optional list of (entity_type, entity_id) pairs that prefix the path.
     """
-    url = hub_graph_url(path)
+    url = hub_graph_url(entity_type, entity_id, action, sub_path, scope=scope)
     if not url:
-        logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping POST to %s", path)
+        logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping POST %s/%s", entity_type, entity_id)
         return None
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(url, json=payload, headers=_auth_headers())
             if resp.status_code == 200:
                 return resp.json().get("data") or {}
-            logger.warning("[hub] POST %s returned %s: %s", path, resp.status_code, resp.text[:200])
+            logger.warning("[hub] POST %s returned %s: %s", url, resp.status_code, resp.text[:200])
             return None
     except Exception as e:
-        logger.warning("[hub] POST %s error (non-fatal): %s", path, e)
+        logger.warning("[hub] POST %s error (non-fatal): %s", url, e)
         return None
