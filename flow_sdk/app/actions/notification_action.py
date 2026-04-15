@@ -12,7 +12,7 @@ File layout (all inside the git repo, committed and pushed):
   tasks/spec/<spec-title>/spec.md           — spec content (markdown + frontmatter)
 
 Routes:
-  POST /api/v1/graph/notification/send
+  POST /api/v1/graph/share_task
   POST /api/v1/graph/notification/append-conversation
   POST /api/v1/graph/notification/open-task
 """
@@ -247,7 +247,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     # 5. Post to hub
     branch = git_current_branch(project_root) if project_root else ""
     hub_configured = bool(hub_base_url())
-    hub_data = await hub_post("notification/notify", {
+    hub_data = await hub_post("notify_hub", {
         "recipient_email": recipient_email,
         "sender_id": sender_id,
         "sender_name": sender_name,
@@ -402,7 +402,7 @@ async def handle_open_task(project_url: str, task_id: str) -> ApiResponse:
     return ApiSuccessResponse(data={"navigation_path": nav_path, "git_error": git_error})
 
 
-@action.post(action_name="send", types=["notification"])
+@action.post(action_name="share_task", types=None)
 async def send_notification() -> ApiResponse:
     try:
         request_info = get_current_request_info()
