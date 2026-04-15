@@ -13,8 +13,9 @@ File layout (all inside the git repo, committed and pushed):
 
 Routes:
   POST /api/v1/graph/share_task
-  POST /api/v1/graph/notification/append-conversation
-  POST /api/v1/graph/notification/open-task
+  POST /api/v1/graph/notification/{id}/append-conversation
+  POST /api/v1/graph/notification/{id}/open-task
+  GET  /api/v1/graph/notification/{id}/open
 """
 
 import asyncio
@@ -477,3 +478,34 @@ async def refresh_notifications() -> ApiResponse:
     except Exception as e:
         logger.error(f"[notification_action] refresh error: {e}", exc_info=True)
         return ApiFailResponse(message=f"Failed to refresh: {str(e)}")
+
+
+@action.get(action_name="open", types=["notification"])
+async def open_notification() -> ApiResponse:
+    """Deep-link handler: fetch notification from hub, git pull, redirect to task view."""
+    from fastapi.responses import HTMLResponse
+    from flow_sdk.server.routes.notify import _ERROR_HTML, _get_ui_port, handle_notification_deep_link
+    from flow_sdk.utils.hub import hub_get
+
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        return ApiFailResponse(message="No request info found", status_code=400)
+
+    notification_id = str(request_info.target_entity_typeid.id)
+    data = await hub_get("notification", notification_id)
+    if not data:
+        port = _get_ui_port()
+        return HTMLResponse(
+            content=_ERROR_HTML.format(
+                error_message="Could not fetch notification from hub. Make sure FlowPad is connected.",
+                port=port,
+            ),
+            status_code=502,
+        )
+
+    meta = data.get("metadata") or {}
+    return await handle_notification_deep_link(
+        project_url=(meta.get("project_url") or data.get("project_url") or "").strip(),
+        task_id=(meta.get("task_id") or data.get("task_id") or "").strip(),
+        branch=(meta.get("branch") or data.get("branch") or "").strip(),
+    )

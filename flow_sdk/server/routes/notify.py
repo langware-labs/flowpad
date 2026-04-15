@@ -1,28 +1,22 @@
-"""Local notification handler routes.
+"""Local notification deep-link utilities.
 
-GET /notify
-   Deep-link from flowpad.ai email landing page.
-   Called when the RECIPIENT clicks "Open in FlowPad" on flowpad.ai.
-   Params: project_url, task_id
-   - Triggers a git pull on the matching local repo
-   - Runs the notification scanner
-   - Returns an HTML page that auto-redirects to the task in the UI
+handle_notification_deep_link — shared helper used by the `open` graph action
+(registered in flow_sdk/app/actions/notification_action.py).
 
-Registered in server/routes/__init__.py and server/app.py.
+The `open` action is registered at:
+  GET /api/v1/graph/notification/{id}/open
+via @action.get(action_name="open", types=["notification"]).
 """
 
 import asyncio
 import logging
 from typing import Tuple
 
-from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-from flow_sdk.config import load_server_info
 from flow_sdk.utils.git import find_local_repo_for_url, git_pull
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
 
 
 def _get_ui_port() -> int:
@@ -71,6 +65,7 @@ _ERROR_HTML = """<!DOCTYPE html>
 </body>
 </html>"""
 
+
 async def _pull_and_scan(project_url: str, branch: str = "") -> Tuple[bool, str]:
     """Find the local repo for project_url, git pull, then run the notification scanner."""
     repo_path = find_local_repo_for_url(project_url) if project_url else None
@@ -97,12 +92,10 @@ def _summarise_pull(pull_ok: bool, pull_msg: str) -> str:
     """Return a short human-readable summary of a git pull result."""
     msg = pull_msg.strip()
     if not pull_ok:
-        # Surface just the first meaningful error line, not the full trace
         first_line = next((l.strip() for l in msg.splitlines() if l.strip()), msg)
         return f"Pull failed: {first_line}"
     if "already up to date" in msg.lower():
         return "Already up to date"
-    # Look for the stats summary line: "X files changed, Y insertions(+)…"
     for line in msg.splitlines():
         if "file" in line and ("changed" in line or "insertion" in line or "deletion" in line):
             return line.strip()
@@ -141,16 +134,3 @@ async def handle_notification_deep_link(project_url: str, task_id: str, branch: 
     return HTMLResponse(content=_REDIRECT_HTML.format(
         redirect_url=redirect_url, status_message=status_message,
     ))
-
-
-@router.get("/notify", response_class=HTMLResponse)
-async def notification_deep_link(request: Request) -> HTMLResponse:
-    """Deep-link from flowpad.ai email page — pulls repo and redirects to task view."""
-    return await handle_notification_deep_link(
-        project_url=request.query_params.get("project_url", ""),
-        task_id=request.query_params.get("task_id", ""),
-        branch=request.query_params.get("branch", ""),
-    )
-
-
-
