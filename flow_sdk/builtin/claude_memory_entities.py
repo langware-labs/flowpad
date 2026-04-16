@@ -21,6 +21,7 @@ class Markdown(Entity):
     Fields common to docs, plan, claude_memory, claude_md, claude_rules.
     """
 
+    _abstract: ClassVar[bool] = True
     name: str = APIField(default="")
     asset_type: str = APIField(default="")
     source_path: str = APIField(default="")

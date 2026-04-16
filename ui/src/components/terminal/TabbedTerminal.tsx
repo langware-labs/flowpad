@@ -575,6 +575,10 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
               const displayName = getDisplayName(session);
               const isDisabled = session.isDisabled;
               const isClosing = session.shell?.status === ShellStatus.CLOSING;
+              // Sandbox flag: derived from the shell's compute node uname.
+              // Used to swap the tab's green dot for a Cloud icon so sandbox
+              // shells are visually distinct from local ones.
+              const isSandboxShell = session.shell?.compute_node_uname === 'sandbox';
               // Use context process for the active tab (always authoritative);
               // inactive tabs have no reliable process reference.
               const sessionProcess = session.shellId === activeShellId ? contextAgenticProcess : undefined;
@@ -594,12 +598,22 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
                   onClick={() => !isDisabled && selectTab(session.shellId)}
                   data-testid={`tab-shell-${session.shellId}`}
                 >
-                  {/* Status dot */}
-                  <span
-                    className={`inline-block h-2 w-2 shrink-0 rounded-full ${
-                      isClosing ? 'bg-amber-500/70' : isDisabled ? 'bg-red-500/70' : 'bg-green-500/70'
-                    }`}
-                  />
+                  {/* Status indicator — Cloud icon for sandbox shells, green
+                      dot for everything else. Sits to the left of the name. */}
+                  {isSandboxShell ? (
+                    <Cloud
+                      className="h-3.5 w-3.5 shrink-0 text-sky-500"
+                      data-testid={`tab-sandbox-icon-${session.shellId}`}
+                      aria-label="Sandbox shell"
+                    />
+                  ) : (
+                    <span
+                      className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                        isClosing ? 'bg-amber-500/70' : isDisabled ? 'bg-red-500/70' : 'bg-green-500/70'
+                      }`}
+                      data-testid={`tab-status-dot-${session.shellId}`}
+                    />
+                  )}
                   {Boolean(sessionProcess?.cliOptions?.worktree) && (
                     <FolderGit2 className="h-3 w-3 shrink-0 text-amber-500" />
                   )}

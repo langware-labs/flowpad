@@ -57,6 +57,8 @@ class DBBaseRecord(BaseModel):
 
     def __init_subclass__(cls, **kwargs: Unpack[ConfigDict]):
         super().__init_subclass__(**kwargs)
+        if cls.__dict__.get('_abstract', False):
+            return
         type_name = cls.get_type()
         if type_name:
             from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo  # noqa: PLC0415
