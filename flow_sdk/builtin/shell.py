@@ -50,6 +50,7 @@ class Shell(Entity):
     env: dict | None = APIField(default=None, description="Custom environment variables")
     pty_pid: str | None = APIField(default=None, description="PTY session ID")
     compute_node_id: str | None = APIField(default=None, description="Owning compute node")
+    compute_node_uname: str | None = APIField(default=None, description="Owning compute node uname")
     project_id: str | None = APIField(default=None, description="Owning project")
     tab_order: int = APIField(default=0)
     created_at: str | None = APIField(default=None, description="ISO creation timestamp")
@@ -74,34 +75,50 @@ class Shell(Entity):
             node_provider_type="local_machine",
         )
 
-    @staticmethod
-    def _normalize_compute_node_id(compute_node_id: str | None) -> str | None:
-        if not compute_node_id:
-            return None
-        prefix = "compute_node-"
-        if compute_node_id.startswith(prefix):
-            return compute_node_id[len(prefix):]
-        return compute_node_id
+    def _compute_node_lookup_hint(self) -> str:
+        if self.compute_node_uname:
+            return f"uname={self.compute_node_uname}"
+        if self.compute_node_id:
+            return f"id={self.compute_node_id}"
+        return "no stored compute node"
 
-    async def ensure_live_compute_node_binding(self, preferred_compute_node_id: str | None = None) -> bool:
-        """Repair stale compute_node_id bindings against the current local node."""
+    @property
+    def compute_node_typeid_str(self) -> str:
+        """VFS TypeId string for this shell's compute node (reads current state, no I/O)."""
+        if self.compute_node_uname:
+            return f"compute_node-@{self.compute_node_uname}"
+        if self.compute_node_id:
+            return f"compute_node-{self.compute_node_id}"
+        return "compute_node-@local"
+
+    async def resolve_compute_node_typeid_str(self) -> str:
+        """Repair stale binding then return the VFS TypeId string, falling back to @local."""
+        if await self.ensure_live_compute_node_binding():
+            return self.compute_node_typeid_str
+        return "compute_node-@local"
+
+    async def ensure_live_compute_node_binding(self) -> bool:
+        """Repair stale shell bindings using compute_node_uname first, then id."""
         from flow_sdk.builtin.faas.compute_node import ComputeNode
 
-        candidate_id = self._normalize_compute_node_id(preferred_compute_node_id) or self._normalize_compute_node_id(self.compute_node_id)
-        bound_node = await ComputeNode.get_by_id(candidate_id) if candidate_id else None
+        candidate_id = self.compute_node_id
+        bound_node = await ComputeNode.get_by_uname(self.compute_node_uname) if self.compute_node_uname else None
         if bound_node is None:
-            bound_node = await ComputeNode.get_one({"uname": "local"})
+            bound_node = await ComputeNode.get_by_id(candidate_id) if candidate_id else None
         if bound_node is None:
-            if not candidate_id:
-                return False
-            if self.compute_node_id != candidate_id:
-                self.compute_node_id = candidate_id
-                await self.save()
+            bound_node = await ComputeNode.get_by_uname("local") if not self.compute_node_uname else None
+        if bound_node is None and candidate_id and not self.compute_node_uname:
+            # Preserve the historical local-shell behavior for ephemeral sessions
+            # that were created with only a raw local compute-node id.
             return True
+        if bound_node is None:
+            return False
 
         canonical_id = str(bound_node.id)
-        if self.compute_node_id != canonical_id:
+        canonical_uname = getattr(bound_node, "uname", None)
+        if self.compute_node_id != canonical_id or self.compute_node_uname != canonical_uname:
             self.compute_node_id = canonical_id
+            self.compute_node_uname = canonical_uname
             await self.save()
         return True
 
@@ -236,7 +253,7 @@ class Shell(Entity):
         if self.status not in (None, "idle", "closed", "running"):
             raise RuntimeError(f"Cannot open session in status: {self.status}")
         if not await self.ensure_live_compute_node_binding():
-            raise RuntimeError("No live compute node available for shell session")
+            raise RuntimeError(f"Compute node not found for shell session ({self._compute_node_lookup_hint()})")
 
         cn = self.compute_node
         existing = cn.get_pty(self.id)
@@ -613,6 +630,7 @@ class Shell(Entity):
             last_active_at=record.data.get("last_active_at"),
             status=(record.status.value if hasattr(record.status, "value") else record.status) or ShellStatus.IDLE.value,
             compute_node_id=cn_id,
+            compute_node_uname=record.data.get("compute_node_uname"),
         )
         await entity.save()
 
@@ -637,6 +655,7 @@ class Shell(Entity):
         self.pty_pid = record.data.get("pty_pid")
         self.created_at = record.data.get("created_at")
         self.last_active_at = record.data.get("last_active_at")
+        self.compute_node_uname = record.data.get("compute_node_uname")
         status = record.status
         self.status = status.value if hasattr(status, "value") else (status or ShellStatus.IDLE.value)
 
@@ -787,8 +806,8 @@ class Shell(Entity):
         """HTTP: Return replay buffer chunk metadata for PTY debugging."""
         import base64
 
-        if not self.compute_node_id:
-            return ApiFailResponse(message="Shell has no compute_node_id")
+        if not await self.ensure_live_compute_node_binding():
+            return ApiFailResponse(message=f"Compute node not found for shell session ({self._compute_node_lookup_hint()})")
 
         pty_handle = self.compute_node.get_pty(self.id)
         if pty_handle is None:

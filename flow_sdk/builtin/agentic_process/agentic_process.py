@@ -178,7 +178,6 @@ class AgenticProcess(Entity):
     shell_mode: bool = APIField(default=False, description="False=direct PTY spawn (default), True=legacy zsh intermediary")
     project_id: str | None = APIField(default=None)
     project_encoded_name: str | None = APIField(default=None)
-    compute_node_id: str | None = APIField(default=None)
     shell_id: str | None = APIField(default=None)
     sidecar_shell_id: str | None = APIField(default=None)
     visible: bool = APIField(default=False, description="Whether this process is visible in the tabs view")
@@ -259,37 +258,16 @@ class AgenticProcess(Entity):
             "shell_id": self.shell_id,
             "pty_id": shell.pty_pid or shell.id,
             "session_id": self.session_id,
-            "compute_node_id": self.compute_node_id,
             "shell": shell.model_dump(mode="json"),
             "is_resume": is_resume,
             "worker_pid": shell.worker_pid,
         }
 
-    @staticmethod
-    def _normalize_compute_node_id(compute_node_id: str | None) -> str | None:
-        if not compute_node_id:
-            return None
-        prefix = "compute_node-"
-        if compute_node_id.startswith(prefix):
-            return compute_node_id[len(prefix):]
-        return compute_node_id
-
-    async def _ensure_live_compute_node_binding(self):
-        """Repair stale compute_node_id bindings against the current local node."""
+    async def _get_local_compute_node(self):
+        """Return the local compute node used for shell creation and recovery."""
         from flow_sdk.builtin.faas.compute_node import ComputeNode
 
-        candidate_id = self._normalize_compute_node_id(self.compute_node_id)
-        bound_node = await ComputeNode.get_by_id(candidate_id) if candidate_id else None
-        if bound_node is None:
-            bound_node = await ComputeNode.get_one({"uname": "local"})
-        if bound_node is None:
-            return None
-
-        canonical_typeid = str(bound_node.typeid)
-        if self.compute_node_id != canonical_typeid:
-            self.compute_node_id = canonical_typeid
-            await self.save()
-        return bound_node
+        return await ComputeNode.get_by_uname("local")
 
     async def _drop_stale_shell(self, shell: "Shell | None", *, reason: str) -> None:
         """Discard a linked shell that can no longer be reattached."""
@@ -327,16 +305,11 @@ class AgenticProcess(Entity):
             self.session_id = self.session_id or str(uuid4())
             if visible is not None:
                 self.visible = visible
-            local_node = await self._ensure_live_compute_node_binding()
-            if local_node is None:
-                return ApiFailResponse(
-                    message="No compute node assigned and no @local compute node found. "
-                    "This environment does not support local process execution."
-                )
 
             shell = await self.shell() if self.shell_id else None
             if shell is not None:
-                await shell.ensure_live_compute_node_binding(self.compute_node_id)
+                if not await shell.ensure_live_compute_node_binding():
+                    return ApiFailResponse(message=f"Compute node not found for linked shell {shell.id}")
 
             if self.status == AgenticProcessLifecycleStatus.STARTING.value and self.shell_id:
                 if shell is not None and await shell.has_attachable_pty():
@@ -509,7 +482,6 @@ class AgenticProcess(Entity):
             new_proc = AgenticProcess.fork(
                 session_id=self.session_id,
                 workdir=self.workdir,
-                compute_node_id=self.compute_node_id,
                 visible=visible,
             )
             await new_proc.save(owner)
@@ -928,6 +900,11 @@ class AgenticProcess(Entity):
         from flow_sdk.builtin.shell import Shell
         return await Shell.get_by_id(self.shell_id)
 
+    async def get_compute_node(self):
+        """Return the linked shell's compute node, or None when no shell exists."""
+        shell = await self.shell()
+        return shell.compute_node if shell else None
+
     async def set_session_id(self, session_id: str) -> None:
         """Bind this process to an existing Claude session before start()."""
         self.session_id = session_id
@@ -1096,7 +1073,8 @@ class AgenticProcess(Entity):
             input_dir = record_dir / "input"
             input_dir.mkdir(parents=True, exist_ok=True)
 
-        compute_node_id = self.compute_node_id or "compute_node-@local"
+        shell = await self.shell()
+        compute_node_id = await shell.resolve_compute_node_typeid_str() if shell else "compute_node-@local"
 
         return ApiSuccessResponse(
             data={
@@ -1137,7 +1115,8 @@ class AgenticProcess(Entity):
         if self.shell_id:
             shell = await Shell.get_by_id(self.shell_id)
             if shell:
-                await shell.ensure_live_compute_node_binding(self.compute_node_id)
+                if not await shell.ensure_live_compute_node_binding():
+                    raise RuntimeError(f"Compute node not found for linked shell {shell.id}")
                 return shell
 
         prev = self.context_data.pop("_prev_tab_order", None)
@@ -1153,10 +1132,12 @@ class AgenticProcess(Entity):
             raise NotADirectoryError(
                 f"AgenticProcess {self.id} has no workdir after project resolution"
             )
-        cn = await self._ensure_live_compute_node_binding()
-        cn_id = str(cn.id) if cn is not None else self._normalize_compute_node_id(self.compute_node_id)
+        cn = await self._get_local_compute_node()
+        if cn is None:
+            raise RuntimeError("Compute node not found for local shell session (@local)")
         shell = Shell(
-            compute_node_id=cn_id,
+            compute_node_id=str(cn.id),
+            compute_node_uname=getattr(cn, "uname", None),
             name=session_name,
             workdir=workdir,
             tab_order=tab_order,

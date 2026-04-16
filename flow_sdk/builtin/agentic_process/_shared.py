@@ -21,7 +21,6 @@ class AgenticContext(BaseModel):
     workdir: str | None = None
     model: str | None = None
     max_thinking_tokens: int | None = None
-    compute_node_id: str | None = None
 
 
 class ContextData(BaseModel):
