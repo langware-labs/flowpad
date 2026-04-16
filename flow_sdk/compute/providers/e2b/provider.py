@@ -45,7 +45,11 @@ except ImportError:
 service_log = logging.getLogger(__name__)
 
 E2B_API_KEY_ENV = "E2B_KEY"
-E2B_SANDBOX_LIVE_TIMEOUT = 300  # seconds; refreshed by the sandbox keepalive
+# E2B kills idle sandboxes after this many seconds. The keepalive task below
+# extends it well before expiry, so the value just needs to be a comfortable
+# margin > KEEPALIVE_INTERVAL.
+E2B_SANDBOX_LIVE_TIMEOUT = 1800  # 30 min
+E2B_KEEPALIVE_INTERVAL = 600     # extend timeout every 10 min
 E2B_HOME_PATH = "/home/user"
 
 
@@ -75,6 +79,9 @@ class E2BComputeProvider(ComputeProvider):
         self._sandboxes: dict[str, AsyncSandbox] = {}
         # (provider_node_id, session_id) -> {"sandbox", "pty", "running", "on_output", "rows", "cols"}
         self._pty_sessions: dict[tuple[str, str], dict[str, Any]] = {}
+        # provider_node_id -> background asyncio.Task that periodically extends
+        # the sandbox timeout. Cancelled in shutdown().
+        self._keepalive_tasks: dict[str, asyncio.Task] = {}
 
     # ---------------------------------------------------------------- lifecycle
 
@@ -82,6 +89,11 @@ class E2BComputeProvider(ComputeProvider):
         for pty_info in self._pty_sessions.values():
             pty_info["running"]["value"] = False
         self._pty_sessions.clear()
+
+        for task in self._keepalive_tasks.values():
+            if not task.done():
+                task.cancel()
+        self._keepalive_tasks.clear()
 
         for sandbox in list(self._sandboxes.values()):
             try:
@@ -113,6 +125,9 @@ class E2BComputeProvider(ComputeProvider):
         return True
 
     async def shutdown(self, provider_node_id: str) -> None:
+        task = self._keepalive_tasks.pop(provider_node_id, None)
+        if task and not task.done():
+            task.cancel()
         sandbox = self._sandboxes.pop(provider_node_id, None)
         if sandbox is not None:
             try:
@@ -163,10 +178,33 @@ class E2BComputeProvider(ComputeProvider):
     # ---------------------------------------------------------------- helpers
 
     async def _get_or_boot_sandbox(self, provider_node_id: str) -> AsyncSandbox:
-        """Return a running sandbox for this node, booting one if needed."""
+        """Return a running sandbox for this node, booting one if needed.
+
+        Validates a cached sandbox is still alive before returning it; if E2B
+        has reaped it (timeout / external kill), drops the stale ref and boots
+        a fresh one so callers never get back a dead sandbox.
+        """
         sandbox = self._sandboxes.get(provider_node_id)
         if sandbox is not None:
-            return sandbox
+            try:
+                info = await AsyncSandbox.get_info(
+                    sandbox_id=sandbox.sandbox_id,
+                    api_key=get_e2b_api_key(),
+                )
+                if info.state == SandboxState.RUNNING:
+                    return sandbox
+                service_log.warning(
+                    f"[E2B] Cached sandbox {sandbox.sandbox_id} is in state {info.state}; rebooting"
+                )
+            except Exception as e:
+                service_log.warning(
+                    f"[E2B] Cached sandbox {sandbox.sandbox_id} unreachable ({e}); rebooting"
+                )
+            # Drop stale ref + cancel its keepalive
+            self._sandboxes.pop(provider_node_id, None)
+            task = self._keepalive_tasks.pop(provider_node_id, None)
+            if task and not task.done():
+                task.cancel()
 
         api_key = get_e2b_api_key()
         if not api_key:
@@ -181,7 +219,31 @@ class E2BComputeProvider(ComputeProvider):
             f"[E2B] Sandbox booted for node {provider_node_id}: {sandbox.sandbox_id}"
         )
         self._sandboxes[provider_node_id] = sandbox
+        # Start a keepalive task that extends the sandbox timeout periodically
+        # so it doesn't get reaped during a long terminal session.
+        self._keepalive_tasks[provider_node_id] = asyncio.create_task(
+            self._keepalive_loop(provider_node_id, sandbox.sandbox_id),
+            name=f"e2b_keepalive_{provider_node_id}",
+        )
         return sandbox
+
+    async def _keepalive_loop(self, provider_node_id: str, sandbox_id: str) -> None:
+        """Periodically extend the sandbox's auto-kill timeout."""
+        try:
+            while True:
+                await asyncio.sleep(E2B_KEEPALIVE_INTERVAL)
+                sandbox = self._sandboxes.get(provider_node_id)
+                if sandbox is None or sandbox.sandbox_id != sandbox_id:
+                    return  # sandbox was rotated; let the new task take over
+                try:
+                    await sandbox.set_timeout(E2B_SANDBOX_LIVE_TIMEOUT)
+                    service_log.debug(
+                        f"[E2B] Keepalive extended timeout to {E2B_SANDBOX_LIVE_TIMEOUT}s for {sandbox_id}"
+                    )
+                except Exception as e:
+                    service_log.warning(f"[E2B] Keepalive failed for {sandbox_id}: {e}")
+        except asyncio.CancelledError:
+            pass
 
     # ---------------------------------------------------------------- files
 
