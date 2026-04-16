@@ -1,5 +1,4 @@
-import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { fsManager, VFSPath } from '@sdk';
+import { FSRef } from '@sdk';
 import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
 import { Button } from '@src/components/ui/button';
 import { useToast } from '@src/hooks/use-toast';
@@ -7,16 +6,15 @@ import { RefreshCw, Save } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 interface DocsAssetEditorProps {
-  /** Absolute path to a .md file */
-  sourcePath: string;
+  /** FSRef to the .md file. */
+  fsRef: FSRef;
 }
 
 /**
  * Simple Milkdown viewer/editor for a docs markdown file.
- * Loads content from the filesystem and saves back via fsManager.writeFile().
+ * Loads content via fsRef.read() and saves via fsRef.write().
  */
-export function DocsAssetEditor({ sourcePath }: DocsAssetEditorProps) {
-  const { computeNode } = useAgentContext();
+export function DocsAssetEditor({ fsRef }: DocsAssetEditorProps) {
   const { toast } = useToast();
   const [content, setContent] = useState('');
   const [editedContent, setEditedContent] = useState('');
@@ -25,15 +23,13 @@ export function DocsAssetEditor({ sourcePath }: DocsAssetEditorProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const filename = sourcePath ? sourcePath.split('/').pop() ?? sourcePath : '';
+  const filename = fsRef.path.split('/').pop() ?? fsRef.path;
 
   const loadContent = useCallback(async () => {
-    if (!sourcePath || !computeNode?.typeId) return;
     setIsLoading(true);
     setLoadError(null);
     try {
-      const vfsPath = VFSPath.fromMachinePath(sourcePath, computeNode.typeId);
-      const raw = (await fsManager.download(computeNode.typeId, vfsPath.entitySubPath)) as string;
+      const raw = await fsRef.read();
       setContent(raw);
       setEditedContent(raw);
       setHasChanges(false);
@@ -43,7 +39,7 @@ export function DocsAssetEditor({ sourcePath }: DocsAssetEditorProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [sourcePath, computeNode?.typeId]);
+  }, [fsRef]);
 
   useEffect(() => {
     void loadContent();
@@ -58,11 +54,10 @@ export function DocsAssetEditor({ sourcePath }: DocsAssetEditorProps) {
   );
 
   const handleSave = useCallback(async () => {
-    if (!hasChanges || !computeNode?.typeId) return;
+    if (!hasChanges) return;
     setIsSaving(true);
     try {
-      const vfsPath = VFSPath.fromMachinePath(sourcePath, computeNode.typeId);
-      await fsManager.writeFile(computeNode.typeId, vfsPath.entitySubPath, editedContent);
+      await fsRef.write(editedContent);
       setContent(editedContent);
       setHasChanges(false);
     } catch (err) {
@@ -71,7 +66,7 @@ export function DocsAssetEditor({ sourcePath }: DocsAssetEditorProps) {
     } finally {
       setIsSaving(false);
     }
-  }, [hasChanges, computeNode?.typeId, sourcePath, editedContent, toast]);
+  }, [hasChanges, fsRef, editedContent, toast]);
 
   if (isLoading) {
     return (

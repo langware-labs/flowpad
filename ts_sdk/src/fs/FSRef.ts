@@ -20,7 +20,7 @@ export class FSRef {
   readonly path: string;
   readonly refType: FSRefType;
   readonly readOnly: boolean;
-  private readonly typeId: TypeId;
+  protected readonly typeId: TypeId;
 
   constructor(path: string, typeId: TypeId, refType: FSRefType = 'file', readOnly = false) {
     this.path = path;

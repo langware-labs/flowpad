@@ -289,6 +289,7 @@ class Record:
         object.__setattr__(self, "fs_sync", False)
         object.__setattr__(self, "_record_folder_ref", None)   # FSRef | None — record folder
         object.__setattr__(self, "_asset_ref", None)  # FSRef | None — external content
+        object.__setattr__(self, "_asset_folder_ref", None)  # FSRef | None — folder asset was discovered from
 
         # Merge _data dict first (lowest priority)
         if _data is not None:
@@ -536,6 +537,15 @@ class Record:
     @asset_ref.setter
     def asset_ref(self, value: "Any") -> None:
         object.__setattr__(self, "_asset_ref", value)
+
+    @property
+    def asset_folder_ref(self) -> "Any":  # FSRef | None
+        """FSRef pointing to the folder from which this asset was discovered."""
+        return object.__getattribute__(self, "_asset_folder_ref")
+
+    @asset_folder_ref.setter
+    def asset_folder_ref(self, value: "Any") -> None:
+        object.__setattr__(self, "_asset_folder_ref", value)
 
     @property
     def main_ref(self) -> "Any":  # FSRef | None

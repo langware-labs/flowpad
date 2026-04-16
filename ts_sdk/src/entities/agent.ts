@@ -1,7 +1,9 @@
 import { APIEntity, registerEntity } from '../APIEntity';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
+import { FSRef } from '../fs/FSRef';
 import { DockPointerData } from '../models/DockPointer';
 import { ViewType } from '../utils/ui/view-types';
+import { dataContext } from '../FlowSync/context';
 import { ComputeNodeSize } from './compute-node';
 import { ISiteConfig } from './siteconfig';
 
@@ -64,15 +66,23 @@ export interface IAgentRecord {
 /**
  * Agent entity — backed by a filesystem AgentRecord (.md file).
  *
- * Cloud-only fields (site_config, agent_config, histogram) are kept only for
- * backward compatibility with legacy UI components.
+ * Navigation is entity-centric: searchDockPointer is derived from asset_folder_ref + name,
+ * not from a raw source_path string.
+ *
+ * Legacy cloud fields (site_config, agent_config, histogram, enabled) are kept
+ * only for backward compatibility with legacy UI components.
  */
 @registerEntity
 export class Agent extends APIEntity<Agent> {
   static type: string = 'agent';
   name?: string;
   description?: string;
-  source_path?: string;
+
+  /**
+   * FSRef pointing to the folder the agent .md was discovered from.
+   * Populated from search results in record-type-nav.ts.
+   */
+  asset_folder_ref?: FSRef;
 
   // Legacy cloud fields — kept for UI compat only
   site_config?: ISiteConfig;
@@ -84,23 +94,36 @@ export class Agent extends APIEntity<Agent> {
     super(entity);
     this.name = entity.name;
     this.description = entity.description;
-    this.source_path = entity.source_path;
+    this.asset_folder_ref = entity.asset_folder_ref;
     this.histogram = entity.histogram || {};
     this.enabled = entity.enabled ?? true;
     this.agent_config = entity.agent_config;
     this.site_config = entity.site_config;
   }
 
+  /** VFS entity sub-path of the .md file, derived from asset_folder_ref + name. */
+  private get _mdVfsSubPath(): string | null {
+    const afr = this.asset_folder_ref;
+    if (afr && this.name) return `${afr.path}/${this.name}.md`;
+    return null;
+  }
+
   override get searchDockPointer(): DockPointerData {
-    if (this.source_path) {
-      return new DockPointerData(ViewType.ASSETS, `editor/agent/${this.source_path.replace(/^\//, '')}`);
-    }
+    const p = this._mdVfsSubPath;
+    if (p) return new DockPointerData(ViewType.ASSETS, `editor/agent/${p}`);
     return this.dockPointer;
   }
 
-  /** FrontMatterFsRef for the agent .md file. Resolves compute node from dataContext. */
-  get doc(): FrontMatterFsRef {
-    return new FrontMatterFsRef(this.source_path ?? '');
+  override get editorDockPointer(): DockPointerData {
+    return this.searchDockPointer;
   }
 
+  /** FrontMatterFsRef for the agent .md file. */
+  get doc(): FrontMatterFsRef | null {
+    const typeId = dataContext.computeNodeTypeId;
+    if (!typeId) return null;
+    const p = this._mdVfsSubPath;
+    if (!p) return null;
+    return new FrontMatterFsRef(p, typeId);
+  }
 }

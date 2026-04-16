@@ -1,4 +1,5 @@
 import { APIEntity, registerEntity } from '../APIEntity';
+import { dataContext } from '../FlowSync/context';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
 import { ViewType } from '../utils/ui/view-types';
@@ -44,9 +45,11 @@ export class Skill extends APIEntity<Skill> {
   }
 
   /** FrontMatterFsRef for SKILL.md. Resolves compute node from dataContext. */
-  get doc(): FrontMatterFsRef {
-    const mdPath = (this.source_path ?? '').replace(/\/$/, '') + '/SKILL.md';
-    return new FrontMatterFsRef(mdPath);
+  get doc(): FrontMatterFsRef | null {
+    const typeId = dataContext.computeNodeTypeId;
+    if (!typeId || !this.source_path) return null;
+    const mdPath = this.source_path.replace(/\/$/, '') + '/SKILL.md';
+    return new FrontMatterFsRef(mdPath, typeId);
   }
 
   static async create(name: string, description?: string): Promise<Skill> {

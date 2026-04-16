@@ -416,6 +416,7 @@ def build_app_paths() -> AppPaths:
     workspace = f"{home}/Flowpad workspace"
     skills = f"{workspace}/.claude/skills"
     user_skills = f"{home}/.claude/skills"
+    user_agents = f"{home}/.claude/agents"
     system_skills = f"{workspace}/.flow/system_assets/skills"
     system_agents = f"{workspace}/.flow/system_assets/agents"
     logs = f"{home}/.flow/logs"
@@ -427,6 +428,7 @@ def build_app_paths() -> AppPaths:
         workspace=workspace,
         skills=skills,
         user_skills=user_skills,
+        user_agents=user_agents,
         system_skills=system_skills,
         system_agents=system_agents,
         logs=logs,

@@ -1,22 +1,20 @@
-import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
 import { Button } from '@src/components/ui/button';
-import { FsRef } from '@src/hooks/use-fs-ref-content';
 import { useMarkdownContent } from '@src/hooks/use-markdown-content';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
-import { fsManager, VFSPath } from '@sdk';
+import { FSRef } from '@sdk';
 import Editor from '@monaco-editor/react';
 import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, RefreshCw } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 type ViewMode = 'editor' | 'markdown';
 
 interface MarkdownAssetEditorProps {
-  /** Absolute machine path to the .md file */
-  sourcePath: string;
+  /** FSRef to the .md file — carries path + typeId + read/write. */
+  fsRef: FSRef;
   /** Optional asset-specific toolbar actions rendered in the header */
   toolbar?: React.ReactNode;
 }
@@ -29,42 +27,13 @@ interface MarkdownAssetEditorProps {
  * - Fields are rendered dynamically from whatever keys exist in the frontmatter.
  * - Body is edited via Milkdown (uncontrolled after first mount).
  */
-export function MarkdownAssetEditor({ sourcePath, toolbar }: MarkdownAssetEditorProps) {
-  const { computeNode } = useAgentContext();
-  const typeIdStr = computeNode?.typeId?.toString();
-
-  const fsRef = useMemo((): FsRef | null => {
-    if (!typeIdStr || !computeNode?.typeId) return null;
-    const typeId = computeNode.typeId;
-    return {
-      path: sourcePath,
-      read: async () => {
-        const vfsPath = VFSPath.fromMachinePath(sourcePath, typeId);
-        return (await fsManager.download(typeId, vfsPath.entitySubPath)) as string;
-      },
-      write: async (content: string) => {
-        const vfsPath = VFSPath.fromMachinePath(sourcePath, typeId);
-        await fsManager.writeFile(typeId, vfsPath.entitySubPath, content);
-      },
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typeIdStr, sourcePath]);
-
-  if (!fsRef) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-        Connecting…
-      </div>
-    );
-  }
-
-  return <MarkdownEditorContent fsRef={fsRef} sourcePath={sourcePath} toolbar={toolbar} />;
+export function MarkdownAssetEditor({ fsRef, toolbar }: MarkdownAssetEditorProps) {
+  return <MarkdownEditorContent fsRef={fsRef} sourcePath={fsRef.path} toolbar={toolbar} />;
 }
 
 // ── Editor content ────────────────────────────────────────────────────────────
 
-function MarkdownEditorContent({ fsRef, sourcePath, toolbar }: { fsRef: FsRef; sourcePath: string; toolbar?: React.ReactNode }) {
+function MarkdownEditorContent({ fsRef, sourcePath, toolbar }: { fsRef: FSRef; sourcePath: string; toolbar?: React.ReactNode }) {
   const { navigation, currentDock } = useDockNavigation();
   const [viewMode, setViewMode] = useState<ViewMode>('editor');
 

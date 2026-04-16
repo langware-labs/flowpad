@@ -108,14 +108,14 @@ def _extract_wiki_links(body: str) -> list[str]:
 class MarkdownRecord(Record):
     """A record backed by a markdown asset file with YAML frontmatter."""
 
-    _record_type: ClassVar[str] = RecordType.DOCS
+    _record_type: ClassVar[str] = RecordType.MARKDOWN
     _indexed_by_default: ClassVar[bool] = True
     _user_asset: ClassVar[bool] = True
     _icon: ClassVar[str] = "BookOpen"
     index_fields: ClassVar[list[str]] = ["title", "tags", "links"]
 
     def __init__(self, **kwargs: Any):
-        kwargs.setdefault("type", RecordType.DOCS)
+        kwargs.setdefault("type", RecordType.MARKDOWN)
         kwargs.setdefault("status", "active")
         super().__init__(**kwargs)
 

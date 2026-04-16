@@ -28,6 +28,9 @@ import { useToast } from '@src/hooks/use-toast';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityProgressModal } from '@src/components/search-index/ActivityProgressModal';
 import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
+import { JoinSessionDialog } from '@src/components/join-session-dialog/JoinSessionDialog';
+import { useLoginRequired } from '@src/hooks/use-login-required';
+import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -143,6 +146,13 @@ export function HomeLanding() {
     if (scanInfo.never_indexed) setShowWelcome(true);
   }, [scanInfo]);
   const firstName = user?.name?.split(' ')[0] || 'there';
+
+  const { checkLoginAndProceed, requiresLogin, showLoginDialog, closeLoginDialog } = useLoginRequired();
+  const [showJoinSession, setShowJoinSession] = useState(false);
+  const handleStartCollaborativeSession = () => {
+    if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
+    setShowJoinSession(true);
+  };
 
   const [memoPanelOpen, setMemoPanelOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -446,13 +456,19 @@ export function HomeLanding() {
               <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
             </h1>
 
-            <div className="w-full max-w-3xl">
+            <div className="w-full max-w-3xl flex flex-col items-end gap-2">
               <SessionInput
                 placeholder="What would you like to work on?"
                 onSubmit={(msg) => void handleSessionSubmit(msg)}
               />
+              <Button
+                type="button"
+                className="bg-green-600 text-white hover:bg-green-700 transition-colors shadow-sm"
+                onClick={handleStartCollaborativeSession}
+              >
+                Start collaborative session
+              </Button>
             </div>
-
 
             {/* Activity strip — shown while any system activity is running */}
             {currentActivity && (
@@ -587,6 +603,13 @@ export function HomeLanding() {
           setShowWelcome(false);
         }}
       />
+
+      <JoinSessionDialog
+        open={showJoinSession}
+        onClose={() => setShowJoinSession(false)}
+        hostName={user?.name ?? undefined}
+      />
+      <LoginDialog open={showLoginDialog} onOpenChange={closeLoginDialog} />
 
       {/* Activity progress detail modal */}
       <ActivityProgressModal

@@ -193,7 +193,7 @@ _BUILTIN_DEFAULT_TYPES: list[str] = [
     RecordType.AGENTIC_PROCESS,
     RecordType.RECORD_ERROR,
     RecordType.CLAUDE_ERROR,
-    RecordType.DOCS,
+    RecordType.MARKDOWN,
     RecordType.PLAN,
     RecordType.CLAUDE_MD,
     RecordType.CLAUDE_MEMORY,
