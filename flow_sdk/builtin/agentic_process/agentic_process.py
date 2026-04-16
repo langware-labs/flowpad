@@ -339,13 +339,18 @@ class AgenticProcess(Entity):
                 if not await shell.ensure_live_compute_node_binding():
                     return ApiFailResponse(message=f"Compute node not found for linked shell {shell.id}")
 
-            if self.status == AgenticProcessLifecycleStatus.STARTING.value and self.shell_id:
+            if self.status in (
+                AgenticProcessLifecycleStatus.STARTING.value,
+                AgenticProcessLifecycleStatus.LIVE.value,
+            ) and self.shell_id:
                 if shell is not None and await shell.has_attachable_pty():
-                    self.status = AgenticProcessLifecycleStatus.LIVE.value
-                    await self.save()
+                    if self.status != AgenticProcessLifecycleStatus.LIVE.value:
+                        self.status = AgenticProcessLifecycleStatus.LIVE.value
+                        await self.save()
                     return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=False))
-                await self._drop_stale_shell(shell, reason="starting process is missing an attachable PTY")
-                shell = None
+                if self.status == AgenticProcessLifecycleStatus.STARTING.value:
+                    await self._drop_stale_shell(shell, reason="starting process is missing an attachable PTY")
+                    shell = None
 
             await self.get_project()
 

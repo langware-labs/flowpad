@@ -2,6 +2,7 @@ import {
   AgenticProcess,
   ContextEntitiesEnum,
   dataContext,
+  dataManager,
   initSdk,
   isProcessActive,
   Project,
@@ -35,6 +36,32 @@ function emptyRecoverySkips(): ShellRecoverySkips {
     skipProcessIds: new Set(),
     skipShellIds: new Set(),
   };
+}
+
+// Synchronously iterate the DataManager entity cache, returning all live entities of a type.
+// Used to skip redundant backend queries on tab switches (the cache is kept warm by
+// `useActiveTerminals`'s live subscription via `useEntitiesQuery`).
+function cachedEntitiesByType<U>(type: string): U[] {
+  const out: U[] = [];
+  for (const [typeId, ref] of dataManager.entities.entries()) {
+    if (typeId.type !== type) continue;
+    const entity = ref.entity as unknown as U | undefined;
+    if (entity) out.push(entity);
+  }
+  return out;
+}
+
+async function fetchShellsAndProcesses(): Promise<[Shell[], AgenticProcess[]]> {
+  return Promise.all([
+    Shell.query<Shell>(new QueryRequest({ type: Shell.type, scope: [] })),
+    AgenticProcess.query<AgenticProcess>(
+      new QueryRequest({
+        type: AgenticProcess.type,
+        scope: [],
+        query: new QueryFilter({ match: { visible: true } as Record<string, unknown> }),
+      }),
+    ),
+  ]);
 }
 /**
  * Ensure compute node is loaded for the current project
@@ -212,16 +239,12 @@ async function loadShell(
     throw redirect(`/dock/shell/${newShell.dockPointer.pointer}`);
   }
 
-  // Prefetch all shells and processes into the entity cache so
-  // useActiveTerminals has data on first render without extra fetches.
-  const [shells, processes] = await Promise.all([
-    Shell.query<Shell>(new QueryRequest({ type: Shell.type, scope: [] })),
-    AgenticProcess.query<AgenticProcess>(new QueryRequest({ type: AgenticProcess.type, scope: [], query: new QueryFilter({ match: { visible: true } as Record<string, unknown> }) })),
-  ]);
-
-  _perfLog(`loadShell queries done (${shells.length} shells, ${processes.length} processes)`);
-
   if (!pointer) {
+    // No-pointer path needs the full visible-process set to pick a default shell.
+    // This only happens on cold navigation to /dock/shell (not on tab clicks).
+    const [shells, processes] = await fetchShellsAndProcesses();
+    _perfLog(`loadShell queries done (${shells.length} shells, ${processes.length} processes)`);
+
     const redirectUrl = resolveDefaultShell(shells, processes, recoverySkips);
     if (redirectUrl) {
       _perfLog(`loadShell redirect → ${redirectUrl}`);
@@ -237,8 +260,11 @@ async function loadShell(
   if (DockPointer.isAgenticProcessPointer(pointer)) {
     const processId = DockPointer.extractAgenticProcessId(pointer);
 
+    // Cache-first: tab switches between live sessions should not hit the backend.
+    // `useActiveTerminals` keeps the cache warm via a live entity subscription.
     const process =
-      processes.find((p) => p.id === processId) ?? (await AgenticProcess.getById(processId).catch(() => null));
+      AgenticProcess.getByIdFromCache<AgenticProcess>(processId) ??
+      (await AgenticProcess.getById<AgenticProcess>(processId).catch(() => null));
     if (!process) {
       toast({ title: 'Session not found', description: `Agentic process does not exist.`, variant: 'destructive' });
       // eslint-disable-next-line @typescript-eslint/only-throw-error
@@ -282,7 +308,8 @@ async function loadShell(
   } else {
     // Shell pointer: "shell-<uuid>" or bare UUID
     const shellId = pointer.startsWith(Shell.type + '-') ? pointer.slice(Shell.type.length + 1) : pointer;
-    const shell = await Shell.getById(shellId).catch(() => null);
+    const shell =
+      Shell.getByIdFromCache<Shell>(shellId) ?? (await Shell.getById<Shell>(shellId).catch(() => null));
 
     if (!shell) {
       toast({ title: 'Shell not found', description: 'This terminal no longer exists.', variant: 'destructive' });
@@ -296,7 +323,9 @@ async function loadShell(
       throw redirect('/dock/shell');
     }
 
-    const linkedProcess = processes.find((p) => p.shell_id === shell.id);
+    const linkedProcess = cachedEntitiesByType<AgenticProcess>(AgenticProcess.type).find(
+      (p) => p.shell_id === shell.id,
+    );
     if (linkedProcess) {
       if (recoverySkips.skipProcessIds.has(linkedProcess.id) || recoverySkips.skipShellIds.has(shell.id)) {
         // Avoid bouncing straight back into the same failing process restore.

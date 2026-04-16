@@ -75,6 +75,10 @@ export interface BootstrapInfo {
   default_project?: Project;
   default_workspace?: Workspace;
   default_compute_node?: ComputeNode;
+  /** True iff the backend has E2B configured and the @sandbox compute node is available. */
+  sandbox_available?: boolean;
+  /** Raw ComputeNode payload for the @sandbox node (E2B-backed). Hydrate via dataContext.sandboxComputeNode. */
+  sandbox_compute_node?: ComputeNode;
   env?: EnvInfo;
   desktop_info?: LmInfo;
   sniffer_hook?: AgentHook;
