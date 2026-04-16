@@ -11,7 +11,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@src/components/ui/context-menu';
-import { ChevronLeft, ChevronRight, FolderGit2, History, Loader2, SquareTerminal, X, XCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Cloud, FolderGit2, History, Loader2, SquareTerminal, X, XCircle } from 'lucide-react';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import InteractiveTerminal from './interactive-terminal';
@@ -136,22 +136,27 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   const activeShellId = (contextShellId ? contextShellId : visibleSessions[0]?.shellId) || '';
   const hasActiveTab = Boolean(activeShellId && visibleSessions.some((session) => session.shellId === activeShellId));
 
-  // Lazy-mount: only render InteractiveTerminal for sessions that have been
-  // active at least once. Inactive sessions that were never visited render a
-  // cheap placeholder <div>. Once mounted the component stays alive (the Set
-  // never shrinks) so subsequent tab switches are instant.
+  // Pre-mount every visible session so first switches are a CSS display toggle,
+  // not a full xterm/ptySync init. The inactive tabs render behind the active
+  // one (visibility: hidden, absolute inset-0), which keeps layout measurable
+  // so xterm's term.open + fit() work normally. The Set never shrinks so
+  // subsequent switches stay instant.
   const [mountedShellIds, setMountedShellIds] = useState<Set<string>>(
-    () => new Set(activeShellId ? [activeShellId] : []),
+    () => new Set(visibleSessions.map((s) => s.shellId)),
   );
   useEffect(() => {
-    if (!activeShellId) return;
     setMountedShellIds((prev) => {
-      if (prev.has(activeShellId)) return prev;
+      let changed = false;
       const next = new Set(prev);
-      next.add(activeShellId);
-      return next;
+      for (const s of visibleSessions) {
+        if (!next.has(s.shellId)) {
+          next.add(s.shellId);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
     });
-  }, [activeShellId]);
+  }, [visibleSessions]);
 
   // Keep dataContext in sync for other consumers
   useEffect(() => {
@@ -189,6 +194,20 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
     tabCreationLockRef.current = true;
     setPendingTabCreation({ kind: 'terminal', targetShellId: null, targetProcessId: null });
     const result = await navigation.openNewShell();
+    if (!result?.shellId) {
+      clearPendingTabCreation();
+      return;
+    }
+    setPendingTabCreation({ kind: 'terminal', targetShellId: result.shellId, targetProcessId: null });
+  }, [clearPendingTabCreation, navigation]);
+
+  const handleStartSandbox = useCallback(async () => {
+    if (tabCreationLockRef.current) return;
+    const sandboxNode = dataContext.sandboxComputeNode;
+    if (!sandboxNode) return;
+    tabCreationLockRef.current = true;
+    setPendingTabCreation({ kind: 'terminal', targetShellId: null, targetProcessId: null });
+    const result = await navigation.openNewShell({ computeNode: sandboxNode });
     if (!result?.shellId) {
       clearPendingTabCreation();
       return;
@@ -458,6 +477,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   const isTabCreationPending = pendingTabCreation !== null;
   const isClaudeCreationPending = pendingTabCreation?.kind === 'claude';
   const isTerminalCreationPending = pendingTabCreation?.kind === 'terminal';
+  const sandboxAvailable = !!dataContext.bootstrapInfo?.sandbox_available && !!dataContext.sandboxComputeNode;
   const tabEndToolbar = addTabButton ? (
     <div className="flex shrink-0 items-center gap-1 border-l px-1" data-testid="terminal-tab-end-toolbar">
       <Button
@@ -492,6 +512,25 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
           <SquareTerminal className="h-4 w-4" />
         )}
       </Button>
+      {sandboxAvailable && (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 rounded"
+          onClick={handleStartSandbox}
+          disabled={isTabCreationPending}
+          aria-busy={isTerminalCreationPending}
+          aria-label="Open sandbox terminal"
+          data-testid="open-sandbox-tab-button"
+          title="Open sandbox terminal (E2B)"
+        >
+          {isTerminalCreationPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Cloud className="h-4 w-4" />
+          )}
+        </Button>
+      )}
       <Button
         variant="ghost"
         size="icon"

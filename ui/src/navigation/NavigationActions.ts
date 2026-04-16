@@ -1,6 +1,7 @@
 import {
   AgenticProcess,
   CodeRef,
+  ComputeNode,
   dataContext,
   DockPointerData,
   FSItem,
@@ -292,9 +293,11 @@ export class NavigationActions {
     }
   }
 
-  async openNewShell(options?: { cwd?: string; startCommand?: string }): Promise<{ shellId: string } | null> {
+  async openNewShell(
+    options?: { cwd?: string; startCommand?: string; computeNode?: ComputeNode },
+  ): Promise<{ shellId: string } | null> {
     try {
-      const cn = dataContext.computeNode;
+      const cn = options?.computeNode ?? dataContext.computeNode;
       if (!cn) {
         console.error('[NavigationActions] No compute node');
         this.openShellView();
@@ -303,7 +306,14 @@ export class NavigationActions {
       const { nextTerminalName } = await import('@src/components/terminal/TabbedTerminal');
       const shells = await Shell.list(cn.id);
       const name = nextTerminalName(shells.map((s) => ({ name: s.name ?? '' })));
-      const cwd = options?.cwd || dataContext.project?.fs_storage_mount_path || undefined;
+      // For sandbox compute nodes the project's host path is meaningless;
+      // fall back to the node's own mount path (e.g. /home/user) instead.
+      const cwd =
+        options?.cwd ||
+        (options?.computeNode
+          ? options.computeNode.fs_storage_mount_path ?? undefined
+          : dataContext.project?.fs_storage_mount_path) ||
+        undefined;
       const newShell = Shell.create(cn, { name, workdir: cwd });
       await newShell.save(cn.typeId);
       await this.openShell(newShell.id, options);
