@@ -236,8 +236,9 @@ class AgentRecord(Record):
         p = Path(path)
         text = p.read_text(encoding="utf-8")
         rec = cls.from_markdown(text, name=p.stem)
-        from flow_sdk.fs_store.fs_ref import FrontMatterFsRef
+        from flow_sdk.fs_store.fs_ref import FrontMatterFsRef, FSRef
         rec.asset_ref = FrontMatterFsRef(p)
+        rec.asset_folder_ref = FSRef(p.parent)
         return rec
 
     # -- Claude Code --agents JSON -----------------------------------------
@@ -309,9 +310,17 @@ class AgentRecord(Record):
         if not p.is_dir():
             return super().load_record(path)
 
-        # Shadow record dir (has metadata.json or old data.json) — load normally
+        # Shadow record dir (has metadata.json or old data.json) — load normally,
+        # then wire up asset_ref to the companion .md if present.
         if (p / _META_JSON).exists() or (p / "data.json").exists():
-            return super().load_record(path)
+            rec = super().load_record(path)
+            if rec.asset_ref is None:
+                md_files = list(p.glob("*.md"))
+                if md_files:
+                    from flow_sdk.fs_store.fs_ref import FrontMatterFsRef, FSRef
+                    object.__setattr__(rec, "_asset_ref", FrontMatterFsRef(md_files[0].resolve()))
+                    object.__setattr__(rec, "_asset_folder_ref", FSRef(md_files[0].parent.resolve()))
+            return rec
 
         # Markdown bootstrap: dir contains only .md (external asset folder)
         md_files = list(p.glob("*.md"))

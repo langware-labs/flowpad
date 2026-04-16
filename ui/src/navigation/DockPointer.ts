@@ -177,7 +177,7 @@ export class DockPointer implements IDockPointer {
   /**
    * Create dock pointer for an asset editor.
    * Pointer format: "editor/<assetType>/<vfsPath>"
-   * @param assetType - The asset type (e.g., "skill", "docs")
+   * @param assetType - The asset type (e.g., "skill", "markdown")
    * @param vfsPath - The VFS or filesystem path to the asset
    */
   static forAssetEditor(assetType: string, vfsPath: string, layout: Layout = Layout.DOCK): DockPointer {

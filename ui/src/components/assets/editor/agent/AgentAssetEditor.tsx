@@ -1,11 +1,11 @@
-import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { MarkdownAssetEditor } from '@src/components/assets/editor/markdown/MarkdownAssetEditor';
 import { AssetExecutionPanel } from '@src/components/assets/execution-panel/AssetExecutionPanel';
+import { FSRef } from '@sdk';
 import { AgentToolbar, useAgentExecution } from './AgentToolbar';
 
 interface AgentAssetEditorProps {
-  /** Absolute machine path to the agent .md file */
-  sourcePath: string;
+  /** FSRef to the agent .md file. */
+  fsRef: FSRef;
 }
 
 /**
@@ -14,18 +14,12 @@ interface AgentAssetEditorProps {
  * - toolbar slot: AgentToolbar (Run/Stop button)
  * - execution panel: slides in when Run is clicked, shows streamed agent output
  */
-export function AgentAssetEditor({ sourcePath }: AgentAssetEditorProps) {
-  const { computeNode } = useAgentContext();
-  const execution = useAgentExecution(sourcePath);
-
-  if (!computeNode?.typeId) return null;
+export function AgentAssetEditor({ fsRef }: AgentAssetEditorProps) {
+  const execution = useAgentExecution(fsRef.path);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <MarkdownAssetEditor
-        sourcePath={sourcePath}
-        toolbar={<AgentToolbar execution={execution} />}
-      />
+      <MarkdownAssetEditor fsRef={fsRef} toolbar={<AgentToolbar execution={execution} />} />
       {execution.panelOpen && (
         <AssetExecutionPanel
           execution={execution}

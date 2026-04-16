@@ -2,7 +2,7 @@
 
 Hierarchy:
     Markdown          — base for all markdown-backed types
-    ├── Docs          — wiki/documentation .md files (type="docs")
+    ├── Docs          — wiki/documentation .md files (type="markdown")
     ├── ClaudeMemory  — auto-memory files (type="claude_memory")
     ├── ClaudeRules   — rules files (type="claude_rules")
     ├── ClaudePlan    — plan files (type="plan")
@@ -29,7 +29,7 @@ class Markdown(Entity):
 
 
 class Docs(Markdown):
-    type: str = APIField(default="docs")
+    type: str = APIField(default="markdown")
     title: str = APIField(default="")
     tags: List[str] = APIField(default_factory=list)
     links: List[str] = APIField(default_factory=list)

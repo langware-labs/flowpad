@@ -3,7 +3,7 @@ import type { SearchResult } from '@src/hooks/use-record-search';
 import { DockPointer } from './DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { CheckSquare, Search, GitBranch, FileText } from 'lucide-react';
-import { Agent, AgenticProcess, Project, Skill, Task } from '@sdk';
+import { Agent, AgenticProcess, dataContext, FSRef, Project, RecordType, Skill, Task } from '@sdk';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import type { NavigationActions } from './NavigationActions';
 
@@ -61,7 +61,18 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     ],
   },
   agent: {
-    dockPointer: (r) => new Agent({ id: r.record_id, source_path: r.source_path || undefined }).searchDockPointer,
+    dockPointer: (r) => {
+      const localTypeId = dataContext.computeNodeTypeId;
+      const agent = new Agent({ id: r.record_id, name: r.name || undefined });
+      if (localTypeId && r.source_path) {
+        // source_path is an absolute machine path — strip leading '/' to get VFS entity sub-path.
+        // The folder is the parent directory (strip filename).
+        const vfsSubPath = r.source_path.replace(/^\//, '');
+        const folderVfsSubPath = vfsSubPath.replace(/\/[^/]+$/, '');
+        agent.asset_folder_ref = new FSRef(folderVfsSubPath, localTypeId);
+      }
+      return agent.searchDockPointer;
+    },
   },
   annotation: {
     primaryAction: async (r, navigation) => {
@@ -93,9 +104,9 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       }
     },
   },
-  docs: {
+  [RecordType.MARKDOWN]: {
     dockPointer: (r) => r.source_path
-      ? new DockPointer(ViewType.ASSETS, `editor/docs/${r.source_path.replace(/^\//, '')}`)
+      ? new DockPointer(ViewType.ASSETS, `editor/${RecordType.MARKDOWN}/${r.source_path.replace(/^\//, '')}`)
       : null,
   },
   plan: {

@@ -6,6 +6,7 @@ export enum RecordType {
   // ── Core resource types ──────────────────────────────
   ANNOTATION = 'annotation',
   ASSET = 'asset',
+  MARKDOWN = 'markdown',
   TASK = 'task',
   SKILL = 'skill',
   LOG = 'log',

@@ -103,7 +103,7 @@ class RecordType(StrEnum):
     WORKFLOW = "workflow"
 
     ASSET = "asset"
-    DOCS = "docs"
+    MARKDOWN = "markdown"
     SPEC = "spec"
 
 
