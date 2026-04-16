@@ -29,6 +29,7 @@ import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityProgressModal } from '@src/components/search-index/ActivityProgressModal';
 import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
 import { JoinSessionDialog } from '@src/components/join-session-dialog/JoinSessionDialog';
+import { JoinExistingSessionDialog } from '@src/components/join-session-dialog/JoinExistingSessionDialog';
 import { useLoginRequired } from '@src/hooks/use-login-required';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { Button } from '@src/components/ui/button';
@@ -149,9 +150,14 @@ export function HomeLanding() {
 
   const { checkLoginAndProceed, requiresLogin, showLoginDialog, closeLoginDialog } = useLoginRequired();
   const [showJoinSession, setShowJoinSession] = useState(false);
+  const [showJoinExisting, setShowJoinExisting] = useState(false);
   const handleStartCollaborativeSession = () => {
     if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
     setShowJoinSession(true);
+  };
+  const handleJoinSession = () => {
+    if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
+    setShowJoinExisting(true);
   };
 
   const [memoPanelOpen, setMemoPanelOpen] = useState(false);
@@ -461,13 +467,23 @@ export function HomeLanding() {
                 placeholder="What would you like to work on?"
                 onSubmit={(msg) => void handleSessionSubmit(msg)}
               />
-              <Button
-                type="button"
-                className="bg-green-600 text-white hover:bg-green-700 transition-colors shadow-sm"
-                onClick={handleStartCollaborativeSession}
-              >
-                Start collaborative session
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white transition-colors shadow-sm"
+                  onClick={handleJoinSession}
+                >
+                  Join session
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-green-600 text-white hover:bg-green-700 transition-colors shadow-sm"
+                  onClick={handleStartCollaborativeSession}
+                >
+                  Start collaborative session
+                </Button>
+              </div>
             </div>
 
             {/* Activity strip — shown while any system activity is running */}
@@ -608,6 +624,10 @@ export function HomeLanding() {
         open={showJoinSession}
         onClose={() => setShowJoinSession(false)}
         hostName={user?.name ?? undefined}
+      />
+      <JoinExistingSessionDialog
+        open={showJoinExisting}
+        onClose={() => setShowJoinExisting(false)}
       />
       <LoginDialog open={showLoginDialog} onOpenChange={closeLoginDialog} />
 
