@@ -73,16 +73,18 @@ async def test_ensure_live_compute_node_binding_rebinds_prefixed_stale_node_to_l
     shell = Shell(id=str(uuid.uuid4()), compute_node_id="compute_node-stale-node")
     current_node = MagicMock()
     current_node.id = "local-node"
+    current_node.uname = "local"
 
     with patch("flow_sdk.builtin.faas.compute_node.ComputeNode.get_by_id", new=AsyncMock(return_value=None)) as get_by_id, \
-         patch("flow_sdk.builtin.faas.compute_node.ComputeNode.get_one", new=AsyncMock(return_value=current_node)) as get_one, \
+         patch("flow_sdk.builtin.faas.compute_node.ComputeNode.get_by_uname", new=AsyncMock(return_value=current_node)) as get_by_uname, \
          patch.object(Shell, "save", new=AsyncMock()) as save:
         rebound = await shell.ensure_live_compute_node_binding()
 
     assert rebound is True
     assert shell.compute_node_id == "local-node"
+    assert shell.compute_node_uname == "local"
     get_by_id.assert_awaited_once_with("stale-node")
-    get_one.assert_awaited_once_with({"uname": "local"})
+    get_by_uname.assert_awaited_once_with("local")
     save.assert_awaited_once()
 
 

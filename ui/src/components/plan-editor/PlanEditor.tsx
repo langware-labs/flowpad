@@ -17,6 +17,7 @@ import { useContext } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useFS } from '@src/hooks/useFS';
+import { useShell } from '@src/hooks/useShell';
 import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
 import { planNotePlugins } from './plan-note-plugin';
 import { Button } from '@src/components/ui/button';
@@ -24,7 +25,7 @@ import { SendPlanNotificationDialog } from './SendPlanNotificationDialog';
 import { Send, ShieldOff, StickyNote, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@src/lib/utils';
-import { AgenticProcess, TypeId } from '@sdk';
+import { AgenticProcess } from '@sdk';
 import './milkdown.css';
 
 export const PlanEditor: React.FC = () => {
@@ -37,12 +38,9 @@ export const PlanEditor: React.FC = () => {
     () => currentDock?.pointer ? DockPointer.parsePlanPointer(currentDock.pointer)?.filePath ?? '' : '',
     [currentDock?.pointer],
   );
+  const { shell } = useShell(agenticProcess?.shell_id);
 
-  // Derive compute node from the agentic process
-  const computeNodeTypeId = useMemo(
-    () => agenticProcess?.compute_node_id ? new TypeId(agenticProcess.compute_node_id) : null,
-    [agenticProcess?.compute_node_id],
-  );
+  const computeNodeTypeId = useMemo(() => shell?.computeNodeTypeId ?? null, [shell?.compute_node_id]);
   const fs = useFS(computeNodeTypeId);
 
   // Get file content from cache

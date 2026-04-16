@@ -109,6 +109,7 @@ def test_shell_entity_defaults():
     assert entity.workdir is None
     assert entity.pty_pid is None
     assert entity.compute_node_id is None
+    assert entity.compute_node_uname is None
     assert entity.tab_order == 0
     assert entity.created_at is None
     assert entity.last_active_at is None
@@ -126,6 +127,7 @@ def test_shell_entity_has_all_api_fields():
         "env",
         "pty_pid",
         "compute_node_id",
+        "compute_node_uname",
         "tab_order",
         "created_at",
         "last_active_at",

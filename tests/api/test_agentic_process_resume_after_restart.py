@@ -82,6 +82,7 @@ async def _create_post_restart_state(client, compute_node_id: str, session_id: s
             "name": f"Claude - {session_id[:8]}",
             "status": "running",          # <-- stale: PTY is dead after restart
             "compute_node_id": compute_node_id,
+            "compute_node_uname": "local",
         },
     )
     assert shell_resp.status_code == 200, shell_resp.text
@@ -90,7 +91,6 @@ async def _create_post_restart_state(client, compute_node_id: str, session_id: s
     proc_resp = await client.post(
         "/api/v1/graph/agentic_process",
         json={
-            "compute_node_id": f"compute_node-{compute_node_id}",
             "shell_id": shell_id,
             "session_id": session_id,
             "status": "running",   # <-- stale: Claude exited at restart

@@ -336,15 +336,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     if (!process) return;
     if (!sidecarShellId) {
       // Create a plain Shell entity and let SidecarShellTerminal start its PTY
-      // process.compute_node_id may be a TypeId object (deepAssign converts "type-UUID" strings).
-      // Extract the plain UUID (.id) to pass to Shell so attachPty() constructs valid ActionInfo URLs.
-      const rawCnId = process.compute_node_id ?? shellRef.current?.compute_node_id ?? null;
-      if (!rawCnId) return;
-      const computeNodeId: string | null =
-        typeof rawCnId === 'object' ? ((rawCnId as unknown as { id: string }).id ?? null) : rawCnId;
+      const computeNodeId = shellRef.current?.compute_node_id ?? dataContext.computeNode?.id ?? null;
+      const computeNodeUname = shellRef.current?.compute_node_uname ?? dataContext.computeNode?.uname ?? null;
       if (!computeNodeId) return;
       const workdir = process.workdir ?? shellRef.current?.workdir ?? undefined;
-      const shell = new Shell({ compute_node_id: computeNodeId, workdir: workdir ?? null });
+      const shell = new Shell({
+        compute_node_id: computeNodeId,
+        compute_node_uname: computeNodeUname,
+        workdir: workdir ?? null,
+      });
       await shell.save();
       process.sidecar_shell_id = shell.id;
       await process.save();
@@ -1354,12 +1354,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
               >
                 {activeSideTab === SideTabId.Git && (
                   <GitPanel
-                    computeNodeId={(() => {
-                      const fromShell = shellRef.current?.compute_node_id;
-                      if (fromShell) return fromShell;
-                      const fullId = process?.compute_node_id ?? undefined;
-                      return fullId ? fullId.replace(/^compute_node-/, '') : '';
-                    })()}
+                    computeNodeId={shellRef.current?.compute_node_id ?? dataContext.computeNode?.id ?? ''}
                     workdir={shellRef.current?.workdir ?? process?.workdir ?? ''}
                     sidecarShellId={sidecarShellId}
                   />

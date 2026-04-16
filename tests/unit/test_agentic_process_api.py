@@ -33,7 +33,7 @@ def use_tmp_records_root(tmp_path):
 
 
 def _proc(**kwargs) -> AgenticProcess:
-    return AgenticProcess(id=str(uuid.uuid4()), compute_node_id=str(uuid.uuid4()), **kwargs)
+    return AgenticProcess(id=str(uuid.uuid4()), **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -134,12 +134,6 @@ def test_fork_factory_passes_workdir():
     assert proc.workdir == "/project/dir"
 
 
-def test_fork_factory_passes_compute_node_id():
-    """AgenticProcess.fork() passes compute_node_id to the new instance."""
-    proc = AgenticProcess.fork("src-session-456", compute_node_id="node-abc")
-    assert proc.compute_node_id == "node-abc"
-
-
 # ---------------------------------------------------------------------------
 # CLAUDE_PROJECT_DIR lookup uses source session on fork
 # ---------------------------------------------------------------------------
@@ -196,7 +190,6 @@ async def test_fork_action_creates_sibling_with_fork_session_id():
     mock_fork.assert_called_once_with(
         session_id="source-session-abc",
         workdir="/project",
-        compute_node_id=source.compute_node_id,
         visible=False,
     )
     fake_new_proc.save.assert_awaited_once_with(None)
@@ -221,7 +214,6 @@ async def test_fork_action_visible_false_by_default():
     mock_fork.assert_called_once_with(
         session_id="src-sess",
         workdir="/project",
-        compute_node_id=source.compute_node_id,
         visible=False,
     )
 
@@ -246,7 +238,6 @@ async def test_fork_action_visible_true_when_passed():
     mock_fork.assert_called_once_with(
         session_id="src-sess",
         workdir="/project",
-        compute_node_id=source.compute_node_id,
         visible=True,
     )
 
@@ -297,15 +288,14 @@ async def test_start_promotes_stuck_starting_process_to_live_when_pty_is_attacha
     shell.ensure_live_compute_node_binding = AsyncMock(return_value=True)
     shell.has_attachable_pty = AsyncMock(return_value=True)
 
-    with patch.object(AgenticProcess, "_ensure_live_compute_node_binding", new=AsyncMock(return_value=MagicMock())), \
-         patch.object(AgenticProcess, "shell", new=AsyncMock(return_value=shell)), \
+    with patch.object(AgenticProcess, "shell", new=AsyncMock(return_value=shell)), \
          patch.object(AgenticProcess, "save", new=AsyncMock()) as save, \
          patch.object(AgenticProcess, "get_project", new=AsyncMock()) as get_project:
         result = await proc.start()
 
     assert isinstance(result, ApiSuccessResponse)
     assert proc.status == AgenticProcessLifecycleStatus.LIVE.value
-    shell.ensure_live_compute_node_binding.assert_awaited_once_with(proc.compute_node_id)
+    shell.ensure_live_compute_node_binding.assert_awaited_once_with()
     shell.has_attachable_pty.assert_awaited_once()
     save.assert_awaited_once()
     get_project.assert_not_awaited()

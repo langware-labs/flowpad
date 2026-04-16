@@ -11,6 +11,7 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ClaudeCliOptions } from '../cli_workers';
+import { dataContext } from '../FlowSync/context';
 import { FlowDataFactory } from '../entities/flow/flow-data-factory';
 import { Shell, ShellStatus } from '../entities/shell';
 import { FlowData } from '../flow_processing';
@@ -551,7 +552,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /**
    * Get the workdir as a VFSPath if available.
-   * Resolves machine paths using compute_node_id from context_data.
+   * Resolves plain machine paths against the current compute-node context.
    */
   get workDirVfs(): VFSPath | null {
     const contextWorkdir = this.workdir;
@@ -564,17 +565,29 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       return VFSPath.parse(contextWorkdir);
     }
 
-    const computeNodeId = this.context_data?.compute_node_id as string | undefined;
-    if (!computeNodeId) {
+    const computeNodeTypeId = dataContext.computeNode?.typeId;
+    if (!computeNodeTypeId) {
       return VFSPath.parse(contextWorkdir);
     }
 
     try {
-      const typeId = new TypeId(computeNodeId);
-      return VFSPath.fromMachinePath(contextWorkdir, typeId);
+      return VFSPath.fromMachinePath(contextWorkdir, computeNodeTypeId);
     } catch {
       return VFSPath.parse(contextWorkdir);
     }
+  }
+
+  get shellEntity(): Shell | null {
+    if (!this.shell_id) return null;
+    return dataManager.getByTypeIdFromCache<Shell>(new TypeId(Shell.type, this.shell_id));
+  }
+
+  get compute_node_id(): string | null {
+    return this.shellEntity?.compute_node_id ?? null;
+  }
+
+  get compute_node_uname(): string | null {
+    return this.shellEntity?.compute_node_uname ?? null;
   }
 
   /**

@@ -262,7 +262,6 @@ class ScanActionsMixin:
                 cli_opts.resume = True
 
             process = AgenticProcess(
-                compute_node_id=str(self.typeid),
                 instruction_content="",
                 cli_config=cli_opts.to_json(),
                 context_data=context_data,
@@ -391,7 +390,7 @@ class ScanActionsMixin:
             # Create new process directly on this compute node
             owner = request_info.someone_typeid if request_info else None
 
-            context_data = {"compute_node_id": f"{self.type}-{self.id}"}
+            context_data = {}
             if workdir:
                 context_data["workdir"] = workdir
             if project_id:
@@ -401,7 +400,6 @@ class ScanActionsMixin:
                 session_id=session_id,
                 use_worker_history=True,
                 context_data=context_data,
-                compute_node_id=str(self.typeid),
                 project_id=project_id or None,
                 project_encoded_name=project_encoded_name or None,
             )
