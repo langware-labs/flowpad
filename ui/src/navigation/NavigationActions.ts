@@ -279,7 +279,10 @@ export class NavigationActions {
         return null;
       }
       const agenticProcess = await computeNode.createProcess(
-        { workdir: options?.cwd || dataContext.project?.fs_storage_mount_path },
+        {
+          workdir: options?.cwd || dataContext.project?.fs_storage_mount_path,
+          projectId: dataContext.project?.id,
+        },
         { watchProcess: false, visible: true },
       );
       return {

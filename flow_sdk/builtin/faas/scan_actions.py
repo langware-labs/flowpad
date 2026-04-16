@@ -241,6 +241,7 @@ class ScanActionsMixin:
 
             context_data = dict(context_raw)
             workdir = context_data.pop("workdir", None)
+            project_id = context_data.pop("project_id", None)
 
             fork_session = bool(context_data.pop("fork_session", False))
             resume_session_id = context_data.pop("resume_session_id", None)
@@ -261,6 +262,25 @@ class ScanActionsMixin:
             elif resume_session_id:
                 cli_opts.resume = True
 
+            # Resolve project_id from workdir prefix-match when the caller didn't
+            # supply one. Otherwise AgenticProcess.get_project() falls back to
+            # DB ancestry which returns the user's canonical project — not the
+            # UI-active one — causing a project/workdir mismatch on the entity.
+            if workdir and not project_id:
+                try:
+                    from flow_sdk.builtin.project import Project
+
+                    projects = await Project.get_all()
+                    best, best_len = None, 0
+                    for p in projects:
+                        mp = getattr(p, "fs_storage_mount_path", None)
+                        if mp and workdir.startswith(str(mp)) and len(str(mp)) > best_len:
+                            best, best_len = p, len(str(mp))
+                    if best:
+                        project_id = best.id
+                except Exception:
+                    pass
+
             process = AgenticProcess(
                 instruction_content="",
                 cli_config=cli_opts.to_json(),
@@ -268,6 +288,7 @@ class ScanActionsMixin:
                 workdir=workdir,
                 visible=visible,
                 additional_dirs=additional_dirs,
+                project_id=project_id or None,
             )
             if resume_session_id and not fork_session:
                 process.session_id = resume_session_id
