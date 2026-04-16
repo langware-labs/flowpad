@@ -265,6 +265,50 @@ class AgenticProcess(Entity):
             "worker_pid": shell.worker_pid,
         }
 
+    @staticmethod
+    def _normalize_compute_node_id(compute_node_id: str | None) -> str | None:
+        if not compute_node_id:
+            return None
+        prefix = "compute_node-"
+        if compute_node_id.startswith(prefix):
+            return compute_node_id[len(prefix):]
+        return compute_node_id
+
+    async def _ensure_live_compute_node_binding(self):
+        """Repair stale compute_node_id bindings against the current local node."""
+        from flow_sdk.builtin.faas.compute_node import ComputeNode
+
+        candidate_id = self._normalize_compute_node_id(self.compute_node_id)
+        bound_node = await ComputeNode.get_by_id(candidate_id) if candidate_id else None
+        if bound_node is None:
+            bound_node = await ComputeNode.get_one({"uname": "local"})
+        if bound_node is None:
+            return None
+
+        canonical_typeid = str(bound_node.typeid)
+        if self.compute_node_id != canonical_typeid:
+            self.compute_node_id = canonical_typeid
+            await self.save()
+        return bound_node
+
+    async def _drop_stale_shell(self, shell: "Shell | None", *, reason: str) -> None:
+        """Discard a linked shell that can no longer be reattached."""
+        if shell is not None:
+            logger.warning("AgenticProcess %s: discarding stale shell %s (%s)", self.id, shell.id, reason)
+            context = dict(self.context_data or {})
+            context["_prev_tab_order"] = shell.tab_order
+            self.context_data = context
+            try:
+                await shell.terminate_worker()
+            except Exception as exc:
+                logger.warning("AgenticProcess %s: failed terminating stale worker for shell %s: %s", self.id, shell.id, exc)
+            try:
+                await shell.close()
+            except Exception as exc:
+                logger.warning("AgenticProcess %s: failed closing stale shell %s: %s", self.id, shell.id, exc)
+        self.shell_id = None
+        self.sidecar_shell_id = None
+
     async def start(
         self,
         instruction: str | None = None,
@@ -283,22 +327,24 @@ class AgenticProcess(Entity):
             self.session_id = self.session_id or str(uuid4())
             if visible is not None:
                 self.visible = visible
+            local_node = await self._ensure_live_compute_node_binding()
+            if local_node is None:
+                return ApiFailResponse(
+                    message="No compute node assigned and no @local compute node found. "
+                    "This environment does not support local process execution."
+                )
+
+            shell = await self.shell() if self.shell_id else None
+            if shell is not None:
+                await shell.ensure_live_compute_node_binding(self.compute_node_id)
 
             if self.status == AgenticProcessLifecycleStatus.STARTING.value and self.shell_id:
-                shell = await self.shell()
-                if shell is not None and shell.is_alive:
+                if shell is not None and await shell.has_attachable_pty():
+                    self.status = AgenticProcessLifecycleStatus.LIVE.value
+                    await self.save()
                     return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=False))
-
-            # Resolve compute node: if not yet assigned, look up the @local node (desktop only).
-            if not self.compute_node_id:
-                from flow_sdk.builtin.faas.compute_node import ComputeNode
-                local_node = await ComputeNode.get_one({"uname": "local"})
-                if not local_node:
-                    return ApiFailResponse(
-                        message="No compute node assigned and no @local compute node found. "
-                        "This environment does not support local process execution."
-                    )
-                self.compute_node_id = str(local_node.typeid)
+                await self._drop_stale_shell(shell, reason="starting process is missing an attachable PTY")
+                shell = None
 
             await self.get_project()
 
@@ -376,6 +422,11 @@ class AgenticProcess(Entity):
 
             return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=is_resume))
 
+        except asyncio.CancelledError:
+            logger.warning("AgenticProcess %s start cancelled (status=%s shell_id=%s)", self.id, self.status, self.shell_id)
+            self.status = AgenticProcessLifecycleStatus.FAILED.value
+            await self.save()
+            raise
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} start error: {e}")
             self.shell_id = None
@@ -1086,6 +1137,7 @@ class AgenticProcess(Entity):
         if self.shell_id:
             shell = await Shell.get_by_id(self.shell_id)
             if shell:
+                await shell.ensure_live_compute_node_binding(self.compute_node_id)
                 return shell
 
         prev = self.context_data.pop("_prev_tab_order", None)
@@ -1096,14 +1148,13 @@ class AgenticProcess(Entity):
         session_label = 'fork' if is_fork else 'resume' if is_resume else 'new'
         session_name = f"Claude - {self.session_id[:8]} ({session_label})" if self.session_id else "Claude"
 
-        cn_id = self.compute_node_id
-        if cn_id and "-" in cn_id:
-            cn_id = cn_id.split("-", 1)[1]
         workdir = self.workdir
         if not workdir:
             raise NotADirectoryError(
                 f"AgenticProcess {self.id} has no workdir after project resolution"
             )
+        cn = await self._ensure_live_compute_node_binding()
+        cn_id = str(cn.id) if cn is not None else self._normalize_compute_node_id(self.compute_node_id)
         shell = Shell(
             compute_node_id=cn_id,
             name=session_name,

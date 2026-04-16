@@ -12,6 +12,7 @@ import pytest
 from flow_sdk.builtin.agentic_process import AgenticProcess, ProcessError, RunResult
 from flow_sdk.fs_records.agent_status import AgenticProcessStatus
 from flow_sdk.fs_records.agentic_process_lifecycle import AgenticProcessLifecycleStatus
+from flow_sdk.responses.response import ApiSuccessResponse
 from flow_sdk.fs_store.record import (
     get_default_records_data_root,
     get_default_records_root,
@@ -278,6 +279,36 @@ async def test_context_manager_calls_start_and_stop():
 
     assert start_called == [True]
     assert exit_called == [True]
+
+
+@pytest.mark.asyncio
+async def test_start_promotes_stuck_starting_process_to_live_when_pty_is_attachable():
+    """A wedged STARTING process should heal back to LIVE when its shell PTY is still attachable."""
+    proc = _proc(
+        status=AgenticProcessLifecycleStatus.STARTING.value,
+        shell_id="shell-123",
+        session_id="session-123",
+    )
+    shell = MagicMock()
+    shell.id = "shell-123"
+    shell.pty_pid = "pty-123"
+    shell.worker_pid = 4321
+    shell.model_dump.return_value = {"id": "shell-123"}
+    shell.ensure_live_compute_node_binding = AsyncMock(return_value=True)
+    shell.has_attachable_pty = AsyncMock(return_value=True)
+
+    with patch.object(AgenticProcess, "_ensure_live_compute_node_binding", new=AsyncMock(return_value=MagicMock())), \
+         patch.object(AgenticProcess, "shell", new=AsyncMock(return_value=shell)), \
+         patch.object(AgenticProcess, "save", new=AsyncMock()) as save, \
+         patch.object(AgenticProcess, "get_project", new=AsyncMock()) as get_project:
+        result = await proc.start()
+
+    assert isinstance(result, ApiSuccessResponse)
+    assert proc.status == AgenticProcessLifecycleStatus.LIVE.value
+    shell.ensure_live_compute_node_binding.assert_awaited_once_with(proc.compute_node_id)
+    shell.has_attachable_pty.assert_awaited_once()
+    save.assert_awaited_once()
+    get_project.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
