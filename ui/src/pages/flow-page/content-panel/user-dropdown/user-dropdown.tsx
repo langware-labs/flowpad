@@ -9,13 +9,13 @@ import {
 } from '@src/components/ui/dropdown-menu';
 import { SettingsPane } from '@src/components/ui/settings-pane';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
+import { Cloud, LogIn, LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
 
 import { AccountInfo } from '@src/components/account/account-info';
 
 import { trackEvent } from '@src/utils/analytics';
 import { redirectToConsole } from '@src/utils/navigation';
-import { Agent, dataContext, ExpansionRequest, navigator, Page, PAGE_TYPE, QueryFilter, QueryRequest, TypeId } from '@sdk';
+import { Agent, dataContext, ExpansionRequest, navigator, oauthService, OAUTH_PROVIDERS, Page, PAGE_TYPE, QueryFilter, QueryRequest, TypeId } from '@sdk';
 import { useAuth, useConnectionStatus, useContext, useEntitiesQuery, useEntity, useWatch } from '@sdk/react/hooks';
 import { SerializedElementNode, SerializedLexicalNode, SerializedTextNode } from 'lexical';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -143,6 +143,18 @@ export function UserDropdown() {
     } catch (e) {
       console.error('[Logout] Failed:', e);
     }
+  }, []);
+
+  const handleCloudLogin = useCallback(async () => {
+    try {
+      await oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
+    } catch (e) {
+      console.error('[Cloud Login] Failed:', e);
+    }
+  }, []);
+
+  const handleOpenFlowpadCloud = useCallback(() => {
+    window.open('https://app.flowpad.ai', '_blank', 'noopener,noreferrer');
   }, []);
 
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -294,13 +306,24 @@ export function UserDropdown() {
                   <UserIcon className="mr-2 h-4 w-4" />
                   Account Details
                 </DropdownMenuItem>
-                {cloudLoginAvailable && (
-                  <DropdownMenuItem
-                    onClick={() => void handleLogout()}
-                    className="cursor-pointer text-red-500 focus:text-red-500"
-                  >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Logout
+                {cloudLoginAvailable ? (
+                  <>
+                    <DropdownMenuItem onClick={handleOpenFlowpadCloud} className="cursor-pointer">
+                      <Cloud className="mr-2 h-4 w-4" />
+                      Flowpad Cloud
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => void handleLogout()}
+                      className="cursor-pointer text-red-500 focus:text-red-500"
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Logout
+                    </DropdownMenuItem>
+                  </>
+                ) : (
+                  <DropdownMenuItem onClick={() => void handleCloudLogin()} className="cursor-pointer">
+                    <LogIn className="mr-2 h-4 w-4" />
+                    Login
                   </DropdownMenuItem>
                 )}
                   </DropdownMenuContent>
