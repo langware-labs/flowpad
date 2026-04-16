@@ -34,6 +34,9 @@ import {
   QueuePanel,
   SideTabId,
   SideWindow,
+  TeamSideWindow,
+  parseSideTabIdList,
+  parseSideTabId,
   type PromptEntry,
 } from './side-windows';
 import { SidecarShellTerminal } from './SidecarShellTerminal';
@@ -296,6 +299,20 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const closeSideTab = useCallback((tab: SideTabId) => {
     dispatchSideTab({ type: 'close', tab });
   }, []);
+
+  // URL-driven side windows: ?windows=team,git&activeWindow=team
+  // One-shot on sessionId change — user closing a tab afterwards does not rewrite the URL.
+  const urlWindowsAppliedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const key = `${sessionId}|${searchParams.get('windows') ?? ''}|${searchParams.get('activeWindow') ?? ''}`;
+    if (urlWindowsAppliedRef.current === key) return;
+    urlWindowsAppliedRef.current = key;
+    const ids = parseSideTabIdList(searchParams.get('windows'));
+    if (ids.length === 0) return;
+    for (const tab of ids) dispatchSideTab({ type: 'open', tab });
+    const active = parseSideTabId(searchParams.get('activeWindow'));
+    if (active && ids.includes(active)) dispatchSideTab({ type: 'select', tab: active });
+  }, [sessionId, searchParams]);
 
   // Queue hook — idle injection of queued prompts
   const { queue, addEntry, removeEntry, setEnabled, moveEntry } = useAgenticQueue(
@@ -1383,6 +1400,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                   <InputFilesPanel
                     computeNodeTypeId={inputDirInfo.computeNodeTypeId}
                     inputDirAbsPath={inputDirInfo.absPath}
+                  />
+                )}
+                {activeSideTab === SideTabId.Team && process && (
+                  <TeamSideWindow
+                    agenticProcessId={process.id}
+                    defaultHostName={dataContext.user?.name ?? null}
                   />
                 )}
               </SideWindow>

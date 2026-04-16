@@ -319,6 +319,58 @@ describe('e2b_sandbox_pty', () => {
     expect(shell.compute_node_id).toBe(sandboxNode.id);
   }, 60_000);
 
+  // Regression guard for the `Shell.start()` + `shell.sendInput` path on E2B.
+  //
+  // Previously `Shell.compute_node` on the Python side was hardcoded to a
+  // synthetic local-provider ComputeNode — so a Shell bound to @sandbox still
+  // spawned a host-macOS zsh instead of an E2B sandbox, and `shell.sendInput`
+  // hit the backend "PTY session not found" branch (ptyConnection.ts:189-193).
+  //
+  // Fixed by caching the real ComputeNode inside `ensure_live_compute_node_binding()`
+  // and returning it from the sync `compute_node` property.
+  it(
+    'Shell.start() on @sandbox routes sendInput/onOutput through the real E2B PTY',
+    async () => {
+      const draft = Shell.create(sandboxNode, { name: 'ts-shell-start-e2b-regression' });
+      await draft.save();
+      const shell = await dataManager.getByTypeId<Shell>(new TypeId(Shell.type, draft.id));
+      if (!shell) throw new Error(`Shell ${draft.id} not in DataManager cache after save`);
+
+      await shell.start({ cols: 80, rows: 24 });
+
+      await vi.waitFor(
+        () => {
+          const probe = shell.onOutput(() => {});
+          if (!probe) throw new Error('PtyConnection not ready (replay not done)');
+          probe();
+        },
+        { timeout: 10_000, interval: 100 },
+      );
+
+      let accumulated = '';
+      const unsub = shell.onOutput((data) => {
+        accumulated += data;
+      });
+      if (!unsub) throw new Error('onOutput returned undefined');
+
+      await shell.sendInput('echo e2b_shell_start_fix_ok\n');
+
+      await vi.waitFor(
+        () => {
+          if (!accumulated.includes('e2b_shell_start_fix_ok')) {
+            const pc: any = (shell as any).ptyConnection;
+            throw new Error(
+              `no output via shell.onOutput; ptyConnection state: started=${pc?.started} replayDone=${pc?.replayDone} isLive=${pc?.isLive} lastSeq=${pc?.lastSeq} accumulated=${accumulated.length}b`,
+            );
+          }
+        },
+        { timeout: 10_000, interval: 150 },
+      );
+      unsub();
+    },
+    30_000,
+  );
+
   it('interactive roundtrip: two sequential commands on the same Shell hit the same sandbox', async () => {
     const shellId = await createShell(sandboxNode.id, 'e2b-roundtrip-test');
     await startPty(sandboxNode.id, shellId, manager);

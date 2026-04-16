@@ -1182,6 +1182,35 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
+   * Start a collaborative TeamSession bound to this process.
+   *
+   * Creates a TeamSession entity with this process as the host and
+   * seeds the host as the first member. Returns the persisted entity
+   * whose `session_code` is the shareable join code.
+   */
+  async createTeamSession(hostName: string, hostMemberId?: string): Promise<import('../entities/team-session').TeamSession> {
+    const { TeamSession, getOrCreateLocalMemberId } = await import('../entities/team-session');
+    const memberId = hostMemberId ?? getOrCreateLocalMemberId();
+    const now = new Date().toISOString();
+    const ts = new TeamSession({
+      agentic_process_id: this.id,
+      host_name: hostName,
+      host_member_id: memberId,
+      members: [
+        {
+          member_id: memberId,
+          name: hostName,
+          joined_at: now,
+          last_seen_at: now,
+        },
+      ],
+      status: 'active',
+    });
+    await ts.save();
+    return ts;
+  }
+
+  /**
    * Stop the current shell session while keeping the shell entity available for reuse.
    *
    * Calls the backend exit action which kills the worker and PTY but

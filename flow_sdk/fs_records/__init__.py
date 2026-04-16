@@ -55,6 +55,8 @@ from .session_analysis import SessionAnalysis as SessionAnalysis
 from .session_classification import SessionClassification as SessionClassification
 from .shell_record import ShellRecord as ShellRecord
 from .shell_record import ShellStatus as ShellStatus
+from .team_session_record import TeamSessionRecord as TeamSessionRecord
+from .team_session_record import TeamSessionStatus as TeamSessionStatus
 from .skill_record import SkillRecord as SkillRecord
 from .spec_record import SpecRecord as SpecRecord
 from .task import TaskResource as TaskResource

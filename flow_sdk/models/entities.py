@@ -71,6 +71,11 @@ except ImportError as e:
     print(f"[WARN] Failed to import Shell: {e}")
 
 try:
+    from flow_sdk.builtin.team_session import TeamSession  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import TeamSession: {e}")
+
+try:
     from flow_sdk.builtin.cron_event import CronEvent  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import CronEvent: {e}")

@@ -203,7 +203,10 @@ export class NavigationActions {
     return shell;
   }
 
-  async openShellProcess(agenticProcessId: string, options?: { t?: string }): Promise<AgenticProcess | null> {
+  async openShellProcess(
+    agenticProcessId: string,
+    options?: { t?: string; windows?: string; activeWindow?: string },
+  ): Promise<AgenticProcess | null> {
     const extraOptions = toStringRecord(options);
     const process =
       AgenticProcess.getByIdFromCache(agenticProcessId) ?? (await AgenticProcess.getById(agenticProcessId));

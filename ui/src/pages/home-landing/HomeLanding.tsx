@@ -151,8 +151,16 @@ export function HomeLanding() {
   const { checkLoginAndProceed, requiresLogin, showLoginDialog, closeLoginDialog } = useLoginRequired();
   const [showJoinSession, setShowJoinSession] = useState(false);
   const [showJoinExisting, setShowJoinExisting] = useState(false);
+  const [draftPrompt, setDraftPrompt] = useState('');
   const handleStartCollaborativeSession = () => {
     if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
+    if (!draftPrompt.trim()) {
+      toast({
+        title: 'Type a prompt first',
+        description: 'Enter the first message for the shared session, then press Start collaborative session.',
+      });
+      return;
+    }
     setShowJoinSession(true);
   };
   const handleJoinSession = () => {
@@ -191,6 +199,45 @@ export function HomeLanding() {
 
   // Get paths from desktop_info
   const paths = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths, []);
+
+  const handleStartCollaboration = useCallback(
+    async (hostName: string, prompt: string) => {
+      if (!currentProject?.typeId) {
+        toast({
+          title: 'Project Required',
+          description: 'Please select or create a project first.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      const workdir =
+        currentProject.fs_storage_mount_path || currentProject.name || paths?.workspace || undefined;
+      try {
+        const agenticProcess = await claudeSessionManager.createAndStartSession(
+          { workdir },
+          { instruction: prompt },
+        );
+        try {
+          await agenticProcess.createTeamSession(hostName);
+        } catch (err) {
+          console.error('[HomeLanding] createTeamSession failed', err);
+        }
+        setDraftPrompt('');
+        await navigation.openShellProcess(agenticProcess.id, {
+          windows: 'team',
+          activeWindow: 'team',
+        });
+      } catch (error) {
+        console.error('[HomeLanding] Failed to start collaborative session:', error);
+        toast({
+          title: 'Could not start session',
+          description: String((error as Error).message ?? error),
+          variant: 'destructive',
+        });
+      }
+    },
+    [currentProject, navigation, paths?.workspace, toast],
+  );
   const apiUrl = useMemo(() => {
     // Derive API URL from the current window location or use default
     const port = '9007';
@@ -465,6 +512,8 @@ export function HomeLanding() {
             <div className="w-full max-w-3xl flex flex-col items-end gap-2">
               <SessionInput
                 placeholder="What would you like to work on?"
+                value={draftPrompt}
+                onChange={setDraftPrompt}
                 onSubmit={(msg) => void handleSessionSubmit(msg)}
               />
               <div className="flex gap-2">
@@ -624,10 +673,13 @@ export function HomeLanding() {
         open={showJoinSession}
         onClose={() => setShowJoinSession(false)}
         hostName={user?.name ?? undefined}
+        draftPrompt={draftPrompt}
+        onStart={(hostName, prompt) => handleStartCollaboration(hostName, prompt)}
       />
       <JoinExistingSessionDialog
         open={showJoinExisting}
         onClose={() => setShowJoinExisting(false)}
+        defaultName={user?.name ?? undefined}
       />
       <LoginDialog open={showLoginDialog} onOpenChange={closeLoginDialog} />
 

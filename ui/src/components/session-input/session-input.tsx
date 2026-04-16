@@ -7,10 +7,22 @@ interface SessionInputProps {
   placeholder?: string;
   onSubmit: (message: string) => void;
   disabled?: boolean;
+  /** Optional controlled value. When provided, onChange becomes authoritative. */
+  value?: string;
+  onChange?: (value: string) => void;
 }
 
-export function SessionInput({ placeholder, onSubmit, disabled = false }: SessionInputProps) {
-  const [message, setMessage] = useState('');
+export function SessionInput({ placeholder, onSubmit, disabled = false, value, onChange }: SessionInputProps) {
+  const [internal, setInternal] = useState('');
+  const controlled = value !== undefined;
+  const message = controlled ? (value ?? '') : internal;
+  const setMessage = (next: string) => {
+    if (controlled) {
+      onChange?.(next);
+    } else {
+      setInternal(next);
+    }
+  };
 
   const handleSubmit = useCallback(
     (e?: React.FormEvent) => {

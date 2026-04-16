@@ -65,9 +65,24 @@ class Shell(Entity):
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
+    # Cached result of the last ensure_live_compute_node_binding() — lets the
+    # sync `compute_node` property return the real ComputeNode (with its real
+    # provider type) instead of a synthetic local stub. Not persisted.
+    _bound_compute_node: "ComputeNode | None" = None
+
     @property
     def compute_node(self) -> "ComputeNode":
-        """The local ComputeNode backing this shell's PTY sessions."""
+        """Real ComputeNode this shell is bound to (e.g. @local, @sandbox).
+
+        Returns the node resolved by `ensure_live_compute_node_binding()` when
+        available. Falls back to a synthetic local-provider CN only when the
+        binding hasn't been resolved yet AND we have no uname hint — purely to
+        avoid breaking ephemeral sessions that still use a raw local id. For
+        every other path (including sandbox shells) the real CN + provider are
+        used, so `Shell.start()` routes to the correct provider.
+        """
+        if self._bound_compute_node is not None:
+            return self._bound_compute_node
         from flow_sdk.builtin.faas.compute_node import ComputeNode
         return ComputeNode(
             id=self.compute_node_id or "",
@@ -120,6 +135,10 @@ class Shell(Entity):
             self.compute_node_id = canonical_id
             self.compute_node_uname = canonical_uname
             await self.save()
+        # Cache the real CN so the sync `compute_node` property can return it
+        # with its actual provider type (previously it always fabricated a
+        # local stub, which mis-routed sandbox shells to LocalComputeProvider).
+        self._bound_compute_node = bound_node
         return True
 
     async def has_attachable_pty(self) -> bool:
