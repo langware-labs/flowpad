@@ -106,6 +106,8 @@ class RecordType(StrEnum):
     MARKDOWN = "markdown"
     SPEC = "spec"
 
+    TEAM_SESSION = "team_session"
+
 
 class SkillitRecordType(StrEnum):
     SKILLIT_SESSION = "skillit_session"

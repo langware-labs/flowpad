@@ -46,6 +46,7 @@ from .routes import (
     hooks_router,
     notify_router,
     search_router,
+    team_session_router,
     testing_router,
     ui_router,
     watch_router,
@@ -162,6 +163,7 @@ server.add_router(websocket_router)
 server.add_router(webhook_api_router)
 server.add_router(assets_router)
 server.add_router(notify_router, prefix="/api/v1")
+server.add_router(team_session_router, prefix="/api/v1")
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)
 

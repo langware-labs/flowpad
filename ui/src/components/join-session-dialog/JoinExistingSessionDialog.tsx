@@ -1,21 +1,55 @@
+import { TeamSession, getOrCreateLocalMemberId } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useToast } from '@src/hooks/use-toast';
 import { LogIn } from 'lucide-react';
 import { useState } from 'react';
 
 interface JoinExistingSessionDialogProps {
   open: boolean;
   onClose: () => void;
+  defaultName?: string;
 }
 
-export function JoinExistingSessionDialog({ open, onClose }: JoinExistingSessionDialogProps) {
+export function JoinExistingSessionDialog({ open, onClose, defaultName }: JoinExistingSessionDialogProps) {
   const [code, setCode] = useState('');
+  const [displayName, setDisplayName] = useState(defaultName ?? '');
+  const [busy, setBusy] = useState(false);
+  const { navigation } = useDockNavigation();
+  const { toast } = useToast();
 
-  const handleJoin = () => {
-    if (!code.trim()) return;
-    // TODO: navigate to session by code
-    onClose();
+  const normalizedCode = code.trim().toUpperCase();
+  const canJoin = !!normalizedCode && !!displayName.trim() && !busy;
+
+  const handleJoin = async () => {
+    if (!canJoin) return;
+    setBusy(true);
+    try {
+      const resolved = await TeamSession.resolveByCode(normalizedCode);
+      if (!resolved || !resolved.agentic_process_id) {
+        toast({
+          title: 'Session not found',
+          description: `No active session matches code "${normalizedCode}".`,
+        });
+        return;
+      }
+      const memberId = getOrCreateLocalMemberId();
+      try {
+        const ts = new TeamSession({ id: resolved.team_session_id, type: 'team_session' } as any);
+        await ts.join(memberId, displayName.trim());
+      } catch (err) {
+        console.warn('[JoinExistingSessionDialog] join call failed (continuing)', err);
+      }
+      await navigation.openShellProcess(resolved.agentic_process_id, {
+        windows: 'team',
+        activeWindow: 'team',
+      });
+      onClose();
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -28,21 +62,37 @@ export function JoinExistingSessionDialog({ open, onClose }: JoinExistingSession
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4 py-2">
-          <Input
-            placeholder="Enter session code (e.g. XKCD-J3F2)"
-            value={code}
-            onChange={(e) => setCode(e.target.value.toUpperCase())}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleJoin(); }}
-            className="font-mono tracking-widest text-center text-lg"
-            autoFocus
-          />
+        <div className="flex flex-col gap-3 py-2">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">Session code</label>
+            <Input
+              placeholder="XKCD-J3F2"
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleJoin();
+              }}
+              className="font-mono tracking-widest text-center text-lg"
+              autoFocus
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">Your display name</label>
+            <Input
+              placeholder="e.g. Alex"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleJoin();
+              }}
+            />
+          </div>
           <Button
             className="w-full bg-green-600 text-white hover:bg-green-700 transition-colors"
-            onClick={handleJoin}
-            disabled={!code.trim()}
+            onClick={() => void handleJoin()}
+            disabled={!canJoin}
           >
-            Join session
+            {busy ? 'Joining…' : 'Join session'}
           </Button>
         </div>
       </DialogContent>

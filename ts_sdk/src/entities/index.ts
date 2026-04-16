@@ -26,6 +26,7 @@ export * from './process-result';
 export * from './project';
 export * from './question';
 export * from './shell';
+export * from './team-session';
 export * from './siteconfig';
 export * from './spec';
 export * from './task';

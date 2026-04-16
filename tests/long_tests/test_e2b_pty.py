@@ -1,13 +1,20 @@
-"""Smoke tests for E2BComputeProvider — boots a real E2B sandbox and runs a PTY.
+"""Integration tests for E2B sandbox shells — driven through the real Shell entity.
 
-Skipped unless E2B_KEY is set. Each test owns its sandbox and cleans up on exit.
-Pattern adapted from FlowPad's hub/tests/long_tests/test_claude_code_e2b.py
-(`run_command_via_pty`), but exercises our provider rather than the raw SDK.
+Everything goes through the production path:
+  `Shell(...).save()` → `shell.start()` → `shell.compute_node.get_pty(shell.id).write(...)` → `pty.output()`
+
+No direct calls to `E2BComputeProvider`. No hand-built `session_manager` entries.
+If `Shell.start()` routes to the wrong provider, these tests will fail loudly —
+which is the point. They are the integration pair for the provider-only smoke
+tests that existed previously and gave false confidence.
+
+Skipped unless `E2B_KEY` is set.
 """
 from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import uuid
 
 import pytest
@@ -16,186 +23,263 @@ E2B_KEY = os.getenv("E2B_KEY")
 pytestmark = pytest.mark.skipif(not E2B_KEY, reason="E2B_KEY not set")
 
 
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
 @pytest.fixture()
-async def provider():
-    """Yield a fresh E2BComputeProvider; ensure all sandboxes are killed at teardown."""
-    from flow_sdk.compute.providers.e2b.provider import E2BComputeProvider
+async def sandbox_compute_node(initialize_test_db):
+    """Get or create the @sandbox ComputeNode. Mirrors the real bootstrap wiring.
 
-    p = E2BComputeProvider()
+    Has node_provider_type=E2B so `ComputeNode.compute_provider` resolves to the
+    E2B singleton and `Shell.start()` on this node should spin up an E2B sandbox.
+    """
+    from flow_sdk.builtin.faas.compute_node import ComputeNode
+    from flow_sdk.builtin.user import User
+    from flow_sdk.config import ComputeProviderType, StorageProvider
+    from flow_sdk.flowpad_types.runtime_environment import OSType, RuntimeEnvironment
+
+    created = False
+    node = await ComputeNode.get_one({"uname": "sandbox"})
+    if node is None:
+        user = await User.get_one({"uname": "local"})
+        node = ComputeNode(
+            uname="sandbox",
+            name="@sandbox",
+            runtime=RuntimeEnvironment(name="e2b_sandbox_runtime", os_type=OSType.LINUX),
+            node_provider_type=ComputeProviderType.E2B,
+            fs_storage_provider=StorageProvider.SANDBOX,
+            fs_storage_mount_path="/home/user",
+            visitor_role="owner",
+        )
+        await node.save(owner=user)
+        created = True
+
+    # Ensure the node has a provider_node_id (used as a stable cache key for the
+    # E2B sandbox instance in the provider's dicts).
+    if not node.node_provider_id:
+        node.node_provider_id = "sandbox_" + str(uuid.uuid4())
+        await node.save()
+
+    yield node
+
+    if created:
+        await node.delete()
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+async def _write_and_collect(
+    pty,
+    data: bytes,
+    needle: bytes,
+    timeout: float = 10.0,
+) -> bytes:
+    """Subscribe to pty.output() FIRST, then write — so we never race past the
+    command's output. Consume until `needle` is seen or timeout fires.
+    """
+    buf = bytearray()
+
+    async def _loop():
+        async for chunk in pty.output():
+            buf.extend(chunk)
+            if needle in buf:
+                return
+
+    task = asyncio.create_task(_loop())
+    await asyncio.sleep(0.05)  # yield so the iterator subscribes
+    await pty.write(data)
     try:
-        yield p
+        await asyncio.wait_for(task, timeout=timeout)
+    except asyncio.TimeoutError:
+        task.cancel()
+    return bytes(buf)
+
+
+async def _make_shell(sandbox_cn, name_suffix: str):
+    """Construct + save a Shell bound to the @sandbox ComputeNode."""
+    from flow_sdk.builtin.shell import Shell
+
+    shell = Shell(
+        name=f"test-{name_suffix}-{uuid.uuid4().hex[:6]}",
+        compute_node_id=sandbox_cn.id,
+        compute_node_uname="sandbox",
+    )
+    await shell.save()
+    return shell
+
+
+async def _close_shell(shell) -> None:
+    """Best-effort teardown — stops the PTY and deletes the Shell entity."""
+    try:
+        await shell.stop()
+    except Exception:
+        pass
+    try:
+        await shell.delete()
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Tests — all go through the real Shell entity, no mocks, no injections
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.timeout(90)
+async def test_shell_on_sandbox_boots_linux_pty_via_shell_start(sandbox_compute_node):
+    """`Shell.start()` on @sandbox must spawn a real E2B Linux PTY.
+
+    Catches the bug where `Shell.compute_node` was hardcoded to a synthetic
+    local CN regardless of the shell's actual binding — which caused the PTY
+    to be a host-macOS zsh instead of the sandbox's bash.
+    """
+    shell = await _make_shell(sandbox_compute_node, "boot")
+    try:
+        await shell.start(rows=24, cols=80)
+
+        # The provider that actually spawned the PTY should be E2B — NOT local.
+        # This is the key invariant that was broken.
+        cn = shell.compute_node
+        assert cn.node_provider_type == "e2b", (
+            f"Shell.compute_node.node_provider_type must be 'e2b' for a sandbox shell; "
+            f"got {cn.node_provider_type!r}. Likely the synthetic-local fallback is back."
+        )
+        assert cn.id == sandbox_compute_node.id, (
+            f"Shell.compute_node.id mismatch: got {cn.id}, expected {sandbox_compute_node.id}"
+        )
+
+        pty = cn.get_pty(shell.id)
+        assert pty is not None, f"No PTY handle for shell {shell.id} on @sandbox"
+        assert pty.is_alive
+
+        # Send `uname -s` through the real pty handle and read back via pty.output().
+        out = await _write_and_collect(pty, b"uname -s\n", b"Linux", timeout=15.0)
+        assert b"Linux" in out, (
+            f"`uname -s` through Shell→PTY did not return Linux. Got: "
+            f"{out.decode(errors='replace')[:400]}"
+        )
+        # Defence-in-depth: if the synthetic-local fallback sneaks back in, the
+        # PTY would be macOS and we'd see Darwin.
+        assert b"Darwin" not in out
     finally:
-        await p.reset()
-
-
-async def _wait_until(predicate, timeout: float = 10.0, interval: float = 0.1):
-    """Poll predicate() until true or timeout."""
-    deadline = asyncio.get_event_loop().time() + timeout
-    while asyncio.get_event_loop().time() < deadline:
-        if predicate():
-            return True
-        await asyncio.sleep(interval)
-    return False
+        await _close_shell(shell)
 
 
 @pytest.mark.timeout(90)
-async def test_e2b_pty_boot_and_whoami(provider):
-    """Boot a sandbox PTY, send `whoami`, expect `user` in the output stream."""
-    node_id = f"test-node-{uuid.uuid4().hex[:8]}"
-    session_id = f"test-sess-{uuid.uuid4().hex[:8]}"
-    chunks: list[bytes] = []
-
-    def on_output(data: bytes) -> None:
-        chunks.append(data)
-
-    result = await provider.get_or_create_pty_session(
-        provider_node_id=node_id,
-        session_id=session_id,
-        on_output=on_output,
-        rows=24,
-        cols=80,
-    )
-
-    assert result["provider"] == "e2b"
-    assert result["sandbox_id"]
-    assert result["pid"]
-
-    # Wait for shell prompt
-    assert await _wait_until(lambda: any(b"$" in c or b"#" in c for c in chunks), timeout=15.0), (
-        f"No shell prompt seen. Chunks so far: {[c[:120] for c in chunks]}"
-    )
-
-    chunks.clear()
-    await provider.send_pty_input(node_id, session_id, b"whoami\n", 80, 24)
-
-    assert await _wait_until(lambda: any(b"user" in c for c in chunks), timeout=10.0), (
-        f"`whoami` did not return `user`. Output: {b''.join(chunks).decode(errors='replace')}"
-    )
-
-
-@pytest.mark.timeout(90)
-async def test_e2b_pty_close_kills_sandbox(provider):
-    """Closing the last PTY on a node should kill the underlying sandbox."""
-    from e2b import AsyncSandbox
-    from e2b.exceptions import SandboxException
-
-    node_id = f"test-node-{uuid.uuid4().hex[:8]}"
-    session_id = f"test-sess-{uuid.uuid4().hex[:8]}"
-
-    result = await provider.get_or_create_pty_session(
-        provider_node_id=node_id,
-        session_id=session_id,
-        on_output=lambda _: None,
-        rows=24,
-        cols=80,
-    )
-    sandbox_id = result["sandbox_id"]
-
-    # Sandbox should be tracked.
-    assert node_id in provider._sandboxes
-    assert provider.is_pty_alive(node_id, session_id)
-
-    # Close the only PTY → sandbox should be reaped.
-    await provider.close_pty_session(node_id, session_id)
-    assert not provider.is_pty_alive(node_id, session_id)
-    assert node_id not in provider._sandboxes
-
-    # Confirm via E2B API: the sandbox is gone — either an explicit non-running
-    # state or a 404 SandboxNotFoundException (the SDK's signal for a killed sandbox).
+async def test_shell_on_sandbox_pwd_is_home_user(sandbox_compute_node):
+    """`pwd` in a sandbox shell must return /home/user (the E2B default cwd)."""
+    shell = await _make_shell(sandbox_compute_node, "pwd")
     try:
-        info = await AsyncSandbox.get_info(sandbox_id=sandbox_id, api_key=E2B_KEY)
-        assert str(info.state).lower() != "running", (
-            f"Sandbox {sandbox_id} still running after close: state={info.state}"
+        await shell.start(rows=24, cols=80)
+        pty = shell.compute_node.get_pty(shell.id)
+        assert pty is not None
+
+        out = await _write_and_collect(pty, b"pwd\n", b"/home/user", timeout=15.0)
+        assert b"/home/user" in out, (
+            f"pwd in a sandbox shell did not return /home/user. Got: "
+            f"{out.decode(errors='replace')[:400]}"
         )
-    except SandboxException as e:
-        # 404 / SandboxNotFoundException — the sandbox was killed. Pass.
-        assert "not found" in str(e).lower() or "404" in str(e), (
-            f"Unexpected SandboxException for killed sandbox: {e}"
-        )
+    finally:
+        await _close_shell(shell)
 
 
-@pytest.mark.timeout(90)
-async def test_e2b_pty_handle_write_and_output(provider):
-    """Exercise the Pty handle interface — pty.write() and pty.output() — used by
-    backend Shell entity flows (`shell.compute_node.get_pty(shell.id).write(...)`).
+@pytest.mark.timeout(120)
+async def test_two_sandbox_shells_share_one_e2b_sandbox(sandbox_compute_node):
+    """Two Shells bound to the same @sandbox CN must share one E2B sandbox.
 
-    Mirrors the wiring that pty_actions.start_machine_pty_session sets up: the
-    provider's on_output callback feeds session_state.output_queues, which is what
-    Pty.output() reads from.
+    Each Shell gets its own PTY (own pid), but they live inside the same E2B
+    sandbox. Proven via provider_session_data exposed on the shared
+    session_manager state.
     """
     from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
 
-    cn_id = f"test-cn-{uuid.uuid4().hex[:8]}"
-    node_id = f"test-node-{uuid.uuid4().hex[:8]}"
-    shell_id = f"test-shell-{uuid.uuid4().hex[:8]}"
-    pty_key = (cn_id, node_id, shell_id)
-
-    # Register the session_state first so its output_queues exist when on_output fires.
-    session_state = await session_manager.generate_session(pty_key, cn_id, None, 80, 24)
-    loop = asyncio.get_event_loop()
-
-    def on_output(data: bytes) -> None:
-        for q in session_state.output_queues:
-            asyncio.run_coroutine_threadsafe(q.put(data), loop)
-
+    s1 = await _make_shell(sandbox_compute_node, "share-a")
+    s2 = await _make_shell(sandbox_compute_node, "share-b")
     try:
-        await provider.get_or_create_pty_session(
-            provider_node_id=node_id,
-            session_id=shell_id,
-            on_output=on_output,
-            rows=24, cols=80,
+        await s1.start(rows=24, cols=80)
+        await s2.start(rows=24, cols=80)
+
+        key1 = (sandbox_compute_node.id, sandbox_compute_node.node_provider_id, s1.id)
+        key2 = (sandbox_compute_node.id, sandbox_compute_node.node_provider_id, s2.id)
+        sess1 = session_manager.sessions.get(key1)
+        sess2 = session_manager.sessions.get(key2)
+        assert sess1 is not None, f"No session_manager entry for shell {s1.id}"
+        assert sess2 is not None, f"No session_manager entry for shell {s2.id}"
+
+        sid1 = (sess1.provider_session_data or {}).get("sandbox_id")
+        sid2 = (sess2.provider_session_data or {}).get("sandbox_id")
+        assert sid1 and sid2, (
+            f"provider_session_data missing sandbox_id: s1={sess1.provider_session_data} s2={sess2.provider_session_data}"
         )
+        assert sid1 == sid2, f"Expected shared E2B sandbox, got {sid1} vs {sid2}"
 
-        # Acquire the Pty handle — same call path as ComputeNode.get_pty(shell_id).
-        pty = provider.get_pty_session(cn_id, shell_id)
-        assert pty is not None, "get_pty_session should return an E2BPtySession"
-        assert pty.shell_id == shell_id
-        assert pty.is_alive
-
-        # Drain initial prompt + send `whoami` via the handle interface.
-        await pty.write(b"whoami\n")
-
-        received: list[bytes] = []
-
-        async def collect_until(needle: bytes, timeout: float = 10.0) -> bool:
-            async def _loop():
-                async for chunk in pty.output():
-                    received.append(chunk)
-                    if any(needle in c for c in received):
-                        return
-            try:
-                await asyncio.wait_for(_loop(), timeout=timeout)
-                return True
-            except asyncio.TimeoutError:
-                return False
-
-        assert await collect_until(b"user", timeout=10.0), (
-            f"`whoami` via pty.write() did not surface `user` in pty.output(). "
-            f"Got: {b''.join(received).decode(errors='replace')[:400]}"
-        )
+        pid1 = (sess1.provider_session_data or {}).get("pid")
+        pid2 = (sess2.provider_session_data or {}).get("pid")
+        assert pid1 != pid2, "Distinct PTYs must have distinct pids"
     finally:
-        # Drain queues so the output() iterator can exit, then close.
-        for q in session_state.output_queues:
-            await q.put(None)
-        await session_manager.close_session(pty_key)
+        await _close_shell(s1)
+        await _close_shell(s2)
 
 
 @pytest.mark.timeout(90)
-async def test_e2b_pty_two_sessions_share_sandbox(provider):
-    """Two PTYs on the same compute node should share one E2B sandbox."""
-    node_id = f"test-node-{uuid.uuid4().hex[:8]}"
-    s1 = f"sess-a-{uuid.uuid4().hex[:8]}"
-    s2 = f"sess-b-{uuid.uuid4().hex[:8]}"
+async def test_shell_close_kills_sandbox_when_last_pty_leaves(sandbox_compute_node):
+    """Closing the only sandbox Shell must reap the underlying E2B sandbox."""
+    from e2b import AsyncSandbox
+    from e2b.exceptions import SandboxException
+    from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
 
-    r1 = await provider.get_or_create_pty_session(node_id, s1, lambda _: None, 24, 80)
-    r2 = await provider.get_or_create_pty_session(node_id, s2, lambda _: None, 24, 80)
+    shell = await _make_shell(sandbox_compute_node, "close")
+    await shell.start(rows=24, cols=80)
+    key = (sandbox_compute_node.id, sandbox_compute_node.node_provider_id, shell.id)
+    sess = session_manager.sessions.get(key)
+    assert sess is not None
+    sandbox_id = (sess.provider_session_data or {}).get("sandbox_id")
+    assert sandbox_id, f"provider_session_data missing sandbox_id: {sess.provider_session_data}"
 
-    assert r1["sandbox_id"] == r2["sandbox_id"], (
-        f"Expected same sandbox, got {r1['sandbox_id']} vs {r2['sandbox_id']}"
-    )
-    assert r1["pid"] != r2["pid"], "Distinct PTYs must have distinct pids"
+    # Close the shell through its real lifecycle method.
+    await shell.close() if hasattr(shell, "close") else None
+    pty = shell.compute_node.get_pty(shell.id)
+    if pty is not None:
+        await pty.close()
 
-    # Closing one should NOT kill the sandbox while the other is alive.
-    await provider.close_pty_session(node_id, s1)
-    assert node_id in provider._sandboxes
-    assert provider.is_pty_alive(node_id, s2)
+    # E2B cloud-side: sandbox gone (404) or at minimum not running.
+    try:
+        info = await AsyncSandbox.get_info(sandbox_id=sandbox_id, api_key=E2B_KEY)
+        assert str(info.state).lower() != "running", (
+            f"Sandbox {sandbox_id} still running after shell close: state={info.state}"
+        )
+    except SandboxException as e:
+        assert "not found" in str(e).lower() or "404" in str(e), (
+            f"Unexpected SandboxException: {e}"
+        )
+
+
+@pytest.mark.timeout(60)
+async def test_shell_start_on_sandbox_uses_e2b_provider_not_local(sandbox_compute_node):
+    """Guard: `shell.compute_node.compute_provider` must be the E2B singleton.
+
+    Fast structural check (no sandbox boot) that pins the routing — if this fails,
+    Shell.compute_node is falling back to the synthetic local CN again.
+    """
+    from flow_sdk.compute.providers.e2b.provider import E2BComputeProvider
+
+    shell = await _make_shell(sandbox_compute_node, "routing")
+    try:
+        # Must resolve the binding first — the sync `compute_node` property
+        # returns the real CN only after `ensure_live_compute_node_binding()`
+        # caches it. `Shell.start()` calls that internally; here we exercise
+        # the binding step directly without booting a sandbox.
+        assert await shell.ensure_live_compute_node_binding()
+        cn = shell.compute_node
+        assert cn.id == sandbox_compute_node.id
+        assert cn.node_provider_type == "e2b"
+        assert isinstance(cn.compute_provider, E2BComputeProvider), (
+            f"Shell.compute_node.compute_provider must be E2B, got {type(cn.compute_provider).__name__}"
+        )
+    finally:
+        await _close_shell(shell)

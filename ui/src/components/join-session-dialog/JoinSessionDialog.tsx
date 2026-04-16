@@ -1,46 +1,39 @@
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
-import { useToast } from '@src/hooks/use-toast';
-import { Check, Copy, Link, Mail, Users } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { Users } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 interface JoinSessionDialogProps {
   open: boolean;
   onClose: () => void;
   hostName?: string;
+  draftPrompt: string;
+  onStart: (hostName: string, prompt: string) => Promise<void> | void;
 }
 
-function generateSessionCode() {
-  return Math.random().toString(36).slice(2, 6).toUpperCase() +
-    '-' +
-    Math.random().toString(36).slice(2, 6).toUpperCase();
-}
+export function JoinSessionDialog({ open, onClose, hostName, draftPrompt, onStart }: JoinSessionDialogProps) {
+  const [name, setName] = useState(hostName ?? '');
+  const [busy, setBusy] = useState(false);
 
-export function JoinSessionDialog({ open, onClose, hostName }: JoinSessionDialogProps) {
-  const { toast } = useToast();
-  const sessionCode = useMemo(generateSessionCode, [open]);
-  const sessionLink = `${window.location.origin}/join/${sessionCode.replace('-', '').toLowerCase()}`;
+  // Keep name in sync when the dialog reopens with a new host name
+  useEffect(() => {
+    if (open) setName(hostName ?? '');
+  }, [open, hostName]);
 
-  const [copied, setCopied] = useState(false);
-  const [email, setEmail] = useState('');
-  const [sending, setSending] = useState(false);
+  const promptTrimmed = draftPrompt.trim();
+  const canStart = !!promptTrimmed && !!name.trim() && !busy;
 
-  const handleCopyLink = useCallback(() => {
-    void navigator.clipboard.writeText(sessionLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    toast({ title: 'Link copied', description: 'Share it with anyone you want to collaborate with.' });
-  }, [sessionLink, toast]);
-
-  const handleInvite = useCallback(async () => {
-    if (!email.trim()) return;
-    setSending(true);
-    await new Promise((r) => setTimeout(r, 800)); // placeholder
-    toast({ title: 'Invite sent', description: `Invitation sent to ${email}` });
-    setEmail('');
-    setSending(false);
-  }, [email, toast]);
+  const handleStart = async () => {
+    if (!canStart) return;
+    setBusy(true);
+    try {
+      await onStart(name.trim(), promptTrimmed);
+      onClose();
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -48,60 +41,54 @@ export function JoinSessionDialog({ open, onClose, hostName }: JoinSessionDialog
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="h-5 w-5 text-green-600" />
-            Collaborative session
+            Start collaborative session
           </DialogTitle>
         </DialogHeader>
 
-        {/* Session code badge */}
-        <div className="flex flex-col items-center gap-1 rounded-xl bg-muted/50 py-6">
-          <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">Session code</p>
-          <span className="font-mono text-3xl font-bold tracking-widest text-foreground">{sessionCode}</span>
-          {hostName && (
-            <p className="mt-2 text-xs text-muted-foreground">Hosted by <span className="font-medium text-foreground">{hostName}</span></p>
-          )}
-        </div>
+        <div className="flex flex-col gap-4 text-sm">
+          <p className="text-muted-foreground">
+            Starting a session opens a new agentic process with the prompt you typed above. Your share
+            link and participant list will appear in the <span className="font-medium text-foreground">Team</span>{' '}
+            side window.
+          </p>
 
-        {/* Copy link */}
-        <div className="flex gap-2">
-          <div className="flex flex-1 items-center gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm text-muted-foreground truncate">
-            <Link className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">{sessionLink}</span>
+          {/* Prompt preview */}
+          <div className="rounded-md border bg-muted/30 p-3">
+            <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-1">First prompt</p>
+            {promptTrimmed ? (
+              <p className="whitespace-pre-wrap text-sm text-foreground">{promptTrimmed}</p>
+            ) : (
+              <p className="text-sm italic text-muted-foreground">
+                Type a prompt in the box above — it becomes the first message in the shared session.
+              </p>
+            )}
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="shrink-0 gap-1.5"
-            onClick={handleCopyLink}
-          >
-            {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
-            {copied ? 'Copied!' : 'Copy'}
+
+          {/* Host name */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">Your display name</label>
+            <Input
+              placeholder="e.g. Alex"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleStart();
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={onClose}>
+            Cancel
           </Button>
-        </div>
-
-        {/* Divider */}
-        <div className="flex items-center gap-3">
-          <div className="h-px flex-1 bg-border" />
-          <span className="text-xs text-muted-foreground">or invite by email</span>
-          <div className="h-px flex-1 bg-border" />
-        </div>
-
-        {/* Email invite */}
-        <div className="flex gap-2">
-          <Input
-            type="email"
-            placeholder="colleague@company.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') void handleInvite(); }}
-            className="flex-1"
-          />
           <Button
-            className="shrink-0 gap-1.5 bg-green-600 text-white hover:bg-green-700"
-            onClick={() => void handleInvite()}
-            disabled={!email.trim() || sending}
+            className="gap-1.5 bg-green-600 text-white hover:bg-green-700"
+            onClick={() => void handleStart()}
+            disabled={!canStart}
           >
-            <Mail className="h-4 w-4" />
-            {sending ? 'Sending…' : 'Invite'}
+            <Users className="h-4 w-4" />
+            {busy ? 'Starting…' : 'Start'}
           </Button>
         </div>
       </DialogContent>
