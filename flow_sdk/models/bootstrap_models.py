@@ -64,6 +64,8 @@ class BootstrapInfo(BaseModel):
     default_project: Optional[Dict[str, Any]] = None
     default_workspace: Optional[Dict[str, Any]] = None
     default_compute_node: Optional[Dict[str, Any]] = None
+    sandbox_available: bool = False
+    sandbox_compute_node: Optional[Dict[str, Any]] = None
     env: Optional[EnvInfo] = None
     desktop_info: Optional[LmInfo] = None
     sniffer_hook: Optional[Dict[str, Any]] = None

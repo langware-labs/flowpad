@@ -826,6 +826,95 @@ async def get_or_create_local_compute_node(
     return compute_node
 
 
+def is_sandbox_available() -> bool:
+    """True iff the E2B SDK is installed and an E2B_KEY is configured.
+
+    Drives both the bootstrap `sandbox_available` flag and whether the
+    @sandbox compute node is created.
+    """
+    if not os.getenv("E2B_KEY"):
+        return False
+    try:
+        from flow_sdk.compute.providers.e2b.provider import E2B_AVAILABLE  # noqa: PLC0415
+        return E2B_AVAILABLE
+    except Exception:
+        return False
+
+
+async def get_or_create_sandbox_compute_node(
+    local_project: Optional[Entity] = None,
+    desktop_user: Optional[Entity] = None,
+) -> ComputeNode:
+    """Get or create the @sandbox compute node backed by E2B.
+
+    Mirrors get_or_create_local_compute_node but uses ComputeProviderType.E2B
+    and a sandbox-scoped mount path (/home/user). The actual E2B Sandbox
+    boots lazily on first PTY attach.
+    """
+    sandbox_mount_path = "/home/user"
+
+    compute_node: Optional[ComputeNode] = None
+    try:
+        compute_node = await ComputeNode.get_by_prop("uname", "sandbox", "compute_node")
+    except Exception as e:
+        if "Multiple rows were found" in str(e):
+            try:
+                rows = await ComputeNode.get_all({"match": {"uname": "sandbox"}})
+                if rows:
+                    compute_node = rows[0]
+            except Exception as list_error:
+                logging.error(f"Failed to resolve duplicate @sandbox rows: {list_error}")
+
+    already_existed = compute_node is not None
+    if compute_node is None:
+        logging.info("Creating @sandbox compute node for E2B environment")
+        compute_node = ComputeNode(
+            type="compute_node",
+            uname="sandbox",
+            name="@sandbox",
+            runtime=RuntimeEnvironment(name="e2b_sandbox_runtime", os_type=OSType.LINUX),
+            node_provider_type=ComputeProviderType.E2B,
+            fs_storage_provider=StorageProvider.SANDBOX,
+            fs_storage_mount_path=sandbox_mount_path,
+            visitor_role="owner",
+        )
+        try:
+            await compute_node.save(owner=desktop_user)
+        except Exception as save_error:
+            if "already exist" in str(save_error):
+                existing = await ComputeNode.get_by_prop("uname", "sandbox", "compute_node")
+                if existing:
+                    compute_node = existing
+                    already_existed = True
+                else:
+                    raise save_error
+            else:
+                raise save_error
+        logging.info(
+            f"Created @sandbox compute node: {compute_node.id} with owner: "
+            f"{desktop_user.id if desktop_user else 'None'}"
+        )
+
+    if not already_existed:
+        if local_project:
+            await local_project.add_child(compute_node)
+        await compute_node.set_visitor_role("owner")
+
+    if not compute_node.node_provider_id:
+        try:
+            # E2B sandboxes are created lazily; this is just a stable key for
+            # the in-memory PTY session manager and provider sandbox cache.
+            compute_node.node_provider_id = "sandbox_" + str(uuid.uuid4())
+            await compute_node.save()
+            logging.info(
+                f"@sandbox compute node initialized with provider_id: {compute_node.node_provider_id}"
+            )
+        except Exception as e:
+            logging.warning(f"Failed to initialize @sandbox provider_id: {e}")
+
+    return compute_node
+
+
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # File system setup (migrated from desktop_loader.py:init_desktop_entities)
@@ -1068,6 +1157,18 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         compute_node = await get_or_create_local_compute_node(local_project=project, desktop_user=user)
         _t.time("get_or_create_local_compute_node")
 
+        sandbox_available = is_sandbox_available()
+        sandbox_compute_node: Optional[ComputeNode] = None
+        if sandbox_available:
+            try:
+                sandbox_compute_node = await get_or_create_sandbox_compute_node(
+                    local_project=project, desktop_user=user
+                )
+            except Exception as e:
+                logging.warning(f"[bootstrap] Failed to create @sandbox compute node: {e}")
+                sandbox_available = False
+        _t.time("get_or_create_sandbox_compute_node")
+
         # Get desktop info (LLM providers, installed agents, paths)
         desktop_info = await get_desktop_info()
         _t.time("get_desktop_info")
@@ -1103,6 +1204,8 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             default_project=entity_to_dict(project),
             default_workspace=entity_to_dict(workspace),
             default_compute_node=entity_to_dict(compute_node),
+            sandbox_available=sandbox_available,
+            sandbox_compute_node=entity_to_dict(sandbox_compute_node) if sandbox_compute_node else None,
             env=EnvInfo(env_name="desktop", cloud_api_url=os.environ.get("FLOWPAD_CLOUD_API_URL"), version=__version__),
             desktop_info=desktop_info,
             scan_info=scan_info,
