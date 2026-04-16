@@ -609,6 +609,19 @@ class DataContext extends EventEmitter {
     return this.getContextEntity(ContextEntitiesEnum.CurrentComputeNodeTypeId) as ComputeNode | null;
   }
 
+  /** Lazily-hydrated @sandbox compute node from bootstrap (E2B-backed). Null when E2B is not configured. */
+  private _sandboxComputeNode: ComputeNode | null = null;
+  get sandboxComputeNode(): ComputeNode | null {
+    if (!this.bootstrapInfo?.sandbox_available || !this.bootstrapInfo?.sandbox_compute_node) {
+      return null;
+    }
+    if (this._sandboxComputeNode === null) {
+      this._sandboxComputeNode = new ComputeNode(this.bootstrapInfo.sandbox_compute_node as any);
+      this._sandboxComputeNode.markAsExpanded();
+    }
+    return this._sandboxComputeNode;
+  }
+
   get domainTypeId(): TypeId | null {
     return this.getContextEntityTypeId(ContextEntitiesEnum.CurrentDomainTypeId) ?? null;
   }

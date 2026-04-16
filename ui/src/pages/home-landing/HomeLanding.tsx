@@ -6,7 +6,7 @@ import { type ProjectResourceListItem } from '@src/components/project-resource-l
 import { ProjectActivityStrip, BookmarkColumn } from '@src/components/project-activity-strip';
 import { WorkflowStrip } from '@src/components/workflows-view/WorkflowStrip';
 import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
-import { TerminalLineSessionInput } from '@src/components/session-input';
+import { SessionInput } from '@src/components/session-input/session-input';
 import { isSkillCreationTask, TaskStatus } from '@src/components/task-bar/task-utils';
 import { useBookmarkMutations } from '@src/hooks/use-bookmark-mutations';
 import { useClaudeErrorRecords } from '@src/hooks/useClaudeErrorRecords';
@@ -152,21 +152,6 @@ export function HomeLanding() {
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
   // Clear post-scan panel when user starts a real search
   useEffect(() => { if (searchQuery.trim().length >= 2) setPostScanResult(null); }, [searchQuery]);
-  const [showSessionInput, setShowSessionInput] = useState(false);
-  const sessionInputRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!showSessionInput) return;
-    const handler = (e: MouseEvent) => {
-      if (sessionInputRef.current && !sessionInputRef.current.contains(e.target as Node)) {
-        setShowSessionInput(false);
-      }
-    };
-    const id = setTimeout(() => document.addEventListener('mousedown', handler), 0);
-    return () => {
-      clearTimeout(id);
-      document.removeEventListener('mousedown', handler);
-    };
-  }, [showSessionInput]);
 
   const handleSearchSubmit = useCallback(() => {
     if (searchQuery.trim()) {
@@ -437,21 +422,12 @@ export function HomeLanding() {
               <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
             </h1>
 
-            {showSessionInput ? (
-              <div className="w-full max-w-3xl" ref={sessionInputRef}>
-                <TerminalLineSessionInput
-                  placeholder="Start new Claude Code session..."
-                  onSubmit={(msg) => void handleSessionSubmit(msg)}
-                />
-              </div>
-            ) : (
-              <button
-                className="cursor-pointer text-lg text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => setShowSessionInput(true)}
-              >
-                What would you like to work on today?
-              </button>
-            )}
+            <div className="w-full max-w-3xl">
+              <SessionInput
+                placeholder="What would you like to work on?"
+                onSubmit={(msg) => void handleSessionSubmit(msg)}
+              />
+            </div>
 
             <div className="w-full max-w-3xl flex items-start gap-2">
               <div className="flex-1">

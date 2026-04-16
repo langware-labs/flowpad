@@ -1115,6 +1115,29 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       throw new Error('Process is stopping');
     }
 
+    // Fast path: if this process is already LIVE, its shell is cached, and the PTY is fully
+    // attached in this client, skip the backend `open` round-trip entirely. Tab switches
+    // between live sessions hit this path. Instructions must always go to the backend,
+    // so we only short-circuit when no instruction is provided.
+    if (
+      this.status === ProcessStatus.LIVE &&
+      this.shell_id &&
+      !options?.instruction
+    ) {
+      const cachedShell = dataManager.getByTypeIdFromCache<Shell>(new TypeId(Shell.type, this.shell_id));
+      const canFastPath =
+        !!(cachedShell && cachedShell.pty_pid && cachedShell.ptyConnection?.isAttachedTo(cachedShell.pty_pid));
+      const _t0 = (typeof window !== 'undefined' ? window : globalThis) as Record<string, unknown>;
+      if (_t0.__shellNavT0 !== undefined) {
+        console.log(
+          `[PERF] +${(performance.now() - (_t0.__shellNavT0 as number)).toFixed(0)}ms AgenticProcess.start fast-path eligible=${canFastPath} (status=${this.status} shell=${cachedShell ? cachedShell.id.slice(0,8) : 'null'} pty=${cachedShell?.pty_pid?.slice(0,8) ?? 'null'})`,
+        );
+      }
+      if (canFastPath) {
+        return true;
+      }
+    }
+
     const actionInfo = new ActionInfo('open', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = options ?? {};
     const result = await dataManager.callAction<
