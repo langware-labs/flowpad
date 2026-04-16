@@ -22,11 +22,18 @@ import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
 import { planNotePlugins } from './plan-note-plugin';
 import { Button } from '@src/components/ui/button';
 import { SendPlanNotificationDialog } from './SendPlanNotificationDialog';
-import { Send, ShieldOff, StickyNote, X } from 'lucide-react';
+import { Bookmark as BookmarkIcon, Copy, Send, ShieldOff, StickyNote, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@src/lib/utils';
-import { AgenticProcess } from '@sdk';
+import { AgenticProcess, Bookmark, QueryRequest } from '@sdk';
 import './milkdown.css';
+
+function parseFrontmatter(raw: string): { executed: boolean; body: string } {
+  const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  if (!m) return { executed: false, body: raw };
+  const executed = /^executed:\s*true$/m.test(m[1]);
+  return { executed, body: m[2] };
+}
 
 export const PlanEditor: React.FC = () => {
   const { agenticProcess } = useContext() as { agenticProcess: AgenticProcess | null };
@@ -48,9 +55,41 @@ export const PlanEditor: React.FC = () => {
   const fileContent = (cached?.content as string) || '';
   const isDirty = cached?.isDirty || false;
 
+  // Frontmatter: strip YAML header from display and read executed flag
+  const { executed: isExecuted, body: displayContent } = useMemo(
+    () => parseFrontmatter(fileContent),
+    [fileContent],
+  );
+
   // State
   const [isExecuting, setIsExecuting] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
+
+  // Bookmark state for this plan file
+  const [planBookmark, setPlanBookmark] = useState<Bookmark | null>(null);
+  useEffect(() => {
+    if (!filePath) return;
+    void Bookmark.query(new QueryRequest({ type: 'bookmark', query: null, scope: [] })).then((all) =>
+      setPlanBookmark(all.find((b) => b.bookmark_type === 'plan' && b.data?.file_path === filePath) ?? null),
+    );
+  }, [filePath]);
+
+  const handleBookmarkToggle = useCallback(async () => {
+    if (planBookmark) {
+      await planBookmark.delete();
+      setPlanBookmark(null);
+    } else if (agenticProcess) {
+      const pointer = `${agenticProcess.typeId.toString()}/${filePath}`;
+      const b = new Bookmark({
+        bookmark_type: 'plan',
+        title: filePath.split('/').pop()?.replace(/\.md$/, '') ?? 'Plan',
+        data: { file_path: filePath, navigation_path: `/dock/plan/${pointer}` },
+        status: 'open',
+      });
+      await b.save([]);
+      setPlanBookmark(b);
+    }
+  }, [planBookmark, filePath, agenticProcess]);
 
   // Auto-download file content if not cached
   useEffect(() => {
@@ -118,17 +157,30 @@ export const PlanEditor: React.FC = () => {
 
   return (
     <div className="relative flex h-full flex-col">
+      {/* File path header */}
+      <div className="flex items-center gap-1.5 border-b border-border bg-background/80 px-4 py-1 font-mono text-[11px] text-muted-foreground">
+        <span className="flex-1 truncate" title={filePath}>{filePath}</span>
+        <button
+          type="button"
+          title="Copy path"
+          className="shrink-0 rounded p-0.5 hover:bg-muted hover:text-foreground"
+          onClick={() => void navigator.clipboard.writeText(filePath)}
+        >
+          <Copy className="h-3 w-3" />
+        </button>
+      </div>
+
       {/* Top action bar */}
       <div className="border-b border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           {/* Execute Plan (clear context) */}
           <Button
             size="sm"
             variant="outline"
-            disabled={isExecuting}
+            disabled={isExecuting || isExecuted}
             onClick={() => saveAndRun(() => agenticProcess.executePlan(filePath, { clearContext: true }))}
-            title="Execute the plan, clearing context first. Full trust mode ON."
-            className={cn(isExecuting && 'opacity-50')}
+            title={isExecuted ? 'Plan already executed' : 'Execute the plan, clearing context first. Full trust mode ON.'}
+            className={cn((isExecuting || isExecuted) && 'opacity-50')}
           >
             <ShieldOff className="mr-2 h-4 w-4 text-amber-500" />
             Execute Plan (clear context)
@@ -138,10 +190,10 @@ export const PlanEditor: React.FC = () => {
           <Button
             size="sm"
             variant="outline"
-            disabled={isExecuting}
+            disabled={isExecuting || isExecuted}
             onClick={() => saveAndRun(() => agenticProcess.executePlan(filePath, { clearContext: false }))}
-            title="Execute the plan. Full trust mode ON."
-            className={cn(isExecuting && 'opacity-50')}
+            title={isExecuted ? 'Plan already executed' : 'Execute the plan. Full trust mode ON.'}
+            className={cn((isExecuting || isExecuted) && 'opacity-50')}
           >
             <ShieldOff className="mr-2 h-4 w-4 text-amber-500" />
             Execute Plan
@@ -183,6 +235,17 @@ export const PlanEditor: React.FC = () => {
             <X className="mr-2 h-4 w-4" />
             Cancel
           </Button>
+
+          {/* Bookmark toggle — icon-only, pushed to the right */}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="ml-auto h-8 w-8 p-0"
+            onClick={() => void handleBookmarkToggle()}
+            title={planBookmark ? 'Remove bookmark' : 'Bookmark this plan'}
+          >
+            <BookmarkIcon className={cn('h-4 w-4', planBookmark && 'fill-current text-primary')} />
+          </Button>
         </div>
       </div>
 
@@ -198,7 +261,7 @@ export const PlanEditor: React.FC = () => {
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="plan-milkdown-editor">
           {cached ? (
-            <MilkdownEditor content={fileContent} onChange={handleContentChange} readOnly={false} plugins={planNotePlugins} />
+            <MilkdownEditor content={displayContent} onChange={handleContentChange} readOnly={false} plugins={planNotePlugins} />
           ) : (
             <div className="flex h-full items-center justify-center text-muted-foreground">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />

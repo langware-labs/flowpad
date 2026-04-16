@@ -6,7 +6,7 @@ import { type ProjectResourceListItem } from '@src/components/project-resource-l
 import { ProjectActivityStrip, BookmarkColumn } from '@src/components/project-activity-strip';
 import { WorkflowStrip } from '@src/components/workflows-view/WorkflowStrip';
 import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
-import { TerminalLineSessionInput } from '@src/components/session-input';
+import { SessionInput } from '@src/components/session-input/session-input';
 import { isSkillCreationTask, TaskStatus } from '@src/components/task-bar/task-utils';
 import { useBookmarkMutations } from '@src/hooks/use-bookmark-mutations';
 import { useClaudeErrorRecords } from '@src/hooks/useClaudeErrorRecords';
@@ -152,21 +152,6 @@ export function HomeLanding() {
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
   // Clear post-scan panel when user starts a real search
   useEffect(() => { if (searchQuery.trim().length >= 2) setPostScanResult(null); }, [searchQuery]);
-  const [showSessionInput, setShowSessionInput] = useState(false);
-  const sessionInputRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!showSessionInput) return;
-    const handler = (e: MouseEvent) => {
-      if (sessionInputRef.current && !sessionInputRef.current.contains(e.target as Node)) {
-        setShowSessionInput(false);
-      }
-    };
-    const id = setTimeout(() => document.addEventListener('mousedown', handler), 0);
-    return () => {
-      clearTimeout(id);
-      document.removeEventListener('mousedown', handler);
-    };
-  }, [showSessionInput]);
 
   const handleSearchSubmit = useCallback(() => {
     if (searchQuery.trim()) {
@@ -399,10 +384,34 @@ export function HomeLanding() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Top row: UsageBar */}
+      {/* Top row: UsageBar + Search */}
       <div className="flex shrink-0 items-center gap-2 p-4">
         <div className="w-72 shrink-0">
           <UsageBar />
+        </div>
+        <div className="flex-1" />
+        <div className="relative w-72 shrink-0">
+          <RecordSearchBar
+            query={searchQuery}
+            filters={searchFilters}
+            onQueryChange={setSearchQuery}
+            onFiltersChange={setSearchFilters}
+            onSubmit={handleSearchSubmit}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Search..."
+          />
+          {searchQuery.trim().length >= 2 && (
+            <div className="absolute right-0 top-full z-50 w-[600px] pt-1">
+              <InlineSearchResults
+                query={searchQuery}
+                filters={searchFilters}
+                selectedIndex={selectedResultIndex}
+                onSelectedIndexChange={setSelectedResultIndex}
+                onOpenFullSearch={handleSearchSubmit}
+                onNavigateResult={handleNavigateResult}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -437,65 +446,13 @@ export function HomeLanding() {
               <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
             </h1>
 
-            {showSessionInput ? (
-              <div className="w-full max-w-3xl" ref={sessionInputRef}>
-                <TerminalLineSessionInput
-                  placeholder="Start new Claude Code session..."
-                  onSubmit={(msg) => void handleSessionSubmit(msg)}
-                />
-              </div>
-            ) : (
-              <button
-                className="cursor-pointer text-lg text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => setShowSessionInput(true)}
-              >
-                What would you like to work on today?
-              </button>
-            )}
-
-            <div className="w-full max-w-3xl flex items-start gap-2">
-              <div className="flex-1">
-                <RecordSearchBar
-                  query={searchQuery}
-                  filters={searchFilters}
-                  onQueryChange={setSearchQuery}
-                  onFiltersChange={setSearchFilters}
-                  onSubmit={handleSearchSubmit}
-                  onKeyDown={handleSearchKeyDown}
-                  placeholder="Search anything across your Claude Code projects"
-                />
-              </div>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9 shrink-0"
-                    onClick={() => void resetAndRescan()}
-                    disabled={busy}
-                  >
-                    <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Refresh search data</TooltipContent>
-              </Tooltip>
-              {devMode && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 text-orange-500 ring-1 ring-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] animate-pulse"
-                      onClick={() => void clearIndex()}
-                      disabled={busy}
-                    >
-                      <Hammer className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Clear index (dev)</TooltipContent>
-                </Tooltip>
-              )}
+            <div className="w-full max-w-3xl">
+              <SessionInput
+                placeholder="What would you like to work on?"
+                onSubmit={(msg) => void handleSessionSubmit(msg)}
+              />
             </div>
+
 
             {/* Activity strip — shown while any system activity is running */}
             {currentActivity && (
@@ -586,18 +543,6 @@ export function HomeLanding() {
               </div>
             </div>
           )}
-
-          {/* Inline search results */}
-          <div className="w-full max-w-3xl self-center min-h-0 flex-1 relative z-10">
-            <InlineSearchResults
-              query={searchQuery}
-              filters={searchFilters}
-              selectedIndex={selectedResultIndex}
-              onSelectedIndexChange={setSelectedResultIndex}
-              onOpenFullSearch={handleSearchSubmit}
-              onNavigateResult={handleNavigateResult}
-            />
-          </div>
 
           {/* Notifications section */}
           <div className="w-full max-w-3xl shrink-0 self-center">

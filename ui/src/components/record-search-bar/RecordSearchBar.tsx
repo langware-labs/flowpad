@@ -44,8 +44,10 @@ const TYPE_COLORS: Record<string, string> = {
 };
 
 interface RecordSearchBarProps {
-  /** Compact mode: shows Tools toggle button, filters hidden by default */
+  /** Compact mode: filters hidden by default */
   compact?: boolean;
+  /** Show the Tools toggle button (default: false) */
+  showTools?: boolean;
   placeholder?: string;
   query: string;
   filters: SearchFilters;
@@ -88,6 +90,7 @@ function CustomDateRangeInputs({
 
 export function RecordSearchBar({
   compact = true,
+  showTools = false,
   placeholder = 'Search records...',
   query,
   filters,
@@ -163,7 +166,7 @@ export function RecordSearchBar({
           </button>
         )}
 
-        {compact && (
+        {showTools && (
           <Button
             variant="ghost"
             size="sm"

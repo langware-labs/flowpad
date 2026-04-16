@@ -29,6 +29,34 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _write_plan_frontmatter(file_path: str, fields: dict) -> None:
+    """Upsert YAML frontmatter key/values in a plan .md file."""
+    import re
+    p = Path(file_path)
+    if not p.exists():
+        return
+    content = p.read_text(encoding="utf-8")
+    fm_re = re.compile(r"^---\n(.*?)\n---\n?", re.DOTALL)
+    m = fm_re.match(content)
+    if m:
+        existing = m.group(1)
+        for k, v in fields.items():
+            val_str = "true" if v is True else ("false" if v is False else str(v))
+            line_re = re.compile(rf"^{re.escape(k)}:.*$", re.MULTILINE)
+            if line_re.search(existing):
+                existing = line_re.sub(f"{k}: {val_str}", existing)
+            else:
+                existing += f"\n{k}: {val_str}"
+        new_content = f"---\n{existing}\n---\n" + content[m.end():]
+    else:
+        lines = "\n".join(
+            f"{k}: {'true' if v is True else ('false' if v is False else str(v))}"
+            for k, v in fields.items()
+        )
+        new_content = f"---\n{lines}\n---\n{content}"
+    p.write_text(new_content, encoding="utf-8")
+
+
 async def _index_session_on_close(session_id: str, pty_title: str | None = None) -> None:
     """Index the ClaudeSessionRecord after an AgenticProcess closes (fire-and-forget).
 
@@ -696,6 +724,7 @@ class AgenticProcess(Entity):
             await asyncio.sleep(1.5)
 
             set_plan_auto_approve(self.id)
+            _write_plan_frontmatter(file_path, {"executed": True})
 
             return ApiSuccessResponse(data={"injected": True})
         except Exception as e:
