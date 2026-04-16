@@ -21,6 +21,7 @@ dependencies = [
     "typer>=0.9.0",
     "python-dotenv",
     "keyring",
+    "keyrings.alt",
     "fastmcp",
     "httpx>=0.24.0,<1.0",
     "websockets",
