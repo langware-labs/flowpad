@@ -22,6 +22,20 @@ import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
 
 // Get allowed view types from the ViewType enum
 const ALLOWED_VIEWS = new Set(Object.values(ViewType));
+const SKIP_PROCESS_ID_PARAM = 'skip_process_id';
+const SKIP_SHELL_ID_PARAM = 'skip_shell_id';
+
+type ShellRecoverySkips = {
+  skipProcessIds: Set<string>;
+  skipShellIds: Set<string>;
+};
+
+function emptyRecoverySkips(): ShellRecoverySkips {
+  return {
+    skipProcessIds: new Set(),
+    skipShellIds: new Set(),
+  };
+}
 /**
  * Ensure compute node is loaded for the current project
  * Project setup is handled by initSdk -> initContext -> setupProject
@@ -67,26 +81,104 @@ function getDockViewType(args: LoaderArgs): ViewType | undefined {
  * Handle the no-pointer case: redirect to the previously active or first alive shell.
  * Returns null if no alive shell exists (caller should clear context and return).
  */
-function resolveDefaultShell(shells: Shell[], processes: AgenticProcess[]): string | null {
+export function resolveDefaultShell(
+  shells: Shell[],
+  processes: AgenticProcess[],
+  recoverySkips: ShellRecoverySkips = emptyRecoverySkips(),
+): string | null {
   const hiddenStatuses = new Set<string>([ShellStatus.CLOSED, ShellStatus.CLOSING, ShellStatus.ERROR]);
   const activeProcesses = processes.filter((p) => isProcessActive(p.status));
   const isAlive = (s: Shell) => !hiddenStatuses.has(s.status as ShellStatus);
+  const { skipProcessIds, skipShellIds } = recoverySkips;
 
   const resolveUrl = (shell: Shell) => {
     const p = activeProcesses.find((ap) => ap.shell_id === shell.id);
-    return `/dock/shell/${(p ?? shell).dockPointer.pointer}`;
+    if (skipShellIds.has(shell.id) || (p?.id && skipProcessIds.has(p.id))) return null;
+    const baseUrl = `/dock/shell/${(p ?? shell).dockPointer.pointer}`;
+    return p ? withRecoverySearch(baseUrl, recoverySkips) : baseUrl;
   };
 
-  // Prefer the previously active shell (preserves user's tab selection).
-  const previousShellId = dataContext.activeShellId;
-  const previousShell = previousShellId ? shells.find((s) => s.id === previousShellId && isAlive(s)) : null;
-  if (previousShell) return resolveUrl(previousShell);
-
-  // Fall back to first alive shell.
-  const aliveShell = shells.find(isAlive);
-  if (aliveShell) return resolveUrl(aliveShell);
+  const preferredShells = previousThenRemainingShells(shells, isAlive);
+  for (const shell of preferredShells) {
+    const url = resolveUrl(shell);
+    if (url) return url;
+  }
 
   return null;
+}
+
+function previousThenRemainingShells(shells: Shell[], isAlive: (shell: Shell) => boolean): Shell[] {
+  const ordered: Shell[] = [];
+  const previousShellId = dataContext.activeShellId;
+  const previousShell = previousShellId ? shells.find((s) => s.id === previousShellId && isAlive(s)) : null;
+  if (previousShell) ordered.push(previousShell);
+
+  for (const shell of shells) {
+    if (!isAlive(shell)) continue;
+    if (ordered.some((candidate) => candidate.id === shell.id)) continue;
+    ordered.push(shell);
+  }
+
+  return ordered;
+}
+
+function buildShellRecoveryUrl(recoverySkips: ShellRecoverySkips = emptyRecoverySkips()): string {
+  const searchParams = new URLSearchParams();
+  for (const processId of recoverySkips.skipProcessIds ?? []) {
+    searchParams.append(SKIP_PROCESS_ID_PARAM, processId);
+  }
+  for (const shellId of recoverySkips.skipShellIds ?? []) {
+    searchParams.append(SKIP_SHELL_ID_PARAM, shellId);
+  }
+  const queryString = searchParams.toString();
+  return queryString ? `/dock/shell?${queryString}` : '/dock/shell';
+}
+
+function withRecoverySearch(path: string, recoverySkips: ShellRecoverySkips): string {
+  const searchParams = new URLSearchParams();
+  for (const processId of recoverySkips.skipProcessIds) {
+    searchParams.append(SKIP_PROCESS_ID_PARAM, processId);
+  }
+  for (const shellId of recoverySkips.skipShellIds) {
+    searchParams.append(SKIP_SHELL_ID_PARAM, shellId);
+  }
+  const queryString = searchParams.toString();
+  return queryString ? `${path}?${queryString}` : path;
+}
+
+function appendRecoverySkip(
+  recoverySkips: ShellRecoverySkips,
+  processId?: string | null,
+  shellId?: string | null,
+): ShellRecoverySkips {
+  const nextProcessIds = new Set(recoverySkips.skipProcessIds);
+  const nextShellIds = new Set(recoverySkips.skipShellIds);
+  if (processId) nextProcessIds.add(processId);
+  if (shellId) nextShellIds.add(shellId);
+  return {
+    skipProcessIds: nextProcessIds,
+    skipShellIds: nextShellIds,
+  };
+}
+
+export function describeProcessStartError(error: unknown): { title: string; description: string } {
+  const rawMessage = error instanceof Error ? error.message : String(error ?? '').trim();
+  if (/PTY .* not found/i.test(rawMessage)) {
+    return {
+      title: 'Terminal reattach failed',
+      description: rawMessage,
+    };
+  }
+  if (/compute[_ -]?node/i.test(rawMessage) && /not found|missing|stale/i.test(rawMessage)) {
+    return {
+      title: 'Session unavailable',
+      description: 'This session points to a stale compute node and could not be restored.',
+    };
+  }
+  return {
+    title: 'Session unavailable',
+    description: rawMessage || 'Failed to restore this session.',
+  };
 }
 
 /**
@@ -96,7 +188,10 @@ function resolveDefaultShell(shells: Shell[], processes: AgenticProcess[]): stri
  * - Sets activeShellId and agenticProcessTypeId (CurrentProcessTypeId) in context.
  * - On invalid entity: shows a toast and redirects to /dock/shell.
  */
-async function loadShell(pointer: string | undefined): Promise<void> {
+async function loadShell(
+  pointer: string | undefined,
+  recoverySkips: ShellRecoverySkips = emptyRecoverySkips(),
+): Promise<void> {
   _perfLog(`loadShell(${pointer || 'no-pointer'}) start`);
   // Special keyword: create a new shell and redirect to it.
   // Handle before the parallel query to avoid querying AgenticProcess unnecessarily
@@ -127,7 +222,7 @@ async function loadShell(pointer: string | undefined): Promise<void> {
   _perfLog(`loadShell queries done (${shells.length} shells, ${processes.length} processes)`);
 
   if (!pointer) {
-    const redirectUrl = resolveDefaultShell(shells, processes);
+    const redirectUrl = resolveDefaultShell(shells, processes, recoverySkips);
     if (redirectUrl) {
       _perfLog(`loadShell redirect → ${redirectUrl}`);
       // eslint-disable-next-line @typescript-eslint/only-throw-error
@@ -154,16 +249,19 @@ async function loadShell(pointer: string | undefined): Promise<void> {
     try {
       await process.start({ visible: true });
       shell = await process.shell();
-    } catch {
-      toast({ title: 'Session unavailable', description: 'This process has been terminated.', variant: 'destructive' });
+    } catch (error) {
+      const recoveryUrl = buildShellRecoveryUrl(appendRecoverySkip(recoverySkips, process.id, process.shell_id));
+      const toastInfo = describeProcessStartError(error);
+      toast({ ...toastInfo, variant: 'destructive' });
       // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw redirect('/dock/shell');
+      throw redirect(recoveryUrl);
     }
 
     if (!shell) {
+      const recoveryUrl = buildShellRecoveryUrl(appendRecoverySkip(recoverySkips, process.id, process.shell_id));
       toast({ title: 'Session unavailable', description: 'No shell is linked to this process.', variant: 'destructive' });
       // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw redirect('/dock/shell');
+      throw redirect(recoveryUrl);
     }
 
     dataContext.setActiveShellId(shell.id);
@@ -200,9 +298,14 @@ async function loadShell(pointer: string | undefined): Promise<void> {
 
     const linkedProcess = processes.find((p) => p.shell_id === shell.id);
     if (linkedProcess) {
+      if (recoverySkips.skipProcessIds.has(linkedProcess.id) || recoverySkips.skipShellIds.has(shell.id)) {
+        // Avoid bouncing straight back into the same failing process restore.
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        throw redirect(buildShellRecoveryUrl(recoverySkips));
+      }
       // Redirect to process URL; agentic_process path handles open({ visible: true }) + reconnect
       // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw redirect(`/dock/shell/${linkedProcess.dockPointer.pointer}`);
+      throw redirect(withRecoverySearch(`/dock/shell/${linkedProcess.dockPointer.pointer}`, recoverySkips));
     }
 
     // Plain shell — no linked process
@@ -229,6 +332,11 @@ function _perfLog(label: string) {
 
 export async function loadAgentApp(args: LoaderArgs) {
   const { params } = args;
+  const requestUrl = new URL(args.request.url);
+  const recoverySkips: ShellRecoverySkips = {
+    skipProcessIds: new Set(requestUrl.searchParams.getAll(SKIP_PROCESS_ID_PARAM).filter(Boolean)),
+    skipShellIds: new Set(requestUrl.searchParams.getAll(SKIP_SHELL_ID_PARAM).filter(Boolean)),
+  };
   const t = new TimeIt(`loadAgentApp(${params['*'] || params.viewType || '/'})`);
   _perfLog(`loadAgentApp start (${params['*'] || params.viewType || '?'})`);
 
@@ -245,6 +353,12 @@ export async function loadAgentApp(args: LoaderArgs) {
 
   const { processId, viewType } = params;
   const pointer = params['*'] || '';
+
+  if (!processId && !viewType && /^\/dock\/?$/.test(requestUrl.pathname)) {
+    // Bare /dock has no child route to render; send it to the app root instead.
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect('/');
+  }
 
   // Handle session context - set process in dataContext (no agent required)
   if (viewType === ViewType.SESSION) {
@@ -283,7 +397,7 @@ export async function loadAgentApp(args: LoaderArgs) {
     t.time('ensureComputeNode');
 
     if (viewType === ViewType.SHELL) {
-      await loadShell(pointer || undefined);
+      await loadShell(pointer || undefined, recoverySkips);
       t.time('loadShell');
     }
 

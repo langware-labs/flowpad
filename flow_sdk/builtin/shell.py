@@ -74,11 +74,53 @@ class Shell(Entity):
             node_provider_type="local_machine",
         )
 
+    @staticmethod
+    def _normalize_compute_node_id(compute_node_id: str | None) -> str | None:
+        if not compute_node_id:
+            return None
+        prefix = "compute_node-"
+        if compute_node_id.startswith(prefix):
+            return compute_node_id[len(prefix):]
+        return compute_node_id
+
+    async def ensure_live_compute_node_binding(self, preferred_compute_node_id: str | None = None) -> bool:
+        """Repair stale compute_node_id bindings against the current local node."""
+        from flow_sdk.builtin.faas.compute_node import ComputeNode
+
+        candidate_id = self._normalize_compute_node_id(preferred_compute_node_id) or self._normalize_compute_node_id(self.compute_node_id)
+        bound_node = await ComputeNode.get_by_id(candidate_id) if candidate_id else None
+        if bound_node is None:
+            bound_node = await ComputeNode.get_one({"uname": "local"})
+        if bound_node is None:
+            if not candidate_id:
+                return False
+            if self.compute_node_id != candidate_id:
+                self.compute_node_id = candidate_id
+                await self.save()
+            return True
+
+        canonical_id = str(bound_node.id)
+        if self.compute_node_id != canonical_id:
+            self.compute_node_id = canonical_id
+            await self.save()
+        return True
+
+    async def has_attachable_pty(self) -> bool:
+        """True when this shell is still backed by a live PTY session."""
+        if not await self.ensure_live_compute_node_binding():
+            return False
+        pty = self.compute_node.get_pty(self.id)
+        return pty is not None and pty.is_alive
+
     async def _cleanup_stale_session(self) -> None:
         """Evict any dead PTY session state so a fresh one can be spawned."""
+        await self.ensure_live_compute_node_binding()
         pty = self.compute_node.get_pty(self.id)
         if pty:
             await pty.kill()
+            return
+        if self.worker_pid:
+            await self.terminate_worker()
 
     @staticmethod
     def _argv_flag_value(argv: list[str], flag: str) -> str | None:
@@ -193,6 +235,8 @@ class Shell(Entity):
         """
         if self.status not in (None, "idle", "closed", "running"):
             raise RuntimeError(f"Cannot open session in status: {self.status}")
+        if not await self.ensure_live_compute_node_binding():
+            raise RuntimeError("No live compute node available for shell session")
 
         cn = self.compute_node
         existing = cn.get_pty(self.id)
@@ -422,6 +466,7 @@ class Shell(Entity):
         """
         if not self.worker_pid:
             return False
+        await self.ensure_live_compute_node_binding()
 
         if self.compute_node_id:
             pty_handle = self.compute_node.get_pty(self.id)

@@ -8,7 +8,7 @@ no real PTY is needed.
 
 import asyncio
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 
@@ -65,6 +65,40 @@ def test_is_alive_false_without_compute_node_id():
 def test_is_alive_false_when_no_session():
     """is_alive is False before start() is called."""
     assert _shell().is_alive is False
+
+
+@pytest.mark.asyncio
+async def test_ensure_live_compute_node_binding_rebinds_prefixed_stale_node_to_local():
+    """Stale shell bindings should rebind to the current @local compute node."""
+    shell = Shell(id=str(uuid.uuid4()), compute_node_id="compute_node-stale-node")
+    current_node = MagicMock()
+    current_node.id = "local-node"
+
+    with patch("flow_sdk.builtin.faas.compute_node.ComputeNode.get_by_id", new=AsyncMock(return_value=None)) as get_by_id, \
+         patch("flow_sdk.builtin.faas.compute_node.ComputeNode.get_one", new=AsyncMock(return_value=current_node)) as get_one, \
+         patch.object(Shell, "save", new=AsyncMock()) as save:
+        rebound = await shell.ensure_live_compute_node_binding()
+
+    assert rebound is True
+    assert shell.compute_node_id == "local-node"
+    get_by_id.assert_awaited_once_with("stale-node")
+    get_one.assert_awaited_once_with({"uname": "local"})
+    save.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cleanup_stale_session_terminates_orphan_worker_without_pty():
+    """If PTY state is gone but worker_pid still exists, cleanup must kill the orphan worker."""
+    shell = Shell(id=str(uuid.uuid4()), compute_node_id="local-node", worker_pid=12345)
+    fake_compute_node = MagicMock()
+    fake_compute_node.get_pty.return_value = None
+
+    with patch.object(Shell, "ensure_live_compute_node_binding", new=AsyncMock(return_value=True)), \
+         patch.object(Shell, "compute_node", new_callable=PropertyMock, return_value=fake_compute_node), \
+         patch.object(Shell, "terminate_worker", new=AsyncMock()) as terminate_worker:
+        await shell._cleanup_stale_session()
+
+    terminate_worker.assert_awaited_once()
 
 
 @pytest.mark.asyncio
