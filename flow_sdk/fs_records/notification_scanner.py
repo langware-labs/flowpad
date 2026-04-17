@@ -55,23 +55,42 @@ async def scan_incoming_notifications(local_user_id: str) -> list[str]:
 
 
 async def scan_task_in_repo(local_user_id: str, repo_path: str, task_id: str) -> bool:
-    """Scan a single task manifest in a specific repo. Used after pull/clone to
-    ensure the task entity exists before the UI navigates to it.
+    """Find and process the manifest for a specific task_id in a repo.
 
-    Returns True if the task was processed (new or updated).
+    Task directories are named after the task title (not the task ID), so we
+    scan all task dirs and match by the task_id field inside the manifest.
+    Used after pull/clone to ensure the task entity exists before the UI navigates to it.
+
+    Returns True if the task was processed.
     """
     from pathlib import Path as _Path
-    task_dir = _Path(repo_path) / "tasks" / task_id
-    manifest_file = task_dir / "manifest.json"
-    if not manifest_file.exists():
+    tasks_dir = _Path(repo_path) / "tasks"
+    if not tasks_dir.is_dir():
+        logger.warning(f"notification_scanner: scan_task_in_repo: no tasks dir at {repo_path}")
         return False
+
     processed_ids: list[str] = []
-    try:
-        await _process_manifest(manifest_file, task_dir, _Path(repo_path), local_user_id, processed_ids)
-    except Exception as e:
-        logger.warning(f"notification_scanner: scan_task_in_repo error: {e}")
-        return False
-    return task_id in processed_ids
+    for task_dir in sorted(tasks_dir.iterdir()):
+        if not task_dir.is_dir() or task_dir.name == "spec":
+            continue
+        manifest_file = task_dir / "manifest.json"
+        if not manifest_file.exists():
+            continue
+        try:
+            data = json.loads(manifest_file.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if data.get("task_id") != task_id:
+            continue
+        try:
+            await _process_manifest(manifest_file, task_dir, _Path(repo_path), local_user_id, processed_ids)
+        except Exception as e:
+            logger.warning(f"notification_scanner: scan_task_in_repo error processing {manifest_file}: {e}")
+            return False
+        return True  # found and processed (or already existed)
+
+    logger.warning(f"notification_scanner: scan_task_in_repo: no manifest found for task_id={task_id} in {repo_path}")
+    return False
 
 
 async def _process_manifest(
