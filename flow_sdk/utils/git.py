@@ -89,21 +89,54 @@ def repo_id(repo_full_name: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"repo:{repo_full_name}"))
 
 
+def _url_matches(path: str, project_url: str) -> bool:
+    """Return True if the git repo at path has an origin URL matching project_url."""
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=path, capture_output=True, text=True, timeout=5,
+        )
+        return result.returncode == 0 and result.stdout.strip() == project_url.strip()
+    except Exception:
+        return False
+
+
 def find_local_repo_for_url(project_url: str) -> Optional[str]:
-    """Find a local repo whose origin URL matches project_url."""
+    """Find a local repo whose origin URL matches project_url.
+
+    Pass 1: Claude-registered projects (fast, authoritative).
+    Pass 2: Immediate siblings of those projects — covers repos that exist
+            on disk but were never opened in Claude.
+    """
     if not project_url:
         return None
+
+    from pathlib import Path as _Path
     from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
-    for project_root in iter_claude_project_paths():
-        try:
-            result = subprocess.run(
-                ["git", "remote", "get-url", "origin"],
-                cwd=str(project_root), capture_output=True, text=True, timeout=5,
-            )
-            if result.returncode == 0 and result.stdout.strip() == project_url.strip():
-                return str(project_root)
-        except Exception:
+
+    claude_paths = list(iter_claude_project_paths())
+
+    # Pass 1: Claude-registered projects
+    for project_root in claude_paths:
+        if _url_matches(str(project_root), project_url):
+            return str(project_root)
+
+    # Pass 2: siblings — scan one level inside each unique parent directory
+    seen_parents: set[_Path] = set()
+    for project_root in claude_paths:
+        parent = _Path(project_root).parent
+        if parent in seen_parents:
             continue
+        seen_parents.add(parent)
+        try:
+            for sibling in parent.iterdir():
+                if not sibling.is_dir() or sibling == _Path(project_root):
+                    continue
+                if (sibling / ".git").exists() and _url_matches(str(sibling), project_url):
+                    return str(sibling)
+        except OSError:
+            continue
+
     return None
 
 
