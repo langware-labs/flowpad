@@ -146,7 +146,7 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
     }
   }, [computeNode]);
 
-  const branch = findResult?.branch || '';
+  const resolvedBranch = findResult?.branch || branch || '';
   const repoUrl = findResult?.repo_url || '';
   const knownProjects = findResult?.known_projects ?? [];
 
@@ -184,10 +184,10 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
                   <code className="truncate text-foreground">{repoUrl}</code>
                 </div>
               )}
-              {branch && (
+              {resolvedBranch && (
                 <div className="flex items-center gap-2 text-muted-foreground">
                   <GitBranch className="h-3.5 w-3.5 shrink-0" />
-                  <code className="text-foreground">{branch}</code>
+                  <code className="text-foreground">{resolvedBranch}</code>
                 </div>
               )}
               {localPath && (
