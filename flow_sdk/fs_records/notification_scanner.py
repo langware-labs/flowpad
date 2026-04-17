@@ -129,11 +129,14 @@ async def _process_manifest(
     local_user = await User.get_one({"uname": "local"})
     owner_typeid = local_user.typeid if local_user else None
 
-    # --- Create Spec entity from disk ---
+    # --- Create Spec entity from disk (non-fatal) ---
     if spec_id and spec_dir_name:
         spec_file = project_root / "tasks" / "spec" / spec_dir_name / "spec.md"
         if spec_file.exists():
-            await _create_spec_from_file(spec_file, spec_id, owner_typeid)
+            try:
+                await _create_spec_from_file(spec_file, spec_id, owner_typeid)
+            except Exception as spec_err:
+                logger.warning(f"notification_scanner: spec creation failed (non-fatal), task will still be imported: {spec_err}")
 
     # --- Resolve project_url from git remote ---
     from flow_sdk.utils.git import git_remote_url
