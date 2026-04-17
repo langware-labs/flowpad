@@ -54,6 +54,26 @@ async def scan_incoming_notifications(local_user_id: str) -> list[str]:
     return processed_ids
 
 
+async def scan_task_in_repo(local_user_id: str, repo_path: str, task_id: str) -> bool:
+    """Scan a single task manifest in a specific repo. Used after pull/clone to
+    ensure the task entity exists before the UI navigates to it.
+
+    Returns True if the task was processed (new or updated).
+    """
+    from pathlib import Path as _Path
+    task_dir = _Path(repo_path) / "tasks" / task_id
+    manifest_file = task_dir / "manifest.json"
+    if not manifest_file.exists():
+        return False
+    processed_ids: list[str] = []
+    try:
+        await _process_manifest(manifest_file, task_dir, _Path(repo_path), local_user_id, processed_ids)
+    except Exception as e:
+        logger.warning(f"notification_scanner: scan_task_in_repo error: {e}")
+        return False
+    return task_id in processed_ids
+
+
 async def _process_manifest(
     manifest_file: Path,
     task_dir: Path,

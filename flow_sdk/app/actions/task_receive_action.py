@@ -139,11 +139,13 @@ async def pull_for_task() -> ApiResponse:
 
         conflicts = "CONFLICT" in (pull_msg or "")
 
-        # Re-scan for new manifests
+        # Await scan of this specific task so the entity exists before the UI navigates.
+        # Then fire the full scan in the background for any other tasks in the repo.
         try:
-            from flow_sdk.fs_records.notification_scanner import scan_incoming_notifications
+            from flow_sdk.fs_records.notification_scanner import scan_task_in_repo, scan_incoming_notifications
             local_user = await User.get_one({"uname": "local"})
             if local_user:
+                await scan_task_in_repo(local_user.id, local_path, task_id)
                 asyncio.ensure_future(scan_incoming_notifications(local_user.id))
         except Exception as scan_err:
             logger.warning(f"[task_receive] pull-for-task: scan error (non-fatal): {scan_err}")
@@ -217,12 +219,14 @@ async def clone_for_task() -> ApiResponse:
                         "cloned_path": clone_path,
                     })
 
-        # Re-scan after success
+        # Await scan of this specific task so the entity exists before the UI navigates.
+        # Then fire the full scan in the background for any other tasks in the repo.
         if clone_ok:
             try:
-                from flow_sdk.fs_records.notification_scanner import scan_incoming_notifications
+                from flow_sdk.fs_records.notification_scanner import scan_task_in_repo, scan_incoming_notifications
                 local_user = await User.get_one({"uname": "local"})
                 if local_user:
+                    await scan_task_in_repo(local_user.id, clone_path, task_id)
                     asyncio.ensure_future(scan_incoming_notifications(local_user.id))
             except Exception as scan_err:
                 logger.warning(f"[task_receive] clone-for-task: scan error (non-fatal): {scan_err}")
