@@ -245,17 +245,32 @@ export function initNotificationListener(): () => void {
         const taskTypeId = crossEventData?.task_type_id as string | undefined;
         const specType = (crossEventData?.spec_type as string | undefined) ?? 'plan';
         const senderName = (crossEventData?.sender_name as string | undefined) ?? 'Someone';
+        const taskId = crossEventData?.task_id as string | undefined;
+        const taskTitle = `New ${specType} from ${senderName}`;
 
         useNotificationStore.getState().addNotification({
           category: ViewType.TASKS,
-          title: `New ${specType} from ${senderName}`,
+          title: taskTitle,
           navigationPath: taskTypeId ? `/dock/${ViewType.TASKS}/${taskTypeId}` : undefined,
           metadata: {
             event_type: 'notification',
-            task_id: crossEventData?.task_id,
+            task_id: taskId,
             spec_id: crossEventData?.spec_id,
+            project_url: crossEventData?.project_url,
+            repo_id: crossEventData?.repo_id,
+            branch: crossEventData?.branch,
           },
         });
+
+        // Trigger the incoming-task dialog
+        if (taskId) {
+          const { useIncomingTaskStore } = await import('./use-incoming-task-store');
+          useIncomingTaskStore.getState().setPendingTask({
+            taskId,
+            taskTitle,
+            senderName,
+          });
+        }
       }
     }
 

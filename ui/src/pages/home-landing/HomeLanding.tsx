@@ -1,3 +1,5 @@
+import { IncomingTaskDialog } from '@src/components/task-receive/IncomingTaskDialog';
+import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
 import { MemoIframeModal } from '@src/components/memo-panel/MemoIframeModal';
 import { UsageBar } from '@src/components/cost-dashboard';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
@@ -72,6 +74,31 @@ export function HomeLanding() {
   const { user } = useAuth();
   const { navigation } = useDockNavigation();
   useProjects();
+
+  // Incoming task dialog — driven by URL params (email deep-link) or WS events
+  const { pendingTask, setPendingTask } = useIncomingTaskStore();
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('task_action') === 'open') {
+      const taskId = params.get('task_id') || '';
+      const taskTitle = params.get('task_title') || 'Shared task';
+      const senderName = params.get('sender_name') || 'Someone';
+      if (taskId) {
+        setPendingTask({ taskId, taskTitle, senderName });
+        // Clean URL so refreshing doesn't re-trigger
+        const url = new URL(window.location.href);
+        url.searchParams.delete('task_action');
+        url.searchParams.delete('task_id');
+        url.searchParams.delete('task_title');
+        url.searchParams.delete('sender_name');
+        url.searchParams.delete('project_url');
+        url.searchParams.delete('branch');
+        url.searchParams.delete('repo_id');
+        window.history.replaceState(null, '', url.toString());
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const { projects: claudeProjects, isLoading: isLoadingClaudeProjects } = useClaudeProjectList();
   const { project: currentProject } = useProject();
   const { toast } = useToast();
@@ -658,6 +685,17 @@ export function HomeLanding() {
           : `Indexing… ${activityProgress?.done.length ?? 0}/${activityProgress?.total ?? 0}`
         ) : 'Activity'}
       />
+
+      {/* Incoming task dialog — pull/clone flow for shared tasks */}
+      {pendingTask && (
+        <IncomingTaskDialog
+          open={!!pendingTask}
+          taskId={pendingTask.taskId}
+          taskTitle={pendingTask.taskTitle}
+          senderName={pendingTask.senderName}
+          onClose={() => setPendingTask(null)}
+        />
+      )}
     </div>
   );
 }

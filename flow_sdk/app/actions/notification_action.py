@@ -14,7 +14,7 @@ File layout (all inside the git repo, committed and pushed):
 Routes:
   POST /api/v1/graph/share_task
   POST /api/v1/graph/notification/{id}/append-conversation
-  POST /api/v1/graph/notification/{id}/open-task
+  POST /api/v1/graph/notification/{id}/refresh
   GET  /api/v1/graph/notification/{id}/open
 """
 
@@ -41,7 +41,7 @@ from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse, ApiResponse
-from flow_sdk.utils.git import find_local_repo_for_url, find_project_root, git_add_commit_push, git_current_branch, git_pull, git_remote_url
+from flow_sdk.utils.git import find_project_root, git_add_commit_push, git_current_branch, git_pull, git_remote_url, git_repo_full_name, repo_id
 from flow_sdk.utils.hub import hub_base_url, hub_post
 from flow_sdk.builtin.bookmark import Bookmark
 
@@ -145,6 +145,8 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
 
     project_root = find_project_root(project_path) if project_path else None
     project_url = git_remote_url(project_root) if project_root else ""
+    repo_full_name = git_repo_full_name(project_root) if project_root else ""
+    repo_id_val = repo_id(repo_full_name) if repo_full_name else ""
 
     # 1. Create Spec entity
     spec = Spec.model_validate({
@@ -220,6 +222,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         task = await task.save(someone_typeid)
 
         # 3b. Write manifest
+        branch_at_write = git_current_branch(project_root) if project_root else ""
         (task_dir / "manifest.json").write_text(
             _json.dumps({
                 "task_id": task.id,
@@ -230,6 +233,8 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
                 "sender_name": sender_name,
                 "conversation_id": conversation_id,
                 "created_at": datetime.now(UTC).isoformat(),
+                "repo_id": repo_id_val,
+                "branch": branch_at_write,
             }, indent=2, default=str),
             encoding="utf-8",
         )
@@ -260,6 +265,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         "spec_type": spec_type,
         "message": message,
         "project_url": project_url,
+        "repo_id": repo_id_val,
         "branch": branch,
         "spec_file_path": spec_file_path,
     })
@@ -380,29 +386,6 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     })
 
 
-async def handle_open_task(project_url: str, task_id: str) -> ApiResponse:
-    """Git pull + scan then return the navigation path for the task."""
-    if not project_url:
-        return ApiFailResponse(message="project_url is required")
-    if not find_local_repo_for_url(project_url):
-        return ApiFailResponse(message=f"No local clone found for {project_url}")
-
-    repo_path = find_local_repo_for_url(project_url)
-    pull_ok, pull_msg = await git_pull(repo_path)
-    git_error: Optional[str] = None if pull_ok else pull_msg
-
-    try:
-        from flow_sdk.fs_records.notification_scanner import scan_incoming_notifications
-        local_user = await User.get_one({"uname": "local"})
-        if local_user:
-            asyncio.ensure_future(scan_incoming_notifications(local_user.id))
-    except Exception:
-        pass
-
-    nav_path = f"/dock/tasks/task-{task_id}" if task_id else "/dock/tasks"
-    return ApiSuccessResponse(data={"navigation_path": nav_path, "git_error": git_error})
-
-
 @action.post(action_name="share_task", types=None)
 async def send_notification() -> ApiResponse:
     try:
@@ -431,22 +414,6 @@ async def append_conversation() -> ApiResponse:
     except Exception as e:
         logger.error(f"[notification_action] append-conversation error: {e}", exc_info=True)
         return ApiFailResponse(message=f"Failed to append conversation: {str(e)}")
-
-
-@action.post(action_name="open-task", types=["notification"])
-async def open_task_notification() -> ApiResponse:
-    try:
-        request_info = get_current_request_info()
-        if not request_info:
-            return ApiFailResponse(message="No request info found")
-        body = await request_info.get_post_data() or {}
-        return await handle_open_task(
-            project_url=(body.get("project_url") or "").strip(),
-            task_id=(body.get("task_id") or "").strip(),
-        )
-    except Exception as e:
-        logger.error(f"[notification_action] open-task error: {e}", exc_info=True)
-        return ApiFailResponse(message=f"Failed to open task: {str(e)}")
 
 
 async def handle_refresh_notifications(project_path: str) -> ApiResponse:
@@ -482,9 +449,8 @@ async def refresh_notifications() -> ApiResponse:
 
 @action.get(action_name="open", types=["notification"])
 async def open_notification() -> ApiResponse:
-    """Deep-link handler: fetch notification from hub, git pull, redirect to task view."""
-    from fastapi.responses import HTMLResponse
-    from flow_sdk.server.routes.notify import _ERROR_HTML, _get_ui_port, handle_notification_deep_link
+    """Deep-link handler: fetch notification from hub, redirect to UI dialog."""
+    from flow_sdk.server.routes.notify import handle_notification_deep_link
     from flow_sdk.utils.hub import hub_get
 
     request_info = get_current_request_info()
@@ -493,19 +459,13 @@ async def open_notification() -> ApiResponse:
 
     notification_id = str(request_info.target_entity_typeid.id)
     data = await hub_get("notification", notification_id)
-    if not data:
-        port = _get_ui_port()
-        return HTMLResponse(
-            content=_ERROR_HTML.format(
-                error_message="Could not fetch notification from hub. Make sure FlowPad is connected.",
-                port=port,
-            ),
-            status_code=502,
-        )
 
-    meta = data.get("metadata") or {}
+    meta = data.get("metadata") or {} if data else {}
     return await handle_notification_deep_link(
-        project_url=(meta.get("project_url") or data.get("project_url") or "").strip(),
-        task_id=(meta.get("task_id") or data.get("task_id") or "").strip(),
-        branch=(meta.get("branch") or data.get("branch") or "").strip(),
+        project_url=(meta.get("project_url") or (data or {}).get("project_url") or "").strip(),
+        task_id=(meta.get("task_id") or (data or {}).get("task_id") or "").strip(),
+        branch=(meta.get("branch") or (data or {}).get("branch") or "").strip(),
+        repo_id=(meta.get("repo_id") or (data or {}).get("repo_id") or "").strip(),
+        sender_name=(meta.get("sender_name") or (data or {}).get("sender_name") or "").strip(),
+        task_title=(meta.get("task_title") or (data or {}).get("task_title") or "").strip(),
     )
