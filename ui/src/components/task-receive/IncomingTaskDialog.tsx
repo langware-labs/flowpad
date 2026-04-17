@@ -329,11 +329,15 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
                   <pre className="mt-2 max-h-32 overflow-auto rounded bg-muted px-3 py-2 text-xs text-foreground whitespace-pre-wrap">
                     {errorMsg}
                   </pre>
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    Please fix the issue in your repository and try again.
+                  </p>
                 </div>
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
-              <Button onClick={handleClose}>Close</Button>
+              <Button variant="ghost" onClick={handleClose}>Close</Button>
+              <Button onClick={() => void handleConfirmPull()}>Retry</Button>
             </DialogFooter>
           </>
         )}
