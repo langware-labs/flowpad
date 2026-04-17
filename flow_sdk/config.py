@@ -16,7 +16,7 @@ from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import Literal, Optional
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from flow_sdk.utils.validation import UUID_PATTERN
@@ -324,10 +324,10 @@ class ServiceUrlsConfig(BaseSettings):
     # Simple port configuration (loaded from environment)
     backend_scheme: str = "http"
     backend_host: str = "localhost"
-    backend_port: int | None = None
+    backend_port: int | None = Field(default=None, alias="LOCAL_SERVER_PORT")
     frontend_scheme: str = "http"
     frontend_host: str = "localhost"
-    frontend_port: int | None = None
+    frontend_port: int | None = Field(default=None, alias="VITE_PORT")
     frontend_proxy_port: int = 5174
 
     # Legacy URL configuration (for backwards compatibility)
