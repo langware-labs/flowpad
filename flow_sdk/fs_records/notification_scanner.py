@@ -162,6 +162,7 @@ async def _process_manifest(
             "project_url": project_url,
             "repo_id": manifest_repo_id,
             "branch": manifest_branch,
+            "sender_name": sender_name,
         },
     })
     task = await task.save(owner_typeid)
