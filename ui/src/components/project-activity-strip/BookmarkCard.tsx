@@ -1,18 +1,9 @@
-import { useState } from 'react';
 import { Badge } from '@src/components/ui/badge';
 import type { Bookmark } from '@sdk';
+import { BookmarkType } from '@sdk/entities/bookmark';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { openTaskNotification } from '@sdk/entities/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@src/components/ui/alert-dialog';
+import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
 import { Clock, FileText, GitBranch, Play, StickyNote, X } from 'lucide-react';
 
 function formatTimeAgo(value?: string | null): string {
@@ -48,8 +39,8 @@ export function BookmarkCard({
   onForkSession?: (bookmark: Bookmark) => void;
 }) {
   const { navigation } = useDockNavigation();
-  const [gitError, setGitError] = useState<string | null>(null);
-  const isTerminalAnnotation = bookmark.bookmark_type === 'terminal_annotation' && !!bookmark.session_id;
+  const { setPendingTask } = useIncomingTaskStore();
+  const isTerminalAnnotation = bookmark.bookmark_type === BookmarkType.TERMINAL_ANNOTATION && !!bookmark.session_id;
   const navPath = bookmark.data?.navigation_path as string | undefined;
   const isClosed = bookmark.status === 'closed';
   const contentPreview = bookmark.content
@@ -59,23 +50,15 @@ export function BookmarkCard({
     : null;
 
   const handleCardClick = () => {
-    if (bookmark.bookmark_type === 'cross_notification') {
-      const projectUrl = bookmark.data?.project_url as string | undefined;
+    if (bookmark.bookmark_type === BookmarkType.NOTIFICATION) {
       const taskId = bookmark.data?.task_id as string | undefined;
-      void openTaskNotification(projectUrl ?? '', taskId ?? '')
-        .then(({ navigation_path, git_error }) => {
-          if (git_error) {
-            setGitError(git_error);
-            return;
-          }
-          const match = navigation_path.match(/^\/dock\/([^/]+)\/(.+)$/);
-          if (match) navigation.openDock(DockPointer.fromUrl(match[1], match[2]));
-        })
-        .catch((err: unknown) => {
-          const msg = (err as any)?.response?.data?.message
-            || (err instanceof Error ? err.message : 'Failed to open task.');
-          setGitError(msg);
+      if (taskId) {
+        setPendingTask({
+          taskId,
+          taskTitle: bookmark.title || 'Shared task',
+          senderName: (bookmark.data?.sender_name as string | undefined) || 'Someone',
         });
+      }
       return;
     }
     if (!navPath) return;
@@ -91,25 +74,9 @@ export function BookmarkCard({
 
   return (
     <>
-    <AlertDialog open={!!gitError} onOpenChange={(o) => { if (!o) setGitError(null); }}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Git Pull Failed</AlertDialogTitle>
-          <AlertDialogDescription asChild>
-            <div>
-              <p className="mb-2">The task could not be pulled from the remote repository. The task may not be up to date.</p>
-              <pre className="max-h-40 overflow-auto rounded bg-muted px-3 py-2 text-xs text-foreground whitespace-pre-wrap">{gitError}</pre>
-            </div>
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogAction>OK</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
     <div
-      className={`bookmark-card${navPath || bookmark.bookmark_type === 'cross_notification' ? ' cursor-pointer' : ''}`}
-      onClick={navPath || bookmark.bookmark_type === 'cross_notification' ? handleCardClick : undefined}
+      className={`bookmark-card${navPath || bookmark.bookmark_type === BookmarkType.NOTIFICATION ? ' cursor-pointer' : ''}`}
+      onClick={navPath || bookmark.bookmark_type === BookmarkType.NOTIFICATION ? handleCardClick : undefined}
     >
       <div className="bookmark-card-header">
         {isTerminalAnnotation

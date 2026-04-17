@@ -1,8 +1,17 @@
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 
+export enum BookmarkType {
+  NOTE = 'note',
+  CONTEXT = 'context',
+  SUMMARY = 'summary',
+  NOTIFICATION = 'notification',
+  NOTIFICATION_FAILED = 'notification_failed',
+  TERMINAL_ANNOTATION = 'terminal_annotation',
+}
+
 export interface IBookmark extends IEntity {
-  bookmark_type?: string;
+  bookmark_type?: BookmarkType;
   source?: string;
   title?: string;
   content?: string;
@@ -16,7 +25,7 @@ export interface IBookmark extends IEntity {
 
 @registerEntity
 export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
-  bookmark_type?: string;
+  bookmark_type?: BookmarkType;
   source?: string;
   title?: string;
   content?: string;

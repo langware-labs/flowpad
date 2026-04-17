@@ -206,7 +206,8 @@ async def _get_flowpad_cloud_oauth_auth() -> ApiResponse:
     from flow_sdk.cli.env_loader import get_login_url
 
     port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
-    callback_url = f"http://127.0.0.1:{port}/post_login"
+    public_url = os.environ.get("FLOWPAD_DOCKER_PUBLIC_URL", "").strip()
+    callback_url = f"{public_url}/post_login" if public_url else f"http://127.0.0.1:{port}/post_login"
 
     auth_url = get_login_url(callback_url)
 

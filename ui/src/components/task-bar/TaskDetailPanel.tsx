@@ -5,7 +5,7 @@
 
 import { ArrowLeft, ExternalLink, FileText, MessageSquare, Send, Sparkles } from 'lucide-react';
 import { useState } from 'react';
-import { Spec, Task, TypeId, User } from '@sdk';
+import { Conversation, Spec, Task, TypeId, User } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ExpansionRequest } from '@sdk/FlowSync/query';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -37,16 +37,16 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
   const { data: sender } = useEntity<User>(
     task.shared_by_id ? new TypeId(User.type, task.shared_by_id) : null,
   );
-  const { data: fullTask } = useEntity<Task>(
-    isSharedTask && task.id ? new TypeId(Task.type, task.id) : null,
-    { query: blobExpansion },
-  );
   const { data: spec } = useEntity<Spec>(
     task.spec_id ? new TypeId(Spec.type, task.spec_id) : null,
     { query: blobExpansion },
   );
+  const { data: conversation } = useEntity<Conversation>(
+    task.conversation_id ? new TypeId(Conversation.type, task.conversation_id) : null,
+    { query: blobExpansion },
+  );
 
-  const messages = fullTask?.conversationMessages ?? task.conversationMessages ?? [];
+  const messages = conversation?.conversationMessages ?? [];
 
   const handleOpenFullView = () => {
     navigation.openDock(DockPointer.forTasks(task.typeId?.toString()));
@@ -229,7 +229,7 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
                     >
                       <div className="mb-0.5 flex items-center justify-between gap-2">
                         <span className="text-[11px] font-semibold text-muted-foreground">
-                          {msg.role === 'bot' ? 'Claude' : msg.sender_id}
+                          {msg.role === 'bot' ? 'Claude' : displayName(msg.role === 'sender' ? sender : null, msg.sender_id)}
                         </span>
                         {msg.timestamp && (
                           <span className="text-[10px] text-muted-foreground/60">
