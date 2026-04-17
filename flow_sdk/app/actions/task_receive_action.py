@@ -198,10 +198,26 @@ async def clone_for_task() -> ApiResponse:
         repo_name = repo_name_match.group(1) if repo_name_match else "repo"
         clone_path = str(_Path(target_dir) / repo_name)
 
-        from flow_sdk.utils.git import git_clone
+        from flow_sdk.utils.git import git_clone, git_pull
         clone_ok, clone_msg = await git_clone(project_url, clone_path, branch=branch or None)
 
-        # Re-scan after successful clone
+        # If clone failed because the directory already exists, pull instead.
+        if not clone_ok and "already exists and is not an empty directory" in clone_msg:
+            logger.info("[task_receive] clone target exists — attempting pull instead: %s", clone_path)
+            pull_ok, pull_msg = await git_pull(clone_path, branch=branch or None)
+            conflicts = "CONFLICT" in (pull_msg or "")
+            op_ok = pull_ok and not conflicts
+            if op_ok or conflicts:
+                clone_ok, clone_msg = op_ok, pull_msg
+                if conflicts:
+                    return ApiSuccessResponse(data={
+                        "success": False,
+                        "conflicts": True,
+                        "error": None,
+                        "cloned_path": clone_path,
+                    })
+
+        # Re-scan after success
         if clone_ok:
             try:
                 from flow_sdk.fs_records.notification_scanner import scan_incoming_notifications
@@ -213,6 +229,7 @@ async def clone_for_task() -> ApiResponse:
 
         return ApiSuccessResponse(data={
             "success": clone_ok,
+            "conflicts": False,
             "error": None if clone_ok else clone_msg,
             "cloned_path": clone_path if clone_ok else None,
         })

@@ -120,7 +120,10 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
     setStep('cloning');
     try {
       const result = await cloneForTask(taskId, cloneTarget, { projectUrl, branch });
-      if (result.success) {
+      if (result.conflicts) {
+        setLocalPath(result.cloned_path ?? cloneTarget);
+        setStep('conflict');
+      } else if (result.success) {
         setStep('success');
         setTimeout(() => {
           navigation.openDock(DockPointer.fromUrl('tasks', `task-${taskId}`));

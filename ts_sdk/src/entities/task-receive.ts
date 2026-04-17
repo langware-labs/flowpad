@@ -17,6 +17,7 @@ export interface PullResult {
 
 export interface CloneResult {
   success: boolean;
+  conflicts: boolean;
   error: string | null;
   cloned_path: string | null;
 }
@@ -64,5 +65,5 @@ export async function cloneForTask(
     ...(fallback?.branch ? { branch: fallback.branch } : {}),
   };
   const res = await dataManager.callAction<undefined, CloneResult>(action);
-  return res ?? { success: false, error: 'Unknown error', cloned_path: null };
+  return res ?? { success: false, conflicts: false, error: 'Unknown error', cloned_path: null };
 }
