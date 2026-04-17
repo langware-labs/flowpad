@@ -184,7 +184,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
  * Should be called once when the app starts.
  */
 export function initNotificationListener(): () => void {
-  const handleFlowData = (_typeId: unknown, flowData: Record<string, unknown>) => {
+  const handleFlowData = async (_typeId: unknown, flowData: Record<string, unknown>) => {
     const attributes = flowData.attributes as Record<string, string> | undefined;
 
     // Handle hook_op events — skill/activation notifications
