@@ -2,19 +2,6 @@ import { dataManager } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import type { ITask } from './task';
 
-export async function openTaskNotification(
-  projectUrl: string,
-  taskId: string,
-): Promise<{ navigation_path: string; git_error?: string | null }> {
-  const action = new ActionInfo('open-task', 'notification', null, 'POST');
-  action.bodyParameters = { project_url: projectUrl, task_id: taskId };
-  const res = await dataManager.callAction<undefined, { navigation_path: string; git_error?: string | null }>(action);
-  return {
-    navigation_path: res?.navigation_path ?? (taskId ? `/dock/tasks/task-${taskId}` : '/dock/tasks'),
-    git_error: res?.git_error ?? null,
-  };
-}
-
 export async function sendReply(task: ITask, message: string): Promise<void> {
   const action = new ActionInfo('append-conversation', 'notification', null, 'POST');
   action.bodyParameters = { task_id: task.id, message };

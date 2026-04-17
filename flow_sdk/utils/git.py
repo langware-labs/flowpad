@@ -1,6 +1,8 @@
 import asyncio
 import logging
+import re
 import subprocess
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
@@ -73,6 +75,20 @@ def git_current_branch(repo_path: str) -> str:
         return ""
 
 
+def git_repo_full_name(repo_path: str) -> str:
+    """Extract 'owner/repo' from origin URL (handles https and ssh). Returns empty string if not found."""
+    url = git_remote_url(repo_path)
+    if not url:
+        return ""
+    m = re.search(r'[:/]([^/:\s]+/[^/:\s]+?)(?:\.git)?$', url)
+    return m.group(1) if m else ""
+
+
+def repo_id(repo_full_name: str) -> str:
+    """Return uuid5(NAMESPACE_DNS, 'repo:{repo_full_name}') — stable cross-machine repo identity."""
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"repo:{repo_full_name}"))
+
+
 def find_local_repo_for_url(project_url: str) -> Optional[str]:
     """Find a local repo whose origin URL matches project_url."""
     if not project_url:
@@ -121,6 +137,33 @@ async def git_pull(repo_path: str, branch: Optional[str] = None) -> Tuple[bool, 
     except Exception as e:
         logger.warning("[git] pull error: %s", e)
         return False, f"Git pull error: {e}"
+
+
+async def git_clone(project_url: str, target_dir: str, branch: Optional[str] = None) -> Tuple[bool, str]:
+    """Clone project_url into target_dir, optionally checking out branch.
+
+    Returns (success, message).
+    """
+    try:
+        cmd = ["git", "clone", project_url, target_dir]
+        if branch:
+            cmd += ["--branch", branch]
+
+        def _run(args):
+            return subprocess.run(args, capture_output=True, text=True, timeout=120)
+
+        result = await asyncio.to_thread(_run, cmd)
+        if result.returncode == 0:
+            out = (result.stdout or result.stderr or "").strip()
+            logger.info("[git] clone %s into %s succeeded", project_url, target_dir)
+            return True, out or "Cloned successfully."
+        else:
+            err = (result.stderr or result.stdout or "").strip()
+            logger.warning("[git] clone %s FAILED: %s", project_url, err)
+            return False, f"Git clone failed: {err}"
+    except Exception as e:
+        logger.warning("[git] clone error: %s", e)
+        return False, f"Git clone error: {e}"
 
 
 async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: str) -> GitPushResult:

@@ -80,6 +80,8 @@ async def _process_manifest(
     spec_dir_name = data.get("spec_dir")
     task_title = data.get("title") or "Shared task"
     conversation_id = data.get("conversation_id")
+    manifest_branch = data.get("branch") or ""
+    manifest_repo_id = data.get("repo_id") or ""
 
     # Don't import tasks that were created by the local user (sender)
     if sender_id == local_user_id:
@@ -93,6 +95,10 @@ async def _process_manifest(
         spec_file = project_root / "tasks" / "spec" / spec_dir_name / "spec.md"
         if spec_file.exists():
             await _create_spec_from_file(spec_file, spec_id, owner_typeid)
+
+    # --- Resolve project_url from git remote ---
+    from flow_sdk.utils.git import git_remote_url
+    project_url = git_remote_url(str(project_root))
 
     # --- Create Conversation entity + record ---
     conv = await _create_conversation_from_disk(
@@ -109,7 +115,12 @@ async def _process_manifest(
         "spec_id": spec_id,
         "shared_by_id": sender_id,
         "conversation_id": conv.id if conv else None,
-        "metadata": {"project_root": str(project_root)},
+        "metadata": {
+            "project_root": str(project_root),
+            "project_url": project_url,
+            "repo_id": manifest_repo_id,
+            "branch": manifest_branch,
+        },
     })
     task = await task.save(owner_typeid)
 
@@ -118,10 +129,6 @@ async def _process_manifest(
         await task.attach_child(conv)
 
     task_type_id_str = f"task-{task.id}"
-
-    # --- Resolve project_url for the consolidated click handler ---
-    from flow_sdk.utils.git import git_remote_url
-    project_url = git_remote_url(str(project_root))
 
     # --- Create Bookmark ---
     nav_path = f"/dock/tasks/{task_type_id_str}"
@@ -151,6 +158,9 @@ async def _process_manifest(
                     "spec_id": spec_id,
                     "spec_type": data.get("spec_type", "plan"),
                     "sender_name": sender_name,
+                    "project_url": project_url,
+                    "repo_id": manifest_repo_id,
+                    "branch": manifest_branch,
                 }
             },
         )
