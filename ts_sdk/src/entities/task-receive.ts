@@ -67,3 +67,4 @@ export async function cloneForTask(
   const res = await dataManager.callAction<undefined, CloneResult>(action);
   return res ?? { success: false, conflicts: false, error: 'Unknown error', cloned_path: null };
 }
+
