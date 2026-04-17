@@ -190,8 +190,16 @@ async def clone_for_task() -> ApiResponse:
         if not project_url:
             return ApiFailResponse(message="No project URL found for this task")
 
+        # Derive repo name from URL (e.g. "https://github.com/org/my-repo.git" → "my-repo")
+        # and clone into <target_dir>/<repo-name> so the user picks a parent folder.
+        import re as _re
+        from pathlib import Path as _Path
+        repo_name_match = _re.search(r'/([^/]+?)(?:\.git)?$', project_url)
+        repo_name = repo_name_match.group(1) if repo_name_match else "repo"
+        clone_path = str(_Path(target_dir) / repo_name)
+
         from flow_sdk.utils.git import git_clone
-        clone_ok, clone_msg = await git_clone(project_url, target_dir, branch=branch or None)
+        clone_ok, clone_msg = await git_clone(project_url, clone_path, branch=branch or None)
 
         # Re-scan after successful clone
         if clone_ok:
@@ -206,7 +214,7 @@ async def clone_for_task() -> ApiResponse:
         return ApiSuccessResponse(data={
             "success": clone_ok,
             "error": None if clone_ok else clone_msg,
-            "cloned_path": target_dir if clone_ok else None,
+            "cloned_path": clone_path if clone_ok else None,
         })
     except Exception as e:
         logger.error(f"[task_receive] clone-for-task error: {e}", exc_info=True)

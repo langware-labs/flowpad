@@ -236,7 +236,7 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
                       key={p.path}
                       type="button"
                       className="w-full px-3 py-1.5 text-left hover:bg-accent truncate"
-                      onClick={() => setCloneTarget(p.path.split('/').slice(0, -1).join('/'))}
+                      onClick={() => setCloneTarget(p.path.replace(/[/\\][^/\\]+$/, ''))}
                     >
                       <span className="font-medium">{p.name}</span>{' '}
                       <span className="text-muted-foreground">{p.path}</span>
@@ -248,7 +248,7 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
 
             <div className="flex gap-2">
               <Input
-                placeholder="Clone into folder…"
+                placeholder="Parent folder to clone into…"
                 value={cloneTarget}
                 onChange={(e) => setCloneTarget(e.target.value)}
                 className="flex-1 text-sm"
