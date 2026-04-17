@@ -229,14 +229,14 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
 
             {knownProjects.length > 0 && (
               <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">Known projects (click to use as clone target parent):</p>
+                <p className="text-xs font-medium text-muted-foreground">Known projects (click to clone alongside):</p>
                 <div className="max-h-28 overflow-y-auto rounded-md border text-xs">
                   {knownProjects.map((p) => (
                     <button
                       key={p.path}
                       type="button"
                       className="w-full px-3 py-1.5 text-left hover:bg-accent truncate"
-                      onClick={() => setCloneTarget(p.path)}
+                      onClick={() => setCloneTarget(p.path.split('/').slice(0, -1).join('/'))}
                     >
                       <span className="font-medium">{p.name}</span>{' '}
                       <span className="text-muted-foreground">{p.path}</span>
