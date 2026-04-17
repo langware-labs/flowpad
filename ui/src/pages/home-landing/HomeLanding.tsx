@@ -83,8 +83,11 @@ export function HomeLanding() {
       const taskId = params.get('task_id') || '';
       const taskTitle = params.get('task_title') || 'Shared task';
       const senderName = params.get('sender_name') || 'Someone';
+      const projectUrl = params.get('project_url') || undefined;
+      const branch = params.get('branch') || undefined;
+      const repoId = params.get('repo_id') || undefined;
       if (taskId) {
-        setPendingTask({ taskId, taskTitle, senderName });
+        setPendingTask({ taskId, taskTitle, senderName, projectUrl, branch, repoId });
         // Clean URL so refreshing doesn't re-trigger
         const url = new URL(window.location.href);
         url.searchParams.delete('task_action');
@@ -693,6 +696,9 @@ export function HomeLanding() {
           taskId={pendingTask.taskId}
           taskTitle={pendingTask.taskTitle}
           senderName={pendingTask.senderName}
+          projectUrl={pendingTask.projectUrl}
+          branch={pendingTask.branch}
+          repoId={pendingTask.repoId}
           onClose={() => setPendingTask(null)}
         />
       )}
