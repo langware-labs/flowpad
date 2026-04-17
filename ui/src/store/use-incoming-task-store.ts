@@ -4,6 +4,9 @@ export interface IncomingTaskParams {
   taskId: string;
   taskTitle: string;
   senderName: string;
+  projectUrl?: string;
+  branch?: string;
+  repoId?: string;
 }
 
 interface IncomingTaskState {

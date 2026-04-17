@@ -43,10 +43,13 @@ interface Props {
   taskId: string;
   taskTitle: string;
   senderName: string;
+  projectUrl?: string;
+  branch?: string;
+  repoId?: string;
   onClose: () => void;
 }
 
-export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, onClose }: Props) {
+export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projectUrl, branch, repoId, onClose }: Props) {
   const { navigation } = useDockNavigation();
   const [step, setStep] = useState<Step>('checking');
   const [findResult, setFindResult] = useState<FindResult | null>(null);
@@ -67,7 +70,7 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, onClos
     setFindResult(null);
     setErrorMsg('');
 
-    findProjectForTask(taskId)
+    findProjectForTask(taskId, { projectUrl, branch, repoId })
       .then((result) => {
         setFindResult(result);
         setLocalPath(result.local_path ?? '');
@@ -93,7 +96,7 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, onClos
   const handleConfirmPull = useCallback(async () => {
     setStep('pulling');
     try {
-      const result = await pullForTask(taskId, localPath || undefined);
+      const result = await pullForTask(taskId, localPath || undefined, { projectUrl, branch });
       if (result.conflicts) {
         setStep('conflict');
       } else if (result.success) {
@@ -116,7 +119,7 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, onClos
     if (!cloneTarget) return;
     setStep('cloning');
     try {
-      const result = await cloneForTask(taskId, cloneTarget);
+      const result = await cloneForTask(taskId, cloneTarget, { projectUrl, branch });
       if (result.success) {
         setStep('success');
         setTimeout(() => {

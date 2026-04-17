@@ -42,13 +42,14 @@ async def find_project_for_task() -> ApiResponse:
 
         task_id = str(request_info.target_entity_typeid.id)
         task = await _get_task(task_id)
-        if not task:
-            return ApiFailResponse(message=f"Task not found: {task_id}")
 
-        meta = task.metadata or {}
-        project_url = meta.get("project_url") or ""
-        manifest_repo_id = meta.get("repo_id") or ""
-        branch = meta.get("branch") or ""
+        body = await request_info.get_post_data() or {}
+        meta = (task.metadata or {}) if task else {}
+
+        # Use task metadata if available, fall back to body params (deep-link before scanner has run)
+        project_url = meta.get("project_url") or (body.get("project_url") or "").strip()
+        manifest_repo_id = meta.get("repo_id") or (body.get("repo_id") or "").strip()
+        branch = meta.get("branch") or (body.get("branch") or "").strip()
 
         from flow_sdk.utils.git import (
             find_local_repo_for_url,
@@ -116,13 +117,11 @@ async def pull_for_task() -> ApiResponse:
 
         task_id = str(request_info.target_entity_typeid.id)
         task = await _get_task(task_id)
-        if not task:
-            return ApiFailResponse(message=f"Task not found: {task_id}")
 
         body = await request_info.get_post_data() or {}
-        meta = task.metadata or {}
-        branch = meta.get("branch") or ""
-        project_url = meta.get("project_url") or ""
+        meta = (task.metadata or {}) if task else {}
+        branch = meta.get("branch") or (body.get("branch") or "").strip()
+        project_url = meta.get("project_url") or (body.get("project_url") or "").strip()
 
         # Determine local_path: from body override, then metadata, then URL lookup
         local_path: str | None = (body.get("local_path") or "").strip() or None
@@ -178,17 +177,15 @@ async def clone_for_task() -> ApiResponse:
 
         task_id = str(request_info.target_entity_typeid.id)
         task = await _get_task(task_id)
-        if not task:
-            return ApiFailResponse(message=f"Task not found: {task_id}")
 
         body = await request_info.get_post_data() or {}
         target_dir = (body.get("target_dir") or "").strip()
         if not target_dir:
             return ApiFailResponse(message="target_dir is required")
 
-        meta = task.metadata or {}
-        project_url = meta.get("project_url") or ""
-        branch = meta.get("branch") or ""
+        meta = (task.metadata or {}) if task else {}
+        project_url = meta.get("project_url") or (body.get("project_url") or "").strip()
+        branch = meta.get("branch") or (body.get("branch") or "").strip()
 
         if not project_url:
             return ApiFailResponse(message="No project URL found for this task")
