@@ -1,0 +1,269 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e7]:
+    - generic [ref=e8]:
+      - list [ref=e11]:
+        - listitem [ref=e12]:
+          - button [ref=e13] [cursor=pointer]:
+            - img [ref=e14]
+          - button [ref=e16] [cursor=pointer]:
+            - img [ref=e17]
+        - listitem [ref=e22]:
+          - button [ref=e23] [cursor=pointer]:
+            - img [ref=e24]
+        - listitem [ref=e27]:
+          - button [ref=e28] [cursor=pointer]:
+            - img [ref=e29]
+        - listitem [ref=e31]:
+          - button [ref=e32] [cursor=pointer]:
+            - img [ref=e33]
+        - listitem [ref=e35]:
+          - button [ref=e36] [cursor=pointer]:
+            - img [ref=e37]
+        - generic [ref=e39]:
+          - img [ref=e42]
+          - listitem [ref=e44]:
+            - button [ref=e45] [cursor=pointer]:
+              - img [ref=e46]
+          - listitem [ref=e50]:
+            - button [ref=e51] [cursor=pointer]:
+              - img [ref=e52]
+      - generic [ref=e54]:
+        - button "Toggle theme" [ref=e55] [cursor=pointer]:
+          - img
+          - generic [ref=e56]: Toggle theme
+        - generic [ref=e58]:
+          - generic [ref=e59]:
+            - heading "Chat Settings" [level=2] [ref=e60]
+            - button [ref=e61] [cursor=pointer]:
+              - img
+          - generic [ref=e64]:
+            - generic [ref=e65]: Rules
+            - textbox "Rules" [ref=e66]:
+              - /placeholder: Enter chat rules...
+          - button "Save Changes" [ref=e68] [cursor=pointer]
+        - generic [ref=e72] [cursor=pointer]: E
+    - generic [ref=e73]:
+      - tabpanel [ref=e78]:
+        - generic [ref=e80]:
+          - generic [ref=e81]:
+            - generic [ref=e82]:
+              - generic [ref=e83] [cursor=pointer]:
+                - generic [ref=e85]: Tab 1
+                - button "Close tab" [ref=e86]:
+                  - img [ref=e87]
+              - generic [ref=e90] [cursor=pointer]:
+                - generic [ref=e92]: Tab 2
+                - button "Close tab" [ref=e93]:
+                  - img [ref=e94]
+              - generic [ref=e97] [cursor=pointer]:
+                - generic [ref=e99]: Tab 3
+                - button "Close tab" [ref=e100]:
+                  - img [ref=e101]
+              - generic [ref=e104] [cursor=pointer]:
+                - generic [ref=e106]: Tab 4
+                - button "Close tab" [ref=e107]:
+                  - img [ref=e108]
+              - generic [ref=e111] [cursor=pointer]:
+                - generic [ref=e113]: Tab 5
+                - button "Close tab" [ref=e114]:
+                  - img [ref=e115]
+              - generic [ref=e118] [cursor=pointer]:
+                - generic [ref=e120]: Tab 6
+                - button "Close tab" [ref=e121]:
+                  - img [ref=e122]
+              - generic [ref=e125] [cursor=pointer]:
+                - generic [ref=e127]: Tab 7
+                - button "Close tab" [ref=e128]:
+                  - img [ref=e129]
+              - generic [ref=e132] [cursor=pointer]:
+                - generic [ref=e134]: Tab 8
+                - button "Close tab" [ref=e135]:
+                  - img [ref=e136]
+              - generic [ref=e139] [cursor=pointer]:
+                - generic [ref=e141]: Tab 9
+                - button "Close tab" [ref=e142]:
+                  - img [ref=e143]
+              - generic [ref=e146] [cursor=pointer]:
+                - generic [ref=e148]: Tab 10
+                - button "Close tab" [ref=e149]:
+                  - img [ref=e150]
+              - generic [ref=e153] [cursor=pointer]:
+                - generic [ref=e155]: Tab 11
+                - button "Close tab" [ref=e156]:
+                  - img [ref=e157]
+              - generic [ref=e160] [cursor=pointer]:
+                - generic [ref=e162]: Tab 12
+                - button "Close tab" [ref=e163]:
+                  - img [ref=e164]
+              - generic [ref=e167] [cursor=pointer]:
+                - img "Sandbox shell" [ref=e168]
+                - generic [ref=e170]: Tab 13
+                - button "Close tab" [ref=e171]:
+                  - img [ref=e172]
+              - generic [ref=e175] [cursor=pointer]:
+                - generic [ref=e177]: Tab 14
+                - button "Close tab" [ref=e178]:
+                  - img [ref=e179]
+              - generic [ref=e182] [cursor=pointer]:
+                - img "Sandbox shell" [ref=e183]
+                - generic [ref=e185]: "user@e2b: ~"
+                - button "Close tab" [ref=e186]:
+                  - img [ref=e187]
+              - generic [ref=e190] [cursor=pointer]:
+                - generic [ref=e192]: Tab 15
+                - button "Close tab" [ref=e193]:
+                  - img [ref=e194]
+              - generic [ref=e197] [cursor=pointer]:
+                - img "Sandbox shell" [ref=e198]
+                - generic [ref=e200]: "user@e2b: ~"
+                - button "Close tab" [ref=e201]:
+                  - img [ref=e202]
+              - generic [ref=e205] [cursor=pointer]:
+                - img "Sandbox shell" [ref=e206]
+                - generic [ref=e208]: "user@e2b: ~"
+                - button "Close tab" [ref=e209]:
+                  - img [ref=e210]
+              - generic [ref=e213] [cursor=pointer]:
+                - generic [ref=e215]: Tab 16
+                - button "Close tab" [ref=e216]:
+                  - img [ref=e217]
+              - generic [ref=e220] [cursor=pointer]:
+                - generic [ref=e222]: Tab 17
+                - button "Close tab" [ref=e223]:
+                  - img [ref=e224]
+              - generic [ref=e227] [cursor=pointer]:
+                - generic [ref=e229]: Tab 18
+                - button "Close tab" [ref=e230]:
+                  - img [ref=e231]
+              - generic [ref=e234] [cursor=pointer]:
+                - generic [ref=e236]: Tab 19
+                - button "Close tab" [ref=e237]:
+                  - img [ref=e238]
+              - generic [ref=e241] [cursor=pointer]:
+                - generic [ref=e243]: Tab 20
+                - button "Close tab" [ref=e244]:
+                  - img [ref=e245]
+              - generic [ref=e248] [cursor=pointer]:
+                - generic [ref=e250]: Tab 21
+                - button "Close tab" [ref=e251]:
+                  - img [ref=e252]
+              - generic [ref=e255] [cursor=pointer]:
+                - generic [ref=e257]: Tab 22
+                - button "Close tab" [ref=e258]:
+                  - img [ref=e259]
+              - generic [ref=e262] [cursor=pointer]:
+                - generic [ref=e264]: Tab 23
+                - button "Close tab" [ref=e265]:
+                  - img [ref=e266]
+              - generic [ref=e269] [cursor=pointer]:
+                - generic [ref=e271]: Tab 24
+                - button "Close tab" [ref=e272]:
+                  - img [ref=e273]
+              - generic [ref=e276] [cursor=pointer]:
+                - generic [ref=e278]: Tab 25
+                - button "Close tab" [ref=e279]:
+                  - img [ref=e280]
+              - generic [ref=e283] [cursor=pointer]:
+                - generic [ref=e285]: Tab 26
+                - button "Close tab" [ref=e286]:
+                  - img [ref=e287]
+              - generic [ref=e290] [cursor=pointer]:
+                - generic [ref=e292]: Tab 27
+                - button "Close tab" [ref=e293]:
+                  - img [ref=e294]
+              - generic [ref=e297] [cursor=pointer]:
+                - generic [ref=e299]: Tab 28
+                - button "Close tab" [ref=e300]:
+                  - img [ref=e301]
+              - generic [ref=e304] [cursor=pointer]:
+                - generic [ref=e306]: Tab 29
+                - button "Close tab" [ref=e307]:
+                  - img [ref=e308]
+              - generic [ref=e311] [cursor=pointer]:
+                - generic [ref=e313]: Tab 30
+                - button "Close tab" [ref=e314]:
+                  - img [ref=e315]
+              - generic [ref=e318] [cursor=pointer]:
+                - generic [ref=e320]: Tab 31
+                - button "Close tab" [ref=e321]:
+                  - img [ref=e322]
+              - generic [ref=e325] [cursor=pointer]:
+                - generic [ref=e327]: Tab 32
+                - button "Close tab" [ref=e328]:
+                  - img [ref=e329]
+              - generic [ref=e332] [cursor=pointer]:
+                - generic [ref=e334]: Tab 33
+                - button "Close tab" [ref=e335]:
+                  - img [ref=e336]
+              - generic [ref=e339] [cursor=pointer]:
+                - generic [ref=e341]: Tab 34
+                - button "Close tab" [ref=e342]:
+                  - img [ref=e343]
+              - generic [ref=e346] [cursor=pointer]:
+                - generic [ref=e348]: Tab 35
+                - button "Close tab" [ref=e349]:
+                  - img [ref=e350]
+              - generic [ref=e353] [cursor=pointer]:
+                - generic [ref=e355]: Tab 36
+                - button "Close tab" [ref=e356]:
+                  - img [ref=e357]
+              - generic [ref=e360] [cursor=pointer]:
+                - generic [ref=e362]: Tab 37
+                - button "Close tab" [ref=e363]:
+                  - img [ref=e364]
+              - generic [ref=e367] [cursor=pointer]:
+                - generic [ref=e369]: Tab 38
+                - button "Close tab" [ref=e370]:
+                  - img [ref=e371]
+              - generic [ref=e374] [cursor=pointer]:
+                - generic [ref=e376]: Tab 39
+                - button "Close tab" [ref=e377]:
+                  - img [ref=e378]
+              - generic [ref=e381] [cursor=pointer]:
+                - generic [ref=e383]: Tab 40
+                - button "Close tab" [ref=e384]:
+                  - img [ref=e385]
+              - generic [ref=e388] [cursor=pointer]:
+                - generic [ref=e390]: Tab 41
+                - button "Close tab" [ref=e391]:
+                  - img [ref=e392]
+            - button "Open new tab menu" [ref=e396] [cursor=pointer]:
+              - img
+            - button "Scroll tabs right" [ref=e397] [cursor=pointer]:
+              - img
+            - button "Close all tabs" [ref=e398] [cursor=pointer]:
+              - img
+          - generic [ref=e406]:
+            - generic [ref=e409]:
+              - generic:
+                - textbox "Terminal input"
+            - generic [ref=e438]:
+              - generic:
+                - textbox "Terminal input"
+      - contentinfo [ref=e465]:
+        - generic [ref=e466]:
+          - generic [ref=e467]:
+            - button "Settings" [ref=e468] [cursor=pointer]:
+              - img [ref=e469]
+            - button [ref=e472] [cursor=pointer]:
+              - img [ref=e473]
+          - generic [ref=e475]:
+            - button "Switch Project" [ref=e476] [cursor=pointer]:
+              - img [ref=e477]
+              - generic [ref=e480]: Switch Project
+            - button "my_first_project" [ref=e481] [cursor=pointer]
+            - button "/Users/shlom/Flowpad workspace/my_first_project" [ref=e482] [cursor=pointer]:
+              - generic [ref=e483]: /Users/shlom/Flowpad workspace/my_first_project
+              - img [ref=e484]
+          - generic [ref=e488]:
+            - button "5h 0% · 7d 600%" [ref=e489] [cursor=pointer]:
+              - generic [ref=e490]: 5h 0% · 7d 600%
+            - generic [ref=e491]: v0.2.9
+            - generic [ref=e492]:
+              - generic [ref=e493]: Powered by
+              - link "Flowpad.ai Logo" [ref=e494] [cursor=pointer]:
+                - /url: https://flowpad.ai
+                - img "Flowpad.ai Logo" [ref=e495]

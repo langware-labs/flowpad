@@ -127,6 +127,7 @@ class ComputeProviderType(StrEnum):
     GCP = "gcp"
     AWS = "aws"
     E2B = "e2b"
+    DOCKER = "docker"
 
 
 class DBDriver(StrEnum):

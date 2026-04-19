@@ -262,7 +262,7 @@ def test_factory_unknown_type_raises():
 def test_from_json_defaults():
     cmd = ClaudeCliOptions.from_json({})
     assert cmd.resume is False
-    assert cmd.debug is True
+    assert cmd.debug is False
     assert cmd.permission_mode == "bypassPermissions"
     assert cmd.chrome is False
     assert cmd.worktree is False

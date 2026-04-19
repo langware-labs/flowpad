@@ -38,20 +38,19 @@ const processQuery = new QueryRequest({
   }),
 });
 
-export function useRecentSessions(): RecentItem[] {
+export function useRecentSessions(enabled: boolean = true): RecentItem[] {
   // List 1: last N agentic_process entities across all projects
   const { data: processes = [] } = useEntitiesQuery<AgenticProcess>(processQuery);
 
   // List 2: last N entries from ~/.claude/history.jsonl across all projects
-  const { entries: historyEntries } = useClaudeHistory(HISTORY_FETCH);
+  // Only fetch history when the modal is open — otherwise each entry costs
+  // a GET discovery/claude_session + POST upsertSessionProcess.
+  const { entries: historyEntries } = useClaudeHistory(HISTORY_FETCH, { enabled });
 
-  // Resolve dockPointers for all history entries up front.
-  // Effect only depends on historyEntries — NOT on processes — so that
-  // fromClaudeSession upserts don't retrigger the effect and cause a loop.
   const [historyItems, setHistoryItems] = useState<RecentItem[]>([]);
 
   useEffect(() => {
-    if (historyEntries.length === 0) {
+    if (!enabled || historyEntries.length === 0) {
       setHistoryItems([]);
       return;
     }
@@ -79,7 +78,7 @@ export function useRecentSessions(): RecentItem[] {
     return () => {
       cancelled = true;
     };
-  }, [historyEntries]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [enabled, historyEntries]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return useMemo(() => {
     // Both sources use session_id as the canonical key so dedup works across types.
@@ -115,7 +114,7 @@ interface HistoryModalProps {
 }
 
 export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps) {
-  const items = useRecentSessions();
+  const items = useRecentSessions(open);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

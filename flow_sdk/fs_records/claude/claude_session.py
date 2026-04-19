@@ -512,68 +512,68 @@ class ClaudeSessionRecord(Record):
     ) -> Self:
         """Build a session record from a JSONL transcript file path.
 
-        Only reads the first few lines of the file to extract ``session_id``
-        and ``slug`` (needed to set ``id`` and ``name`` at construction time).
-        All other stats are lazy — they are parsed from the JSONL on first
-        access via ``_SessionStatsProp`` descriptors.
+        O(1) read cost regardless of transcript size:
+          - head ``_HEAD_BYTES`` for session_id / slug / cwd (first-line fields).
+          - tail ``_TAIL_BYTES`` for the most-recent custom-title (``/rename``
+            can be written at any point in the session, but in practice the
+            latest one is near the end).
 
-        Args:
-            path: Path to the JSONL transcript file.
-            project_encoded_name: Encoded project directory name. If not
-                provided it is derived from ``path.parent.name``.
+        ``message_count`` is intentionally NOT computed eagerly — it's a
+        ``_SessionStatsProp`` on the class and parses lazily on first access.
         """
-        import time as _time
+        _HEAD_BYTES = 4096
+        _TAIL_BYTES = 16384
 
         path = Path(path)
         session_id = path.stem  # fallback
         slug = ""
-
-        # Scan all lines for session_id, slug, cwd, and custom-title.
-        # custom-title entries can appear anywhere (written on every /rename),
-        # so we must scan to the end and take the last one.
         cwd = ""
         custom_title = ""
+
+        # ── head: first few lines cover session_id / slug / cwd ────────────
         try:
-            with open(path, encoding="utf-8") as fh:
-                lines = fh.readlines()
-
-            # Find the index of the last non-empty line to detect mid-write truncation.
-            last_nonempty_idx = -1
-            for i in range(len(lines) - 1, -1, -1):
-                if lines[i].strip():
-                    last_nonempty_idx = i
-                    break
-
-            # Only excuse a parse error on the last non-empty line, and only when
-            # the file was modified within the last second (actively being written).
-            file_age = _time.time() - path.stat().st_mtime
-
-            for i, raw_line in enumerate(lines):
-                line = raw_line.strip()
+            with open(path, "rb") as fh:
+                head = fh.read(_HEAD_BYTES).decode("utf-8", errors="replace")
+            for line in head.splitlines():
+                line = line.strip()
                 if not line:
                     continue
                 try:
                     raw = json.loads(line)
                 except json.JSONDecodeError:
-                    if i == last_nonempty_idx and file_age < 1.0:
-                        continue  # mid-write last line — excuse it
-                    raise
+                    # Partial line at the 4KB boundary — stop here.
+                    break
                 if raw.get("sessionId"):
                     session_id = raw["sessionId"]
                 if raw.get("slug"):
                     slug = raw["slug"]
                 if not cwd and raw.get("cwd"):
                     cwd = raw["cwd"]
-                if raw.get("type") == "custom-title" and raw.get("customTitle"):
-                    custom_title = raw["customTitle"]  # keep last one (most recent rename)
+                if session_id and slug and cwd:
+                    break
         except OSError:
             pass
 
-        # Fast message count: binary scan for newlines — no JSON parsing.
-        message_count = 0
+        # ── tail: most-recent custom-title only (same trick as _tail_status) ─
         try:
+            sz = path.stat().st_size
             with open(path, "rb") as fb:
-                message_count = fb.read().count(b"\n")
+                if sz > _TAIL_BYTES:
+                    fb.seek(sz - _TAIL_BYTES)
+                tail = fb.read().decode("utf-8", errors="replace")
+            # Walk tail lines in reverse; first valid custom-title wins.
+            for line in reversed(tail.splitlines()):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                except json.JSONDecodeError:
+                    # Line straddled the seek boundary or mid-write — skip.
+                    continue
+                if raw.get("type") == "custom-title" and raw.get("customTitle"):
+                    custom_title = raw["customTitle"]
+                    break
         except OSError:
             pass
 
@@ -583,7 +583,7 @@ class ClaudeSessionRecord(Record):
             slug=slug,
             cwd=cwd,
             custom_title=custom_title,
-            message_count=message_count,
+            # message_count intentionally omitted — _SessionStatsProp parses lazily.
             jsonl_path=str(path),
             source_file=str(path),
             path=str(path),

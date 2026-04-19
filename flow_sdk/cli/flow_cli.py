@@ -930,6 +930,9 @@ def hooks_list(
 log_app = typer.Typer(help="View and replay CLI invocation logs")
 app.add_typer(log_app, name="log")
 
+from flow_sdk.cli.commands.compute_cmd import compute_app
+app.add_typer(compute_app, name="compute")
+
 
 @log_app.callback(invoke_without_command=True)
 def log_show(

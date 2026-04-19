@@ -317,7 +317,7 @@ async def test_agentic_process_lists_system_skills(local_project, local_compute_
     """Verify that system skills are visible to Claude via --add-dir system_assets."""
     import flow_sdk
     from pathlib import Path as _Path
-    system_skills_path = _Path(flow_sdk.__file__).parent / "system_assets" / "core" / ".claude" / "skills"
+    system_skills_path = _Path(flow_sdk.__file__).parent / "system_assets" / "available" / "skills"
 
     process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
     await process.prompt(

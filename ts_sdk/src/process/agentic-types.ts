@@ -41,10 +41,14 @@ export function isProcessLive(status: ProcessStatus): boolean {
 
 /**
  * Transcript-derived worker execution status.
+ * Mirrors the Python ``AgenticProcessStatus`` enum in
+ * ``flow_sdk/fs_records/agent_status.py`` and arrives on the wire as the
+ * ``worker_status`` field on ``AgenticProcess``.
+ *
  * Internal to the SDK — not part of the public API.
- * Use ProcessStatus (lifecycle) for external consumers.
+ * Use ``ProcessStatus`` (lifecycle) for external consumers.
  */
-export enum ProcessorStatus {
+export enum WorkerStatus {
   INIT         = 'init',
   EMPTY        = 'empty',
   IDLE         = 'idle',
@@ -59,31 +63,33 @@ export enum ProcessorStatus {
   RUNNING      = 'running',
   PAUSED       = 'paused',
   STEPPING     = 'stepping',
+  API_ERROR    = 'api_error',
+  API_TIMEOUT  = 'api_timeout',
 }
 
-const RUNNING_STATUSES = new Set<ProcessorStatus>([
-  ProcessorStatus.WAITING,
-  ProcessorStatus.THINKING,
-  ProcessorStatus.TOOL_CALL,
-  ProcessorStatus.TOOL_RUNNING,
-  ProcessorStatus.RUNNING,
-  ProcessorStatus.PAUSED,
-  ProcessorStatus.STEPPING,
+const WORKER_RUNNING_STATUSES = new Set<WorkerStatus>([
+  WorkerStatus.WAITING,
+  WorkerStatus.THINKING,
+  WorkerStatus.TOOL_CALL,
+  WorkerStatus.TOOL_RUNNING,
+  WorkerStatus.RUNNING,
+  WorkerStatus.PAUSED,
+  WorkerStatus.STEPPING,
 ]);
 
-const TERMINAL_STATUSES = new Set<ProcessorStatus>([
-  ProcessorStatus.COMPLETE,
-  ProcessorStatus.ERROR,
-  ProcessorStatus.INTERRUPTED,
-  ProcessorStatus.INACTIVE,
+const WORKER_TERMINAL_STATUSES = new Set<WorkerStatus>([
+  WorkerStatus.COMPLETE,
+  WorkerStatus.ERROR,
+  WorkerStatus.INTERRUPTED,
+  WorkerStatus.INACTIVE,
 ]);
 
-export function isProcessorRunning(status: ProcessorStatus): boolean {
-  return RUNNING_STATUSES.has(status);
+export function isWorkerRunning(status: WorkerStatus): boolean {
+  return WORKER_RUNNING_STATUSES.has(status);
 }
 
-export function isProcessorTerminal(status: ProcessorStatus): boolean {
-  return TERMINAL_STATUSES.has(status);
+export function isWorkerTerminal(status: WorkerStatus): boolean {
+  return WORKER_TERMINAL_STATUSES.has(status);
 }
 
 /**

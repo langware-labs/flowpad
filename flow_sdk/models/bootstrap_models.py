@@ -67,6 +67,8 @@ class BootstrapInfo(BaseModel):
     default_compute_node: Optional[Dict[str, Any]] = None
     sandbox_available: bool = False
     sandbox_compute_node: Optional[Dict[str, Any]] = None
+    docker_available: bool = False
+    docker_compute_nodes: List[Dict[str, Any]] = []
     env: Optional[EnvInfo] = None
     desktop_info: Optional[LmInfo] = None
     sniffer_hook: Optional[Dict[str, Any]] = None

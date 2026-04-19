@@ -22,7 +22,8 @@ import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
 import { planNotePlugins } from './plan-note-plugin';
 import { Button } from '@src/components/ui/button';
 import { SendPlanNotificationDialog } from './SendPlanNotificationDialog';
-import { Bookmark as BookmarkIcon, Copy, Send, ShieldOff, StickyNote, X } from 'lucide-react';
+import { Bookmark as BookmarkIcon, Copy, FolderOpen, Send, ShieldOff, StickyNote, X } from 'lucide-react';
+import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@src/lib/utils';
 import { AgenticProcess, Bookmark, QueryRequest } from '@sdk';
@@ -159,7 +160,7 @@ export const PlanEditor: React.FC = () => {
     <div className="relative flex h-full flex-col">
       {/* File path header */}
       <div className="flex items-center gap-1.5 border-b border-border bg-background/80 px-4 py-1 font-mono text-[11px] text-muted-foreground">
-        <span className="flex-1 truncate" title={filePath}>{filePath}</span>
+        <span className="min-w-0 truncate" title={filePath}>{filePath}</span>
         <button
           type="button"
           title="Copy path"
@@ -168,6 +169,19 @@ export const PlanEditor: React.FC = () => {
         >
           <Copy className="h-3 w-3" />
         </button>
+        <button
+          type="button"
+          title="Show in folder (selects file for drag-and-drop)"
+          className="shrink-0 rounded p-0.5 hover:bg-muted hover:text-foreground disabled:opacity-40"
+          disabled={!computeNodeTypeId}
+          onClick={() => {
+            if (!computeNodeTypeId) return;
+            void openExternalFromComputeNode(computeNodeTypeId.id, filePath, { select: true });
+          }}
+        >
+          <FolderOpen className="h-3 w-3" />
+        </button>
+        <span className="flex-1" />
       </div>
 
       {/* Top action bar */}

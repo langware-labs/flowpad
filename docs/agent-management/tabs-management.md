@@ -408,7 +408,7 @@ On mount, the component queries the backend for up to 100 `AgenticProcess` entit
 
 The component uses `useSessionProcess()` internally to get:
 - `process` — the active `AgenticProcess` entity.
-- `state` — `ProcessorStatus` and execution state.
+- `state` — `WorkerStatus` and execution state.
 - `isRunning`, `completed`.
 - `abortProcess()`, `appendInstruction(value)`, `injectInstruction(content)`.
 

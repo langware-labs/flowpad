@@ -19,6 +19,11 @@ pytestmark = [
 
 LISTEN_URL = "/api/v1/webhook/listen"
 
+# Cap on unrelated WS messages to drain before we declare the expected
+# bookmark op missing. The cross_notification_scanner can emit several
+# task-import events at startup.
+_WS_DRAIN_LIMIT = 20
+
 
 def _envelope(payload: dict) -> dict:
     return {"webhook_type": "hook_op", "webhook_payload": payload}
@@ -36,6 +41,26 @@ def isolate_records_root(tmp_path):
 
 def _compute_node_id(bootstrap_payload: dict) -> str:
     return bootstrap_payload["data"]["default_compute_node"]["id"]
+
+
+def _receive_bookmark_op(ws, *, op: str, title: str | None = None) -> dict:
+    """Drain unrelated WS traffic (e.g. cross_notification_scanner task imports)
+    and return the first data_op_msg matching (op, optional title) for a bookmark.
+    """
+    for _ in range(_WS_DRAIN_LIMIT):
+        msg = ws.receive_json()
+        if msg.get("message_type") != "data_op_msg":
+            continue
+        if msg.get("op") != op:
+            continue
+        if "bookmark" not in (msg.get("to_entity") or ""):
+            continue
+        if title is not None and msg.get("data", {}).get("title") != title:
+            continue
+        return msg
+    raise AssertionError(
+        f"Did not receive expected bookmark {op} (title={title!r}) within {_WS_DRAIN_LIMIT} messages"
+    )
 
 
 @pytest.mark.timeout(15)
@@ -78,13 +103,7 @@ def test_hook_op_ws_and_graph_update():
             assert data["action"] in ("created", "updated")
             bookmark_id = data["bookmark_id"]
 
-            msg = ws.receive_json()
-            assert msg["message_type"] == "data_op_msg", (
-                f"Expected data_op_msg create, got: {json.dumps(msg, indent=2)}"
-            )
-            assert msg["op"] == "create"
-            assert "bookmark" in msg["to_entity"]
-            assert msg["data"]["title"] == "WS Test Bookmark"
+            msg = _receive_bookmark_op(ws, op="create", title="WS Test Bookmark")
 
             # --- Watch bookmark for targeted update/delete events ---
             resp = tc.post(
@@ -101,12 +120,7 @@ def test_hook_op_ws_and_graph_update():
             assert resp.status_code == 200, resp.text
             assert resp.json()["data"]["title"] == "Graph Updated"
 
-            msg = ws.receive_json()
-            assert msg["message_type"] == "data_op_msg", (
-                f"Expected data_op_msg update, got: {json.dumps(msg, indent=2)}"
-            )
-            assert msg["op"] == "update"
-            assert msg["data"]["title"] == "Graph Updated"
+            msg = _receive_bookmark_op(ws, op="update", title="Graph Updated")
 
             # --- hook_op UPDATE -> WS update events ---
             resp = tc.post(
@@ -123,12 +137,9 @@ def test_hook_op_ws_and_graph_update():
             assert resp.status_code == 200, resp.text
             assert resp.json()["data"]["action"] == "updated"
 
-            msg1 = ws.receive_json()
-            msg2 = ws.receive_json()
-            for m in (msg1, msg2):
-                assert m["message_type"] == "data_op_msg"
-                assert m["op"] == "update"
-                assert m["data"]["title"] == "Hook Updated"
+            # Two updates (targeted watch + broadcast) — drain unrelated noise.
+            for _ in range(2):
+                _receive_bookmark_op(ws, op="update", title="Hook Updated")
 
             # --- hook_op DELETE -> WS delete event ---
             resp = tc.post(
@@ -145,13 +156,7 @@ def test_hook_op_ws_and_graph_update():
             assert resp.status_code == 200, resp.text
             assert resp.json()["data"]["action"] == "deleted"
 
-            msg = ws.receive_json()
-            if msg["message_type"] == "flow_data_msg":
-                msg = ws.receive_json()
-            assert msg["message_type"] == "data_op_msg", (
-                f"Expected data_op_msg delete, got: {json.dumps(msg, indent=2)}"
-            )
-            assert msg["op"] == "delete"
+            _receive_bookmark_op(ws, op="delete")
 
         # --- Records API read-back (outside WS context) ---
         base = f"/api/v1/graph/compute_node/{cn_id}/fs-records/bookmark"
@@ -211,10 +216,7 @@ def test_sdk_notify_creates_bookmark():
             assert result["action"] in ("created", "updated")
             bookmark_id = result["bookmark_id"]
 
-            msg = ws.receive_json()
-            assert msg["message_type"] == "data_op_msg"
-            assert msg["op"] == "create"
-            assert msg["data"]["title"] == "SDK Created Bookmark"
+            msg = _receive_bookmark_op(ws, op="create", title="SDK Created Bookmark")
             assert msg["data"]["content"] == "This is the bookmark body from the SDK."
 
         resp = tc.get(f"/api/v1/graph/bookmark/{bookmark_id}")

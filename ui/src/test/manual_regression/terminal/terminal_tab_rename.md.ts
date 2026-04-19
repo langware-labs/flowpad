@@ -13,17 +13,26 @@ test.describe('Terminal Tab Rename', () => {
     await gotoShell(page);
     await page.waitForTimeout(1_000);
 
-    // Step 2: add a new terminal tab
+    // Step 2: snapshot the tab count so we can find the newly-added tab by
+    //         index (preserving stability against pre-existing Claude tabs).
+    const initialCount = await page.locator('[data-testid^="tab-shell-"]').count();
     await addTerminalTab(page);
+    await expect(page.locator('[data-testid^="tab-shell-"]')).toHaveCount(initialCount + 1);
 
-    // Step 3: find the new custom tab (last tab in the list)
-    const tabs = page.locator('[data-testid^="tab-"]');
-    const newTab = tabs.last();
-    await expect(newTab).toContainText(/Terminal/);
+    // Step 3: find the new terminal tab by matching "Tab N" text, then pin
+    //         it by its stable data-testid so follow-up selectors survive the
+    //         span → input swap during rename.
+    const initialNewTab = page
+      .locator('[data-testid^="tab-shell-"]')
+      .filter({ has: page.locator('span', { hasText: /^Tab \d+$/ }) })
+      .last();
+    await expect(initialNewTab).toContainText(/Tab \d+/);
+    const newTabTestId = (await initialNewTab.getAttribute('data-testid'))!;
+    const newTab = page.locator(`[data-testid="${newTabTestId}"]`);
 
-    // Step 4: double-click the tab name to start editing
-    const tabNameSpan = newTab.locator('span').first();
-    await tabNameSpan.dblclick();
+    // Step 4: double-click the tab NAME span — the one carrying the
+    //         onDoubleClick handler (class "text-sm font-medium").
+    await newTab.locator('span.text-sm.font-medium').dblclick();
 
     // Step 5: validate the rename input appears
     const renameInput = newTab.locator('input[type="text"]');

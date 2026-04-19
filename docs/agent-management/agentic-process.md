@@ -97,7 +97,7 @@ The `state` field on the entity is a `ProcessorState` dict. It carries runtime e
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `status` | `ProcessorStatus` | Current execution status. For PTY processes, this is derived from the transcript on every API read. |
+| `status` | `WorkerStatus` | Current execution status. For PTY processes, this is derived from the transcript on every API read. |
 | `index` | `int` | Index of the currently executing instruction (AMD model). |
 | `totalInstructions` | `int` | Total instruction count in the loaded instruction file. |
 | `currentInstructionId` | `str \| None` | ID of the currently executing `flow-do` block. |
@@ -382,7 +382,7 @@ await processor.step('out');    // Step out of current frame
 ### Status Enum
 
 ```ts
-enum ProcessorStatus {
+enum WorkerStatus {
   IDLE       = 'idle',        // Created, no session started
   RUNNING    = 'running',     // Claude actively processing
   PAUSED     = 'paused',      // Debug breakpoint hit (AMD model)
@@ -393,7 +393,7 @@ enum ProcessorStatus {
 }
 ```
 
-Python mirror: `ProcessorStatus` StrEnum in `flow_sdk/fs_records/agentic_process.py`.
+Python mirror: `WorkerStatus` StrEnum in `flow_sdk/fs_records/agentic_process.py`.
 
 ### PTY Model: Transcript-Based Derivation
 
@@ -483,7 +483,7 @@ For AMD processes, status is managed by the backend executor and written to `sta
 import { AgenticProcess, IAgenticProcess, ExecuteOptions } from '@sdk';
 import { AgenticProcessor } from '@sdk';
 import { AgenticContext, serializeAgenticContext } from '@sdk';
-import { ProcessorStatus, ProcessorState, StackFrame } from '@sdk';
+import { WorkerStatus, ProcessorState, StackFrame } from '@sdk';
 ```
 
 ### AgenticProcess Class
@@ -721,7 +721,7 @@ The `state.status` field in `data` always reflects the transcript-derived status
 | File | Role |
 |------|------|
 | `flow_sdk/builtin/agentic_processor.py` | `AgenticProcessor` + `AgenticProcess` entity classes (~1828 lines) |
-| `flow_sdk/fs_records/agentic_process.py` | `AgenticProcess` Record — `ProcessorStatus` enum, `discover_status()` |
+| `flow_sdk/fs_records/agentic_process.py` | `AgenticProcess` Record — `WorkerStatus` enum, `discover_status()` |
 | `flow_sdk/fs_records/claude/claude_session.py` | `ClaudeSessionFsRecord` — JSONL reader, `status` property, transcript entry parsing |
 | `flow_sdk/fs_records/claude/claude_active_session.py` | Active session discovery by mtime filter |
 | `flow_sdk/compute/providers/local_compute_provider.py` | PTY spawn, read loop, input/resize, close |
@@ -737,7 +737,7 @@ The `state.status` field in `data` always reflects the transcript-derived status
 | `ts_sdk/src/agentic_processor/agentic-process.ts` | `AgenticProcess` entity class — PTY API, AMD streaming, state, history |
 | `ts_sdk/src/agentic_processor/agentic-processor.ts` | `AgenticProcessor` entity class — process creation, `run()`, `execute()` |
 | `ts_sdk/src/agentic_processor/agentic-context.ts` | `AgenticContext` DTO and `serializeAgenticContext()` |
-| `ts_sdk/src/agentic_processor/agentic-types.ts` | `ProcessorStatus`, `ProcessorState`, `StackFrame`, `DebugState` |
+| `ts_sdk/src/agentic_processor/agentic-types.ts` | `WorkerStatus`, `ProcessorState`, `StackFrame`, `DebugState` |
 | `ts_sdk/src/agentic_processor/index.ts` | Public re-exports for the `agentic_processor` module |
 | `ts_sdk/src/services/claude/claudeSessionManager.ts` | `ClaudeSessionManager` singleton — start, resume, restart, fork, kill |
 | `ts_sdk/src/services/claude/claudeCliCommand.ts` | `ClaudeCliCommand` builder — parse and generate CLI invocation strings |

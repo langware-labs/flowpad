@@ -622,6 +622,20 @@ class DataContext extends EventEmitter {
     return this._sandboxComputeNode;
   }
 
+  /** Lazily-hydrated @docker-<name> compute nodes from bootstrap. One entry per live worker. */
+  private _dockerComputeNodes: ComputeNode[] | null = null;
+  get dockerComputeNodes(): ComputeNode[] {
+    const raws = this.bootstrapInfo?.docker_compute_nodes ?? [];
+    if (this._dockerComputeNodes === null || this._dockerComputeNodes.length !== raws.length) {
+      this._dockerComputeNodes = raws.map((r) => {
+        const cn = new ComputeNode(r as any);
+        cn.markAsExpanded();
+        return cn;
+      });
+    }
+    return this._dockerComputeNodes;
+  }
+
   get domainTypeId(): TypeId | null {
     return this.getContextEntityTypeId(ContextEntitiesEnum.CurrentDomainTypeId) ?? null;
   }

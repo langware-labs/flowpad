@@ -60,7 +60,7 @@ def _query_annotations(session_id: str) -> list[dict]:
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(300)
-async def test_prompt_annotation_created_and_visible(bootstrapped_client):
+async def test_prompt_annotation_created_and_visible(bootstrapped_client, local_project, local_compute_node):
     """
     Full flow:
       process.start() → process.prompt("hi") → wait()
@@ -78,7 +78,7 @@ async def test_prompt_annotation_created_and_visible(bootstrapped_client):
     assert resp.status_code == 200, f"Bootstrap failed: {resp.text}"
 
     # ── 2. Create and start process ─────────────────────────────────────────
-    process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
+    process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
     process_id = process.id
 
     # ── 3. Send prompt ───────────────────────────────────────────────────────
@@ -92,7 +92,7 @@ async def test_prompt_annotation_created_and_visible(bootstrapped_client):
 
     # ── 4. Wait for Claude to finish ─────────────────────────────────────────
     await process.wait(timeout=120)
-    assert process.is_idle is True, "Process should be idle after completion"
+    assert process.waiting_for_prompt is True, "Process should be waiting for prompt after completion"
 
     # ── 5. Verify annotation was created ─────────────────────────────────────
     # The UserPromptSubmit hook fires synchronously when prompt() is called,

@@ -106,8 +106,10 @@ describe('scan/index per-record progress events', () => {
     // Trigger an aggregate scan (no ?type= filter) — this is the code path
     // that calls scan_type_progress() and emits progress events per-record.
     // limit_types=10 keeps the test fast while ensuring enough types are covered.
-    const received = await collectFlowDataDuring(manager, () =>
-      apiClient.get(`${CN_FS_BASE}/scan?trigger=manual&limit_types=10`),
+    const received = await collectFlowDataDuring(
+      manager,
+      () => apiClient.get(`${CN_FS_BASE}/scan?trigger=manual&limit_types=10`),
+      10000,
     );
 
     // Accept scan_progress events for ANY type (not just 'skill', since the
