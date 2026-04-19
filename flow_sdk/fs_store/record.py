@@ -582,6 +582,41 @@ class Record:
         dirty = object.__getattribute__(self, "_dirty_keys")
         dirty.add("children")
 
+    def link_to_parent_record(self) -> None:
+        """Register self as a child in the parent record's children_refs.
+
+        Uses self.parent_ref to locate the parent on disk, loads it, and
+        delegates to add_child(self) — which deduplicates and auto-saves.
+        Safe to call when the parent record doesn't exist (no-op with warning).
+
+        This establishes the bidirectional record-layer composition:
+          child.parent_ref     →  parent record  (set by caller)
+          parent.children_refs →  child record   (set here)
+
+        Works for any parent/child record type pair.
+        """
+        import logging as _logging
+
+        parent = self.parent_ref
+        if not parent or not parent.id or not parent.type:
+            return
+
+        parent_folder = (
+            get_default_records_root() / parent.type / record_stem(parent.type, parent.id)
+        )
+        parent_meta = parent_folder / "metadata.json"
+        if not parent_meta.exists():
+            return
+
+        try:
+            parent_rec = Record.load(parent_meta)
+            parent_rec.add_child(self)
+        except Exception as exc:
+            _logging.getLogger(__name__).warning(
+                f"Record.link_to_parent_record: could not update parent record "
+                f"({parent.type}/{parent.id}): {exc}"
+            )
+
     @property
     def origin_ref(self) -> RecordRef | None:
         return self._deserialize_ref(object.__getattribute__(self, "__dict__").get("origin"))
@@ -1736,7 +1771,14 @@ class Record:
         meta_file = self._save_split_format(folder)
         self.path = str(folder)
         self.source_file = str(meta_file)
-        self._get_state().save(meta=self.to_dict())
+        state_meta = self.to_dict()
+        try:
+            _asset_ref = object.__getattribute__(self, "_asset_ref")
+        except AttributeError:
+            _asset_ref = None
+        if _asset_ref is not None:
+            state_meta["asset_ref"] = _asset_ref.path
+        self._get_state().save(meta=state_meta)
         self._bump_manifest("add" if first_save else "update")
 
     # -- Auto-sync (fs_sync behavior from FsRecord) --

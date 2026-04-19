@@ -1,5 +1,6 @@
-# temp
-flowpad2
+# Local Docker config
+.dockerignore
+docker-compose.local.yml
 
 # Screenshot PNGs (Playwright / manual testing artifacts)
 /*.png

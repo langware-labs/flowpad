@@ -105,6 +105,7 @@ class RecordType(StrEnum):
     ASSET = "asset"
     MARKDOWN = "markdown"
     SPEC = "spec"
+    CONVERSATION = "conversation"
 
     TEAM_SESSION = "team_session"
 
