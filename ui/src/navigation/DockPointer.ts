@@ -211,6 +211,15 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create dock pointer for a collaboration space
+   * URL: /dock/collaboration_space/<spaceId>
+   * @param spaceId - Collaboration space entity id
+   */
+  static forCollaborationSpace(spaceId?: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.COLLABORATION_SPACE, spaceId, undefined, layout);
+  }
+
+  /**
    * Create dock pointer for execute flow viewer
    * @param options - Optional options object with vfsAbsPath and session
    * @param options.vfsAbsPath - Optional VFS absolute path to execute (e.g., "compute_node-@local/path/to/file.md")

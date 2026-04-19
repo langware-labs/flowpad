@@ -1,7 +1,8 @@
-"""TeamSessionRecord -- filesystem record for collaborative team sessions.
+"""CollaborationSpaceRecord -- filesystem record for collaboration spaces.
 
-Backs a Zoom/Meet-style collaboration bound 1:1 to an AgenticProcess.
-Stores the session code, host, members list (name + presence), and status.
+Backs a persistent "space" where users meet to assist and get assisted —
+Zoom/Slack-style. Users work in their own projects but share specific tabs,
+docs, and plans into a space. The host controls data flow.
 """
 
 from __future__ import annotations
@@ -26,26 +27,26 @@ def _generate_session_code() -> str:
     return f"{left}-{right}"
 
 
-class TeamSessionStatus:
+class CollaborationSpaceStatus:
     ACTIVE = "active"
     ENDED = "ended"
 
 
-class TeamSessionRecord(Record):
-    _record_type: ClassVar[str] = RecordType.TEAM_SESSION
+class CollaborationSpaceRecord(Record):
+    _record_type: ClassVar[str] = RecordType.COLLABORATION_SPACE
     _indexed_by_default: ClassVar[bool] = False
     index_fields: ClassVar[list[str]] = ["session_code", "agentic_process_id"]
 
     def __init__(self, **kwargs: Any) -> None:
         if "id" not in kwargs:
             kwargs["id"] = str(_uuid.uuid4())
-        kwargs.setdefault("type", RecordType.TEAM_SESSION)
+        kwargs.setdefault("type", RecordType.COLLABORATION_SPACE)
         kwargs.setdefault("session_code", _generate_session_code())
         kwargs.setdefault("agentic_process_id", None)
         kwargs.setdefault("host_name", None)
         kwargs.setdefault("host_member_id", None)
         kwargs.setdefault("members", [])
-        kwargs.setdefault("status", TeamSessionStatus.ACTIVE)
+        kwargs.setdefault("status", CollaborationSpaceStatus.ACTIVE)
         kwargs.setdefault("created_at", _now_iso())
         kwargs.setdefault("ended_at", None)
         super().__init__(**kwargs)
@@ -91,7 +92,7 @@ class TeamSessionRecord(Record):
         return False
 
     def end(self) -> None:
-        object.__setattr__(self, "status", TeamSessionStatus.ENDED)
+        object.__setattr__(self, "status", CollaborationSpaceStatus.ENDED)
         object.__setattr__(self, "ended_at", _now_iso())
         self._mark_dirty("status")
         self._mark_dirty("ended_at")

@@ -40,13 +40,21 @@ const processQuery = new QueryRequest({
 /**
  * Hook that queries Shell and AgenticProcess entities, merges them into an
  * ordered tab list.
+ *
+ * Pass `collaborationSpaceId` to scope tabs to a specific collaboration space
+ * (only shells that have been explicitly shared into that space appear).
  */
-export function useActiveTerminals() {
+export interface UseActiveTerminalsOptions {
+  collaborationSpaceId?: string | null;
+}
+
+export function useActiveTerminals(options: UseActiveTerminalsOptions = {}) {
+  const { collaborationSpaceId = null } = options;
   const { data: shells = [], isLoading: shellsLoading } = useEntitiesQuery<Shell>(shellQuery);
   const { data: processes = [], isLoading: processesLoading } =
     useEntitiesQuery<AgenticProcess>(processQuery);
   const shellProjectionKey = shells
-    .map((shell) => `${shell.id}:${shell.status ?? ''}:${shell.error_message ?? ''}:${shell.name ?? ''}:${shell.tab_order ?? 0}`)
+    .map((shell) => `${shell.id}:${shell.status ?? ''}:${shell.error_message ?? ''}:${shell.name ?? ''}:${shell.tab_order ?? 0}:${shell.collaboration_space_id ?? ''}`)
     .join('|');
   const processProjectionKey = processes
     .map((process) => `${process.id}:${process.status ?? ''}:${process.shell_id ?? ''}:${process.sidecar_shell_id ?? ''}`)
@@ -74,9 +82,12 @@ export function useActiveTerminals() {
       if (proc.sidecar_shell_id) sidecarShellIds.add(proc.sidecar_shell_id);
     }
 
-    const visibleShells = currentShells.filter(
-      (shell) => !HIDDEN_SHELL_STATUSES.has(shell.status as ShellStatus) && !sidecarShellIds.has(shell.id),
-    );
+    const visibleShells = currentShells.filter((shell) => {
+      if (HIDDEN_SHELL_STATUSES.has(shell.status as ShellStatus)) return false;
+      if (sidecarShellIds.has(shell.id)) return false;
+      if (collaborationSpaceId != null && shell.collaboration_space_id !== collaborationSpaceId) return false;
+      return true;
+    });
 
     // Build map: shell_id -> AgenticProcess
     const shellToProcess = new Map<string, AgenticProcess>();
@@ -110,7 +121,7 @@ export function useActiveTerminals() {
 
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shellProjectionKey, processProjectionKey]);
+  }, [shellProjectionKey, processProjectionKey, collaborationSpaceId]);
 
   const isLoading = shellsLoading || processesLoading;
 

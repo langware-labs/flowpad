@@ -17,7 +17,7 @@ from .webhook import webhook_router as webhook_api_router
 from .rules import router as rules_router
 from .watch import router as watch_router
 from .assets import router as assets_router
-from .team_session import router as team_session_router
+from .collaboration_space import router as collaboration_space_router
 from .compute_register import compute_register_router
 
 __all__ = [
@@ -38,6 +38,6 @@ __all__ = [
     "rules_router",
     "watch_router",
     "assets_router",
-    "team_session_router",
+    "collaboration_space_router",
     "compute_register_router",
 ]

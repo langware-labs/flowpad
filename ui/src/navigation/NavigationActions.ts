@@ -158,6 +158,10 @@ export class NavigationActions {
     this.openDock(DockPointer.forAssetList(typeName));
   }
 
+  openCollaborationSpace(spaceId?: string): void {
+    this.openDock(DockPointer.forCollaborationSpace(spaceId));
+  }
+
   openEditor(path?: string, options?: FileOptions): void {
     const pointer = DockPointer.forFile(path, {
       line: options?.line,
