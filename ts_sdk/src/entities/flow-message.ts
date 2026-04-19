@@ -58,7 +58,7 @@ export async function uploadFlowMessage(
   formData.append('file', file);
   if (options.overwrite) formData.append('overwrite', 'true');
 
-  const action = new ActionInfo('file-upload', 'flow_message', null, 'POST');
+  const action = new ActionInfo('flow-message-upload', null, null, 'POST');
   action.bodyParameters = formData;
   const res = await dataManager.callAction<FormData, UploadFlowMessageResult>(action);
   return res!;

@@ -16,6 +16,7 @@ import shutil
 import tempfile
 import zipfile
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,6 +26,13 @@ from flow_sdk.fs_store import SyncOperation
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
+
+
+def _json_default(obj):
+    """JSON serializer that converts Enum members to their values."""
+    if isinstance(obj, Enum):
+        return obj.value
+    return str(obj)
 
 
 class FlowMessageExistsError(Exception):
@@ -52,8 +60,9 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
             mode="python",
             context={"skip_api_serializer": True},
         )
+        msg_data.pop("expand", None)  # transient request-level field, not for transport
         (tmp_root / "message.json").write_text(
-            json.dumps(msg_data, default=str, ensure_ascii=False), encoding="utf-8"
+            json.dumps(msg_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
         )
 
         attachment_dir = tmp_root / "attachment"
@@ -61,12 +70,14 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
 
         # 2. Process each attachment entry
         for entry in flow_message.attachment:
-            entry_type = entry.get("type")
+            # Normalise: enum member → its string value
+            raw_type = entry.get("type")
+            entry_type = raw_type.value if isinstance(raw_type, BuiltinEntityType) else raw_type
             entry_id = entry.get("id")
             if not entry_type or not entry_id:
                 continue
 
-            if entry_type == BuiltinEntityType.SPEC:
+            if entry_type == BuiltinEntityType.SPEC.value:
                 spec = await Spec.get_one({"id": entry_id})
                 if spec:
                     spec_dir = attachment_dir / f"spec-@{entry_id}"
@@ -76,7 +87,7 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
                     spec_md = "".join(fm_lines) + content
                     (spec_dir / "spec.md").write_text(spec_md, encoding="utf-8")
 
-            elif entry_type == BuiltinEntityType.TASK:
+            elif entry_type == BuiltinEntityType.TASK.value:
                 task = await Task.get_one({"id": entry_id})
                 if task:
                     task_dir = attachment_dir / f"task-@{entry_id}"
@@ -86,10 +97,10 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
                         context={"skip_api_serializer": True},
                     )
                     (task_dir / "manifest.json").write_text(
-                        json.dumps(task_data, default=str, ensure_ascii=False), encoding="utf-8"
+                        json.dumps(task_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
                     )
 
-            elif entry_type == BuiltinEntityType.CONVERSATION:
+            elif entry_type == BuiltinEntityType.CONVERSATION.value:
                 conv = await Conversation.get_one({"id": entry_id})
                 if conv and conv.data_path:
                     conv_dir = attachment_dir / f"conversation-@{entry_id}"
@@ -110,7 +121,7 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
                             if fm_id:
                                 await _pack_flow_message_entry(fm_id, attachment_dir)
 
-            elif entry_type == BuiltinEntityType.FLOW_MESSAGE:
+            elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
                 await _pack_flow_message_entry(entry_id, attachment_dir)
 
         # 3. Zip everything
@@ -145,8 +156,9 @@ async def _pack_flow_message_entry(fm_id: str, attachment_dir: Path) -> None:
             mode="python",
             context={"skip_api_serializer": True},
         )
+        fm_data.pop("expand", None)  # transient request-level field, not for transport
         (fm_dir / "message.json").write_text(
-            json.dumps(fm_data, default=str, ensure_ascii=False), encoding="utf-8"
+            json.dumps(fm_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
         )
 
 
@@ -187,6 +199,7 @@ async def unpack_bundle(
         if not msg_file.exists():
             raise ValueError("Invalid .flowmsg: missing message.json")
         msg_data = json.loads(msg_file.read_text(encoding="utf-8"))
+        msg_data.pop("expand", None)  # strip transient field before validation
 
         # Resolve owner
         local_user = await User.get_one({"uname": "local"})
@@ -223,12 +236,12 @@ async def unpack_bundle(
                 if not entry_type or not entry_id:
                     continue
 
-                if entry_type == BuiltinEntityType.SPEC:
+                if entry_type == BuiltinEntityType.SPEC.value:
                     spec_file = entry_dir / "spec.md"
                     if spec_file.exists():
                         await _create_spec_from_file(spec_file, entry_id, owner_typeid)
 
-                elif entry_type == BuiltinEntityType.TASK:
+                elif entry_type == BuiltinEntityType.TASK.value:
                     manifest_file = entry_dir / "manifest.json"
                     if manifest_file.exists():
                         task_data = json.loads(manifest_file.read_text(encoding="utf-8"))
@@ -246,12 +259,12 @@ async def unpack_bundle(
                             })
                             await task.save(owner_typeid)
 
-                elif entry_type == BuiltinEntityType.CONVERSATION:
+                elif entry_type == BuiltinEntityType.CONVERSATION.value:
                     jsonl_file = entry_dir / "conversation.jsonl"
                     if jsonl_file.exists():
                         # Find task_id from msg_data context
                         task_id_for_conv = next(
-                            (c["id"] for c in msg_data.get("context", []) if c.get("type") == BuiltinEntityType.TASK),
+                            (c["id"] for c in msg_data.get("context", []) if c.get("type") == BuiltinEntityType.TASK.value),
                             None,
                         )
                         conv = await _create_conversation_from_disk(
@@ -263,10 +276,11 @@ async def unpack_bundle(
                         if conv:
                             conversation_id = conv.id
 
-                elif entry_type == BuiltinEntityType.FLOW_MESSAGE:
+                elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
                     fm_file = entry_dir / "message.json"
                     if fm_file.exists():
                         fm_data = json.loads(fm_file.read_text(encoding="utf-8"))
+                        fm_data.pop("expand", None)
                         fm_id = fm_data.get("id") or entry_id
                         existing_fm = await FlowMessage.get_one({"id": fm_id})
                         if existing_fm is None or overwrite:
@@ -282,7 +296,7 @@ async def unpack_bundle(
 
         # 6. Append pointer to target conversation
         target_conv_id = conversation_id or next(
-            (c["id"] for c in top_fm.context if c.get("type") == BuiltinEntityType.CONVERSATION),
+            (c["id"] for c in top_fm.context if c.get("type") == BuiltinEntityType.CONVERSATION.value),
             None,
         )
         if target_conv_id:
@@ -291,7 +305,7 @@ async def unpack_bundle(
                 from pathlib import Path as _Path
                 rec = ConversationRecord.from_jsonl(
                     _Path(conv_entity.data_path),
-                    next((c["id"] for c in top_fm.context if c.get("type") == BuiltinEntityType.TASK), ""),
+                    next((c["id"] for c in top_fm.context if c.get("type") == BuiltinEntityType.TASK.value), ""),
                     target_conv_id,
                 )
                 rec.append_message_pointer(top_fm.id, datetime.now(UTC).isoformat())
@@ -299,7 +313,7 @@ async def unpack_bundle(
         # 7. Fire resource sync
         try:
             task_id_for_sync = next(
-                (c["id"] for c in top_fm.context if c.get("type") == BuiltinEntityType.TASK),
+                (c["id"] for c in top_fm.context if c.get("type") == BuiltinEntityType.TASK.value),
                 top_fm.id,
             )
             send_resource_sync(
@@ -324,10 +338,10 @@ async def _check_entity_exists(entity_type: str, entity_id: str) -> bool:
     from flow_sdk.builtin.task import Task
 
     type_map = {
-        BuiltinEntityType.SPEC: Spec,
-        BuiltinEntityType.TASK: Task,
-        BuiltinEntityType.CONVERSATION: Conversation,
-        BuiltinEntityType.FLOW_MESSAGE: FlowMessage,
+        BuiltinEntityType.SPEC.value: Spec,
+        BuiltinEntityType.TASK.value: Task,
+        BuiltinEntityType.CONVERSATION.value: Conversation,
+        BuiltinEntityType.FLOW_MESSAGE.value: FlowMessage,
     }
     cls = type_map.get(entity_type)
     if cls is None:

@@ -209,18 +209,18 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         # 3b. Save FlowMessage record for this initial share
         from flow_sdk.builtin.flow_message import FlowMessage
         fm_context = [
-            {"type": BuiltinEntityType.TASK, "id": task.id},
-            {"type": BuiltinEntityType.CONVERSATION, "id": conversation_id},
+            {"type": BuiltinEntityType.TASK.value, "id": task.id},
+            {"type": BuiltinEntityType.CONVERSATION.value, "id": conversation_id},
         ]
         if team_space_id:
-            fm_context.append({"type": BuiltinEntityType.TEAM_SPACE, "id": team_space_id})
+            fm_context.append({"type": BuiltinEntityType.TEAM_SPACE.value, "id": team_space_id})
         fm = FlowMessage.model_validate({
             "text": message or f"Task shared: {task_title}",
             "context": fm_context,
             "attachment": [
-                {"type": BuiltinEntityType.SPEC, "id": spec.id},
-                {"type": BuiltinEntityType.TASK, "id": task.id},
-                {"type": BuiltinEntityType.CONVERSATION, "id": conversation_id},
+                {"type": BuiltinEntityType.SPEC.value, "id": spec.id},
+                {"type": BuiltinEntityType.TASK.value, "id": task.id},
+                {"type": BuiltinEntityType.CONVERSATION.value, "id": conversation_id},
             ],
             "sender_id": sender_id,
             "sender_name": sender_name,
@@ -229,7 +229,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         })
         fm.id = FlowMessage.allocate_id(fm.model_dump())
         fm = await fm.save(someone_typeid)
-        fm.attachment.append({"type": BuiltinEntityType.FLOW_MESSAGE, "id": fm.id})
+        fm.attachment.append({"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": fm.id})
         fm = await fm.save(someone_typeid)
 
         # Append FlowMessage pointer to conversation + keep message_ids in sync
@@ -377,14 +377,14 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     reply_fm = FlowMessage.model_validate({
         "text": message,
         "context": [
-            {"type": BuiltinEntityType.TASK, "id": task_id},
-            {"type": BuiltinEntityType.CONVERSATION, "id": conv.id},
+            {"type": BuiltinEntityType.TASK.value, "id": task_id},
+            {"type": BuiltinEntityType.CONVERSATION.value, "id": conv.id},
         ],
         "attachment": [],
         "sender_id": sender_id,
     })
     reply_fm.id = FlowMessage.allocate_id(reply_fm.model_dump())
-    reply_fm.attachment.append({"type": BuiltinEntityType.FLOW_MESSAGE, "id": reply_fm.id})
+    reply_fm.attachment.append({"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": reply_fm.id})
     reply_fm = await reply_fm.save(someone_typeid)
 
     # Append pointer to conversation + keep message_ids in sync
