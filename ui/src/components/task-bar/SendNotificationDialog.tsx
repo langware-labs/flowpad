@@ -32,6 +32,9 @@ interface SendNotificationDialogProps {
 }
 
 export function SendNotificationDialog({ task, open, onClose }: SendNotificationDialogProps) {
+  const [teamSpaceId, setTeamSpaceId] = useState(
+    () => localStorage.getItem('flowpad.sendNotification.lastTeamSpace') ?? '',
+  );
   const [recipientId, setRecipientId] = useState('');
   const [specType, setSpecType] = useState<SpecType>('plan');
   const [specTitle, setSpecTitle] = useState('');
@@ -64,6 +67,9 @@ export function SendNotificationDialog({ task, open, onClose }: SendNotification
     setError(null);
 
     try {
+      if (teamSpaceId.trim()) {
+        localStorage.setItem('flowpad.sendNotification.lastTeamSpace', teamSpaceId.trim());
+      }
       await sendNotification({
         recipient_id: recipientId.trim(),
         spec_title: specTitle.trim(),
@@ -74,6 +80,7 @@ export function SendNotificationDialog({ task, open, onClose }: SendNotification
         message: message.trim() || null,
         plan_id: null,
         project_path: null,
+        team_space_id: teamSpaceId.trim() || null,
       });
 
       setSuccess(true);
@@ -103,6 +110,17 @@ export function SendNotificationDialog({ task, open, onClose }: SendNotification
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+          {/* Team Space */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-medium text-muted-foreground">Team Space (optional)</label>
+            <Input
+              value={teamSpaceId}
+              onChange={(e) => setTeamSpaceId(e.target.value)}
+              placeholder="e.g. hw-demo"
+              disabled={sending}
+            />
+          </div>
+
           {/* Recipient */}
           <div className="space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Recipient email or user ID</label>
