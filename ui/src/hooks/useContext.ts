@@ -73,6 +73,7 @@ export function useContext() {
     agenticProcess: typeof dataContext.agenticProcess;
     agenticProcessTypeId: typeof dataContext.agenticProcessTypeId;
     activeShellId: typeof dataContext.activeShellId;
+    workdir: typeof dataContext.workdir;
   }>({
     user: dataContext.user,
     workspace: dataContext.workspace,
@@ -104,6 +105,7 @@ export function useContext() {
     agenticProcess: dataContext.agenticProcess,
     agenticProcessTypeId: dataContext.agenticProcessTypeId,
     activeShellId: dataContext.activeShellId,
+    workdir: dataContext.workdir,
   });
 
   // Subscribe to dataContext changes using the shared subscription manager
@@ -145,6 +147,7 @@ export function useContext() {
       agenticProcess: dataContext.agenticProcess,
       agenticProcessTypeId: dataContext.agenticProcessTypeId,
       activeShellId: dataContext.activeShellId,
+      workdir: dataContext.workdir,
     };
 
     // Only update snapshot if values have changed (to maintain stable reference)
@@ -183,7 +186,8 @@ export function useContext() {
       typeIdChanged(prev.workflowTypeId, current.workflowTypeId) ||
       prev.agenticProcess !== current.agenticProcess ||
       typeIdChanged(prev.agenticProcessTypeId, current.agenticProcessTypeId) ||
-      prev.activeShellId !== current.activeShellId
+      prev.activeShellId !== current.activeShellId ||
+      prev.workdir !== current.workdir
     ) {
       snapshotRef.current = current;
     }

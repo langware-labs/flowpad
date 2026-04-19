@@ -1,4 +1,4 @@
-import { AssetEditorRouter } from '@src/components/assets/editor/AssetEditorRouter';
+import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/AssetEditorRouter';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { useToast } from '@src/hooks/use-toast';
@@ -156,7 +156,7 @@ export function AssetsPage() {
               recordType={selectedType}
               onNew={() => handleNew(selectedType)}
               refreshKey={refreshKey}
-              onRowClick={handleRowClick}
+              onRowClick={hasEditor(selectedType) ? handleRowClick : undefined}
               filter={assetFilter}
               onFilterChange={setAssetFilter}
               onProjectFilter={handleProjectFilter}

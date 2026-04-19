@@ -17,8 +17,6 @@ from .webhook import webhook_router as webhook_api_router
 from .rules import router as rules_router
 from .watch import router as watch_router
 from .assets import router as assets_router
-from .notify import router as notify_router
-
 __all__ = [
     "bootstrap_router",
     "graph_router",
@@ -37,5 +35,4 @@ __all__ = [
     "rules_router",
     "watch_router",
     "assets_router",
-    "notify_router",
 ]

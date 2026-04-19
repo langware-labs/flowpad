@@ -193,6 +193,7 @@ export const PlanEditor: React.FC = () => {
         onClose={() => setShowShareDialog(false)}
         planFilePath={filePath}
         planContent={fileContent}
+        workdir={agenticProcess?.workdir}
       />
 
       {/* Editor body */}

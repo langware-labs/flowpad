@@ -495,6 +495,7 @@ export function OpenProjectComponent({ open, onOpenChange, onProjectChanged }: O
     async (project: Project) => {
       await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, project.typeId);
       await dataContext.refreshProject();
+      dataContext.setWorkdir(project.fs_storage_mount_path ?? null);
       onProjectChanged?.();
     },
     [onProjectChanged],

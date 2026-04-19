@@ -16,6 +16,16 @@ interface AssetEditorRouterProps {
  *   "editor/skill//Users/shlom/.claude/skills/my-skill"
  *   "editor/docs//Users/shlom/docs/readme.md"
  */
+const EDITABLE_TYPES = new Set([
+  'skill', 'docs', 'agent',
+  'claude_md', 'claude_memory', 'claude_rules',
+  'command', 'plan', 'workflow', 'asset',
+]);
+
+export function hasEditor(assetType: string): boolean {
+  return EDITABLE_TYPES.has(assetType);
+}
+
 export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
   // Parse pointer: "editor/<type>/<rest...>" — rest is the VFS/filesystem path
   const parts = pointer.split('/');

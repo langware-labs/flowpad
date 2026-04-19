@@ -6,8 +6,10 @@ import { dataContext, fsStore, isProcessLive, Shell, type AgenticProcess } from 
 import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
 import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
+import { useContext } from '@src/hooks/useContext';
 import { useInputDir } from '@src/hooks/use-input-dir';
 import { useSettings } from '@src/hooks/use-settings';
+import { useDockNavigation } from '@src/navigation';
 import { useAgenticQueue } from '@src/hooks/useAgenticQueue';
 import { useFS } from '@src/hooks/useFS';
 import { useShell } from '@src/hooks/useShell';
@@ -231,6 +233,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // _flow is used only in the React.memo comparator below
   void _flow;
 
+  const { agenticProcessTypeId } = useContext();
+  const { navigation } = useDockNavigation();
   const { resolvedTheme } = useTheme();
   const [searchParams] = useSearchParams();
   const targetTimestamp = searchParams.get('t') ?? undefined;
@@ -468,6 +472,20 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   );
   const showAnnotationGutter = !!process?.session_id && colVis.annotations;
   const reserveAnnotationSpace = colVis.annotations;
+
+  const lastPlanAnnotation = useMemo(() => {
+    const plans = sessionAnnotations.filter((a) => a.labels?.includes('plan:'));
+    if (plans.length === 0) return null;
+    return plans.reduce((latest, a) =>
+      String(a.created_date ?? '') > String(latest.created_date ?? '') ? a : latest,
+    );
+  }, [sessionAnnotations]);
+
+  const handleOpenLastPlan = useCallback(() => {
+    if (!lastPlanAnnotation || !agenticProcessTypeId) return;
+    const filePath = (lastPlanAnnotation.data as Record<string, unknown>)?.file_path as string | undefined;
+    if (filePath) navigation.openPlan(agenticProcessTypeId, filePath);
+  }, [lastPlanAnnotation, agenticProcessTypeId, navigation]);
 
   const mergedPrompts = useMemo<PromptEntry[]>(() => {
     const annotationPrompts: PromptEntry[] = rawAnnotationElements
@@ -1415,6 +1433,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
               dispatchSideTab({ type: 'toggle', tab });
             }
           }}
+          hasLastPlan={!!lastPlanAnnotation}
+          onOpenLastPlan={handleOpenLastPlan}
         />
       )}
     </div>

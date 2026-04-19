@@ -5,7 +5,6 @@ import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models';
 import { DockPointerData } from '../models/DockPointer';
 import { PtyConnection } from '../services/shell/ptyConnection';
-import { ptyOrphanBuffer } from '../services/shell/ptyOrphanBuffer';
 import { ViewType } from '../utils/ui/view-types';
 
 export const ShellStatus = {
@@ -112,23 +111,14 @@ export class Shell extends APIEntity<Shell> implements IShell {
   last_active_at: string | null = null;
   error_message: string | null = null;
 
-  /** Transient PTY connection state — not persisted, not part of IShell */
-  private _pty: PtyConnection | null = null;
+  /**
+   * The single PTY interface — always present, eagerly created.
+   * All PTY lifecycle, I/O, and event logic lives here.
+   */
+  readonly ptyConnection: PtyConnection;
 
   /** True once this shell's tab has been the active tab at least once. */
   private _hasEverBeenActive = false;
-
-  /** True once attachPty() has finished its replay phase and the output gate is open. */
-  private _replayDone = false;
-
-  /** Backend-owned PTY handle currently attached in this browser client. */
-  private _attachedPtyId: string | null = null;
-
-  /** In-flight attach dedupe guard. */
-  private _attachPromise: Promise<void> | null = null;
-
-  /** PTY currently being attached. */
-  private _attachingPtyId: string | null = null;
 
   get dockPointer(): DockPointerData {
     return new DockPointerData(ViewType.SHELL, this.typeId?.toString());
@@ -136,72 +126,74 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
   constructor(entity: Partial<IShell> = {}) {
     super(entity as IEntity);
-    // Re-apply entity data after class field initializers (which run after super())
-    // would otherwise overwrite values set by deepAssign() in APIEntity.
+    // Create PtyConnection eagerly — eliminates the secondary orphan buffer path.
+    // compute_node_id may not be set yet; PtyConnection guards on empty string.
+    this.ptyConnection = new PtyConnection(
+      (entity as any).id ?? '',
+      (entity as any).compute_node_id ?? '',
+    );
+    // Bridge PtyConnection events to Shell's EventEmitter so existing listeners
+    // (shell.on('status', ...)) keep working during the migration to ptyConnection.
+    this.ptyConnection.onReady(() => this.emit('status', 'connected'));
+    this.ptyConnection.onDisconnect(() => this.emit('status', 'disconnected'));
+    // Re-apply entity data after class field initializers.
     Object.assign(this, entity);
+    // Keep PtyConnection IDs in sync after Object.assign potentially sets them.
+    if (this.id) this.ptyConnection.shellId = this.id;
+    if (this.compute_node_id) this.ptyConnection.computeNodeId = this.compute_node_id;
   }
 
+  // ── Status accessors ──────────────────────────────────────────────────────
+
+  /** True when the PTY is live (WS up + started). Matches original shell.connected semantics. */
   get connected(): boolean {
-    return this._pty?.isLive ?? false;
+    return this.ptyConnection.isLive;
   }
 
-  /** True once attachPty() has finished its replay phase and the output gate is open. */
+  /** True once attach() has finished its replay phase (no WS dependency). */
   get replayDone(): boolean {
-    return this._replayDone;
+    return this.ptyConnection.replayDone;
   }
 
   /** True if the PTY process has been started on the compute node. */
   get ptyStarted(): boolean {
-    return this._pty?.started ?? false;
+    return this.ptyConnection.started;
   }
 
   get shellStatus(): string {
     if (this.status === ShellStatus.ERROR) return this.error_message ?? 'Shell error';
     if (this.status === ShellStatus.CLOSING) return 'Shell closing...';
     if (this.status === ShellStatus.CLOSED) return 'Shell closed';
-    if (!this._pty) return 'Not connected';
-    if (this._pty.restarting) return 'Restarting...';
-    if (!this._pty.started) return 'Connecting...';
-    if (!this._pty.isLive) return 'Disconnected';
+    if (this.ptyConnection.restarting) return 'Restarting...';
+    if (!this.ptyConnection.started) return 'Not connected';
+    if (!this.ptyConnection.isLive) return 'Disconnected';
     return 'Live';
   }
 
-  // ── Private PTY state accessors ───────────────────────────────────────────
-
-  /** Seq of last received chunk; used by connect() for replay offset. */
-  private get _lastPtySeq(): number {
-    return this._pty?.lastSeq ?? 0;
-  }
-
-  /** Force-reset seq to 0 so connect() requests a full replay. */
-  private _resetPtySeq(): void {
-    if (this._pty) this._pty.lastSeq = 0;
-  }
-
-  // ── Public accessors ──────────────────────────────────────────────────────
+  // ── Output routing ────────────────────────────────────────────────────────
 
   /**
-   * Route a `pty_output_msg` from the store to the active PtyConnection.
-   * Called by DataManager.onPtyOutputMessage(); buffers to ptyOrphanBuffer if
-   * _pty is not yet initialized.
+   * Route a `pty_output_msg` from DataManager to the PtyConnection.
+   * PtyConnection is always present so no orphan buffer needed here.
    */
   routePtyOutput(data: string, seq?: number, timestamp_ms?: number): string | null {
-    if (!this._pty) {
-      ptyOrphanBuffer.buffer(this.id, data, seq, timestamp_ms);
-      return null;
-    }
-    return this._pty.appendOutput(data, seq, timestamp_ms);
+    // Keep PtyConnection IDs current in case they were set after construction
+    // (e.g. Shell.list() uses Object.assign after new Shell()).
+    if (this.id) this.ptyConnection.shellId = this.id;
+    if (this.compute_node_id) this.ptyConnection.computeNodeId = this.compute_node_id;
+    return this.ptyConnection.routeOutput(data, seq, timestamp_ms);
   }
+
+  // ── Public PTY accessors (delegation wrappers — kept for caller compat) ───
 
   /** Sorted output chunks for VirtualTerminal rebuild on resize. */
   getPtyChunks(): import('../pty-sync/types.js').OutputChunk[] {
-    if (!this._pty) return [];
-    return [...this._pty.chunks.values()].sort((a, b) => a.seq - b.seq);
+    return this.ptyConnection.getSortedChunks();
   }
 
   /** Single chunk by seq — for ptySyncRef.processChunk() in output handler. */
   getPtyChunk(seq: number): import('../pty-sync/types.js').OutputChunk | undefined {
-    return this._pty?.chunks.get(seq);
+    return this.ptyConnection.getChunk(seq);
   }
 
   printPty(): void {
@@ -214,15 +206,15 @@ export class Shell extends APIEntity<Shell> implements IShell {
   }
 
   /**
-   * Subscribe to PTY output. Returns an unsubscribe function, or undefined if
-   * the connection is not ready (replayDone is false). Gating here ensures that
-   * no external subscriber can receive replay chunks — those are delivered via
-   * getPtyChunks() after connect() completes.
+   * Subscribe to PTY output.
+   * Gated: returns undefined if not yet ready (replay not done).
    */
   onOutput(fn: import('../services/shell/ptyConnection.js').PtyOutputListener): (() => void) | undefined {
-    if (!this._replayDone) return undefined;
-    return this._pty?.onOutput(fn);
+    if (!this.ptyConnection.replayDone) return undefined;
+    return this.ptyConnection.onOutput(fn);
   }
+
+  // ── Shell start (backend HTTP + PTY attach) ───────────────────────────────
 
   /**
    * Backend-owned shell start. The frontend only opens the shell and then
@@ -241,6 +233,9 @@ export class Shell extends APIEntity<Shell> implements IShell {
     Object.assign(this, result);
     this.pty_pid = (result.pty_id as string | undefined) ?? (result.pty_pid as string | undefined) ?? this.id;
     if (workdir !== undefined) this.workdir = workdir;
+    // Sync IDs into PtyConnection (compute_node_id may have been set by backend response).
+    if (this.compute_node_id) this.ptyConnection.computeNodeId = this.compute_node_id;
+    this.ptyConnection.shellId = this.id;
     await this.attachPty({ cols, rows, workdir, timeout: opts.timeout, ptyId: this.pty_pid ?? this.id });
     return this.pty_pid ?? this.id;
   }
@@ -253,15 +248,9 @@ export class Shell extends APIEntity<Shell> implements IShell {
    * Options:
    *   - isActive: deferred activation gate (default: true)
    *   - force: reset seq + replayDone before connecting (absorbs old restart())
-   *
-   * Replay chunks arrive during _reattach() and are stored in _pty.chunks via
-   * appendOutput(). No external onOutput() subscriber can exist at this point —
-   * onOutput() gates on replayDone. After reattach + ensurePty,
-   * _bump({ replayDone: true }) signals React to read getPtyChunks() for the
-   * replay write, then subscribe onOutput() for live output.
    */
   async attachPty(opts: IShellConnectionOptions): Promise<void> {
-    const { cols, rows, isActive = true, ptyId, force = false, timeout } = opts;
+    const { isActive = true, ptyId, force = false, timeout } = opts;
     const targetPtyId = ptyId ?? this.pty_pid ?? this.id;
 
     if (isActive) this._hasEverBeenActive = true;
@@ -272,162 +261,28 @@ export class Shell extends APIEntity<Shell> implements IShell {
       _ensureStaticListeners();
     }
 
-    if (force) this._restart();
+    // Sync computeNodeId in case it was set after construction.
+    if (this.compute_node_id) this.ptyConnection.computeNodeId = this.compute_node_id;
+    this.ptyConnection.shellId = this.id;
 
-    if (this._attachPromise && this._attachingPtyId === targetPtyId && !force) {
-      console.warn(`[Shell] duplicate attach ignored while attach is in flight (shell=${this.id}, pty_id=${targetPtyId})`);
-      return this._attachPromise;
-    }
-
-    if (this._pty?.started && this._replayDone && this._attachedPtyId === targetPtyId && !force) {
-      console.warn(`[Shell] duplicate attach ignored (shell=${this.id}, pty_id=${targetPtyId})`);
-      return;
-    }
-
-    if (!this.compute_node_id) return;
-
-    const attachWork = (async () => {
-      if (this._attachedPtyId !== targetPtyId) {
-        if (this._pty) this._pty.clear();
-        this._replayDone = false;
-      }
-      if (this._lastPtySeq > 0) this._resetPtySeq();
-      if (!this._pty) this._pty = new PtyConnection();
-
-      // _reattach() sends replay WS messages → appendOutput() stores each chunk
-      // in _pty.chunks — no external subscriber exists yet (onOutput() is gated)
-      const latestSeq = await this._reattach(targetPtyId, this._lastPtySeq, timeout);
-      if (latestSeq === undefined) {
-        this._replayDone = false;
-        this._attachedPtyId = null;
-        throw new Error(`PTY ${targetPtyId} not found for shell ${this.id}`);
-      }
-
-      // Drain replay: the server streams pty_output_msg messages before the
-      // attach response, but they may arrive as separate macrotasks that haven't
-      // been processed yet when _reattach() resolves. Poll until _pty.lastSeq
-      // reaches latestSeq (or the deadline) before signaling replayDone.
-      if (latestSeq > 0 && this._pty.lastSeq < latestSeq) {
-        await new Promise<void>((resolve) => {
-          const deadline = Date.now() + 2000;
-          const check = () => {
-            if (this._pty!.lastSeq >= latestSeq || Date.now() >= deadline) {
-              resolve();
-            } else {
-              setTimeout(check, 5);
-            }
-          };
-          setTimeout(check, 0); // yield one macrotask so pending WS messages can be processed
-        });
-      }
-
-      // ONLY NOW flip replayDone — InteractiveTerminal's 'connected' event handler
-      // resets xterm, writes getPtyChunks() for the replay, and subscribes onOutput().
-      const _t0 = (typeof window !== 'undefined' ? window : globalThis) as Record<string, unknown>;
-      if (_t0.__shellNavT0 !== undefined)
-        console.log(
-          `[PERF] +${(performance.now() - (_t0.__shellNavT0 as number)).toFixed(0)}ms shell.attachPty() replayDone=true (shell=${this.id.slice(0, 8)})`,
-        );
-      this._attachedPtyId = targetPtyId;
-      this._replayDone = true;
-      this.emit('status', 'connected');
-    })();
-
-    this._attachingPtyId = targetPtyId;
-    this._attachPromise = attachWork.finally(() => {
-      if (this._attachPromise === attachWork) {
-        this._attachPromise = null;
-        this._attachingPtyId = null;
-      }
-    });
-    return this._attachPromise;
+    await this.ptyConnection.attach(targetPtyId, { force, timeout });
   }
 
-  // ── Private PTY lifecycle ─────────────────────────────────────────────────
-
-  /** Reset local PTY attach state so the next attach performs a full replay. */
-  private _restart(): void {
-    this._pty?.clear();
-    this._replayDone = false;
-    this._attachedPtyId = null;
-    this._attachPromise = null;
-    this._attachingPtyId = null;
-    this.emit('status', 'disconnected');
-  }
-
-  private async _reattach(ptyId: string, sinceSeq = 0, timeout?: number): Promise<number | undefined> {
-    if (!this.compute_node_id) return;
-    if (!this._pty) this._pty = new PtyConnection();
-    this._pty.computeNodeId = this.compute_node_id;
-    this._pty.shellId = this.id;
-    const { ConnectionManager } = await import('../websocket');
-    const connection_id = ConnectionManager.getInstance().id;
-    const action = new ActionInfo('terminal-command', 'compute_node', this.compute_node_id, 'POST');
-    action.subpath = 'attach';
-    action.bodyParameters = { shell_id: this.id, pty_id: ptyId, since_seq: sinceSeq, connection_id };
-    const result = await dataManager.callActionOverWS<any, any>(
-      action,
-      timeout !== undefined ? { timeout } : undefined,
-    );
-
-    // Server returns status="not_found" when the PTY session no longer exists
-    if (result?.status === 'not_found') {
-      this._pty.started = false;
-      return undefined;
-    }
-
-    this._pty.started = true;
-    ptyOrphanBuffer.flush(this.id, this._pty);
-    return result?.latest_seq;
-  }
-
-  // ── Public I/O and display methods ───────────────────────────────────────
+  // ── I/O delegation wrappers ───────────────────────────────────────────────
 
   async sendInput(data: string): Promise<void> {
-    if (!this._pty?.isLive) {
-      console.warn('[Shell] sendInput: PTY not live');
-      return;
-    }
-    if (!this.compute_node_id) return;
-    const action = new ActionInfo('terminal-command', 'compute_node', this.compute_node_id, 'POST');
-    action.subpath = 'input';
-    action.bodyParameters = { shell_id: this.id, data };
-    try {
-      await dataManager.callActionOverWS<any, any>(action);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes('PTY session not found')) {
-        if (this._pty) this._pty.started = false;
-        this._replayDone = false;
-        this._attachedPtyId = null;
-      } else {
-        throw e;
-      }
-    }
+    return this.ptyConnection.sendInput(data);
   }
 
   async resize(cols: number, rows: number): Promise<void> {
-    if (!this._pty?.started) return;
-    if (!this.compute_node_id) return;
-    const action = new ActionInfo('terminal-command', 'compute_node', this.compute_node_id, 'POST');
-    action.subpath = 'resize';
-    action.bodyParameters = { shell_id: this.id, cols, rows };
-    try {
-      await dataManager.callActionOverWS<any, any>(action);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes('PTY session not found') || msg.includes('Failed to resize PTY')) {
-        if (this._pty) this._pty.started = false;
-      }
-    }
+    return this.ptyConnection.resize(cols, rows);
   }
+
+  // ── WS lifecycle handlers ─────────────────────────────────────────────────
 
   /** Called by the static on_close dispatcher. */
   _onCmClose(): void {
-    if (this._replayDone || this._pty?.started) {
-      this._replayDone = false;
-      this.emit('status', 'disconnected');
-    }
+    this.ptyConnection.handleWsClose();
   }
 
   /** Called by the static on_reconnected dispatcher. */
@@ -438,6 +293,8 @@ export class Shell extends APIEntity<Shell> implements IShell {
     void this.start({ cols: 80, rows: 24, workdir });
   }
 
+  // ── Entity lifecycle ──────────────────────────────────────────────────────
+
   async close(): Promise<void> {
     _shellRegistry.delete(this);
     const previousStatus = this.status;
@@ -445,14 +302,12 @@ export class Shell extends APIEntity<Shell> implements IShell {
     const action = new ActionInfo('close', Shell.type, this.id, 'POST');
     try {
       await dataManager.callAction<any, any>(action);
-      this._pty?.dispose();
-      this._pty = null;
+      this.ptyConnection.dispose();
       this.status = ShellStatus.CLOSED;
     } catch (error) {
       // 404 means the shell entity is already gone — treat as already closed
       if (isApiError(error) && error.response?.status === 404) {
-        this._pty?.dispose();
-        this._pty = null;
+        this.ptyConnection.dispose();
         this.status = ShellStatus.CLOSED;
         dataManager.removeEntityFromCache(this.typeId);
         return;
@@ -467,8 +322,6 @@ export class Shell extends APIEntity<Shell> implements IShell {
     action.bodyParameters = fields;
     await dataManager.callAction<any, any>(action);
     Object.assign(this, fields);
-    // Notify watchers so React components that subscribe to Shell entities re-render
-    // with the updated display properties (name, tab_order).
     dataManager.notifyEntityChanged(this);
   }
 
@@ -525,9 +378,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     const results: Shell[] = [];
     for (const d of data) {
       try {
-        // Use Object.assign after construction so class field initializers
-        // (e.g. status: string = 'idle') don't overwrite values from the API.
-        results.push(Object.assign(new Shell(), d));
+        results.push(new Shell(d));
       } catch {
         // skip entries with invalid IDs (e.g. non-UUID legacy records)
       }

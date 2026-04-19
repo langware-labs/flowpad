@@ -112,7 +112,6 @@ async def _poll_for_completion(agentic_process_id: str, session_id: str | None) 
                 return  # already up to date — WS was already sent
 
             proc.status = AgenticProcessLifecycleStatus.STOPPED.value
-            proc.visible = False
             await proc.save()
             logger.info(
                 "AgenticProcess %s: completion monitor set lifecycle=%s worker_status=%s",
@@ -352,8 +351,9 @@ class AgenticProcess(Entity):
             else:
                 # Direct path — Claude IS the PTY process (no zsh intermediary)
                 spawn_argv, spawn_env = cmd.to_spawn_args(instruction=instruction)
-                await shell.start(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
-                worker_is_alive = await shell.worker_alive()
+                spawned = await shell.start(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
+                if not spawned:
+                    worker_is_alive = await shell.worker_alive()
                 if not worker_is_alive:
                     execution_info = await shell.set_worker_pid_direct(cmd)
                     logger.info(
@@ -1076,7 +1076,6 @@ class AgenticProcess(Entity):
                         proc.context_data = {k: v for k, v in proc.context_data.items() if k != "_shell_exit_pending"}
                         await proc.save()
                         return
-                    proc.shell_id = None
                     proc.sidecar_shell_id = None
                     if proc.status == AgenticProcessLifecycleStatus.STARTING.value:
                         proc.status = AgenticProcessLifecycleStatus.FAILED.value
