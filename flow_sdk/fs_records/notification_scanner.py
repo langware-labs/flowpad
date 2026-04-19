@@ -225,14 +225,14 @@ async def _create_conversation_from_disk(
 
     jsonl_path = task_dir / "conversation.jsonl"
 
-    # Read messages from jsonl if it exists
-    messages: list[dict] = []
+    # Read pointer lines from jsonl (each line: {"message_id": uuid, "timestamp": ISO})
+    pointers: list[dict] = []
     if jsonl_path.exists():
         try:
             for line in jsonl_path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
                 if line:
-                    messages.append(json.loads(line))
+                    pointers.append(json.loads(line))
         except Exception as e:
             logger.warning(f"notification_scanner: could not read {jsonl_path}: {e}")
 
@@ -244,8 +244,8 @@ async def _create_conversation_from_disk(
     conv = Conversation.model_validate({
         "task_id": task_id,
         "data_path": str(jsonl_path),
-        "message_count": len(messages),
-        "messages": json.dumps(messages) if messages else None,
+        "message_count": len(pointers),
+        "message_ids": json.dumps(pointers) if pointers else None,
     })
     if conversation_id:
         conv.id = conversation_id
@@ -276,24 +276,24 @@ async def _sync_conversation(task: Task, task_dir: Path) -> None:
     if not jsonl_path.exists():
         return
 
-    messages: list[dict] = []
+    pointers: list[dict] = []
     try:
         for line in jsonl_path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
             if line:
-                messages.append(json.loads(line))
+                pointers.append(json.loads(line))
     except Exception:
         return
 
-    new_messages_json = json.dumps(messages) if messages else None
-    if new_messages_json == conv.messages and len(messages) == conv.message_count:
+    new_message_ids = json.dumps(pointers) if pointers else None
+    if new_message_ids == conv.message_ids and len(pointers) == conv.message_count:
         return  # nothing changed
 
     local_user = await User.get_one({"uname": "local"})
     owner_typeid = local_user.typeid if local_user else None
 
-    conv.messages = new_messages_json
-    conv.message_count = len(messages)
+    conv.message_ids = new_message_ids
+    conv.message_count = len(pointers)
     await conv.save(owner_typeid)
 
     try:

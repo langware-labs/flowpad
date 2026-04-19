@@ -35,6 +35,7 @@ from flow_sdk.flowpad_types.enums.entity_enums import (
     NotificationStatus,
     NotificationType,
 )
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.spec import Spec
 from flow_sdk.builtin.task import Task
@@ -67,31 +68,22 @@ def _meaningful_name(title: str) -> str:
 async def _create_conversation_entity(
     task: Task,
     conversation_jsonl_path: Path,
-    initial_messages: list[dict],
     someone_typeid: str,
 ) -> Conversation:
-    """Create a Conversation entity + write initial messages to conversation.jsonl.
+    """Create an empty Conversation entity + empty conversation.jsonl (pointer-index).
 
     Attaches the conversation as a child of the task in the DB.
+    Message content lives in FlowMessage records; pointers are appended after creation.
     """
     from flow_sdk.fs_records.conversation_record import ConversationRecord
 
-    # Write messages to jsonl
     conversation_jsonl_path.parent.mkdir(parents=True, exist_ok=True)
-    if initial_messages:
-        with conversation_jsonl_path.open("w", encoding="utf-8") as fh:
-            for msg in initial_messages:
-                fh.write(_json.dumps(msg, ensure_ascii=False) + "\n")
-    else:
-        conversation_jsonl_path.touch()
-
-    messages_json = _json.dumps(initial_messages) if initial_messages else None
+    conversation_jsonl_path.touch()
 
     conv = Conversation.model_validate({
         "task_id": task.id,
         "data_path": str(conversation_jsonl_path),
-        "message_count": len(initial_messages),
-        "messages": messages_json,
+        "message_count": 0,
     })
     conv.id = Conversation.allocate_id(conv.model_dump())
     conv = await conv.save(someone_typeid)
@@ -118,6 +110,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     message = (body.get("message") or "").strip() or None
     plan_id = (body.get("plan_id") or "").strip() or None
     project_path = (body.get("project_path") or "").strip() or None
+    team_space_id = (body.get("team_space_id") or "").strip() or None
 
     if not recipient_id:
         return ApiFailResponse(message="recipient_id is required")
@@ -164,6 +157,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         "title": task_title,
         "spec_id": spec.id,
         "shared_by_id": sender_id,
+        "metadata": {"team_space_id": team_space_id} if team_space_id else None,
     })
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
@@ -200,19 +194,10 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         task_dir = tasks_root / task_dir_name
         task_dir.mkdir(parents=True, exist_ok=True)
 
-        # 3a. Create Conversation entity + conversation.jsonl
-        initial_messages = []
-        if message:
-            initial_messages = [{
-                "role": "sender",
-                "content": message,
-                "sender_id": sender_id or "",
-                "timestamp": datetime.now(UTC).isoformat(),
-            }]
+        # 3a. Create Conversation entity + conversation.jsonl (empty pointer-index)
         conv = await _create_conversation_entity(
             task,
             task_dir / "conversation.jsonl",
-            initial_messages,
             someone_typeid,
         )
         conversation_id = conv.id
@@ -221,7 +206,50 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         task.conversation_id = conversation_id
         task = await task.save(someone_typeid)
 
-        # 3b. Write manifest
+        # 3b. Save FlowMessage record for this initial share
+        from flow_sdk.builtin.flow_message import FlowMessage
+        fm_context = [
+            {"type": BuiltinEntityType.TASK, "id": task.id},
+            {"type": BuiltinEntityType.CONVERSATION, "id": conversation_id},
+        ]
+        if team_space_id:
+            fm_context.append({"type": BuiltinEntityType.TEAM_SPACE, "id": team_space_id})
+        fm = FlowMessage.model_validate({
+            "text": message or f"Task shared: {task_title}",
+            "context": fm_context,
+            "attachment": [
+                {"type": BuiltinEntityType.SPEC, "id": spec.id},
+                {"type": BuiltinEntityType.TASK, "id": task.id},
+                {"type": BuiltinEntityType.CONVERSATION, "id": conversation_id},
+            ],
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+            "receiver_address": recipient_email,
+            "receiver_address_type": "email",
+        })
+        fm.id = FlowMessage.allocate_id(fm.model_dump())
+        fm = await fm.save(someone_typeid)
+        fm.attachment.append({"type": BuiltinEntityType.FLOW_MESSAGE, "id": fm.id})
+        fm = await fm.save(someone_typeid)
+
+        # Append FlowMessage pointer to conversation + keep message_ids in sync
+        fm_ts = datetime.now(UTC).isoformat()
+        if conv.data_path:
+            from flow_sdk.fs_records.conversation_record import ConversationRecord
+            rec = ConversationRecord.from_jsonl(Path(conv.data_path), task.id, conv.id)
+            rec.append_message_pointer(fm.id, fm_ts)
+        existing_ids: list = []
+        if conv.message_ids:
+            try:
+                existing_ids = _json.loads(conv.message_ids)
+            except Exception:
+                existing_ids = []
+        existing_ids.append({"message_id": fm.id, "timestamp": fm_ts})
+        conv.message_ids = _json.dumps(existing_ids)
+        conv.message_count = len(existing_ids)
+        conv = await conv.save(someone_typeid)
+
+        # 3c. Write manifest
         branch_at_write = git_current_branch(project_root) if project_root else ""
         (task_dir / "manifest.json").write_text(
             _json.dumps({
@@ -344,29 +372,36 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     if not conv:
         return ApiFailResponse(message=f"No conversation found for task {task_id}")
 
-    new_msg = {
-        "role": "recipient",
-        "content": message,
-        "sender_id": sender_id or "",
-        "timestamp": datetime.now(UTC).isoformat(),
-    }
+    # Save FlowMessage record for this reply
+    from flow_sdk.builtin.flow_message import FlowMessage
+    reply_fm = FlowMessage.model_validate({
+        "text": message,
+        "context": [
+            {"type": BuiltinEntityType.TASK, "id": task_id},
+            {"type": BuiltinEntityType.CONVERSATION, "id": conv.id},
+        ],
+        "attachment": [],
+        "sender_id": sender_id,
+    })
+    reply_fm.id = FlowMessage.allocate_id(reply_fm.model_dump())
+    reply_fm.attachment.append({"type": BuiltinEntityType.FLOW_MESSAGE, "id": reply_fm.id})
+    reply_fm = await reply_fm.save(someone_typeid)
 
-    # Append to conversation.jsonl
+    # Append pointer to conversation + keep message_ids in sync
+    reply_ts = datetime.now(UTC).isoformat()
     if conv.data_path:
         from flow_sdk.fs_records.conversation_record import ConversationRecord
         rec = ConversationRecord.from_jsonl(Path(conv.data_path), task_id, conv.id)
-        rec.append_message(new_msg)
-
-    # Update the Conversation entity
-    existing_msgs: list = []
-    if conv.messages:
+        rec.append_message_pointer(reply_fm.id, reply_ts)
+    existing_ids_raw: list = []
+    if conv.message_ids:
         try:
-            existing_msgs = _json.loads(conv.messages)
+            existing_ids_raw = _json.loads(conv.message_ids)
         except Exception:
-            existing_msgs = []
-    existing_msgs.append(new_msg)
-    conv.messages = _json.dumps(existing_msgs)
-    conv.message_count = len(existing_msgs)
+            existing_ids_raw = []
+    existing_ids_raw.append({"message_id": reply_fm.id, "timestamp": reply_ts})
+    conv.message_ids = _json.dumps(existing_ids_raw)
+    conv.message_count = len(existing_ids_raw)
     conv = await conv.save(someone_typeid)
 
     # Git push the updated conversation.jsonl
@@ -383,6 +418,7 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         "task_id": task_id,
         "conversation_id": conv.id,
         "message_count": conv.message_count,
+        "flow_message_id": reply_fm.id,
     })
 
 

@@ -29,9 +29,6 @@ export default defineConfig(({ mode }) => {
     server: {
       host: 'localhost',
       port: parseInt(env.VITE_PORT || '4097'),
-      proxy: {
-        '/api/v1/notify': `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`,
-      },
       fs: {
         allow: [
           path.resolve(__dirname, './'),

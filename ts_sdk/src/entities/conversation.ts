@@ -8,11 +8,16 @@ export interface ConversationMessage {
   timestamp: string;
 }
 
+export interface ConversationMessagePointer {
+  message_id: string;
+  timestamp: string;
+}
+
 export interface IConversation extends IEntity {
   task_id?: string | null;
   data_path?: string | null;
   message_count?: number;
-  messages?: string | null;  // JSON-encoded ConversationMessage[]
+  message_ids?: string | null;  // JSON-encoded ConversationMessagePointer[]
 }
 
 @registerEntity
@@ -20,7 +25,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   task_id?: string | null;
   data_path?: string | null;
   message_count?: number;
-  messages?: string | null;
+  message_ids?: string | null;
   static type: string = 'conversation';
 
   constructor(entity: Partial<IConversation> = {}) {
@@ -28,13 +33,13 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.task_id = entity.task_id;
     this.data_path = entity.data_path;
     this.message_count = entity.message_count;
-    this.messages = entity.messages;
+    this.message_ids = entity.message_ids;
   }
 
-  get conversationMessages(): ConversationMessage[] {
-    if (!this.messages) return [];
+  get conversationMessageIds(): ConversationMessagePointer[] {
+    if (!this.message_ids) return [];
     try {
-      return JSON.parse(this.messages) as ConversationMessage[];
+      return JSON.parse(this.message_ids) as ConversationMessagePointer[];
     } catch {
       return [];
     }

@@ -21,12 +21,14 @@ import {
   Settings,
   Sparkles,
   Terminal,
+  Upload,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { formatTimeAgo } from './project-activity-utils';
 import { SessionEventsDialog } from './SessionEventsDialog';
 import { SessionStatusDot } from '@src/components/ui/session-status-dot';
+import { uploadFlowMessage, type UploadConflict } from '@sdk/entities/flow-message';
 import './ProjectActivityStrip.css';
 
 interface ResourceMeta {
@@ -303,6 +305,11 @@ export function ProjectActivityStrip({
   const [search, setSearch] = useState('');
   const [dialogSessionId, setDialogSessionId] = useState<string | null>(null);
   const [dialogSessionName, setDialogSessionName] = useState('');
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadConflicts, setUploadConflicts] = useState<UploadConflict[] | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { navigation } = useDockNavigation();
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -364,6 +371,45 @@ export function ProjectActivityStrip({
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }, [dialogSessionId, snifferEvents]);
 
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setUploadError(null);
+    setUploadConflicts(null);
+    try {
+      const result = await uploadFlowMessage(file);
+      if (result.task_id) {
+        navigation.openDock(DockPointer.fromUrl('tasks', result.task_id));
+      }
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { status?: number; data?: { data?: { conflicts?: UploadConflict[] } } } };
+      if (axiosErr?.response?.status === 409) {
+        setPendingFile(file);
+        setUploadConflicts(axiosErr.response.data?.data?.conflicts ?? []);
+      } else {
+        const msg = err instanceof Error ? err.message : 'Upload failed.';
+        setUploadError(msg);
+      }
+    }
+  };
+
+  const handleOverwrite = async () => {
+    if (!pendingFile) return;
+    setUploadError(null);
+    try {
+      const result = await uploadFlowMessage(pendingFile, { overwrite: true });
+      setPendingFile(null);
+      setUploadConflicts(null);
+      if (result.task_id) {
+        navigation.openDock(DockPointer.fromUrl('tasks', result.task_id));
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Upload failed.';
+      setUploadError(msg);
+    }
+  };
+
   const refreshButton = onRefresh && (
     <button
       type="button"
@@ -375,9 +421,53 @@ export function ProjectActivityStrip({
     </button>
   );
 
+  const uploadSection = (
+    <div className="border-b border-border px-3 py-2">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".flowmsg"
+        className="hidden"
+        onChange={(e) => void handleFileChange(e)}
+      />
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        className="flex w-full items-center justify-center gap-1.5 rounded-md border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <Upload className="h-3.5 w-3.5" />
+        Upload Message
+      </button>
+      {uploadError && <p className="mt-1 text-xs text-destructive">{uploadError}</p>}
+      {uploadConflicts && (
+        <div className="mt-1 space-y-1 rounded-md border border-border bg-muted/40 p-2 text-xs">
+          <p className="font-medium text-foreground">Entities already exist:</p>
+          <p className="text-muted-foreground">{uploadConflicts.map((c) => `${c.type}:${c.id}`).join(', ')}</p>
+          <div className="flex gap-1.5 pt-0.5">
+            <button
+              type="button"
+              onClick={() => void handleOverwrite()}
+              className="rounded bg-destructive px-2 py-1 text-xs font-medium text-destructive-foreground hover:bg-destructive/90"
+            >
+              Overwrite
+            </button>
+            <button
+              type="button"
+              onClick={() => { setPendingFile(null); setUploadConflicts(null); }}
+              className="rounded border border-border px-2 py-1 text-xs font-medium hover:bg-muted"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   if (items.length === 0 && !isLoading) {
     return (
       <div className="activity-table" data-testid="project-activity-strip">
+        {uploadSection}
         <div className="activity-table-header">
           <span className="activity-table-title">Current Activity</span>
           {refreshButton}
@@ -391,6 +481,7 @@ export function ProjectActivityStrip({
 
   return (
     <div className="activity-table" data-testid="project-activity-strip">
+      {uploadSection}
       <div className="activity-table-header">
         <span className="activity-table-title">Current Activity</span>
         {refreshButton}
