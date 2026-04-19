@@ -44,5 +44,5 @@ class Task(Entity):
     metadata: Optional[Dict[str, Any]] = APIField(None)
     spec_id: Optional[str] = APIField(None)
     shared_by_id: Optional[str] = APIField(None)
-    conversation: Optional[str] = APIField(None)
+    conversation_id: Optional[str] = APIField(None)
     _api_visible: ClassVar[bool] = True

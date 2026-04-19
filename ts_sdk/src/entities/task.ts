@@ -23,7 +23,7 @@ export interface ITask extends IEntity {
   metadata?: Record<string, any>;
   spec_id?: string | null;
   shared_by_id?: string | null;
-  conversation?: string | null;  // raw JSON blob: List[{role, content, sender_id, timestamp}]
+  conversation_id?: string | null;
 }
 
 @registerEntity
@@ -47,7 +47,7 @@ export class Task extends APIEntity<Task> implements ITask {
   metadata?: Record<string, any>;
   spec_id?: string | null;
   shared_by_id?: string | null;
-  conversation?: string | null;
+  conversation_id?: string | null;
   static type: string = 'task';
 
   constructor(entity: Partial<ITask> = {}) {
@@ -71,7 +71,7 @@ export class Task extends APIEntity<Task> implements ITask {
     this.metadata = entity.metadata ||= {};
     this.spec_id = entity.spec_id;
     this.shared_by_id = entity.shared_by_id;
-    this.conversation = entity.conversation;
+    this.conversation_id = entity.conversation_id;
   }
 
   override get searchDockPointer(): DockPointerData {
@@ -115,12 +115,4 @@ export class Task extends APIEntity<Task> implements ITask {
       : '';
   }
 
-  get conversationMessages(): Array<{role: string; content: string; sender_id: string; timestamp: string}> {
-    if (!this.conversation) return [];
-    try {
-      return JSON.parse(this.conversation);
-    } catch {
-      return [];
-    }
-  }
 }
