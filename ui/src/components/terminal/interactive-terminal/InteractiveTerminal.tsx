@@ -321,8 +321,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     shellRef,
   );
 
-  // Input dir info for file attachment workflow
-  const inputDirInfo = useInputDir(process);
+  // Input dir info for file attachment workflow.
+  // Only fetch for the active tab — inactive pre-mounted terminals share the
+  // same contextProcess, which caused N identical /input-dir API calls per
+  // render cycle (amplified by re-render loops into 20+ redundant requests).
+  const inputDirInfo = useInputDir(active ? process : undefined);
   const inputFs = useFS(inputDirInfo?.computeNodeTypeId ?? undefined);
   const inputFsRef = useRef(inputFs);
   inputFsRef.current = inputFs;
