@@ -44,6 +44,8 @@ interface TabbedTerminalProps {
   className?: string;
   /** Whether to show the "Add Tab" button (default: false) */
   addTabButton?: boolean;
+  /** When set, only shells shared into this collaboration space are shown. */
+  collaborationSpaceId?: string | null;
 }
 
 /** Find the first available "Tab N" name, filling gaps from closed tabs. */
@@ -129,8 +131,8 @@ const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) =
  * Tab clicks navigate via navigation.openDock(entity.dockPointer), which re-runs the loader.
  * All flags and statuses come from Shell / AgenticProcess entities via useActiveTerminals.
  */
-const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabButton }) => {
-  const { tabs: sessions } = useActiveTerminals();
+const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabButton, collaborationSpaceId }) => {
+  const { tabs: sessions } = useActiveTerminals({ collaborationSpaceId });
   const { flow } = useAgentContext();
   const { activeShellId: contextShellId, agenticProcess: contextAgenticProcess } = useContext();
   const _perfLoggedRef = useRef(false);

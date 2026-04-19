@@ -1182,17 +1182,20 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Start a collaborative TeamSession bound to this process.
+   * Start a CollaborationSpace bound to this process.
    *
-   * Creates a TeamSession entity with this process as the host and
+   * Creates a CollaborationSpace entity with this process as the host and
    * seeds the host as the first member. Returns the persisted entity
    * whose `session_code` is the shareable join code.
    */
-  async createTeamSession(hostName: string, hostMemberId?: string): Promise<import('../entities/team-session').TeamSession> {
-    const { TeamSession, getOrCreateLocalMemberId } = await import('../entities/team-session');
+  async createCollaborationSpace(
+    hostName: string,
+    hostMemberId?: string,
+  ): Promise<import('../entities/collaboration-space').CollaborationSpace> {
+    const { CollaborationSpace, getOrCreateLocalMemberId } = await import('../entities/collaboration-space');
     const memberId = hostMemberId ?? getOrCreateLocalMemberId();
     const now = new Date().toISOString();
-    const ts = new TeamSession({
+    const sp = new CollaborationSpace({
       agentic_process_id: this.id,
       host_name: hostName,
       host_member_id: memberId,
@@ -1206,8 +1209,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       ],
       status: 'active',
     });
-    await ts.save();
-    return ts;
+    await sp.save();
+    return sp;
   }
 
   /**

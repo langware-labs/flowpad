@@ -1,4 +1,8 @@
-"""TeamSession entity — collaborative session bound 1:1 to an AgenticProcess."""
+"""CollaborationSpace entity — persistent space where members meet to collaborate.
+
+Users work in their own projects but meet in spaces to assist and get assisted.
+The host (creator) decides what gets shared into the space (tabs, docs, plans).
+"""
 
 from __future__ import annotations
 
@@ -8,8 +12,8 @@ from typing import Any, ClassVar
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity, action
-from flow_sdk.fs_records.team_session_record import (
-    TeamSessionStatus,
+from flow_sdk.fs_records.collaboration_space_record import (
+    CollaborationSpaceStatus,
     _generate_session_code,
 )
 from flow_sdk.request_context.methods import get_current_request_info
@@ -22,19 +26,19 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class TeamSession(Entity):
-    """Entity representing a collaborative session on an AgenticProcess."""
+class CollaborationSpace(Entity):
+    """Entity representing a collaboration space (persistent meeting room)."""
 
-    type: str = APIField(default="team_session")
+    type: str = APIField(default="collaboration_space")
     session_code: str = APIField(default="", description="Shareable join code, e.g. ABCD-EFGH")
-    agentic_process_id: str | None = APIField(default=None, description="Bound AgenticProcess id")
+    agentic_process_id: str | None = APIField(default=None, description="Bound AgenticProcess id (optional)")
     host_name: str | None = APIField(default=None, description="Display name of the host")
     host_member_id: str | None = APIField(default=None, description="Stable member_id of the host")
     members: list[dict] = APIField(
         default_factory=list,
         description="Participants: [{member_id, name, joined_at, last_seen_at}]",
     )
-    status: str = APIField(default=TeamSessionStatus.ACTIVE)
+    status: str = APIField(default=CollaborationSpaceStatus.ACTIVE)
     created_at: str | None = APIField(default=None)
     ended_at: str | None = APIField(default=None)
 
@@ -100,26 +104,26 @@ class TeamSession(Entity):
     # ── Lookup ────────────────────────────────────────────────────────────────
 
     @classmethod
-    async def get_by_code(cls, code: str) -> "TeamSession | None":
-        """Find active TeamSession by session_code (case-insensitive)."""
+    async def get_by_code(cls, code: str) -> "CollaborationSpace | None":
+        """Find active CollaborationSpace by session_code (case-insensitive)."""
         normalized = (code or "").upper().strip()
         if not normalized:
             return None
-        all_sessions = await cls.get_all()
-        for ts in all_sessions:
-            if (ts.session_code or "").upper() == normalized and ts.status == TeamSessionStatus.ACTIVE:
-                return ts
+        all_spaces = await cls.get_all()
+        for sp in all_spaces:
+            if (sp.session_code or "").upper() == normalized and sp.status == CollaborationSpaceStatus.ACTIVE:
+                return sp
         return None
 
     @classmethod
-    async def get_by_agentic_process(cls, agentic_process_id: str) -> "TeamSession | None":
-        """Find active TeamSession bound to an AgenticProcess."""
+    async def get_by_agentic_process(cls, agentic_process_id: str) -> "CollaborationSpace | None":
+        """Find active CollaborationSpace bound to an AgenticProcess."""
         if not agentic_process_id:
             return None
-        all_sessions = await cls.get_all()
-        for ts in all_sessions:
-            if ts.agentic_process_id == agentic_process_id and ts.status == TeamSessionStatus.ACTIVE:
-                return ts
+        all_spaces = await cls.get_all()
+        for sp in all_spaces:
+            if sp.agentic_process_id == agentic_process_id and sp.status == CollaborationSpaceStatus.ACTIVE:
+                return sp
         return None
 
     # ── HTTP actions ──────────────────────────────────────────────────────────
@@ -149,8 +153,8 @@ class TeamSession(Entity):
 
     @action.post(action_name="end")
     async def _http_end(self) -> ApiResponse:
-        """End the collaborative session."""
-        self.status = TeamSessionStatus.ENDED
+        """End the collaboration space."""
+        self.status = CollaborationSpaceStatus.ENDED
         self.ended_at = _now_iso()
         await self.save()
         return ApiSuccessResponse(data=self.model_dump(mode="json"))

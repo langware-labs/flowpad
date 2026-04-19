@@ -66,7 +66,8 @@ export interface ViewerMeta {
     | 'Zap'
     | 'CheckSquare'
     | 'SearchIcon'
-    | 'Workflow';
+    | 'Workflow'
+    | 'Users';
   /** Where this viewer renders: 'overview' tab or dedicated tab */
   tabLocation: 'overview' | 'dedicated';
   /** Can this viewer be manually added as a tab? */
@@ -287,6 +288,12 @@ export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
   [ViewType.ASSETS]: {
     title: 'Wiki',
     iconName: 'BookOpen',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
+  [ViewType.COLLABORATION_SPACE]: {
+    title: 'Collaboration',
+    iconName: 'Users',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },

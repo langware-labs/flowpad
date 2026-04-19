@@ -1,4 +1,4 @@
-import { TeamSession, getOrCreateLocalMemberId } from '@sdk';
+import { CollaborationSpace, getOrCreateLocalMemberId } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
@@ -27,25 +27,25 @@ export function JoinExistingSessionDialog({ open, onClose, defaultName }: JoinEx
     if (!canJoin) return;
     setBusy(true);
     try {
-      const resolved = await TeamSession.resolveByCode(normalizedCode);
-      if (!resolved || !resolved.agentic_process_id) {
+      const resolved = await CollaborationSpace.resolveByCode(normalizedCode);
+      if (!resolved) {
         toast({
-          title: 'Session not found',
-          description: `No active session matches code "${normalizedCode}".`,
+          title: 'Space not found',
+          description: `No active space matches code "${normalizedCode}".`,
         });
         return;
       }
       const memberId = getOrCreateLocalMemberId();
       try {
-        const ts = new TeamSession({ id: resolved.team_session_id, type: 'team_session' } as any);
-        await ts.join(memberId, displayName.trim());
+        const sp = new CollaborationSpace({
+          id: resolved.collaboration_space_id,
+          type: 'collaboration_space',
+        } as any);
+        await sp.join(memberId, displayName.trim());
       } catch (err) {
         console.warn('[JoinExistingSessionDialog] join call failed (continuing)', err);
       }
-      await navigation.openShellProcess(resolved.agentic_process_id, {
-        windows: 'team',
-        activeWindow: 'team',
-      });
+      navigation.openCollaborationSpace(resolved.collaboration_space_id);
       onClose();
     } finally {
       setBusy(false);

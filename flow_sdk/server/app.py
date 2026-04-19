@@ -45,7 +45,7 @@ from .routes import (
     directory_router,
     hooks_router,
     search_router,
-    team_session_router,
+    collaboration_space_router,
     testing_router,
     ui_router,
     watch_router,
@@ -162,7 +162,7 @@ server.add_router(watch_router)
 server.add_router(websocket_router)
 server.add_router(webhook_api_router)
 server.add_router(assets_router)
-server.add_router(team_session_router, prefix="/api/v1")
+server.add_router(collaboration_space_router, prefix="/api/v1")
 server.add_router(compute_register_router)
 
 server.on_startup(_on_server_startup)
