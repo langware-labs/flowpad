@@ -1,6 +1,6 @@
 import { AgenticProcess, isProcessActive, QueryFilter, QueryRequest, Shell, ShellStatus } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 
 /** Discriminator for tab type */
 export type TerminalTabType = 'plain' | 'claude';
@@ -52,17 +52,29 @@ export function useActiveTerminals() {
     .map((process) => `${process.id}:${process.status ?? ''}:${process.shell_id ?? ''}:${process.sidecar_shell_id ?? ''}`)
     .join('|');
 
+  // Refs keep the latest arrays accessible without adding them as useMemo deps.
+  // The projection keys already encode all fields that affect tab identity/ordering,
+  // so re-running the memo on array-reference changes alone was producing new tab
+  // arrays with identical content, cascading through every callback and useEffect
+  // that depends on `sessions` (navigateToSession → selectTab → scroll effects).
+  const shellsRef = useRef(shells);
+  shellsRef.current = shells;
+  const processesRef = useRef(processes);
+  processesRef.current = processes;
+
   const tabs = useMemo(() => {
-    const activeProcesses = processes.filter((p) => isProcessActive(p.status));
+    const currentShells = shellsRef.current;
+    const currentProcesses = processesRef.current;
+    const activeProcesses = currentProcesses.filter((p) => isProcessActive(p.status));
 
     // Build a set of sidecar shell IDs — these are internal-only PTY sessions
     // managed by InteractiveTerminal and must not appear as top-level tabs.
     const sidecarShellIds = new Set<string>();
-    for (const proc of processes) {
+    for (const proc of currentProcesses) {
       if (proc.sidecar_shell_id) sidecarShellIds.add(proc.sidecar_shell_id);
     }
 
-    const visibleShells = shells.filter(
+    const visibleShells = currentShells.filter(
       (shell) => !HIDDEN_SHELL_STATUSES.has(shell.status as ShellStatus) && !sidecarShellIds.has(shell.id),
     );
 
@@ -97,7 +109,8 @@ export function useActiveTerminals() {
     result.sort((a, b) => a.tabOrder - b.tabOrder);
 
     return result;
-  }, [shells, processes, shellProjectionKey, processProjectionKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shellProjectionKey, processProjectionKey]);
 
   const isLoading = shellsLoading || processesLoading;
 

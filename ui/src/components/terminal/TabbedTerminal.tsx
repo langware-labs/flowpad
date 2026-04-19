@@ -170,27 +170,23 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   const activeShellId = (contextShellId ? contextShellId : visibleSessions[0]?.shellId) || '';
   const hasActiveTab = Boolean(activeShellId && visibleSessions.some((session) => session.shellId === activeShellId));
 
-  // Pre-mount every visible session so first switches are a CSS display toggle,
-  // not a full xterm/ptySync init. The inactive tabs render behind the active
-  // one (visibility: hidden, absolute inset-0), which keeps layout measurable
-  // so xterm's term.open + fit() work normally. The Set never shrinks so
-  // subsequent switches stay instant.
+  // Lazy-mount: only mount the active terminal initially; mount others on
+  // first switch. With many tabs (e.g. 69), eagerly mounting all of them
+  // caused a 14-second main-thread freeze from 69 InteractiveTerminal
+  // component trees (each with ~30 hooks, xterm init, addon loading).
+  // The Set never shrinks so subsequent switches stay instant.
   const [mountedShellIds, setMountedShellIds] = useState<Set<string>>(
-    () => new Set(visibleSessions.map((s) => s.shellId)),
+    () => new Set(activeShellId ? [activeShellId] : []),
   );
   useEffect(() => {
+    if (!activeShellId) return;
     setMountedShellIds((prev) => {
-      let changed = false;
+      if (prev.has(activeShellId)) return prev;
       const next = new Set(prev);
-      for (const s of visibleSessions) {
-        if (!next.has(s.shellId)) {
-          next.add(s.shellId);
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
+      next.add(activeShellId);
+      return next;
     });
-  }, [visibleSessions]);
+  }, [activeShellId]);
 
   // Keep dataContext in sync for other consumers
   useEffect(() => {
@@ -248,10 +244,14 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
 
   const handleStartDocker = useCallback((dockerNode: ComputeNode) => startTerminalTab(dockerNode), [startTerminalTab]);
 
-  // Navigate to a tab via its entity's dockPointer
+  // Navigate to a tab via its entity's dockPointer.
+  // Uses sessionsRef to avoid re-creating the callback when the sessions
+  // array identity changes (which cascades into selectTab → scroll effects).
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
   const navigateToSession = useCallback(
     (shellId: string) => {
-      const session = sessions.find((s) => s.shellId === shellId);
+      const session = sessionsRef.current.find((s) => s.shellId === shellId);
       if (!session) return;
       // Set activeShellId immediately so the CSS display toggle happens
       // before the loader's async work (entity queries). The loader will
@@ -260,7 +260,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
       const entity = session.shell;
       if (entity) navigation.openDock(entity.dockPointer);
     },
-    [sessions, navigation],
+    [navigation],
   );
 
   const scrollSelectedTabIntoView = useCallback((shellId: string) => {
@@ -764,11 +764,13 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
               );
             })}
 
-            {!hasTabOverflow && tabEndToolbar}
           </div>
 
-          {/* Once tabs overflow, pin the end toolbar next to the right scroll control. */}
-          {hasTabOverflow && tabEndToolbar}
+          {/* Always render the toolbar outside the scroll container to prevent
+              an oscillation loop: placing it inside increases scrollWidth,
+              which triggers hasTabOverflow=true, moving it out, shrinking
+              scrollWidth, flipping hasTabOverflow=false, and repeating. */}
+          {tabEndToolbar}
 
           {/* Right Scroll Button */}
           {hasTabOverflow && (
