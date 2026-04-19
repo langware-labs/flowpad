@@ -1,8 +1,9 @@
 import { Badge } from '@src/components/ui/badge';
 import type { Bookmark } from '@sdk';
+import { BookmarkType } from '@sdk/entities/bookmark';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { openTaskNotification } from '@sdk/entities/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
 import { Clock, FileText, GitBranch, Play, StickyNote, X } from 'lucide-react';
 
 function formatTimeAgo(value?: string | null): string {
@@ -38,7 +39,8 @@ export function BookmarkCard({
   onForkSession?: (bookmark: Bookmark) => void;
 }) {
   const { navigation } = useDockNavigation();
-  const isTerminalAnnotation = bookmark.bookmark_type === 'terminal_annotation' && !!bookmark.session_id;
+  const { setPendingTask } = useIncomingTaskStore();
+  const isTerminalAnnotation = bookmark.bookmark_type === BookmarkType.TERMINAL_ANNOTATION && !!bookmark.session_id;
   const navPath = bookmark.data?.navigation_path as string | undefined;
   const isClosed = bookmark.status === 'closed';
   const contentPreview = bookmark.content
@@ -48,17 +50,15 @@ export function BookmarkCard({
     : null;
 
   const handleCardClick = () => {
-    if (bookmark.bookmark_type === 'cross_notification') {
-      const projectUrl = bookmark.data?.project_url as string | undefined;
+    if (bookmark.bookmark_type === BookmarkType.NOTIFICATION) {
       const taskId = bookmark.data?.task_id as string | undefined;
-      void openTaskNotification(projectUrl ?? '', taskId ?? '')
-        .then((path) => {
-          const match = path.match(/^\/dock\/([^/]+)\/(.+)$/);
-          if (match) navigation.openDock(DockPointer.fromUrl(match[1], match[2]));
-        })
-        .catch(() => {
-          if (taskId) navigation.openDock(DockPointer.fromUrl('tasks', `task-${taskId}`));
+      if (taskId) {
+        setPendingTask({
+          taskId,
+          taskTitle: bookmark.title || 'Shared task',
+          senderName: (bookmark.data?.sender_name as string | undefined) || 'Someone',
         });
+      }
       return;
     }
     if (!navPath) return;
@@ -73,9 +73,10 @@ export function BookmarkCard({
   };
 
   return (
+    <>
     <div
-      className={`bookmark-card${navPath ? ' cursor-pointer' : ''}`}
-      onClick={navPath ? handleCardClick : undefined}
+      className={`bookmark-card${navPath || bookmark.bookmark_type === BookmarkType.NOTIFICATION ? ' cursor-pointer' : ''}`}
+      onClick={navPath || bookmark.bookmark_type === BookmarkType.NOTIFICATION ? handleCardClick : undefined}
     >
       <div className="bookmark-card-header">
         {isTerminalAnnotation
@@ -164,5 +165,6 @@ export function BookmarkCard({
         )}
       </div>
     </div>
+    </>
   );
 }

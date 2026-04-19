@@ -25,13 +25,15 @@ interface StatusBarProps {
 }
 
 export function StatusBar({ className = '' }: StatusBarProps) {
-  const { project, computeNode, bootstrapInfo } = useContext();
+  const { project, computeNode, bootstrapInfo, workdir } = useContext();
   const workspacePath = bootstrapInfo?.desktop_info?.paths?.workspace;
   const { refetch: refetchProjects } = useProjects();
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
 
-  // Get the project's working directory path
+  // Get the active working directory path — prefer context workdir (reflects active tab),
+  // fall back to project path for cases where workdir hasn't been set yet (e.g. bootstrap).
   const projectPath = useMemo(() => {
+    if (workdir) return workdir;
     if (!project) return null;
     let path = project.fs_storage_mount_path;
     if (!path && workspacePath && project.displayName) {
@@ -41,7 +43,7 @@ export function StatusBar({ className = '' }: StatusBarProps) {
       path = project.name || project.displayName || '';
     }
     return path;
-  }, [project, workspacePath]);
+  }, [workdir, project, workspacePath]);
 
   const isRoot = isRootPath(project?.fs_storage_mount_path);
 

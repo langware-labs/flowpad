@@ -195,7 +195,10 @@ export class ConnectionManager extends EventEmitter {
   }
 
   public async connect() {
-    if (this.connected) {
+    if (
+      this.socket &&
+      (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)
+    ) {
       return;
     }
     let resolve_promise: any;
@@ -206,16 +209,17 @@ export class ConnectionManager extends EventEmitter {
     });
     try {
       const ws_url = `${config.SERVER_URL}${config.API_PREFIXES.connect}/${this.id}`;
-      this.socket = new WebSocket(convertToWebSocketUrl(ws_url));
-      this.socket.binaryType = 'arraybuffer';
+      const ws = new WebSocket(convertToWebSocketUrl(ws_url));
+      this.socket = ws;
+      ws.binaryType = 'arraybuffer';
       let didOpen = false;
-      this.socket.addEventListener('open', (event) => {
+      ws.addEventListener('open', (event) => {
         didOpen = true;
         this.onOpen(event);
         resolve_promise();
       });
       // Listen for messages
-      this.socket.addEventListener('message', (event) => {
+      ws.addEventListener('message', (event) => {
         try {
           if (event.data instanceof ArrayBuffer) {
             this.onBinMessage(event.data);
@@ -229,14 +233,18 @@ export class ConnectionManager extends EventEmitter {
           console.error(`Error parsing message(${errorMsg}):${event.data}`, event.data);
         }
       });
-      this.socket.addEventListener('close', (event) => {
+      ws.addEventListener('close', (event) => {
+        // Only clear this.socket if it still points to this WebSocket instance.
+        // A newer connect() call may have already replaced it — don't clobber that.
+        if (this.socket === ws) {
+          this.socket = null;
+        }
         this.onClose(event);
-        this.socket = null;
         if (!didOpen) {
           reject_promise(new Error(`WebSocket closed before connecting (code: ${event.code})`));
         }
       });
-      this.socket.addEventListener('error', (event) => {
+      ws.addEventListener('error', (event) => {
         console.error('WebSocket error:', event);
       });
     } catch (e) {

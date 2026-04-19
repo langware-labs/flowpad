@@ -48,8 +48,13 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       }
 
       // Reload on cloud login and logout completion (works for both browser popup and Electron external browser)
-      dataManager.on(OAuthEventType.OAUTH_FLOW_COMPLETE, (msg: { provider: string }) => {
+      dataManager.on(OAuthEventType.OAUTH_FLOW_COMPLETE, async (msg: { provider: string }) => {
         if (msg.provider === OAUTH_PROVIDERS.FLOWPAD_CLOUD) {
+          const callback = (window as any).__postCloudLoginCallback as (() => Promise<void>) | undefined;
+          if (callback) {
+            (window as any).__postCloudLoginCallback = undefined;
+            try { await callback(); } catch (e) { console.error('[postLogin] callback failed', e); }
+          }
           window.location.reload();
         }
       });
@@ -84,6 +89,7 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         project.markAsExpanded();
         if (!userPersistedProject) {
           await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, project.typeId);
+          dataContext.setWorkdir(project.fs_storage_mount_path ?? null);
         }
       }
 

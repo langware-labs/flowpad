@@ -136,7 +136,7 @@ export function NotificationFeed() {
         if (claudeSessionId) {
           resumeInTerminal(claudeSessionId, metadata?.cwd);
         }
-      } else if (eventType === 'cross_notification') {
+      } else if (eventType === 'notification') {
         const taskTypeId = notification.metadata?.task_id as string | undefined;
         if (taskTypeId) {
           navigation.openDock(DockPointer.fromUrl(ViewType.TASKS, taskTypeId));

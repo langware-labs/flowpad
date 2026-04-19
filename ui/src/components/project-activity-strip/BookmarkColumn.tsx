@@ -2,7 +2,7 @@ import type { SnifferEvent } from '@src/hooks/use-hooks-sniffer';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import type { Annotation, Bookmark, Task } from '@sdk';
-import { MessageSquarePlus, StickyNote, Tag, X } from 'lucide-react';
+import { MessageSquarePlus, RefreshCw, StickyNote, Tag, X } from 'lucide-react';
 import { useRef, useMemo, useState } from 'react';
 import { LearningCard } from './LearningCard';
 import { BookmarkCard } from './BookmarkCard';
@@ -24,6 +24,7 @@ export interface BookmarkColumnProps {
   onRemindBookmark?: (bookmark: Bookmark, delayMinutes: number) => void;
   onOpenSession?: (bookmark: Bookmark) => void;
   onForkSession?: (bookmark: Bookmark) => void;
+  onRefresh?: () => Promise<void>;
   sessionEventCounts?: Map<string, number>;
   snifferEvents?: SnifferEvent[];
 }
@@ -136,6 +137,7 @@ export function BookmarkColumn({
   onRemindBookmark,
   onOpenSession,
   onForkSession,
+  onRefresh,
   sessionEventCounts,
   snifferEvents,
 }: BookmarkColumnProps) {
@@ -147,6 +149,7 @@ export function BookmarkColumn({
   const [commentOpen, setCommentOpen] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [commentSaving, setCommentSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const commentInputRef = useRef<HTMLTextAreaElement>(null);
 
   const handleAddComment = async () => {
@@ -195,11 +198,25 @@ export function BookmarkColumn({
       <div className="flex items-center justify-between border-b border-border p-3">
         <div className="flex items-center gap-2">
           <StickyNote className="h-4 w-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold">Bookmarks</h3>
+          <h3 className="text-sm font-semibold">Todos</h3>
           {filteredBookmarkCount > 0 && (
             <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
               {filteredBookmarkCount}
             </span>
+          )}
+          {onRefresh && (
+            <button
+              type="button"
+              title="Refresh — git pull and scan for new notifications"
+              disabled={refreshing}
+              className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-40"
+              onClick={() => {
+                setRefreshing(true);
+                void onRefresh().finally(() => setRefreshing(false));
+              }}
+            >
+              <RefreshCw className={`h-3 w-3 ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
           )}
         </div>
         {onAddComment && (

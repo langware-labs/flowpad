@@ -134,6 +134,7 @@ async function loadShell(pointer: string | undefined): Promise<void> {
       throw redirect(redirectUrl);
     }
     dataContext.setActiveShellId('');
+    dataContext.setWorkdir(dataContext.project?.fs_storage_mount_path ?? null);
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
     return;
   }
@@ -166,6 +167,7 @@ async function loadShell(pointer: string | undefined): Promise<void> {
     }
 
     dataContext.setActiveShellId(shell.id);
+    dataContext.setWorkdir(process.workdir ?? shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
     await dataContext.setContextEntityTypeId(
       ContextEntitiesEnum.CurrentProcessTypeId,
       new TypeId(AgenticProcess.type, processId),
@@ -206,6 +208,7 @@ async function loadShell(pointer: string | undefined): Promise<void> {
     // Plain shell — no linked process
     await shell.start({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: shell.workdir ?? undefined });
     dataContext.setActiveShellId(shell.id);
+    dataContext.setWorkdir(shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
     if (shell.project_id) {
       await dataContext.setContextEntityTypeId(

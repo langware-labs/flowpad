@@ -283,6 +283,14 @@ class DataContext extends EventEmitter {
     this.emit(ContextEventType.CONTEXT_CHANGED);
   }
 
+  setWorkdir(path: string | null): void {
+    if (this.workdir === path) return;
+    runInAction(() => {
+      this.workdir = path;
+    });
+    this.emit(ContextEventType.CONTEXT_CHANGED);
+  }
+
   // WebSocket connection - only set when connected
   connection: WebSocket | null = null;
 
@@ -292,6 +300,9 @@ class DataContext extends EventEmitter {
 
   // Active shell session ID - persisted across refreshes via URL
   activeShellId: string = '';
+
+  // Active working directory — shown in the footer
+  workdir: string | null = null;
 
   get activeEntityTypeId(): TypeId | null {
     return this.getContextEntityTypeId(ContextEntitiesEnum.CurrentActiveEntityTypeId);
@@ -344,6 +355,7 @@ class DataContext extends EventEmitter {
       connection: observable,
       isConnected: computed,
       activeShellId: observable,
+      workdir: observable,
       envName: computed,
       cloudApiUrl: computed,
       cloudLoginAvailable: computed,

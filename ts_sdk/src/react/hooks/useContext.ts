@@ -74,6 +74,7 @@ export function useContext() {
     agenticProcess: typeof dataContext.agenticProcess;
     agenticProcessTypeId: typeof dataContext.agenticProcessTypeId;
     activeShellId: typeof dataContext.activeShellId;
+    workdir: typeof dataContext.workdir;
     snifferEnabled: typeof dataContext.snifferEnabled;
     isConnected: typeof dataContext.isConnected;
   }>({
@@ -108,6 +109,7 @@ export function useContext() {
     agenticProcess: dataContext.agenticProcess,
     agenticProcessTypeId: dataContext.agenticProcessTypeId,
     activeShellId: dataContext.activeShellId,
+    workdir: dataContext.workdir,
     snifferEnabled: dataContext.snifferEnabled,
     isConnected: dataContext.isConnected,
   });
@@ -152,6 +154,7 @@ export function useContext() {
       agenticProcess: dataContext.agenticProcess,
       agenticProcessTypeId: dataContext.agenticProcessTypeId,
       activeShellId: dataContext.activeShellId,
+      workdir: dataContext.workdir,
       snifferEnabled: dataContext.snifferEnabled,
       isConnected: dataContext.isConnected,
     };
@@ -194,6 +197,7 @@ export function useContext() {
       prev.agenticProcess !== current.agenticProcess ||
       typeIdChanged(prev.agenticProcessTypeId, current.agenticProcessTypeId) ||
       prev.activeShellId !== current.activeShellId ||
+      prev.workdir !== current.workdir ||
       prev.snifferEnabled !== current.snifferEnabled ||
       prev.isConnected !== current.isConnected
     ) {

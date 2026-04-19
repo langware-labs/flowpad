@@ -217,11 +217,12 @@ async def post_logout():
     The cloud server redirects here after invalidating the server-side session.
     """
     _clear_local_credentials()
+    blank_script = '<script>setTimeout(function(){ document.body.innerHTML = ""; }, 10000);</script>'
     return _render_result_page(
         title="Logout Successful",
         heading="Logout Successful",
         subheading="You have been successfully logged out of Flowpad.",
-        detail_html="",
+        detail_html=blank_script,
         color="#22c55e",
         icon="👋",
     )

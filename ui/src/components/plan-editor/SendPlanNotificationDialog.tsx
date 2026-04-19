@@ -5,7 +5,10 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useContext } from '@sdk/react/hooks';
 import { sendNotification } from '@sdk/entities/notifications';
+import { oauthService, OAUTH_PROVIDERS } from '@sdk';
+import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
@@ -14,6 +17,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@src/components/ui/alert-dialog';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 
@@ -23,7 +35,6 @@ function extractTitle(markdown: string, filePath: string): string {
     const stripped = line.replace(/^#+\s*/, '').trim();
     if (stripped) return stripped;
   }
-  // Fall back to file stem (last path segment without extension)
   const stem = filePath.split('/').pop()?.replace(/\.md$/, '') ?? 'Untitled Plan';
   return stem;
 }
@@ -33,14 +44,17 @@ interface SendPlanNotificationDialogProps {
   onClose: () => void;
   planFilePath: string;
   planContent: string;
+  workdir?: string | null;
 }
 
 export function SendPlanNotificationDialog({
   open,
   onClose,
+  workdir,
   planFilePath,
   planContent,
 }: SendPlanNotificationDialogProps) {
+  const { cloudLoginAvailable } = useContext();
   const [recipientId, setRecipientId] = useState('');
   const [specTitle, setSpecTitle] = useState('');
   const [specContent, setSpecContent] = useState('');
@@ -48,6 +62,8 @@ export function SendPlanNotificationDialog({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [gitError, setGitError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   // Pre-populate from plan when dialog opens
   useEffect(() => {
@@ -58,6 +74,8 @@ export function SendPlanNotificationDialog({
       setMessage('Hi,\nGot a new task for you.\nLMK if you have any questions.\nGood luck!');
       setError(null);
       setSuccess(false);
+      setGitError(null);
+      setEmailError(null);
     }
   }, [open, planContent, planFilePath]);
 
@@ -72,7 +90,7 @@ export function SendPlanNotificationDialog({
     setError(null);
 
     try {
-      await sendNotification({
+      const result = await sendNotification({
         recipient_id: recipientId.trim(),
         spec_title: specTitle.trim(),
         spec_content: specContent.trim(),
@@ -80,13 +98,21 @@ export function SendPlanNotificationDialog({
         task_title: specTitle.trim(),
         task_id: null,
         message: message.trim() || null,
-        plan_id: planFilePath,
+        plan_id: null,
+        project_path: workdir ?? null,
       });
-
-      setSuccess(true);
-      setTimeout(() => {
-        onClose();
-      }, 1200);
+      if (result.git_error) {
+        setGitError(result.git_error);
+      } else if (result.email_error) {
+        setSuccess(true);
+        setEmailError(result.email_error);
+        toast.warning('Task created, but the notification email could not be sent. Check your activity panel.');
+        setTimeout(() => onClose(), 5000);
+      } else {
+        setSuccess(true);
+        toast.success('Task shared successfully!');
+        setTimeout(() => onClose(), 1200);
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to send notification.';
       setError(msg);
@@ -98,6 +124,23 @@ export function SendPlanNotificationDialog({
   const canSend = recipientId.trim().length > 0 && specTitle.trim().length > 0 && !sending;
 
   return (
+    <>
+    <AlertDialog open={!!gitError} onOpenChange={(o) => { if (!o) { setGitError(null); onClose(); } }}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Git Push Failed</AlertDialogTitle>
+          <AlertDialogDescription asChild>
+            <div>
+              <p className="mb-2">The task could not be pushed to the remote repository. Please fix the git issue below and send the task again.</p>
+              <pre className="max-h-40 overflow-auto rounded bg-muted px-3 py-2 text-xs text-foreground whitespace-pre-wrap">{gitError}</pre>
+            </div>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogAction>OK</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
@@ -157,18 +200,39 @@ export function SendPlanNotificationDialog({
           </div>
 
           {error && <p className="text-xs text-destructive">{error}</p>}
-          {success && <p className="text-xs text-green-600 dark:text-green-400">Task shared successfully.</p>}
+          {success && !emailError && <p className="text-xs text-green-600 dark:text-green-400">Task shared successfully.</p>}
+          {success && emailError && (
+            <div className="space-y-1">
+              <p className="text-xs text-green-600 dark:text-green-400">Task created successfully.</p>
+              <p className="text-xs text-yellow-600 dark:text-yellow-400">Email could not be sent. A reminder has been added to your activity panel.</p>
+            </div>
+          )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={handleClose} disabled={sending}>
             Cancel
           </Button>
-          <Button onClick={() => void handleSend()} disabled={!canSend}>
+          <Button
+            onClick={() => {
+              if (!cloudLoginAvailable) {
+                // Register callback to run after OAuth login completes (before page reload)
+                (window as any).__postCloudLoginCallback = async () => {
+                  await handleSend();
+                  await new Promise(resolve => setTimeout(resolve, 1500));
+                };
+                void oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
+                return;
+              }
+              void handleSend();
+            }}
+            disabled={!canSend}
+          >
             {sending ? 'Sending...' : 'Share as Task'}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    </>
   );
 }

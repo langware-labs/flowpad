@@ -16,11 +16,17 @@ from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import Literal, Optional
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from flow_sdk.utils.validation import UUID_PATTERN
 
+
+# ---------------------------------------------------------------------------
+# URL constants
+# ---------------------------------------------------------------------------
+
+FLOWPAD_CLOUD_URL = "https://app.flowpad.ai"
 
 # ---------------------------------------------------------------------------
 # Path constants
@@ -117,7 +123,6 @@ class StorageProvider(StrEnum):
 
 class EmailProviderType(StrEnum):
     """Email provider types."""
-    SENDGRID = "sendgrid"
     MOCK = "mock"
 
 
@@ -325,10 +330,10 @@ class ServiceUrlsConfig(BaseSettings):
     # Simple port configuration (loaded from environment)
     backend_scheme: str = "http"
     backend_host: str = "localhost"
-    backend_port: int | None = None
+    backend_port: int | None = Field(default=None, alias="LOCAL_SERVER_PORT")
     frontend_scheme: str = "http"
     frontend_host: str = "localhost"
-    frontend_port: int | None = None
+    frontend_port: int | None = Field(default=None, alias="VITE_PORT")
     frontend_proxy_port: int = 5174
 
     # Legacy URL configuration (for backwards compatibility)
@@ -514,7 +519,6 @@ class ServiceConfig(BaseSettings):
     # Email (stub for desktop)
     email_provider: str = EmailProviderType.MOCK.value
     no_reply_email: str = "no-reply@example.com"
-    sendgrid_api_key: str | None = None
     flowpad_hub_url: str | None = None
 
     # Search / LLM
@@ -728,6 +732,10 @@ class ServiceConfig(BaseSettings):
 
             # Configure desktop-specific storage paths
             self.default_storage_mount_folder = str(user_data_folder / "entity_storage")
+
+            # Desktop always connects to production hub unless overridden by env var
+            if not self.flowpad_hub_url:
+                self.flowpad_hub_url = FLOWPAD_CLOUD_URL
 
             logging.info(
                 f"[INFO] Desktop environment detected - using {db_info} and local storage at {user_data_folder}"

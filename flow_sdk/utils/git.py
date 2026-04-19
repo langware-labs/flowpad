@@ -1,12 +1,23 @@
 import asyncio
 import logging
+import re
 import subprocess
+import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Tuple
 
 from .file_system import ROOT_FOLDER
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class GitPushResult:
+    ok: bool
+    message: str
+    warning: Optional[str] = None
+
 
 commit_hash = None  # Global variable to store the commit hash
 
@@ -51,26 +62,86 @@ def git_remote_url(repo_path: str) -> str:
         return ""
 
 
+def git_current_branch(repo_path: str) -> str:
+    """Return the current branch name for the given repo, or empty string."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=repo_path, capture_output=True, text=True, timeout=5,
+        )
+        branch = result.stdout.strip() if result.returncode == 0 else ""
+        return branch if branch and branch != "HEAD" else ""
+    except Exception:
+        return ""
+
+
+def git_repo_full_name(repo_path: str) -> str:
+    """Extract 'owner/repo' from origin URL (handles https and ssh). Returns empty string if not found."""
+    url = git_remote_url(repo_path)
+    if not url:
+        return ""
+    m = re.search(r'[:/]([^/:\s]+/[^/:\s]+?)(?:\.git)?$', url)
+    return m.group(1) if m else ""
+
+
+def repo_id(repo_full_name: str) -> str:
+    """Return uuid5(NAMESPACE_DNS, 'repo:{repo_full_name}') — stable cross-machine repo identity."""
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"repo:{repo_full_name}"))
+
+
+def _url_matches(path: str, project_url: str) -> bool:
+    """Return True if the git repo at path has an origin URL matching project_url."""
+    try:
+        result = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=path, capture_output=True, text=True, timeout=5,
+        )
+        return result.returncode == 0 and result.stdout.strip() == project_url.strip()
+    except Exception:
+        return False
+
+
 def find_local_repo_for_url(project_url: str) -> Optional[str]:
-    """Find a local repo whose origin URL matches project_url."""
+    """Find a local repo whose origin URL matches project_url.
+
+    Pass 1: Claude-registered projects (fast, authoritative).
+    Pass 2: Immediate siblings of those projects — covers repos that exist
+            on disk but were never opened in Claude.
+    """
     if not project_url:
         return None
+
+    from pathlib import Path as _Path
     from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
-    for project_root in iter_claude_project_paths():
-        try:
-            result = subprocess.run(
-                ["git", "remote", "get-url", "origin"],
-                cwd=str(project_root), capture_output=True, text=True, timeout=5,
-            )
-            if result.returncode == 0 and result.stdout.strip() == project_url.strip():
-                return str(project_root)
-        except Exception:
+
+    claude_paths = list(iter_claude_project_paths())
+
+    # Pass 1: Claude-registered projects
+    for project_root in claude_paths:
+        if _url_matches(str(project_root), project_url):
+            return str(project_root)
+
+    # Pass 2: siblings — scan one level inside each unique parent directory
+    seen_parents: set[_Path] = set()
+    for project_root in claude_paths:
+        parent = _Path(project_root).parent
+        if parent in seen_parents:
             continue
+        seen_parents.add(parent)
+        try:
+            for sibling in parent.iterdir():
+                if not sibling.is_dir() or sibling == _Path(project_root):
+                    continue
+                if (sibling / ".git").exists() and _url_matches(str(sibling), project_url):
+                    return str(sibling)
+        except OSError:
+            continue
+
     return None
 
 
-async def git_pull(repo_path: str) -> Tuple[bool, str]:
-    """Pull latest from origin for the current branch.
+async def git_pull(repo_path: str, branch: Optional[str] = None) -> Tuple[bool, str]:
+    """Pull latest from origin for the given branch, or the current branch if not specified.
 
     Returns (success, message).
     """
@@ -78,10 +149,11 @@ async def git_pull(repo_path: str) -> Tuple[bool, str]:
         def _run(args, cwd):
             return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=60)
 
-        branch_result = await asyncio.to_thread(
-            _run, ["git", "rev-parse", "--abbrev-ref", "HEAD"], repo_path
-        )
-        branch = branch_result.stdout.strip() if branch_result.returncode == 0 else ""
+        if not branch:
+            branch_result = await asyncio.to_thread(
+                _run, ["git", "rev-parse", "--abbrev-ref", "HEAD"], repo_path
+            )
+            branch = branch_result.stdout.strip() if branch_result.returncode == 0 else ""
         if not branch or branch == "HEAD":
             logger.warning("[git] Detached HEAD at %s — skipping pull", repo_path)
             return False, "Skipped git pull (detached HEAD). Files may not be up to date."
@@ -100,11 +172,35 @@ async def git_pull(repo_path: str) -> Tuple[bool, str]:
         return False, f"Git pull error: {e}"
 
 
-async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: str) -> None:
-    """Stage the given paths, commit if anything is staged, and push to origin.
+async def git_clone(project_url: str, target_dir: str, branch: Optional[str] = None) -> Tuple[bool, str]:
+    """Clone project_url into target_dir, optionally checking out branch.
 
-    Fire-and-forget: logs warnings on failure but never raises.
+    Returns (success, message).
     """
+    try:
+        cmd = ["git", "clone", project_url, target_dir]
+        if branch:
+            cmd += ["--branch", branch]
+
+        def _run(args):
+            return subprocess.run(args, capture_output=True, text=True, timeout=120)
+
+        result = await asyncio.to_thread(_run, cmd)
+        if result.returncode == 0:
+            out = (result.stdout or result.stderr or "").strip()
+            logger.info("[git] clone %s into %s succeeded", project_url, target_dir)
+            return True, out or "Cloned successfully."
+        else:
+            err = (result.stderr or result.stdout or "").strip()
+            logger.warning("[git] clone %s FAILED: %s", project_url, err)
+            return False, f"Git clone failed: {err}"
+    except Exception as e:
+        logger.warning("[git] clone error: %s", e)
+        return False, f"Git clone error: {e}"
+
+
+async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: str) -> GitPushResult:
+    """Stage the given paths, commit if anything is staged, and push to origin."""
     try:
         def _run(args, cwd):
             return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=30)
@@ -118,13 +214,38 @@ async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: 
         )
         if staged.returncode == 0:
             logger.info("[git] nothing staged, skipping commit+push")
-            return
+            return GitPushResult(ok=True, message="Nothing to commit")
 
-        await asyncio.to_thread(_run, ["git", "commit", "-m", commit_message], repo_path)
-        result = await asyncio.to_thread(_run, ["git", "push", "origin", "HEAD"], repo_path)
+        await asyncio.to_thread(_run, ["git", "commit", "-m", commit_message, "--", *paths], repo_path)
+
+        branch_result = await asyncio.to_thread(
+            _run, ["git", "rev-parse", "--abbrev-ref", "HEAD"], repo_path
+        )
+        current_branch = branch_result.stdout.strip() if branch_result.returncode == 0 else "HEAD"
+        if not current_branch or current_branch == "HEAD":
+            current_branch = "HEAD"
+
+        pull_warning: Optional[str] = None
+        pull_result = await asyncio.to_thread(
+            _run, ["git", "pull", "--rebase", "origin", current_branch], repo_path
+        )
+        if pull_result.returncode != 0:
+            pull_output = (pull_result.stderr or pull_result.stdout or "").strip()
+            if "couldn't find remote ref" in pull_output:
+                # Branch doesn't exist on remote yet — push will create it
+                logger.info("[git] branch '%s' not yet on remote, skipping pull --rebase", current_branch)
+            else:
+                pull_warning = pull_output
+                logger.warning("[git] pull --rebase before push failed: %s", pull_warning)
+
+        result = await asyncio.to_thread(_run, ["git", "push", "origin", current_branch], repo_path)
         if result.returncode != 0:
-            logger.warning("[git] push failed: %s", result.stderr or result.stdout)
+            err = (result.stderr or result.stdout or "").strip()
+            logger.warning("[git] push failed: %s", err)
+            return GitPushResult(ok=False, message=err, warning=pull_warning)
         else:
             logger.info("[git] push succeeded")
+            return GitPushResult(ok=True, message="Pushed successfully", warning=pull_warning)
     except Exception as e:
         logger.warning("[git] push error (non-fatal): %s", e)
+        return GitPushResult(ok=False, message=str(e))

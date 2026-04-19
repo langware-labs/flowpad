@@ -11,6 +11,15 @@ class BookmarkStatus(StrEnum):
     PENDING = "pending"
 
 
+class BookmarkType(StrEnum):
+    NOTE = "note"
+    CONTEXT = "context"
+    SUMMARY = "summary"
+    NOTIFICATION = "notification"
+    NOTIFICATION_FAILED = "notification_failed"
+    TERMINAL_ANNOTATION = "terminal_annotation"
+
+
 class Bookmark(Entity):
     type: str = APIField(default="bookmark")
     bookmark_type: str = APIField("")

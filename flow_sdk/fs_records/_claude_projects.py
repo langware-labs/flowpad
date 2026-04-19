@@ -11,11 +11,17 @@ project directory, which stores the original unencoded path.
 from __future__ import annotations
 
 import json
+import re
+import sys
 from pathlib import Path
 from typing import Iterator
 
 
 _CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
+_IS_WINDOWS = sys.platform == "win32"
+
+# Match Windows encoded project names: starts with drive letter, e.g. "C-Users-<user-name>-project"
+_WIN_ENCODED_RE = re.compile(r"^([A-Za-z])-(.*)")
 
 
 def _real_path_from_jsonl(project_dir: Path) -> Path | None:
@@ -73,17 +79,35 @@ def iter_claude_project_paths(include_temp: bool = False) -> Iterator[Path]:
 
         real = _real_path_from_jsonl(project_dir)
         if real is None:
-            # Fallback: decode encoded name (correct for paths without hyphens)
+            # Fallback: decode encoded name (correct for paths without hyphens).
+            # On Windows, Claude encodes "C:\Users\<user-name>\proj" as "C-Users-<user-name>-proj"
+            # (drive letter without colon). On Unix, "/Users/foo/bar" becomes
+            # "-Users-foo-bar".
             encoded = project_dir.name
-            real = Path("/" + encoded.lstrip("-").replace("-", "/"))
+            if _IS_WINDOWS:
+                m = _WIN_ENCODED_RE.match(encoded)
+                if m:
+                    drive, rest = m.group(1), m.group(2)
+                    real = Path(f"{drive}:\\" + rest.replace("-", "\\"))
+                else:
+                    # Can't decode on Windows without drive letter — skip
+                    continue
+            else:
+                real = Path("/" + encoded.lstrip("-").replace("-", "/"))
 
         if not include_temp and is_temp_path(real):
             continue
 
-        rp = real.resolve()
+        try:
+            rp = real.resolve()
+        except OSError:
+            continue
         if rp in seen:
             continue
-        if not real.is_dir():
+        try:
+            if not real.is_dir():
+                continue
+        except OSError:
             continue
         seen.add(rp)
         yield real

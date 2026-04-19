@@ -8,13 +8,14 @@ import {
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
 import { SettingsPane } from '@src/components/ui/settings-pane';
-import { LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { Cloud, LogIn, LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
 
 import { AccountInfo } from '@src/components/account/account-info';
 
 import { trackEvent } from '@src/utils/analytics';
 import { redirectToConsole } from '@src/utils/navigation';
-import { Agent, dataContext, ExpansionRequest, navigator, Page, PAGE_TYPE, QueryFilter, QueryRequest, TypeId } from '@sdk';
+import { Agent, dataContext, ExpansionRequest, navigator, oauthService, OAUTH_PROVIDERS, Page, PAGE_TYPE, QueryFilter, QueryRequest, TypeId } from '@sdk';
 import { useAuth, useConnectionStatus, useContext, useEntitiesQuery, useEntity, useWatch } from '@sdk/react/hooks';
 import { SerializedElementNode, SerializedLexicalNode, SerializedTextNode } from 'lexical';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -144,6 +145,18 @@ export function UserDropdown() {
     }
   }, []);
 
+  const handleCloudLogin = useCallback(async () => {
+    try {
+      await oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
+    } catch (e) {
+      console.error('[Cloud Login] Failed:', e);
+    }
+  }, []);
+
+  const handleOpenFlowpadCloud = useCallback(() => {
+    window.open('https://app.flowpad.ai', '_blank', 'noopener,noreferrer');
+  }, []);
+
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false);
 
@@ -237,23 +250,33 @@ export function UserDropdown() {
       <div className="flex flex-col items-center gap-2">
         {user ? (
           <>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Avatar
-                  className={`h-8 w-8 cursor-pointer transition-opacity hover:opacity-80${!isConnected ? ' ring-2 ring-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] animate-pulse' : ''}`}
-                  title={!isConnected ? 'Service unavailable' : undefined}
-                  data-testid="agent-page-user-avatar"
-                >
-                  <AvatarFallback>
-                    {user.name
-                      ?.split(' ')
-                      .map((n: string) => n[0])
-                      .join('')
-                      .toUpperCase() || '?'}
-                  </AvatarFallback>
-                </Avatar>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+            <TooltipProvider>
+              <Tooltip>
+                <DropdownMenu>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                <div className="relative cursor-pointer">
+                  <Avatar
+                    className={`h-8 w-8 transition-opacity hover:opacity-80${!isConnected ? ' ring-2 ring-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] animate-pulse' : ''}`}
+                    title={!isConnected ? 'Service unavailable' : undefined}
+                    data-testid="agent-page-user-avatar"
+                  >
+                    <AvatarFallback>
+                      {user.name
+                        ?.split(' ')
+                        .map((n: string) => n[0])
+                        .join('')
+                        .toUpperCase() || '?'}
+                    </AvatarFallback>
+                  </Avatar>
+                  {cloudLoginAvailable && (
+                    <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-green-500 ring-2 ring-background" />
+                  )}
+                </div>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">{cloudLoginAvailable ? 'Logged in' : 'Not logged in'}</TooltipContent>
+                  <DropdownMenuContent align="end">
                 {isOwner && agentId && (
                   <>
                     <DropdownMenuItem onClick={() => setIsSettingsOpen(true)} className="cursor-pointer">
@@ -283,29 +306,49 @@ export function UserDropdown() {
                   <UserIcon className="mr-2 h-4 w-4" />
                   Account Details
                 </DropdownMenuItem>
-                {cloudLoginAvailable && (
-                  <DropdownMenuItem
-                    onClick={() => void handleLogout()}
-                    className="cursor-pointer text-red-500 focus:text-red-500"
-                  >
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Logout
+                {cloudLoginAvailable ? (
+                  <>
+                    <DropdownMenuItem onClick={handleOpenFlowpadCloud} className="cursor-pointer">
+                      <Cloud className="mr-2 h-4 w-4" />
+                      Flowpad Cloud
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => void handleLogout()}
+                      className="cursor-pointer text-red-500 focus:text-red-500"
+                    >
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Logout
+                    </DropdownMenuItem>
+                  </>
+                ) : (
+                  <DropdownMenuItem onClick={() => void handleCloudLogin()} className="cursor-pointer">
+                    <LogIn className="mr-2 h-4 w-4" />
+                    Login
                   </DropdownMenuItem>
                 )}
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </Tooltip>
+            </TooltipProvider>
           </>
         ) : (
-          <Button
-            variant="default"
-            size="sm"
-            onClick={() => {
-              trackEvent({ event: 'login_clicked', event_source: 'page_header' });
-              navigator.navigateToLogin();
-            }}
-          >
-            Login
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => {
+                    trackEvent({ event: 'login_clicked', event_source: 'page_header' });
+                    navigator.navigateToLogin();
+                  }}
+                >
+                  Login
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Not logged in</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         )}
       </div>
     </>

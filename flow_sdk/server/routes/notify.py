@@ -1,28 +1,22 @@
-"""Local notification handler routes.
+"""Local notification deep-link utilities.
 
-GET /notify
-   Deep-link from flowpad.ai email landing page.
-   Called when the RECIPIENT clicks "Open in FlowPad" on flowpad.ai.
-   Params: project_url, task_id
-   - Triggers a git pull on the matching local repo
-   - Runs the notification scanner
-   - Returns an HTML page that auto-redirects to the task in the UI
+handle_notification_deep_link — shared helper used by the `open` graph action
+(registered in flow_sdk/app/actions/notification_action.py).
 
-Registered in server/routes/__init__.py and server/app.py.
+The `open` action is registered at:
+  GET /api/v1/graph/notification/{id}/open
+via @action.get(action_name="open", types=["notification"]).
+
+Instead of pulling silently, this redirects to the HomeLanding page with URL
+parameters so the dialog-driven flow can guide the user through pulling/cloning.
 """
 
-import asyncio
 import logging
-from typing import Tuple
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-from flow_sdk.config import load_server_info
-from flow_sdk.utils.git import find_local_repo_for_url, git_pull
-
 logger = logging.getLogger(__name__)
-router = APIRouter()
 
 
 def _get_ui_port() -> int:
@@ -45,95 +39,42 @@ _REDIRECT_HTML = """<!DOCTYPE html>
             border-radius:50%;animation:spin .7s linear infinite;margin:16px auto}}
   @keyframes spin{{to{{transform:rotate(360deg)}}}}
 </style>
-<meta http-equiv="refresh" content="2;url={redirect_url}">
+<meta http-equiv="refresh" content="1;url={redirect_url}">
 </head>
 <body>
 <div class="card">
   <div class="spinner"></div>
-  <h2>Opening task...</h2>
-  <p>{status_message}</p>
+  <h2>Opening FlowPad...</h2>
+  <p>Redirecting you to the task.</p>
 </div>
 </body>
 </html>"""
 
-_ERROR_HTML = """<!DOCTYPE html>
-<html lang="en">
-<head><meta charset="UTF-8"><title>FlowPad — Error</title>
-<style>
-  body{{font-family:-apple-system,sans-serif;max-width:600px;margin:80px auto;padding:0 24px;color:#333;text-align:center}}
-  h2{{color:#c0392b}} a{{color:#4f46e5}}
-</style>
-</head>
-<body>
-<h2>Could not open task</h2>
-<p>{error_message}</p>
-<p><a href="http://localhost:{port}/">Open FlowPad</a></p>
-</body>
-</html>"""
 
-
-async def _pull_and_scan(project_url: str) -> Tuple[bool, str]:
-    """Find the local repo for project_url, git pull, then run the notification scanner."""
-    repo_path = find_local_repo_for_url(project_url) if project_url else None
-    if not repo_path:
-        return False, f"No local clone found for {project_url}"
-
-    pull_ok, pull_msg = await git_pull(repo_path)
-    if not pull_ok:
-        logger.warning("[notify] git pull did not succeed for %s: %s", repo_path, pull_msg)
-
-    try:
-        from flow_sdk.fs_records.cross_notification_scanner import scan_incoming_notifications
-        from flow_sdk.builtin.user import User
-        local_user = await User.get_one({"uname": "local"})
-        if local_user:
-            asyncio.ensure_future(scan_incoming_notifications(local_user.id))
-    except Exception:
-        pass
-
-    return pull_ok, pull_msg
-
-
-async def handle_notification_deep_link(project_url: str, task_id: str) -> HTMLResponse:
-    """Pull the repo, scan for notifications, return a redirect HTML page."""
+async def handle_notification_deep_link(
+    project_url: str,
+    task_id: str,
+    branch: str = "",
+    repo_id: str = "",
+    sender_name: str = "",
+    task_title: str = "",
+) -> HTMLResponse:
+    """Redirect the browser to HomeLanding with task_action=open params."""
     port = _get_ui_port()
 
-    if not project_url:
-        return HTMLResponse(content=_ERROR_HTML.format(
-            error_message="No project URL provided. Ask the sender to share the repository URL.",
-            port=port,
-        ), status_code=400)
-
-    if not find_local_repo_for_url(project_url):
-        return HTMLResponse(content=_ERROR_HTML.format(
-            error_message=(
-                f"Could not find a local clone of <code>{project_url}</code>.<br>"
-                f"Clone the repository first: <code>git clone {project_url}</code>"
-            ),
-            port=port,
-        ), status_code=404)
-
-    pull_ok, pull_msg = await _pull_and_scan(project_url)
-
+    params: dict = {"task_action": "open"}
     if task_id:
-        redirect_url = f"http://localhost:{port}/dock/tasks/task-{task_id}"
-        status_message = f"Git pull: {pull_msg} — Opening task..."
-    else:
-        redirect_url = f"http://localhost:{port}/dock/tasks"
-        status_message = f"Git pull: {pull_msg} — Opening Tasks..."
+        params["task_id"] = task_id
+    if project_url:
+        params["project_url"] = project_url
+    if branch:
+        params["branch"] = branch
+    if repo_id:
+        params["repo_id"] = repo_id
+    if sender_name:
+        params["sender_name"] = sender_name
+    if task_title:
+        params["task_title"] = task_title
 
-    return HTMLResponse(content=_REDIRECT_HTML.format(
-        redirect_url=redirect_url, status_message=status_message,
-    ))
-
-
-@router.get("/notify", response_class=HTMLResponse)
-async def notification_deep_link(request: Request) -> HTMLResponse:
-    """Deep-link from flowpad.ai email page — pulls repo and redirects to task view."""
-    return await handle_notification_deep_link(
-        project_url=request.query_params.get("project_url", ""),
-        task_id=request.query_params.get("task_id", ""),
-    )
-
-
-
+    redirect_url = f"http://localhost:{port}/dock/home?{urlencode(params)}"
+    return HTMLResponse(content=_REDIRECT_HTML.format(redirect_url=redirect_url))

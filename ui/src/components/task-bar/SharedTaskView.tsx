@@ -7,7 +7,7 @@
 
 import { ArrowLeft, MessageSquare, Send, Sparkles } from 'lucide-react';
 import { useState } from 'react';
-import { AgenticProcess, dataContext, Spec, Task, TypeId, User } from '@sdk';
+import { AgenticProcess, Conversation, dataContext, Spec, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ExpansionRequest } from '@sdk/FlowSync/query';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -18,10 +18,6 @@ interface SharedTaskViewProps {
   onClose: () => void;
 }
 
-function displayName(user: User | null | undefined, fallback?: string | null): string {
-  return user?.name || user?.email || fallback || 'Unknown';
-}
-
 export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
   const { navigation } = useDockNavigation();
   const [replyText, setReplyText] = useState('');
@@ -30,24 +26,26 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
 
   const blobExpansion = new ExpansionRequest({ expand: ['blobs'] });
 
-  const { data: sender } = useEntity<User>(
-    task.shared_by_id ? new TypeId(User.type, task.shared_by_id) : null,
-  );
+  // Sender name comes from task metadata — no local user entity lookup needed
+  // (sender is a remote user who only exists on the hub).
+  const senderName = (task.metadata as Record<string, unknown> | undefined)?.sender_name as string | undefined
+    || task.shared_by_id
+    || 'Unknown';
   const { data: spec } = useEntity<Spec>(
     task.spec_id ? new TypeId(Spec.type, task.spec_id) : null,
     { query: blobExpansion },
   );
-  const { data: fullTask } = useEntity<Task>(
-    task.id ? new TypeId(Task.type, task.id) : null,
+  const { data: conversation } = useEntity<Conversation>(
+    task.conversation_id ? new TypeId(Conversation.type, task.conversation_id) : null,
     { query: blobExpansion },
   );
 
-  const messages = fullTask?.conversationMessages ?? task.conversationMessages ?? [];
+  const messages = conversation?.conversationMessages ?? [];
 
   const handleClaudeIt = async () => {
     const specContent = spec?.content ?? '';
     const specTitle = spec?.title ?? task.title ?? 'Untitled';
-    const senderLabel = displayName(sender, task.shared_by_id);
+    const senderLabel = senderName;
     const prompt = [
       `You received a task from ${senderLabel}: "${specTitle}"`,
       '',
@@ -59,8 +57,10 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
     ].join('\n');
 
     try {
+      const workdir = (task.metadata as Record<string, unknown> | undefined)?.project_root as string | undefined
+        ?? dataContext.project?.fs_storage_mount_path;
       const { process: agenticProcess } = await AgenticProcess.spawn(
-        { workdir: dataContext.project?.fs_storage_mount_path },
+        { workdir },
         { instruction: prompt, visible: true },
       );
       navigation.openDock(agenticProcess.dockPointer);
@@ -97,9 +97,9 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
         </button>
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-base font-semibold">{task.title || 'Untitled'}</h2>
-          {sender && (
+          {senderName && (
             <p className="text-xs text-muted-foreground">
-              From {displayName(sender, task.shared_by_id)}
+              From {senderName}
             </p>
           )}
         </div>
@@ -128,13 +128,6 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
             </div>
           )}
 
-          {/* Message — first conversation entry (sender's personal note) */}
-          {messages.length > 0 && messages[0].role === 'sender' && (
-            <div>
-              <span className="text-xs font-medium text-muted-foreground">Message</span>
-              <p className="mt-0.5 text-sm text-foreground/80">{messages[0].content}</p>
-            </div>
-          )}
         </section>
 
         {/* Claude It */}
@@ -146,15 +139,17 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
           Claude It — Start Implementation
         </button>
 
-        {/* Conversation — all messages after the first (replies) */}
-        {messages.length > 1 && (
-          <section>
-            <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              <MessageSquare className="h-3.5 w-3.5" />
-              Conversation
-            </h3>
+        {/* Conversation */}
+        <section>
+          <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <MessageSquare className="h-3.5 w-3.5" />
+            Conversation
+          </h3>
+          {messages.length === 0 ? (
+            <p className="text-xs italic text-muted-foreground/60">No messages yet.</p>
+          ) : (
             <div className="space-y-2">
-              {messages.slice(1).map((msg, i) => (
+              {messages.map((msg, i) => (
                 <div
                   key={i}
                   className={`rounded-lg px-3 py-2 text-sm ${
@@ -167,7 +162,7 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
                 >
                   <div className="mb-0.5 flex items-center justify-between gap-2">
                     <span className="text-[11px] font-semibold text-muted-foreground">
-                      {msg.role === 'bot' ? 'Claude' : displayName(msg.role === 'sender' ? sender : null, msg.sender_id)}
+                      {msg.role === 'bot' ? 'Claude' : msg.role === 'sender' ? senderName : 'You'}
                     </span>
                     {msg.timestamp && (
                       <span className="text-[10px] text-muted-foreground/60">
@@ -182,8 +177,8 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
                 </div>
               ))}
             </div>
-          </section>
-        )}
+          )}
+        </section>
 
         {/* Reply */}
         <section>

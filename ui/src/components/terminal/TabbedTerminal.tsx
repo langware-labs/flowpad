@@ -11,11 +11,12 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@src/components/ui/context-menu';
-import { ChevronLeft, ChevronRight, FolderGit2, Loader2, SquareTerminal, X, XCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, FolderGit2, History, Loader2, SquareTerminal, X, XCircle } from 'lucide-react';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import InteractiveTerminal from './interactive-terminal';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { HistoryModal } from './HistoryModal';
 
 interface TabbedTerminalProps {
   className?: string;
@@ -122,6 +123,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   // Scroll state
   const tabContainerRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [hasTabOverflow, setHasTabOverflow] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -489,6 +491,17 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
           <SquareTerminal className="h-4 w-4" />
         )}
       </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 rounded"
+        onClick={() => setHistoryModalOpen(true)}
+        aria-label="Open from history"
+        title="Open from history"
+        data-testid="open-history-button"
+      >
+        <History className="h-4 w-4" />
+      </Button>
     </div>
   ) : null;
 
@@ -745,6 +758,14 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
           )}
         </div>
       </div>
+      <HistoryModal
+        open={historyModalOpen}
+        onOpenChange={setHistoryModalOpen}
+        onSelect={(p) => {
+          setHistoryModalOpen(false);
+          void navigation.openShellProcess(p.id);
+        }}
+      />
     </div>
   );
 };

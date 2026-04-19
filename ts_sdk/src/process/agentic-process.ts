@@ -502,6 +502,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return Shell.getById(this.shell_id);
   }
 
+  /** The PTY connection for this process — delegates to the linked Shell. */
+  get ptyConnection(): import('../services/shell/ptyConnection').PtyConnection | undefined {
+    if (!this.shell_id) return undefined;
+    const entity = dataManager.getByTypeIdFromCache(new TypeId('shell', this.shell_id)) as any;
+    return entity?.ptyConnection;
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
 
   /** Internal references (not serialized) */
@@ -1100,6 +1107,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const shell = await dataManager.getByTypeId<Shell>(new TypeId(Shell.type, result.shell_id));
     if (!shell) throw new Error(`Shell ${result.shell_id} not found after start()`);
     shell.pty_pid = result.pty_id;
+    // Sync PtyConnection identifiers before attaching (guard: fakes in tests may lack ptyConnection).
+    if (shell.ptyConnection) {
+      shell.ptyConnection.shellId = shell.id;
+      if (shell.compute_node_id) shell.ptyConnection.computeNodeId = shell.compute_node_id;
+    }
     await shell.attachPty({ cols: 80, rows: 24, timeout: options?.ptyTimeout, ptyId: result.pty_id });
     return true;
   }
@@ -1143,11 +1155,17 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   async sendInput(text: string): Promise<void> {
     if (!this.shell_id) throw new Error('[AgenticProcess.sendInput] No shell linked to this process');
+    const pty = this.ptyConnection;
+    if (pty) {
+      await pty.sendInput(text + '\n');
+      return;
+    }
+    // Fallback: shell not yet in cache — load it and delegate
     const { Shell } = await import('../entities/shell');
     const typeId = new TypeId(Shell.type, this.shell_id);
     const shell = await dataManager.getByTypeId<Shell>(typeId);
     if (!shell) throw new Error(`[AgenticProcess.sendInput] Shell ${this.shell_id} not found`);
-    await shell.sendInput(text + '\n');
+    await shell.ptyConnection.sendInput(text + '\n');
   }
 
   /**
