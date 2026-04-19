@@ -819,13 +819,18 @@ async def get_or_create_local_compute_node(
     # Generate provider_id if not set (needed for PTY operations)
     if not compute_node.node_provider_id:
         try:
-            compute_node.node_provider_id = "name_" + str(uuid.uuid4())
+            compute_node.node_provider_id = _new_provider_id("name")
             await compute_node.save()
             logging.info(f"@local compute node initialized with provider_id: {compute_node.node_provider_id}")
         except Exception as e:
             logging.warning(f"Failed to initialize @local compute node provider_id: {e}")
 
     return compute_node
+
+
+def _new_provider_id(prefix: str) -> str:
+    """Stable per-process id used by PTY session manager & provider caches."""
+    return f"{prefix}_{uuid.uuid4()}"
 
 
 def is_sandbox_available() -> bool:
@@ -841,6 +846,33 @@ def is_sandbox_available() -> bool:
         return E2B_AVAILABLE
     except Exception:
         return False
+
+
+async def get_docker_compute_nodes() -> list:
+    """Return @docker-* ComputeNode entities for every live worker in the registry.
+
+    Only returns nodes that both (a) exist in the DB and (b) have an active
+    WS connection — i.e. the container is currently reachable.
+    """
+    try:
+        from flow_sdk.compute.providers.docker import docker_registry  # noqa: PLC0415
+    except Exception:
+        return []
+
+    live_machine_ids = [w["machine_id"] for w in docker_registry.list_workers()]
+    if not live_machine_ids:
+        return []
+
+    # Resolve by provider id directly — avoids fetching every @docker-* CN.
+    results = []
+    for mid in live_machine_ids:
+        try:
+            cn = await ComputeNode.get_by_prop("node_provider_id", mid, "compute_node")
+        except Exception:
+            continue
+        if cn is not None:
+            results.append(cn)
+    return results
 
 
 async def get_or_create_sandbox_compute_node(
@@ -904,9 +936,7 @@ async def get_or_create_sandbox_compute_node(
 
     if not compute_node.node_provider_id:
         try:
-            # E2B sandboxes are created lazily; this is just a stable key for
-            # the in-memory PTY session manager and provider sandbox cache.
-            compute_node.node_provider_id = "sandbox_" + str(uuid.uuid4())
+            compute_node.node_provider_id = _new_provider_id("sandbox")
             await compute_node.save()
             logging.info(
                 f"@sandbox compute node initialized with provider_id: {compute_node.node_provider_id}"
@@ -917,7 +947,6 @@ async def get_or_create_sandbox_compute_node(
     return compute_node
 
 
-# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # File system setup (migrated from desktop_loader.py:init_desktop_entities)
 # ---------------------------------------------------------------------------
@@ -1171,6 +1200,16 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
                 sandbox_available = False
         _t.time("get_or_create_sandbox_compute_node")
 
+        # Docker: one @docker-<name> CN per live worker. No env gate — only the
+        # presence of a registered worker in docker_registry flips availability.
+        try:
+            docker_cns = await get_docker_compute_nodes()
+        except Exception as e:
+            logging.warning(f"[bootstrap] Failed to list docker compute nodes: {e}")
+            docker_cns = []
+        docker_available = len(docker_cns) > 0
+        _t.time("get_docker_compute_nodes")
+
         # Get desktop info (LLM providers, installed agents, paths)
         desktop_info = await get_desktop_info()
         _t.time("get_desktop_info")
@@ -1208,6 +1247,8 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             default_compute_node=entity_to_dict(compute_node),
             sandbox_available=sandbox_available,
             sandbox_compute_node=entity_to_dict(sandbox_compute_node) if sandbox_compute_node else None,
+            docker_available=docker_available,
+            docker_compute_nodes=[entity_to_dict(cn) for cn in docker_cns],
             env=EnvInfo(env_name="desktop", cloud_api_url=os.environ.get("FLOWPAD_CLOUD_API_URL"), version=__version__),
             desktop_info=desktop_info,
             scan_info=scan_info,

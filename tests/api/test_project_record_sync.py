@@ -60,13 +60,11 @@ async def test_discover_picks_up_updated_project_name(bootstrapped_client):
                 for h in rec.index_state_dir.glob("*.hash"):
                     h.unlink()
 
-            # 4. Run discover — must find the record in records_root
-            found = None
-            for r in ClaudeProjectFsRecord.discover():
-                if r.id == entity_id:
-                    found = r
-                    break
-            assert found is not None, "discover() must find the record in records_root"
+            # 4. Discover by id — must find the mutated record in records_root.
+            # discover_iter() filters out temp-path mount paths on purpose, so
+            # iterate via discover_one() which is an O(1) direct lookup.
+            found = ClaudeProjectFsRecord.discover_one(entity_id)
+            assert found is not None, "discover_one() must find the record in records_root"
             assert found.name == "Updated Project Name"
 
             # 5. Index the found record — pushes updated name into DB

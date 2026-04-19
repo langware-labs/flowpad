@@ -73,31 +73,7 @@ async def sandbox_compute_node(initialize_test_db):
 # ---------------------------------------------------------------------------
 
 
-async def _write_and_collect(
-    pty,
-    data: bytes,
-    needle: bytes,
-    timeout: float = 10.0,
-) -> bytes:
-    """Subscribe to pty.output() FIRST, then write — so we never race past the
-    command's output. Consume until `needle` is seen or timeout fires.
-    """
-    buf = bytearray()
-
-    async def _loop():
-        async for chunk in pty.output():
-            buf.extend(chunk)
-            if needle in buf:
-                return
-
-    task = asyncio.create_task(_loop())
-    await asyncio.sleep(0.05)  # yield so the iterator subscribes
-    await pty.write(data)
-    try:
-        await asyncio.wait_for(task, timeout=timeout)
-    except asyncio.TimeoutError:
-        task.cancel()
-    return bytes(buf)
+from tests.long_tests._pty_helpers import write_and_collect as _write_and_collect, close_shell as _close_shell
 
 
 async def _make_shell(sandbox_cn, name_suffix: str):
@@ -111,18 +87,6 @@ async def _make_shell(sandbox_cn, name_suffix: str):
     )
     await shell.save()
     return shell
-
-
-async def _close_shell(shell) -> None:
-    """Best-effort teardown — stops the PTY and deletes the Shell entity."""
-    try:
-        await shell.stop()
-    except Exception:
-        pass
-    try:
-        await shell.delete()
-    except Exception:
-        pass
 
 
 # ---------------------------------------------------------------------------

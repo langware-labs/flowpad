@@ -284,7 +284,7 @@ async def test_clean_claude_pty_stress(bootstrapped_client):
 
             await asyncio.sleep(SETTLE_SLEEP)
 
-            pty_key = (cn.id, "local", shell_id)
+            pty_key = (cn.id, cn.node_provider_id, shell_id)
             chunks = replay_buffer.get_replay(pty_key, since_seq=0)
             full_pty = "".join(c.data.decode("utf-8", errors="replace") for c in chunks)
             assert full_pty, f"[iter {i}] No PTY output captured"

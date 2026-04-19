@@ -3,10 +3,17 @@ import { type Page, expect } from '@playwright/test';
 /**
  * Dismiss the DesktopSetupModal if it appears.
  * Sets localStorage key before page loads so the modal never shows.
+ * Also pre-pins the terminal/sandbox/docker openers so their inline test ids
+ * render — by default nothing is pinned, and the openers live inside a
+ * dropdown menu which is not directly selectable by test id.
  */
 export async function dismissSetupModal(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
+    localStorage.setItem(
+      'flowpad.terminal.pinnedOpeners',
+      JSON.stringify(['terminal', 'sandbox', 'docker']),
+    );
   });
 }
 
@@ -136,8 +143,9 @@ export async function getActiveTabName(page: Page): Promise<string> {
  * Navigate to Home via the sidebar Home button (first button in sidebar nav).
  */
 export async function goHome(page: Page) {
-  await page.locator('ul li button').first().click();
-  await page.waitForURL(/^\/$|\/$/, { timeout: 10_000 });
+  // Direct navigation is more reliable than hunting the sidebar's first button,
+  // whose DOM position drifts when secondary-nav items are added/removed.
+  await page.goto('/');
   await page.getByRole('heading', { name: /hey /i }).waitFor({ state: 'visible', timeout: 15_000 });
 }
 

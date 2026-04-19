@@ -9,7 +9,7 @@
  */
 
 import { AgenticProcess, type Shell } from '@sdk';
-import { ProcessorStatus } from '@sdk/process/agentic-types.js';
+import { WorkerStatus } from '@sdk/process/agentic-types.js';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -58,9 +58,9 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const hasSession = !!process.session_id;
   const workerStatus = process.workerStatus;
   const canFork = hasSession
-    && workerStatus !== ProcessorStatus.INIT
-    && workerStatus !== ProcessorStatus.EMPTY
-    && workerStatus !== ProcessorStatus.IDLE;
+    && workerStatus !== WorkerStatus.INIT
+    && workerStatus !== WorkerStatus.EMPTY
+    && workerStatus !== WorkerStatus.IDLE;
   const canToggle = hasSession;
   const workdir = process.workdir ?? '';
 
@@ -88,7 +88,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const { toast, dismiss } = useToast();
   const apiTimeoutToastId = useRef<string | null>(null);
   useEffect(() => {
-    if (process.workerStatus === 'api_timeout') {
+    if (process.workerStatus === WorkerStatus.API_TIMEOUT) {
       if (apiTimeoutToastId.current) return; // already shown
       const { id } = toast({
         title: 'Agent is taking a long time to respond',

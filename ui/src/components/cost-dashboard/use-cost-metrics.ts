@@ -146,13 +146,17 @@ export function getSparklineData(
 export function useCostMetrics() {
   // Use full history so time cohorts (week/month/all) can diverge correctly.
   // Defer cost fetch so it doesn't compete with critical page-load requests.
-  const { data, isLoading, error, refetch } = useCostOverview({ sessionLimit: 100, autoFetch: false });
+  const { data, isLoading, error, fetch: fetchCostOverview, refetch } = useCostOverview({
+    sessionLimit: 100,
+    autoFetch: false,
+  });
 
   // Fire the fetch 3s after mount — well after bootstrap and other critical requests.
+  // Use `fetch` (cache-respecting) so sibling components don't cause duplicate network calls.
   useEffect(() => {
-    const timer = setTimeout(() => void refetch(), 3000);
+    const timer = setTimeout(() => void fetchCostOverview(), 3000);
     return () => clearTimeout(timer);
-  }, [refetch]);
+  }, [fetchCostOverview]);
 
   const [selectedTimeCohort, setSelectedTimeCohort] = useState<TimeCohort>('thisWeek');
 

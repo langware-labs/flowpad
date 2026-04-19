@@ -107,7 +107,7 @@ def move_child(child: AssetRecord, old_parent: AssetRecord, new_parent: AssetRec
 def all_assets_with_parent(parent: AssetRecord, root: Path) -> list[AssetRecord]:
     """Scan all asset records in *root* and return those whose parent_ref.id == parent.id."""
     results = []
-    asset_dir = root / "docs"
+    asset_dir = root / "markdown"
     if not asset_dir.exists():
         return results
     for entry in asset_dir.iterdir():

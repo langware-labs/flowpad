@@ -505,7 +505,7 @@ When a toggle changes, a `RestartRequiredOverlay` is rendered over the terminal:
 3. If a PTY is running, `killPty()` is called first.
 4. `resumePty()` spawns a new PTY with the updated flags.
 
-Toggles are disabled when the session is actively running (`ProcessorStatus.RUNNING`) or when no session has been launched yet.
+Toggles are disabled when the session is actively running (`WorkerStatus.RUNNING`) or when no session has been launched yet.
 
 ---
 

@@ -269,7 +269,7 @@ describe('AgenticProcess WS entity updates — integration', () => {
   });
 
   it('dataManager.subscribe fires when is_active changes — simulates WS update', async () => {
-    const process = new AgenticProcess({ id: uuidv4(), compute_node_id: uuidv4() });
+    const process = new AgenticProcess({ id: uuidv4() });
     registerProcess(process);
 
     const notified: boolean[] = [];
@@ -291,7 +291,7 @@ describe('AgenticProcess WS entity updates — integration', () => {
   it('status stays lifecycle-owned even when is_active is false', async () => {
     const process = new AgenticProcess({
       id: uuidv4(),
-      compute_node_id: uuidv4(),
+      
       status: ProcessStatus.LIVE,
       worker_status: 'running' as any,
       is_active: false,
@@ -306,7 +306,7 @@ describe('AgenticProcess WS entity updates — integration', () => {
   it('worker_status remains transcript-owned when process is live', async () => {
     const process = new AgenticProcess({
       id: uuidv4(),
-      compute_node_id: uuidv4(),
+      
       status: ProcessStatus.LIVE,
       worker_status: 'running' as any,
       is_active: true,
@@ -319,7 +319,7 @@ describe('AgenticProcess WS entity updates — integration', () => {
   });
 
   it('status and worker_status update independently on entity events', async () => {
-    const process = new AgenticProcess({ id: uuidv4(), compute_node_id: uuidv4(), is_active: true });
+    const process = new AgenticProcess({ id: uuidv4(), is_active: true });
     registerProcess(process);
 
     const statuses: Array<{ status: ProcessStatus; workerStatus: string }> = [];

@@ -56,11 +56,12 @@ async def local_compute_node(initialize_test_db):
     from flow_sdk.builtin.user import User
     from flow_sdk.config import ComputeProviderType, StorageProvider
     from flow_sdk.flowpad_types.runtime_environment import RuntimeEnvironment
+    from flow_sdk.server.routes.bootstrap import _new_provider_id
 
     created = False
-    node = await ComputeNode.get_one({"uname": "local"})
+    node = await ComputeNode.get_by_uname("local")
     if node is None:
-        user = await User.get_one({"uname": "local"})
+        user = await User.get_by_uname("local")
         node = ComputeNode(
             uname="local",
             name="@local",
@@ -69,9 +70,13 @@ async def local_compute_node(initialize_test_db):
             fs_storage_provider=StorageProvider.SANDBOX,
             fs_storage_mount_path="/" if sys.platform != "win32" else "C:\\",
             visitor_role="owner",
+            node_provider_id=_new_provider_id("name"),
         )
         await node.save(owner=user)
         created = True
+    elif not node.node_provider_id:
+        node.node_provider_id = _new_provider_id("name")
+        await node.save()
 
     yield node
 

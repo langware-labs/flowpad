@@ -47,8 +47,8 @@ async def test_clean_claude_pty(bootstrapped_client, tmp_path):
         # Wait briefly for PTY output to land in the replay buffer
         await asyncio.sleep(1.0)
 
-        # Shell.compute_node hardcodes node_provider_id="local" (see shell.py)
-        pty_key = (cn.id, "local", shell_id)
+        # Replay buffer is keyed on the ComputeNode's actual node_provider_id.
+        pty_key = (cn.id, cn.node_provider_id, shell_id)
         chunks = replay_buffer.get_replay(pty_key, since_seq=0)
         pty_output = "".join(c.data.decode("utf-8", errors="replace") for c in chunks)
 

@@ -391,6 +391,20 @@ export class Shell extends APIEntity<Shell> implements IShell {
     const results: Shell[] = [];
     for (const d of data) {
       try {
+        const id = (d as any)?.id;
+        // Prefer the cached instance — constructing `new Shell(d)` registers
+        // in the DataManager cache and orphans any previous instance, breaking
+        // existing subscribers (InteractiveTerminal's onOutput would keep firing
+        // on the orphaned instance while PTY routing hits the new one). Merge
+        // fresh fields into the cached instance instead.
+        if (id) {
+          const existing = Shell.getByIdFromCache(id);
+          if (existing) {
+            Object.assign(existing, d);
+            results.push(existing);
+            continue;
+          }
+        }
         results.push(new Shell(d));
       } catch {
         // skip entries with invalid IDs (e.g. non-UUID legacy records)

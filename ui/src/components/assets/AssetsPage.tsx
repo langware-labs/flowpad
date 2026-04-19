@@ -3,7 +3,8 @@ import { InputDialog } from '@src/components/ui/input-dialog';
 import { useToast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { Agent, dataContext, Skill, Task, Workflow } from '@sdk';
+import { Agent, dataContext, fsManager, Skill, Task, Workflow } from '@sdk';
+import { ComputeNode } from '@sdk/entities/compute-node';
 import apiClient from '@sdk/client';
 import { BookOpen } from 'lucide-react';
 import React, { useCallback, useState } from 'react';
@@ -29,7 +30,7 @@ import '@src/components/assets/columns/claudeRulesColumns';
 import '@src/components/assets/filters/assetFilters';
 import '@src/components/assets/filters/taskFilters';
 
-const CREATABLE_TYPES = new Set(['skill', 'agent', 'workflow', 'task']);
+const CREATABLE_TYPES = new Set(['skill', 'agent', 'workflow', 'task', 'markdown']);
 
 function parseAssetPointer(pointer: string | undefined): { mode: 'editor' | 'list' | null; typeName: string | null } {
   if (!pointer) return { mode: null, typeName: null };
@@ -99,6 +100,20 @@ export function AssetsPage() {
         const saved = await task.save();
         toast({ title: 'Task created' });
         navigation.openDock(DockPointer.forTasks(saved.id));
+        return;
+      } else if (newTypeTarget === 'markdown') {
+        const computeNode = await ComputeNode.getById('@local');
+        if (!computeNode) throw new Error('No local compute node');
+        const mountPath = dataContext.project?.fs_storage_mount_path ?? '';
+        const vfsBase = mountPath.startsWith('/') ? mountPath.slice(1) : mountPath;
+        const safeName = name.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+        const vfsPath = vfsBase
+          ? `${vfsBase}/.claude/docs/${safeName}.md`
+          : `.claude/docs/${safeName}.md`;
+        const content = `---\ntitle: ${name.trim()}\n---\n\n# ${name.trim()}\n`;
+        await fsManager.writeFile(computeNode.typeId, vfsPath, content);
+        toast({ title: 'Markdown created' });
+        navigation.openDock(DockPointer.forAssetEditor('markdown', vfsPath));
         return;
       }
       setRefreshKey(k => k + 1);

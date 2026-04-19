@@ -51,6 +51,7 @@ from .routes import (
     watch_router,
     webhook_api_router,
     websocket_router,
+    compute_register_router,
 )
 
 
@@ -162,6 +163,7 @@ server.add_router(websocket_router)
 server.add_router(webhook_api_router)
 server.add_router(assets_router)
 server.add_router(team_session_router, prefix="/api/v1")
+server.add_router(compute_register_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)

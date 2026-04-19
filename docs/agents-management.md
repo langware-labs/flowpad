@@ -48,7 +48,7 @@ The filesystem record layer and how it syncs with DB entities.
 Topics covered:
 - Base `Record` / `FsRecord` class: meta vs. data storage, folder layout, `RecordStatus`
 - `ClaudeSessionFsRecord`: JSONL parsing, status derivation, `discover()` / `discover_one()`
-- `AgenticProcess` Record: `ProcessorStatus` enum, `discover_status()` delegation
+- `AgenticProcess` Record: `WorkerStatus` enum, `discover_status()` delegation
 - `AgentRecord`: dual-file layout, `--agents` JSON serialization, load priority
 - `vfs_record` entity sync: `sync_record()`, `_apply_record_metadata()`, orphan handling
 - Read/write patterns with code examples

@@ -108,7 +108,7 @@ interface AgenticContext {
 ### Status Enum
 
 ```ts
-enum ProcessorStatus {
+enum WorkerStatus {
   IDLE       = 'idle',        // Created, no session started
   RUNNING    = 'running',     // Claude actively processing
   PAUSED     = 'paused',      // Debug breakpoint hit
@@ -607,7 +607,7 @@ The `state.status` field in `data` always reflects the transcript-derived status
 | `ts_sdk/src/agentic_processor/agentic-process.ts` | `AgenticProcess` entity class |
 | `ts_sdk/src/agentic_processor/agentic-processor.ts` | `AgenticProcessor` entity class |
 | `ts_sdk/src/agentic_processor/agentic-context.ts` | `AgenticContext` DTO + serializer |
-| `ts_sdk/src/agentic_processor/agentic-types.ts` | `ProcessorStatus`, `ProcessorState`, `StackFrame` |
+| `ts_sdk/src/agentic_processor/agentic-types.ts` | `WorkerStatus`, `ProcessorState`, `StackFrame` |
 | `ts_sdk/src/services/claude/claudeSessionManager.ts` | `ClaudeSessionManager` singleton |
 | `ts_sdk/src/services/claude/claudeCliCommand.ts` | `ClaudeCliCommand` builder (parse / generate) |
 | `ts_sdk/src/services/claude/claudeSessionEvents.ts` | `ClaudeSessionEvent` enum |

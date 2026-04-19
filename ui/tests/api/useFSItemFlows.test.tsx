@@ -193,10 +193,14 @@ describe('useFSItemFlows Hook - API Integration Tests', () => {
       return response;
     } catch (error: any) {
       const backendMessage = String(error?.response?.data?.error ?? error?.response?.data?.message ?? '');
+      const status = error?.response?.status;
       const serviceUnavailable =
-        error?.response?.status === 500 &&
-        (backendMessage.includes('Service not available') ||
-          String(error?.message ?? '').includes('status code 500'));
+        (status === 500 &&
+          (backendMessage.includes('Service not available') ||
+            String(error?.message ?? '').includes('status code 500'))) ||
+        // Newer backends that never registered the `create-flow` action return
+        // 400 "Post not supported for this path". Treat the same way.
+        (status === 400 && backendMessage.toLowerCase().includes('not supported for this path'));
 
       if (!serviceUnavailable) {
         throw error;

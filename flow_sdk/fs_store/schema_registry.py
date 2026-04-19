@@ -906,6 +906,8 @@ class SchemaRegistry:
         batch_size = max(1, (total // 100)) if total else emit_every
 
         done = 0
+        rec = None
+        size = 0
         for rec in record_cls.discover_iter(limit=limit):
             done += 1
             size = 0
@@ -925,6 +927,16 @@ class SchemaRegistry:
                 )
             if done % batch_size == 0:
                 await asyncio.sleep(0)
+        # Closing event so consumers see total==done when discover_iter
+        # yielded fewer records than discovery_items_count claimed.
+        if rec is not None and (total is None or done != total):
+            yield ScanProgress(
+                type_name=type_name,
+                done=done,
+                total=done,
+                id=rec.id,
+                size_bytes=size,
+            )
 
     @classmethod
     async def index_type_progress(
@@ -970,6 +982,7 @@ class SchemaRegistry:
         skipped = 0
         errors = 0
         done = 0
+        rec = None
         fts_batch: list = []
         for rec in record_cls.discover_iter(limit=limit):
             done += 1
@@ -1007,6 +1020,18 @@ class SchemaRegistry:
             driver = get_db_driver()
             if hasattr(driver, "fts_upsert"):
                 await driver.fts_upsert(fts_batch)
+        # Closing event so consumers see total==done when discover_iter
+        # yielded fewer records than discovery_items_count claimed.
+        if rec is not None and (total is None or done != total):
+            yield IndexProgress(
+                type_name=type_name,
+                done=done,
+                total=done,
+                id=rec.id,
+                indexed=indexed,
+                skipped=skipped,
+                errors=errors,
+            )
 
     # ---------------------------------------------------------------------------
     # High-level orchestration

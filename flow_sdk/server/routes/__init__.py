@@ -18,6 +18,7 @@ from .rules import router as rules_router
 from .watch import router as watch_router
 from .assets import router as assets_router
 from .team_session import router as team_session_router
+from .compute_register import compute_register_router
 
 __all__ = [
     "bootstrap_router",
@@ -38,4 +39,5 @@ __all__ = [
     "watch_router",
     "assets_router",
     "team_session_router",
+    "compute_register_router",
 ]

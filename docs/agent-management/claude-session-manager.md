@@ -608,7 +608,7 @@ When a toggle changes, `RestartRequiredOverlay` is shown, which calls `restartSe
 | `ts_sdk/src/agentic_processor/agentic-process.ts` | `AgenticProcess.startPty()`, `resumePty()`, `killPty()` |
 | `ts_sdk/src/agentic_processor/agentic-processor.ts` | `AgenticProcessor.createProcess()` |
 | `ts_sdk/src/agentic_processor/agentic-context.ts` | `AgenticContext` DTO and serializer |
-| `ts_sdk/src/agentic_processor/agentic-types.ts` | `ProcessorStatus`, `ProcessorState` |
+| `ts_sdk/src/agentic_processor/agentic-types.ts` | `WorkerStatus`, `ProcessorState` |
 | `ts_sdk/src/services/shell/shellManager.ts` | `ShellManager` — the pattern this mirrors |
 | `ui/src/components/terminal/interactive-terminal/ProcessToolbar.tsx` | Fork and Restart buttons |
 | `ui/src/components/terminal/interactive-terminal/RestartRequiredOverlay.tsx` | Restart confirmation overlay |

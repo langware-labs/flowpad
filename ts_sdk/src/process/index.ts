@@ -9,10 +9,13 @@
 // Shared types (canonical source - breaks circular dependency)
 export {
   ProcessStatus,
+  WorkerStatus,
   parseUIUri,
   isProcessActive,
   isProcessStartable,
   isProcessLive,
+  isWorkerRunning,
+  isWorkerTerminal,
 } from './agentic-types';
 export type { ParsedUIUri, UIComponentPayload } from './agentic-types';
 

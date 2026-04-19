@@ -284,10 +284,10 @@ class AgenticProcess(Record):
 
 Auto-registered in the type registry under `RecordType.AGENTIC_PROCESS`.
 
-### ProcessorStatus Enum
+### WorkerStatus Enum
 
 ```python
-class ProcessorStatus(StrEnum):
+class WorkerStatus(StrEnum):
     IDLE       = "idle"
     RUNNING    = "running"
     PAUSED     = "paused"
@@ -302,7 +302,7 @@ class ProcessorStatus(StrEnum):
 ```python
 def __init__(self, **kwargs: Any):
     kwargs.setdefault("type", RecordType.AGENTIC_PROCESS)
-    kwargs.setdefault("state", ProcessorStatus.IDLE)
+    kwargs.setdefault("state", WorkerStatus.IDLE)
     super().__init__(**kwargs)
 ```
 
@@ -313,14 +313,14 @@ The `state` field is stored in `_data` and defaults to `"idle"`.
 `discover_status(worker_session_id?)` derives the process status by looking up the Claude session transcript:
 
 ```python
-def discover_status(self, worker_session_id: str | None = None) -> ProcessorStatus:
+def discover_status(self, worker_session_id: str | None = None) -> WorkerStatus:
     sid = worker_session_id or self.data.get("worker_session_id")
     if not sid:
-        return ProcessorStatus.IDLE
+        return WorkerStatus.IDLE
     session = ClaudeSessionFsRecord.discover_one(sid)
     if not session:
-        return ProcessorStatus.IDLE
-    return ProcessorStatus(session.worker_status)
+        return WorkerStatus.IDLE
+    return WorkerStatus(session.worker_status)
 ```
 
 This is the same logic as the entity's `_discover_status_from_transcript()` — the record delegates to `ClaudeSessionFsRecord.status`.
@@ -710,7 +710,7 @@ The old `vfs_record` and `vfs_orphan` fields remain in `IEntity` for backward co
 | `flow_sdk/fs_records/claude/claude_session.py` | `ClaudeSessionFsRecord` — JSONL reader, status derivation |
 | `flow_sdk/fs_records/claude/claude_active_session.py` | `ClaudeActiveSessionFsRecord` — mtime-filtered active session |
 | `flow_sdk/fs_records/claude/claude_transcript_entry.py` | `ClaudeTranscriptEntryFsRecord` — single JSONL line |
-| `flow_sdk/fs_records/agentic_process.py` | `AgenticProcess` Record + `ProcessorStatus` enum |
+| `flow_sdk/fs_records/agentic_process.py` | `AgenticProcess` Record + `WorkerStatus` enum |
 | `flow_sdk/fs_records/agent_record.py` | `AgentRecord` — sub-agent definition with `.md` companion |
 | `flow_sdk/fs_records/__init__.py` | Public exports for all record types |
 | `flow_sdk/core/entity/entity_model.py` | `Entity` base class — `record_data_ref`, `from_record()`, `store()`, `check_and_refresh_record()` |

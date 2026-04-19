@@ -30,4 +30,9 @@ def get_compute_provider(provider_type: str) -> ComputeProvider:
             from .e2b import E2BComputeProvider
             _providers["e2b"] = E2BComputeProvider()
         return _providers["e2b"]
+    if provider_type == "docker":
+        if "docker" not in _providers:
+            from .docker import DockerComputeProvider
+            _providers["docker"] = DockerComputeProvider()
+        return _providers["docker"]
     raise ValueError(f"Unknown compute provider type: {provider_type}")
