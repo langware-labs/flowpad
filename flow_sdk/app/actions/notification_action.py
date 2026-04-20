@@ -41,6 +41,8 @@ from flow_sdk.builtin.spec import Spec
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
 from flow_sdk.request_context.methods import get_current_request_info
+from flow_sdk.discovery.notify import send_resource_sync
+from flow_sdk.fs_store import SyncOperation
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse, ApiResponse
 from flow_sdk.utils.git import find_project_root, git_add_commit_push, git_current_branch, git_pull, git_remote_url, git_repo_full_name, repo_id
 from flow_sdk.utils.hub import hub_base_url, hub_post
@@ -366,8 +368,10 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     local_user = await User.get_one({"uname": "local"})
     sender_id: Optional[str] = local_user.id if local_user else None
 
-    # Find the Conversation entity (child of this task)
+    # Find the Conversation entity — try by task_id first, then by task.conversation_id
     conv = await Conversation.get_one({"task_id": task_id})
+    if not conv and task.conversation_id:
+        conv = await Conversation.get_one({"id": task.conversation_id})
     if not conv:
         return ApiFailResponse(message=f"No conversation found for task {task_id}")
 
@@ -385,6 +389,8 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     })
     reply_fm.id = FlowMessage.allocate_id(reply_fm.model_dump())
     reply_fm.attachment = [
+        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.TASK.value, id=task_id))),
+        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))),
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=reply_fm.id))),
     ]
     reply_fm = await reply_fm.save(someone_typeid)
@@ -405,6 +411,17 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     conv.message_ids = _json.dumps(existing_ids_raw)
     conv.message_count = len(existing_ids_raw)
     conv = await conv.save(someone_typeid)
+
+    # Notify UI so conversation refreshes automatically
+    try:
+        send_resource_sync(
+            type="conversation",
+            id=conv.id,
+            operation=SyncOperation.UPDATE,
+            data={"event_data": {"conversation_id": conv.id, "task_id": task_id, "flow_message_id": reply_fm.id}},
+        )
+    except Exception:
+        pass
 
     # Git push the updated conversation.jsonl
     project_root_str = (task.metadata or {}).get("project_root")

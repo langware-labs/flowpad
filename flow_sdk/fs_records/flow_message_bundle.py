@@ -235,9 +235,21 @@ async def unpack_bundle(
             raise FlowMessageExistsError(conflicts)
 
         # 4. Materialize attachments
+        # Process in dependency order: spec → task → conversation → flow_message
+        _TYPE_ORDER = {
+            BuiltinEntityType.SPEC.value: 0,
+            BuiltinEntityType.TASK.value: 1,
+            BuiltinEntityType.CONVERSATION.value: 2,
+            BuiltinEntityType.FLOW_MESSAGE.value: 3,
+        }
+
+        def _entry_sort_key(p: Path) -> int:
+            t, _, _ = p.name.partition("-@")
+            return _TYPE_ORDER.get(t, 99)
+
         conversation_id: str | None = None
         if attachment_dir.exists():
-            for entry_dir in sorted(attachment_dir.iterdir()):
+            for entry_dir in sorted(attachment_dir.iterdir(), key=_entry_sort_key):
                 if not entry_dir.is_dir():
                     continue
                 name = entry_dir.name
@@ -271,13 +283,23 @@ async def unpack_bundle(
                 elif entry_type == BuiltinEntityType.CONVERSATION.value:
                     jsonl_file = entry_dir / "conversation.jsonl"
                     if jsonl_file.exists():
-                        # Find task_id from msg_data context (raw JSON strings: "task-<id>")
                         task_id_for_conv = next(
                             (TypeId(c).id for c in msg_data.get("context", []) if TypeId(c).type == BuiltinEntityType.TASK.value),
                             None,
-                        )
+                        ) or task_id
+                        # Copy conversation.jsonl to a permanent location before the
+                        # temp dir is cleaned up — _create_conversation_from_disk
+                        # stores data_path pointing at task_dir, so it must survive.
+                        from flow_sdk.config import FLOW_HOME
+                        import re as _re
+                        task_obj = await Task.get_one({"id": task_id_for_conv}) if task_id_for_conv else None
+                        task_title_slug = _re.sub(r"[^a-z0-9]+", "-", (task_obj.title or "task").lower()).strip("-")[:60] if task_obj else "task"
+                        perm_task_dir = FLOW_HOME / "tasks" / f"{task_title_slug}-{(task_id_for_conv or entry_id)[:8]}"
+                        perm_task_dir.mkdir(parents=True, exist_ok=True)
+                        perm_jsonl = perm_task_dir / "conversation.jsonl"
+                        shutil.copy2(jsonl_file, perm_jsonl)
                         conv = await _create_conversation_from_disk(
-                            task_dir=entry_dir,
+                            task_dir=perm_task_dir,
                             task_id=task_id_for_conv or "",
                             conversation_id=entry_id,
                             owner_typeid=owner_typeid,
@@ -303,7 +325,7 @@ async def unpack_bundle(
         top_fm.id = top_fm_id
         top_fm = await top_fm.save(owner_typeid)
 
-        # 6. Append pointer to target conversation
+        # 6. Append pointer to target conversation (only if not already present)
         target_conv_id = conversation_id or next(
             (c.id for c in top_fm.context if c.type == BuiltinEntityType.CONVERSATION.value),
             None,
@@ -312,12 +334,15 @@ async def unpack_bundle(
             conv_entity = await Conversation.get_one({"id": target_conv_id})
             if conv_entity and conv_entity.data_path:
                 from pathlib import Path as _Path
-                rec = ConversationRecord.from_jsonl(
-                    _Path(conv_entity.data_path),
-                    next((c.id for c in top_fm.context if c.type == BuiltinEntityType.TASK.value), ""),
-                    target_conv_id,
-                )
-                rec.append_message_pointer(top_fm.id, datetime.now(UTC).isoformat())
+                _jsonl_path = _Path(conv_entity.data_path)
+                _existing = _jsonl_path.read_text(encoding="utf-8") if _jsonl_path.exists() else ""
+                if top_fm.id not in _existing:
+                    rec = ConversationRecord.from_jsonl(
+                        _jsonl_path,
+                        next((c.id for c in top_fm.context if c.type == BuiltinEntityType.TASK.value), ""),
+                        target_conv_id,
+                    )
+                    rec.append_message_pointer(top_fm.id, datetime.now(UTC).isoformat())
 
         # 7. Fire resource sync
         try:
