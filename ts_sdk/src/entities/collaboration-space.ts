@@ -159,11 +159,21 @@ export class CollaborationSpace extends APIEntity<CollaborationSpace> implements
    * session_code. Caller typically follows with navigation.openDock(space.dockPointer).
    */
   public static async create(hostName?: string, hostMemberId?: string): Promise<CollaborationSpace> {
+    const memberId = hostMemberId ?? getOrCreateLocalMemberId();
     const space = new CollaborationSpace({
       host_name: hostName ?? null,
-      host_member_id: hostMemberId ?? getOrCreateLocalMemberId(),
+      host_member_id: memberId,
     } as Partial<ICollaborationSpace>);
     await space.save();
+    // Seed the host as the first member so heartbeats have a row to touch and
+    // joining members can see who's in the space.
+    if (hostName) {
+      try {
+        await space.join(memberId, hostName);
+      } catch (err) {
+        console.warn('[CollaborationSpace.create] failed to seed host as member', err);
+      }
+    }
     return space;
   }
 

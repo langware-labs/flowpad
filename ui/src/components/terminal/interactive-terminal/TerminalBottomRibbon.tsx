@@ -48,7 +48,6 @@ const RIBBON_TABS: SideTabIdType[] = [
   SideTabId.Prompts,
   SideTabId.Queue,
   SideTabId.Files,
-  SideTabId.Team,
 ];
 
 export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({

@@ -185,13 +185,6 @@ export function HomeLanding() {
   const [draftPrompt, setDraftPrompt] = useState('');
   const handleStartCollaborativeSession = () => {
     if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
-    if (!draftPrompt.trim()) {
-      toast({
-        title: 'Type a prompt first',
-        description: 'Enter the first message for the shared session, then press Start collaborative session.',
-      });
-      return;
-    }
     setShowJoinSession(true);
   };
   const handleJoinSession = () => {
@@ -241,23 +234,28 @@ export function HomeLanding() {
         });
         return;
       }
-      const workdir =
-        currentProject.fs_storage_mount_path || currentProject.name || paths?.workspace || undefined;
+      const trimmedPrompt = prompt.trim();
       try {
-        const agenticProcess = await claudeSessionManager.createAndStartSession(
-          { workdir },
-          { instruction: prompt },
-        );
-        try {
-          await agenticProcess.createTeamSession(hostName);
-        } catch (err) {
-          console.error('[HomeLanding] createTeamSession failed', err);
+        if (trimmedPrompt) {
+          const workdir =
+            currentProject.fs_storage_mount_path || currentProject.name || paths?.workspace || undefined;
+          const agenticProcess = await claudeSessionManager.createAndStartSession(
+            { workdir },
+            { instruction: trimmedPrompt },
+          );
+          const space = await agenticProcess.createCollaborationSpace(hostName);
+          setDraftPrompt('');
+          navigation.openDock(
+            DockPointer.forCollaborationSpace(space.id, {
+              type: 'agentic_process',
+              id: agenticProcess.id,
+            }),
+          );
+        } else {
+          const { CollaborationSpace } = await import('@sdk');
+          const space = await CollaborationSpace.create(hostName);
+          navigation.openCollaborationSpace(space.id);
         }
-        setDraftPrompt('');
-        await navigation.openShellProcess(agenticProcess.id, {
-          windows: 'team',
-          activeWindow: 'team',
-        });
       } catch (error) {
         console.error('[HomeLanding] Failed to start collaborative session:', error);
         toast({
