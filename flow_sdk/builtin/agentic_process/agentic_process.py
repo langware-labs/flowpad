@@ -206,6 +206,10 @@ class AgenticProcess(Entity):
     shell_mode: bool = APIField(default=False, description="False=direct PTY spawn (default), True=legacy zsh intermediary")
     project_id: str | None = APIField(default=None)
     project_encoded_name: str | None = APIField(default=None)
+    collaboration_session_id: str | None = APIField(
+        default=None,
+        description="CollaborationSession this process was spawned in, if any",
+    )
     shell_id: str | None = APIField(default=None)
     sidecar_shell_id: str | None = APIField(default=None)
     visible: bool = APIField(default=False, description="Whether this process is visible in the tabs view")

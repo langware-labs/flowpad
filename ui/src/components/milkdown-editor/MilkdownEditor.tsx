@@ -1,4 +1,4 @@
-import { Editor, rootCtx, defaultValueCtx, editorViewCtx } from '@milkdown/core';
+import { Editor, rootCtx, defaultValueCtx, editorViewCtx, parserCtx } from '@milkdown/core';
 import { Milkdown, MilkdownProvider, useEditor, useInstance } from '@milkdown/react';
 import {
   commonmark,
@@ -211,6 +211,9 @@ function MilkdownEditorInner({ content, onChange, readOnly, plugins, onActiveSta
   // Strip HTML comments for display in WYSIWYG mode
   const displayContent = useMemo(() => stripHtmlComments(content), [content]);
   const initialContentRef = useRef(displayContent);
+  // Track the last markdown we emitted via onChange so we can tell user edits
+  // apart from external content changes (e.g. file rewritten on disk).
+  const lastEmittedRef = useRef(displayContent);
 
   // Keep ref in sync so editor uses latest content when re-initialized (e.g. after save)
   useEffect(() => {
@@ -225,7 +228,10 @@ function MilkdownEditorInner({ content, onChange, readOnly, plugins, onActiveSta
           ctx.set(defaultValueCtx, initialContentRef.current);
           const lctx = ctx.get(listenerCtx);
           if (onChange) {
-            lctx.markdownUpdated((_, markdown) => { onChange(markdown); });
+            lctx.markdownUpdated((_, markdown) => {
+              lastEmittedRef.current = markdown;
+              onChange(markdown);
+            });
           }
           if (onActiveStateChange) {
             const notify = (ctx: Ctx) => {
@@ -267,6 +273,28 @@ function MilkdownEditorInner({ content, onChange, readOnly, plugins, onActiveSta
       editorRef.current = get() ?? null;
     }
   }, [get]);
+
+  // Sync external content changes into the live ProseMirror doc.
+  // useEditor's dep array doesn't include content, so without this the editor
+  // keeps its initial state when the file is rewritten on disk.
+  useEffect(() => {
+    const editor = get?.();
+    if (!editor) return;
+    if (displayContent === lastEmittedRef.current) return;
+    try {
+      editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const parser = ctx.get(parserCtx);
+        const newDoc = parser(displayContent);
+        if (!newDoc) return;
+        const { state } = view;
+        view.dispatch(state.tr.replaceWith(0, state.doc.content.size, newDoc.content));
+      });
+      lastEmittedRef.current = displayContent;
+    } catch (err) {
+      console.error('[MilkdownEditor] Failed to sync external content:', err);
+    }
+  }, [displayContent, get]);
 
   return (
     <div className={`milkdown-editor-wrapper h-full ${readOnly ? 'pointer-events-none opacity-80' : ''}`}>

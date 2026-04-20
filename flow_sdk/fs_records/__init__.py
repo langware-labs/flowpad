@@ -57,6 +57,8 @@ from .shell_record import ShellRecord as ShellRecord
 from .shell_record import ShellStatus as ShellStatus
 from .collaboration_space_record import CollaborationSpaceRecord as CollaborationSpaceRecord
 from .collaboration_space_record import CollaborationSpaceStatus as CollaborationSpaceStatus
+from .collaboration_session_record import CollaborationSessionRecord as CollaborationSessionRecord
+from .collaboration_session_record import CollaborationSessionStatus as CollaborationSessionStatus
 from .skill_record import SkillRecord as SkillRecord
 from .spec_record import SpecRecord as SpecRecord
 from .task import TaskResource as TaskResource

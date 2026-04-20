@@ -105,6 +105,8 @@ export interface IAgenticProcess extends IEntity {
   additional_dirs?: string[];
   /** Owning project ID */
   project_id?: string | null;
+  /** CollaborationSession this process was spawned in, if any */
+  collaboration_session_id?: string | null;
 }
 
 /**
@@ -464,6 +466,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Owning project ID */
   project_id?: string | null;
 
+  /** CollaborationSession this process was spawned in, if any */
+  collaboration_session_id: string | null = null;
+
   /** Backend TTL live field: true if a PTY session is actually alive (30s TTL) */
   is_active: boolean = false;
 
@@ -539,6 +544,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;
     this.sidecar_shell_id = entity.sidecar_shell_id;
+    this.collaboration_session_id = entity.collaboration_session_id ?? null;
     this.is_active = entity.is_active ?? false;
     this.waiting_for_prompt = entity.waiting_for_prompt ?? false;
   }
@@ -1182,35 +1188,31 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Start a CollaborationSpace bound to this process.
-   *
-   * Creates a CollaborationSpace entity with this process as the host and
-   * seeds the host as the first member. Returns the persisted entity
-   * whose `session_code` is the shareable join code.
+   * Start a CollaborationSession around this process — resolves the project's
+   * default CollaborationSpace (lazy-creating it if needed), creates a fresh
+   * session inside it, and binds this process to that session.
    */
-  async createCollaborationSpace(
+  async createCollaborationSession(
     hostName: string,
-    hostMemberId?: string,
-  ): Promise<import('../entities/collaboration-space').CollaborationSpace> {
-    const { CollaborationSpace, getOrCreateLocalMemberId } = await import('../entities/collaboration-space');
-    const memberId = hostMemberId ?? getOrCreateLocalMemberId();
-    const now = new Date().toISOString();
-    const sp = new CollaborationSpace({
-      agentic_process_id: this.id,
-      host_name: hostName,
-      host_member_id: memberId,
-      members: [
-        {
-          member_id: memberId,
-          name: hostName,
-          joined_at: now,
-          last_seen_at: now,
-        },
-      ],
-      status: 'active',
+    options?: { hostMemberId?: string; spaceId?: string; name?: string | null },
+  ): Promise<import('../entities/collaboration-session').CollaborationSession> {
+    const { CollaborationSession } = await import('../entities/collaboration-session');
+    const session = await CollaborationSession.create({
+      projectId: this.project_id ?? undefined,
+      spaceId: options?.spaceId,
+      hostName,
+      hostMemberId: options?.hostMemberId,
+      name: options?.name ?? null,
     });
-    await sp.save();
-    return sp;
+    // Bind this process to the new session on both ends.
+    this.collaboration_session_id = session.id;
+    await this.save();
+    try {
+      await session.addProcess(this.id);
+    } catch (err) {
+      console.warn('[AgenticProcess.createCollaborationSession] addProcess failed', err);
+    }
+    return session;
   }
 
   /**

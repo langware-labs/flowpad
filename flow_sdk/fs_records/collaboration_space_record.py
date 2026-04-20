@@ -35,17 +35,19 @@ class CollaborationSpaceStatus:
 class CollaborationSpaceRecord(Record):
     _record_type: ClassVar[str] = RecordType.COLLABORATION_SPACE
     _indexed_by_default: ClassVar[bool] = False
-    index_fields: ClassVar[list[str]] = ["session_code", "agentic_process_id"]
+    index_fields: ClassVar[list[str]] = ["session_code", "project_id"]
 
     def __init__(self, **kwargs: Any) -> None:
         if "id" not in kwargs:
             kwargs["id"] = str(_uuid.uuid4())
         kwargs.setdefault("type", RecordType.COLLABORATION_SPACE)
         kwargs.setdefault("session_code", _generate_session_code())
-        kwargs.setdefault("agentic_process_id", None)
+        kwargs.setdefault("name", None)
         kwargs.setdefault("host_name", None)
         kwargs.setdefault("host_member_id", None)
         kwargs.setdefault("members", [])
+        kwargs.setdefault("project_id", None)
+        kwargs.setdefault("is_default", False)
         kwargs.setdefault("status", CollaborationSpaceStatus.ACTIVE)
         kwargs.setdefault("created_at", _now_iso())
         kwargs.setdefault("ended_at", None)

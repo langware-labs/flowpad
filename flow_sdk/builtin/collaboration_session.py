@@ -1,7 +1,8 @@
-"""CollaborationSpace entity — persistent space where members meet to collaborate.
+"""CollaborationSession entity — a single meeting inside a CollaborationSpace.
 
-Users work in their own projects but meet in spaces to assist and get assisted.
-The host (creator) decides what gets shared into the space (tabs, docs, plans).
+A space is the persistent team room; a session is one meeting event. Sessions
+own the AgenticProcesses spawned during the meeting and hold the participants
+who joined it.
 """
 
 from __future__ import annotations
@@ -12,10 +13,7 @@ from typing import Any, ClassVar
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity, action
-from flow_sdk.fs_records.collaboration_space_record import (
-    CollaborationSpaceStatus,
-    _generate_session_code,
-)
+from flow_sdk.fs_records.collaboration_session_record import CollaborationSessionStatus
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -26,22 +24,26 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class CollaborationSpace(Entity):
-    """Entity representing a collaboration space (persistent meeting room)."""
+class CollaborationSession(Entity):
+    """Entity representing one meeting inside a CollaborationSpace."""
 
-    type: str = APIField(default="collaboration_space")
-    session_code: str = APIField(default="", description="Shareable join code, e.g. ABCD-EFGH")
-    name: str | None = APIField(default=None, description="User-editable display name for the space")
+    type: str = APIField(default="collaboration_session")
+    space_id: str | None = APIField(default=None, description="Owning CollaborationSpace id")
+    project_id: str | None = APIField(default=None, description="Denormalized project id from the space")
     host_name: str | None = APIField(default=None, description="Display name of the host")
     host_member_id: str | None = APIField(default=None, description="Stable member_id of the host")
-    project_id: str | None = APIField(default=None, description="Project this space belongs to (optional)")
-    is_default: bool = APIField(default=False, description="True when this is the project's default space")
+    name: str | None = APIField(default=None, description="Optional human title for this meeting")
     members: list[dict] = APIField(
         default_factory=list,
         description="Participants: [{member_id, name, joined_at, last_seen_at}]",
     )
-    status: str = APIField(default=CollaborationSpaceStatus.ACTIVE)
-    created_at: str | None = APIField(default=None)
+    agentic_process_ids: list[str] = APIField(
+        default_factory=list,
+        description="AgenticProcess ids spawned during this session",
+    )
+    status: str = APIField(default=CollaborationSessionStatus.ACTIVE)
+    started_at: str | None = APIField(default=None)
+    updated_at: str | None = APIField(default=None)
     ended_at: str | None = APIField(default=None)
 
     _api_visible: ClassVar[bool] = True
@@ -49,19 +51,17 @@ class CollaborationSpace(Entity):
     # ── Construction ──────────────────────────────────────────────────────────
 
     def __init__(self, **data: Any) -> None:
-        if not data.get("session_code"):
-            data["session_code"] = _generate_session_code()
-        if not data.get("created_at"):
-            data["created_at"] = _now_iso()
+        now = _now_iso()
+        if not data.get("started_at"):
+            data["started_at"] = now
+        if not data.get("updated_at"):
+            data["updated_at"] = now
         super().__init__(**data)
 
-    # ── Member helpers ────────────────────────────────────────────────────────
+    # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _find_member(self, member_id: str) -> dict | None:
-        for m in self.members or []:
-            if m.get("member_id") == member_id:
-                return m
-        return None
+    def _touch(self) -> None:
+        self.updated_at = _now_iso()
 
     async def upsert_member(self, member_id: str, name: str) -> dict:
         now = _now_iso()
@@ -86,6 +86,7 @@ class CollaborationSpace(Entity):
             }
             members.append(entry)
         self.members = members
+        self._touch()
         await self.save()
         return entry
 
@@ -100,45 +101,24 @@ class CollaborationSpace(Entity):
                 break
         if changed:
             self.members = members
+            self._touch()
             await self.save()
         return changed
 
-    # ── Lookup ────────────────────────────────────────────────────────────────
-
-    @classmethod
-    async def get_by_code(cls, code: str) -> "CollaborationSpace | None":
-        """Find active CollaborationSpace by session_code (case-insensitive)."""
-        normalized = (code or "").upper().strip()
-        if not normalized:
-            return None
-        all_spaces = await cls.get_all()
-        for sp in all_spaces:
-            if (sp.session_code or "").upper() == normalized and sp.status == CollaborationSpaceStatus.ACTIVE:
-                return sp
-        return None
-
-    @classmethod
-    async def ensure_default_for_project(cls, project_id: str) -> "CollaborationSpace":
-        """Return the project's default space, creating it lazily if needed."""
-        if not project_id:
-            raise ValueError("project_id is required")
-        all_spaces = await cls.get_all()
-        for sp in all_spaces:
-            if (
-                sp.project_id == project_id
-                and getattr(sp, "is_default", False)
-                and sp.status == CollaborationSpaceStatus.ACTIVE
-            ):
-                return sp
-        space = cls(project_id=project_id, is_default=True)
-        await space.save()
-        return space
+    async def add_process(self, process_id: str) -> bool:
+        procs = list(self.agentic_process_ids or [])
+        if process_id in procs:
+            return False
+        procs.append(process_id)
+        self.agentic_process_ids = procs
+        self._touch()
+        await self.save()
+        return True
 
     # ── HTTP actions ──────────────────────────────────────────────────────────
 
     @action.post(action_name="join")
     async def _http_join(self) -> ApiResponse:
-        """POST body: {member_id, name} → upsert member, return entity."""
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
         member_id = body.get("member_id")
@@ -150,7 +130,6 @@ class CollaborationSpace(Entity):
 
     @action.post(action_name="heartbeat")
     async def _http_heartbeat(self) -> ApiResponse:
-        """POST body: {member_id} → bump last_seen_at."""
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
         member_id = body.get("member_id")
@@ -159,10 +138,20 @@ class CollaborationSpace(Entity):
         updated = await self.touch_member(member_id)
         return ApiSuccessResponse(data={"ok": updated, "members": self.members})
 
+    @action.post(action_name="add_process")
+    async def _http_add_process(self) -> ApiResponse:
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        process_id = body.get("agentic_process_id")
+        if not process_id:
+            return ApiFailResponse(message="agentic_process_id is required")
+        added = await self.add_process(process_id)
+        return ApiSuccessResponse(data={"ok": added, "agentic_process_ids": self.agentic_process_ids})
+
     @action.post(action_name="end")
     async def _http_end(self) -> ApiResponse:
-        """End the collaboration space."""
-        self.status = CollaborationSpaceStatus.ENDED
+        self.status = CollaborationSessionStatus.ENDED
         self.ended_at = _now_iso()
+        self._touch()
         await self.save()
         return ApiSuccessResponse(data=self.model_dump(mode="json"))

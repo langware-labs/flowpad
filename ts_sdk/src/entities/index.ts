@@ -27,6 +27,7 @@ export * from './project';
 export * from './question';
 export * from './shell';
 export * from './collaboration-space';
+export * from './collaboration-session';
 export * from './siteconfig';
 export * from './conversation';
 export * from './spec';

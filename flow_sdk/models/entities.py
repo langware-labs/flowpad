@@ -76,6 +76,11 @@ except ImportError as e:
     print(f"[WARN] Failed to import CollaborationSpace: {e}")
 
 try:
+    from flow_sdk.builtin.collaboration_session import CollaborationSession  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import CollaborationSession: {e}")
+
+try:
     from flow_sdk.builtin.cron_event import CronEvent  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import CronEvent: {e}")

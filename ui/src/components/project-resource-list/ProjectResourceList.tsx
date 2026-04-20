@@ -31,6 +31,7 @@ export type ProjectResourceType =
   | 'command'
   | 'agent'
   | 'claude_session'
+  | 'collaboration_session'
   | 'todo'
   | 'claude_md';
 
