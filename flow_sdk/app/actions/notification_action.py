@@ -374,6 +374,7 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         conv = await Conversation.get_one({"id": task.conversation_id})
     if not conv:
         return ApiFailResponse(message=f"No conversation found for task {task_id}")
+    print(f"[ROUNDTRIP] REPLY   task_id={task_id}  conv_id={conv.id}  current_count={conv.message_count}")
 
     # Save FlowMessage record for this reply
     from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
