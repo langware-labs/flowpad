@@ -24,6 +24,13 @@ from flow_sdk.discovery.notify import send_resource_sync
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store import SyncOperation
 
+_FM_FIELDS = {"type", "id", "text", "instruction", "context", "attachment",
+              "sender_id", "sender_name", "receiver_address", "receiver_address_type"}
+
+_TASK_FIELDS = {"type", "id", "title", "description", "status", "task_type",
+                "priority", "spec_id", "shared_by_id", "conversation_id",
+                "metadata", "due_at", "start_date"}
+
 if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
 
@@ -58,9 +65,9 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
         # 1. Write top-level message.json
         msg_data = flow_message.model_dump(
             mode="python",
+            include=_FM_FIELDS,
             context={"skip_api_serializer": True},
         )
-        msg_data.pop("expand", None)  # transient request-level field, not for transport
         (tmp_root / "message.json").write_text(
             json.dumps(msg_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
         )
@@ -94,6 +101,7 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
                     task_dir.mkdir(parents=True, exist_ok=True)
                     task_data = task.model_dump(
                         mode="python",
+                        include=_TASK_FIELDS,
                         context={"skip_api_serializer": True},
                     )
                     (task_dir / "manifest.json").write_text(
@@ -154,9 +162,9 @@ async def _pack_flow_message_entry(fm_id: str, attachment_dir: Path) -> None:
         fm_dir.mkdir(parents=True, exist_ok=True)
         fm_data = fm.model_dump(
             mode="python",
+            include=_FM_FIELDS,
             context={"skip_api_serializer": True},
         )
-        fm_data.pop("expand", None)  # transient request-level field, not for transport
         (fm_dir / "message.json").write_text(
             json.dumps(fm_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
         )

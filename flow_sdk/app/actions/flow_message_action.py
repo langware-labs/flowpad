@@ -102,8 +102,8 @@ async def handle_create_task_bundle(
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
 
-    # 3. Create Conversation + conversation.jsonl under FLOW_HOME/tasks/<slug>/
-    task_dir = FLOW_HOME / "tasks" / _meaningful_name(task_title)
+    # 3. Create Conversation + conversation.jsonl under FLOW_HOME/tasks/<slug>-<id>/
+    task_dir = FLOW_HOME / "tasks" / f"{_meaningful_name(task_title)}-{task.id[:8]}"
     task_dir.mkdir(parents=True, exist_ok=True)
     jsonl_path = task_dir / "conversation.jsonl"
     jsonl_path.touch()
