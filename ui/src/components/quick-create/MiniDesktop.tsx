@@ -1,17 +1,19 @@
+import { FavoriteTile } from '@src/components/favorites/FavoriteTile';
+import { useFavorites } from '@src/hooks/use-favorites';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { QuickCreateDialog } from './QuickCreateDialog';
 import { QuickCreateMenu } from './QuickCreateMenu';
 
 /**
- * MiniDesktop — a compact "dock"-style surface on the home landing. Currently
- * holds a single "+" button that opens the quick-create menu; future iterations
- * can add more desktop-like icons next to it.
+ * MiniDesktop — a desktop-grid surface on the home landing. The "+" button is
+ * always first; each favorited entity renders as a tile beside it.
  */
 export function MiniDesktop() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeType, setActiveType] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const { favorites } = useFavorites();
 
   const handlePick = (type: string) => {
     setActiveType(type);
@@ -31,6 +33,10 @@ export function MiniDesktop() {
           <span className="text-[10px] font-medium leading-none">New</span>
         </button>
       </QuickCreateMenu>
+
+      {favorites.map((fav) => (
+        <FavoriteTile key={fav.id} bookmark={fav} />
+      ))}
 
       <QuickCreateDialog
         open={dialogOpen}
