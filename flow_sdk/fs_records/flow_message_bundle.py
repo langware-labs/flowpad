@@ -199,6 +199,38 @@ def _rewrite_file_attachments(fm_data: dict, tmp_root: Path, task_id: str) -> No
 
 
 # ---------------------------------------------------------------------------
+# _merge_conversation_jsonl
+# ---------------------------------------------------------------------------
+
+def _merge_conversation_jsonl(bundle_jsonl: Path, dest: Path) -> None:
+    """Write a merged conversation.jsonl to dest.
+
+    Keeps all existing local pointers in dest, then appends any pointers from
+    bundle_jsonl whose message_id is not already present (preserving local replies).
+    """
+    def _read_ptrs(path: Path) -> list[dict]:
+        ptrs: list[dict] = []
+        if not path.exists():
+            return ptrs
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    ptrs.append(json.loads(line))
+                except Exception:
+                    pass
+        return ptrs
+
+    existing = _read_ptrs(dest)
+    existing_ids = {p.get("message_id") for p in existing}
+    new_ptrs = [p for p in _read_ptrs(bundle_jsonl) if p.get("message_id") not in existing_ids]
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with dest.open("w", encoding="utf-8") as fh:
+        for ptr in existing + new_ptrs:
+            fh.write(json.dumps(ptr) + "\n")
+
+
+# ---------------------------------------------------------------------------
 # unpack_bundle
 # ---------------------------------------------------------------------------
 
@@ -296,13 +328,20 @@ async def unpack_bundle(
                         task_id = task_data.get("id") or entry_id
                         existing_task = await Task.get_one({"id": task_id})
                         if existing_task is None or overwrite:
+                            # Merge metadata: keep agentic_* keys from existing task so
+                            # session resume still works after re-upload.
+                            bundle_meta: dict = task_data.get("metadata") or {}
+                            if existing_task and existing_task.metadata:
+                                existing_meta = dict(existing_task.metadata)
+                                agentic_keys = {k: v for k, v in existing_meta.items() if k.startswith("agentic_")}
+                                bundle_meta = {**bundle_meta, **agentic_keys}
                             task = Task.model_validate({
                                 "id": task_id,
                                 "title": task_data.get("title", ""),
                                 "spec_id": task_data.get("spec_id"),
                                 "shared_by_id": task_data.get("shared_by_id"),
                                 "conversation_id": task_data.get("conversation_id"),
-                                "metadata": task_data.get("metadata"),
+                                "metadata": bundle_meta or None,
                                 "status": task_data.get("status", "to_do"),
                             })
                             await task.save(owner_typeid)
@@ -324,7 +363,7 @@ async def unpack_bundle(
                         perm_task_dir = FLOW_HOME / "tasks" / f"{task_title_slug}-{(task_id_for_conv or entry_id)[:8]}"
                         perm_task_dir.mkdir(parents=True, exist_ok=True)
                         perm_jsonl = perm_task_dir / "conversation.jsonl"
-                        shutil.copy2(jsonl_file, perm_jsonl)
+                        _merge_conversation_jsonl(jsonl_file, perm_jsonl)
                         conv = await _create_conversation_from_disk(
                             task_dir=perm_task_dir,
                             task_id=task_id_for_conv or "",
