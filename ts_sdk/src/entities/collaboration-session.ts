@@ -3,16 +3,16 @@ import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
 import { ViewType } from '../utils/ui/view-types';
-import type { CollaborationSpaceMember } from './collaboration-space';
-import { CollaborationSpace, getOrCreateLocalMemberId } from './collaboration-space';
+import type { ProjectMember } from './project';
+import { Project, getOrCreateLocalMemberId } from './project';
+
 
 export interface ICollaborationSession extends IEntity {
-  space_id?: string | null;
   project_id?: string | null;
   host_name?: string | null;
   host_member_id?: string | null;
   name?: string | null;
-  members?: CollaborationSpaceMember[];
+  members?: ProjectMember[];
   agentic_process_ids?: string[];
   status?: string;
   started_at?: string | null;
@@ -27,12 +27,11 @@ export class CollaborationSession
 {
   static type: string = 'collaboration_session';
 
-  space_id: string | null = null;
   project_id: string | null = null;
   host_name: string | null = null;
   host_member_id: string | null = null;
   name: string | null = null;
-  members: CollaborationSpaceMember[] = [];
+  members: ProjectMember[] = [];
   agentic_process_ids: string[] = [];
   status: string = 'active';
   started_at: string | null = null;
@@ -47,27 +46,29 @@ export class CollaborationSession
   }
 
   get displayName(): string {
-    if (this.name) return this.name;
-    if (this.started_at) {
-      try {
-        return new Date(this.started_at).toLocaleString();
-      } catch {
-        // fall through
-      }
+    if (this.name && this.name.trim()) return this.name;
+    // Backfill display for legacy records that were created before auto-naming
+    // landed. Uses the same "<Host>'s session (Day, HH:MM)" shape as create().
+    const host = this.host_name?.trim() || 'Anonymous';
+    const when = this.started_at ? new Date(this.started_at) : new Date();
+    if (!Number.isNaN(when.getTime())) {
+      return CollaborationSession.defaultName(host, when);
     }
-    return 'Session';
+    return `${host}'s session`;
   }
 
   /**
-   * DockPointer back to the session, nested in its space:
-   *   /dock/collaboration_space/<space_id>/session/<session_id>
+   * DockPointer back to the session, nested under its project:
+   *   /dock/collaboration/<project_id>/session/<session_id>
+   * (Using the COLLABORATION_SPACE ViewType for now — it will be renamed to
+   * COLLABORATION in the next phase.)
    */
   override get dockPointer(): DockPointerData {
-    const pointer = this.space_id && this.id ? `${this.space_id}/session/${this.id}` : undefined;
+    const pointer = this.project_id && this.id ? `${this.project_id}/session/${this.id}` : undefined;
     return new DockPointerData(ViewType.COLLABORATION_SPACE, pointer);
   }
 
-  public async join(memberId: string, name: string): Promise<CollaborationSpaceMember | null> {
+  public async join(memberId: string, name: string): Promise<ProjectMember | null> {
     const info = new ActionInfo('join', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters = { member_id: memberId, name };
     const result = await dataManager.callAction<{ member_id: string; name: string }, any>(info);
@@ -77,12 +78,12 @@ export class CollaborationSession
     return this.members.find((m) => m.member_id === memberId) ?? null;
   }
 
-  public async heartbeat(memberId: string): Promise<CollaborationSpaceMember[] | null> {
+  public async heartbeat(memberId: string): Promise<ProjectMember[] | null> {
     const info = new ActionInfo('heartbeat', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters = { member_id: memberId };
     const result = await dataManager.callAction<
       { member_id: string },
-      { ok: boolean; members: CollaborationSpaceMember[] }
+      { ok: boolean; members: ProjectMember[] }
     >(info);
     if (result && Array.isArray(result.members)) {
       this.members = result.members;
@@ -114,35 +115,46 @@ export class CollaborationSession
   }
 
   /**
-   * Start a new meeting. If `spaceId` is omitted, resolves (and lazy-creates)
-   * the project's default space first. Seeds the host as the first member.
+   * Start a new meeting bound to a project. Ensures the project has a
+   * collaboration `session_code` (lazy-generated), seeds the host as the
+   * first member of both project and session, then saves and returns the
+   * session record.
    */
+  /** Default session name: e.g. "Alex's session (Mon, 19:45)". */
+  static defaultName(hostName: string, when: Date = new Date()): string {
+    const day = when.toLocaleDateString(undefined, { weekday: 'short' });
+    const hh = String(when.getHours()).padStart(2, '0');
+    const mm = String(when.getMinutes()).padStart(2, '0');
+    return `${hostName}'s session (${day}, ${hh}:${mm})`;
+  }
+
   public static async create(options: {
-    projectId?: string;
-    spaceId?: string;
+    projectId: string;
     hostName: string;
     hostMemberId?: string;
     name?: string | null;
   }): Promise<CollaborationSession> {
     const { projectId, hostName, name } = options;
-    let spaceId = options.spaceId ?? null;
-    let projectIdResolved: string | null = projectId ?? null;
+    if (!projectId) throw new Error('projectId is required');
+    const effectiveName =
+      name != null && name.trim() ? name.trim() : CollaborationSession.defaultName(hostName);
 
-    if (!spaceId) {
-      if (!projectId) throw new Error('Either spaceId or projectId is required');
-      const defaultSpace = await CollaborationSpace.ensureDefaultForProject(projectId, hostName);
-      spaceId = defaultSpace.id;
-      projectIdResolved = defaultSpace.project_id ?? projectId;
+    // Ensure the project has a collaboration code (and a host).
+    const project =
+      Project.getByIdFromCache<Project>(projectId) ??
+      (await Project.getById<Project>(projectId));
+    if (!project) throw new Error(`Project ${projectId} not found`);
+    const memberId = options.hostMemberId ?? getOrCreateLocalMemberId();
+    if (!project.session_code || !project.host_member_id) {
+      await project.ensureCollaborationCode(hostName, memberId);
     }
 
-    const memberId = options.hostMemberId ?? getOrCreateLocalMemberId();
     const now = new Date().toISOString();
     const session = new CollaborationSession({
-      space_id: spaceId,
-      project_id: projectIdResolved,
+      project_id: projectId,
       host_name: hostName,
       host_member_id: memberId,
-      name: name ?? null,
+      name: effectiveName,
       members: [
         {
           member_id: memberId,

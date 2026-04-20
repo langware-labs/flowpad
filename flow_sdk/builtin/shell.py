@@ -52,8 +52,8 @@ class Shell(Entity):
     compute_node_id: str | None = APIField(default=None, description="Owning compute node")
     compute_node_uname: str | None = APIField(default=None, description="Owning compute node uname")
     project_id: str | None = APIField(default=None, description="Owning project")
-    collaboration_space_id: str | None = APIField(
-        default=None, description="Collaboration space this shell is shared into (null = not shared)"
+    collaboration_session_id: str | None = APIField(
+        default=None, description="CollaborationSession this shell is shared into (null = not shared)"
     )
     tab_order: int = APIField(default=0)
     created_at: str | None = APIField(default=None, description="ISO creation timestamp")

@@ -16,7 +16,7 @@ interface Props {
   projectId: string | null;
 }
 
-export function CollaborationSpaceSidebar({ projectId }: Props) {
+export function CollaborationSidebar({ projectId }: Props) {
   const [expanded, setExpanded] = useState<Record<CategoryKey, boolean>>({
     sessions: true,
     docs: true,

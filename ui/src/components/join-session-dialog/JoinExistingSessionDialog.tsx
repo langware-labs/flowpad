@@ -1,4 +1,4 @@
-import { CollaborationSpace, getOrCreateLocalMemberId } from '@sdk';
+import { getOrCreateLocalMemberId, Project } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
@@ -27,25 +27,24 @@ export function JoinExistingSessionDialog({ open, onClose, defaultName }: JoinEx
     if (!canJoin) return;
     setBusy(true);
     try {
-      const resolved = await CollaborationSpace.resolveByCode(normalizedCode);
+      const resolved = await Project.resolveByCode(normalizedCode);
       if (!resolved) {
         toast({
-          title: 'Space not found',
-          description: `No active space matches code "${normalizedCode}".`,
+          title: 'Project not found',
+          description: `No project matches code "${normalizedCode}".`,
         });
         return;
       }
       const memberId = getOrCreateLocalMemberId();
       try {
-        const sp = new CollaborationSpace({
-          id: resolved.collaboration_space_id,
-          type: 'collaboration_space',
-        } as any);
-        await sp.join(memberId, displayName.trim());
+        const proj =
+          Project.getByIdFromCache<Project>(resolved.project_id) ??
+          (await Project.getById<Project>(resolved.project_id));
+        await proj?.joinCollaboration(memberId, displayName.trim());
       } catch (err) {
         console.warn('[JoinExistingSessionDialog] join call failed (continuing)', err);
       }
-      navigation.openCollaborationSpace(resolved.collaboration_space_id);
+      navigation.openCollaboration(resolved.project_id);
       onClose();
     } finally {
       setBusy(false);

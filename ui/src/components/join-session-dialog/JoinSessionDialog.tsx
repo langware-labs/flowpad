@@ -1,6 +1,7 @@
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
+import { CollaborationSession } from '@sdk';
 import { Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -9,17 +10,29 @@ interface JoinSessionDialogProps {
   onClose: () => void;
   hostName?: string;
   draftPrompt: string;
-  onStart: (hostName: string, prompt: string) => Promise<void> | void;
+  onStart: (hostName: string, prompt: string, sessionName: string) => Promise<void> | void;
 }
 
 export function JoinSessionDialog({ open, onClose, hostName, draftPrompt, onStart }: JoinSessionDialogProps) {
   const [name, setName] = useState(hostName ?? '');
+  const [sessionName, setSessionName] = useState('');
+  const [sessionNameEdited, setSessionNameEdited] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  // Keep name in sync when the dialog reopens with a new host name
+  // Reset + prefill when the dialog reopens.
   useEffect(() => {
-    if (open) setName(hostName ?? '');
+    if (!open) return;
+    setName(hostName ?? '');
+    setSessionName(CollaborationSession.defaultName(hostName?.trim() || 'Anonymous'));
+    setSessionNameEdited(false);
   }, [open, hostName]);
+
+  // When the display name changes and the user hasn't manually edited the
+  // session name, keep the session-name prefill in sync.
+  useEffect(() => {
+    if (sessionNameEdited) return;
+    setSessionName(CollaborationSession.defaultName(name.trim() || 'Anonymous'));
+  }, [name, sessionNameEdited]);
 
   const promptTrimmed = draftPrompt.trim();
   const canStart = !!name.trim() && !busy;
@@ -28,7 +41,9 @@ export function JoinSessionDialog({ open, onClose, hostName, draftPrompt, onStar
     if (!canStart) return;
     setBusy(true);
     try {
-      await onStart(name.trim(), promptTrimmed);
+      const finalName =
+        sessionName.trim() || CollaborationSession.defaultName(name.trim());
+      await onStart(name.trim(), promptTrimmed, finalName);
       onClose();
     } finally {
       setBusy(false);
@@ -47,22 +62,9 @@ export function JoinSessionDialog({ open, onClose, hostName, draftPrompt, onStar
 
         <div className="flex flex-col gap-4 text-sm">
           <p className="text-muted-foreground">
-            A space is a persistent room you meet in to assist and get assisted. If you typed a
-            prompt above, it opens the first agentic process bound to this space. Otherwise the
-            space opens empty and you can share tabs into it later.
+            You're about to open a meeting on this project. You can invite others with the share
+            code that'll appear in the header once the session starts.
           </p>
-
-          {/* Prompt preview (optional) */}
-          <div className="rounded-md border bg-muted/30 p-3">
-            <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-1">First prompt (optional)</p>
-            {promptTrimmed ? (
-              <p className="whitespace-pre-wrap text-sm text-foreground">{promptTrimmed}</p>
-            ) : (
-              <p className="text-sm italic text-muted-foreground">
-                No prompt — space will open empty.
-              </p>
-            )}
-          </div>
 
           {/* Host name */}
           <div className="flex flex-col gap-1.5">
@@ -71,6 +73,22 @@ export function JoinSessionDialog({ open, onClose, hostName, draftPrompt, onStar
               placeholder="e.g. Alex"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleStart();
+              }}
+            />
+          </div>
+
+          {/* Session name — prefilled, user can override */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">Session name</label>
+            <Input
+              placeholder="e.g. Retry logic review"
+              value={sessionName}
+              onChange={(e) => {
+                setSessionName(e.target.value);
+                setSessionNameEdited(true);
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void handleStart();
               }}

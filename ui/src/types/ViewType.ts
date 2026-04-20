@@ -291,7 +291,7 @@ export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
-  [ViewType.COLLABORATION_SPACE]: {
+  [ViewType.COLLABORATION]: {
     title: 'Collaboration',
     iconName: 'Users',
     tabLocation: 'dedicated',

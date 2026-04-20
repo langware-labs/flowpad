@@ -107,7 +107,6 @@ class RecordType(StrEnum):
     SPEC = "spec"
     CONVERSATION = "conversation"
 
-    COLLABORATION_SPACE = "collaboration_space"
     COLLABORATION_SESSION = "collaboration_session"
 
 

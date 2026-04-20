@@ -28,7 +28,7 @@ export function SessionsCategory({ projectId }: Props) {
   const { items, isLoading } = useCollaborationSessions({ projectId: projectId ?? undefined, limit: 20 });
 
   const activeSessionId = useMemo(
-    () => DockPointer.parseCollaborationSpacePointer(currentDock?.pointer).sessionId,
+    () => DockPointer.parseCollaborationPointer(currentDock?.pointer).sessionId,
     [currentDock?.pointer],
   );
 
@@ -53,8 +53,8 @@ export function SessionsCategory({ projectId }: Props) {
           <li
             key={s.id}
             onClick={() => {
-              if (!s.spaceId) return;
-              navigation.openDock(DockPointer.forCollaborationSpace(s.spaceId, { sessionId: s.id }));
+              if (!s.projectId) return;
+              navigation.openDock(DockPointer.forCollaboration(s.projectId, { sessionId: s.id }));
             }}
             className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
               isActive
@@ -64,9 +64,9 @@ export function SessionsCategory({ projectId }: Props) {
           >
             <Video className="h-3.5 w-3.5 flex-shrink-0" />
             <div className="flex min-w-0 flex-col">
-              <span className="truncate">{s.name}</span>
+              <span className="truncate font-medium text-foreground">{s.name}</span>
               <span className="truncate text-[10px] text-muted-foreground">
-                {s.spaceName}
+                {s.hostName ?? 'unknown host'}
                 {s.updatedAt && <> · {formatWhen(s.updatedAt)}</>}
               </span>
             </div>
