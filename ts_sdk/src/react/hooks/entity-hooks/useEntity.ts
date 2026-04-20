@@ -161,7 +161,7 @@ export function useEntity<T extends APIEntity<T>>(
     stateRef.current = { ...stateRef.current, isFetching: true, error: null, isError: false };
 
     try {
-      const entity = await dataManager.getByTypeId<T>(typeId, query);
+      const entity = await dataManager.refreshByTypeId(typeId) as T | null;
       stateRef.current = {
         data: entity,
         isLoading: false,

@@ -393,6 +393,26 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))),
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=reply_fm.id))),
     ]
+
+    # Save any uploaded files to disk and add FILE attachments
+    uploaded_files = body.get("files") or []
+    if not isinstance(uploaded_files, list):
+        uploaded_files = [uploaded_files]
+    if uploaded_files:
+        from flow_sdk.config import FLOW_HOME
+        files_dir = FLOW_HOME / "tasks" / f"{_meaningful_name(task.title)}-{task_id[:8]}" / "files"
+        files_dir.mkdir(parents=True, exist_ok=True)
+        for uf in uploaded_files:
+            if not hasattr(uf, "read"):
+                continue
+            filename = getattr(uf, "filename", None) or "file"
+            file_path = files_dir / filename
+            content = await uf.read()
+            file_path.write_bytes(content)
+            reply_fm.attachment.append(
+                Attachment(attachment_type=AttachmentType.FILE, data=str(file_path))
+            )
+
     reply_fm = await reply_fm.save(someone_typeid)
 
     # Append pointer to conversation + keep message_ids in sync

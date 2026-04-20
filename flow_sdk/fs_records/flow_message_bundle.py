@@ -35,6 +35,8 @@ _TASK_FIELDS = {"type", "id", "title", "description", "status", "task_type",
 if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
 
+from flow_sdk.builtin.flow_message import AttachmentType
+
 
 def _json_default(obj):
     """JSON serializer that converts Enum members to their values."""
@@ -64,11 +66,16 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
     tmp_root = Path(tempfile.mkdtemp(prefix="flowmsg_pack_"))
     try:
         # 1. Write top-level message.json
+        # FILE attachment data is stored as absolute paths locally; rewrite to
+        # zip-relative paths so the receiver can find them without our directory layout.
         msg_data = flow_message.model_dump(
             mode="python",
             include=_FM_FIELDS,
             context={"skip_api_serializer": True},
         )
+        for att in msg_data.get("attachment", []):
+            if att.get("attachment_type") == AttachmentType.FILE.value:
+                att["data"] = f"attachment/files/{Path(att['data']).name}"
         (tmp_root / "message.json").write_text(
             json.dumps(msg_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
         )
@@ -78,8 +85,15 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
 
         # 2. Process each attachment entry
         for entry in flow_message.attachment:
-            if entry.attachment_type != "type_id":
-                continue  # file/repo/url attachments have no Record to bundle
+            if entry.attachment_type == AttachmentType.FILE:
+                file_path = Path(entry.data)
+                if file_path.exists():
+                    files_dir = attachment_dir / "files"
+                    files_dir.mkdir(exist_ok=True)
+                    shutil.copy2(file_path, files_dir / file_path.name)
+                continue
+            if entry.attachment_type != AttachmentType.TYPE_ID:
+                continue  # repo/url attachments have no bytes to bundle
             tid = TypeId(entry.data)
             entry_type, entry_id = tid.type, tid.id
             if not entry_type or not entry_id:
@@ -117,18 +131,9 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
                     jsonl_path = Path(conv.data_path)
                     if jsonl_path.exists():
                         shutil.copy2(jsonl_path, conv_dir / "conversation.jsonl")
-                        # Also include any FlowMessage entities referenced as pointers
-                        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
-                            line = line.strip()
-                            if not line:
-                                continue
-                            try:
-                                obj = json.loads(line)
-                            except json.JSONDecodeError:
-                                continue
-                            fm_id = obj.get("message_id")
-                            if fm_id:
-                                await _pack_flow_message_entry(fm_id, attachment_dir)
+                        # Only bundle the current FlowMessage — the receiver already has
+                        # all prior messages from the previous bundle they received.
+                        await _pack_flow_message_entry(flow_message.id, attachment_dir)
 
             elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
                 await _pack_flow_message_entry(entry_id, attachment_dir)
@@ -169,6 +174,28 @@ async def _pack_flow_message_entry(fm_id: str, attachment_dir: Path) -> None:
         (fm_dir / "message.json").write_text(
             json.dumps(fm_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
         )
+
+
+# ---------------------------------------------------------------------------
+# _rewrite_file_attachments
+# ---------------------------------------------------------------------------
+
+def _rewrite_file_attachments(fm_data: dict, tmp_root: Path, task_id: str) -> None:
+    """Copy FILE attachments from the extracted zip to a permanent location and
+    rewrite their `data` field from zip-relative paths to absolute disk paths."""
+    from flow_sdk.config import FLOW_HOME
+    for att in fm_data.get("attachment", []):
+        if att.get("attachment_type") != AttachmentType.FILE.value:
+            continue
+        rel_path = att.get("data", "")
+        src = tmp_root / rel_path
+        if not src.exists():
+            continue
+        dest_dir = FLOW_HOME / "tasks" / f"files-{task_id[:8]}" if task_id else FLOW_HOME / "tasks" / "files"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / src.name
+        shutil.copy2(src, dest)
+        att["data"] = str(dest)
 
 
 # ---------------------------------------------------------------------------
@@ -315,11 +342,14 @@ async def unpack_bundle(
                         fm_id = fm_data.get("id") or entry_id
                         existing_fm = await FlowMessage.get_one({"id": fm_id})
                         if existing_fm is None or overwrite:
+                            _rewrite_file_attachments(fm_data, tmp_root, task_id or "")
                             inner_fm = FlowMessage.model_validate(fm_data)
                             inner_fm.id = fm_id
                             await inner_fm.save(owner_typeid)
 
-        # 5. Save the top-level FlowMessage record
+        # 5. Resolve FILE attachment paths and save the top-level FlowMessage record
+        # Bundle stores zip-relative paths; rewrite to absolute paths on this machine.
+        _rewrite_file_attachments(msg_data, tmp_root, task_id or "")
         top_fm = FlowMessage.model_validate(msg_data)
         top_fm_id = msg_data.get("id") or FlowMessage.allocate_id(msg_data)
         top_fm.id = top_fm_id
