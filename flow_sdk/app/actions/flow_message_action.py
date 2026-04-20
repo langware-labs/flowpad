@@ -3,6 +3,7 @@
   POST /api/v1/graph/flow-message-upload      — upload .flowmsg (multipart, global action)
   POST /api/v1/graph/flow-message-create      — create task+spec+conv+FlowMessage locally, no email/git
   GET  /api/v1/graph/flow_message/{id}/file-download  — download .flowmsg (entity-scoped)
+  GET  /api/v1/graph/flow_message/{id}/open   — deep-link: fetch from hub and open IncomingTaskDialog
 """
 import json as _json
 import logging
@@ -232,6 +233,30 @@ async def create_task_bundle() -> ApiResponse:
     except Exception as e:
         logger.error(f"[flow_message_action] create-task-bundle error: {e}", exc_info=True)
         return ApiFailResponse(message=f"Failed to create task bundle: {str(e)}")
+
+
+@action.get(action_name="flow_message.open")
+async def open_flow_message() -> ApiResponse:
+    """Deep-link handler: fetch FlowMessage from hub, redirect to IncomingTaskDialog."""
+    from flow_sdk.server.routes.notify import handle_notification_deep_link
+    from flow_sdk.utils.hub import hub_get
+
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        return ApiFailResponse(message="No request info found", status_code=400)
+
+    flow_message_id = str(request_info.target_entity_typeid.id)
+    data = await hub_get("flow_message", flow_message_id)
+
+    meta = (data or {}).get("metadata") or {}
+    return await handle_notification_deep_link(
+        project_url=(meta.get("project_url") or (data or {}).get("project_url") or "").strip(),
+        task_id=(meta.get("task_id") or (data or {}).get("task_id") or "").strip(),
+        branch=(meta.get("branch") or (data or {}).get("branch") or "").strip(),
+        repo_id=(meta.get("repo_id") or (data or {}).get("repo_id") or "").strip(),
+        sender_name=(meta.get("sender_name") or (data or {}).get("sender_name") or "").strip(),
+        task_title=(meta.get("task_title") or meta.get("spec_title") or (data or {}).get("task_title") or "").strip(),
+    )
 
 
 @action.get(action_name="file-download", types=["flow_message"])
