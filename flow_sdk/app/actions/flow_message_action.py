@@ -99,6 +99,7 @@ async def handle_create_task_bundle(
         "title": task_title,
         "spec_id": spec.id,
         "shared_by_id": sender_id,
+        "metadata": {"team_space_id": team_space_id} if team_space_id else None,
     })
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
@@ -130,8 +131,6 @@ async def handle_create_task_bundle(
         TypeId(type=BuiltinEntityType.TASK.value, id=task.id),
         TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id),
     ]
-    if team_space_id:
-        context.append(TypeId(type=BuiltinEntityType.TEAM_SPACE.value, id=team_space_id))
 
     fm = FlowMessage.model_validate({
         "text": message or f"Task: {task_title}",
@@ -200,7 +199,8 @@ async def upload_flow_message() -> ApiResponse:
         if not upload_file or not hasattr(upload_file, "read"):
             return ApiFailResponse(message="No file uploaded", status_code=400)
 
-        overwrite = (post_data.get("overwrite") or "false").lower() in ("true", "1", "yes")
+        overwrite_qp = request_info.request.query_params.get("overwrite", "false")
+        overwrite = overwrite_qp.lower() in ("true", "1", "yes")
         return await handle_upload_flow_message(upload_file, overwrite)
     except Exception as e:
         logger.error(f"[flow_message_action] upload error: {e}", exc_info=True)

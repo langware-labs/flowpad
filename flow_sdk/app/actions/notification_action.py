@@ -213,8 +213,6 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
             TypeId(type=BuiltinEntityType.TASK.value, id=task.id),
             TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conversation_id),
         ]
-        if team_space_id:
-            fm_context.append(TypeId(type=BuiltinEntityType.TEAM_SPACE.value, id=team_space_id))
         fm = FlowMessage.model_validate({
             "text": message or f"Task shared: {task_title}",
             "context": fm_context,
