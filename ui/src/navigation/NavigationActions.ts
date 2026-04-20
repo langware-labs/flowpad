@@ -158,11 +158,11 @@ export class NavigationActions {
     this.openDock(DockPointer.forAssetList(typeName));
   }
 
-  openCollaboration(
+  openProject(
     projectId?: string,
     sub?: { sessionId?: string | null; tab?: import('@sdk').TypeId | null },
   ): void {
-    this.openDock(DockPointer.forCollaboration(projectId, sub));
+    this.openDock(DockPointer.forProject(projectId, sub));
   }
 
   openEditor(path?: string, options?: FileOptions): void {

@@ -11,7 +11,7 @@ import {
 import type { TerminalTab } from '@src/hooks/useActiveTerminals';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer, getProcessCollaborationDockPointer } from '@src/navigation/DockPointer';
+import { DockPointer, getProcessProjectDockPointer } from '@src/navigation/DockPointer';
 import { TabbedTerminal } from '@src/components/terminal';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@src/components/ui/resizable';
 import { Button } from '@src/components/ui/button';
@@ -49,11 +49,11 @@ export function CollaborationPage() {
   // MRU stack of shell ids within the current session — most-recent first.
   const mruRef = useRef<string[]>([]);
 
-  const isActiveView = currentDock?.viewType === ViewType.COLLABORATION;
+  const isActiveView = currentDock?.viewType === ViewType.PROJECT;
   const { projectId, sessionId, tabTypeId } = useMemo(
     () =>
       isActiveView
-        ? DockPointer.parseCollaborationPointer(currentDock?.pointer)
+        ? DockPointer.parseProjectPointer(currentDock?.pointer)
         : { projectId: null, sessionId: null, tabTypeId: null },
     [isActiveView, currentDock?.pointer],
   );
@@ -126,7 +126,7 @@ export function CollaborationPage() {
     (shellId: string, tab: TerminalTab) => {
       if (!projectId || !sessionId) return;
       touchMru(shellId);
-      navigation.openDock(getProcessCollaborationDockPointer(tab, projectId, sessionId));
+      navigation.openDock(getProcessProjectDockPointer(tab, projectId, sessionId));
     },
     [navigation, projectId, sessionId, touchMru],
   );
@@ -138,8 +138,8 @@ export function CollaborationPage() {
       if (!mruRef.current[0]) {
         navigation.openDock(
           sessionId
-            ? DockPointer.forCollaboration(projectId, { sessionId })
-            : DockPointer.forCollaboration(projectId),
+            ? DockPointer.forProject(projectId, { sessionId })
+            : DockPointer.forProject(projectId),
         );
       }
     },
@@ -208,7 +208,7 @@ export function CollaborationPage() {
 
       const enriched: TerminalTab = { ...tab, shell: shell ?? tab.shell };
       touchMru(enriched.shellId);
-      navigation.openDock(getProcessCollaborationDockPointer(enriched, project.id, activeSession.id));
+      navigation.openDock(getProcessProjectDockPointer(enriched, project.id, activeSession.id));
     },
     [navigation, project, session, ensureSessionForTabOpen, touchMru],
   );

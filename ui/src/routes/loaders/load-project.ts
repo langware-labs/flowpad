@@ -1,11 +1,11 @@
 /**
- * Collaboration dock loader for
- *   /dock/collaboration/<projectId>[/session/<sessionId>[/tab/<typeid>]]
+ * Project dock loader for
+ *   /dock/project/<projectId>[/collaborative_session/<sessionId>[/tab/<typeid>]]
  *
  * Reuses the pure `loadProcess` / `loadShell` primitives from the shell
  * loaders so PTY attach + context setup is identical to the standard route.
- * Owns its own redirect URL policy — failures bounce to the session (or
- * collaboration root) inside the same view, not out to /dock/shell.
+ * Owns its own redirect URL policy — failures bounce to the collaborative
+ * session (or project root) inside the same view, not out to /dock/shell.
  */
 
 import {
@@ -24,8 +24,8 @@ import { emptyRecoverySkips, type ShellRecoverySkips } from './shell-recovery';
 
 function recoveryUrl(projectId: string, sessionId: string | null): string {
   return sessionId
-    ? `/dock/collaboration/${projectId}/session/${sessionId}`
-    : `/dock/collaboration/${projectId}`;
+    ? `/dock/project/${projectId}/collaborative_session/${sessionId}`
+    : `/dock/project/${projectId}`;
 }
 
 /**
@@ -40,15 +40,15 @@ async function tagShellWithSession(shell: Shell, sessionId: string): Promise<voi
     shell.collaboration_session_id = sessionId;
     await shell.save();
   } catch (err) {
-    console.warn('[load-collaboration] failed to tag shell with session id', err);
+    console.warn('[load-project] failed to tag shell with session id', err);
   }
 }
 
-export async function loadCollaborationRoute(
+export async function loadProjectRoute(
   pointer: string | undefined,
   _recoverySkips: ShellRecoverySkips = emptyRecoverySkips(),
 ): Promise<void> {
-  const { projectId, sessionId, tabTypeId } = DockPointer.parseCollaborationPointer(pointer);
+  const { projectId, sessionId, tabTypeId } = DockPointer.parseProjectPointer(pointer);
   if (!projectId) {
     // No project id in URL — page renders its empty state; nothing to load.
     return;
