@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Sparkles } from 'lucide-react';
-import { AgenticProcess, Conversation, dataContext, dataManager, FlowMessage, Spec, TypeId } from '@sdk';
+import { AgenticProcess, Conversation, dataContext, dataManager, FlowMessage, Spec, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ExpansionRequest } from '@sdk/FlowSync/query';
 import { AttachmentType } from '@sdk/entities/flow-message';
@@ -8,6 +8,9 @@ import type { ITask } from '@sdk/entities/task';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { MessageComposer } from './MessageComposer';
+
+/** Module-level cache: task_id → AgenticProcess. Survives component remounts within a session. */
+const taskSessionCache = new Map<string, AgenticProcess>();
 
 interface ConversationViewProps {
   conversationId: string;
@@ -17,6 +20,7 @@ interface ConversationViewProps {
 
 export function ConversationView({ conversationId, task, senderName }: ConversationViewProps) {
   const { navigation } = useDockNavigation();
+  const taskId = task.id ?? '';
   const [lastExecutedCount, setLastExecutedCount] = useState(-1);
   const [executing, setExecuting] = useState(false);
 
@@ -29,15 +33,20 @@ export function ConversationView({ conversationId, task, senderName }: Conversat
   );
 
   const pointers = conversation?.conversationMessageIds ?? [];
-  const hasExecuted = lastExecutedCount >= 0;
-  const hasDelta = pointers.length > lastExecutedCount;
+  const taskMeta = (task.metadata as Record<string, unknown> | undefined) ?? {};
+  const storedSessionId = taskMeta.agentic_session_id as string | undefined;
+  const storedExecutedCount = (taskMeta.agentic_executed_count as number | undefined) ?? -1;
+  // Effective cursor: use local state if already set this session, otherwise fall back to DB value
+  const effectiveExecutedCount = lastExecutedCount >= 0 ? lastExecutedCount : storedExecutedCount;
+  const hasExecuted = effectiveExecutedCount >= 0 || taskSessionCache.has(taskId) || !!storedSessionId;
+  const hasDelta = pointers.length > effectiveExecutedCount;
 
   const handleExecute = async () => {
     if (executing) return;
     setExecuting(true);
     try {
-      const isFirstRun = lastExecutedCount < 0;
-      const deltaPointers = isFirstRun ? pointers : pointers.slice(lastExecutedCount);
+      const isFirstRun = effectiveExecutedCount < 0 && !taskSessionCache.has(taskId) && !storedSessionId;
+      const deltaPointers = isFirstRun ? pointers : pointers.slice(effectiveExecutedCount);
 
       // Fetch FlowMessage entities for the relevant range
       const messages = await Promise.all(
@@ -46,11 +55,13 @@ export function ConversationView({ conversationId, task, senderName }: Conversat
         ),
       );
 
-      // Format messages as labeled turns
+      // Format messages as labeled turns — use sender_name from the message, fall back to senderName prop
       const formatMsg = (fm: FlowMessage | null) => {
         if (!fm) return null;
         const isSender = fm.sender_id && task.shared_by_id && fm.sender_id === task.shared_by_id;
-        const label = isSender ? (senderName ?? fm.sender_name ?? 'Sender') : 'You';
+        const label = isSender
+          ? (fm.sender_name || senderName || 'Sender')
+          : (fm.sender_name || 'You');
         return `[${label}]: ${fm.text ?? ''}`;
       };
 
@@ -88,15 +99,48 @@ export function ConversationView({ conversationId, task, senderName }: Conversat
         prompt = parts.join('\n');
       }
 
-      const workdir =
-        (task.metadata as Record<string, unknown> | undefined)?.project_root as string | undefined
+      const workdir = taskMeta.project_root as string | undefined
         ?? dataContext.project?.fs_storage_mount_path;
 
-      const { process: agenticProcess } = await AgenticProcess.spawn(
-        { workdir },
-        { instruction: prompt, visible: true },
-      );
-      navigation.openDock(agenticProcess.dockPointer);
+      // In-memory cache: PTY is still live, send instruction directly
+      const cached = taskSessionCache.get(taskId);
+      if (cached) {
+        await cached.executeInstruction(prompt, { sync: false });
+        navigation.openDock(cached.dockPointer);
+      } else if (storedSessionId) {
+        // App restarted — resume the Claude session transcript via a new spawn.
+        // spawn({ resumeSessionId }) never conflicts with an existing PTY; it
+        // creates a fresh AgenticProcess entity that continues the same transcript.
+        const { process: resumed } = await AgenticProcess.spawn(
+          { workdir, resumeSessionId: storedSessionId },
+          { instruction: prompt, visible: true },
+        );
+        taskSessionCache.set(taskId, resumed);
+        navigation.openDock(resumed.dockPointer);
+      } else {
+        // First run — spawn a brand-new session
+        const { process: agenticProcess } = await AgenticProcess.spawn(
+          { workdir },
+          { instruction: prompt, visible: true },
+        );
+        taskSessionCache.set(taskId, agenticProcess);
+        navigation.openDock(agenticProcess.dockPointer);
+        // Persist the Claude session_id (not entity id) — stable across process entities
+        if (agenticProcess.session_id) {
+          const t = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId));
+          if (t) {
+            t.metadata = { ...(t.metadata ?? {}), agentic_session_id: agenticProcess.session_id };
+            await t.save();
+          }
+        }
+      }
+
+      // Persist the cursor so delta is correct after restart
+      const liveTask = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId));
+      if (liveTask) {
+        liveTask.metadata = { ...(liveTask.metadata ?? {}), agentic_executed_count: pointers.length };
+        await liveTask.save();
+      }
       setLastExecutedCount(pointers.length);
     } catch (err) {
       console.error('[Execute with Claude Code] Failed:', err);
