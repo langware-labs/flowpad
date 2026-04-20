@@ -313,6 +313,13 @@ class BuiltinEntityType(Enum):
     SKILL = "skill"
     SHELL = "shell"
     CRON_EVENT = "cron_event"
+    TASK = "task"
+    SPEC = "spec"
+    CONVERSATION = "conversation"
+    FLOW_MESSAGE = "flow_message"
+    TEAM_SPACE = "team_space"
+    NOTIFICATION = "notification"
+    BOOKMARK = "bookmark"
 
 
 class EntityChild(BaseModel, Generic[RecordType]):

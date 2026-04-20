@@ -1,10 +1,10 @@
 """ConversationRecord — represents a conversation backed by a conversation.jsonl file.
 
-Each line in the JSONL file is one message:
-  {"role": "sender"|"recipient"|"bot", "content": "...", "sender_id": "...", "timestamp": "ISO"}
+Each line in the JSONL file is a FlowMessage pointer:
+  {"message_id": "<uuid>", "timestamp": "<ISO>"}
 
 Layout:
-  tasks/<task-dir>/conversation.jsonl   — messages, one JSON object per line
+  tasks/<task-dir>/conversation.jsonl   — pointer index, one JSON object per line
 
 The record's data_ref.path points to the conversation.jsonl on disk.
 parent_ref points to the TaskRecord (or other parent record).
@@ -100,6 +100,25 @@ class ConversationRecord(Record):
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(message, ensure_ascii=False) + "\n")
+
+    # ------------------------------------------------------------------
+    # append_message_pointer — write a pointer line referencing a FlowMessage id
+    # ------------------------------------------------------------------
+
+    def append_message_pointer(self, message_id: str, timestamp: str) -> None:
+        """Append a pointer line: {"message_id": "...", "timestamp": "..."}"""
+        dp = object.__getattribute__(self, "__dict__").get("data_path")
+        if not dp:
+            raise ValueError("ConversationRecord has no data_path set")
+        path = Path(dp)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pointer = {"message_id": message_id, "timestamp": timestamp}
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(pointer, ensure_ascii=False) + "\n")
+
+    def message_pointers(self) -> list[dict]:
+        """Return all pointer lines from the jsonl index."""
+        return self.messages
 
     # ------------------------------------------------------------------
     # write_messages — (re)write all messages from a list
