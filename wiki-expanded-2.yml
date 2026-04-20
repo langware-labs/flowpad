@@ -1,0 +1,119 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - list [ref=e9]:
+        - listitem [ref=e10]:
+          - button [ref=e11] [cursor=pointer]:
+            - img [ref=e12]
+          - button [ref=e14] [cursor=pointer]:
+            - img [ref=e15]
+        - listitem [ref=e20]:
+          - button [ref=e21] [cursor=pointer]:
+            - img [ref=e22]
+        - listitem [ref=e25]:
+          - button [ref=e26] [cursor=pointer]:
+            - img [ref=e27]
+        - listitem [ref=e29]:
+          - button [ref=e30] [cursor=pointer]:
+            - img [ref=e31]
+        - listitem [ref=e33]:
+          - button [ref=e34] [cursor=pointer]:
+            - img [ref=e35]
+        - generic [ref=e37]:
+          - img [ref=e40]
+          - listitem [ref=e42]:
+            - button [ref=e43] [cursor=pointer]:
+              - img [ref=e44]
+          - listitem [ref=e48]:
+            - button [ref=e49] [cursor=pointer]:
+              - img [ref=e50]
+      - generic [ref=e52]:
+        - button "Toggle theme" [ref=e53] [cursor=pointer]:
+          - img
+          - generic [ref=e54]: Toggle theme
+        - generic [ref=e56]:
+          - generic [ref=e57]:
+            - heading "Chat Settings" [level=2] [ref=e58]
+            - button [ref=e59] [cursor=pointer]:
+              - img
+          - generic [ref=e62]:
+            - generic [ref=e63]: Rules
+            - textbox "Rules" [ref=e64]:
+              - /placeholder: Enter chat rules...
+          - button "Save Changes" [ref=e66] [cursor=pointer]
+        - generic [ref=e70] [cursor=pointer]: ES
+    - generic [ref=e72]:
+      - tabpanel [ref=e1591]:
+        - generic [ref=e1592]:
+          - generic [ref=e1593]:
+            - generic [ref=e1594]:
+              - generic [ref=e1595]: Triggers
+              - generic [ref=e1596]: "1"
+            - generic [ref=e1598]:
+              - generic [ref=e1599]:
+                - generic [ref=e1600]: Hook Triggers
+                - generic [ref=e1601]:
+                  - generic [ref=e1602]: System
+                  - generic [ref=e1603] [cursor=pointer]:
+                    - generic [ref=e1604]:
+                      - generic [ref=e1605]: system
+                      - generic [ref=e1606]: session-context-init
+                      - generic [ref=e1607]:
+                        - button [ref=e1608]:
+                          - img
+                        - button [ref=e1609]:
+                          - img
+                        - combobox "Log mode" [ref=e1610]:
+                          - option "Activations only" [selected]
+                          - option "All calls"
+                    - generic [ref=e1612]: SessionStart
+              - generic [ref=e1614]:
+                - generic [ref=e1615]: Schedule Triggers
+                - button "New schedule trigger" [ref=e1616] [cursor=pointer]:
+                  - img
+          - generic [ref=e1618]:
+            - generic [ref=e1620]: New Schedule Trigger
+            - generic [ref=e1621]:
+              - generic [ref=e1622]:
+                - generic: Instruction
+                - textbox "Prompt sent to the agentic process when this trigger fires…" [ref=e1623]
+                - generic: Working directory
+                - textbox "Optional — leave blank for home" [ref=e1624]
+              - generic [ref=e1625]:
+                - textbox "Today" [ref=e1626]: My Schedule
+                - textbox "Description like prepare my daily brief" [ref=e1627]
+                - generic [ref=e1628]:
+                  - button "Once" [ref=e1629] [cursor=pointer]
+                  - button "Daily" [ref=e1630] [cursor=pointer]
+                  - button "Weekly" [ref=e1631] [cursor=pointer]
+                  - button "Monthly" [ref=e1632] [cursor=pointer]
+                  - button "Custom" [ref=e1633] [cursor=pointer]
+                - textbox [ref=e1634]: 09:00
+                - generic:
+                  - button "Cancel" [ref=e1635] [cursor=pointer]
+                  - button "Create" [ref=e1636] [cursor=pointer]
+          - generic [ref=e1638]: Select a trigger to view invocations
+      - contentinfo [ref=e387]:
+        - generic [ref=e388]:
+          - button "Settings" [ref=e390] [cursor=pointer]:
+            - img [ref=e391]
+          - generic [ref=e394]:
+            - button "Switch Project" [ref=e395] [cursor=pointer]:
+              - img [ref=e396]
+              - generic [ref=e399]: Switch Project
+            - button "flowpad-oss" [ref=e400] [cursor=pointer]
+            - button "/Users/shlom/Documents/dev/flowpad-oss" [ref=e401] [cursor=pointer]:
+              - generic [ref=e402]: /Users/shlom/Documents/dev/flowpad-oss
+              - img [ref=e403]
+          - generic [ref=e407]:
+            - button "5h 1900% · 7d 2800% · $23.35" [ref=e433] [cursor=pointer]:
+              - generic [ref=e409]: 5h 1900% · 7d 2800% · $23.35
+            - generic [ref=e410]: v0.2.13
+            - generic [ref=e411]:
+              - generic [ref=e412]: Powered by
+              - link "Flowpad.ai Logo":
+                - /url: https://flowpad.ai
+                - img "Flowpad.ai Logo"
