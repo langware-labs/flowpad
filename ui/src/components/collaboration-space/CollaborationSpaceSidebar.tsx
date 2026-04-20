@@ -12,7 +12,11 @@ const CATEGORIES: Array<{ key: CategoryKey; label: string; icon: typeof Video }>
   { key: 'plans', label: 'Plans', icon: ListChecks },
 ];
 
-export function CollaborationSpaceSidebar() {
+interface Props {
+  projectId: string | null;
+}
+
+export function CollaborationSpaceSidebar({ projectId }: Props) {
   const [expanded, setExpanded] = useState<Record<CategoryKey, boolean>>({
     sessions: true,
     docs: true,
@@ -37,9 +41,9 @@ export function CollaborationSpaceSidebar() {
             </button>
             {open && (
               <div className="ml-2">
-                {key === 'sessions' && <SessionsCategory />}
-                {key === 'docs' && <DocsCategory />}
-                {key === 'plans' && <PlansCategory />}
+                {key === 'sessions' && <SessionsCategory projectId={projectId} />}
+                {key === 'docs' && <DocsCategory projectId={projectId} />}
+                {key === 'plans' && <PlansCategory projectId={projectId} />}
               </div>
             )}
           </div>

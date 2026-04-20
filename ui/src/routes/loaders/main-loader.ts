@@ -22,7 +22,8 @@ import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
 import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
-import { loadShell, resolveDefaultShell } from './load-shell';
+import { loadShellRoute, resolveDefaultShell } from './load-shell';
+import { loadCollaborationSpaceRoute } from './load-space';
 import { describeProcessStartError } from './load-process';
 import { parseRecoverySkipsFromUrl, type ShellRecoverySkips } from './shell-recovery';
 
@@ -132,8 +133,13 @@ export async function loadAgentApp(args: LoaderArgs) {
     t.time('ensureComputeNode');
 
     if (viewType === ViewType.SHELL) {
-      await loadShell(pointer || undefined, recoverySkips);
-      t.time('loadShell');
+      await loadShellRoute(pointer || undefined, recoverySkips);
+      t.time('loadShellRoute');
+    }
+
+    if (viewType === ViewType.COLLABORATION_SPACE) {
+      await loadCollaborationSpaceRoute(pointer || undefined, recoverySkips);
+      t.time('loadCollaborationSpaceRoute');
     }
 
     if (viewType === ViewType.TRIGGERS) {

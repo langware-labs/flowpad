@@ -1,11 +1,19 @@
 /**
  * Shell dock loader for /dock/shell[/<pointer>].
  *
- * Dispatches on the shape of `pointer`:
+ * Two layers:
+ *   - `loadShell(shellId)` — pure primitive. Attaches a plain Shell's PTY and
+ *     writes dataContext. Throws typed errors. No redirects.
+ *   - `loadShellRoute(pointer, recoverySkips)` — route wrapper. Dispatches on
+ *     pointer shape, delegates to `loadShell` / `loadProcess`, catches typed
+ *     errors and redirects to the appropriate `/dock/shell/...` recovery URL.
+ *
+ * Dispatch shapes (loadShellRoute):
  *   - no pointer          → pick a default shell (previously-active, then any alive)
  *   - "new_terminal"      → create a fresh Shell and redirect into it
- *   - agentic_process-*   → delegate to load-process.ts
- *   - shell-<uuid> / uuid → plain Shell attach (or redirect to its linked process)
+ *   - agentic_process-*   → delegate to loadProcess()
+ *   - shell-<uuid> / uuid → delegate to loadShell()
+ *                           (unless a process owns it — redirect to the process URL)
  *
  * Every failure path redirects to /dock/shell with the offending ids encoded
  * in `skip_*` query params so the default resolver won't loop.
@@ -28,7 +36,7 @@ import {
 import { toast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation';
 import { redirect } from 'react-router';
-import { describeProcessStartError, loadAgenticProcessFromPointer } from './load-process';
+import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
 import {
   appendRecoverySkip,
   buildShellRecoveryUrl,
@@ -36,6 +44,19 @@ import {
   type ShellRecoverySkips,
   withRecoverySearch,
 } from './shell-recovery';
+
+// ── typed error (for plain-Shell loads) ─────────────────────────────────────
+
+export class ShellLoadError extends Error {
+  constructor(
+    readonly kind: 'not_found' | 'error_status' | 'start_failed',
+    readonly shellId: string,
+    readonly errorMessage?: string | null,
+    readonly cause?: unknown,
+  ) {
+    super(`shell-load:${kind}`);
+  }
+}
 
 // ── internal helpers ────────────────────────────────────────────────────────
 
@@ -84,6 +105,44 @@ function _perfLog(label: string) {
   if (t0 !== undefined) console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms ${label}`);
 }
 
+// ── CORE: loadShell(shellId) — pure, no redirects ───────────────────────────
+
+/**
+ * Load a plain Shell by id: cache-first fetch, attach PTY via `shell.start`,
+ * write dataContext. Throws ShellLoadError. Never redirects. Does NOT check
+ * for a linked AgenticProcess — the route wrapper is responsible for that
+ * dispatch (and will call `loadProcess` instead when a process owns the shell).
+ */
+export async function loadShell(shellId: string): Promise<Shell> {
+  const shell =
+    Shell.getByIdFromCache<Shell>(shellId) ??
+    (await Shell.getById<Shell>(shellId).catch(() => null));
+  if (!shell) {
+    throw new ShellLoadError('not_found', shellId);
+  }
+  if (shell.status === ShellStatus.ERROR) {
+    throw new ShellLoadError('error_status', shellId, shell.error_message ?? null);
+  }
+  try {
+    await shell.start({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: shell.workdir ?? undefined });
+  } catch (cause) {
+    throw new ShellLoadError('start_failed', shellId, null, cause);
+  }
+
+  dataContext.setActiveShellId(shell.id);
+  dataContext.setWorkdir(shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
+  await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
+  if (shell.project_id) {
+    await dataContext.setContextEntityTypeId(
+      ContextEntitiesEnum.CurrentProjectTypeId,
+      new TypeId(Project.type, shell.project_id),
+    );
+  } else {
+    await systemTools.resolveProjectContext(shell.workdir ?? undefined, shell);
+  }
+  return shell;
+}
+
 // ── default-shell resolution (exported for unit tests) ──────────────────────
 
 /**
@@ -114,9 +173,9 @@ export function resolveDefaultShell(
   return null;
 }
 
-// ── branches of loadShell ───────────────────────────────────────────────────
+// ── ROUTE: internal branches ────────────────────────────────────────────────
 
-async function loadNewTerminal(): Promise<never> {
+async function routeNewTerminal(): Promise<never> {
   const cn = dataContext.computeNode;
   if (!cn) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
@@ -132,15 +191,15 @@ async function loadNewTerminal(): Promise<never> {
   throw redirect(`/dock/shell/${newShell.dockPointer.pointer}`);
 }
 
-async function loadDefaultShell(recoverySkips: ShellRecoverySkips): Promise<void> {
+async function routeDefaultShell(recoverySkips: ShellRecoverySkips): Promise<void> {
   // Needs the full visible-process set to pick a default shell.
   // Only happens on cold navigation to /dock/shell (not on tab clicks).
   const [shells, processes] = await fetchShellsAndProcesses();
-  _perfLog(`loadShell queries done (${shells.length} shells, ${processes.length} processes)`);
+  _perfLog(`loadShellRoute queries done (${shells.length} shells, ${processes.length} processes)`);
 
   const redirectUrl = resolveDefaultShell(shells, processes, recoverySkips);
   if (redirectUrl) {
-    _perfLog(`loadShell redirect → ${redirectUrl}`);
+    _perfLog(`loadShellRoute redirect → ${redirectUrl}`);
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw redirect(redirectUrl);
   }
@@ -149,30 +208,47 @@ async function loadDefaultShell(recoverySkips: ShellRecoverySkips): Promise<void
   await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
 }
 
-async function loadPlainShell(pointer: string, recoverySkips: ShellRecoverySkips): Promise<void> {
+async function routeProcessPointer(processId: string, recoverySkips: ShellRecoverySkips): Promise<void> {
+  try {
+    await loadProcess(processId);
+  } catch (e) {
+    if (!(e instanceof ProcessLoadError)) throw e;
+    if (e.kind === 'not_found') {
+      toast({
+        title: 'Session not found',
+        description: 'Agentic process does not exist.',
+        variant: 'destructive',
+      });
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw redirect('/dock/shell');
+    }
+    if (e.kind === 'start_failed') {
+      toast({ ...describeProcessStartError(e.cause ?? e), variant: 'destructive' });
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw redirect(buildShellRecoveryUrl(appendRecoverySkip(recoverySkips, e.processId, e.shellId)));
+    }
+    // no_shell
+    toast({
+      title: 'Session unavailable',
+      description: 'No shell is linked to this process.',
+      variant: 'destructive',
+    });
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect(buildShellRecoveryUrl(appendRecoverySkip(recoverySkips, e.processId, e.shellId)));
+  }
+}
+
+async function routePlainShellPointer(pointer: string, recoverySkips: ShellRecoverySkips): Promise<void> {
   // Shell pointer: "shell-<uuid>" or bare UUID.
   const shellId = pointer.startsWith(Shell.type + '-') ? pointer.slice(Shell.type.length + 1) : pointer;
-  const shell = Shell.getByIdFromCache<Shell>(shellId) ?? (await Shell.getById<Shell>(shellId).catch(() => null));
-
-  if (!shell) {
-    toast({ title: 'Shell not found', description: 'This terminal no longer exists.', variant: 'destructive' });
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect('/dock/shell');
-  }
-
-  if (shell.status === ShellStatus.ERROR) {
-    toast({ title: 'Shell unavailable', description: shell.error_message ?? 'Shell error', variant: 'destructive' });
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect('/dock/shell');
-  }
 
   // If a process owns this shell, send the user to the process URL instead —
   // that path handles open({ visible: true }) + PTY reconnect for us.
   const linkedProcess = cachedEntitiesByType<AgenticProcess>(AgenticProcess.type).find(
-    (p) => p.shell_id === shell.id,
+    (p) => p.shell_id === shellId,
   );
   if (linkedProcess) {
-    if (recoverySkips.skipProcessIds.has(linkedProcess.id) || recoverySkips.skipShellIds.has(shell.id)) {
+    if (recoverySkips.skipProcessIds.has(linkedProcess.id) || recoverySkips.skipShellIds.has(shellId)) {
       // Avoid bouncing straight back into the same failing process restore.
       // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw redirect(buildShellRecoveryUrl(recoverySkips));
@@ -181,64 +257,68 @@ async function loadPlainShell(pointer: string, recoverySkips: ShellRecoverySkips
     throw redirect(withRecoverySearch(`/dock/shell/${linkedProcess.dockPointer.pointer}`, recoverySkips));
   }
 
-  // Plain shell — no linked process.
   try {
-    await shell.start({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: shell.workdir ?? undefined });
-  } catch (error) {
-    const toastInfo = describeProcessStartError(error);
-    toast({ ...toastInfo, variant: 'destructive' });
-    await shell.close().catch(() => {});
+    await loadShell(shellId);
+  } catch (e) {
+    if (!(e instanceof ShellLoadError)) throw e;
+    if (e.kind === 'not_found') {
+      toast({
+        title: 'Shell not found',
+        description: 'This terminal no longer exists.',
+        variant: 'destructive',
+      });
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw redirect('/dock/shell');
+    }
+    if (e.kind === 'error_status') {
+      toast({
+        title: 'Shell unavailable',
+        description: e.errorMessage ?? 'Shell error',
+        variant: 'destructive',
+      });
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw redirect('/dock/shell');
+    }
+    // start_failed
+    toast({ ...describeProcessStartError(e.cause ?? e), variant: 'destructive' });
+    // Attempt a best-effort close so the user isn't stuck with a zombie row.
+    const shell = Shell.getByIdFromCache<Shell>(e.shellId);
+    await shell?.close().catch(() => {});
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect(buildShellRecoveryUrl(appendRecoverySkip(recoverySkips, null, shell.id)));
-  }
-
-  dataContext.setActiveShellId(shell.id);
-  dataContext.setWorkdir(shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
-  await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
-  if (shell.project_id) {
-    await dataContext.setContextEntityTypeId(
-      ContextEntitiesEnum.CurrentProjectTypeId,
-      new TypeId(Project.type, shell.project_id),
-    );
-  } else {
-    await systemTools.resolveProjectContext(shell.workdir ?? undefined, shell);
+    throw redirect(buildShellRecoveryUrl(appendRecoverySkip(recoverySkips, null, e.shellId)));
   }
 }
 
-// ── public entry point ──────────────────────────────────────────────────────
+// ── ROUTE: public entry point ───────────────────────────────────────────────
 
 /**
- * Load and validate the shell dock.
+ * Route-level loader for /dock/shell. Registered from main-loader.ts.
  *
- * - Prefetches all shells + agentic processes into the SDK cache (no-pointer path).
- * - If pointer is given, validates the entity exists and is not closed/error.
- * - Sets activeShellId and agenticProcessTypeId (CurrentProcessTypeId) in context.
- * - On invalid entity: shows a toast and redirects to /dock/shell.
+ * Owns the redirect policy for this URL namespace. Internals delegate to the
+ * pure `loadShell` / `loadProcess` primitives.
  */
-export async function loadShell(
+export async function loadShellRoute(
   pointer: string | undefined,
   recoverySkips: ShellRecoverySkips = emptyRecoverySkips(),
 ): Promise<void> {
-  _perfLog(`loadShell(${pointer || 'no-pointer'}) start`);
+  _perfLog(`loadShellRoute(${pointer || 'no-pointer'}) start`);
 
-  // Special keyword: create a new shell and redirect to it.
-  // Handle before any parallel queries — a running process can add latency.
   if (pointer === 'new_terminal') {
-    await loadNewTerminal();
+    await routeNewTerminal();
   }
 
   if (!pointer) {
-    await loadDefaultShell(recoverySkips);
+    await routeDefaultShell(recoverySkips);
     return;
   }
 
   if (DockPointer.isAgenticProcessPointer(pointer)) {
     const processId = DockPointer.extractAgenticProcessId(pointer);
-    await loadAgenticProcessFromPointer(processId, recoverySkips);
-    _perfLog('loadShell done (agentic process path)');
+    await routeProcessPointer(processId, recoverySkips);
+    _perfLog('loadShellRoute done (agentic process path)');
     return;
   }
 
-  await loadPlainShell(pointer, recoverySkips);
-  _perfLog('loadShell done (shell path)');
+  await routePlainShellPointer(pointer, recoverySkips);
+  _perfLog('loadShellRoute done (shell path)');
 }
