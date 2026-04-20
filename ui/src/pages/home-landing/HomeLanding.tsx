@@ -120,7 +120,7 @@ export function HomeLanding() {
 
   // Skill creation tasks for the Learnings tab
   const { data: allTasks, refetch: taskRefetch, excludeTasks } = useProjectTasks();
-  const { archiveTask } = useTaskMutations({ refetch: taskRefetch, excludeTasks });
+  const { archiveTask, removeTasks } = useTaskMutations({ refetch: taskRefetch, excludeTasks });
   const learningTasks = useMemo(
     () => allTasks.filter((t) => t.status !== 'archived' && !t.archived_at),
     [allTasks],
@@ -449,6 +449,7 @@ export function HomeLanding() {
             onErrorClick={() => navigation.openLens('heartbeat', 'errors', 'open')}
             onAddComment={createComment}
             onArchiveLearning={(task) => void archiveTask(task)}
+            onArchiveAllLearnings={() => void removeTasks(learningTasks)}
             onCloseBookmark={(m) => void closeBookmark(m)}
             onDeleteBookmark={(m) => void deleteBookmark(m)}
             onRemindBookmark={(m, mins) => void remindBookmark(m, mins)}
