@@ -3,7 +3,7 @@
  * Read-only display; editing happens in the full dock view.
  */
 
-import { ArrowLeft, ExternalLink, FileText, MessageSquare, Send, Sparkles } from 'lucide-react';
+import { ArrowLeft, ExternalLink, FileText, MessageSquare, Send } from 'lucide-react';
 import { useState } from 'react';
 import { Spec, Task, TypeId, User } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -42,25 +42,6 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
   };
 
   const analysisPath = getAnalysisPath(task);
-
-  const handleClaudeIt = () => {
-    const specContent = spec?.content ?? '';
-    const specTitle = spec?.title ?? task.title ?? 'Untitled';
-    const senderLabel = displayName(sender, task.shared_by_id);
-    const prompt = [
-      `You received a task from ${senderLabel}: "${specTitle}"`,
-      '',
-      specContent
-        ? `Here is the plan:\n\n${specContent}`
-        : `Task: ${task.title || 'Untitled'}`,
-      '',
-      'Please read through the plan carefully and confirm you have everything you need to get started. If anything is unclear or missing, ask before proceeding.',
-    ].join('\n');
-
-    navigation.openDock(
-      DockPointer.forShell(crypto.randomUUID(), { startClaude: true, startCommand: prompt }),
-    );
-  };
 
   return (
     <div className="flex h-full flex-col">
@@ -169,15 +150,6 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
                 </div>
               </div>
             )}
-
-            {/* Claude It button */}
-            <button
-              onClick={handleClaudeIt}
-              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-primary/40 bg-primary/5 px-3 py-1.5 text-sm font-medium text-primary hover:bg-primary/10"
-            >
-              <Sparkles className="h-4 w-4" />
-              Claude It
-            </button>
 
             {/* Conversation thread */}
             {task.conversation_id && (

@@ -5,11 +5,10 @@
  * Replaces the sliding TaskDetailPanel for spec_id tasks.
  */
 
-import { ArrowLeft, MessageSquare, Sparkles } from 'lucide-react';
-import { AgenticProcess, dataContext, Spec, Task, TypeId } from '@sdk';
+import { ArrowLeft, MessageSquare } from 'lucide-react';
+import { Spec, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ExpansionRequest } from '@sdk/FlowSync/query';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ConversationView } from '@src/components/conversation';
 
 interface SharedTaskViewProps {
@@ -18,46 +17,18 @@ interface SharedTaskViewProps {
 }
 
 export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
-  const { navigation } = useDockNavigation();
-
   const blobExpansion = new ExpansionRequest({ expand: ['blobs'] });
 
-  // Sender name comes from task metadata — no local user entity lookup needed
-  // (sender is a remote user who only exists on the hub).
-  const senderName = (task.metadata as Record<string, unknown> | undefined)?.sender_name as string | undefined
+  const taskMeta = task.metadata as Record<string, unknown> | undefined;
+  const projectRoot = taskMeta?.project_root as string | undefined;
+  const senderName = taskMeta?.sender_name as string | undefined
     || task.shared_by_id
     || 'Unknown';
+
   const { data: spec } = useEntity<Spec>(
     task.spec_id ? new TypeId(Spec.type, task.spec_id) : null,
     { query: blobExpansion },
   );
-
-  const handleClaudeIt = async () => {
-    const specContent = spec?.content ?? '';
-    const specTitle = spec?.title ?? task.title ?? 'Untitled';
-    const senderLabel = senderName;
-    const prompt = [
-      `You received a task from ${senderLabel}: "${specTitle}"`,
-      '',
-      specContent
-        ? `Here is the plan:\n\n${specContent}`
-        : `Task: ${task.title || 'Untitled'}`,
-      '',
-      'Please read through the plan carefully and confirm you have everything you need to get started. If anything is unclear or missing, ask before proceeding.',
-    ].join('\n');
-
-    try {
-      const workdir = (task.metadata as Record<string, unknown> | undefined)?.project_root as string | undefined
-        ?? dataContext.project?.fs_storage_mount_path;
-      const { process: agenticProcess } = await AgenticProcess.spawn(
-        { workdir },
-        { instruction: prompt, visible: true },
-      );
-      navigation.openDock(agenticProcess.dockPointer);
-    } catch (err) {
-      console.error('[Claude It] Failed to spawn process:', err);
-    }
-  };
 
   return (
     <div className="flex h-full w-full flex-col bg-card">
@@ -73,9 +44,7 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-base font-semibold">{task.title || 'Untitled'}</h2>
           {senderName && (
-            <p className="text-xs text-muted-foreground">
-              From {senderName}
-            </p>
+            <p className="text-xs text-muted-foreground">From {senderName}</p>
           )}
         </div>
       </div>
@@ -83,17 +52,14 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
       {/* Body */}
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
 
-        {/* Read-only fields — mirrors SendNotificationDialog */}
+        {/* Read-only fields */}
         <section className="space-y-3">
-          {/* Spec title */}
           {spec?.title && (
             <div>
               <span className="text-xs font-medium text-muted-foreground">Title</span>
               <p className="mt-0.5 text-sm">{spec.title}</p>
             </div>
           )}
-
-          {/* Description */}
           {spec?.content && (
             <div>
               <span className="text-xs font-medium text-muted-foreground">Description</span>
@@ -102,17 +68,7 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
               </div>
             </div>
           )}
-
         </section>
-
-        {/* Claude It */}
-        <button
-          onClick={() => void handleClaudeIt()}
-          className="flex w-full items-center justify-center gap-2 rounded-lg border border-primary/40 bg-primary/5 px-4 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/10"
-        >
-          <Sparkles className="h-4 w-4" />
-          Claude It — Start Implementation
-        </button>
 
         {/* Conversation */}
         <section>
@@ -131,6 +87,7 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
           )}
         </section>
       </div>
+
     </div>
   );
 }
