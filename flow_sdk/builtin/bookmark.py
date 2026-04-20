@@ -18,6 +18,7 @@ class BookmarkType(StrEnum):
     NOTIFICATION = "notification"
     NOTIFICATION_FAILED = "notification_failed"
     TERMINAL_ANNOTATION = "terminal_annotation"
+    FAVORITE = "favorite"
 
 
 class Bookmark(Entity):

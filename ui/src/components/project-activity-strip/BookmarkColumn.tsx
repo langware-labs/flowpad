@@ -1,7 +1,7 @@
 import type { SnifferEvent } from '@src/hooks/use-hooks-sniffer';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
-import type { Annotation, Bookmark, Task } from '@sdk';
+import { BookmarkType, type Annotation, type Bookmark, type Task } from '@sdk';
 import { MessageSquarePlus, RefreshCw, StickyNote, Tag, X } from 'lucide-react';
 import { useRef, useMemo, useState } from 'react';
 import { LearningCard } from './LearningCard';
@@ -81,7 +81,9 @@ function BookmarksList({
   onOpenEventDialog?: (sessionId: string, name: string) => void;
 }) {
   const entries = useMemo<BookmarkEntry[]>(() => {
-    const filteredBookmarks = bookmarks.filter((m) => filterBookmark(m, filter));
+    const filteredBookmarks = bookmarks.filter(
+      (m) => m.bookmark_type !== BookmarkType.FAVORITE && filterBookmark(m, filter),
+    );
     const items: BookmarkEntry[] = [
       ...learningTasks.map((task) => ({
         kind: 'learning' as const,
