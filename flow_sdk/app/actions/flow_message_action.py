@@ -57,36 +57,9 @@ async def handle_upload_flow_message(file, overwrite: bool) -> ApiResponse:
     finally:
         tmp_path.unlink(missing_ok=True)
 
-    def _find_typeid(collection, entity_type):
-        for c in collection:
-            try:
-                if hasattr(c, 'type'):
-                    if c.type == entity_type:
-                        return c.id
-                else:
-                    tid = TypeId(str(c))
-                    if tid.type == entity_type:
-                        return tid.id
-            except Exception:
-                pass
-        return None
+    task_id = next((c.id for c in fm.context if c.type == BuiltinEntityType.TASK.value), None)
+    conv_id = next((c.id for c in fm.context if c.type == BuiltinEntityType.CONVERSATION.value), None)
 
-    task_id = _find_typeid(fm.context, BuiltinEntityType.TASK.value)
-    conv_id = _find_typeid(fm.context, BuiltinEntityType.CONVERSATION.value)
-
-    # Fall back to attachment list if context is empty
-    if not task_id or not conv_id:
-        for att in fm.attachment:
-            try:
-                tid = TypeId(att.data)
-                if not task_id and tid.type == BuiltinEntityType.TASK.value:
-                    task_id = tid.id
-                if not conv_id and tid.type == BuiltinEntityType.CONVERSATION.value:
-                    conv_id = tid.id
-            except Exception:
-                pass
-
-    print(f"[ROUNDTRIP] UPLOAD  task_id={task_id}  conv_id={conv_id}  fm_id={fm.id}")
     return ApiSuccessResponse(data={
         "message_id": fm.id,
         "task_id": task_id,
@@ -152,7 +125,6 @@ async def handle_create_task_bundle(
 
     task.conversation_id = conv.id
     task = await task.save(someone_typeid)
-    print(f"[ROUNDTRIP] CREATE  task_id={task.id}  conv_id={conv.id}")
 
     # 4. Create FlowMessage record
     context = [
@@ -167,7 +139,6 @@ async def handle_create_task_bundle(
         "sender_id": sender_id,
         "sender_name": sender_name,
     })
-    print(f"[DEBUG context] after model_validate: {fm.context}")
     fm.id = FlowMessage.allocate_id(fm.model_dump())
     fm.attachment = [
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.SPEC.value, id=spec.id))),
@@ -175,9 +146,7 @@ async def handle_create_task_bundle(
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))),
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm.id))),
     ]
-    print(f"[DEBUG context] before save: {fm.context}")
     fm = await fm.save(someone_typeid)
-    print(f"[DEBUG context] after save: {fm.context}")
 
     # Append pointer to conversation
     bundle_ts = datetime.now(UTC).isoformat()
