@@ -7,10 +7,9 @@ import { MessageComposer } from './MessageComposer';
 interface ConversationViewProps {
   conversationId: string;
   task: ITask;
-  senderName?: string;
 }
 
-export function ConversationView({ conversationId, task, senderName }: ConversationViewProps) {
+export function ConversationView({ conversationId, task }: ConversationViewProps) {
   const { data: conversation } = useEntity<Conversation>(
     new TypeId(Conversation.type, conversationId),
   );
@@ -29,7 +28,6 @@ export function ConversationView({ conversationId, task, senderName }: Conversat
               messageId={ptr.message_id}
               timestamp={ptr.timestamp}
               task={task}
-              senderName={senderName ?? 'Unknown'}
             />
           ))}
         </div>

@@ -15,8 +15,9 @@ from typing import Optional
 
 from flow_sdk.actions.action_registry import action
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.flow_message import FlowMessage
+from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
 from flow_sdk.builtin.spec import Spec
+from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
 from flow_sdk.config import FLOW_HOME
@@ -56,8 +57,8 @@ async def handle_upload_flow_message(file, overwrite: bool) -> ApiResponse:
     finally:
         tmp_path.unlink(missing_ok=True)
 
-    task_id = next((c["id"] for c in fm.context if c.get("type") == BuiltinEntityType.TASK.value), None)
-    conv_id = next((c["id"] for c in fm.context if c.get("type") == BuiltinEntityType.CONVERSATION.value), None)
+    task_id = next((c.id for c in fm.context if c.type == BuiltinEntityType.TASK.value), None)
+    conv_id = next((c.id for c in fm.context if c.type == BuiltinEntityType.CONVERSATION.value), None)
 
     return ApiSuccessResponse(data={
         "message_id": fm.id,
@@ -126,27 +127,26 @@ async def handle_create_task_bundle(
 
     # 4. Create FlowMessage record
     context = [
-        {"type": BuiltinEntityType.TASK.value, "id": task.id},
-        {"type": BuiltinEntityType.CONVERSATION.value, "id": conv.id},
+        TypeId(type=BuiltinEntityType.TASK.value, id=task.id),
+        TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id),
     ]
     if team_space_id:
-        context.append({"type": BuiltinEntityType.TEAM_SPACE.value, "id": team_space_id})
-
-    attachment = [
-        {"type": BuiltinEntityType.SPEC.value, "id": spec.id},
-        {"type": BuiltinEntityType.TASK.value, "id": task.id},
-        {"type": BuiltinEntityType.CONVERSATION.value, "id": conv.id},
-    ]
+        context.append(TypeId(type=BuiltinEntityType.TEAM_SPACE.value, id=team_space_id))
 
     fm = FlowMessage.model_validate({
         "text": message or f"Task: {task_title}",
         "context": context,
-        "attachment": attachment,
+        "attachment": [],
         "sender_id": sender_id,
         "sender_name": sender_name,
     })
     fm.id = FlowMessage.allocate_id(fm.model_dump())
-    fm.attachment.append({"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": fm.id})
+    fm.attachment = [
+        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.SPEC.value, id=spec.id))),
+        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.TASK.value, id=task.id))),
+        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))),
+        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm.id))),
+    ]
     fm = await fm.save(someone_typeid)
 
     # Append pointer to conversation
@@ -175,7 +175,7 @@ async def handle_download_flow_message(fm_id: str) -> ApiResponse:
 
     zip_path = await fm.to_file()
     short_id = fm_id[:8]
-    task_id = next((c["id"] for c in fm.context if c.get("type") == BuiltinEntityType.TASK.value), "msg")
+    task_id = next((c.id for c in fm.context if c.type == BuiltinEntityType.TASK.value), "msg")
     filename = f"task-{task_id[:8]}-{short_id}.flowmsg"
 
     return FileResponse(

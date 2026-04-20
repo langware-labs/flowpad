@@ -1,18 +1,42 @@
 from __future__ import annotations
 
+from enum import Enum
 from pathlib import Path
 from typing import ClassVar, Optional
 
+from pydantic import BaseModel
+
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
+from flow_sdk.fs_store.type_id import TypeId
+
+
+class AttachmentType(str, Enum):
+    TYPE_ID = "type_id"
+    FILE = "file"
+    REPO = "repo"
+    URL = "url"
+
+
+class Attachment(BaseModel):
+    """A single item attached to a FlowMessage.
+
+    attachment_type controls how `data` is interpreted:
+      - TYPE_ID : data is a TypeId string ("type-id") referencing a local entity
+      - FILE    : data is a path relative to the .flowmsg root
+      - REPO    : data is the full repo path (uuid5 is derived from it)
+      - URL     : data is a URL
+    """
+    attachment_type: AttachmentType
+    data: str
 
 
 class FlowMessage(Entity):
     type: str = APIField(default="flow_message")
     text: str = APIField(...)
     instruction: Optional[str] = APIField(None)
-    context: list = APIField(default_factory=list)    # [{"type": str, "id": str}]
-    attachment: list = APIField(default_factory=list)  # subset of context + self
+    context: list[TypeId] = APIField(default_factory=list)
+    attachment: list[Attachment] = APIField(default_factory=list)
     sender_id: Optional[str] = APIField(None)
     sender_name: Optional[str] = APIField(None)
     receiver_address: Optional[str] = APIField(None)

@@ -2,11 +2,25 @@ import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 
+export enum AttachmentType {
+  TYPE_ID = 'type_id',
+  FILE = 'file',
+  REPO = 'repo',
+  URL = 'url',
+}
+
+export interface Attachment {
+  attachment_type: AttachmentType;
+  /** TypeId string ("type-id"), relative file path, repo path, or URL */
+  data: string;
+}
+
 export interface IFlowMessage extends IEntity {
   text?: string;
   instruction?: string | null;
-  context?: Array<{ type: string; id: string }>;
-  attachment?: Array<{ type: string; id: string }>;
+  /** List of TypeId strings ("type-id") placing this message in context */
+  context?: string[];
+  attachment?: Attachment[];
   sender_id?: string | null;
   sender_name?: string | null;
   receiver_address?: string | null;
@@ -17,8 +31,8 @@ export interface IFlowMessage extends IEntity {
 export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage {
   text?: string;
   instruction?: string | null;
-  context?: Array<{ type: string; id: string }>;
-  attachment?: Array<{ type: string; id: string }>;
+  context?: string[];
+  attachment?: Attachment[];
   sender_id?: string | null;
   sender_name?: string | null;
   receiver_address?: string | null;
