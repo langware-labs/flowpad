@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 from flow_sdk.discovery.notify import send_resource_sync
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store import SyncOperation
+from flow_sdk.fs_store.type_id import TypeId
 
 _FM_FIELDS = {"type", "id", "text", "instruction", "context", "attachment",
               "sender_id", "sender_name", "receiver_address", "receiver_address_type"}
@@ -77,10 +78,10 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
 
         # 2. Process each attachment entry
         for entry in flow_message.attachment:
-            # Normalise: enum member → its string value
-            raw_type = entry.get("type")
-            entry_type = raw_type.value if isinstance(raw_type, BuiltinEntityType) else raw_type
-            entry_id = entry.get("id")
+            if entry.attachment_type != "type_id":
+                continue  # file/repo/url attachments have no Record to bundle
+            tid = TypeId(entry.data)
+            entry_type, entry_id = tid.type, tid.id
             if not entry_type or not entry_id:
                 continue
 
@@ -270,9 +271,9 @@ async def unpack_bundle(
                 elif entry_type == BuiltinEntityType.CONVERSATION.value:
                     jsonl_file = entry_dir / "conversation.jsonl"
                     if jsonl_file.exists():
-                        # Find task_id from msg_data context
+                        # Find task_id from msg_data context (raw JSON strings: "task-<id>")
                         task_id_for_conv = next(
-                            (c["id"] for c in msg_data.get("context", []) if c.get("type") == BuiltinEntityType.TASK.value),
+                            (TypeId(c).id for c in msg_data.get("context", []) if TypeId(c).type == BuiltinEntityType.TASK.value),
                             None,
                         )
                         conv = await _create_conversation_from_disk(
@@ -304,7 +305,7 @@ async def unpack_bundle(
 
         # 6. Append pointer to target conversation
         target_conv_id = conversation_id or next(
-            (c["id"] for c in top_fm.context if c.get("type") == BuiltinEntityType.CONVERSATION.value),
+            (c.id for c in top_fm.context if c.type == BuiltinEntityType.CONVERSATION.value),
             None,
         )
         if target_conv_id:
@@ -313,7 +314,7 @@ async def unpack_bundle(
                 from pathlib import Path as _Path
                 rec = ConversationRecord.from_jsonl(
                     _Path(conv_entity.data_path),
-                    next((c["id"] for c in top_fm.context if c.get("type") == BuiltinEntityType.TASK.value), ""),
+                    next((c.id for c in top_fm.context if c.type == BuiltinEntityType.TASK.value), ""),
                     target_conv_id,
                 )
                 rec.append_message_pointer(top_fm.id, datetime.now(UTC).isoformat())
@@ -321,7 +322,7 @@ async def unpack_bundle(
         # 7. Fire resource sync
         try:
             task_id_for_sync = next(
-                (c["id"] for c in top_fm.context if c.get("type") == BuiltinEntityType.TASK.value),
+                (c.id for c in top_fm.context if c.type == BuiltinEntityType.TASK.value),
                 top_fm.id,
             )
             send_resource_sync(

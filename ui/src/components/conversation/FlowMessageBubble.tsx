@@ -8,10 +8,9 @@ interface FlowMessageBubbleProps {
   messageId: string;
   timestamp: string;
   task: ITask;
-  senderName: string;
 }
 
-export function FlowMessageBubble({ messageId, timestamp, task, senderName }: FlowMessageBubbleProps) {
+export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBubbleProps) {
   const { data: fm } = useEntity<FlowMessage>(
     new TypeId(FlowMessage.type, messageId),
   );
@@ -34,7 +33,7 @@ export function FlowMessageBubble({ messageId, timestamp, task, senderName }: Fl
     <MessageBubble
       message={message}
       flowMessageId={messageId}
-      senderName={senderName}
+      senderName={fm.sender_name ?? ''}
     />
   );
 }

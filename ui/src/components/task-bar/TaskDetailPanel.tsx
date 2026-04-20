@@ -190,7 +190,6 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
                   <ConversationView
                     conversationId={task.conversation_id}
                     task={task}
-                    senderName={displayName(sender, task.shared_by_id)}
                   />
                 </div>
               </div>
