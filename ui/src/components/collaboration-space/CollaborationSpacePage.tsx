@@ -81,34 +81,6 @@ export function CollaborationSpacePage() {
   const { data: session } = useEntity<CollaborationSession>(sessionTypeId, { watch: true });
   const localMemberId = useMemo(() => (typeof window !== 'undefined' ? getOrCreateLocalMemberId() : null), []);
 
-  // Resolve the tab TypeId into an active shell id so TabbedTerminal can light
-  // up the right tab. For agentic_process, look up the linked shell.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!tabTypeId) return;
-      if (tabTypeId.type === 'shell') {
-        dataContext.setActiveShellId(tabTypeId.id);
-        return;
-      }
-      if (tabTypeId.type === 'agentic_process') {
-        try {
-          const proc = await dataManager.getByTypeId<{ shell_id?: string | null }>(
-            new TypeId('agentic_process', tabTypeId.id),
-          );
-          if (cancelled) return;
-          const shellId = (proc as { shell_id?: string | null } | null)?.shell_id ?? null;
-          if (shellId) dataContext.setActiveShellId(shellId);
-        } catch (err) {
-          console.warn('[CollaborationSpacePage] failed to resolve process shell_id', err);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [tabTypeId?.type, tabTypeId?.id]);
-
   // Heartbeat into the session (not the space) — sessions are the meetings.
   useEffect(() => {
     if (!session || !localMemberId) return;
@@ -187,30 +159,22 @@ export function CollaborationSpacePage() {
         if (!activeSession) return;
       }
 
-      // For Claude: the collaboration_space route has no loader that bootstraps
-      // proc.start(), so we kick it off here to get a Shell.
+      // Tag the shell with the owning space so the TabbedTerminal filter keeps it.
+      // When the tab is Claude, the shell doesn't exist yet (it's created by
+      // `process.start` in the loader on navigation); resolve it best-effort.
       const proc = tab.agenticProcess;
       let shell = tab.shell ?? null;
-      if (proc && !shell?.id) {
-        try {
-          const live =
-            AgenticProcess.getByIdFromCache<AgenticProcess>(proc.id) ??
-            (await AgenticProcess.getById<AgenticProcess>(proc.id));
-          if (live) {
-            await live.start({ visible: true });
-            if (live.shell_id) {
-              shell =
-                Shell.getByIdFromCache<Shell>(live.shell_id) ??
-                (await Shell.getById<Shell>(live.shell_id)) ??
-                null;
-            }
-          }
-        } catch (err) {
-          console.warn('[CollaborationSpacePage] failed to start claude process in space', err);
+      if (!shell?.id && proc) {
+        const live =
+          AgenticProcess.getByIdFromCache<AgenticProcess>(proc.id) ??
+          (await AgenticProcess.getById<AgenticProcess>(proc.id).catch(() => null));
+        if (live?.shell_id) {
+          shell =
+            Shell.getByIdFromCache<Shell>(live.shell_id) ??
+            (await Shell.getById<Shell>(live.shell_id).catch(() => null)) ??
+            null;
         }
       }
-
-      // Tag the shell with the owning space so the TabbedTerminal filter keeps it.
       if (shell && shell.collaboration_space_id !== space.id) {
         try {
           shell.collaboration_space_id = space.id;
@@ -225,7 +189,7 @@ export function CollaborationSpacePage() {
         try {
           const live =
             AgenticProcess.getByIdFromCache<AgenticProcess>(proc.id) ??
-            (await AgenticProcess.getById<AgenticProcess>(proc.id));
+            (await AgenticProcess.getById<AgenticProcess>(proc.id).catch(() => null));
           if (live && live.collaboration_session_id !== activeSession.id) {
             live.collaboration_session_id = activeSession.id;
             await live.save();
@@ -275,7 +239,7 @@ export function CollaborationSpacePage() {
       <CollaborationSpaceHeader space={space} localMemberId={localMemberId} />
       <div className="flex min-h-0 flex-1">
         <div className="w-64 flex-shrink-0 overflow-y-auto border-r">
-          <CollaborationSpaceSidebar />
+          <CollaborationSpaceSidebar projectId={space.project_id ?? null} />
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
           {session && <SessionHeader session={session} isHost={session.isHost(localMemberId ?? undefined)} />}
