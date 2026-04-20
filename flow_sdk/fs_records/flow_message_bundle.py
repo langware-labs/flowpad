@@ -64,13 +64,11 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
     tmp_root = Path(tempfile.mkdtemp(prefix="flowmsg_pack_"))
     try:
         # 1. Write top-level message.json
-        print(f"[DEBUG context] pack_bundle: flow_message.context = {flow_message.context!r}")
         msg_data = flow_message.model_dump(
             mode="python",
             include=_FM_FIELDS,
             context={"skip_api_serializer": True},
         )
-        print(f"[DEBUG context] pack_bundle: msg_data['context'] = {msg_data.get('context')!r}")
         (tmp_root / "message.json").write_text(
             json.dumps(msg_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
         )
@@ -270,7 +268,6 @@ async def unpack_bundle(
                         task_data = json.loads(manifest_file.read_text(encoding="utf-8"))
                         task_id = task_data.get("id") or entry_id
                         existing_task = await Task.get_one({"id": task_id})
-                        print(f"[ROUNDTRIP] UNPACK task_id={task_id}  existing={existing_task is not None}  overwrite={overwrite}")
                         if existing_task is None or overwrite:
                             task = Task.model_validate({
                                 "id": task_id,
@@ -301,8 +298,6 @@ async def unpack_bundle(
                         perm_task_dir.mkdir(parents=True, exist_ok=True)
                         perm_jsonl = perm_task_dir / "conversation.jsonl"
                         shutil.copy2(jsonl_file, perm_jsonl)
-                        existing_conv = await Conversation.get_one({"id": entry_id})
-                        print(f"[ROUNDTRIP] UNPACK conv_id={entry_id}  task_id_for_conv={task_id_for_conv}  existing={existing_conv is not None}  perm_path={perm_jsonl}")
                         conv = await _create_conversation_from_disk(
                             task_dir=perm_task_dir,
                             task_id=task_id_for_conv or "",
@@ -311,7 +306,6 @@ async def unpack_bundle(
                         )
                         if conv:
                             conversation_id = conv.id
-                            print(f"[ROUNDTRIP] UNPACK conv saved  conv_id={conv.id}  message_count={conv.message_count}")
 
                 elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
                     fm_file = entry_dir / "message.json"
