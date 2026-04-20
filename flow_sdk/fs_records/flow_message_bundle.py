@@ -296,21 +296,13 @@ async def unpack_bundle(
                         task_id = task_data.get("id") or entry_id
                         existing_task = await Task.get_one({"id": task_id})
                         if existing_task is None or overwrite:
-                            # Merge metadata: start with existing (receiver-side keys like
-                            # agentic_session_id, agentic_executed_count) then overlay
-                            # bundle keys (sender-side keys like project_root, sender_name).
-                            merged_metadata: dict = {}
-                            if existing_task and existing_task.metadata:
-                                merged_metadata.update(existing_task.metadata)
-                            if task_data.get("metadata"):
-                                merged_metadata.update(task_data["metadata"])
                             task = Task.model_validate({
                                 "id": task_id,
                                 "title": task_data.get("title", ""),
                                 "spec_id": task_data.get("spec_id"),
                                 "shared_by_id": task_data.get("shared_by_id"),
                                 "conversation_id": task_data.get("conversation_id"),
-                                "metadata": merged_metadata or None,
+                                "metadata": task_data.get("metadata"),
                                 "status": task_data.get("status", "to_do"),
                             })
                             await task.save(owner_typeid)
