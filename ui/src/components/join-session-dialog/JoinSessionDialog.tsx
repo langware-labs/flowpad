@@ -22,7 +22,7 @@ export function JoinSessionDialog({ open, onClose, hostName, draftPrompt, onStar
   }, [open, hostName]);
 
   const promptTrimmed = draftPrompt.trim();
-  const canStart = !!promptTrimmed && !!name.trim() && !busy;
+  const canStart = !!name.trim() && !busy;
 
   const handleStart = async () => {
     if (!canStart) return;
@@ -47,19 +47,19 @@ export function JoinSessionDialog({ open, onClose, hostName, draftPrompt, onStar
 
         <div className="flex flex-col gap-4 text-sm">
           <p className="text-muted-foreground">
-            Starting a session opens a new agentic process with the prompt you typed above. Your share
-            link and participant list will appear in the <span className="font-medium text-foreground">Team</span>{' '}
-            side window.
+            A space is a persistent room you meet in to assist and get assisted. If you typed a
+            prompt above, it opens the first agentic process bound to this space. Otherwise the
+            space opens empty and you can share tabs into it later.
           </p>
 
-          {/* Prompt preview */}
+          {/* Prompt preview (optional) */}
           <div className="rounded-md border bg-muted/30 p-3">
-            <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-1">First prompt</p>
+            <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-1">First prompt (optional)</p>
             {promptTrimmed ? (
               <p className="whitespace-pre-wrap text-sm text-foreground">{promptTrimmed}</p>
             ) : (
               <p className="text-sm italic text-muted-foreground">
-                Type a prompt in the box above — it becomes the first message in the shared session.
+                No prompt — space will open empty.
               </p>
             )}
           </div>

@@ -34,7 +34,6 @@ import {
   QueuePanel,
   SideTabId,
   SideWindow,
-  TeamSideWindow,
   parseSideTabIdList,
   parseSideTabId,
   type PromptEntry,
@@ -1403,12 +1402,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                   <InputFilesPanel
                     computeNodeTypeId={inputDirInfo.computeNodeTypeId}
                     inputDirAbsPath={inputDirInfo.absPath}
-                  />
-                )}
-                {activeSideTab === SideTabId.Team && process && (
-                  <TeamSideWindow
-                    agenticProcessId={process.id}
-                    defaultHostName={dataContext.user?.name ?? null}
                   />
                 )}
               </SideWindow>

@@ -211,12 +211,38 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Create dock pointer for a collaboration space
-   * URL: /dock/collaboration_space/<spaceId>
-   * @param spaceId - Collaboration space entity id
+   * Create dock pointer for a collaboration space, optionally with an active
+   * sub-entity (shell / agentic_process) shown inside the space view.
+   *
+   * URL formats:
+   *   /dock/collaboration_space/<spaceId>
+   *   /dock/collaboration_space/<spaceId>/<type>/<id>
    */
-  static forCollaborationSpace(spaceId?: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.COLLABORATION_SPACE, spaceId, undefined, layout);
+  static forCollaborationSpace(
+    spaceId?: string,
+    sub?: { type: string; id: string },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    if (!spaceId) return new DockPointer(ViewType.COLLABORATION_SPACE, undefined, undefined, layout);
+    const pointer = sub ? `${spaceId}/${sub.type}/${sub.id}` : spaceId;
+    return new DockPointer(ViewType.COLLABORATION_SPACE, pointer, undefined, layout);
+  }
+
+  /**
+   * Parse a collaboration_space pointer string into its space id and optional
+   * sub-entity reference. Returns `{ spaceId: null, sub: null }` when empty.
+   */
+  static parseCollaborationSpacePointer(
+    pointer: string | undefined | null,
+  ): { spaceId: string | null; sub: { type: string; id: string } | null } {
+    if (!pointer) return { spaceId: null, sub: null };
+    const parts = pointer.split('/').filter(Boolean);
+    if (parts.length === 0) return { spaceId: null, sub: null };
+    if (parts.length === 1) return { spaceId: parts[0], sub: null };
+    if (parts.length >= 3) {
+      return { spaceId: parts[0], sub: { type: parts[1], id: parts.slice(2).join('/') } };
+    }
+    return { spaceId: parts[0], sub: null };
   }
 
   /**
