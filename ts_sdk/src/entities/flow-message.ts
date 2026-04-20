@@ -2,6 +2,11 @@ import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 
+export enum DeliveryMode {
+  EMAIL = 'email',
+  REPO = 'repo',
+}
+
 export enum AttachmentType {
   TYPE_ID = 'type_id',
   FILE = 'file',

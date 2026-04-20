@@ -22,6 +22,7 @@ import asyncio
 import json as _json
 import logging
 import re
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -285,7 +286,9 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     # 5. Post to hub
     branch = git_current_branch(project_root) if project_root else ""
     hub_configured = bool(hub_base_url())
-    hub_data = await hub_post("notify_hub", {
+    flow_message_id = str(uuid.uuid4())
+    hub_data = await hub_post("flow_message/send", {
+        "flow_message_id": flow_message_id,
         "recipient_email": recipient_email,
         "sender_id": sender_id,
         "sender_name": sender_name,
@@ -301,9 +304,9 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         "branch": branch,
         "spec_file_path": spec_file_path,
     })
-    hub_notification_id: Optional[str] = (hub_data or {}).get("notification_id")
+    hub_flow_message_id: Optional[str] = (hub_data or {}).get("flow_message_id")
     email_error: Optional[str] = None
-    if hub_configured and not hub_notification_id:
+    if hub_configured and not hub_flow_message_id:
         email_error = f"Email to {recipient_email} could not be sent — the notification service did not confirm delivery."
 
     # 6. Save Notification locally
@@ -314,7 +317,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         "recipient_id": resolved_recipient_id,
         "sender_id": sender_id,
         "delivery_method": DeliveryMethod.EMAIL,
-        "notification_status": NotificationStatus.SENT if hub_notification_id else NotificationStatus.PENDING,
+        "notification_status": NotificationStatus.SENT if hub_flow_message_id else NotificationStatus.PENDING,
         "message": message,
         "metadata": {
             "project_url": project_url,
@@ -322,7 +325,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
             "sender_name": sender_name,
         },
     })
-    notification.id = hub_notification_id or Notification.allocate_id(notification.model_dump())
+    notification.id = hub_flow_message_id or Notification.allocate_id(notification.model_dump())
     notification = await notification.save(someone_typeid)
 
     # 7. If hub failed, add a bookmark so the user sees it in the activity panel.
@@ -344,13 +347,13 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
 
     base = hub_base_url()
     return ApiSuccessResponse(data={
-        "sent": bool(hub_notification_id),
+        "sent": bool(hub_flow_message_id),
         "email_error": email_error,
         "spec_id": spec.id,
         "task_id": task.id,
         "conversation_id": conversation_id,
         "notification_id": notification.id,
-        "notify_url": f"{base}/notify/{notification.id}" if hub_notification_id and base else None,
+        "notify_url": f"{base}/flow_message/{hub_flow_message_id}" if hub_flow_message_id and base else None,
     })
 
 
