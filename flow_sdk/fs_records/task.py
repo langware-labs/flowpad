@@ -27,6 +27,8 @@ class TaskResource(Record):
     _record_type: ClassVar[str] = RecordType.TASK
     _indexed_by_default: ClassVar[bool] = True
     _user_asset: ClassVar[bool] = True
+    _creatable: ClassVar[bool] = True
+    _icon: ClassVar[str] = "CheckSquare"
     index_fields: ClassVar[list[str]] = ["description", "objective"]
 
     def __init__(self, **kwargs: Any):

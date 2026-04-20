@@ -23,6 +23,72 @@ export interface TerminalTab {
 const HIDDEN_SHELL_STATUSES = new Set([ShellStatus.ERROR]);
 const DISABLED_SHELL_STATUSES = new Set([ShellStatus.CLOSED, ShellStatus.CLOSING]);
 
+export interface TabFilter {
+  /** When true, hide ERROR shells and sidecar shells (the "visible tab strip" set). */
+  visible?: boolean;
+  /** When set, only include shells tagged with this collaboration session id. */
+  collaborationSessionId?: string | null;
+}
+
+/**
+ * Pure tab builder. Merges shells + processes into TerminalTab[] and applies
+ * the filter. Shared between `useActiveTerminals` (rendering) and the route
+ * loaders (default-tab resolution).
+ */
+export function filterTabs(
+  shells: Shell[],
+  processes: AgenticProcess[],
+  filter: TabFilter = {},
+): TerminalTab[] {
+  const { visible = false, collaborationSessionId = null } = filter;
+  const activeProcesses = processes.filter((p) => isProcessActive(p.status));
+
+  const sidecarShellIds = new Set<string>();
+  for (const proc of processes) {
+    if (proc.sidecar_shell_id) sidecarShellIds.add(proc.sidecar_shell_id);
+  }
+
+  const keptShells = shells.filter((shell) => {
+    if (visible) {
+      if (HIDDEN_SHELL_STATUSES.has(shell.status as ShellStatus)) return false;
+      if (sidecarShellIds.has(shell.id)) return false;
+    }
+    if (collaborationSessionId != null && shell.collaboration_session_id !== collaborationSessionId) {
+      return false;
+    }
+    return true;
+  });
+
+  const shellToProcess = new Map<string, AgenticProcess>();
+  for (const proc of activeProcesses) {
+    if (proc.shell_id) shellToProcess.set(proc.shell_id, proc);
+  }
+
+  const result: TerminalTab[] = keptShells.map((shell) => {
+    const linkedProcess = shellToProcess.get(shell.id);
+    const isDisabled = DISABLED_SHELL_STATUSES.has(shell.status as ShellStatus);
+    const statusReason =
+      shell.status === ShellStatus.CLOSING
+        ? 'Closing...'
+        : shell.status === ShellStatus.CLOSED
+          ? 'Closed'
+          : '';
+    return {
+      shellId: shell.id,
+      tabOrder: shell.tab_order ?? 0,
+      name: shell.name ?? null,
+      type: linkedProcess ? 'claude' : 'plain',
+      agenticProcess: linkedProcess,
+      shell,
+      isDisabled,
+      statusReason,
+    };
+  });
+
+  result.sort((a, b) => a.tabOrder - b.tabOrder);
+  return result;
+}
+
 const shellQuery = new QueryRequest({
   type: 'shell',
   scope: [],
@@ -71,55 +137,10 @@ export function useActiveTerminals(options: UseActiveTerminalsOptions = {}) {
   processesRef.current = processes;
 
   const tabs = useMemo(() => {
-    const currentShells = shellsRef.current;
-    const currentProcesses = processesRef.current;
-    const activeProcesses = currentProcesses.filter((p) => isProcessActive(p.status));
-
-    // Build a set of sidecar shell IDs — these are internal-only PTY sessions
-    // managed by InteractiveTerminal and must not appear as top-level tabs.
-    const sidecarShellIds = new Set<string>();
-    for (const proc of currentProcesses) {
-      if (proc.sidecar_shell_id) sidecarShellIds.add(proc.sidecar_shell_id);
-    }
-
-    const visibleShells = currentShells.filter((shell) => {
-      if (HIDDEN_SHELL_STATUSES.has(shell.status as ShellStatus)) return false;
-      if (sidecarShellIds.has(shell.id)) return false;
-      if (collaborationSessionId != null && shell.collaboration_session_id !== collaborationSessionId) return false;
-      return true;
+    return filterTabs(shellsRef.current, processesRef.current, {
+      visible: true,
+      collaborationSessionId,
     });
-
-    // Build map: shell_id -> AgenticProcess
-    const shellToProcess = new Map<string, AgenticProcess>();
-    for (const proc of activeProcesses) {
-      if (proc.shell_id) {
-        shellToProcess.set(proc.shell_id, proc);
-      }
-    }
-
-    // Build tabs from shells that should still be visible in the terminal strip.
-    const result: TerminalTab[] = visibleShells.map((shell) => {
-      const linkedProcess = shellToProcess.get(shell.id);
-      const isDisabled = DISABLED_SHELL_STATUSES.has(shell.status as ShellStatus);
-      const statusReason = shell.status === ShellStatus.CLOSING ? 'Closing...'
-        : shell.status === ShellStatus.CLOSED ? 'Closed'
-        : '';
-      return {
-        shellId: shell.id,
-        tabOrder: shell.tab_order ?? 0,
-        name: shell.name ?? null,
-        type: linkedProcess ? 'claude' : 'plain',
-        agenticProcess: linkedProcess,
-        shell,
-        isDisabled,
-        statusReason,
-      };
-    });
-
-    // Sort by tab_order
-    result.sort((a, b) => a.tabOrder - b.tabOrder);
-
-    return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shellProjectionKey, processProjectionKey, collaborationSessionId]);
 

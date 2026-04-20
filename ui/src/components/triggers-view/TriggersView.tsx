@@ -3,17 +3,26 @@ import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { type ITrigger } from '@sdk';
 import { useTriggers } from '@src/hooks/useTriggers';
+import { useProject } from '@src/hooks/useProject';
 import { TriggersList } from './TriggersList';
 import { TriggerEditor } from './TriggerEditor';
 import { ScheduleTriggerEditor } from './ScheduleTriggerEditor';
 import { TriggerInvocationsPanel } from './TriggerInvocationsPanel';
 
 export function TriggersView() {
-  const { triggers, isLoading: loading } = useTriggers();
+  const { triggers: allTriggers, isLoading: loading } = useTriggers();
+  const { project } = useProject();
+  // Schedule triggers are project-scoped; hook triggers are global (system/user).
+  const triggers = useMemo(() => {
+    return allTriggers.filter(t => {
+      if (t.trigger_type !== 'schedule') return true;
+      return t.project_id === project?.id;
+    });
+  }, [allTriggers, project?.id]);
   const [selectedTrigger, setSelectedTrigger] = useState<ITrigger | null>(null);
   const [isCreatingSchedule, setIsCreatingSchedule] = useState(false);
   const { navigation } = useDockNavigation();

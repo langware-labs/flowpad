@@ -124,21 +124,31 @@ export class Workflow extends APIEntity<Workflow> {
   }
 
   /**
-   * Create a new workflow: saves the entity, writes the initial .md file,
-   * and links source_vfs_path — no dataContext required.
+   * Create a new workflow scoped to the given project: saves the entity, writes
+   * the initial .md file under `<project>/workflows/<name>.md`, and links
+   * source_vfs_path. Falls back to `@local` project when `project` is null.
    */
-  static async create(name: string): Promise<Workflow> {
+  static async createInProject(
+    project: { fs_storage_mount_path?: string } | null,
+    name: string,
+    folderVfsPath?: string,
+  ): Promise<Workflow> {
     const { ComputeNode } = await import('./compute-node/compute-node');
     const { Project } = await import('./project');
 
     const computeNode = await ComputeNode.getById('@local');
     if (!computeNode) throw new Error('No local compute node');
-    const project = await dataManager.getByTypeId<Project>(new TypeId(Project.type, '@local'));
 
-    const mountPath = project?.fs_storage_mount_path ?? '';
+    let resolvedProject = project;
+    if (!resolvedProject) {
+      resolvedProject = await dataManager.getByTypeId<Project>(new TypeId(Project.type, '@local'));
+    }
+
+    const mountPath = resolvedProject?.fs_storage_mount_path ?? '';
     const vfsBase = mountPath.startsWith('/') ? mountPath.slice(1) : mountPath;
+    const folder = folderVfsPath ?? 'workflows';
     const safeName = name.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
-    const vfsPath = vfsBase ? `${vfsBase}/workflows/${safeName}.md` : `workflows/${safeName}.md`;
+    const vfsPath = vfsBase ? `${vfsBase}/${folder}/${safeName}.md` : `${folder}/${safeName}.md`;
 
     const workflow = new Workflow({ name: name.trim() });
     const saved = await workflow.save();
@@ -149,6 +159,11 @@ export class Workflow extends APIEntity<Workflow> {
     await saved.save();
 
     return saved;
+  }
+
+  /** Backward-compat alias: create a workflow in the default (@local) project. */
+  static async create(name: string): Promise<Workflow> {
+    return Workflow.createInProject(null, name);
   }
 
   /**

@@ -1,6 +1,19 @@
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@src/components/ui/alert-dialog';
 import { ActionInfo, dataManager, type ITrigger } from '@sdk';
+import Editor from '@monaco-editor/react';
+import { Pencil } from 'lucide-react';
+import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
 
 interface Props {
@@ -13,7 +26,16 @@ export function TriggerEditor({ trigger }: Props) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const isReadOnly = trigger.scope === 'system';
+  const [unlocked, setUnlocked] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const { resolvedTheme } = useTheme();
+
+  const isSystem = trigger.scope === 'system';
+  const isReadOnly = isSystem && !unlocked;
+
+  useEffect(() => {
+    setUnlocked(false);
+  }, [trigger.id]);
 
   useEffect(() => {
     if (!trigger.id) return;
@@ -23,8 +45,8 @@ export function TriggerEditor({ trigger }: Props) {
     const action = new ActionInfo('trigger-content', 'trigger', trigger.id, 'GET');
     dataManager.callAction<undefined, { content: string }>(action)
       .then((data) => {
-        if (data && typeof (data as any).content === 'string') {
-          setContent((data as any).content);
+        if (data && typeof (data as { content: string }).content === 'string') {
+          setContent((data as { content: string }).content);
         } else {
           setError('Failed to load trigger.py');
         }
@@ -46,13 +68,6 @@ export function TriggerEditor({ trigger }: Props) {
       setError(e instanceof Error ? e.message : 'Save failed');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 's') {
-      e.preventDefault();
-      void handleSave();
     }
   };
 
@@ -79,8 +94,20 @@ export function TriggerEditor({ trigger }: Props) {
           </div>
         )}
         <div className="ml-auto flex items-center gap-2">
-          {isReadOnly && (
-            <span className="text-[10px] text-muted-foreground">read-only (system)</span>
+          {isSystem && !unlocked && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 gap-1.5 text-xs text-muted-foreground"
+              onClick={() => setConfirmOpen(true)}
+              title="Edit system trigger"
+            >
+              <Pencil className="h-3 w-3" />
+              Edit
+            </Button>
+          )}
+          {isSystem && unlocked && (
+            <span className="text-[10px] text-amber-500">Editing system trigger</span>
           )}
           {error && <span className="text-[10px] text-destructive">{error}</span>}
           {saved && <span className="text-[10px] text-green-500">Saved</span>}
@@ -97,17 +124,47 @@ export function TriggerEditor({ trigger }: Props) {
         {loading ? (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading...</div>
         ) : (
-          <textarea
+          <Editor
+            height="100%"
+            language="python"
             value={content}
-            onChange={e => setContent(e.target.value)}
-            onKeyDown={handleKeyDown}
-            readOnly={isReadOnly}
-            className="h-full w-full resize-none bg-background p-4 font-mono text-sm focus:outline-none"
-            spellCheck={false}
-            placeholder="# trigger.py"
+            onChange={(val) => setContent(val ?? '')}
+            theme={resolvedTheme === 'dark' ? 'vs-dark' : 'light'}
+            options={{
+              readOnly: isReadOnly,
+              fontSize: 13,
+              lineHeight: 20,
+              minimap: { enabled: false },
+              scrollBeyondLastLine: false,
+              automaticLayout: true,
+              wordWrap: 'on',
+              padding: { top: 12, bottom: 12 },
+              lineNumbers: 'on',
+              folding: true,
+              renderLineHighlight: 'all',
+            }}
           />
         )}
       </div>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Edit a system trigger?</AlertDialogTitle>
+            <AlertDialogDescription>
+              System triggers power core Flowpad functionality. Editing them can cause parts
+              of the app to behave unexpectedly. Proceed only if you understand what this
+              trigger does.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => setUnlocked(true)}>
+              Edit anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

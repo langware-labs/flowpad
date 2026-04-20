@@ -24,7 +24,6 @@ import {
   ContextEntitiesEnum,
   dataContext,
   dataManager,
-  isProcessActive,
   Project,
   QueryFilter,
   QueryRequest,
@@ -33,6 +32,7 @@ import {
   systemTools,
   TypeId,
 } from '@sdk';
+import { filterTabs, type TerminalTab } from '@src/hooks/useActiveTerminals';
 import { toast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation';
 import { redirect } from 'react-router';
@@ -73,7 +73,7 @@ function cachedEntitiesByType<U>(type: string): U[] {
   return out;
 }
 
-async function fetchShellsAndProcesses(): Promise<[Shell[], AgenticProcess[]]> {
+export async function fetchShellsAndProcesses(): Promise<[Shell[], AgenticProcess[]]> {
   return Promise.all([
     Shell.query<Shell>(new QueryRequest({ type: Shell.type, scope: [] })),
     AgenticProcess.query<AgenticProcess>(
@@ -84,20 +84,6 @@ async function fetchShellsAndProcesses(): Promise<[Shell[], AgenticProcess[]]> {
       }),
     ),
   ]);
-}
-
-function previousThenRemainingShells(shells: Shell[], isAlive: (shell: Shell) => boolean): Shell[] {
-  const ordered: Shell[] = [];
-  const previousShellId = dataContext.activeShellId;
-  const previousShell = previousShellId ? shells.find((s) => s.id === previousShellId && isAlive(s)) : null;
-  if (previousShell) ordered.push(previousShell);
-
-  for (const shell of shells) {
-    if (!isAlive(shell)) continue;
-    if (ordered.some((candidate) => candidate.id === shell.id)) continue;
-    ordered.push(shell);
-  }
-  return ordered;
 }
 
 function _perfLog(label: string) {
@@ -143,34 +129,31 @@ export async function loadShell(shellId: string): Promise<Shell> {
   return shell;
 }
 
-// ── default-shell resolution (exported for unit tests) ──────────────────────
+// ── default-tab resolution (exported for unit tests) ───────────────────────
 
 /**
- * Handle the no-pointer case: pick a target URL for the previously-active or
- * first alive shell. Returns null if no alive shell exists.
+ * Pick a default tab from a pre-filtered list. Prefers the previously-active
+ * shell, then falls back to the first non-disabled tab. Skips anything in
+ * `recoverySkips`. Returns null when nothing is pickable.
  */
-export function resolveDefaultShell(
-  shells: Shell[],
-  processes: AgenticProcess[],
+export function resolveDefaultTab(
+  tabs: TerminalTab[],
   recoverySkips: ShellRecoverySkips = emptyRecoverySkips(),
-): string | null {
-  const hiddenStatuses = new Set<string>([ShellStatus.CLOSED, ShellStatus.CLOSING, ShellStatus.ERROR]);
-  const activeProcesses = processes.filter((p) => isProcessActive(p.status));
-  const isAlive = (s: Shell) => !hiddenStatuses.has(s.status as ShellStatus);
+): TerminalTab | null {
   const { skipProcessIds, skipShellIds } = recoverySkips;
-
-  const resolveUrl = (shell: Shell) => {
-    const p = activeProcesses.find((ap) => ap.shell_id === shell.id);
-    if (skipShellIds.has(shell.id) || (p?.id && skipProcessIds.has(p.id))) return null;
-    const baseUrl = `/dock/shell/${(p ?? shell).dockPointer.pointer}`;
-    return p ? withRecoverySearch(baseUrl, recoverySkips) : baseUrl;
+  const isPickable = (tab: TerminalTab) => {
+    if (tab.isDisabled) return false;
+    if (skipShellIds.has(tab.shellId)) return false;
+    if (tab.agenticProcess && skipProcessIds.has(tab.agenticProcess.id)) return false;
+    return true;
   };
 
-  for (const shell of previousThenRemainingShells(shells, isAlive)) {
-    const url = resolveUrl(shell);
-    if (url) return url;
+  const previousShellId = dataContext.activeShellId;
+  if (previousShellId) {
+    const previous = tabs.find((t) => t.shellId === previousShellId && isPickable(t));
+    if (previous) return previous;
   }
-  return null;
+  return tabs.find(isPickable) ?? null;
 }
 
 // ── ROUTE: internal branches ────────────────────────────────────────────────
@@ -197,11 +180,15 @@ async function routeDefaultShell(recoverySkips: ShellRecoverySkips): Promise<voi
   const [shells, processes] = await fetchShellsAndProcesses();
   _perfLog(`loadShellRoute queries done (${shells.length} shells, ${processes.length} processes)`);
 
-  const redirectUrl = resolveDefaultShell(shells, processes, recoverySkips);
-  if (redirectUrl) {
-    _perfLog(`loadShellRoute redirect → ${redirectUrl}`);
+  const tabs = filterTabs(shells, processes, { visible: true });
+  const tab = resolveDefaultTab(tabs, recoverySkips);
+  if (tab) {
+    const pointer = (tab.agenticProcess ?? tab.shell!).dockPointer.pointer;
+    const baseUrl = `/dock/shell/${pointer}`;
+    const url = tab.agenticProcess ? withRecoverySearch(baseUrl, recoverySkips) : baseUrl;
+    _perfLog(`loadShellRoute redirect → ${url}`);
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect(redirectUrl);
+    throw redirect(url);
   }
   dataContext.setActiveShellId('');
   dataContext.setWorkdir(dataContext.project?.fs_storage_mount_path ?? null);

@@ -56,4 +56,19 @@ export class Skill extends APIEntity<Skill> {
     const skill = new Skill({ name: name.trim(), description: description?.trim() ?? '' });
     return skill.save();
   }
+
+  /**
+   * Create a skill scoped to the given project. If `project` is null, creates in the user's
+   * home (~/.claude/skills/<name>/). `folderVfsPath` is reserved for future fine-grained
+   * placement; the server derives the path from project scope today.
+   */
+  static async createInProject(
+    project: { typeId?: import('../models/TypeId').TypeId } | null,
+    name: string,
+    _folderVfsPath?: string,
+  ): Promise<Skill> {
+    const scopeIds = project?.typeId ? [project.typeId] : [];
+    const skill = new Skill({ name: name.trim() });
+    return skill.save(scopeIds);
+  }
 }

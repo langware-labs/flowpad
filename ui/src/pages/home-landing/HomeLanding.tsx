@@ -8,6 +8,7 @@ import { type ProjectResourceListItem } from '@src/components/project-resource-l
 import { ProjectActivityStrip, BookmarkColumn } from '@src/components/project-activity-strip';
 import { WorkflowStrip } from '@src/components/workflows-view/WorkflowStrip';
 import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
+import { MiniDesktop } from '@src/components/quick-create';
 import { SessionInput } from '@src/components/session-input/session-input';
 import { isSkillCreationTask, TaskStatus } from '@src/components/task-bar/task-utils';
 import { useBookmarkMutations } from '@src/hooks/use-bookmark-mutations';
@@ -604,6 +605,10 @@ export function HomeLanding() {
                   Start collaborative session
                 </Button>
               </div>
+            </div>
+
+            <div className="w-full max-w-3xl">
+              <MiniDesktop />
             </div>
 
             {/* Activity strip — shown while any system activity is running */}

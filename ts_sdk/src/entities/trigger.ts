@@ -28,6 +28,7 @@ export interface ITrigger extends IEntity {
   last_run?: Date;
   instruction?: string;
   workdir?: string;
+  project_id?: string | null;
 }
 
 /**
@@ -57,6 +58,7 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
   last_run?: Date;
   instruction?: string;
   workdir?: string;
+  project_id?: string | null;
 
   constructor(entity: Partial<ITrigger> = {}) {
     super(entity);
@@ -78,6 +80,7 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     this.last_run = entity.last_run;
     this.instruction = entity.instruction;
     this.workdir = entity.workdir;
+    this.project_id = entity.project_id ?? null;
   }
 
   /**

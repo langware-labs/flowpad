@@ -15,11 +15,12 @@ import {
   type Shell,
   TypeId,
 } from '@sdk';
+import { filterTabs } from '@src/hooks/useActiveTerminals';
 import { toast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation';
 import { redirect } from 'react-router';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
-import { loadShell, ShellLoadError } from './load-shell';
+import { fetchShellsAndProcesses, loadShell, resolveDefaultTab, ShellLoadError } from './load-shell';
 import { emptyRecoverySkips, type ShellRecoverySkips } from './shell-recovery';
 
 function recoveryUrl(projectId: string, sessionId: string | null): string {
@@ -74,6 +75,18 @@ export async function loadProjectRoute(
   }
 
   if (!tabTypeId) {
+    // No tab in the URL. If the session already has visible tabs, redirect
+    // into the previously-active / first one so the xterm pane isn't blank.
+    if (sessionId) {
+      const [shells, processes] = await fetchShellsAndProcesses();
+      const tabs = filterTabs(shells, processes, { visible: true, collaborationSessionId: sessionId });
+      const tab = resolveDefaultTab(tabs);
+      if (tab) {
+        const pointer = (tab.agenticProcess ?? tab.shell!).dockPointer.pointer;
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        throw redirect(`/dock/project/${projectId}/collaborative_session/${sessionId}/tab/${pointer}`);
+      }
+    }
     return;
   }
 
