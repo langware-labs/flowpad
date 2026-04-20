@@ -522,7 +522,7 @@ export function ContentPanel() {
           </TabsContent>
 
           <TabsContent
-            value={ViewType.COLLABORATION}
+            value={ViewType.PROJECT}
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
           >
             <CollaborationPage />

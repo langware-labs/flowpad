@@ -533,29 +533,30 @@ export class DockPointer implements IDockPointer {
 }
 
 /**
- * Compute the project-scoped collaboration DockPointer for a terminal tab
- * rendered inside the Collaboration view. Prefers the AgenticProcess when the
- * tab is a Claude session; falls back to the plain Shell.
+ * Compute the project-scoped DockPointer for a terminal tab rendered inside
+ * the Project (collaboration) view. Prefers the AgenticProcess when the tab
+ * is a Claude session; falls back to the plain Shell.
  *
- * The session id is required — tabs inside a collaboration always belong to
- * a session. Keep `process.dockPointer` untouched — this function is the seam.
+ * The session id is required — tabs inside a collaborative session always
+ * belong to one. Keep `process.dockPointer` untouched — this function is the
+ * seam.
  */
-export function getProcessCollaborationDockPointer(
+export function getProcessProjectDockPointer(
   session: { shell?: { id?: string } | null; agenticProcess?: { id?: string } | null },
   projectId: string,
   sessionId: string,
 ): DockPointer {
   if (session.agenticProcess?.id) {
-    return DockPointer.forCollaboration(projectId, {
+    return DockPointer.forProject(projectId, {
       sessionId,
       tab: new TypeId('agentic_process', session.agenticProcess.id),
     });
   }
   if (session.shell?.id) {
-    return DockPointer.forCollaboration(projectId, {
+    return DockPointer.forProject(projectId, {
       sessionId,
       tab: new TypeId('shell', session.shell.id),
     });
   }
-  return DockPointer.forCollaboration(projectId, { sessionId });
+  return DockPointer.forProject(projectId, { sessionId });
 }

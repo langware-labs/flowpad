@@ -59,13 +59,14 @@ export class CollaborationSession
 
   /**
    * DockPointer back to the session, nested under its project:
-   *   /dock/collaboration/<project_id>/session/<session_id>
-   * (Using the COLLABORATION_SPACE ViewType for now — it will be renamed to
-   * COLLABORATION in the next phase.)
+   *   /dock/project/<project_id>/collaborative_session/<session_id>
    */
   override get dockPointer(): DockPointerData {
-    const pointer = this.project_id && this.id ? `${this.project_id}/session/${this.id}` : undefined;
-    return new DockPointerData(ViewType.COLLABORATION_SPACE, pointer);
+    const pointer =
+      this.project_id && this.id
+        ? `${this.project_id}/collaborative_session/${this.id}`
+        : undefined;
+    return new DockPointerData(ViewType.PROJECT, pointer);
   }
 
   public async join(memberId: string, name: string): Promise<ProjectMember | null> {

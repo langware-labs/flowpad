@@ -28,7 +28,7 @@ export function SessionsCategory({ projectId }: Props) {
   const { items, isLoading } = useCollaborationSessions({ projectId: projectId ?? undefined, limit: 20 });
 
   const activeSessionId = useMemo(
-    () => DockPointer.parseCollaborationPointer(currentDock?.pointer).sessionId,
+    () => DockPointer.parseProjectPointer(currentDock?.pointer).sessionId,
     [currentDock?.pointer],
   );
 
@@ -54,7 +54,7 @@ export function SessionsCategory({ projectId }: Props) {
             key={s.id}
             onClick={() => {
               if (!s.projectId) return;
-              navigation.openDock(DockPointer.forCollaboration(s.projectId, { sessionId: s.id }));
+              navigation.openDock(DockPointer.forProject(s.projectId, { sessionId: s.id }));
             }}
             className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
               isActive

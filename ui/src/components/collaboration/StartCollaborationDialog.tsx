@@ -50,7 +50,7 @@ export function StartCollaborationDialog({ open, onClose, defaultName }: StartCo
           ? `Share code ${currentProject.session_code} to invite.`
           : undefined,
       });
-      navigation.openCollaboration(currentProject.id, { sessionId: session.id });
+      navigation.openProject(currentProject.id, { sessionId: session.id });
       onClose();
     } catch (err) {
       console.error('[StartCollaborationDialog] create failed', err);
@@ -78,7 +78,7 @@ export function StartCollaborationDialog({ open, onClose, defaultName }: StartCo
       } catch (err) {
         console.warn('[StartCollaborationDialog] join call failed (continuing)', err);
       }
-      navigation.openCollaboration(resolved.project_id);
+      navigation.openProject(resolved.project_id);
       onClose();
     } finally {
       setBusy(false);

@@ -41,14 +41,6 @@ export function TriggersList({
   const hookGrouped = groupByScope(hookTriggers);
   const scheduleGrouped = groupByScope(scheduleTriggers);
 
-  if (triggers.length === 0 && !isCreatingSchedule) {
-    return (
-      <div className="flex h-full items-center justify-center p-4 text-center text-sm text-muted-foreground">
-        No triggers found. Create rules in <code className="mx-1 rounded bg-muted px-1">~/.flow/rules/</code>
-      </div>
-    );
-  }
-
   return (
     <div>
       {/* Hook Triggers section */}

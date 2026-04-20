@@ -44,7 +44,7 @@ export function JoinExistingSessionDialog({ open, onClose, defaultName }: JoinEx
       } catch (err) {
         console.warn('[JoinExistingSessionDialog] join call failed (continuing)', err);
       }
-      navigation.openCollaboration(resolved.project_id);
+      navigation.openProject(resolved.project_id);
       onClose();
     } finally {
       setBusy(false);

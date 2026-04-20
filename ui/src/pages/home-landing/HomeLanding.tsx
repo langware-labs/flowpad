@@ -251,7 +251,7 @@ export function HomeLanding() {
           });
           setDraftPrompt('');
           navigation.openDock(
-            DockPointer.forCollaboration(projectIdStr, {
+            DockPointer.forProject(projectIdStr, {
               sessionId: session.id,
               tab: new TypeId('agentic_process', agenticProcess.id),
             }),
@@ -263,7 +263,7 @@ export function HomeLanding() {
             name: finalName ?? null,
           });
           navigation.openDock(
-            DockPointer.forCollaboration(projectIdStr, { sessionId: session.id }),
+            DockPointer.forProject(projectIdStr, { sessionId: session.id }),
           );
         }
       } catch (error) {
@@ -448,7 +448,7 @@ export function HomeLanding() {
           const row = collaborationSessionRows.find((r) => r.id === resource.id);
           if (row && row.projectId) {
             navigation.openDock(
-              DockPointer.forCollaboration(row.projectId, { sessionId: row.id }),
+              DockPointer.forProject(row.projectId, { sessionId: row.id }),
             );
           }
           break;
