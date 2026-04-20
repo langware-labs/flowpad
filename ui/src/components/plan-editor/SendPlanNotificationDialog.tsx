@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
 import { useContext } from '@sdk/react/hooks';
 import { sendNotification } from '@sdk/entities/notifications';
 import { createTaskBundle, downloadFlowMessageUrl } from '@sdk/entities/flow-message';
@@ -70,6 +71,7 @@ export function SendPlanNotificationDialog({
   const [specTitle, setSpecTitle] = useState('');
   const [specContent, setSpecContent] = useState('');
   const [message, setMessage] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -82,6 +84,7 @@ export function SendPlanNotificationDialog({
       setSpecContent(planContent);
       setRecipientId('');
       setMessage('Hi,\nGot a new task for you.\nLMK if you have any questions.\nGood luck!');
+      setFiles([]);
       setError(null);
       setSuccess(false);
       setGitError(null);
@@ -296,6 +299,7 @@ export function SendPlanNotificationDialog({
                 disabled={busy}
                 className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               />
+              <FileAttachmentPicker files={files} onChange={setFiles} disabled={busy} />
             </div>
 
             {error && <p className="text-xs text-destructive">{error}</p>}

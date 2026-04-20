@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import type { Task } from '@sdk';
+import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
 import { sendNotification } from '@sdk/entities/notifications';
 import {
   Dialog,
@@ -40,6 +41,7 @@ export function SendNotificationDialog({ task, open, onClose }: SendNotification
   const [specTitle, setSpecTitle] = useState('');
   const [specContent, setSpecContent] = useState('');
   const [message, setMessage] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -51,6 +53,7 @@ export function SendNotificationDialog({ task, open, onClose }: SendNotification
       setRecipientId('');
       setSpecContent('');
       setMessage('Hi,\nGot a new task for you.\nLMK if you have any questions.\nGood luck!');
+      setFiles([]);
       setError(null);
       setSuccess(false);
     }
@@ -190,6 +193,7 @@ export function SendNotificationDialog({ task, open, onClose }: SendNotification
               disabled={sending}
               className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
             />
+            <FileAttachmentPicker files={files} onChange={setFiles} disabled={sending} />
           </div>
 
           {error && <p className="text-xs text-destructive">{error}</p>}
