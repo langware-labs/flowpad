@@ -379,7 +379,7 @@ export function ProjectActivityStrip({
     return (
       <div className="activity-table" data-testid="project-activity-strip">
         <div className="activity-table-header">
-          <span className="activity-table-title">Current Activity</span>
+          <span className="activity-table-title">Sessions</span>
           {refreshButton}
         </div>
         <div className="flex flex-1 flex-col items-center justify-center py-12">
@@ -392,7 +392,7 @@ export function ProjectActivityStrip({
   return (
     <div className="activity-table" data-testid="project-activity-strip">
       <div className="activity-table-header">
-        <span className="activity-table-title">Current Activity</span>
+        <span className="activity-table-title">Sessions</span>
         {refreshButton}
         <div className="activity-table-search">
           <Search className="activity-table-search-icon" />

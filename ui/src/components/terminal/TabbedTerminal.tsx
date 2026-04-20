@@ -1,5 +1,4 @@
-import { CollaborationSpace, dataContext, isProcessLive, Shell, ShellStatus, TypeId, ViewType, type AgenticProcess, type ComputeNode, type IDockPointer } from '@sdk';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { AgenticProcess, dataContext, isProcessLive, Shell, ShellStatus, type ComputeNode } from '@sdk';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { Button } from '@src/components/ui/button';
@@ -41,12 +40,29 @@ const ClaudeResumeIcon: React.FC<{ className?: string }> = ({ className }) => (
   </span>
 );
 
+import type { TerminalTab } from '@src/hooks/useActiveTerminals';
+
 interface TabbedTerminalProps {
   className?: string;
   /** Whether to show the "Add Tab" button (default: false) */
   addTabButton?: boolean;
   /** When set, only shells shared into this collaboration space are shown. */
   collaborationSpaceId?: string | null;
+  /**
+   * Fires when the user clicks a tab. The consumer performs navigation; the
+   * component never calls navigation.openDock for tab clicks itself.
+   */
+  onTabClick?: (shellId: string, session: TerminalTab) => void;
+  /**
+   * Fires after a tab's close has been committed to the backend (shell status
+   * transitions to CLOSED). The consumer decides where to navigate next.
+   */
+  onTabClose?: (shellId: string) => void;
+  /**
+   * Fires after a new tab has been created (Shell/AgenticProcess persisted).
+   * The consumer decides the destination URL.
+   */
+  onTabOpen?: (session: TerminalTab) => void;
 }
 
 /** Find the first available "Tab N" name, filling gaps from closed tabs. */
@@ -132,7 +148,14 @@ const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) =
  * Tab clicks navigate via navigation.openDock(entity.dockPointer), which re-runs the loader.
  * All flags and statuses come from Shell / AgenticProcess entities via useActiveTerminals.
  */
-const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabButton, collaborationSpaceId }) => {
+const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
+  className = '',
+  addTabButton,
+  collaborationSpaceId,
+  onTabClick,
+  onTabClose,
+  onTabOpen,
+}) => {
   const { tabs: sessions } = useActiveTerminals({ collaborationSpaceId });
   const { flow } = useAgentContext();
   const { activeShellId: contextShellId, agenticProcess: contextAgenticProcess } = useContext();
@@ -168,43 +191,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   const { navigation } = useDockNavigation();
   const visibleSessions = sessions;
 
-  // When this TabbedTerminal is rendered inside a CollaborationSpace view, we
-  // rewrite tab navigation to stay within the space: /dock/collaboration_space/
-  // <space_id>/<type>/<id>. Also tag newly-created shells with the space id so
-  // they only appear in this space's filtered tab list.
-  const wrapPointer = useCallback(
-    (dp: IDockPointer): IDockPointer => {
-      if (!collaborationSpaceId) return dp;
-      if (dp.viewType !== ViewType.SHELL || !dp.pointer) return dp;
-      try {
-        const typeId = new TypeId(dp.pointer);
-        return DockPointer.forCollaborationSpace(collaborationSpaceId, {
-          type: typeId.type,
-          id: typeId.id,
-        });
-      } catch {
-        return dp;
-      }
-    },
-    [collaborationSpaceId],
-  );
-
-  const tagShellWithSpace = useCallback(
-    async (shellId: string) => {
-      if (!collaborationSpaceId || !shellId) return;
-      try {
-        const shell = Shell.getByIdFromCache(shellId) ?? (await Shell.getById(shellId));
-        if (!shell) return;
-        if (shell.collaboration_space_id === collaborationSpaceId) return;
-        shell.collaboration_space_id = collaborationSpaceId;
-        await shell.save();
-      } catch (err) {
-        console.warn('[TabbedTerminal] failed to tag shell with space id', err);
-      }
-    },
-    [collaborationSpaceId],
-  );
-
   // Active tab: set by the loader via dataContext.setActiveShellId.
   // Fall back to first tab if context has no selection yet (e.g. /dock/shell with no pointer).
   const activeShellId = (contextShellId ? contextShellId : visibleSessions[0]?.shellId) || '';
@@ -238,7 +224,8 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
     setPendingTabCreation(null);
   }, []);
 
-  // "Start Claude" button — creates AgenticProcess entity then navigates to it
+  // "Start Claude" button — creates AgenticProcess entity, then emits onTabOpen
+  // so the consumer can navigate / tag / start.
   const handleStartClaude = useCallback(async () => {
     if (tabCreationLockRef.current) return;
     tabCreationLockRef.current = true;
@@ -248,70 +235,56 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
       clearPendingTabCreation();
       return;
     }
-    // Set pending tab first so the tab strip shows the new tab immediately,
-    // then navigate — keeping openDock outside the async spawn body prevents
-    // React Router from cancelling the navigation due to in-flight re-renders.
     setPendingTabCreation({
       kind: 'claude',
       targetShellId: result.shellId,
       targetProcessId: result.processId,
     });
-    if (result.shellId) {
-      await tagShellWithSpace(result.shellId);
-    } else if (collaborationSpaceId) {
-      // The CollaborationSpace route has no loader that calls process.start(),
-      // so the Shell would never be created and the space-scoped tab filter
-      // would never match. Start the process here, then tag its shell with
-      // the space id so it shows up in the TabbedTerminal.
-      void (async () => {
-        try {
-          const proc = await AgenticProcess.getById<AgenticProcess>(result.processId);
-          if (!proc) return;
-          await proc.start({ visible: true });
-          if (proc.shell_id) await tagShellWithSpace(proc.shell_id);
-        } catch (err) {
-          console.warn('[TabbedTerminal] failed to start claude process in space', err);
-        }
-      })();
-    }
-    if (collaborationSpaceId) {
-      // Bind the new process to the space so it has a canonical pointer to
-      // "the" active process, independent of URL state.
-      void (async () => {
-        try {
-          const space =
-            CollaborationSpace.getByIdFromCache<CollaborationSpace>(collaborationSpaceId) ??
-            (await CollaborationSpace.getById<CollaborationSpace>(collaborationSpaceId));
-          if (!space || space.agentic_process_id === result.processId) return;
-          space.agentic_process_id = result.processId;
-          await space.save();
-        } catch (err) {
-          console.warn('[TabbedTerminal] failed to bind process to space', err);
-        }
-      })();
-    }
-    navigation.openDock(wrapPointer(result.dockPointer));
-  }, [clearPendingTabCreation, navigation, wrapPointer, tagShellWithSpace, collaborationSpaceId]);
+    const agenticProcess =
+      AgenticProcess.getByIdFromCache<AgenticProcess>(result.processId) ?? undefined;
+    const shell =
+      result.shellId
+        ? Shell.getByIdFromCache<Shell>(result.shellId) ?? undefined
+        : undefined;
+    onTabOpen?.({
+      shellId: result.shellId ?? '',
+      tabOrder: shell?.tab_order ?? 0,
+      name: shell?.name ?? null,
+      type: 'claude',
+      agenticProcess,
+      shell,
+      isDisabled: false,
+      statusReason: '',
+    });
+  }, [clearPendingTabCreation, navigation, onTabOpen]);
 
   const startTerminalTab = useCallback(
     async (computeNode?: ComputeNode) => {
       if (tabCreationLockRef.current) return;
       tabCreationLockRef.current = true;
       setPendingTabCreation({ kind: 'terminal', targetShellId: null, targetProcessId: null });
-      const result = await navigation.openNewShell(computeNode ? { computeNode } : undefined);
+      // skipNavigate: true — consumer owns destination via onTabOpen.
+      const result = await navigation.openNewShell({
+        ...(computeNode ? { computeNode } : {}),
+        skipNavigate: true,
+      });
       if (!result?.shellId) {
         clearPendingTabCreation();
         return;
       }
       setPendingTabCreation({ kind: 'terminal', targetShellId: result.shellId, targetProcessId: null });
-      if (collaborationSpaceId) {
-        await tagShellWithSpace(result.shellId);
-        navigation.openDock(
-          DockPointer.forCollaborationSpace(collaborationSpaceId, { type: 'shell', id: result.shellId }),
-        );
-      }
+      const shell = Shell.getByIdFromCache<Shell>(result.shellId) ?? undefined;
+      onTabOpen?.({
+        shellId: result.shellId,
+        tabOrder: shell?.tab_order ?? 0,
+        name: shell?.name ?? null,
+        type: 'plain',
+        shell,
+        isDisabled: false,
+        statusReason: '',
+      });
     },
-    [clearPendingTabCreation, navigation, collaborationSpaceId, tagShellWithSpace],
+    [clearPendingTabCreation, navigation, onTabOpen],
   );
 
   const handleStartTerminal = useCallback(() => startTerminalTab(), [startTerminalTab]);
@@ -324,7 +297,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
 
   const handleStartDocker = useCallback((dockerNode: ComputeNode) => startTerminalTab(dockerNode), [startTerminalTab]);
 
-  // Navigate to a tab via its entity's dockPointer.
+  // Navigate to a tab by emitting onTabClick — consumer owns the destination.
   // Uses sessionsRef to avoid re-creating the callback when the sessions
   // array identity changes (which cascades into selectTab → scroll effects).
   const sessionsRef = useRef(sessions);
@@ -337,10 +310,9 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
       // before the loader's async work (entity queries). The loader will
       // later call setActiveShellId with the same value (no-op).
       dataContext.setActiveShellId(shellId);
-      const entity = session.shell;
-      if (entity) navigation.openDock(wrapPointer(entity.dockPointer));
+      onTabClick?.(shellId, session);
     },
-    [navigation, wrapPointer],
+    [onTabClick],
   );
 
   const scrollSelectedTabIntoView = useCallback((shellId: string) => {
@@ -425,38 +397,30 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
         } else if (session.shell) {
           await session.shell.close();
         }
+        onTabClose?.(shellId);
       } catch (error) {
         console.error('[TabbedTerminal] Failed to close tab:', shellId, error);
       }
     },
-    [sessions],
+    [sessions, activeShellId, contextAgenticProcess, onTabClose],
   );
 
   const handleCloseTab = useCallback(
     (shellId: string) => {
-      if (activeShellId === shellId) {
-        const idx = visibleSessions.findIndex((s) => s.shellId === shellId);
-        const remaining = visibleSessions.filter((s) => s.shellId !== shellId && !s.isDisabled);
-        remaining.length > 0
-          ? selectTab(remaining[Math.min(idx, remaining.length - 1)].shellId)
-          : navigation.openShellView();
-      }
       void closeTab(shellId);
     },
-    [activeShellId, visibleSessions, closeTab, selectTab, navigation],
+    [closeTab],
   );
 
   const handleCloseAll = useCallback(() => {
     void Promise.all(visibleSessions.map((s) => closeTab(s.shellId)));
-    navigation.openShellView();
-  }, [visibleSessions, closeTab, navigation]);
+  }, [visibleSessions, closeTab]);
 
   const handleCloseAllButThis = useCallback(
     (shellId: string) => {
       void Promise.all(visibleSessions.filter((s) => s.shellId !== shellId).map((s) => closeTab(s.shellId)));
-      selectTab(shellId);
     },
-    [visibleSessions, closeTab, selectTab],
+    [visibleSessions, closeTab],
   );
 
   const handleCloseToTheRight = useCallback(
@@ -464,9 +428,8 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
       const idx = visibleSessions.findIndex((s) => s.shellId === shellId);
       const toClose = visibleSessions.slice(idx + 1);
       void Promise.all(toClose.map((s) => closeTab(s.shellId)));
-      if (toClose.some((s) => s.shellId === activeShellId)) selectTab(shellId);
     },
-    [visibleSessions, activeShellId, closeTab, selectTab],
+    [visibleSessions, closeTab],
   );
 
   const handleTabDoubleClick = (shellId: string, currentName: string) => {

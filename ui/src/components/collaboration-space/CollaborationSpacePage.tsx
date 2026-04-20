@@ -1,13 +1,14 @@
-import { CollaborationSpace, dataContext, dataManager, getOrCreateLocalMemberId, Shell, TypeId, ViewType } from '@sdk';
+import { AgenticProcess, CollaborationSpace, dataContext, dataManager, getOrCreateLocalMemberId, Shell, TypeId, ViewType } from '@sdk';
+import type { TerminalTab } from '@src/hooks/useActiveTerminals';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { DockPointer, getProcessSpaceDockPointer } from '@src/navigation/DockPointer';
 import { TabbedTerminal } from '@src/components/terminal';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@src/components/ui/resizable';
 import { Button } from '@src/components/ui/button';
 import { useToast } from '@src/hooks/use-toast';
 import { Users } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CollaborationSpaceHeader } from './CollaborationSpaceHeader';
 import { CollaborationSpaceSidebar } from './CollaborationSpaceSidebar';
 import { CollaborationSpaceChat } from './CollaborationSpaceChat';
@@ -33,8 +34,10 @@ function EmptyState() {
 }
 
 export function CollaborationSpacePage() {
-  const { currentDock } = useDockNavigation();
+  const { currentDock, navigation } = useDockNavigation();
   const { toast } = useToast();
+  // MRU stack of shell ids — most-recent first, maintained from onTabClick.
+  const mruRef = useRef<string[]>([]);
 
   // Content-panel keeps every <TabsContent> mounted and hides the inactive ones,
   // so this page still runs while the user is on a different viewType. Treat
@@ -109,6 +112,95 @@ export function CollaborationSpacePage() {
     };
   }, [space, localMemberId]);
 
+  // ── Tab event handlers for the nested TabbedTerminal ────────────────────
+  // Declared before any early return so hook order stays stable regardless of
+  // whether `space` is still loading.
+  const spaceIdForHandlers = space?.id ?? null;
+
+  const touchMru = useCallback((shellId: string) => {
+    mruRef.current = [shellId, ...mruRef.current.filter((id) => id !== shellId)];
+  }, []);
+
+  const handleTabClick = useCallback(
+    (shellId: string, session: TerminalTab) => {
+      if (!spaceIdForHandlers) return;
+      touchMru(shellId);
+      navigation.openDock(getProcessSpaceDockPointer(session, spaceIdForHandlers));
+    },
+    [navigation, spaceIdForHandlers, touchMru],
+  );
+
+  const handleTabClose = useCallback(
+    (shellId: string) => {
+      if (!spaceIdForHandlers) return;
+      mruRef.current = mruRef.current.filter((id) => id !== shellId);
+      // Stay inside the space. If nothing's left in MRU, land on the space
+      // root (empty TabbedTerminal). If something's left, let the loader pick
+      // up the next default; the URL already stays scoped.
+      if (!mruRef.current[0]) {
+        navigation.openDock(DockPointer.forCollaborationSpace(spaceIdForHandlers));
+      }
+    },
+    [navigation, spaceIdForHandlers],
+  );
+
+  const handleTabOpen = useCallback(
+    async (session: TerminalTab) => {
+      const currentSpace = space;
+      if (!currentSpace) return;
+      // For Claude: the space route has no loader that calls process.start().
+      // We bootstrap here so the Shell gets created and picked up by the
+      // TabbedTerminal's space-scoped filter.
+      const proc = session.agenticProcess;
+      let shell = session.shell ?? null;
+
+      if (proc && !shell?.id) {
+        try {
+          const live =
+            AgenticProcess.getByIdFromCache<AgenticProcess>(proc.id) ??
+            (await AgenticProcess.getById<AgenticProcess>(proc.id));
+          if (live) {
+            await live.start({ visible: true });
+            if (live.shell_id) {
+              shell =
+                Shell.getByIdFromCache<Shell>(live.shell_id) ??
+                (await Shell.getById<Shell>(live.shell_id)) ??
+                null;
+            }
+          }
+        } catch (err) {
+          console.warn('[CollaborationSpacePage] failed to start claude process in space', err);
+        }
+      }
+
+      // Tag the shell so the space-scoped `useActiveTerminals` filter matches.
+      if (shell && shell.collaboration_space_id !== currentSpace.id) {
+        try {
+          shell.collaboration_space_id = currentSpace.id;
+          await shell.save();
+        } catch (err) {
+          console.warn('[CollaborationSpacePage] failed to tag shell with space id', err);
+        }
+      }
+
+      // Bind the agentic_process to the space (mostly cosmetic — gives the
+      // space a canonical "current process" reference).
+      if (proc?.id && currentSpace.agentic_process_id !== proc.id) {
+        try {
+          currentSpace.agentic_process_id = proc.id;
+          await currentSpace.save();
+        } catch (err) {
+          console.warn('[CollaborationSpacePage] failed to bind process to space', err);
+        }
+      }
+
+      const enriched: TerminalTab = { ...session, shell: shell ?? session.shell };
+      touchMru(enriched.shellId);
+      navigation.openDock(getProcessSpaceDockPointer(enriched, currentSpace.id));
+    },
+    [navigation, space, touchMru],
+  );
+
   if (!spaceId) return <EmptyState />;
   if (!space) {
     return (
@@ -155,7 +247,14 @@ export function CollaborationSpacePage() {
           <div className="min-h-0 flex-1">
             <ResizablePanelGroup direction="vertical">
               <ResizablePanel defaultSize={60} minSize={20}>
-                <TabbedTerminal className="h-full" collaborationSpaceId={space.id} addTabButton />
+                <TabbedTerminal
+                  className="h-full"
+                  collaborationSpaceId={space.id}
+                  addTabButton
+                  onTabClick={handleTabClick}
+                  onTabClose={handleTabClose}
+                  onTabOpen={handleTabOpen}
+                />
               </ResizablePanel>
               <ResizableHandle />
               <ResizablePanel defaultSize={40} minSize={20}>
