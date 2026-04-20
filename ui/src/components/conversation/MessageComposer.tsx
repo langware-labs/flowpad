@@ -22,7 +22,7 @@ export function MessageComposer({ task, disabled, onSent }: MessageComposerProps
     setSending(true);
     setError(null);
     try {
-      await sendReply(task, trimmed);
+      await sendReply(task, trimmed, files.length > 0 ? files : undefined);
       setText('');
       setFiles([]);
       onSent?.();

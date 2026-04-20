@@ -30,9 +30,13 @@ export function useEntity<T extends APIEntity<T>>(
   // Cache the snapshot to prevent unnecessary re-renders
   const snapshotRef = useRef(stateRef.current);
 
+  // Ref to the useSyncExternalStore notify callback so refetch() can trigger re-renders
+  const notifyRef = useRef<(() => void) | null>(null);
+
   // Subscribe function for useSyncExternalStore
   const subscribe = useCallback(
     (callback: () => void) => {
+      notifyRef.current = callback;
       if (!typeId || !enabled) {
         // When disabled or no typeId, immediately set to non-loading null state
         stateRef.current = {
@@ -176,6 +180,8 @@ export function useEntity<T extends APIEntity<T>>(
         isSuccess: false,
       };
     }
+    snapshotRef.current = { ...stateRef.current };
+    notifyRef.current?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, typeId?.type, typeId?.id, queryJsonStringified]);
 

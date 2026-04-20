@@ -2,9 +2,19 @@ import { dataManager } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import type { ITask } from './task';
 
-export async function sendReply(task: ITask, message: string): Promise<void> {
+export async function sendReply(task: ITask, message: string, files?: File[]): Promise<void> {
   const action = new ActionInfo('append-conversation', 'notification', null, 'POST');
-  action.bodyParameters = { task_id: task.id, message };
+  if (files && files.length > 0) {
+    const form = new FormData();
+    form.append('task_id', task.id ?? '');
+    form.append('message', message);
+    for (const file of files) {
+      form.append('files', file, file.name);
+    }
+    action.bodyParameters = form;
+  } else {
+    action.bodyParameters = { task_id: task.id, message };
+  }
   await dataManager.callAction(action);
 }
 

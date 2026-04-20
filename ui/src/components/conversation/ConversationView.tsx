@@ -10,7 +10,7 @@ interface ConversationViewProps {
 }
 
 export function ConversationView({ conversationId, task }: ConversationViewProps) {
-  const { data: conversation } = useEntity<Conversation>(
+  const { data: conversation, refetch } = useEntity<Conversation>(
     new TypeId(Conversation.type, conversationId),
   );
 
@@ -32,7 +32,7 @@ export function ConversationView({ conversationId, task }: ConversationViewProps
           ))}
         </div>
       )}
-      <MessageComposer task={task} />
+      <MessageComposer task={task} onSent={() => void refetch()} />
     </div>
   );
 }
