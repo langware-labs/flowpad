@@ -31,9 +31,11 @@ class CollaborationSpace(Entity):
 
     type: str = APIField(default="collaboration_space")
     session_code: str = APIField(default="", description="Shareable join code, e.g. ABCD-EFGH")
-    agentic_process_id: str | None = APIField(default=None, description="Bound AgenticProcess id (optional)")
+    name: str | None = APIField(default=None, description="User-editable display name for the space")
     host_name: str | None = APIField(default=None, description="Display name of the host")
     host_member_id: str | None = APIField(default=None, description="Stable member_id of the host")
+    project_id: str | None = APIField(default=None, description="Project this space belongs to (optional)")
+    is_default: bool = APIField(default=False, description="True when this is the project's default space")
     members: list[dict] = APIField(
         default_factory=list,
         description="Participants: [{member_id, name, joined_at, last_seen_at}]",
@@ -116,15 +118,21 @@ class CollaborationSpace(Entity):
         return None
 
     @classmethod
-    async def get_by_agentic_process(cls, agentic_process_id: str) -> "CollaborationSpace | None":
-        """Find active CollaborationSpace bound to an AgenticProcess."""
-        if not agentic_process_id:
-            return None
+    async def ensure_default_for_project(cls, project_id: str) -> "CollaborationSpace":
+        """Return the project's default space, creating it lazily if needed."""
+        if not project_id:
+            raise ValueError("project_id is required")
         all_spaces = await cls.get_all()
         for sp in all_spaces:
-            if sp.agentic_process_id == agentic_process_id and sp.status == CollaborationSpaceStatus.ACTIVE:
+            if (
+                sp.project_id == project_id
+                and getattr(sp, "is_default", False)
+                and sp.status == CollaborationSpaceStatus.ACTIVE
+            ):
                 return sp
-        return None
+        space = cls(project_id=project_id, is_default=True)
+        await space.save()
+        return space
 
     # ── HTTP actions ──────────────────────────────────────────────────────────
 

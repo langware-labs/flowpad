@@ -18,7 +18,7 @@ import { useProjectTasks } from '@src/hooks/use-project-tasks';
 import { useTaskMutations } from '@src/hooks/use-task-mutations';
 import { useClaudeProjectList } from '@src/hooks/use-claude-projects';
 import { useSnifferContext } from '@src/contexts/SnifferContext';
-import { useEventDrivenSessions } from '@src/hooks/use-event-driven-sessions';
+import { useCollaborationSessions } from '@src/hooks/useCollaborationSessions';
 import { useProjects } from '@src/hooks/use-projects';
 import { useActAccordingToClassification } from '@src/hooks/use-act-according-to-classification';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
@@ -236,6 +236,7 @@ export function HomeLanding() {
       }
       const trimmedPrompt = prompt.trim();
       try {
+        const { CollaborationSession, TypeId } = await import('@sdk');
         if (trimmedPrompt) {
           const workdir =
             currentProject.fs_storage_mount_path || currentProject.name || paths?.workspace || undefined;
@@ -243,18 +244,31 @@ export function HomeLanding() {
             { workdir },
             { instruction: trimmedPrompt },
           );
-          const space = await agenticProcess.createCollaborationSpace(hostName);
+          const session = await agenticProcess.createCollaborationSession(hostName);
           setDraftPrompt('');
+          if (!session.space_id) {
+            console.error('[HomeLanding] created session has no space_id');
+            return;
+          }
           navigation.openDock(
-            DockPointer.forCollaborationSpace(space.id, {
-              type: 'agentic_process',
-              id: agenticProcess.id,
+            DockPointer.forCollaborationSpace(session.space_id, {
+              sessionId: session.id,
+              tab: new TypeId('agentic_process', agenticProcess.id),
             }),
           );
         } else {
-          const { CollaborationSpace } = await import('@sdk');
-          const space = await CollaborationSpace.create(hostName);
-          navigation.openCollaborationSpace(space.id);
+          const projectIdStr = currentProject.typeId.id;
+          const session = await CollaborationSession.create({
+            projectId: projectIdStr,
+            hostName,
+          });
+          if (!session.space_id) {
+            console.error('[HomeLanding] created session has no space_id');
+            return;
+          }
+          navigation.openDock(
+            DockPointer.forCollaborationSpace(session.space_id, { sessionId: session.id }),
+          );
         }
       } catch (error) {
         console.error('[HomeLanding] Failed to start collaborative session:', error);
@@ -333,11 +347,25 @@ export function HomeLanding() {
     [selectedClaudeProjectEncodedName],
   );
 
-  const { items: activityItems } = useEventDrivenSessions({
-    snifferEvents,
-    seedItems: [],
-    fetchProject: async () => null,
+  const { items: collaborationSessionRows } = useCollaborationSessions({
+    projectId: currentProject?.typeId.id,
+    limit: 20,
   });
+  const activityItems = useMemo(
+    () =>
+      collaborationSessionRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        type: 'collaboration_session' as const,
+        subtitle: row.membersCount
+          ? `${row.membersCount} ${row.membersCount === 1 ? 'member' : 'members'}`
+          : '',
+        // `path`'s last segment is rendered as the chip — use the space name directly.
+        path: row.spaceName,
+        modifiedAt: row.updatedAt,
+      })),
+    [collaborationSessionRows],
+  );
 
   const selectedClaudeProjectCwd = useMemo(() => {
     if (!selectedClaudeProjectEncodedName) return undefined;
@@ -418,6 +446,15 @@ export function HomeLanding() {
           handleSessionResume(resource);
           break;
         }
+        case 'collaboration_session': {
+          const row = collaborationSessionRows.find((r) => r.id === resource.id);
+          if (row && row.spaceId) {
+            navigation.openDock(
+              DockPointer.forCollaborationSpace(row.spaceId, { sessionId: row.id }),
+            );
+          }
+          break;
+        }
         case 'hook':
           navigation.openSystemProfile('hooks', resource.itemId, resourceNavigationOptions);
           break;
@@ -445,7 +482,13 @@ export function HomeLanding() {
           navigation.openSystemProfile();
       }
     },
-    [navigation, resourceNavigationOptions, selectedClaudeProjectEncodedName, handleSessionResume],
+    [
+      navigation,
+      resourceNavigationOptions,
+      selectedClaudeProjectEncodedName,
+      handleSessionResume,
+      collaborationSessionRows,
+    ],
   );
 
   const handleSessionTasks = useCallback(

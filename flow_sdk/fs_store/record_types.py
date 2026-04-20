@@ -108,6 +108,7 @@ class RecordType(StrEnum):
     CONVERSATION = "conversation"
 
     COLLABORATION_SPACE = "collaboration_space"
+    COLLABORATION_SESSION = "collaboration_session"
 
 
 class SkillitRecordType(StrEnum):

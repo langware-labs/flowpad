@@ -1,6 +1,7 @@
 import { Copy, Users } from 'lucide-react';
 import { useToast } from '@src/hooks/use-toast';
 import type { CollaborationSpace, CollaborationSpaceMember } from '@sdk';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 interface Props {
   space: CollaborationSpace;
@@ -17,6 +18,16 @@ function onlineWithin(member: CollaborationSpaceMember, windowMs: number): boole
 export function CollaborationSpaceHeader({ space, localMemberId }: Props) {
   const { toast } = useToast();
   const members = space.members ?? [];
+  const [editing, setEditing] = useState(false);
+  const [draftName, setDraftName] = useState(space.displayName);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
 
   const copy = () => {
     if (!space.session_code) return;
@@ -24,12 +35,59 @@ export function CollaborationSpaceHeader({ space, localMemberId }: Props) {
     toast({ title: 'Code copied', description: space.session_code });
   };
 
+  const startEdit = () => {
+    setDraftName(space.name ?? space.displayName);
+    setEditing(true);
+  };
+
+  const commit = async () => {
+    const trimmed = draftName.trim();
+    setEditing(false);
+    const next = trimmed || null;
+    if ((space.name ?? null) === next) return;
+    try {
+      space.name = next;
+      await space.save();
+      toast({ title: 'Space renamed', description: trimmed || '(cleared)' });
+    } catch (err) {
+      console.error('[CollaborationSpaceHeader] rename failed', err);
+      toast({ title: 'Rename failed', description: String((err as Error).message ?? err) });
+    }
+  };
+
+  const handleKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      void commit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setEditing(false);
+      setDraftName(space.displayName);
+    }
+  };
+
   return (
     <div className="flex h-[52px] flex-shrink-0 items-center gap-3 border-b px-3">
       <Users className="h-4 w-4 text-muted-foreground" />
-      <span className="text-sm font-medium">
-        {space.host_name ? `${space.host_name}'s space` : 'Collaboration space'}
-      </span>
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={draftName}
+          onChange={(e) => setDraftName(e.target.value)}
+          onKeyDown={handleKey}
+          onBlur={() => void commit()}
+          className="min-w-[160px] max-w-[360px] rounded border border-primary/40 bg-background px-2 py-0.5 text-sm font-medium outline-none focus:border-primary"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={startEdit}
+          className="rounded px-1 text-sm font-medium hover:bg-muted"
+          title="Click to rename"
+        >
+          {space.displayName}
+        </button>
+      )}
       {space.session_code && (
         <button
           onClick={copy}

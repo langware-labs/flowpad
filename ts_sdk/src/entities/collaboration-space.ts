@@ -15,9 +15,11 @@ export interface CollaborationSpaceMember {
 
 export interface ICollaborationSpace extends IEntity {
   session_code?: string;
-  agentic_process_id?: string | null;
+  name?: string | null;
   host_name?: string | null;
   host_member_id?: string | null;
+  project_id?: string | null;
+  is_default?: boolean;
   members?: CollaborationSpaceMember[];
   status?: string;
   created_at?: string | null;
@@ -26,9 +28,9 @@ export interface ICollaborationSpace extends IEntity {
 
 export interface ResolveCollaborationSpaceResult {
   collaboration_space_id: string;
-  agentic_process_id: string | null;
   session_code: string;
   host_name: string | null;
+  project_id: string | null;
   members_count: number;
 }
 
@@ -62,9 +64,11 @@ export class CollaborationSpace extends APIEntity<CollaborationSpace> implements
   static type: string = 'collaboration_space';
 
   session_code: string = '';
-  agentic_process_id: string | null = null;
+  name: string | null = null;
   host_name: string | null = null;
   host_member_id: string | null = null;
+  project_id: string | null = null;
+  is_default: boolean = false;
   members: CollaborationSpaceMember[] = [];
   status: string = 'active';
   created_at: string | null = null;
@@ -77,6 +81,7 @@ export class CollaborationSpace extends APIEntity<CollaborationSpace> implements
   }
 
   get displayName(): string {
+    if (this.name && this.name.trim()) return this.name;
     return this.host_name ? `${this.host_name}'s space` : (this.session_code || 'Collaboration Space');
   }
 
@@ -137,9 +142,16 @@ export class CollaborationSpace extends APIEntity<CollaborationSpace> implements
     }
   }
 
-  /** Find the active CollaborationSpace bound to a given AgenticProcess id, if any. */
-  public static async findByProcessId(processId: string): Promise<CollaborationSpace | null> {
-    if (!processId) return null;
+  /**
+   * Return the given project's default space, lazily creating it if none
+   * exists yet. Projects conceptually always have a default space — we just
+   * don't create the record until someone actually meets there.
+   */
+  public static async ensureDefaultForProject(
+    projectId: string,
+    hostName?: string,
+  ): Promise<CollaborationSpace> {
+    if (!projectId) throw new Error('projectId is required');
     const request = new QueryRequest({
       type: CollaborationSpace.type,
       query: null,
@@ -147,11 +159,18 @@ export class CollaborationSpace extends APIEntity<CollaborationSpace> implements
     });
     const list = await CollaborationSpace.query(request, true);
     for (const sp of list) {
-      if ((sp as CollaborationSpace).agentic_process_id === processId && (sp as CollaborationSpace).status === 'active') {
-        return sp as CollaborationSpace;
+      const cs = sp as CollaborationSpace;
+      if (cs.project_id === projectId && cs.is_default && cs.status === 'active') {
+        return cs;
       }
     }
-    return null;
+    const fresh = new CollaborationSpace({
+      project_id: projectId,
+      is_default: true,
+      host_name: hostName ?? null,
+    } as Partial<ICollaborationSpace>);
+    await fresh.save();
+    return fresh;
   }
 
   /**

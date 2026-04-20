@@ -212,37 +212,60 @@ export class DockPointer implements IDockPointer {
 
   /**
    * Create dock pointer for a collaboration space, optionally with an active
-   * sub-entity (shell / agentic_process) shown inside the space view.
+   * session and/or an active tab inside that session.
    *
    * URL formats:
    *   /dock/collaboration_space/<spaceId>
-   *   /dock/collaboration_space/<spaceId>/<type>/<id>
+   *   /dock/collaboration_space/<spaceId>/session/<sessionId>
+   *   /dock/collaboration_space/<spaceId>/session/<sessionId>/tab/<typeid>
+   *
+   * `typeid` is the standard TypeId string (e.g. "agentic_process-<uuid>").
    */
   static forCollaborationSpace(
     spaceId?: string,
-    sub?: { type: string; id: string },
+    sub?: { sessionId?: string | null; tab?: TypeId | null },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     if (!spaceId) return new DockPointer(ViewType.COLLABORATION_SPACE, undefined, undefined, layout);
-    const pointer = sub ? `${spaceId}/${sub.type}/${sub.id}` : spaceId;
-    return new DockPointer(ViewType.COLLABORATION_SPACE, pointer, undefined, layout);
+    const segments: string[] = [spaceId];
+    if (sub?.sessionId) {
+      segments.push('session', sub.sessionId);
+      if (sub.tab) {
+        segments.push('tab', sub.tab.toString());
+      }
+    }
+    return new DockPointer(ViewType.COLLABORATION_SPACE, segments.join('/'), undefined, layout);
   }
 
   /**
-   * Parse a collaboration_space pointer string into its space id and optional
-   * sub-entity reference. Returns `{ spaceId: null, sub: null }` when empty.
+   * Parse a collaboration_space pointer string.
+   *
+   * Accepted shapes:
+   *   <spaceId>
+   *   <spaceId>/session/<sessionId>
+   *   <spaceId>/session/<sessionId>/tab/<type>-<id>
+   *
+   * Returns nulls for segments that aren't present or the input is malformed.
    */
   static parseCollaborationSpacePointer(
     pointer: string | undefined | null,
-  ): { spaceId: string | null; sub: { type: string; id: string } | null } {
-    if (!pointer) return { spaceId: null, sub: null };
+  ): { spaceId: string | null; sessionId: string | null; tabTypeId: TypeId | null } {
+    if (!pointer) return { spaceId: null, sessionId: null, tabTypeId: null };
     const parts = pointer.split('/').filter(Boolean);
-    if (parts.length === 0) return { spaceId: null, sub: null };
-    if (parts.length === 1) return { spaceId: parts[0], sub: null };
-    if (parts.length >= 3) {
-      return { spaceId: parts[0], sub: { type: parts[1], id: parts.slice(2).join('/') } };
+    const spaceId = parts[0] ?? null;
+    let sessionId: string | null = null;
+    let tabTypeId: TypeId | null = null;
+    if (parts[1] === 'session' && parts[2]) {
+      sessionId = parts[2];
+      if (parts[3] === 'tab' && parts[4]) {
+        try {
+          tabTypeId = new TypeId(parts[4]);
+        } catch {
+          tabTypeId = null;
+        }
+      }
     }
-    return { spaceId: parts[0], sub: null };
+    return { spaceId, sessionId, tabTypeId };
   }
 
   /**
@@ -514,21 +537,25 @@ export class DockPointer implements IDockPointer {
  * CollaborationSpace view. Prefers the AgenticProcess when the tab is a Claude
  * session; falls back to the plain Shell.
  *
- * Equivalent to the "space view" of `process.dockPointer` / `shell.dockPointer`.
- * Keep the entity getters untouched — this function is the seam.
+ * The session id is required — tabs inside a space always belong to a session.
+ * Keep `process.dockPointer` untouched — this function is the seam.
  */
 export function getProcessSpaceDockPointer(
   session: { shell?: { id?: string } | null; agenticProcess?: { id?: string } | null },
   spaceId: string,
+  sessionId: string,
 ): DockPointer {
   if (session.agenticProcess?.id) {
     return DockPointer.forCollaborationSpace(spaceId, {
-      type: 'agentic_process',
-      id: session.agenticProcess.id,
+      sessionId,
+      tab: new TypeId('agentic_process', session.agenticProcess.id),
     });
   }
   if (session.shell?.id) {
-    return DockPointer.forCollaborationSpace(spaceId, { type: 'shell', id: session.shell.id });
+    return DockPointer.forCollaborationSpace(spaceId, {
+      sessionId,
+      tab: new TypeId('shell', session.shell.id),
+    });
   }
-  return DockPointer.forCollaborationSpace(spaceId);
+  return DockPointer.forCollaborationSpace(spaceId, { sessionId });
 }
