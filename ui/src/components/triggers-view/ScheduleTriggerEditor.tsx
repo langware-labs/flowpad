@@ -2,6 +2,7 @@ import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { CronForm } from '@src/components/cron-view/CronForm';
+import { useProject } from '@src/hooks/useProject';
 import { dataManager, Trigger, type ITrigger } from '@sdk';
 import { ActionInfo } from '@sdk';
 import { Play } from 'lucide-react';
@@ -15,11 +16,12 @@ interface Props {
 }
 
 export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
+  const { project } = useProject();
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [instruction, setInstruction] = useState(trigger?.instruction ?? '');
-  const [workdir, setWorkdir] = useState(trigger?.workdir ?? '');
+  const [workdir, setWorkdir] = useState(trigger?.workdir ?? project?.fs_storage_mount_path ?? '');
 
   const handleSubmit = async (formData: { name?: string; description?: string; expr?: string; trigger_type?: string; enabled?: boolean }) => {
     setSaving(true);
@@ -48,7 +50,8 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
           trigger_type: 'schedule',
           expr: formData.expr,
           sched_trigger_type: formData.trigger_type,  // cron|interval|date
-          scope: 'user',
+          scope: project?.id ? 'project' : 'user',
+          project_id: project?.id ?? null,
           enabled: formData.enabled ?? true,
           instruction: instruction || null,
           workdir: workdir || null,
@@ -137,7 +140,7 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
           <Input
             value={workdir}
             onChange={(e) => setWorkdir(e.target.value)}
-            placeholder="Optional — leave blank for home"
+            placeholder={project?.fs_storage_mount_path ?? 'Optional — leave blank for home'}
             className="h-7 font-mono text-xs"
           />
         </div>

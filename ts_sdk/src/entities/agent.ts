@@ -126,4 +126,18 @@ export class Agent extends APIEntity<Agent> {
     if (!p) return null;
     return new FrontMatterFsRef(p, typeId);
   }
+
+  /**
+   * Create an agent scoped to the given project (writes to
+   * <project>/.claude/agents/<name>.md when project is set, else home).
+   */
+  static async createInProject(
+    project: { typeId?: import('../models/TypeId').TypeId } | null,
+    name: string,
+    _folderVfsPath?: string,
+  ): Promise<Agent> {
+    const scopeIds = project?.typeId ? [project.typeId] : [];
+    const agent = new Agent({ name: name.trim() });
+    return agent.save(scopeIds);
+  }
 }

@@ -40,4 +40,5 @@ export * from './web-domain';
 export * from './workflow';
 export * from './asset';
 export * from './skill';
+export * from './markdown';
 export * from './workspace';

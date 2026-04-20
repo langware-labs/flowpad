@@ -67,6 +67,7 @@ class DBBaseRecord(BaseModel):
                 locations=["index"],
                 entity_cls=cls,
                 user_asset=bool(getattr(cls, "_user_asset", False)),
+                creatable=bool(getattr(cls, "_creatable", False)),
                 icon=getattr(cls, "_icon", None),
             ))
 

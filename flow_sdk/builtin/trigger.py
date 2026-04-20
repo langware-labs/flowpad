@@ -91,6 +91,7 @@ async def _fire_schedule_job(trigger_id: str) -> None:
                     instruction_content=entity.instruction,
                     workdir=entity.workdir,
                     trigger_id=entity.id,
+                    project_id=entity.project_id,
                     visible=False,
                 )
                 await proc.save()
@@ -141,6 +142,7 @@ class Trigger(Entity):
     last_run: Optional[datetime] = APIField(None, description="Last scheduled run (schedule triggers only)")
     instruction: Optional[str] = APIField(None, description="Prompt sent to the agentic process when this trigger fires (schedule triggers only)")
     workdir: Optional[str] = APIField(None, description="Working directory for the spawned agentic process (schedule triggers only)")
+    project_id: Optional[str] = APIField(None, description="Owning project id (schedule triggers only)")
 
     _api_visible: ClassVar[bool] = True
     _unique: ClassVar[list[str]] = []
@@ -289,6 +291,8 @@ class Trigger(Entity):
                 kwargs["instruction"] = body["instruction"]
             if "workdir" in body:
                 kwargs["workdir"] = body["workdir"]
+            if "project_id" in body:
+                kwargs["project_id"] = body["project_id"]
         else:
             if "mask" in body:
                 kwargs["mask"] = body["mask"]
@@ -321,7 +325,7 @@ class Trigger(Entity):
 
         for field in ("name", "description", "enabled", "scope", "expr",
                       "sched_trigger_type", "log_mode", "trigger_type",
-                      "instruction", "workdir"):
+                      "instruction", "workdir", "project_id"):
             if field in body:
                 setattr(self, field, body[field])
         if "mask" in body:

@@ -22,13 +22,13 @@ import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
 import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
-import { loadShellRoute, resolveDefaultShell } from './load-shell';
+import { loadShellRoute, resolveDefaultTab } from './load-shell';
 import { loadProjectRoute } from './load-project';
 import { describeProcessStartError } from './load-process';
 import { parseRecoverySkipsFromUrl, type ShellRecoverySkips } from './shell-recovery';
 
 // Re-exports kept for existing consumers (unit tests import from here).
-export { resolveDefaultShell, describeProcessStartError };
+export { resolveDefaultTab, describeProcessStartError };
 
 const ALLOWED_VIEWS = new Set(Object.values(ViewType));
 

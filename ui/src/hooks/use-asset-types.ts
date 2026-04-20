@@ -5,6 +5,7 @@ export interface AssetTypeInfo {
   type_name: string;
   label: string;
   icon: string | null;
+  creatable?: boolean;
 }
 
 interface UseAssetTypesResult {

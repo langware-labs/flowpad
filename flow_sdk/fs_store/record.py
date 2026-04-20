@@ -214,6 +214,8 @@ class Record:
     _indexed_by_default: ClassVar[bool] = False
     # Subclasses set this to True to mark the type as user-facing (shown in asset browser).
     _user_asset: ClassVar[bool] = False
+    # Subclasses set this to True to surface the type in quick-create menus.
+    _creatable: ClassVar[bool] = False
     # Subclasses set this to cap how many records are scanned by default (None = no limit).
     _scan_limit: ClassVar[int | None] = None
     # Extra field names concatenated into the embedding text.
@@ -268,6 +270,8 @@ class Record:
                     defaults=dict(getattr(cls, "_DATA_DEFAULTS", {})),
                     indexed_by_default=bool(getattr(cls, "_indexed_by_default", False)),
                     user_asset=bool(getattr(cls, "_user_asset", False)),
+                    creatable=bool(getattr(cls, "_creatable", False)),
+                    icon=getattr(cls, "_icon", None),
                     parent_type=parent_type,
                     locations=["record"],
                     record_cls=cls,

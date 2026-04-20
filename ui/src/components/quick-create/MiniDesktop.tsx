@@ -1,0 +1,45 @@
+import { Plus } from 'lucide-react';
+import { useState } from 'react';
+import { QuickCreateDialog } from './QuickCreateDialog';
+import { QuickCreateMenu } from './QuickCreateMenu';
+
+/**
+ * MiniDesktop — a compact "dock"-style surface on the home landing. Currently
+ * holds a single "+" button that opens the quick-create menu; future iterations
+ * can add more desktop-like icons next to it.
+ */
+export function MiniDesktop() {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [activeType, setActiveType] = useState<string | null>(null);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const handlePick = (type: string) => {
+    setActiveType(type);
+    setDialogOpen(true);
+  };
+
+  return (
+    <div className="flex flex-wrap items-start gap-3 rounded-lg border border-border bg-card/50 px-4 py-3">
+      <QuickCreateMenu open={menuOpen} onOpenChange={setMenuOpen} onPick={handlePick}>
+        <button
+          type="button"
+          aria-label="Quick create"
+          title="Create new…"
+          className="flex h-16 w-16 flex-col items-center justify-center gap-1 rounded-md border border-border bg-background text-muted-foreground transition-colors hover:border-primary hover:bg-accent hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Plus className="h-6 w-6" />
+          <span className="text-[10px] font-medium leading-none">New</span>
+        </button>
+      </QuickCreateMenu>
+
+      <QuickCreateDialog
+        open={dialogOpen}
+        onOpenChange={(next) => {
+          setDialogOpen(next);
+          if (!next) setActiveType(null);
+        }}
+        type={activeType}
+      />
+    </div>
+  );
+}

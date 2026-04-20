@@ -39,15 +39,17 @@ export function BrowseableTree(props: BrowseableTreeProps) {
     [onNavigate],
   );
 
-  // Auto-expand ancestors for the active pointer. Dedupe so we don't
-  // re-walk on every render.
+  // Auto-expand ancestors for the active pointer. Dedupe by pointer value so
+  // we don't re-walk on every render — but only mark as resolved once a leaf
+  // was actually found, so we retry when `roots` populate later (e.g. async
+  // adapter like useAssetTypes loads after initial render).
   useEffect(() => {
-    const key = activePointer ? `${activePointer.viewType ?? ''}::${activePointer.pointer ?? ''}` : null;
-    if (key === lastResolvedRef.current) return;
-    lastResolvedRef.current = key;
     if (!activePointer) return;
+    const key = `${activePointer.viewType ?? ''}::${activePointer.pointer ?? ''}`;
+    if (key === lastResolvedRef.current) return;
     void tree.expandParentsForPointer(activePointer).then((leaf) => {
       if (!leaf) return;
+      lastResolvedRef.current = key;
       requestAnimationFrame(() => {
         const el = document.querySelector(`[data-browseable-id="${CSS.escape(leaf.id)}"]`);
         el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });

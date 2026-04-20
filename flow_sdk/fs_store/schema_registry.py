@@ -220,6 +220,7 @@ class TypeInfo:
     defaults: dict[str, Any] = field(default_factory=dict)
     indexed_by_default: bool = False
     user_asset: bool = False
+    creatable: bool = False
     icon: str | None = None
     parent_type: str | None = None
     locations: list[str] = field(default_factory=list)
@@ -238,6 +239,7 @@ class TypeInfo:
             "defaults": self.defaults,
             "indexed_by_default": self.indexed_by_default,
             "user_asset": self.user_asset,
+            "creatable": self.creatable,
             "icon": self.icon,
             "parent_type": self.parent_type,
             "locations": sorted(self.locations),
@@ -273,6 +275,7 @@ class TypeInfo:
             "defaults": self.defaults,
             "indexed_by_default": self.indexed_by_default,
             "user_asset": self.user_asset,
+            "creatable": self.creatable,
             "icon": self.icon,
             "parent_type": self.parent_type,
             "locations": self.locations,
@@ -288,6 +291,7 @@ class TypeInfo:
             defaults=data.get("defaults", {}),
             indexed_by_default=data.get("indexed_by_default", False),
             user_asset=data.get("user_asset", False),
+            creatable=data.get("creatable", False),
             icon=data.get("icon"),
             parent_type=data.get("parent_type"),
             locations=data.get("locations", []),
@@ -338,6 +342,10 @@ class SchemaRegistry:
                         )
             if info.icon is not None:
                 existing.icon = info.icon
+            if info.creatable and not existing.creatable:
+                existing.creatable = True
+            if info.user_asset and not existing.user_asset:
+                existing.user_asset = True
             info = existing
         else:
             cls._types[info.type_name] = info

@@ -57,6 +57,8 @@ class WorkflowRecord(Record):
     _record_type: ClassVar[str] = RecordType.WORKFLOW
     _indexed_by_default: ClassVar[bool] = True
     _user_asset: ClassVar[bool] = True
+    _creatable: ClassVar[bool] = True
+    _icon: ClassVar[str] = "Workflow"
     index_fields: ClassVar[list[str]] = ["name", "description"]
 
     # VFS path of the generated pipeline.json (set by the prepare action)
