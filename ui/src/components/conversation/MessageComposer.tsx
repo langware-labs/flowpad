@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Send } from 'lucide-react';
 import { sendReply } from '@sdk/entities/notifications';
 import type { ITask } from '@sdk/entities/task';
+import { FileAttachmentPicker } from './FileAttachmentPicker';
 
 interface MessageComposerProps {
   task: ITask;
@@ -11,6 +12,7 @@ interface MessageComposerProps {
 
 export function MessageComposer({ task, disabled, onSent }: MessageComposerProps) {
   const [text, setText] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,6 +24,7 @@ export function MessageComposer({ task, disabled, onSent }: MessageComposerProps
     try {
       await sendReply(task, trimmed);
       setText('');
+      setFiles([]);
       onSent?.();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to send reply.');
@@ -47,6 +50,7 @@ export function MessageComposer({ task, disabled, onSent }: MessageComposerProps
         disabled={disabled || sending}
         className="w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
       />
+      <FileAttachmentPicker files={files} onChange={setFiles} disabled={disabled || sending} />
       {error && <p className="text-xs text-destructive">{error}</p>}
       <button
         onClick={() => void handleSend()}
