@@ -56,6 +56,7 @@ class TriggerLogRecord(Record):
             "is_test": entry_dict.get("is_test", False),
             "rule_name": entry_dict.get("rule_name", rule_name),
             "actions": entry_dict.get("actions", []),
+            "agentic_process_id": entry_dict.get("agentic_process_id"),
         }
 
         # Read existing entries

@@ -3,16 +3,19 @@ import { InputDialog } from '@src/components/ui/input-dialog';
 import { useToast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { Agent, dataContext, fsManager, Skill, Task, Workflow } from '@sdk';
+import { Agent, dataContext, fsManager, RecordType, Skill, Task, Workflow } from '@sdk';
 import { ComputeNode } from '@sdk/entities/compute-node';
 import apiClient from '@sdk/client';
-import { BookOpen } from 'lucide-react';
-import React, { useCallback, useState } from 'react';
+import { BookOpen, PanelLeft, PanelLeftClose } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AssetFilter, AssetScope } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
 import { ScopeFilterBar } from './ScopeFilterBar';
-import { AssetTypeSidebar } from './AssetTypeSidebar';
 import { AssetListView } from './AssetListView';
+import { BrowseableTree } from '@src/components/browseable-tree';
+import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
+import { useAssetTypes } from '@src/hooks/use-asset-types';
+import { useSystemTools } from '@src/hooks/use-system-tools';
 import type { SearchResult } from '@src/hooks/use-asset-search';
 // Side-effect column registrations
 import '@src/components/assets/columns/assetColumns';
@@ -39,9 +42,13 @@ function parseAssetPointer(pointer: string | undefined): { mode: 'editor' | 'lis
   return { mode: null, typeName: null };
 }
 
+const HIDDEN_TYPES = new Set<string>([RecordType.ASSET, RecordType.ANNOTATION]);
+
 export function AssetsPage() {
   const { toast } = useToast();
   const { currentDock, navigation } = useDockNavigation();
+  const { types: allTypes, isLoading: typesLoading } = useAssetTypes();
+  const { indexType } = useSystemTools();
 
   const [refreshKey, setRefreshKey] = useState(0);
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
@@ -63,10 +70,36 @@ export function AssetsPage() {
   const { mode, typeName: selectedType } = parseAssetPointer(currentDock?.pointer);
   const isEditorMode = mode === 'editor';
 
+  const visibleTypes = useMemo(
+    () => allTypes.filter((t) => !HIDDEN_TYPES.has(t.type_name)),
+    [allTypes],
+  );
+
+  const handleScanComplete = useCallback(
+    (type: string) => {
+      if (type === selectedType) setRefreshKey((k) => k + 1);
+    },
+    [selectedType],
+  );
+
   const handleNew = useCallback((type: string) => {
     setNewTypeTarget(type);
     setNewTypeDialogOpen(true);
   }, []);
+
+  const wikiRoots = useMemo(
+    () =>
+      visibleTypes.map((t) =>
+        assetTypeRoot(t, {
+          indexType,
+          onNew: handleNew,
+          creatableTypes: CREATABLE_TYPES,
+          filter: assetFilter,
+          onScanComplete: handleScanComplete,
+        }),
+      ),
+    [visibleTypes, indexType, handleNew, assetFilter, handleScanComplete],
+  );
 
   const handleNewConfirm = useCallback(async (name: string) => {
     if (!name.trim() || !newTypeTarget) return;
@@ -168,12 +201,11 @@ export function AssetsPage() {
       <div className="flex min-h-0 flex-1">
         {/* Type sidebar */}
         <div className="w-56 flex-shrink-0 overflow-y-auto border-r">
-          <AssetTypeSidebar
-            selected={selectedType}
-            onSelect={(t) => navigation.openAssetList(t)}
-            onNew={handleNew}
-            onScanComplete={(type) => { if (type === selectedType) setRefreshKey(k => k + 1); }}
-            creatableTypes={CREATABLE_TYPES}
+          <BrowseableTree
+            roots={wikiRoots}
+            activePointer={currentDock ?? null}
+            isLoading={typesLoading && wikiRoots.length === 0}
+            onNavigate={(p) => navigation.openDock(p)}
           />
         </div>
         {/* List view */}

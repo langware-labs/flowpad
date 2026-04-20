@@ -69,23 +69,46 @@ def _parse_interval_expr(expr: str) -> int:
 
 
 async def _fire_schedule_job(trigger_id: str) -> None:
-    """Callback executed by APScheduler when a schedule trigger fires."""
+    """Callback executed by APScheduler when a schedule trigger fires.
+
+    If the trigger has an `instruction`, spawn an AgenticProcess marked with
+    trigger_id so the invocation can be opened/queried later.
+    """
     try:
         from flow_sdk.fs_records.trigger_log import TriggerLogRecord
         entity = await Trigger.get_by_id(trigger_id)
-        if entity and entity.enabled:
-            entity.counter += 1
-            entity.last_run = datetime.now(timezone.utc)
-            await entity.update()
-            TriggerLogRecord.append_entry(entity.name, {
-                "hook_event": "schedule_fire",
-                "trigger": True,
-                "reason": f"Scheduled ({entity.sched_trigger_type or 'cron'}): {entity.expr}",
-                "is_test": False,
-                "rule_name": entity.name,
-                "actions": [],
-            })
-            logger.debug(f"Schedule trigger {entity.name} fired (counter={entity.counter})")
+        if not (entity and entity.enabled):
+            return
+        entity.counter += 1
+        entity.last_run = datetime.now(timezone.utc)
+        await entity.update()
+
+        process_id: Optional[str] = None
+        if entity.instruction:
+            try:
+                from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+                proc = AgenticProcess(
+                    instruction_content=entity.instruction,
+                    workdir=entity.workdir,
+                    trigger_id=entity.id,
+                    visible=False,
+                )
+                await proc.save()
+                await proc.start(instruction=entity.instruction, visible=False)
+                process_id = proc.id
+            except Exception as e:
+                logger.error(f"Schedule trigger {entity.name}: failed to spawn process: {e}")
+
+        TriggerLogRecord.append_entry(entity.name, {
+            "hook_event": "schedule_fire",
+            "trigger": True,
+            "reason": f"Scheduled ({entity.sched_trigger_type or 'cron'}): {entity.expr}",
+            "is_test": False,
+            "rule_name": entity.name,
+            "actions": [],
+            "agentic_process_id": process_id,
+        })
+        logger.debug(f"Schedule trigger {entity.name} fired (counter={entity.counter}, process_id={process_id})")
     except Exception as e:
         logger.error(f"Schedule trigger fire error for {trigger_id}: {e}")
 
@@ -116,6 +139,8 @@ class Trigger(Entity):
     sched_trigger_type: Optional[str] = APIField(None, description="APScheduler type: cron, interval, date")
     next_run: Optional[datetime] = APIField(None, description="Next scheduled run (schedule triggers only)")
     last_run: Optional[datetime] = APIField(None, description="Last scheduled run (schedule triggers only)")
+    instruction: Optional[str] = APIField(None, description="Prompt sent to the agentic process when this trigger fires (schedule triggers only)")
+    workdir: Optional[str] = APIField(None, description="Working directory for the spawned agentic process (schedule triggers only)")
 
     _api_visible: ClassVar[bool] = True
     _unique: ClassVar[list[str]] = []
@@ -260,6 +285,10 @@ class Trigger(Entity):
         if trigger_type == "schedule":
             kwargs["expr"] = body.get("expr", "* * * * *")
             kwargs["sched_trigger_type"] = body.get("sched_trigger_type", "cron")
+            if "instruction" in body:
+                kwargs["instruction"] = body["instruction"]
+            if "workdir" in body:
+                kwargs["workdir"] = body["workdir"]
         else:
             if "mask" in body:
                 kwargs["mask"] = body["mask"]
@@ -291,7 +320,8 @@ class Trigger(Entity):
             return ApiFailResponse(message="Request body required")
 
         for field in ("name", "description", "enabled", "scope", "expr",
-                      "sched_trigger_type", "log_mode", "trigger_type"):
+                      "sched_trigger_type", "log_mode", "trigger_type",
+                      "instruction", "workdir"):
             if field in body:
                 setattr(self, field, body[field])
         if "mask" in body:
