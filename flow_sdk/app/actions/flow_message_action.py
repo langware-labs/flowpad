@@ -173,9 +173,9 @@ async def handle_download_flow_message(fm_id: str) -> ApiResponse:
         return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
 
     zip_path = await fm.to_file()
-    short_id = fm_id[:8]
-    task_id = next((c.id for c in fm.context if c.type == BuiltinEntityType.TASK.value), "msg")
-    filename = f"task-{task_id[:8]}-{short_id}.flowmsg"
+    sender = re.sub(r"[^a-z0-9]+", "-", (fm.sender_name or "unknown").lower()).strip("-")[:30]
+    dt = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    filename = f"{sender}-{dt}.flowmsg"
 
     return FileResponse(
         str(zip_path),
