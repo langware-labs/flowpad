@@ -508,3 +508,27 @@ export class DockPointer implements IDockPointer {
     }
   }
 }
+
+/**
+ * Compute the space-scoped DockPointer for a terminal tab rendered inside a
+ * CollaborationSpace view. Prefers the AgenticProcess when the tab is a Claude
+ * session; falls back to the plain Shell.
+ *
+ * Equivalent to the "space view" of `process.dockPointer` / `shell.dockPointer`.
+ * Keep the entity getters untouched — this function is the seam.
+ */
+export function getProcessSpaceDockPointer(
+  session: { shell?: { id?: string } | null; agenticProcess?: { id?: string } | null },
+  spaceId: string,
+): DockPointer {
+  if (session.agenticProcess?.id) {
+    return DockPointer.forCollaborationSpace(spaceId, {
+      type: 'agentic_process',
+      id: session.agenticProcess.id,
+    });
+  }
+  if (session.shell?.id) {
+    return DockPointer.forCollaborationSpace(spaceId, { type: 'shell', id: session.shell.id });
+  }
+  return DockPointer.forCollaborationSpace(spaceId);
+}

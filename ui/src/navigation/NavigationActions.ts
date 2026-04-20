@@ -304,13 +304,13 @@ export class NavigationActions {
   }
 
   async openNewShell(
-    options?: { cwd?: string; startCommand?: string; computeNode?: ComputeNode },
+    options?: { cwd?: string; startCommand?: string; computeNode?: ComputeNode; skipNavigate?: boolean },
   ): Promise<{ shellId: string } | null> {
     try {
       const cn = options?.computeNode ?? dataContext.computeNode;
       if (!cn) {
         console.error('[NavigationActions] No compute node');
-        this.openShellView();
+        if (!options?.skipNavigate) this.openShellView();
         return null;
       }
       const { nextTerminalName } = await import('@src/components/terminal/TabbedTerminal');
@@ -326,11 +326,13 @@ export class NavigationActions {
         undefined;
       const newShell = Shell.create(cn, { name, workdir: cwd });
       await newShell.save(cn.typeId);
-      await this.openShell(newShell.id, options);
+      if (!options?.skipNavigate) {
+        await this.openShell(newShell.id, options);
+      }
       return { shellId: newShell.id };
     } catch (error) {
       console.error('[NavigationActions] Error creating terminal:', error);
-      this.openShellView();
+      if (!options?.skipNavigate) this.openShellView();
       return null;
     }
   }
