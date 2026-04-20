@@ -4,7 +4,7 @@ import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import { downloadFlowMessageUrl, AttachmentType } from '@sdk/entities/flow-message';
 import { MessageBubble } from './MessageBubble';
-import { Download } from 'lucide-react';
+import { Download, Paperclip } from 'lucide-react';
 
 interface FlowMessageBubbleProps {
   messageId: string;
@@ -31,8 +31,8 @@ export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBub
     timestamp,
   };
 
-  const hasDownloadableAttachments = (fm.attachment ?? []).some(
-    (a) => a.attachment_type === AttachmentType.TYPE_ID || a.attachment_type === AttachmentType.FILE,
+  const fileAttachments = (fm.attachment ?? []).filter(
+    (a) => a.attachment_type === AttachmentType.FILE,
   );
 
   return (
@@ -42,16 +42,24 @@ export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBub
         flowMessageId={messageId}
         senderName={fm.sender_name ?? ''}
       />
-      {hasDownloadableAttachments && (
-        <div className="mt-1 flex justify-end">
-          <a
-            href={downloadFlowMessageUrl(messageId)}
-            download
-            className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-          >
-            <Download className="h-3 w-3" />
-            Download attachments
-          </a>
+      {fileAttachments.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1.5 px-1">
+          {fileAttachments.map((a, i) => {
+            const filename = a.data.split('/').pop() ?? a.data;
+            return (
+              <a
+                key={i}
+                href={downloadFlowMessageUrl(messageId)}
+                download
+                className="flex items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-[11px] text-foreground hover:bg-muted transition-colors max-w-[200px]"
+                title={filename}
+              >
+                <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
+                <span className="truncate">{filename}</span>
+                <Download className="h-3 w-3 shrink-0 text-muted-foreground" />
+              </a>
+            );
+          })}
         </div>
       )}
     </div>
