@@ -47,7 +47,14 @@ interface TabbedTerminalProps {
   /** Whether to show the "Add Tab" button (default: false) */
   addTabButton?: boolean;
   /** When set, only shells shared into this collaboration space are shown. */
-  collaborationSpaceId?: string | null;
+  collaborationSessionId?: string | null;
+  /**
+   * When set, new shells/processes created from this tab strip are pinned to
+   * this project_id (not `dataContext.project?.id` at click time). Used by the
+   * CollaborationSpace view to prevent the active project context leaking into
+   * a process that belongs to the space's project.
+   */
+  spawnProjectId?: string | null;
   /**
    * Fires when the user clicks a tab. The consumer performs navigation; the
    * component never calls navigation.openDock for tab clicks itself.
@@ -151,12 +158,13 @@ const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) =
 const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   className = '',
   addTabButton,
-  collaborationSpaceId,
+  collaborationSessionId,
+  spawnProjectId,
   onTabClick,
   onTabClose,
   onTabOpen,
 }) => {
-  const { tabs: sessions } = useActiveTerminals({ collaborationSpaceId });
+  const { tabs: sessions } = useActiveTerminals({ collaborationSessionId });
   const { flow } = useAgentContext();
   const { activeShellId: contextShellId, agenticProcess: contextAgenticProcess } = useContext();
   const _perfLoggedRef = useRef(false);
@@ -230,7 +238,9 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     if (tabCreationLockRef.current) return;
     tabCreationLockRef.current = true;
     setPendingTabCreation({ kind: 'claude', targetShellId: null, targetProcessId: null });
-    const result = await navigation.openNewClaudeProcess();
+    const result = await navigation.openNewClaudeProcess(
+      spawnProjectId ? { projectId: spawnProjectId } : undefined,
+    );
     if (!result) {
       clearPendingTabCreation();
       return;
@@ -266,6 +276,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       // skipNavigate: true — consumer owns destination via onTabOpen.
       const result = await navigation.openNewShell({
         ...(computeNode ? { computeNode } : {}),
+        ...(spawnProjectId ? { projectId: spawnProjectId } : {}),
         skipNavigate: true,
       });
       if (!result?.shellId) {

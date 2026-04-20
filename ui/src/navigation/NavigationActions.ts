@@ -158,8 +158,11 @@ export class NavigationActions {
     this.openDock(DockPointer.forAssetList(typeName));
   }
 
-  openCollaborationSpace(spaceId?: string, sub?: { type: string; id: string }): void {
-    this.openDock(DockPointer.forCollaborationSpace(spaceId, sub));
+  openCollaboration(
+    projectId?: string,
+    sub?: { sessionId?: string | null; tab?: import('@sdk').TypeId | null },
+  ): void {
+    this.openDock(DockPointer.forCollaboration(projectId, sub));
   }
 
   openEditor(path?: string, options?: FileOptions): void {
@@ -278,6 +281,7 @@ export class NavigationActions {
 
   async openNewClaudeProcess(options?: {
     cwd?: string;
+    projectId?: string;
   }): Promise<{ processId: string; shellId: string | null; dockPointer: IDockPointer } | null> {
     try {
       const computeNode = dataContext.computeNode;
@@ -288,7 +292,7 @@ export class NavigationActions {
       const agenticProcess = await computeNode.createProcess(
         {
           workdir: options?.cwd || dataContext.project?.fs_storage_mount_path,
-          projectId: dataContext.project?.id,
+          projectId: options?.projectId ?? dataContext.project?.id,
         },
         { watchProcess: false, visible: true },
       );
@@ -304,7 +308,13 @@ export class NavigationActions {
   }
 
   async openNewShell(
-    options?: { cwd?: string; startCommand?: string; computeNode?: ComputeNode; skipNavigate?: boolean },
+    options?: {
+      cwd?: string;
+      startCommand?: string;
+      computeNode?: ComputeNode;
+      skipNavigate?: boolean;
+      projectId?: string;
+    },
   ): Promise<{ shellId: string } | null> {
     try {
       const cn = options?.computeNode ?? dataContext.computeNode;
@@ -325,6 +335,8 @@ export class NavigationActions {
           : dataContext.project?.fs_storage_mount_path) ||
         undefined;
       const newShell = Shell.create(cn, { name, workdir: cwd });
+      const pinnedProjectId = options?.projectId ?? dataContext.project?.id ?? null;
+      if (pinnedProjectId) newShell.project_id = pinnedProjectId;
       await newShell.save(cn.typeId);
       if (!options?.skipNavigate) {
         await this.openShell(newShell.id, options);

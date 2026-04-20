@@ -1,10 +1,9 @@
 import {
   AgenticProcess,
   CollaborationSession,
-  CollaborationSpace,
   dataContext,
-  dataManager,
   getOrCreateLocalMemberId,
+  Project,
   Shell,
   TypeId,
   ViewType,
@@ -12,18 +11,18 @@ import {
 import type { TerminalTab } from '@src/hooks/useActiveTerminals';
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer, getProcessSpaceDockPointer } from '@src/navigation/DockPointer';
+import { DockPointer, getProcessCollaborationDockPointer } from '@src/navigation/DockPointer';
 import { TabbedTerminal } from '@src/components/terminal';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@src/components/ui/resizable';
 import { Button } from '@src/components/ui/button';
 import { useToast } from '@src/hooks/use-toast';
 import { Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CollaborationSpaceHeader } from './CollaborationSpaceHeader';
-import { CollaborationSpaceSidebar } from './CollaborationSpaceSidebar';
-import { CollaborationSpaceChat } from './CollaborationSpaceChat';
+import { CollaborationHeader } from './CollaborationHeader';
+import { CollaborationSidebar } from './CollaborationSidebar';
+import { CollaborationChat } from './CollaborationChat';
 import { SessionHeader } from './SessionHeader';
-import { StartSpaceDialog } from './StartSpaceDialog';
+import { StartCollaborationDialog } from './StartCollaborationDialog';
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 
@@ -33,40 +32,40 @@ function EmptyState() {
     <div className="flex h-full flex-col items-center justify-center gap-4">
       <Users className="h-10 w-10 text-muted-foreground" />
       <div className="text-center">
-        <div className="text-lg font-semibold">No space open</div>
+        <div className="text-lg font-semibold">No collaboration open</div>
         <div className="text-sm text-muted-foreground">
-          Meet collaborators in a space to assist and get assisted.
+          Meet collaborators on a project to assist and get assisted.
         </div>
       </div>
-      <Button onClick={() => setDialogOpen(true)}>Start a space</Button>
-      <StartSpaceDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
+      <Button onClick={() => setDialogOpen(true)}>Start a collaboration</Button>
+      <StartCollaborationDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
     </div>
   );
 }
 
-export function CollaborationSpacePage() {
+export function CollaborationPage() {
   const { currentDock, navigation } = useDockNavigation();
   const { toast } = useToast();
   // MRU stack of shell ids within the current session — most-recent first.
   const mruRef = useRef<string[]>([]);
 
-  const isActiveView = currentDock?.viewType === ViewType.COLLABORATION_SPACE;
-  const { spaceId, sessionId, tabTypeId } = useMemo(
+  const isActiveView = currentDock?.viewType === ViewType.COLLABORATION;
+  const { projectId, sessionId, tabTypeId } = useMemo(
     () =>
       isActiveView
-        ? DockPointer.parseCollaborationSpacePointer(currentDock?.pointer)
-        : { spaceId: null, sessionId: null, tabTypeId: null },
+        ? DockPointer.parseCollaborationPointer(currentDock?.pointer)
+        : { projectId: null, sessionId: null, tabTypeId: null },
     [isActiveView, currentDock?.pointer],
   );
 
-  const spaceTypeId = useMemo(() => {
-    if (!spaceId) return null;
+  const projectTypeId = useMemo(() => {
+    if (!projectId) return null;
     try {
-      return new TypeId(CollaborationSpace.type, spaceId);
+      return new TypeId(Project.type, projectId);
     } catch {
       return null;
     }
-  }, [spaceId]);
+  }, [projectId]);
 
   const sessionTypeId = useMemo(() => {
     if (!sessionId) return null;
@@ -77,11 +76,11 @@ export function CollaborationSpacePage() {
     }
   }, [sessionId]);
 
-  const { data: space } = useEntity<CollaborationSpace>(spaceTypeId, { watch: true });
+  const { data: project } = useEntity<Project>(projectTypeId, { watch: true });
   const { data: session } = useEntity<CollaborationSession>(sessionTypeId, { watch: true });
   const localMemberId = useMemo(() => (typeof window !== 'undefined' ? getOrCreateLocalMemberId() : null), []);
 
-  // Heartbeat into the session (not the space) — sessions are the meetings.
+  // Heartbeat into the session — sessions are the meetings.
   useEffect(() => {
     if (!session || !localMemberId) return;
     let stopped = false;
@@ -104,20 +103,19 @@ export function CollaborationSpacePage() {
   // ── Session bootstrap (auto-create when first tab opens without one) ─────
   const ensureSessionForTabOpen = useCallback(async (): Promise<CollaborationSession | null> => {
     if (session) return session;
-    if (!space) return null;
+    if (!project) return null;
     try {
       const fresh = await CollaborationSession.create({
-        spaceId: space.id,
-        projectId: space.project_id ?? undefined,
-        hostName: space.host_name ?? 'Host',
+        projectId: project.id,
+        hostName: project.displayName || 'Host',
         hostMemberId: localMemberId ?? undefined,
       });
       return fresh;
     } catch (err) {
-      console.warn('[CollaborationSpacePage] failed to auto-create session', err);
+      console.warn('[CollaborationPage] failed to auto-create session', err);
       return null;
     }
-  }, [session, space, localMemberId]);
+  }, [session, project, localMemberId]);
 
   // ── Tab event handlers ──────────────────────────────────────────────────
   const touchMru = useCallback((shellId: string) => {
@@ -126,32 +124,31 @@ export function CollaborationSpacePage() {
 
   const handleTabClick = useCallback(
     (shellId: string, tab: TerminalTab) => {
-      if (!spaceId || !sessionId) return;
+      if (!projectId || !sessionId) return;
       touchMru(shellId);
-      navigation.openDock(getProcessSpaceDockPointer(tab, spaceId, sessionId));
+      navigation.openDock(getProcessCollaborationDockPointer(tab, projectId, sessionId));
     },
-    [navigation, spaceId, sessionId, touchMru],
+    [navigation, projectId, sessionId, touchMru],
   );
 
   const handleTabClose = useCallback(
     (shellId: string) => {
-      if (!spaceId) return;
+      if (!projectId) return;
       mruRef.current = mruRef.current.filter((id) => id !== shellId);
       if (!mruRef.current[0]) {
-        // Fall back to the session root (or space root if no session).
         navigation.openDock(
           sessionId
-            ? DockPointer.forCollaborationSpace(spaceId, { sessionId })
-            : DockPointer.forCollaborationSpace(spaceId),
+            ? DockPointer.forCollaboration(projectId, { sessionId })
+            : DockPointer.forCollaboration(projectId),
         );
       }
     },
-    [navigation, spaceId, sessionId],
+    [navigation, projectId, sessionId],
   );
 
   const handleTabOpen = useCallback(
     async (tab: TerminalTab) => {
-      if (!space) return;
+      if (!project) return;
       // If a tab is opened before any session exists, start one on the fly.
       let activeSession = session;
       if (!activeSession) {
@@ -159,28 +156,37 @@ export function CollaborationSpacePage() {
         if (!activeSession) return;
       }
 
-      // Tag the shell with the owning space so the TabbedTerminal filter keeps it.
-      // When the tab is Claude, the shell doesn't exist yet (it's created by
-      // `process.start` in the loader on navigation); resolve it best-effort.
+      // For Claude tabs: kick the backend `open` action explicitly so the
+      // process goes from NEW → LIVE with a Shell and the PTY attaches on
+      // this client. react-router's parent loader doesn't always revalidate
+      // on intra-route splat changes, so we can't rely on the route loader
+      // to do this for the in-app create path.
       const proc = tab.agenticProcess;
       let shell = tab.shell ?? null;
-      if (!shell?.id && proc) {
-        const live =
-          AgenticProcess.getByIdFromCache<AgenticProcess>(proc.id) ??
-          (await AgenticProcess.getById<AgenticProcess>(proc.id).catch(() => null));
-        if (live?.shell_id) {
-          shell =
-            Shell.getByIdFromCache<Shell>(live.shell_id) ??
-            (await Shell.getById<Shell>(live.shell_id).catch(() => null)) ??
-            null;
+      if (proc && !shell?.id) {
+        try {
+          const live =
+            AgenticProcess.getByIdFromCache<AgenticProcess>(proc.id) ??
+            (await AgenticProcess.getById<AgenticProcess>(proc.id).catch(() => null));
+          if (live) {
+            await live.start({ visible: true });
+            if (live.shell_id) {
+              shell =
+                Shell.getByIdFromCache<Shell>(live.shell_id) ??
+                (await Shell.getById<Shell>(live.shell_id).catch(() => null)) ??
+                null;
+            }
+          }
+        } catch (err) {
+          console.warn('[CollaborationPage] failed to start claude process', err);
         }
       }
-      if (shell && shell.collaboration_space_id !== space.id) {
+      if (shell && shell.collaboration_session_id !== activeSession.id) {
         try {
-          shell.collaboration_space_id = space.id;
+          shell.collaboration_session_id = activeSession.id;
           await shell.save();
         } catch (err) {
-          console.warn('[CollaborationSpacePage] failed to tag shell with space id', err);
+          console.warn('[CollaborationPage] failed to tag shell with session id', err);
         }
       }
 
@@ -196,19 +202,19 @@ export function CollaborationSpacePage() {
           }
           await activeSession.addProcess(proc.id);
         } catch (err) {
-          console.warn('[CollaborationSpacePage] failed to bind process to session', err);
+          console.warn('[CollaborationPage] failed to bind process to session', err);
         }
       }
 
       const enriched: TerminalTab = { ...tab, shell: shell ?? tab.shell };
       touchMru(enriched.shellId);
-      navigation.openDock(getProcessSpaceDockPointer(enriched, space.id, activeSession.id));
+      navigation.openDock(getProcessCollaborationDockPointer(enriched, project.id, activeSession.id));
     },
-    [navigation, space, session, ensureSessionForTabOpen, touchMru],
+    [navigation, project, session, ensureSessionForTabOpen, touchMru],
   );
 
-  if (!spaceId) return <EmptyState />;
-  if (!space) {
+  if (!projectId) return <EmptyState />;
+  if (!project) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading…</div>
     );
@@ -220,26 +226,30 @@ export function CollaborationSpacePage() {
       toast({ title: 'No active tab', description: 'Open a terminal tab first.' });
       return;
     }
+    if (!session) {
+      toast({ title: 'No active session', description: 'Start a session first.' });
+      return;
+    }
     try {
       const shell = Shell.getByIdFromCache(activeShellId) ?? (await Shell.getById(activeShellId));
       if (!shell) return;
-      shell.collaboration_space_id = space.id;
+      shell.collaboration_session_id = session.id;
       await shell.save();
-      toast({ title: 'Shared to space', description: shell.name ?? 'Tab shared.' });
+      toast({ title: 'Shared to session', description: shell.name ?? 'Tab shared.' });
     } catch (err) {
-      console.error('[CollaborationSpacePage] share failed', err);
+      console.error('[CollaborationPage] share failed', err);
       toast({ title: 'Share failed', description: String((err as Error).message ?? err) });
     }
   };
 
-  const isHost = space.isHost(localMemberId ?? undefined);
+  const isHost = project.isHost(localMemberId ?? undefined);
 
   return (
     <div className="flex h-full flex-col">
-      <CollaborationSpaceHeader space={space} localMemberId={localMemberId} />
+      <CollaborationHeader project={project} localMemberId={localMemberId} />
       <div className="flex min-h-0 flex-1">
         <div className="w-64 flex-shrink-0 overflow-y-auto border-r">
-          <CollaborationSpaceSidebar projectId={space.project_id ?? null} />
+          <CollaborationSidebar projectId={project.id} />
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
           {session && <SessionHeader session={session} isHost={session.isHost(localMemberId ?? undefined)} />}
@@ -247,7 +257,7 @@ export function CollaborationSpacePage() {
             <div className="flex h-9 flex-shrink-0 items-center justify-end gap-2 border-b bg-muted/30 px-3 text-xs">
               <span className="text-muted-foreground">Host controls:</span>
               <Button size="sm" variant="outline" className="h-6 text-[11px]" onClick={() => void handleShareActiveTab()}>
-                Share active tab into space
+                Share active tab into session
               </Button>
             </div>
           )}
@@ -256,7 +266,8 @@ export function CollaborationSpacePage() {
               <ResizablePanel defaultSize={60} minSize={20}>
                 <TabbedTerminal
                   className="h-full"
-                  collaborationSpaceId={space.id}
+                  collaborationSessionId={session?.id ?? null}
+                  spawnProjectId={project.id}
                   addTabButton
                   onTabClick={handleTabClick}
                   onTabClose={handleTabClose}
@@ -265,7 +276,7 @@ export function CollaborationSpacePage() {
               </ResizablePanel>
               <ResizableHandle />
               <ResizablePanel defaultSize={40} minSize={20}>
-                <CollaborationSpaceChat />
+                <CollaborationChat />
               </ResizablePanel>
             </ResizablePanelGroup>
           </div>

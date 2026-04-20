@@ -1,25 +1,25 @@
 import { Copy, Users } from 'lucide-react';
 import { useToast } from '@src/hooks/use-toast';
-import type { CollaborationSpace, CollaborationSpaceMember } from '@sdk';
+import type { Project, ProjectMember } from '@sdk';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 interface Props {
-  space: CollaborationSpace;
+  project: Project;
   localMemberId: string | null;
 }
 
-function onlineWithin(member: CollaborationSpaceMember, windowMs: number): boolean {
+function onlineWithin(member: ProjectMember, windowMs: number): boolean {
   if (!member.last_seen_at) return false;
   const t = Date.parse(member.last_seen_at);
   if (Number.isNaN(t)) return false;
   return Date.now() - t < windowMs;
 }
 
-export function CollaborationSpaceHeader({ space, localMemberId }: Props) {
+export function CollaborationHeader({ project, localMemberId }: Props) {
   const { toast } = useToast();
-  const members = space.members ?? [];
+  const members = project.members ?? [];
   const [editing, setEditing] = useState(false);
-  const [draftName, setDraftName] = useState(space.displayName);
+  const [draftName, setDraftName] = useState(project.displayName);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -30,13 +30,13 @@ export function CollaborationSpaceHeader({ space, localMemberId }: Props) {
   }, [editing]);
 
   const copy = () => {
-    if (!space.session_code) return;
-    void navigator.clipboard.writeText(space.session_code);
-    toast({ title: 'Code copied', description: space.session_code });
+    if (!project.session_code) return;
+    void navigator.clipboard.writeText(project.session_code);
+    toast({ title: 'Code copied', description: project.session_code });
   };
 
   const startEdit = () => {
-    setDraftName(space.name ?? space.displayName);
+    setDraftName(project.name ?? project.displayName);
     setEditing(true);
   };
 
@@ -44,13 +44,13 @@ export function CollaborationSpaceHeader({ space, localMemberId }: Props) {
     const trimmed = draftName.trim();
     setEditing(false);
     const next = trimmed || null;
-    if ((space.name ?? null) === next) return;
+    if ((project.name ?? null) === next) return;
     try {
-      space.name = next;
-      await space.save();
-      toast({ title: 'Space renamed', description: trimmed || '(cleared)' });
+      project.name = next ?? undefined;
+      await project.save();
+      toast({ title: 'Project renamed', description: trimmed || '(cleared)' });
     } catch (err) {
-      console.error('[CollaborationSpaceHeader] rename failed', err);
+      console.error('[CollaborationHeader] rename failed', err);
       toast({ title: 'Rename failed', description: String((err as Error).message ?? err) });
     }
   };
@@ -62,7 +62,7 @@ export function CollaborationSpaceHeader({ space, localMemberId }: Props) {
     } else if (e.key === 'Escape') {
       e.preventDefault();
       setEditing(false);
-      setDraftName(space.displayName);
+      setDraftName(project.displayName);
     }
   };
 
@@ -85,23 +85,23 @@ export function CollaborationSpaceHeader({ space, localMemberId }: Props) {
           className="rounded px-1 text-sm font-medium hover:bg-muted"
           title="Click to rename"
         >
-          {space.displayName}
+          {project.displayName}
         </button>
       )}
-      {space.session_code && (
+      {project.session_code && (
         <button
           onClick={copy}
           className="flex items-center gap-1 rounded border border-border bg-muted/40 px-2 py-0.5 font-mono text-xs text-foreground hover:bg-muted"
           title="Copy join code"
         >
-          <span>{space.session_code}</span>
+          <span>{project.session_code}</span>
           <Copy className="h-3 w-3" />
         </button>
       )}
       <div className="ml-auto flex items-center gap-1.5">
         {members.map((m) => {
           const online = onlineWithin(m, 30_000);
-          const isHost = m.member_id === space.host_member_id;
+          const isHost = m.member_id === project.host_member_id;
           const isSelf = m.member_id === localMemberId;
           return (
             <div

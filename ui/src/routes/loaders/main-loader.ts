@@ -23,7 +23,7 @@ import { TimeIt } from '@src/utils/timeit';
 import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
 import { loadShellRoute, resolveDefaultShell } from './load-shell';
-import { loadCollaborationSpaceRoute } from './load-space';
+import { loadCollaborationRoute } from './load-collaboration';
 import { describeProcessStartError } from './load-process';
 import { parseRecoverySkipsFromUrl, type ShellRecoverySkips } from './shell-recovery';
 
@@ -137,9 +137,9 @@ export async function loadAgentApp(args: LoaderArgs) {
       t.time('loadShellRoute');
     }
 
-    if (viewType === ViewType.COLLABORATION_SPACE) {
-      await loadCollaborationSpaceRoute(pointer || undefined, recoverySkips);
-      t.time('loadCollaborationSpaceRoute');
+    if (viewType === ViewType.COLLABORATION) {
+      await loadCollaborationRoute(pointer || undefined, recoverySkips);
+      t.time('loadCollaborationRoute');
     }
 
     if (viewType === ViewType.TRIGGERS) {

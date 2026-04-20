@@ -26,7 +26,7 @@ import { SearchView } from '@src/pages/search-view/SearchView';
 import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
 
 import { WorkflowsPage } from '@src/components/workflows-view/WorkflowsPage';
-import { CollaborationSpacePage } from '@src/components/collaboration-space';
+import { CollaborationPage } from '@src/components/collaboration';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
 import { TriggersView } from '@src/components/triggers-view';
 import { SurveyView } from '@src/components/survey/SurveyView';
@@ -522,10 +522,10 @@ export function ContentPanel() {
           </TabsContent>
 
           <TabsContent
-            value={ViewType.COLLABORATION_SPACE}
+            value={ViewType.COLLABORATION}
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
           >
-            <CollaborationSpacePage />
+            <CollaborationPage />
           </TabsContent>
         </div>
       </Tabs>

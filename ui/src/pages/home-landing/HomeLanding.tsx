@@ -225,7 +225,7 @@ export function HomeLanding() {
   const paths = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths, []);
 
   const handleStartCollaboration = useCallback(
-    async (hostName: string, prompt: string) => {
+    async (hostName: string, prompt: string, sessionName?: string) => {
       if (!currentProject?.typeId) {
         toast({
           title: 'Project Required',
@@ -235,8 +235,10 @@ export function HomeLanding() {
         return;
       }
       const trimmedPrompt = prompt.trim();
+      const finalName = sessionName?.trim() ? sessionName.trim() : undefined;
       try {
         const { CollaborationSession, TypeId } = await import('@sdk');
+        const projectIdStr = currentProject.typeId.id;
         if (trimmedPrompt) {
           const workdir =
             currentProject.fs_storage_mount_path || currentProject.name || paths?.workspace || undefined;
@@ -244,30 +246,24 @@ export function HomeLanding() {
             { workdir },
             { instruction: trimmedPrompt },
           );
-          const session = await agenticProcess.createCollaborationSession(hostName);
+          const session = await agenticProcess.createCollaborationSession(hostName, {
+            name: finalName ?? null,
+          });
           setDraftPrompt('');
-          if (!session.space_id) {
-            console.error('[HomeLanding] created session has no space_id');
-            return;
-          }
           navigation.openDock(
-            DockPointer.forCollaborationSpace(session.space_id, {
+            DockPointer.forCollaboration(projectIdStr, {
               sessionId: session.id,
               tab: new TypeId('agentic_process', agenticProcess.id),
             }),
           );
         } else {
-          const projectIdStr = currentProject.typeId.id;
           const session = await CollaborationSession.create({
             projectId: projectIdStr,
             hostName,
+            name: finalName ?? null,
           });
-          if (!session.space_id) {
-            console.error('[HomeLanding] created session has no space_id');
-            return;
-          }
           navigation.openDock(
-            DockPointer.forCollaborationSpace(session.space_id, { sessionId: session.id }),
+            DockPointer.forCollaboration(projectIdStr, { sessionId: session.id }),
           );
         }
       } catch (error) {
@@ -357,11 +353,13 @@ export function HomeLanding() {
         id: row.id,
         name: row.name,
         type: 'collaboration_session' as const,
-        subtitle: row.membersCount
-          ? `${row.membersCount} ${row.membersCount === 1 ? 'member' : 'members'}`
-          : '',
-        // `path`'s last segment is rendered as the chip — use the space name directly.
-        path: row.spaceName,
+        // Subtitle = host. ProjectActivityStrip already renders the timestamp
+        // (from modifiedAt) on the row, so the subtitle line reads:
+        //   `<name>`  (big)
+        //   `by <host> · <time-ago>`  (rendered across subtitle + timestamp slots)
+        subtitle: row.hostName ? `by ${row.hostName}` : '',
+        // `path`'s last segment is rendered as the chip — use the project name.
+        path: row.projectName,
         modifiedAt: row.updatedAt,
       })),
     [collaborationSessionRows],
@@ -448,9 +446,9 @@ export function HomeLanding() {
         }
         case 'collaboration_session': {
           const row = collaborationSessionRows.find((r) => r.id === resource.id);
-          if (row && row.spaceId) {
+          if (row && row.projectId) {
             navigation.openDock(
-              DockPointer.forCollaborationSpace(row.spaceId, { sessionId: row.id }),
+              DockPointer.forCollaboration(row.projectId, { sessionId: row.id }),
             );
           }
           break;
@@ -747,7 +745,9 @@ export function HomeLanding() {
         onClose={() => setShowJoinSession(false)}
         hostName={user?.name ?? undefined}
         draftPrompt={draftPrompt}
-        onStart={(hostName, prompt) => handleStartCollaboration(hostName, prompt)}
+        onStart={(hostName, prompt, sessionName) =>
+          handleStartCollaboration(hostName, prompt, sessionName)
+        }
       />
       <JoinExistingSessionDialog
         open={showJoinExisting}

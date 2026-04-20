@@ -1,4 +1,4 @@
-import { CollaborationSpace, getOrCreateLocalMemberId } from '@sdk';
+import { CollaborationSession, dataContext, getOrCreateLocalMemberId, Project } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
@@ -7,7 +7,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { LogIn, Plus, Users } from 'lucide-react';
 import { useState } from 'react';
 
-interface StartSpaceDialogProps {
+interface StartCollaborationDialogProps {
   open: boolean;
   onClose: () => void;
   defaultName?: string;
@@ -15,7 +15,7 @@ interface StartSpaceDialogProps {
 
 type Tab = 'create' | 'join';
 
-export function StartSpaceDialog({ open, onClose, defaultName }: StartSpaceDialogProps) {
+export function StartCollaborationDialog({ open, onClose, defaultName }: StartCollaborationDialogProps) {
   const [tab, setTab] = useState<Tab>('create');
   const [hostName, setHostName] = useState(defaultName ?? '');
   const [joinCode, setJoinCode] = useState('');
@@ -32,13 +32,29 @@ export function StartSpaceDialog({ open, onClose, defaultName }: StartSpaceDialo
     if (!canCreate) return;
     setBusy(true);
     try {
-      const space = await CollaborationSpace.create(hostName.trim());
-      toast({ title: 'Space created', description: `Share code ${space.session_code} to invite.` });
-      navigation.openCollaborationSpace(space.id);
+      const currentProject = dataContext.project;
+      if (!currentProject?.id) {
+        toast({
+          title: 'No project selected',
+          description: 'Open a project before starting a collaboration.',
+        });
+        return;
+      }
+      const session = await CollaborationSession.create({
+        projectId: currentProject.id,
+        hostName: hostName.trim(),
+      });
+      toast({
+        title: 'Session started',
+        description: currentProject.session_code
+          ? `Share code ${currentProject.session_code} to invite.`
+          : undefined,
+      });
+      navigation.openCollaboration(currentProject.id, { sessionId: session.id });
       onClose();
     } catch (err) {
-      console.error('[StartSpaceDialog] create failed', err);
-      toast({ title: 'Could not create space', description: String((err as Error).message ?? err) });
+      console.error('[StartCollaborationDialog] create failed', err);
+      toast({ title: 'Could not start session', description: String((err as Error).message ?? err) });
     } finally {
       setBusy(false);
     }
@@ -48,22 +64,21 @@ export function StartSpaceDialog({ open, onClose, defaultName }: StartSpaceDialo
     if (!canJoin) return;
     setBusy(true);
     try {
-      const resolved = await CollaborationSpace.resolveByCode(normalizedCode);
+      const resolved = await Project.resolveByCode(normalizedCode);
       if (!resolved) {
-        toast({ title: 'Space not found', description: `No active space matches "${normalizedCode}".` });
+        toast({ title: 'Project not found', description: `No project matches "${normalizedCode}".` });
         return;
       }
       const memberId = getOrCreateLocalMemberId();
       try {
-        const sp = new CollaborationSpace({
-          id: resolved.collaboration_space_id,
-          type: 'collaboration_space',
-        } as any);
-        await sp.join(memberId, joinName.trim());
+        const proj =
+          Project.getByIdFromCache<Project>(resolved.project_id) ??
+          (await Project.getById<Project>(resolved.project_id));
+        await proj?.joinCollaboration(memberId, joinName.trim());
       } catch (err) {
-        console.warn('[StartSpaceDialog] join call failed (continuing)', err);
+        console.warn('[StartCollaborationDialog] join call failed (continuing)', err);
       }
-      navigation.openCollaborationSpace(resolved.collaboration_space_id);
+      navigation.openCollaboration(resolved.project_id);
       onClose();
     } finally {
       setBusy(false);
@@ -76,7 +91,7 @@ export function StartSpaceDialog({ open, onClose, defaultName }: StartSpaceDialo
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="h-5 w-5 text-primary" />
-            Start a space
+            Start a collaboration
           </DialogTitle>
         </DialogHeader>
 
@@ -114,16 +129,16 @@ export function StartSpaceDialog({ open, onClose, defaultName }: StartSpaceDialo
               />
             </div>
             <Button className="w-full" onClick={() => void handleCreate()} disabled={!canCreate}>
-              {busy ? 'Creating…' : 'Create space'}
+              {busy ? 'Creating…' : 'Start session'}
             </Button>
             <p className="text-center text-[11px] text-muted-foreground">
-              You become the host — you decide what gets shared into the space.
+              You become the host — you decide what gets shared into the session.
             </p>
           </div>
         ) : (
           <div className="flex flex-col gap-3 py-2">
             <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] uppercase tracking-widest text-muted-foreground">Space code</label>
+              <label className="text-[11px] uppercase tracking-widest text-muted-foreground">Join code</label>
               <Input
                 placeholder="XKCD-J3F2"
                 value={joinCode}
@@ -147,7 +162,7 @@ export function StartSpaceDialog({ open, onClose, defaultName }: StartSpaceDialo
               />
             </div>
             <Button className="w-full" onClick={() => void handleJoin()} disabled={!canJoin}>
-              {busy ? 'Joining…' : 'Join space'}
+              {busy ? 'Joining…' : 'Join'}
             </Button>
           </div>
         )}

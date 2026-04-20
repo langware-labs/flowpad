@@ -28,14 +28,16 @@ class CollaborationSessionStatus:
 class CollaborationSessionRecord(Record):
     _record_type: ClassVar[str] = RecordType.COLLABORATION_SESSION
     _indexed_by_default: ClassVar[bool] = False
-    index_fields: ClassVar[list[str]] = ["space_id", "project_id", "updated_at"]
+    index_fields: ClassVar[list[str]] = ["project_id", "updated_at"]
 
     def __init__(self, **kwargs: Any) -> None:
         if "id" not in kwargs:
             kwargs["id"] = str(_uuid.uuid4())
         kwargs.setdefault("type", RecordType.COLLABORATION_SESSION)
         now = _now_iso()
-        kwargs.setdefault("space_id", None)
+        # space_id is no longer part of the schema — drop it if a legacy record
+        # still carries it so the entity doesn't refuse to load.
+        kwargs.pop("space_id", None)
         kwargs.setdefault("project_id", None)
         kwargs.setdefault("host_name", None)
         kwargs.setdefault("host_member_id", None)

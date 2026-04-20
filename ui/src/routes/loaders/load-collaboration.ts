@@ -1,17 +1,17 @@
 /**
- * Collaboration-space dock loader for
- *   /dock/collaboration_space/<spaceId>[/session/<sessionId>[/tab/<typeid>]]
+ * Collaboration dock loader for
+ *   /dock/collaboration/<projectId>[/session/<sessionId>[/tab/<typeid>]]
  *
  * Reuses the pure `loadProcess` / `loadShell` primitives from the shell
  * loaders so PTY attach + context setup is identical to the standard route.
  * Owns its own redirect URL policy — failures bounce to the session (or
- * space) root inside the same view, not out to /dock/shell.
+ * collaboration root) inside the same view, not out to /dock/shell.
  */
 
 import {
   CollaborationSession,
-  CollaborationSpace,
   dataManager,
+  Project,
   type Shell,
   TypeId,
 } from '@sdk';
@@ -22,44 +22,44 @@ import { describeProcessStartError, loadProcess, ProcessLoadError } from './load
 import { loadShell, ShellLoadError } from './load-shell';
 import { emptyRecoverySkips, type ShellRecoverySkips } from './shell-recovery';
 
-function recoveryUrl(spaceId: string, sessionId: string | null): string {
+function recoveryUrl(projectId: string, sessionId: string | null): string {
   return sessionId
-    ? `/dock/collaboration_space/${spaceId}/session/${sessionId}`
-    : `/dock/collaboration_space/${spaceId}`;
+    ? `/dock/collaboration/${projectId}/session/${sessionId}`
+    : `/dock/collaboration/${projectId}`;
 }
 
 /**
- * After the shell is loaded, stamp it with the owning space id so the space-
- * scoped `useActiveTerminals` filter picks it up. `loadProcess` creates a
- * fresh Shell on reload (old PTY gone), so we can't rely on the tag being
- * persisted at tab-creation time.
+ * After the shell is loaded, stamp it with the owning session id so the
+ * session-scoped `useActiveTerminals` filter picks it up. `loadProcess`
+ * creates a fresh Shell on reload (old PTY gone), so we can't rely on the
+ * tag being persisted at tab-creation time.
  */
-async function tagShellWithSpace(shell: Shell, spaceId: string): Promise<void> {
-  if (shell.collaboration_space_id === spaceId) return;
+async function tagShellWithSession(shell: Shell, sessionId: string): Promise<void> {
+  if (shell.collaboration_session_id === sessionId) return;
   try {
-    shell.collaboration_space_id = spaceId;
+    shell.collaboration_session_id = sessionId;
     await shell.save();
   } catch (err) {
-    console.warn('[load-space] failed to tag shell with space id', err);
+    console.warn('[load-collaboration] failed to tag shell with session id', err);
   }
 }
 
-export async function loadCollaborationSpaceRoute(
+export async function loadCollaborationRoute(
   pointer: string | undefined,
   _recoverySkips: ShellRecoverySkips = emptyRecoverySkips(),
 ): Promise<void> {
-  const { spaceId, sessionId, tabTypeId } = DockPointer.parseCollaborationSpacePointer(pointer);
-  if (!spaceId) {
-    // No space id in URL — page renders its empty state; nothing to load.
+  const { projectId, sessionId, tabTypeId } = DockPointer.parseCollaborationPointer(pointer);
+  if (!projectId) {
+    // No project id in URL — page renders its empty state; nothing to load.
     return;
   }
 
-  // Prefetch space + session into the entity cache so the page's `useEntity`
+  // Prefetch project + session into the entity cache so the page's `useEntity`
   // calls hit immediately (no render blank → re-render).
   try {
-    await dataManager.getByTypeId(new TypeId(CollaborationSpace.type, spaceId));
+    await dataManager.getByTypeId(new TypeId(Project.type, projectId));
   } catch {
-    // Missing space — let the page's own fallback (Loading… / EmptyState) handle it.
+    // Missing project — let the page's own fallback (Loading… / EmptyState) handle it.
     return;
   }
 
@@ -67,9 +67,9 @@ export async function loadCollaborationSpaceRoute(
     try {
       await dataManager.getByTypeId(new TypeId(CollaborationSession.type, sessionId));
     } catch {
-      // Missing session — bounce to the space root.
+      // Missing session — bounce to the project's collaboration root.
       // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw redirect(recoveryUrl(spaceId, null));
+      throw redirect(recoveryUrl(projectId, null));
     }
   }
 
@@ -80,7 +80,7 @@ export async function loadCollaborationSpaceRoute(
   if (tabTypeId.type === 'agentic_process') {
     try {
       const { shell } = await loadProcess(tabTypeId.id);
-      await tagShellWithSpace(shell, spaceId);
+      if (sessionId) await tagShellWithSession(shell, sessionId);
     } catch (e) {
       if (!(e instanceof ProcessLoadError)) throw e;
       if (e.kind === 'not_found') {
@@ -99,7 +99,7 @@ export async function loadCollaborationSpaceRoute(
         });
       }
       // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw redirect(recoveryUrl(spaceId, sessionId));
+      throw redirect(recoveryUrl(projectId, sessionId));
     }
     return;
   }
@@ -107,7 +107,7 @@ export async function loadCollaborationSpaceRoute(
   if (tabTypeId.type === 'shell') {
     try {
       const shell = await loadShell(tabTypeId.id);
-      await tagShellWithSpace(shell, spaceId);
+      if (sessionId) await tagShellWithSession(shell, sessionId);
     } catch (e) {
       if (!(e instanceof ShellLoadError)) throw e;
       if (e.kind === 'not_found') {
@@ -126,12 +126,12 @@ export async function loadCollaborationSpaceRoute(
         toast({ ...describeProcessStartError(e.cause ?? e), variant: 'destructive' });
       }
       // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw redirect(recoveryUrl(spaceId, sessionId));
+      throw redirect(recoveryUrl(projectId, sessionId));
     }
     return;
   }
 
   // Unknown tab type: fall back to the session root — tolerant parsing.
   // eslint-disable-next-line @typescript-eslint/only-throw-error
-  throw redirect(recoveryUrl(spaceId, sessionId));
+  throw redirect(recoveryUrl(projectId, sessionId));
 }

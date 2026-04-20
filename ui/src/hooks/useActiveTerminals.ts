@@ -41,20 +41,20 @@ const processQuery = new QueryRequest({
  * Hook that queries Shell and AgenticProcess entities, merges them into an
  * ordered tab list.
  *
- * Pass `collaborationSpaceId` to scope tabs to a specific collaboration space
+ * Pass `collaborationSessionId` to scope tabs to a specific collaboration space
  * (only shells that have been explicitly shared into that space appear).
  */
 export interface UseActiveTerminalsOptions {
-  collaborationSpaceId?: string | null;
+  collaborationSessionId?: string | null;
 }
 
 export function useActiveTerminals(options: UseActiveTerminalsOptions = {}) {
-  const { collaborationSpaceId = null } = options;
+  const { collaborationSessionId = null } = options;
   const { data: shells = [], isLoading: shellsLoading } = useEntitiesQuery<Shell>(shellQuery);
   const { data: processes = [], isLoading: processesLoading } =
     useEntitiesQuery<AgenticProcess>(processQuery);
   const shellProjectionKey = shells
-    .map((shell) => `${shell.id}:${shell.status ?? ''}:${shell.error_message ?? ''}:${shell.name ?? ''}:${shell.tab_order ?? 0}:${shell.collaboration_space_id ?? ''}`)
+    .map((shell) => `${shell.id}:${shell.status ?? ''}:${shell.error_message ?? ''}:${shell.name ?? ''}:${shell.tab_order ?? 0}:${shell.collaboration_session_id ?? ''}`)
     .join('|');
   const processProjectionKey = processes
     .map((process) => `${process.id}:${process.status ?? ''}:${process.shell_id ?? ''}:${process.sidecar_shell_id ?? ''}`)
@@ -85,7 +85,7 @@ export function useActiveTerminals(options: UseActiveTerminalsOptions = {}) {
     const visibleShells = currentShells.filter((shell) => {
       if (HIDDEN_SHELL_STATUSES.has(shell.status as ShellStatus)) return false;
       if (sidecarShellIds.has(shell.id)) return false;
-      if (collaborationSpaceId != null && shell.collaboration_space_id !== collaborationSpaceId) return false;
+      if (collaborationSessionId != null && shell.collaboration_session_id !== collaborationSessionId) return false;
       return true;
     });
 
@@ -121,7 +121,7 @@ export function useActiveTerminals(options: UseActiveTerminalsOptions = {}) {
 
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shellProjectionKey, processProjectionKey, collaborationSpaceId]);
+  }, [shellProjectionKey, processProjectionKey, collaborationSessionId]);
 
   const isLoading = shellsLoading || processesLoading;
 
