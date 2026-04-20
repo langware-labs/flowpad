@@ -3,6 +3,16 @@ const path = require('path');
 const log = require('electron-log');
 const UvManager = require('./uv-manager');
 
+// Register flowpad:// as a custom protocol so the OS routes deep links here.
+// Must be called before app.whenReady().
+app.setAsDefaultProtocolClient('flowpad');
+
+// Enforce single-instance so Windows/Linux deep links reach the running app
+// via the 'second-instance' event rather than spawning a second process.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+}
+
 // Configure logging — store all logs under ~/.flow/logs/
 const fs = require('fs');
 const os = require('os');
@@ -63,6 +73,54 @@ const MAX_HEALTH_CHECKS = 60; // 30 seconds max wait
 
 let mainWindow = null;
 let uvManager = null;
+
+// Deep link that arrived before the window was ready to navigate.
+let pendingDeepLink = null;
+
+/**
+ * Convert a flowpad:// URL to the equivalent http://localhost:9007 URL and
+ * navigate the main window to it.
+ *
+ * flowpad://task/<id>  →  http://localhost:9007/task/<id>
+ */
+function handleDeepLink(url) {
+  log.info(`[deep-link] received: ${url}`);
+  try {
+    const parsed = new URL(url);
+    // host = "task", pathname = "/<id>"  (or just "" for the root)
+    const typePart = parsed.hostname || '';
+    const idPart = parsed.pathname && parsed.pathname !== '/' ? parsed.pathname : '';
+    const localUrl = typePart ? `${BACKEND_URL}/${typePart}${idPart}` : BACKEND_URL;
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+      mainWindow.loadURL(localUrl);
+    } else {
+      // Window not ready yet — apply after startup completes.
+      pendingDeepLink = localUrl;
+    }
+  } catch (err) {
+    log.warn(`[deep-link] failed to parse URL "${url}": ${err}`);
+  }
+}
+
+// macOS: flowpad:// links arrive here whether the app is running or cold-starting.
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  handleDeepLink(url);
+});
+
+// Windows / Linux: a second launch passes the URL as a CLI argument.
+app.on('second-instance', (_event, argv) => {
+  const deepLinkUrl = argv.find(arg => arg.startsWith('flowpad://'));
+  if (deepLinkUrl) handleDeepLink(deepLinkUrl);
+  // Bring the existing window to the front.
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -233,9 +291,11 @@ async function startApp() {
     return;
   }
 
-  // Load the main UI
-  log.info(`Loading UI from ${BACKEND_URL}`);
-  mainWindow.loadURL(BACKEND_URL);
+  // Load the main UI (or a pending deep-link target if one arrived during startup).
+  const startUrl = pendingDeepLink || BACKEND_URL;
+  pendingDeepLink = null;
+  log.info(`Loading UI from ${startUrl}`);
+  mainWindow.loadURL(startUrl);
 
   // Open DevTools in development
   if (isDev) {

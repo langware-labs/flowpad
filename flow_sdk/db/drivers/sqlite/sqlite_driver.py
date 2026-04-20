@@ -2245,6 +2245,10 @@ class SQLiteDBDriver(DBDriver):
         # Skip compiled regex patterns
         if isinstance(value, re.Pattern):
             return value.pattern  # Store just the pattern string
+        # Handle TypeId - serialize to its string representation
+        from flow_sdk.fs_store.type_id import TypeId as _TypeId
+        if isinstance(value, _TypeId):
+            return str(value)
         # Handle Pydantic models - use mode='json' to serialize enums properly
         if hasattr(value, "model_dump"):
             try:
