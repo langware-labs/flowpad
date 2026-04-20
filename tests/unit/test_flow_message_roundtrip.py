@@ -1,0 +1,297 @@
+"""Tests for FlowMessage pack/unpack roundtrip.
+
+These tests exercise pack_bundle and unpack_bundle without a running DB
+by patching entity get_one/save at the source class level.
+
+Because flow_message_bundle imports are lazy (inside function bodies), we
+patch at the class definition modules, e.g. flow_sdk.builtin.spec.Spec.get_one.
+"""
+from __future__ import annotations
+
+import json
+import zipfile
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from flow_sdk.builtin.flow_message import FlowMessage
+from flow_sdk.fs_records.flow_message_bundle import (
+    FlowMessageExistsError,
+    pack_bundle,
+    unpack_bundle,
+)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _make_flow_message(fm_id: str = "aaaa1111-0000-0000-0000-000000000001") -> FlowMessage:
+    fm = FlowMessage(
+        text="Hello, world!",
+        instruction="Do something",
+        context=[{"type": "task", "id": "task-id-001"}, {"type": "conversation", "id": "conv-id-001"}],
+        attachment=[],
+        sender_id="user-001",
+        sender_name="Alice",
+        receiver_address="bob@example.com",
+        receiver_address_type="email",
+    )
+    fm.id = fm_id
+    return fm
+
+
+def _write_flowmsg_zip(tmp_path: Path, fm_data: dict, attachments: dict[str, bytes] | None = None) -> Path:
+    """Write a minimal .flowmsg zip to tmp_path and return its path."""
+    zip_path = tmp_path / "test.flowmsg"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("message.json", json.dumps(fm_data))
+        if attachments:
+            for arc_name, content in attachments.items():
+                zf.writestr(arc_name, content)
+    return zip_path
+
+
+# ---------------------------------------------------------------------------
+# pack_bundle tests
+# ---------------------------------------------------------------------------
+
+class TestPackBundle:
+    @pytest.mark.asyncio
+    async def test_pack_creates_zip_with_message_json(self, tmp_path):
+        """pack_bundle with no attachments creates a zip containing message.json."""
+        fm = _make_flow_message()
+
+        zip_path = await pack_bundle(fm, dest_dir=tmp_path)
+
+        assert zip_path.exists()
+        assert zip_path.suffix == ".flowmsg"
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            names = zf.namelist()
+            assert "message.json" in names
+            data = json.loads(zf.read("message.json"))
+            assert data["text"] == "Hello, world!"
+            assert data["id"] == fm.id
+
+    @pytest.mark.asyncio
+    async def test_pack_with_flow_message_attachment(self, tmp_path):
+        """pack_bundle includes attachment/flow_message-@<id>/message.json for flow_message entries."""
+        fm = _make_flow_message()
+        inner_id = "bbbb2222-0000-0000-0000-000000000002"
+        fm.attachment = [{"type": "flow_message", "id": inner_id}]
+
+        inner_fm = FlowMessage(text="inner msg")
+        inner_fm.id = inner_id
+
+        with patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=inner_fm)):
+            zip_path = await pack_bundle(fm, dest_dir=tmp_path)
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            names = zf.namelist()
+            expected = f"attachment/flow_message-@{inner_id}/message.json"
+            assert expected in names
+
+    @pytest.mark.asyncio
+    async def test_pack_with_spec_attachment(self, tmp_path):
+        """pack_bundle writes spec.md with frontmatter for spec attachments."""
+        from flow_sdk.builtin.spec import Spec
+
+        fm = _make_flow_message()
+        spec_id = "spec-id-0001"
+        fm.attachment = [{"type": "spec", "id": spec_id}]
+
+        mock_spec = Spec(title="My Spec", content="# Content", spec_type="plan")
+        mock_spec.id = spec_id
+
+        with patch.object(Spec, "get_one", new=AsyncMock(return_value=mock_spec)):
+            zip_path = await pack_bundle(fm, dest_dir=tmp_path)
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            names = zf.namelist()
+            expected = f"attachment/spec-@{spec_id}/spec.md"
+            assert expected in names
+            content = zf.read(expected).decode("utf-8")
+            assert "My Spec" in content
+            assert "# Content" in content
+
+    @pytest.mark.asyncio
+    async def test_pack_with_task_attachment(self, tmp_path):
+        """pack_bundle writes manifest.json for task attachments."""
+        from flow_sdk.builtin.task import Task
+
+        fm = _make_flow_message()
+        task_id = "task-id-0001"
+        fm.attachment = [{"type": "task", "id": task_id}]
+
+        mock_task = Task(title="My Task")
+        mock_task.id = task_id
+
+        with patch.object(Task, "get_one", new=AsyncMock(return_value=mock_task)):
+            zip_path = await pack_bundle(fm, dest_dir=tmp_path)
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            names = zf.namelist()
+            expected = f"attachment/task-@{task_id}/manifest.json"
+            assert expected in names
+            data = json.loads(zf.read(expected))
+            assert data["title"] == "My Task"
+
+
+# ---------------------------------------------------------------------------
+# unpack_bundle tests
+# ---------------------------------------------------------------------------
+
+class TestUnpackBundle:
+    @pytest.mark.asyncio
+    async def test_unpack_saves_flow_message(self, tmp_path):
+        """unpack_bundle saves the top-level FlowMessage and returns it."""
+        from flow_sdk.builtin.user import User
+
+        fm_id = "cccc3333-0000-0000-0000-000000000003"
+        fm_data = {
+            "id": fm_id,
+            "type": "flow_message",
+            "text": "Received message",
+            "context": [],
+            "attachment": [],
+        }
+        zip_path = _write_flowmsg_zip(tmp_path, fm_data)
+
+        saved_fm = FlowMessage(text="Received message")
+        saved_fm.id = fm_id
+
+        with (
+            patch.object(User, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "save", new=AsyncMock(return_value=saved_fm)),
+            patch("flow_sdk.discovery.notify.send_resource_sync", return_value=True),
+        ):
+            result = await unpack_bundle(zip_path, "local-user-id")
+
+        assert result.text == "Received message"
+
+    @pytest.mark.asyncio
+    async def test_unpack_raises_on_conflict(self, tmp_path):
+        """unpack_bundle raises FlowMessageExistsError when entity exists and overwrite=False."""
+        from flow_sdk.builtin.conversation import Conversation
+        from flow_sdk.builtin.spec import Spec
+        from flow_sdk.builtin.task import Task
+        from flow_sdk.builtin.user import User
+
+        inner_id = "dddd4444-0000-0000-0000-000000000004"
+        fm_data = {
+            "id": "eeee5555-0000-0000-0000-000000000005",
+            "type": "flow_message",
+            "text": "msg",
+            "context": [],
+            "attachment": [{"type": "flow_message", "id": inner_id}],
+        }
+        inner_fm_data = {"id": inner_id, "type": "flow_message", "text": "inner"}
+        attachments = {
+            f"attachment/flow_message-@{inner_id}/message.json": json.dumps(inner_fm_data).encode(),
+        }
+        zip_path = _write_flowmsg_zip(tmp_path, fm_data, attachments)
+
+        existing_fm = FlowMessage(text="inner")
+        existing_fm.id = inner_id
+
+        async def fm_get_one(filter_dict=None, source_entity=None):
+            if isinstance(filter_dict, dict) and filter_dict.get("id") == inner_id:
+                return existing_fm
+            return None
+
+        with (
+            patch.object(User, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "get_one", new=AsyncMock(side_effect=fm_get_one)),
+            patch.object(Spec, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(Task, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(Conversation, "get_one", new=AsyncMock(return_value=None)),
+        ):
+            with pytest.raises(FlowMessageExistsError) as exc_info:
+                await unpack_bundle(zip_path, "local-user-id", overwrite=False)
+
+        assert exc_info.value.conflicts == [{"type": "flow_message", "id": inner_id}]
+
+    @pytest.mark.asyncio
+    async def test_unpack_with_overwrite_succeeds(self, tmp_path):
+        """unpack_bundle with overwrite=True proceeds even when entity exists."""
+        from flow_sdk.builtin.conversation import Conversation
+        from flow_sdk.builtin.spec import Spec
+        from flow_sdk.builtin.task import Task
+        from flow_sdk.builtin.user import User
+
+        inner_id = "ffff6666-0000-0000-0000-000000000006"
+        fm_id = "gggg7777-0000-0000-0000-000000000007"
+        fm_data = {
+            "id": fm_id,
+            "type": "flow_message",
+            "text": "overwrite me",
+            "context": [],
+            "attachment": [{"type": "flow_message", "id": inner_id}],
+        }
+        inner_fm_data = {"id": inner_id, "type": "flow_message", "text": "inner"}
+        attachments = {
+            f"attachment/flow_message-@{inner_id}/message.json": json.dumps(inner_fm_data).encode(),
+        }
+        zip_path = _write_flowmsg_zip(tmp_path, fm_data, attachments)
+
+        saved_fm = FlowMessage(text="overwrite me")
+        saved_fm.id = fm_id
+
+        with (
+            patch.object(User, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(Spec, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(Task, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(Conversation, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "save", new=AsyncMock(return_value=saved_fm)),
+            patch("flow_sdk.discovery.notify.send_resource_sync", return_value=True),
+        ):
+            result = await unpack_bundle(zip_path, "local-user-id", overwrite=True)
+
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_unpack_appends_conversation_pointer(self, tmp_path):
+        """unpack_bundle calls append_message_pointer on the target conversation."""
+        from flow_sdk.builtin.conversation import Conversation
+        from flow_sdk.builtin.user import User
+
+        conv_id = "conv-id-9999"
+        fm_id = "hhhh8888-0000-0000-0000-000000000008"
+        fm_data = {
+            "id": fm_id,
+            "type": "flow_message",
+            "text": "msg with conv",
+            "context": [{"type": "conversation", "id": conv_id}, {"type": "task", "id": "t-001"}],
+            "attachment": [],
+        }
+        zip_path = _write_flowmsg_zip(tmp_path, fm_data)
+
+        # Create a real jsonl file for the conversation
+        jsonl_path = tmp_path / "conversation.jsonl"
+        jsonl_path.write_text("")
+
+        mock_conv = Conversation(task_id="t-001", data_path=str(jsonl_path))
+        mock_conv.id = conv_id
+
+        saved_fm = FlowMessage(text="msg with conv")
+        saved_fm.id = fm_id
+        saved_fm.context = fm_data["context"]
+
+        with (
+            patch.object(User, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(Conversation, "get_one", new=AsyncMock(return_value=mock_conv)),
+            patch.object(FlowMessage, "save", new=AsyncMock(return_value=saved_fm)),
+            patch("flow_sdk.discovery.notify.send_resource_sync", return_value=True),
+        ):
+            result = await unpack_bundle(zip_path, "local-user-id")
+
+        # The pointer should have been appended to the jsonl file
+        lines = [line.strip() for line in jsonl_path.read_text().splitlines() if line.strip()]
+        assert len(lines) == 1
+        pointer = json.loads(lines[0])
+        assert "message_id" in pointer
+        assert "timestamp" in pointer

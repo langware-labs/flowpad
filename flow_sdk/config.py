@@ -23,6 +23,12 @@ from flow_sdk.utils.validation import UUID_PATTERN
 
 
 # ---------------------------------------------------------------------------
+# URL constants
+# ---------------------------------------------------------------------------
+
+FLOWPAD_CLOUD_URL = "https://app.flowpad.ai"
+
+# ---------------------------------------------------------------------------
 # Path constants
 # ---------------------------------------------------------------------------
 
@@ -727,6 +733,10 @@ class ServiceConfig(BaseSettings):
 
             # Configure desktop-specific storage paths
             self.default_storage_mount_folder = str(user_data_folder / "entity_storage")
+
+            # Desktop always connects to production hub unless overridden by env var
+            if not self.flowpad_hub_url:
+                self.flowpad_hub_url = FLOWPAD_CLOUD_URL
 
             logging.info(
                 f"[INFO] Desktop environment detected - using {db_info} and local storage at {user_data_folder}"
