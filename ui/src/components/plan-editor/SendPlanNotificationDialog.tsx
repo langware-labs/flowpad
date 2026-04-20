@@ -1,14 +1,19 @@
 /**
  * SendPlanNotificationDialog - Share a plan as a task notification.
  * Pre-populates spec content from the current plan markdown.
- * POSTs to /api/v1/graph/notification/send to create a Spec + Task + CrossUserNotification.
+ * Supports two delivery modes toggled at the top of the dialog:
+ *   Email   — sends via Flowpad Hub (requires recipient)
+ *   Download — saves a .flowmsg file locally (no recipient needed)
  */
 
 import { useEffect, useState } from 'react';
+import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
 import { useContext } from '@sdk/react/hooks';
 import { sendNotification } from '@sdk/entities/notifications';
+import { createTaskBundle, downloadFlowMessageUrl } from '@sdk/entities/flow-message';
 import { oauthService, OAUTH_PROVIDERS } from '@sdk';
 import { toast } from 'sonner';
+import { Mail, Download } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -28,6 +33,7 @@ import {
 } from '@src/components/ui/alert-dialog';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
+import { cn } from '@src/lib/utils';
 
 /** Extract first # heading from markdown, fall back to filename stem. */
 function extractTitle(markdown: string, filePath: string): string {
@@ -38,6 +44,8 @@ function extractTitle(markdown: string, filePath: string): string {
   const stem = filePath.split('/').pop()?.replace(/\.md$/, '') ?? 'Untitled Plan';
   return stem;
 }
+
+type DeliveryMode = 'email' | 'download';
 
 interface SendPlanNotificationDialogProps {
   open: boolean;
@@ -55,40 +63,53 @@ export function SendPlanNotificationDialog({
   planContent,
 }: SendPlanNotificationDialogProps) {
   const { cloudLoginAvailable } = useContext();
+  const [mode, setMode] = useState<DeliveryMode>('email');
   const [recipientId, setRecipientId] = useState('');
+  const [teamSpaceId, setTeamSpaceId] = useState(
+    () => localStorage.getItem('flowpad.sendNotification.lastTeamSpace') ?? '',
+  );
   const [specTitle, setSpecTitle] = useState('');
   const [specContent, setSpecContent] = useState('');
   const [message, setMessage] = useState('');
-  const [sending, setSending] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [gitError, setGitError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
 
-  // Pre-populate from plan when dialog opens
   useEffect(() => {
     if (open) {
       setSpecTitle(extractTitle(planContent, planFilePath));
       setSpecContent(planContent);
       setRecipientId('');
       setMessage('Hi,\nGot a new task for you.\nLMK if you have any questions.\nGood luck!');
+      setFiles([]);
       setError(null);
       setSuccess(false);
       setGitError(null);
       setEmailError(null);
     }
-  }, [open, planContent, planFilePath]);
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const switchMode = (next: DeliveryMode) => {
+    setMode(next);
+    setError(null);
+    if (next === 'download' && message.startsWith('Hi,')) setMessage('');
+    if (next === 'email' && !message.trim()) {
+      setMessage('Hi,\nGot a new task for you.\nLMK if you have any questions.\nGood luck!');
+    }
+  };
 
   const handleClose = () => {
-    if (sending) return;
+    if (busy) return;
     onClose();
   };
 
-  const handleSend = async () => {
-    if (!recipientId.trim() || !specTitle.trim()) return;
-    setSending(true);
+  const handleEmail = async () => {
+    if (!recipientId.trim() || !specTitle.trim() || busy) return;
+    setBusy(true);
     setError(null);
-
     try {
       const result = await sendNotification({
         recipient_id: recipientId.trim(),
@@ -117,122 +138,209 @@ export function SendPlanNotificationDialog({
       const msg = err instanceof Error ? err.message : 'Failed to send notification.';
       setError(msg);
     } finally {
-      setSending(false);
+      setBusy(false);
     }
   };
 
-  const canSend = recipientId.trim().length > 0 && specTitle.trim().length > 0 && !sending;
+  const handleDownload = async () => {
+    if (!specTitle.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (teamSpaceId.trim()) {
+        localStorage.setItem('flowpad.sendNotification.lastTeamSpace', teamSpaceId.trim());
+      }
+      const result = await createTaskBundle({
+        spec_title: specTitle.trim(),
+        spec_content: specContent.trim(),
+        task_title: specTitle.trim(),
+        message: message.trim() || null,
+        team_space_id: teamSpaceId.trim() || null,
+      });
+      const url = downloadFlowMessageUrl(result.flow_message_id);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      onClose();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create task bundle.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const canSubmit = mode === 'email'
+    ? recipientId.trim().length > 0 && specTitle.trim().length > 0 && !busy
+    : specTitle.trim().length > 0 && !busy;
 
   return (
     <>
-    <AlertDialog open={!!gitError} onOpenChange={(o) => { if (!o) { setGitError(null); onClose(); } }}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Git Push Failed</AlertDialogTitle>
-          <AlertDialogDescription asChild>
-            <div>
-              <p className="mb-2">The task could not be pushed to the remote repository. Please fix the git issue below and send the task again.</p>
-              <pre className="max-h-40 overflow-auto rounded bg-muted px-3 py-2 text-xs text-foreground whitespace-pre-wrap">{gitError}</pre>
+      <AlertDialog open={!!gitError} onOpenChange={(o) => { if (!o) { setGitError(null); onClose(); } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Git Push Failed</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div>
+                <p className="mb-2">The task could not be pushed to the remote repository. Please fix the git issue below and send the task again.</p>
+                <pre className="max-h-40 overflow-auto rounded bg-muted px-3 py-2 text-xs text-foreground whitespace-pre-wrap">{gitError}</pre>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction>OK</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={open} onOpenChange={handleClose}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Share Task</DialogTitle>
+            <DialogDescription>
+              This plan will be packaged as a spec and shared as a new task.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Mode toggle */}
+            <div className="flex rounded-md border border-input p-0.5">
+              <button
+                type="button"
+                onClick={() => switchMode('email')}
+                disabled={busy}
+                className={cn(
+                  'flex flex-1 items-center justify-center gap-2 rounded py-1.5 text-sm font-medium transition-colors',
+                  mode === 'email'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <Mail className="h-3.5 w-3.5" />
+                Email
+              </button>
+              <button
+                type="button"
+                onClick={() => switchMode('download')}
+                disabled={busy}
+                className={cn(
+                  'flex flex-1 items-center justify-center gap-2 rounded py-1.5 text-sm font-medium transition-colors',
+                  mode === 'download'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download
+              </button>
             </div>
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogAction>OK</AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Share Task</DialogTitle>
-          <DialogDescription>
-            This plan will be packaged as a spec and shared with the recipient as a new task.
-          </DialogDescription>
-        </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          {/* Recipient */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Recipient email</label>
-            <Input
-              value={recipientId}
-              onChange={(e) => setRecipientId(e.target.value)}
-              placeholder="user@example.com"
-              autoFocus
-              disabled={sending}
-            />
-          </div>
+            {/* Email: recipient */}
+            {mode === 'email' && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Recipient email</label>
+                <Input
+                  value={recipientId}
+                  onChange={(e) => setRecipientId(e.target.value)}
+                  placeholder="user@example.com"
+                  autoFocus
+                  disabled={busy}
+                />
+              </div>
+            )}
 
-          {/* Spec title */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Spec title</label>
-            <Input
-              value={specTitle}
-              onChange={(e) => setSpecTitle(e.target.value)}
-              placeholder="Title"
-              disabled={sending}
-            />
-          </div>
+            {/* Download: team space */}
+            {mode === 'download' && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Team Space (optional)</label>
+                <Input
+                  value={teamSpaceId}
+                  onChange={(e) => setTeamSpaceId(e.target.value)}
+                  placeholder="e.g. hw-demo"
+                  disabled={busy}
+                />
+              </div>
+            )}
 
-          {/* Spec content — pre-filled from plan, editable */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Description</label>
-            <textarea
-              value={specContent}
-              onChange={(e) => setSpecContent(e.target.value)}
-              rows={6}
-              disabled={sending}
-              className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-            />
-          </div>
-
-          {/* Optional message */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Message (optional)</label>
-            <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Add a personal note..."
-              rows={4}
-              disabled={sending}
-              className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-            />
-          </div>
-
-          {error && <p className="text-xs text-destructive">{error}</p>}
-          {success && !emailError && <p className="text-xs text-green-600 dark:text-green-400">Task shared successfully.</p>}
-          {success && emailError && (
-            <div className="space-y-1">
-              <p className="text-xs text-green-600 dark:text-green-400">Task created successfully.</p>
-              <p className="text-xs text-yellow-600 dark:text-yellow-400">Email could not be sent. A reminder has been added to your activity panel.</p>
+            {/* Spec title */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Spec title</label>
+              <Input
+                value={specTitle}
+                onChange={(e) => setSpecTitle(e.target.value)}
+                placeholder="Title"
+                autoFocus={mode === 'download'}
+                disabled={busy}
+              />
             </div>
-          )}
-        </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={handleClose} disabled={sending}>
-            Cancel
-          </Button>
-          <Button
-            onClick={() => {
-              if (!cloudLoginAvailable) {
-                // Register callback to run after OAuth login completes (before page reload)
-                (window as any).__postCloudLoginCallback = async () => {
-                  await handleSend();
-                  await new Promise(resolve => setTimeout(resolve, 1500));
-                };
-                void oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
-                return;
-              }
-              void handleSend();
-            }}
-            disabled={!canSend}
-          >
-            {sending ? 'Sending...' : 'Share as Task'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+            {/* Description */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Description</label>
+              <textarea
+                value={specContent}
+                onChange={(e) => setSpecContent(e.target.value)}
+                rows={6}
+                disabled={busy}
+                className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+            </div>
+
+            {/* Message */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Message (optional)</label>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder="Add a personal note..."
+                rows={mode === 'email' ? 4 : 3}
+                disabled={busy}
+                className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              />
+              <FileAttachmentPicker files={files} onChange={setFiles} disabled={busy} />
+            </div>
+
+            {error && <p className="text-xs text-destructive">{error}</p>}
+            {success && !emailError && <p className="text-xs text-green-600 dark:text-green-400">Task shared successfully.</p>}
+            {success && emailError && (
+              <div className="space-y-1">
+                <p className="text-xs text-green-600 dark:text-green-400">Task created successfully.</p>
+                <p className="text-xs text-yellow-600 dark:text-yellow-400">Email could not be sent. A reminder has been added to your activity panel.</p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleClose} disabled={busy}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (mode === 'email') {
+                  if (!cloudLoginAvailable) {
+                    (window as any).__postCloudLoginCallback = async () => {
+                      await handleEmail();
+                      await new Promise(resolve => setTimeout(resolve, 1500));
+                    };
+                    void oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
+                    return;
+                  }
+                  void handleEmail();
+                } else {
+                  void handleDownload();
+                }
+              }}
+              disabled={!canSubmit}
+            >
+              {busy
+                ? mode === 'email' ? 'Sending...' : 'Preparing...'
+                : mode === 'email' ? 'Share as Task' : 'Download .flowmsg'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -9,16 +9,16 @@ from flow_sdk.core import Entity
 class Conversation(Entity):
     """A conversation composed into a Task (or other parent entity).
 
-    messages is a JSON-encoded array of message objects:
-      [{"role": "sender"|"recipient"|"bot", "content": "...", "sender_id": "...", "timestamp": "ISO"}, ...]
+    message_ids is a JSON-encoded list of FlowMessage pointers:
+      [{"message_id": uuid, "timestamp": "ISO"}, ...]
 
-    The source of truth is conversation.jsonl on disk (pointed to by data_path).
-    The messages field is kept in sync and is the API-visible copy.
+    Message content lives in individual FlowMessage records (fetched by id).
+    The source of truth on disk is conversation.jsonl (pointer-index format).
     """
 
     type: str = APIField(default="conversation")
     task_id: Optional[str] = APIField(None)
     data_path: Optional[str] = APIField(None)
     message_count: int = APIField(0)
-    messages: Optional[str] = APIField(None, blob=True)
+    message_ids: Optional[str] = APIField(None)  # JSON-encoded [{"message_id": uuid, "timestamp": ISO}]
     _api_visible: ClassVar[bool] = True
