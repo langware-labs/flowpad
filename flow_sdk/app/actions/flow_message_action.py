@@ -539,10 +539,15 @@ async def inbox_open() -> ApiResponse:
 
         flow_message_id = str(request_info.target_entity_typeid.id)
 
-        # Fetch hub data to get attachment_filename and context
-        hub_data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, flow_message_id)
-        attachment_filename = ((hub_data or {}).get("attachment_filename") or "").strip()
-        raw_context = (hub_data or {}).get("context") or []
+        # Prefer local FlowMessage (reply messages are local-only; hub is fallback for inbox messages)
+        local_fm = await FlowMessage.get_one({"id": flow_message_id})
+        if local_fm:
+            attachment_filename = (local_fm.attachment_filename or "").strip()
+            raw_context = [str(c) for c in (local_fm.context or [])]
+        else:
+            hub_data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, flow_message_id)
+            attachment_filename = ((hub_data or {}).get("attachment_filename") or "").strip()
+            raw_context = (hub_data or {}).get("context") or []
 
         task_id = None
         conv_id = None
