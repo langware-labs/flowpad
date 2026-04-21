@@ -55,6 +55,8 @@ class ClaudeCliOptions(WorkerCLIOptions):
         env_vars: dict[str, str] | None = None,
         print_mode: bool = False,
         add_dirs: list[str] | None = None,
+        output_format: str | None = None,
+        verbose: bool = False,
     ) -> None:
         super().__init__(workdir=workdir, env_vars=env_vars)
         self.session_id = session_id
@@ -68,6 +70,10 @@ class ClaudeCliOptions(WorkerCLIOptions):
         self.agents_json = agents_json
         self.print_mode = print_mode
         self.add_dirs: list[str] = list(add_dirs or [])
+        # One of {"text", "json", "stream-json"} or None for CLI default.
+        self.output_format = output_format
+        # Required by CLI when output_format == "stream-json"; harmless otherwise.
+        self.verbose = verbose or output_format == "stream-json"
 
         # Auto-inject CLAUDE_PROJECT_DIR from workdir
         if workdir:
@@ -90,6 +96,10 @@ class ClaudeCliOptions(WorkerCLIOptions):
             args.append("--debug")
         if self.worktree:
             args.append("--worktree")
+        if self.verbose:
+            args.append("--verbose")
+        if self.output_format:
+            args.append(f"--output-format {shlex.quote(self.output_format)}")
 
         if self.resume and self.session_id:
             if self.fork_session_id:
@@ -154,6 +164,8 @@ class ClaudeCliOptions(WorkerCLIOptions):
             "agents_json": self.agents_json,
             "print_mode": self.print_mode,
             "add_dirs": self.add_dirs,
+            "output_format": self.output_format,
+            "verbose": self.verbose,
         })
         return d
 
@@ -173,6 +185,10 @@ class ClaudeCliOptions(WorkerCLIOptions):
             argv.append("--debug")
         if self.worktree:
             argv.append("--worktree")
+        if self.verbose:
+            argv.append("--verbose")
+        if self.output_format:
+            argv.extend(["--output-format", self.output_format])
 
         if self.resume and self.session_id:
             if self.fork_session_id:
@@ -214,4 +230,6 @@ class ClaudeCliOptions(WorkerCLIOptions):
             env_vars=data.get("env_vars") or {},
             print_mode=bool(data.get("print_mode", False)),
             add_dirs=list(data.get("add_dirs") or []),
+            output_format=data.get("output_format"),
+            verbose=bool(data.get("verbose", False)),
         )

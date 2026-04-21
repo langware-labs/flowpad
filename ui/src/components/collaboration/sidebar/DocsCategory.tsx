@@ -1,21 +1,19 @@
-import { FileText, Plus } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { FileText } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAssetSearch } from '@src/hooks/use-asset-search';
 import type { AssetFilter } from '@src/components/assets/assetFilter';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { InputDialog } from '@src/components/ui/input-dialog';
-import { MarkdownAsset, Project, TypeId } from '@sdk';
+import { Project, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
-import { useToast } from '@src/hooks/use-toast';
 
 interface Props {
   projectId: string | null;
+  refreshKey?: number;
 }
 
-export function DocsCategory({ projectId }: Props) {
+export function DocsCategory({ projectId, refreshKey = 0 }: Props) {
   const { navigation } = useDockNavigation();
-  const { toast } = useToast();
 
   // Resolve the project entity so we can read `system` for auto-opt-in.
   const projectTypeId = useMemo(
@@ -31,9 +29,6 @@ export function DocsCategory({ projectId }: Props) {
   useEffect(() => {
     setIncludeSystem(isSystemProject);
   }, [isSystemProject]);
-
-  const [newDialogOpen, setNewDialogOpen] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
 
   // Filter by the project's .claude/docs/ folder path rather than scope=project,
   // because the server's scope filter compares encoded path, not project UUID —
@@ -65,52 +60,30 @@ export function DocsCategory({ projectId }: Props) {
     refreshKey,
   });
 
-  const handleCreate = useCallback(
-    async (name: string) => {
-      if (!name.trim() || !project) return;
-      try {
-        await MarkdownAsset.createInProject(project, name, '.claude/docs');
-        toast({ title: 'Doc created' });
-        setRefreshKey((k) => k + 1);
-      } catch (err) {
-        console.error('[DocsCategory] Create failed:', err);
-        toast({ title: 'Failed to create doc', variant: 'destructive' });
-      }
-    },
-    [project, toast],
-  );
-
   if (!projectId) {
     return <div className="px-2 py-1.5 text-xs italic text-muted-foreground">No project linked</div>;
   }
 
+  // Only show the Show-system toggle for non-system projects (system projects
+  // are auto-opted-in; toggling it off would leave the panel empty pointlessly).
+  const showToggleRow = !isSystemProject;
+
   return (
     <div className="flex flex-col gap-0.5">
-      <div className="flex items-center gap-2 px-2 py-1">
-        {!isSystemProject && (
-          <label
-            className="flex cursor-pointer items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
-            title="Show docs from SDK-shipped system projects"
-          >
-            <input
-              type="checkbox"
-              className="h-3 w-3 rounded border-input"
-              checked={includeSystem}
-              onChange={(e) => setIncludeSystem(e.target.checked)}
-            />
-            Show system
-          </label>
-        )}
-        <button
-          type="button"
-          onClick={() => setNewDialogOpen(true)}
-          title="New doc"
-          aria-label="New doc"
-          className="ml-auto inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+      {showToggleRow && (
+        <label
+          className="flex cursor-pointer items-center gap-1 px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground"
+          title="Show docs from SDK-shipped system projects"
         >
-          <Plus className="h-3.5 w-3.5" />
-        </button>
-      </div>
+          <input
+            type="checkbox"
+            className="h-3 w-3 rounded border-input"
+            checked={includeSystem}
+            onChange={(e) => setIncludeSystem(e.target.checked)}
+          />
+          Show system
+        </label>
+      )}
 
       {isLoading && results.length === 0 ? (
         <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</div>
@@ -130,16 +103,6 @@ export function DocsCategory({ projectId }: Props) {
           ))}
         </ul>
       )}
-
-      <InputDialog
-        open={newDialogOpen}
-        onOpenChange={setNewDialogOpen}
-        title="New doc"
-        description=".claude/docs/ under this project"
-        placeholder="doc name"
-        confirmLabel="Create"
-        onConfirm={(name) => void handleCreate(name)}
-      />
     </div>
   );
 }
