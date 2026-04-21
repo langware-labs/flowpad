@@ -27,6 +27,7 @@ import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file
 
 import { WorkflowsPage } from '@src/components/workflows-view/WorkflowsPage';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
+import { InboxView } from '@src/components/inbox-view/InboxView';
 import { TriggersView } from '@src/components/triggers-view';
 import { SurveyView } from '@src/components/survey/SurveyView';
 import { TabbedTerminal } from '@src/components/terminal';
@@ -505,6 +506,13 @@ export function ContentPanel() {
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
           >
             <AssetsPage />
+          </TabsContent>
+
+          <TabsContent
+            value={ViewType.INBOX}
+            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
+          >
+            <InboxView />
           </TabsContent>
         </div>
       </Tabs>

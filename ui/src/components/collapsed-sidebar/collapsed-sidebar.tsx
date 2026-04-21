@@ -7,6 +7,7 @@ import { useAuth } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@src/components/ui/sidebar';
+import { useInboxStore } from '@src/store/use-inbox-store';
 import {
   ArrowLeft,
   BookOpen,
@@ -19,6 +20,7 @@ import {
   FolderOpen,
   // Globe,
   Home,
+  Inbox,
   // KeyRound,
   // MessagesSquare,
   // PlaySquare,
@@ -35,6 +37,7 @@ import { useNavigate } from 'react-router';
 
 const mainNavItems = [
   { title: 'Home', icon: Home, viewType: null },
+  { title: 'Inbox', icon: Inbox, viewType: ViewType.INBOX },
   { title: 'Shell', icon: Terminal, viewType: ViewType.SHELL },
   // { title: 'Execute Flow', icon: PlaySquare, viewType: ViewType.EXECUTE_FLOW },
   { title: 'Assets', icon: BookOpen, viewType: ViewType.ASSETS },
@@ -62,6 +65,7 @@ export function CollapsedSidebar() {
   const { goBack, canGoBack } = useNavigationState();
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
   const devMode = useDevMode();
+  const { unreadCount } = useInboxStore();
 
   const currentView = currentDock?.viewType;
   // const { cloudLoginAvailable, cloudApiUrl, isDesktop } = context;
@@ -85,6 +89,7 @@ export function CollapsedSidebar() {
   const renderNavItem = (
     item: { title: string; icon: React.ComponentType<{ className?: string }>; viewType: ViewType | null },
     className?: string,
+    badge?: number,
   ) => {
     const Icon = item.icon;
     const isActive = item.viewType === null ? !currentView : currentView === item.viewType;
@@ -95,9 +100,14 @@ export function CollapsedSidebar() {
           tooltip={item.title}
           isActive={isActive}
           onClick={() => handleClick(item.viewType)}
-          className="w-full justify-center px-2"
+          className="relative w-full justify-center px-2"
         >
           <Icon className="h-5 w-5" />
+          {badge != null && badge > 0 && (
+            <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-0.5 text-[9px] font-bold leading-none text-destructive-foreground">
+              {badge > 99 ? '99+' : badge}
+            </span>
+          )}
         </SidebarMenuButton>
       </SidebarMenuItem>
     );
@@ -119,7 +129,9 @@ export function CollapsedSidebar() {
               </SidebarMenuButton>
             </SidebarMenuItem>
 
-            {mainNavItems.map((item) => renderNavItem(item))}
+            {mainNavItems.map((item) =>
+              renderNavItem(item, undefined, item.viewType === ViewType.INBOX ? unreadCount : undefined),
+            )}
 
             <div onMouseEnter={() => setSecondaryExpanded(true)} onMouseLeave={() => setSecondaryExpanded(false)}>
               <div className="flex justify-center py-1">
