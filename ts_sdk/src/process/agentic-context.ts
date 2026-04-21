@@ -73,6 +73,11 @@ export interface AgenticContext {
 
   /** Serialized TypeId ("type-id") of the entity this process attaches to (markdown, trigger, …). */
   targetTypeIdStr?: string;
+
+  /** One of "text" | "json" | "stream-json"; omit for CLI default. When
+   * "stream-json", the process runs print-mode (no PTY) and `AgenticProcess.prompt`
+   * streams per-event FlowData over HTTP. */
+  outputFormat?: string;
 }
 
 /**
@@ -133,5 +138,6 @@ export function serializeAgenticContext(ctx: AgenticContext): Record<string, unk
     worktree: ctx.worktree,
     additional_dirs: ctx.additionalDirs ?? [],
     target_typeid_str: ctx.targetTypeIdStr,
+    output_format: ctx.outputFormat,
   };
 }

@@ -13,8 +13,11 @@ from pydantic import SerializationInfo, model_serializer
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.app.actions.listen import set_plan_auto_approve
+from flow_sdk.builtin.agentic_workers.claude_cli_stream_worker import ClaudeCLIStreamWorker
+from flow_sdk.builtin.agentic_workers.context import AgenticContext as _AgenticContext
 from flow_sdk.builtin.cli_workers import ClaudeCliOptions
 from flow_sdk.core import Entity, action
+from flow_sdk.core.flow.streaming.response_handler import StreamingResponseHandler
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.fs_records.agent_status import WorkerStatus, is_terminal as is_worker_terminal
 from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
@@ -28,6 +31,20 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.shell import Shell
 
 logger = logging.getLogger(__name__)
+
+
+# ── prompt-action transient state (per-process locks + live workers) ─────────
+# Keyed by agentic_process.id. Lost on hub restart — acceptable, callers retry.
+_PROMPT_LOCKS: dict[str, asyncio.Lock] = {}
+_PROMPT_WORKERS: dict[str, ClaudeCLIStreamWorker] = {}
+
+
+def _get_prompt_lock(process_id: str) -> asyncio.Lock:
+    lock = _PROMPT_LOCKS.get(process_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _PROMPT_LOCKS[process_id] = lock
+    return lock
 
 
 def _write_plan_frontmatter(file_path: str, fields: dict) -> None:
@@ -709,6 +726,135 @@ class AgenticProcess(Entity):
         if isinstance(result, ApiFailResponse):
             return result
         return result if isinstance(result, ApiSuccessResponse) else ApiSuccessResponse(data={"status": "ok"})
+
+    # ── Print-mode streaming prompt ──────────────────────────────────────────
+    #
+    # POST /agentic_process/<id>/prompt
+    #   body: { "message": "<text>" }
+    # Response: chunked XML stream of FlowData elements (same wire format as
+    # the legacy /completion). Admitted only for print-mode (visible=False)
+    # processes that are ready-for-input. PTY/interactive processes reject
+    # with 409 — they use the terminal tab UX.
+    #
+    # The worker (ClaudeCLIStreamWorker) runs ``claude -p --output-format
+    # stream-json`` per turn; its events map to FlowData via
+    # ``claude_event_to_flowdata.convert_event`` and land on the shared
+    # StreamingResponseHandler queue for streaming back to the caller.
+
+    @action.post(action_name="prompt")
+    async def _http_prompt(self) -> Any:
+        from starlette.responses import StreamingResponse  # local import — starlette is an app-layer dep
+
+        request_info = get_current_request_info()
+        if not request_info:
+            return ApiFailResponse(message="No request info")
+        body = await request_info.get_post_data()
+        if not isinstance(body, dict):
+            return ApiFailResponse(message="Expected JSON object body")
+        message = (body.get("message") or "").strip()
+        if not message:
+            return ApiFailResponse(message="message is required")
+
+        # Admission gate — print mode only.
+        # PTY processes are rejected (visible=true means the interactive terminal
+        # owns the session). For print-mode we don't use ``is_ready_for_input``:
+        # it requires ProcessStatus.RUNNING + an IDLE worker, which makes sense
+        # for PTY but not here — print-mode processes have no persistent worker
+        # between turns, so the only contention is whether a turn is already in
+        # flight (enforced by the per-process lock below).
+        if self.visible:
+            return ApiFailResponse(
+                message="process is PTY-interactive; prompt action requires visible=false (print mode)",
+                status_code=409,
+            )
+        if self.status in (ProcessStatus.STOPPING.value, ProcessStatus.FAILED.value):
+            return ApiFailResponse(
+                message=f"process not sendable (status={self.status})",
+                status_code=409,
+            )
+
+        lock = _get_prompt_lock(self.id)
+        if lock.locked():
+            return ApiFailResponse(
+                message="another prompt turn is already in flight for this process",
+                status_code=409,
+            )
+
+        # Context for the worker, reconstructed from the AgenticProcess entity.
+        context = _AgenticContext(
+            workdir=self.workdir,
+            env_vars=dict(self.cli_options.env_vars) if hasattr(self, "cli_options") else {},
+            model=(self.cli_config or {}).get("model"),
+            permission_mode=(self.cli_config or {}).get("permission_mode", "bypassPermissions"),
+            resume_session_id=self.session_id,
+        )
+
+        handler = StreamingResponseHandler()
+
+        async def _run_turn() -> None:
+            """Drive the worker → handler pipeline. Runs as a background task."""
+            worker = ClaudeCLIStreamWorker()
+            _PROMPT_WORKERS[self.id] = worker
+            try:
+                async with lock:
+                    # Kick off lifecycle transition so observers see RUNNING.
+                    if self.status != ProcessStatus.RUNNING.value:
+                        self.status = ProcessStatus.RUNNING.value
+                        try:
+                            await self.save()
+                        except Exception:
+                            logger.debug("prompt: lifecycle save failed", exc_info=True)
+
+                    async for fd in worker.execute(prompt=message, context=context):
+                        await handler.on_flow_data(fd)
+                        # Persist session_id on first capture so subsequent turns resume.
+                        if worker.get_session_id() and not self.session_id:
+                            self.session_id = worker.get_session_id()
+                            try:
+                                await self.save()
+                            except Exception:
+                                logger.debug("prompt: session_id save failed", exc_info=True)
+            except Exception as e:
+                logger.exception("prompt: worker error")
+                await handler.add_str_to_queue(Exception(f"prompt error: {e}"))
+            finally:
+                # Signal end-of-stream to downstream consumers.
+                await handler.on_flow_data(None)
+                _PROMPT_WORKERS.pop(self.id, None)
+
+        turn_task = asyncio.create_task(_run_turn())
+
+        async def _stream_body():
+            try:
+                async for xml_chunk in handler:
+                    yield xml_chunk
+            finally:
+                if not turn_task.done():
+                    # Client disconnected; let the turn finish to keep JSONL coherent,
+                    # but don't block the HTTP handler beyond a short grace.
+                    try:
+                        await asyncio.wait_for(turn_task, timeout=1.0)
+                    except (asyncio.TimeoutError, Exception):
+                        pass
+
+        return StreamingResponse(
+            _stream_body(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @action.post(action_name="cancel-prompt")
+    async def _http_cancel_prompt(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Cancel the in-flight prompt turn. Immediate: SIGTERM → 5s → SIGKILL."""
+        worker = _PROMPT_WORKERS.get(self.id)
+        if worker is None:
+            return ApiFailResponse(message="no in-flight prompt turn")
+        await worker.close_session()
+        return ApiSuccessResponse(data={"cancelled": True})
 
     # ── Plan mode ─────────────────────────────────────────────────────────────
 

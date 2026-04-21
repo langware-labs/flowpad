@@ -928,6 +928,68 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     await dataManager.callAction(actionInfo);
   }
 
+  /**
+   * Print-mode streaming prompt. Available on ``visible === false`` (print-mode)
+   * processes created with ``outputFormat: "stream-json"`` on the AgenticContext.
+   *
+   * POSTs ``/agentic_process/<id>/prompt`` with ``{ message }``, consumes the
+   * streaming XML response body via ``FlowStreamProcessor``, and ingests each
+   * emitted FlowData into ``this.flowDataStream`` so the UI sees it via the
+   * same hook pipeline (``useProcessStream``) the rest of the app already uses.
+   *
+   * PTY-interactive processes (visible=true) will 409 on this action — they
+   * use ``inject``/``executeInstruction`` instead.
+   */
+  async prompt(text: string, abortController?: AbortController): Promise<void> {
+    const { FlowStreamProcessor } = await import('../flow_processing/flow-stream-processor');
+    const { FlowEvents } = await import('../flow_processing/flow-events');
+
+    const ctrl = abortController ?? new AbortController();
+
+    // Optimistic echo of the user turn into the stream.
+    this.appendUserMessage(text);
+
+    const actionInfo = new ActionInfo(
+      'prompt',
+      AgenticProcess.type,
+      this.id,
+      'POST',
+      false,
+      true, // streaming
+      ctrl.signal,
+    );
+    actionInfo.bodyParameters = { message: text };
+
+    const response = await dataManager.callAction<unknown, Response>(actionInfo);
+    if (!response || !response.body) {
+      throw new Error('[AgenticProcess.prompt] no streaming response body');
+    }
+
+    const processor = new FlowStreamProcessor();
+    processor.on(FlowEvents.DATA, (fd: FlowData) => {
+      try {
+        this.flowDataStream.ingest(fd);
+        this._handleFlowData(fd);
+      } catch (err) {
+        console.error('[AgenticProcess.prompt] ingest error', err);
+      }
+    });
+    processor.on(FlowEvents.ERROR, (err) => {
+      console.error('[AgenticProcess.prompt] processor error', err);
+    });
+
+    await processor.ingestStream(response.body.getReader(), ctrl);
+  }
+
+  /**
+   * Cancel the in-flight prompt turn. Server-side SIGTERMs the subprocess with
+   * a 5 s grace then SIGKILL; a final ``<flow-end>`` arrives on the stream.
+   */
+  async cancelPrompt(): Promise<void> {
+    const actionInfo = new ActionInfo('cancel-prompt', AgenticProcess.type, this.id, 'POST');
+    await dataManager.callAction(actionInfo);
+  }
+
   async executeInstruction(
     instruction: string,
     options: { sync?: boolean; workerSessionId?: string } = {},
@@ -1236,16 +1298,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (this.shell_id) await this.stop();
     await this.start();
     this.emit('restarted', { process: this });
-  }
-
-  /**
-   * Send an instruction to Claude for execution.
-   * Alias for executeInstruction() with sync=false.
-   *
-   * @param text - Instruction text
-   */
-  async prompt(text: string): Promise<void> {
-    await this.executeInstruction(text, { sync: false });
   }
 
   /**
