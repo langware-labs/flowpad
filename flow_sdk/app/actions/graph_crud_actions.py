@@ -41,7 +41,33 @@ async def handle_query_resource(request: Request):
     entities_filter.expand_is_private = request_info.expand_is_private
     entities_filter.expand_blobs = request_info.expand_blobs
     _all = await entity_model.get_all(entities_filter, source_entity)
+    # Hide SDK-shipped system entities by default. Callers opt in with
+    # ?include_system=true on the request (or include_system: true in the filter).
+    include_system = _request_wants_system(request_info, filter_params)
+    if not include_system:
+        _all = [e for e in _all if not getattr(e, "system", False)]
     return ApiSuccessResponse[list[Entity]](data=_all)
+
+
+def _request_wants_system(request_info, filter_params) -> bool:
+    """Return True when the caller asked to include system entities.
+
+    Checked in three places (any one wins): ?include_system=1 query string,
+    include_system key inside filter JSON body, or X-Include-System header.
+    """
+    def _truthy(v) -> bool:
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            return v.lower() in ("1", "true", "yes", "on")
+        return bool(v)
+
+    params = getattr(request_info, "request_parameters", {}) or {}
+    if _truthy(params.get("include_system")):
+        return True
+    if isinstance(filter_params, dict) and _truthy(filter_params.get("include_system")):
+        return True
+    return False
 
 
 async def handle_get_by_id():

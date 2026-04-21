@@ -51,6 +51,7 @@ class Entity(DBEntity):
     visitor_role: str | None = Field(default=None)
     labels: List[str] | None = APIField(default=None)
     tags: List[str] = APIField(default_factory=list)
+    system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
 
     # Display name — overridden with required `str` on many subclasses
     name: str | None = APIField(default=None, description="Display name")

@@ -120,6 +120,13 @@ async def _entity_to_result(ent) -> dict:
     return result
 
 
+def _apply_system_filter(entities: list, include_system: bool) -> list:
+    """Drop system-project entities unless the caller opted in."""
+    if include_system:
+        return entities
+    return [e for e in entities if not getattr(e, "system", False)]
+
+
 @router.get("/api/v1/search")
 async def search_records(
     q: str = Query(default="", description="Search query"),
@@ -132,6 +139,7 @@ async def search_records(
     project_ids: Optional[str] = Query(default=None, description="Comma-separated project entity IDs (used when scope=project)"),
     parent_path: Optional[str] = Query(default=None, description="Filter to records whose parent_path is exactly this absolute path (direct children only)"),
     vault_root: Optional[str] = Query(default=None, description="Filter to records whose vault_root is exactly this absolute path (descendants at any depth)"),
+    include_system: bool = Query(default=False, description="Include entities from SDK-shipped system projects. Default off."),
     col_weights: Optional[str] = Query(default=None, description="Comma-separated BM25 column weights (6 values)"),
     recency_boost: Optional[float] = Query(default=None, description="SQL-side additive recency penalty per day"),
     recency_factor: Optional[float] = Query(default=None, description="Python-side multiplicative recency decay per day (k in bm25/(1+days*k))"),
@@ -186,6 +194,9 @@ async def search_records(
         # Apply folder filter (parent_path / vault_root)
         all_entities = _apply_folder_filter(all_entities, parent_path, vault_root)
 
+        # Filter out system entities unless the caller opted in
+        all_entities = _apply_system_filter(all_entities, include_system)
+
         # Apply tags filter
         if tag_list:
             all_entities = [
@@ -215,6 +226,9 @@ async def search_records(
 
     # Apply folder filter (parent_path / vault_root)
     entities = _apply_folder_filter(entities, parent_path, vault_root)
+
+    # Filter out system entities unless the caller opted in
+    entities = _apply_system_filter(entities, include_system)
 
     # Apply tags filter
     if tag_list:

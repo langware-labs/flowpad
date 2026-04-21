@@ -984,10 +984,16 @@ async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list
         mount_path = str(sub)
         existing = await Project.get_by_prop("uname", uname, "project")
         if existing:
+            dirty = False
             if existing.fs_storage_mount_path != mount_path:
                 existing.fs_storage_mount_path = mount_path
+                dirty = True
+            if not getattr(existing, "system", False):
+                existing.system = True
+                dirty = True
+            if dirty:
                 await existing.save()
-                logging.info(f"[bootstrap] Updated system project '{uname}' mount → {mount_path}")
+                logging.info(f"[bootstrap] Updated system project '{uname}' → mount={mount_path} system=True")
             ensured.append(existing)
             continue
 
@@ -998,6 +1004,7 @@ async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list
             fs_storage_mount_path=mount_path,
             fs_storage_provider=StorageProvider.LOCAL.value,
             visitor_role="owner",
+            system=True,
         )
         try:
             await project.save(owner=desktop_user)

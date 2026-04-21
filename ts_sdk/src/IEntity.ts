@@ -28,6 +28,8 @@ export interface IEntity extends Partial<IResource> {
   vfs_record?: string;
   /** True when the linked Record has been deleted (Entity persists as tombstone) */
   vfs_orphan?: boolean;
+  /** True when this entity belongs to an SDK-shipped system project. Hidden by default. */
+  system?: boolean;
 }
 
 export const defaultEntityType = 'entity_base';
