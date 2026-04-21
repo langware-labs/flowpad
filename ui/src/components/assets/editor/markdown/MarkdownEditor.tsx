@@ -1,4 +1,4 @@
-import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
+import { MilkdownEditorWithSidePanel } from '@src/components/milkdown-editor/MilkdownEditorWithSidePanel';
 import { Button } from '@src/components/ui/button';
 import { useMarkdownContent } from '@src/hooks/use-markdown-content';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -196,12 +196,13 @@ function MarkdownEditorContent({ fsRef, sourcePath, toolbar }: { fsRef: FSRef; s
           <MonacoMarkdownEditor value={body} onChange={handleBodyChange} />
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto p-4">
-          <MilkdownEditor
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <MilkdownEditorWithSidePanel
             content={body}
             onChange={handleBodyChange}
             onLinkClick={handleLinkClick}
             editorMode={viewMode}
+            sourcePath={sourcePath}
           />
         </div>
       )}

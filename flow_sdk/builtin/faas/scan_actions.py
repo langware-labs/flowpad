@@ -242,6 +242,8 @@ class ScanActionsMixin:
             context_data = dict(context_raw)
             workdir = context_data.pop("workdir", None)
             project_id = context_data.pop("project_id", None)
+            # Serialized TypeId of the attached entity (trigger, markdown, …); stored on the process.
+            target_typeid_str = context_data.pop("target_typeid_str", None)
 
             fork_session = bool(context_data.pop("fork_session", False))
             resume_session_id = context_data.pop("resume_session_id", None)
@@ -289,6 +291,7 @@ class ScanActionsMixin:
                 visible=visible,
                 additional_dirs=additional_dirs,
                 project_id=project_id or None,
+                target_typeid_str=target_typeid_str or None,
             )
             if resume_session_id and not fork_session:
                 process.session_id = resume_session_id

@@ -361,4 +361,6 @@ export interface ICompletionOptions {
   classifyOnly?: boolean;
   classifyPlannerSupported?: boolean;
   setActiveView?: boolean; // Default true - switches to Active view after sending message
+  /** Serialized TypeId ("type-id") of the entity this chat attaches to (markdown file, trigger, …). */
+  target_typeid_str?: string;
 }
