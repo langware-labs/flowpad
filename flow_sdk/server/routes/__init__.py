@@ -20,6 +20,7 @@ from .assets import router as assets_router
 from .project import router as project_router
 from .compute_register import compute_register_router
 from .debug import router as debug_router
+from .navigate import router as navigate_router
 
 __all__ = [
     "bootstrap_router",
@@ -42,4 +43,5 @@ __all__ = [
     "project_router",
     "compute_register_router",
     "debug_router",
+    "navigate_router",
 ]

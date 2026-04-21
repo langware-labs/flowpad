@@ -1,12 +1,14 @@
 import type { CollaborationSession } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { useToast } from '@src/hooks/use-toast';
-import { Radio, Square } from 'lucide-react';
+import { Radio, Sparkles, Square } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 interface Props {
   session: CollaborationSession;
   isHost: boolean;
+  /** True when the session belongs to an SDK-shipped system project. */
+  isSupport?: boolean;
   onEnded?: () => void;
 }
 
@@ -19,7 +21,7 @@ function formatStarted(iso: string | null | undefined): string {
   }
 }
 
-export function SessionHeader({ session, isHost, onEnded }: Props) {
+export function SessionHeader({ session, isHost, isSupport = false, onEnded }: Props) {
   const { toast } = useToast();
   const live = session.status === 'active';
   const [editing, setEditing] = useState(false);
@@ -102,6 +104,15 @@ export function SessionHeader({ session, isHost, onEnded }: Props) {
         </button>
       )}
       <span className="text-muted-foreground">· started {formatStarted(session.started_at)}</span>
+      {isSupport && (
+        <span
+          className="flex items-center gap-1 rounded-full border border-border bg-muted px-1.5 py-px text-[10px] uppercase tracking-wide text-muted-foreground"
+          title="Session hosted by the Flowpad team"
+        >
+          <Sparkles className="h-2.5 w-2.5" />
+          Support session
+        </span>
+      )}
       <span className="ml-auto text-muted-foreground">
         {(session.members?.length ?? 0)} {session.members?.length === 1 ? 'member' : 'members'}
       </span>
