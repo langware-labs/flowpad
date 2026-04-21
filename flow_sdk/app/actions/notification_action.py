@@ -318,7 +318,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
             bundle_filename = f"{_meaningful_name(task_title)}.flowmsg"
             content = zip_path.read_bytes()
             await hub_post(
-                BuiltinEntityType.FLOW_MESSAGE, {}, hub_flow_message_id, "fs", f"upload/{bundle_filename}",
+                BuiltinEntityType.FLOW_MESSAGE, {}, hub_flow_message_id, "fs", "upload",
                 files={"uploaded_file": (bundle_filename, content, "application/zip")},
             )
             zip_path.unlink(missing_ok=True)
