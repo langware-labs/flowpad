@@ -448,13 +448,13 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     logger.warning("[append_conversation][DEBUG] task_id=%s shared_by_id=%r sender_email_from_meta=%r hub=%r",
                    task_id, original_sender_id, recipient_email_for_reply, hub_base_url())
 
-    if not recipient_email_for_reply and original_sender_id and hub_base_url():
+    if not recipient_email_for_reply and original_sender_id:
         try:
-            user_data = await hub_get(BuiltinEntityType.USER, original_sender_id)
-            logger.warning("[append_conversation][DEBUG] hub user lookup for %s: %s", original_sender_id, user_data)
-            recipient_email_for_reply = ((user_data or {}).get("email") or "").strip()
+            sender_user = await User.get_one({"id": original_sender_id})
+            logger.warning("[append_conversation][DEBUG] local user lookup for %s: %s", original_sender_id, sender_user)
+            recipient_email_for_reply = ((sender_user.email if sender_user else None) or "").strip()
         except Exception as _ue:
-            logger.warning("[append_conversation][DEBUG] hub user lookup failed: %s", _ue)
+            logger.warning("[append_conversation][DEBUG] local user lookup failed: %s", _ue)
 
     logger.warning("[append_conversation][DEBUG] final recipient_email=%r will_upload=%s", recipient_email_for_reply, bool(recipient_email_for_reply and hub_base_url()))
     if recipient_email_for_reply and hub_base_url():
