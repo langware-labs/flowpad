@@ -499,10 +499,16 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
                         tmp.write(bundle_bytes)
                     try:
                         from flow_sdk.fs_records.flow_message_bundle import unpack_bundle
+                        logger.warning("[inbox-fetch][DEBUG] unpacking bundle fm=%s file=%s", fm_id, attachment_filename)
                         await unpack_bundle(tmp_path, local_user_id, overwrite=False)
+                        logger.warning("[inbox-fetch][DEBUG] unpack SUCCESS fm=%s", fm_id)
                         created_ids.append(fm_id)
-                    except FlowMessageExistsError:
+                    except FlowMessageExistsError as fee:
+                        logger.warning("[inbox-fetch][DEBUG] FlowMessageExistsError fm=%s: %s", fm_id, fee)
                         created_ids.append(fm_id)  # already materialized
+                    except Exception as ue:
+                        logger.warning("[inbox-fetch][DEBUG] unpack ERROR fm=%s: %s", fm_id, ue, exc_info=True)
+                        raise
                     finally:
                         tmp_path.unlink(missing_ok=True)
                     continue  # entity saved by unpack_bundle — skip the manual save below
