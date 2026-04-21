@@ -6,13 +6,34 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { FSRef } from '@sdk';
 import Editor from '@monaco-editor/react';
-import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, Eye, ExternalLink, FileCode, MessageSquareDiff, Pencil, RefreshCw } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-type ViewMode = 'editor' | 'markdown';
+const EDITOR_MODES = ['view', 'review', 'editor', 'markdown'] as const;
+type ViewMode = (typeof EDITOR_MODES)[number];
 
-interface MarkdownAssetEditorProps {
+const MODE_STORAGE_KEY = 'markdownEditor.mode';
+const DEFAULT_MODE: ViewMode = 'view';
+
+function readStoredMode(): ViewMode {
+  if (typeof window === 'undefined') return DEFAULT_MODE;
+  try {
+    const raw = window.localStorage.getItem(MODE_STORAGE_KEY);
+    return (EDITOR_MODES as readonly string[]).includes(raw ?? '') ? (raw as ViewMode) : DEFAULT_MODE;
+  } catch {
+    return DEFAULT_MODE;
+  }
+}
+
+const MODE_ICONS: Record<ViewMode, React.ComponentType<{ className?: string }>> = {
+  view: Eye,
+  review: MessageSquareDiff,
+  editor: Pencil,
+  markdown: FileCode,
+};
+
+interface MarkdownEditorProps {
   /** FSRef to the .md file — carries path + typeId + read/write. */
   fsRef: FSRef;
   /** Optional asset-specific toolbar actions rendered in the header */
@@ -20,14 +41,15 @@ interface MarkdownAssetEditorProps {
 }
 
 /**
- * Generic markdown asset editor.
+ * Generic markdown editor.
  *
  * - Header shows filename (with * when dirty), full path, and external-open button.
  * - Shows a Properties block only when the file has YAML frontmatter.
  * - Fields are rendered dynamically from whatever keys exist in the frontmatter.
- * - Body is edited via Milkdown (uncontrolled after first mount).
+ * - Body is rendered by Milkdown (view/review/editor) or Monaco (markdown).
+ * - The chosen mode is persisted across docs via localStorage.
  */
-export function MarkdownAssetEditor({ fsRef, toolbar }: MarkdownAssetEditorProps) {
+export function MarkdownEditor({ fsRef, toolbar }: MarkdownEditorProps) {
   return <MarkdownEditorContent fsRef={fsRef} sourcePath={fsRef.path} toolbar={toolbar} />;
 }
 
@@ -35,7 +57,12 @@ export function MarkdownAssetEditor({ fsRef, toolbar }: MarkdownAssetEditorProps
 
 function MarkdownEditorContent({ fsRef, sourcePath, toolbar }: { fsRef: FSRef; sourcePath: string; toolbar?: React.ReactNode }) {
   const { navigation, currentDock } = useDockNavigation();
-  const [viewMode, setViewMode] = useState<ViewMode>('editor');
+  const [viewMode, setViewMode] = useState<ViewMode>(readStoredMode);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try { window.localStorage.setItem(MODE_STORAGE_KEY, viewMode); } catch { /* storage may be disabled */ }
+  }, [viewMode]);
 
   const {
     fields,
@@ -164,13 +191,18 @@ function MarkdownEditorContent({ fsRef, sourcePath, toolbar }: { fsRef: FSRef; s
         </div>
       )}
 
-      {viewMode === 'editor' ? (
-        <div className="min-h-0 flex-1 overflow-auto p-4">
-          <MilkdownEditor content={body} onChange={handleBodyChange} onLinkClick={handleLinkClick} />
-        </div>
-      ) : (
+      {viewMode === 'markdown' ? (
         <div className="min-h-0 flex-1 overflow-hidden">
           <MonacoMarkdownEditor value={body} onChange={handleBodyChange} />
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-auto p-4">
+          <MilkdownEditor
+            content={body}
+            onChange={handleBodyChange}
+            onLinkClick={handleLinkClick}
+            editorMode={viewMode}
+          />
         </div>
       )}
     </div>
@@ -233,19 +265,25 @@ function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, on
       </div>
 
       <div className="flex flex-shrink-0 items-center rounded-md border bg-muted/40 p-0.5">
-        {(['editor', 'markdown'] as ViewMode[]).map((mode) => (
-          <button
-            key={mode}
-            onClick={() => onViewModeChange(mode)}
-            className={`rounded px-2.5 py-1 text-xs font-medium capitalize transition-colors ${
-              viewMode === mode
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {mode}
-          </button>
-        ))}
+        {EDITOR_MODES.map((mode) => {
+          const Icon = MODE_ICONS[mode];
+          const active = viewMode === mode;
+          return (
+            <button
+              key={mode}
+              onClick={() => onViewModeChange(mode)}
+              title={mode.charAt(0).toUpperCase() + mode.slice(1)}
+              className={`flex items-center gap-1 rounded px-2 py-1 text-xs font-medium capitalize transition-colors ${
+                active
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Icon className="h-3 w-3" />
+              {mode}
+            </button>
+          );
+        })}
       </div>
 
       {actions && <div className="flex flex-shrink-0 items-center gap-1">{actions}</div>}

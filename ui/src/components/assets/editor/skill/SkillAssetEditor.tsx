@@ -1,4 +1,4 @@
-import { MarkdownAssetEditor } from '@src/components/assets/editor/markdown/MarkdownAssetEditor';
+import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownEditor';
 import { FSRef } from '@sdk';
 
 interface SkillAssetEditorProps {
@@ -7,9 +7,9 @@ interface SkillAssetEditorProps {
 }
 
 /**
- * Thin wrapper around MarkdownAssetEditor for skill assets.
+ * Thin wrapper around MarkdownEditor for skill assets.
  * Skills are folders; the content lives at <folder>/SKILL.md.
  */
 export function SkillAssetEditor({ fsRef }: SkillAssetEditorProps) {
-  return <MarkdownAssetEditor fsRef={fsRef.child('SKILL.md')} />;
+  return <MarkdownEditor fsRef={fsRef.child('SKILL.md')} />;
 }
