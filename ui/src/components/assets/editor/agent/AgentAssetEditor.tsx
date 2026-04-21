@@ -1,4 +1,4 @@
-import { MarkdownAssetEditor } from '@src/components/assets/editor/markdown/MarkdownAssetEditor';
+import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownEditor';
 import { AssetExecutionPanel } from '@src/components/assets/execution-panel/AssetExecutionPanel';
 import { FSRef } from '@sdk';
 import { AgentToolbar, useAgentExecution } from './AgentToolbar';
@@ -19,7 +19,7 @@ export function AgentAssetEditor({ fsRef }: AgentAssetEditorProps) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <MarkdownAssetEditor fsRef={fsRef} toolbar={<AgentToolbar execution={execution} />} />
+      <MarkdownEditor fsRef={fsRef} toolbar={<AgentToolbar execution={execution} />} />
       {execution.panelOpen && (
         <AssetExecutionPanel
           execution={execution}

@@ -275,7 +275,7 @@ export const PlanEditor: React.FC = () => {
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="plan-milkdown-editor">
           {cached ? (
-            <MilkdownEditor content={displayContent} onChange={handleContentChange} readOnly={false} plugins={planNotePlugins} />
+            <MilkdownEditor content={displayContent} onChange={handleContentChange} editorMode="editor" plugins={planNotePlugins} />
           ) : (
             <div className="flex h-full items-center justify-center text-muted-foreground">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
