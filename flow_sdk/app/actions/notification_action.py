@@ -442,6 +442,29 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     # Upload reply to hub so the original sender can fetch it via inbox
     sender_name: str = (local_user.name or local_user.email or "") if local_user else ""
     recipient_email_for_reply = (task.metadata or {}).get("sender_email") or ""
+
+    # Fallback: read sender_email directly from manifest.json on disk (handles tasks
+    # imported before sender_email was added to the manifest schema)
+    if not recipient_email_for_reply:
+        project_root = (task.metadata or {}).get("project_root") or ""
+        if project_root:
+            import json as _json2
+            from pathlib import Path as _Path2
+            tasks_dir = _Path2(project_root) / "tasks"
+            if tasks_dir.is_dir():
+                for _td in tasks_dir.iterdir():
+                    if not _td.is_dir() or _td.name == "spec":
+                        continue
+                    _mf = _td / "manifest.json"
+                    if not _mf.exists():
+                        continue
+                    try:
+                        _md = _json2.loads(_mf.read_text(encoding="utf-8"))
+                        if _md.get("task_id") == task_id:
+                            recipient_email_for_reply = _md.get("sender_email") or ""
+                            break
+                    except Exception:
+                        pass
     if recipient_email_for_reply and hub_base_url():
         try:
             import uuid as _uuid
