@@ -374,11 +374,22 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
         if existing:
             continue
 
-        # Process attachments
+        # Process attachments — normalise hub TypeId dict format
+        # Hub may return attachments as TypeId dicts {'type': '...', 'id': '...'}
+        # instead of the Attachment format {'attachment_type': '...', 'data': '...'}.
         attachments: list[Attachment] = []
         for att in (raw.get("attachment") or []):
-            att_type_str = att.get("attachment_type", "")
-            att_data = att.get("data", "")
+            if not isinstance(att, dict):
+                continue
+            if "attachment_type" in att:
+                att_type_str = att.get("attachment_type", "")
+                att_data = att.get("data", "")
+            elif "type" in att and "id" in att:
+                # Hub TypeId dict format → normalise to Attachment format
+                att_type_str = AttachmentType.TYPE_ID.value
+                att_data = f"{att['type']}-{att['id']}"
+            else:
+                continue
             try:
                 att_type = AttachmentType(att_type_str)
             except ValueError:
