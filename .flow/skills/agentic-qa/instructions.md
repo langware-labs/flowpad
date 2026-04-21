@@ -11,6 +11,29 @@
 
 ## Learnings
 
+### 2026-04-21 — PTY-less AgenticProcess.prompt streaming regression cycle
+
+**`add_process` on CollaborationSession accepts bogus agentic_process_id (real bug)**
+`POST /api/v1/graph/collaboration_session/<sid>/add_process` with a nonexistent UUID returns HTTP 200 — no existence validation on the agentic_process_id before appending to the session's list. Also missing-field validation returns 500 (not 4xx). Surfaced by the CollaborationSession sub-domain tester this cycle. Not caused by this session's PTY-less work; pre-existing.
+
+**FlowMessage.context retyping regression in test fixture**
+`tests/unit/test_flow_message_roundtrip.py::TestPackBundle::test_pack_creates_zip_with_message_json` fails because `FlowMessage.context` was retyped to `list[TypeId]` in commit `f02259a` but the test fixture `_make_flow_message` (line 31) still passes plaintext IDs like `"task-id-001"` that don't satisfy `is_valid_identifier` (requires UUID4, `KEY-<int>`, `prop.id`, or `@named`). Fixture-side fix only — no production code change needed. RCA in `.flow/skills/agentic-qa/debug_log.md`.
+
+**Schedule triggers without project_id are invisible in UI**
+`TriggersView` filters schedule triggers by `t.project_id === project?.id` (src/components/triggers-view/TriggersView.tsx:22-24). Creating a schedule trigger via `POST /api/v1/graph/trigger` with no `project_id` hides it from the UI. Either default project_id from request context on create, or show triggers with no project.
+
+**OSS test_callback_stream.py dropped XML round-trip asserts vs reference repo**
+OSS `tests/unit/flow_stream/test_callback_stream.py` asserts against `handler.flow_data_list` (raw inputs) instead of running them through `XMLStreamParser`. Consolidation (`is_same_flow_data_streaming`) behavior is not actually verified. Also dropped: `test_streaming_handler_elif_bug_reproduction` and `test_xml_injection_security_attacks` from the reference. Cross-check report: `ui/tests/manual_regression/_results/2026-04-21T19-02-23/legacy-crosscheck.md`.
+
+**Environment port set is 9008/4098, not 9007/4097**
+The skill docs/default env vars list 9007/4097. The actual environment uses `LOCAL_SERVER_PORT=9008` and `VITE_PORT=4098` from `.env.local`. All manual scenarios + test seeds must use 9008/4098.
+
+**Output_format auto-enables verbose on ClaudeCliOptions**
+Adding `output_format="stream-json"` to `ClaudeCliOptions` auto-sets `verbose=True` (CLI requires it when using stream-json). Do not pass both — just set `output_format`.
+
+**DEEP_TESTING=true doesn't always work; use DEEP_TESTING=1**
+The pydantic BaseSettings parse behavior treated `DEEP_TESTING=true` inconsistently in the live run — tests skipped with `deep_testing=False`. `DEEP_TESTING=1` worked. Also some long tests hardcode `FLOWPAD_HUB_URL` default to 8093; pass `FLOWPAD_HUB_URL=http://localhost:9008` explicitly.
+
 ### 2026-04-21 — Wiki manual regression cycle (folder-tree + creation)
 
 **APP_URL is 4098 not 4097**
