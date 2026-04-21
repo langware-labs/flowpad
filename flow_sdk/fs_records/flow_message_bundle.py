@@ -294,14 +294,15 @@ async def unpack_bundle(
 
         attachment_dir = tmp_root / "attachment"
 
-        # 3. Conflict check: only raise if the top-level FlowMessage itself already exists.
-        # Task/spec/conversation attachments may already exist (e.g. a reply bundle references
-        # a task the recipient already imported) — those are skipped silently during materialise.
+        # 3. Conflict check: detect if the top-level FlowMessage already exists, but do NOT
+        # raise yet — we still need to process attachments (step 4) so the conversation.jsonl
+        # is merged and the Conversation entity is updated even on re-unpacks.
         top_fm_id_check = msg_data.get("id")
+        top_fm_already_exists = False
         if top_fm_id_check and not overwrite:
             existing_top = await _check_entity_exists(BuiltinEntityType.FLOW_MESSAGE.value, top_fm_id_check)
             if existing_top:
-                raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
+                top_fm_already_exists = True
 
         # 4. Materialize attachments
         # Process in dependency order: spec → task → conversation → flow_message
@@ -406,6 +407,11 @@ async def unpack_bundle(
 
         # 5. Resolve FILE attachment paths and save the top-level FlowMessage record
         # Bundle stores zip-relative paths; rewrite to absolute paths on this machine.
+        # Now that conversation/spec/task attachments have been processed, raise if the
+        # top-level FM already existed (callers treat this as "already materialized").
+        if top_fm_already_exists and not overwrite:
+            raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
+
         _normalise_attachments(msg_data)
         _rewrite_file_attachments(msg_data, tmp_root, task_id or "")
         top_fm = FlowMessage.model_validate(msg_data)
