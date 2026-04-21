@@ -3,12 +3,33 @@
 ## Testing Environment
 
 - Backend: `http://localhost:9008` (port set via `LOCAL_SERVER_PORT=9008` in `.env.local`)
-- Frontend: `http://localhost:4097` (Vite dev server)
+- Frontend: `http://localhost:4098` (VITE_PORT=4098 in `.env.local`, NOT 4097)
 - Backend start command: `cd /Users/shlom/Documents/dev/flowpad-oss && LOCAL_SERVER_PORT=9008 uv run -m flow_sdk.server.run`
+- Backend reindex endpoint: `POST http://localhost:9008/api/v1/search/reindex/<record_type>`
 - Platform: darwin (macOS)
-- Browser: chromium (Playwright headless)
+- Browser: chromium via MCP debugMcp (shared with user's interactive session — can cause tab contention when multiple testers run in parallel)
 
 ## Learnings
+
+### 2026-04-21 — Wiki manual regression cycle (folder-tree + creation)
+
+**APP_URL is 4098 not 4097**
+`.env.local` sets `VITE_PORT=4098`. The default in the skill docs (4097) is wrong for this environment. All manual-regression scenarios + test seeds should use 4098.
+
+**MCP browser tab contention between parallel testers**
+Spawning multiple QA testers that all use MCP browser against a single Chrome instance causes URL-race contention: one tester's navigate() preempts another's assertions mid-flight. Work-around observed to be effective: collapse each verification into a single `browser_evaluate()` call that reads URL+DOM+testids atomically. Alternative: serialize testers, or open separate Chrome tabs per tester.
+
+**Vite HMR picks up most changes; Python uvicorn reload does NOT pick up deeply-imported module changes**
+Changes to `flow_sdk/fs_records/*.py` and `flow_sdk/core/entity/*.py` require a backend restart (kill PID + relaunch) because `MINIHUB_RELOAD=false` by default AND even when true, uvicorn's file-watcher misses nested module reimports. Frontend `.tsx`/`.ts` changes reload instantly via Vite. Work-around: `touch` any file under `flow_sdk/server/routes/` to force uvicorn to reload the app module.
+
+**Entity.save() default bypasses subclass store() overrides (fixed 2026-04-21)**
+Before the fix, `Entity.save()` at `flow_sdk/core/entity/entity_model.py:508` called `self._store()` directly. This bypassed Skill.store() and Agent.store() overrides that write SKILL.md / agent .md and populate `source_path`. Result: newly-created skill/agent entities had `source_path=""`, breaking frontend post-create navigation. Fix: call `self.store()` so subclass overrides run.
+
+**WorkflowRecord required file_path in __init__ (fixed 2026-04-21)**
+`Entity.save()` fallback path creates `record_cls(id=entity.id)` to ensure a record exists. `WorkflowRecord.__init__(self, file_path: Path | str)` was a required positional arg, so the fallback crashed with 500 on every new workflow. Fix: `file_path: Path | str | None = None`.
+
+**expandParentsForPointer missed folder leaves (fixed 2026-04-21)**
+`ui/src/components/browseable-tree/useBrowseableTree.ts` used `chain.slice(0, -1)` to decide what to expand — excluding the leaf. Correct for file leaves (`hasChildren: false`), wrong for folder leaves (folder deep-links didn't expand themselves). Fix: filter by `hasChildren !== false` instead.
 
 ### 2026-04-04 — AgenticProcess Layer 3 refactor (worker_session_id → session_id)
 

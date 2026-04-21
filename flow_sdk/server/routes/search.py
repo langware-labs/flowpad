@@ -77,6 +77,23 @@ def _apply_scope_filter(entities: list, scope: str | None, project_ids: str | No
     return entities
 
 
+def _apply_folder_filter(entities: list, parent_path: str | None, vault_root: str | None) -> list:
+    """Filter entities by parent_path (exact) and/or vault_root (prefix).
+
+    parent_path  → direct children only (exact equality).
+    vault_root   → all descendants at any depth.
+    Both can be combined (AND).
+    """
+    if not parent_path and not vault_root:
+        return entities
+    filtered = entities
+    if parent_path:
+        filtered = [e for e in filtered if (getattr(e, "parent_path", None) or "") == parent_path]
+    if vault_root:
+        filtered = [e for e in filtered if (getattr(e, "vault_root", None) or "") == vault_root]
+    return filtered
+
+
 async def _entity_to_result(ent) -> dict:
     name = (
         getattr(ent, "name", None)
@@ -96,7 +113,7 @@ async def _entity_to_result(ent) -> dict:
         "modified_at": str(getattr(ent, "updated_date", "") or ""),
     }
     # Extra fields for per-type column rendering
-    for field in ("uname", "title", "description", "file_path", "filename", "work_dir", "project_encoded", "project_encoded_name", "session_id", "asset_type"):
+    for field in ("uname", "title", "description", "file_path", "filename", "work_dir", "project_encoded", "project_encoded_name", "session_id", "asset_type", "parent_path", "vault_root"):
         val = getattr(ent, field, None)
         if val:
             result[field] = val
@@ -113,6 +130,8 @@ async def search_records(
     scope: Optional[str] = Query(default=None, description="Filter by scope (user, project)"),
     tags: Optional[str] = Query(default=None, description="Comma-separated tags to filter by"),
     project_ids: Optional[str] = Query(default=None, description="Comma-separated project entity IDs (used when scope=project)"),
+    parent_path: Optional[str] = Query(default=None, description="Filter to records whose parent_path is exactly this absolute path (direct children only)"),
+    vault_root: Optional[str] = Query(default=None, description="Filter to records whose vault_root is exactly this absolute path (descendants at any depth)"),
     col_weights: Optional[str] = Query(default=None, description="Comma-separated BM25 column weights (6 values)"),
     recency_boost: Optional[float] = Query(default=None, description="SQL-side additive recency penalty per day"),
     recency_factor: Optional[float] = Query(default=None, description="Python-side multiplicative recency decay per day (k in bm25/(1+days*k))"),
@@ -164,6 +183,9 @@ async def search_records(
         # Apply scope + project_ids filtering
         all_entities = _apply_scope_filter(all_entities, scope, project_ids)
 
+        # Apply folder filter (parent_path / vault_root)
+        all_entities = _apply_folder_filter(all_entities, parent_path, vault_root)
+
         # Apply tags filter
         if tag_list:
             all_entities = [
@@ -190,6 +212,9 @@ async def search_records(
 
     # Apply scope + project_ids filtering
     entities = _apply_scope_filter(entities, scope, project_ids)
+
+    # Apply folder filter (parent_path / vault_root)
+    entities = _apply_folder_filter(entities, parent_path, vault_root)
 
     # Apply tags filter
     if tag_list:

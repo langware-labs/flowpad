@@ -203,6 +203,49 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create dock pointer for an asset folder view (filtered list under a folder).
+   * Pointer format: "folder/<typeName>/<typeid>/<relPath>"
+   *   - typeid is a VFS entity identifier like "compute_node-@local" or "project-<uuid>".
+   *   - relPath is the folder path relative to the typeid (may be empty for the vault root).
+   * URL: /dock/assets/folder/<typeName>/<typeid>/<relPath>
+   */
+  static forAssetFolder(
+    typeName: string,
+    typeid: string,
+    relPath: string = '',
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const cleanRel = relPath.replace(/^\/+/, '').replace(/\/+$/, '');
+    const pointer = cleanRel
+      ? `folder/${typeName}/${typeid}/${cleanRel}`
+      : `folder/${typeName}/${typeid}`;
+    return new DockPointer(ViewType.ASSETS, pointer, undefined, layout);
+  }
+
+  /**
+   * Parse a folder pointer into its parts.
+   * Returns null if the pointer is not a folder pointer.
+   */
+  static parseAssetFolderPointer(
+    pointer: string | undefined,
+  ): { typeName: string; typeid: string; relPath: string } | null {
+    if (!pointer || !pointer.startsWith('folder/')) return null;
+    const rest = pointer.slice('folder/'.length);
+    const firstSlash = rest.indexOf('/');
+    if (firstSlash < 0) return null;
+    const typeName = rest.slice(0, firstSlash);
+    const afterType = rest.slice(firstSlash + 1);
+    const secondSlash = afterType.indexOf('/');
+    if (secondSlash < 0) {
+      // no relPath — pointer addresses the vault root itself
+      return { typeName, typeid: afterType, relPath: '' };
+    }
+    const typeid = afterType.slice(0, secondSlash);
+    const relPath = afterType.slice(secondSlash + 1);
+    return { typeName, typeid, relPath };
+  }
+
+  /**
    * Create dock pointer for workflows viewer
    * @param workflowId - Optional workflow entity ID to view/edit
    */

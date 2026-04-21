@@ -64,14 +64,16 @@ class WorkflowRecord(Record):
     # VFS path of the generated pipeline.json (set by the prepare action)
     pipeline_ref: str | None = None
 
-    def __init__(self, file_path: Path | str, **kwargs: Any):
-        file_path = Path(file_path)
+    def __init__(self, file_path: Path | str | None = None, **kwargs: Any):
         kwargs.setdefault("type", RecordType.WORKFLOW)
-        kwargs.setdefault("name", file_path.stem)
+        if file_path is not None:
+            file_path = Path(file_path)
+            kwargs.setdefault("name", file_path.stem)
         super().__init__(**kwargs)
-        # Use asset_ref instead of _file_path instance attr
-        from flow_sdk.fs_store.fs_ref import FSRef
-        object.__setattr__(self, "_asset_ref", FSRef(file_path))
+        if file_path is not None:
+            # Use asset_ref instead of _file_path instance attr
+            from flow_sdk.fs_store.fs_ref import FSRef
+            object.__setattr__(self, "_asset_ref", FSRef(file_path))
 
     @property
     def file_path(self) -> Path:
