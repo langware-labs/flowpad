@@ -13,7 +13,12 @@ export function InboxMessageRow({ message, onArchive, onToggleRead, onClick }: I
   const fileAttachments = message.attachment.filter((a) => a.attachment_type === 'file');
 
   const formattedDate = message.created_date
-    ? new Date(message.created_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    ? (() => {
+        const d = new Date(message.created_date);
+        const date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+        return `${date} ${time}`;
+      })()
     : '';
 
   return (
