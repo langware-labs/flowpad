@@ -541,7 +541,6 @@ async def inbox_open() -> ApiResponse:
 
         # Prefer local FlowMessage (reply messages are local-only; hub is fallback for inbox messages)
         local_fm = await FlowMessage.get_one({"id": flow_message_id})
-        hub_sender_id: str = ""
         if local_fm:
             attachment_filename = (local_fm.attachment_filename or "").strip()
             raw_context = [str(c) for c in (local_fm.context or [])]
@@ -549,7 +548,6 @@ async def inbox_open() -> ApiResponse:
             hub_data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, flow_message_id)
             attachment_filename = ((hub_data or {}).get("attachment_filename") or "").strip()
             raw_context = (hub_data or {}).get("context") or []
-            hub_sender_id = ((hub_data or {}).get("sender_id") or "").strip()
 
         task_id = None
         conv_id = None
@@ -563,24 +561,6 @@ async def inbox_open() -> ApiResponse:
         # If task not local and bundle available, download and unpack
         if task_id and attachment_filename and not await Task.get_one({"id": task_id}):
             await _download_and_unpack_bundle(flow_message_id, attachment_filename)
-
-        # Persist sender email in task metadata so replies can reach the original sender.
-        # We look up the hub user by their hub sender_id (available in hub FlowMessage data).
-        if task_id and hub_sender_id:
-            task = await Task.get_one({"id": task_id})
-            if task and not (task.metadata or {}).get("sender_email"):
-                try:
-                    sender_hub_user = await hub_get(BuiltinEntityType.USER, hub_sender_id)
-                    sender_email = ((sender_hub_user or {}).get("email") or "").strip()
-                    if sender_email:
-                        from flow_sdk.builtin.user import User as _User
-                        local_user_obj = await _User.get_one({"uname": "local"})
-                        owner_typeid = local_user_obj.typeid if local_user_obj else None
-                        task.metadata = {**(task.metadata or {}), "sender_email": sender_email}
-                        await task.save(owner_typeid)
-                        logger.info("[inbox-open] stored sender_email=%s for task %s", sender_email, task_id)
-                except Exception as _se:
-                    logger.warning("[inbox-open] could not store sender_email (non-fatal): %s", _se)
 
         return ApiSuccessResponse(data={"task_id": task_id, "conversation_id": conv_id})
     except Exception as e:

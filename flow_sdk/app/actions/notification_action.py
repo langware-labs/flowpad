@@ -156,7 +156,10 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     spec = await spec.save(someone_typeid)
 
     # 2. Create Task entity (conversation_id set after Conversation is created)
-    task_meta: dict = {"sender_name": sender_name}
+    task_meta: dict = {
+        "sender_name": sender_name,
+        "sender_email": local_user.email if local_user else "",
+    }
     if team_space_id:
         task_meta["team_space_id"] = team_space_id
     task = Task.model_validate({
@@ -265,7 +268,6 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
                 "spec_dir": spec_dir_name,
                 "shared_by_id": sender_id,
                 "sender_name": sender_name,
-                "sender_email": local_user.email if local_user else "",
                 "conversation_id": conversation_id,
                 "created_at": datetime.now(UTC).isoformat(),
                 "repo_id": repo_id_val,
