@@ -252,7 +252,13 @@ export function CollaborationPage() {
           <CollaborationSidebar projectId={project.id} />
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
-          {session && <SessionHeader session={session} isHost={session.isHost(localMemberId ?? undefined)} />}
+          {session && (
+            <SessionHeader
+              session={session}
+              isHost={session.isHost(localMemberId ?? undefined)}
+              isSupport={!!project?.system}
+            />
+          )}
           {isHost && (
             <div className="flex h-9 flex-shrink-0 items-center justify-end gap-2 border-b bg-muted/30 px-3 text-xs">
               <span className="text-muted-foreground">Host controls:</span>
