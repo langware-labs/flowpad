@@ -390,6 +390,16 @@ async def unpack_bundle(
                         )
                         if conv:
                             conversation_id = conv.id
+                            # Notify frontend that conversation was updated (e.g. new reply arrived)
+                            try:
+                                send_resource_sync(
+                                    type="conversation",
+                                    id=conv.id,
+                                    operation=SyncOperation.UPDATE,
+                                    data={"event_data": {"task_id": task_id_for_conv or "", "conversation_id": conv.id}},
+                                )
+                            except Exception:
+                                pass
 
                 elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
                     fm_file = entry_dir / "message.json"

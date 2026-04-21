@@ -392,9 +392,7 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
     if since:
         hub_params["since"] = since
 
-    logger.warning("[inbox-fetch][DEBUG] since=%r params=%s", since, hub_params)
     result = await hub_get(BuiltinEntityType.FLOW_MESSAGE, params=hub_params)
-    logger.warning("[inbox-fetch][DEBUG] hub result type=%s value=%s", type(result).__name__, result)
     if result is None:
         return ApiFailResponse(message="Hub unavailable or not configured")
     # Hub may return a list directly, or {"items": [...], "total": N}, or {"data": [...]}
@@ -404,7 +402,7 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
         raw_messages = result.get("items") or result.get("data") or result.get("results") or []
     else:
         raw_messages = []
-    logger.warning("[inbox-fetch][DEBUG] raw_messages count=%d ids=%s", len(raw_messages), [m.get("id") for m in raw_messages])
+    logger.info("[inbox-fetch] fetched %d messages from hub", len(raw_messages))
 
     created_ids: list[str] = []
     for raw in raw_messages:
@@ -499,15 +497,13 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
                         tmp.write(bundle_bytes)
                     try:
                         from flow_sdk.fs_records.flow_message_bundle import unpack_bundle
-                        logger.warning("[inbox-fetch][DEBUG] unpacking bundle fm=%s file=%s", fm_id, attachment_filename)
                         await unpack_bundle(tmp_path, local_user_id, overwrite=False)
-                        logger.warning("[inbox-fetch][DEBUG] unpack SUCCESS fm=%s", fm_id)
+                        logger.info("[inbox-fetch] unpacked bundle fm=%s", fm_id)
                         created_ids.append(fm_id)
-                    except FlowMessageExistsError as fee:
-                        logger.warning("[inbox-fetch][DEBUG] FlowMessageExistsError fm=%s: %s", fm_id, fee)
+                    except FlowMessageExistsError:
                         created_ids.append(fm_id)  # already materialized
                     except Exception as ue:
-                        logger.warning("[inbox-fetch][DEBUG] unpack ERROR fm=%s: %s", fm_id, ue, exc_info=True)
+                        logger.warning("[inbox-fetch] unpack error fm=%s: %s", fm_id, ue, exc_info=True)
                         raise
                     finally:
                         tmp_path.unlink(missing_ok=True)
