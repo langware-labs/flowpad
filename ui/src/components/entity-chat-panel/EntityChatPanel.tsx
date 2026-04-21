@@ -5,7 +5,6 @@ import {
   FlowElementTypes,
   TypeId,
   type FlowData,
-  type ITrigger,
 } from '@sdk';
 import { useProcess, useProcessActions, useProcessExecution, useProcessStream } from '@sdk/react/hooks';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
@@ -17,7 +16,13 @@ import { CompactChatInput } from './CompactChatInput';
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
 
 interface EntityChatPanelProps {
-  target: TypeId | null;
+  /**
+   * Serialized attachment key, stored as-is in `AgenticProcess.target_typeid_str`.
+   * Real entities: `new TypeId(Trigger.type, id).toString()` → `"trigger-<id>"`.
+   * Markdown files (pseudo-entity): `"markdown_file-<path>"` — built inline since file paths
+   * don't pass `TypeId.isValidIdentifier`.
+   */
+  target: string | null;
   className?: string;
 }
 
@@ -34,7 +39,7 @@ interface EntityChatPanelProps {
  * coexist with the flow-page `ChatPanel` without clobbering its pendingMessage.
  */
 export function EntityChatPanel({ target, className }: EntityChatPanelProps) {
-  const targetStr = useMemo(() => target?.toString() || '', [target]);
+  const targetStr = target ?? '';
 
   // 1. Find an existing attached process (latest wins).
   const { processes, isLoading: listLoading } = useProcessesForTarget(targetStr);
@@ -71,7 +76,7 @@ export function EntityChatPanel({ target, className }: EntityChatPanelProps) {
   const { send: sendOnCreated } = useProcessActions(createdFlow);
 
   const handleSend = useCallback(async (text: string) => {
-    if (!target) return;
+    if (!targetStr) return;
 
     // Reuse existing process if we have one.
     if (effectiveFlow) {
@@ -90,7 +95,7 @@ export function EntityChatPanel({ target, className }: EntityChatPanelProps) {
       const newProcess = await computeNode.createProcess({
         workdir,
         projectId: project?.id,
-        targetTypeIdStr: target.toString(),
+        targetTypeIdStr: targetStr,
       });
       await newProcess.start({ headless: true });
       // Wrap the spawned process as a Flow so useProcessActions can drive it.
@@ -100,7 +105,7 @@ export function EntityChatPanel({ target, className }: EntityChatPanelProps) {
     } finally {
       createInFlightRef.current = false;
     }
-  }, [effectiveFlow, flow, send, sendOnCreated, target, project]);
+  }, [effectiveFlow, flow, send, sendOnCreated, targetStr, project]);
 
   const messages = useMemo(() => {
     const items: FlowData[] = stream?.data ?? [];
@@ -122,6 +127,7 @@ export function EntityChatPanel({ target, className }: EntityChatPanelProps) {
 
   const hasFlow = !!effectiveFlow;
   const showEmptyState = !hasFlow && !listLoading && !createInFlightRef.current;
+  const sendDisabled = !targetStr || isRunning || createInFlightRef.current;
 
   return (
     <div
@@ -148,13 +154,10 @@ export function EntityChatPanel({ target, className }: EntityChatPanelProps) {
           />
         ))}
       </AutoScrollContainer>
-      <CompactChatInput
-        onSend={handleSend}
-        disabled={!target || isRunning || createInFlightRef.current}
-      />
+      <CompactChatInput onSend={handleSend} disabled={sendDisabled} />
     </div>
   );
 }
 
-// Quiet unused-import warnings from SDK re-exports.
-export type { AgenticProcess, Flow, FlowData, ITrigger };
+// Re-export so outer callers can thread the SDK types without a second import.
+export type { AgenticProcess, Flow, FlowData, TypeId };
