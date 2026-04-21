@@ -87,7 +87,6 @@ export function HomeLanding() {
       const branch = params.get('branch') || undefined;
       const repoId = params.get('repo_id') || undefined;
       if (taskId) {
-        setPendingTask({ taskId, taskTitle, senderName, projectUrl, branch, repoId });
         // Clean URL so refreshing doesn't re-trigger
         const url = new URL(window.location.href);
         url.searchParams.delete('task_action');
@@ -98,6 +97,14 @@ export function HomeLanding() {
         url.searchParams.delete('branch');
         url.searchParams.delete('repo_id');
         window.history.replaceState(null, '', url.toString());
+
+        if (projectUrl) {
+          // Has a REPO attachment — show pull/clone dialog
+          setPendingTask({ taskId, taskTitle, senderName, projectUrl, branch, repoId });
+        } else {
+          // No REPO attachments — navigate directly to the task
+          navigation.openDock(DockPointer.fromUrl('tasks', `task-${taskId}`));
+        }
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps

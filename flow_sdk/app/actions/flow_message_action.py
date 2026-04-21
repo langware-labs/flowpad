@@ -235,9 +235,15 @@ async def create_task_bundle() -> ApiResponse:
         return ApiFailResponse(message=f"Failed to create task bundle: {str(e)}")
 
 
-@action.get(action_name="flow_message.open")
+@action.get(action_name="open", types=["flow_message"])
 async def open_flow_message() -> ApiResponse:
-    """Deep-link handler: fetch FlowMessage from hub, redirect to IncomingTaskDialog."""
+    """Deep-link handler: fetch FlowMessage from hub and redirect to IncomingTaskDialog.
+
+    Only triggers the git pull/clone flow if the FlowMessage has REPO attachments.
+    The first REPO attachment URL is passed as project_url; if none exist the UI
+    navigates directly to the task without showing the pull/clone dialog.
+    """
+    from flow_sdk.builtin.flow_message import AttachmentType
     from flow_sdk.server.routes.notify import handle_notification_deep_link
     from flow_sdk.utils.hub import hub_get
 
@@ -247,11 +253,19 @@ async def open_flow_message() -> ApiResponse:
 
     flow_message_id = str(request_info.target_entity_typeid.id)
     data = await hub_get("flow_message", flow_message_id)
-
     meta = (data or {}).get("metadata") or {}
+
+    # Extract the first REPO attachment URL — only this triggers the git flow.
+    raw_attachments = (data or {}).get("attachment") or []
+    repo_url = next(
+        (a["data"] for a in raw_attachments
+         if isinstance(a, dict) and a.get("attachment_type") == AttachmentType.REPO.value and a.get("data")),
+        "",
+    )
+
     return await handle_notification_deep_link(
-        project_url=(meta.get("project_url") or (data or {}).get("project_url") or "").strip(),
         task_id=(meta.get("task_id") or (data or {}).get("task_id") or "").strip(),
+        project_url=repo_url,
         branch=(meta.get("branch") or (data or {}).get("branch") or "").strip(),
         repo_id=(meta.get("repo_id") or (data or {}).get("repo_id") or "").strip(),
         sender_name=(meta.get("sender_name") or (data or {}).get("sender_name") or "").strip(),
