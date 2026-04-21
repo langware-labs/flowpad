@@ -46,7 +46,7 @@ from flow_sdk.discovery.notify import send_resource_sync
 from flow_sdk.fs_store import SyncOperation
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse, ApiResponse
 from flow_sdk.utils.git import find_project_root, git_add_commit_push, git_current_branch, git_pull, git_remote_url, git_repo_full_name, repo_id
-from flow_sdk.utils.hub import hub_base_url, hub_post
+from flow_sdk.utils.hub import hub_base_url, hub_get, hub_post, hub_put
 from flow_sdk.builtin.bookmark import Bookmark
 
 logger = logging.getLogger(__name__)
@@ -170,7 +170,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
 
     # 2a. Register task on hub so the recipient can load it via the hub graph API.
     # The hub's generic create endpoint stores it in Neo4j with owner access for the sender.
-    await hub_post("task", {
+    await hub_post(BuiltinEntityType.TASK, {
         "id": task.id,
         "title": task_title,
         "task_type": task.task_type,
@@ -288,7 +288,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     branch = git_current_branch(project_root) if project_root else ""
     hub_configured = bool(hub_base_url())
     flow_message_id = str(uuid.uuid4())
-    hub_data = await hub_post("flow_message/send", {
+    hub_data = await hub_post(BuiltinEntityType.FLOW_MESSAGE, {
         "flow_message_id": flow_message_id,
         "recipient_email": recipient_email,
         "sender_id": sender_id,
@@ -304,7 +304,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         "repo_id": repo_id_val,
         "branch": branch,
         "spec_file_path": spec_file_path,
-    })
+    }, action="send")
     hub_flow_message_id: Optional[str] = (hub_data or {}).get("flow_message_id")
     email_error: Optional[str] = None
     if hub_configured and not hub_flow_message_id:
@@ -313,16 +313,16 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     # 5a. Upload .flowmsg bundle to hub so the recipient can materialize the task on their end.
     if hub_flow_message_id and fm:
         try:
-            from flow_sdk.utils.hub import hub_post, hub_put
+
             zip_path = await fm.to_file()
             bundle_filename = f"{_meaningful_name(task_title)}.flowmsg"
             content = zip_path.read_bytes()
             await hub_post(
-                "flow_message", {}, hub_flow_message_id, "fs", f"upload/{bundle_filename}",
+                BuiltinEntityType.FLOW_MESSAGE, {}, hub_flow_message_id, "fs", f"upload/{bundle_filename}",
                 files={"uploaded_file": (bundle_filename, content, "application/zip")},
             )
             zip_path.unlink(missing_ok=True)
-            await hub_put("flow_message", hub_flow_message_id, {"attachment_filename": bundle_filename})
+            await hub_put(BuiltinEntityType.FLOW_MESSAGE, hub_flow_message_id, {"attachment_filename": bundle_filename})
         except Exception as _upload_err:
             logger.warning("[notification_action] bundle upload to hub failed (non-fatal): %s", _upload_err)
 
@@ -549,14 +549,13 @@ async def refresh_notifications() -> ApiResponse:
 async def open_notification() -> ApiResponse:
     """Deep-link handler: fetch notification from hub, redirect to UI dialog."""
     from flow_sdk.server.routes.notify import handle_notification_deep_link
-    from flow_sdk.utils.hub import hub_get
 
     request_info = get_current_request_info()
     if not request_info or not request_info.target_entity_typeid:
         return ApiFailResponse(message="No request info found", status_code=400)
 
     notification_id = str(request_info.target_entity_typeid.id)
-    data = await hub_get("notification", notification_id)
+    data = await hub_get(BuiltinEntityType.NOTIFICATION, notification_id)
 
     meta = data.get("metadata") or {} if data else {}
     return await handle_notification_deep_link(

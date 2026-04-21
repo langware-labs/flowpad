@@ -11,9 +11,12 @@ URL structure follows the Flowpad Hub API guidelines:
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import httpx
+
+if TYPE_CHECKING:
+    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +29,7 @@ def hub_base_url() -> Optional[str]:
 
 
 def hub_graph_url(
-    entity_type: str,
+    entity_type: "BuiltinEntityType",
     entity_id: str | None = None,
     action: str | None = None,
     sub_path: str | None = None,
@@ -50,6 +53,7 @@ def hub_graph_url(
       hub_graph_url("page", "pg-456", scope=[("workspace", "ws-123")])
         → ".../api/v1/graph/workspace/ws-123/page/pg-456"           (scoped entity)
     """
+    entity_type_str = entity_type.value
     if sub_path and not action:
         raise ValueError(
             f"sub_path '{sub_path}' requires an action "
@@ -63,7 +67,7 @@ def hub_graph_url(
     if scope:
         for scope_type, scope_id in scope:
             segments.extend([scope_type, scope_id])
-    segments.append(entity_type)
+    segments.append(entity_type_str)
     if entity_id:
         segments.append(entity_id)
     if action:
@@ -88,7 +92,7 @@ def _auth_headers() -> dict[str, str]:
 
 
 async def hub_get(
-    entity_type: str,
+    entity_type: "BuiltinEntityType",
     entity_id: str | None = None,
     action: str | None = None,
     sub_path: str | None = None,
@@ -128,7 +132,7 @@ async def hub_get(
 
 
 async def hub_post(
-    entity_type: str,
+    entity_type: "BuiltinEntityType",
     payload: dict[str, Any],
     entity_id: str | None = None,
     action: str | None = None,
@@ -171,7 +175,7 @@ async def hub_post(
 
 
 async def hub_put(
-    entity_type: str,
+    entity_type: "BuiltinEntityType",
     entity_id: str,
     payload: dict[str, Any],
     *,
