@@ -6,7 +6,15 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dataContext, RecordType } from '@sdk';
 import apiClient from '@sdk/client';
-import { BookOpen, PanelLeft, PanelLeftClose } from 'lucide-react';
+import { BookOpen, ChevronRight, PanelLeft, PanelLeftClose, X } from 'lucide-react';
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@src/components/ui/breadcrumb';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AssetFilter, AssetScope } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
@@ -14,7 +22,8 @@ import { ScopeFilterBar } from './ScopeFilterBar';
 import { AssetListView } from './AssetListView';
 import { BrowseableTree } from '@src/components/browseable-tree';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
-import { useAssetTypes } from '@src/hooks/use-asset-types';
+import { markdownFolderRoot } from '@src/components/browseable-tree/adapters/markdownFolderRoot';
+import { useAssetTypes, type AssetTypeVault } from '@src/hooks/use-asset-types';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import type { SearchResult } from '@src/hooks/use-asset-search';
 // Side-effect column registrations
@@ -33,16 +42,149 @@ import '@src/components/assets/columns/claudeRulesColumns';
 import '@src/components/assets/filters/assetFilters';
 import '@src/components/assets/filters/taskFilters';
 
-function parseAssetPointer(pointer: string | undefined): { mode: 'editor' | 'list' | null; typeName: string | null } {
-  if (!pointer) return { mode: null, typeName: null };
-  if (pointer.startsWith('editor/')) return { mode: 'editor', typeName: null };
-  if (pointer.startsWith('list/')) return { mode: 'list', typeName: pointer.slice('list/'.length) || null };
-  return { mode: null, typeName: null };
+interface ParsedAssetPointer {
+  mode: 'editor' | 'list' | 'folder' | null;
+  typeName: string | null;
+  /** Only set when mode === 'folder'. */
+  folderTypeid: string | null;
+  /** Only set when mode === 'folder'. VFS relPath under the typeid. */
+  folderRelPath: string | null;
+}
+
+function parseAssetPointer(pointer: string | undefined): ParsedAssetPointer {
+  if (!pointer) return { mode: null, typeName: null, folderTypeid: null, folderRelPath: null };
+  if (pointer.startsWith('editor/')) {
+    // Preserve legacy behavior: typeName isn't surfaced in editor mode today.
+    return { mode: 'editor', typeName: null, folderTypeid: null, folderRelPath: null };
+  }
+  if (pointer.startsWith('list/')) {
+    return {
+      mode: 'list',
+      typeName: pointer.slice('list/'.length) || null,
+      folderTypeid: null,
+      folderRelPath: null,
+    };
+  }
+  if (pointer.startsWith('folder/')) {
+    const folder = DockPointer.parseAssetFolderPointer(pointer);
+    if (folder) {
+      return {
+        mode: 'folder',
+        typeName: folder.typeName,
+        folderTypeid: folder.typeid,
+        folderRelPath: folder.relPath,
+      };
+    }
+  }
+  return { mode: null, typeName: null, folderTypeid: null, folderRelPath: null };
+}
+
+/** Given a parsed folder pointer and a list of vaults, return the absolute
+ *  filesystem path of the folder (for the parent_path API filter). */
+function resolveFolderAbsPath(
+  typeid: string,
+  relPath: string,
+  vaults: AssetTypeVault[],
+): string | null {
+  for (const v of vaults) {
+    if (v.typeid !== typeid) continue;
+    if (relPath === v.relPath) return v.absPath;
+    if (v.relPath === '' && relPath !== '') {
+      return `${v.absPath}/${relPath}`;
+    }
+    if (relPath.startsWith(v.relPath + '/')) {
+      return `${v.absPath}${relPath.slice(v.relPath.length)}`;
+    }
+  }
+  return null;
+}
+
+function buildFolderBreadcrumbs(
+  typeid: string,
+  relPath: string,
+  vaults: AssetTypeVault[],
+): { label: string; pointer: DockPointer }[] {
+  const vault = vaults.find((v) => v.typeid === typeid && (relPath === v.relPath || relPath.startsWith(v.relPath + (v.relPath ? '/' : ''))));
+  if (!vault) return [];
+  const crumbs: { label: string; pointer: DockPointer }[] = [
+    { label: vault.label, pointer: DockPointer.forAssetFolder('markdown', vault.typeid, vault.relPath) },
+  ];
+  const extra = relPath.slice(vault.relPath.length).replace(/^\/+/, '').replace(/\/+$/, '');
+  if (!extra) return crumbs;
+  let cursor = vault.relPath;
+  for (const seg of extra.split('/')) {
+    cursor = cursor ? `${cursor}/${seg}` : seg;
+    crumbs.push({
+      label: seg,
+      pointer: DockPointer.forAssetFolder('markdown', vault.typeid, cursor),
+    });
+  }
+  return crumbs;
 }
 
 const HIDDEN_TYPES = new Set<string>([RecordType.ASSET, RecordType.ANNOTATION]);
 
 const SIDEBAR_COLLAPSED_KEY = 'wiki:sidebar-collapsed';
+
+/** Breadcrumb rendered above the folder-filtered AssetListView. Each crumb
+ *  except the last navigates to that ancestor; the last is the current page.
+ *  A right-aligned X button clears the filter back to the full list. */
+function FolderBreadcrumb({
+  crumbs,
+  onNavigate,
+  onClear,
+}: {
+  crumbs: { label: string; pointer: DockPointer }[];
+  onNavigate: (p: DockPointer) => void;
+  onClear: () => void;
+}) {
+  if (crumbs.length === 0) return null;
+  return (
+    <div
+      className="flex items-center gap-1 border-b px-3 py-2 text-xs"
+      data-testid="asset-list-breadcrumb"
+    >
+      <Breadcrumb>
+        <BreadcrumbList>
+          {crumbs.map((c, i) => {
+            const isLast = i === crumbs.length - 1;
+            return (
+              <React.Fragment key={`${c.pointer.viewType}:${c.pointer.pointer}`}>
+                <BreadcrumbItem>
+                  {isLast ? (
+                    <BreadcrumbPage>{c.label}</BreadcrumbPage>
+                  ) : (
+                    <BreadcrumbLink
+                      className="cursor-pointer"
+                      onClick={() => onNavigate(c.pointer)}
+                    >
+                      {c.label}
+                    </BreadcrumbLink>
+                  )}
+                </BreadcrumbItem>
+                {!isLast && (
+                  <BreadcrumbSeparator>
+                    <ChevronRight className="h-3 w-3" />
+                  </BreadcrumbSeparator>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </BreadcrumbList>
+      </Breadcrumb>
+      <button
+        type="button"
+        onClick={onClear}
+        title="Clear folder filter"
+        aria-label="Clear folder filter"
+        data-testid="asset-list-breadcrumb-clear"
+        className="ml-auto flex h-5 w-5 items-center justify-center rounded hover:bg-muted"
+      >
+        <X className="h-3 w-3 text-muted-foreground" />
+      </button>
+    </div>
+  );
+}
 
 export function AssetsPage() {
   const { toast } = useToast();
@@ -78,8 +220,14 @@ export function AssetsPage() {
     setAssetFilter(prev => ({ ...prev, projectIds: ids }));
   }, []);
 
-  const { mode, typeName: selectedType } = parseAssetPointer(currentDock?.pointer);
+  const {
+    mode,
+    typeName: selectedType,
+    folderTypeid,
+    folderRelPath,
+  } = parseAssetPointer(currentDock?.pointer);
   const isEditorMode = mode === 'editor';
+  const isFolderMode = mode === 'folder';
 
   const visibleTypes = useMemo(
     () => allTypes.filter((t) => !HIDDEN_TYPES.has(t.type_name)),
@@ -105,17 +253,46 @@ export function AssetsPage() {
 
   const wikiRoots = useMemo(
     () =>
-      visibleTypes.map((t) =>
-        assetTypeRoot(t, {
+      visibleTypes.map((t) => {
+        if (t.type_name === 'markdown') {
+          return markdownFolderRoot(t, {
+            indexType,
+            onNew: handleNew,
+            onScanComplete: handleScanComplete,
+          });
+        }
+        return assetTypeRoot(t, {
           indexType,
           onNew: handleNew,
           creatableTypes,
           filter: assetFilter,
           onScanComplete: handleScanComplete,
-        }),
-      ),
+        });
+      }),
     [visibleTypes, indexType, handleNew, creatableTypes, assetFilter, handleScanComplete],
   );
+
+  // Resolve the absolute path of the selected folder (from vault metadata),
+  // and the effective record_type + filter for the right-panel list view.
+  const markdownVaults = useMemo(() => {
+    const md = allTypes.find((t) => t.type_name === 'markdown');
+    return md?.vaults ?? [];
+  }, [allTypes]);
+
+  const folderAbsPath = isFolderMode && folderTypeid && folderRelPath !== null
+    ? resolveFolderAbsPath(folderTypeid, folderRelPath, markdownVaults)
+    : null;
+
+  const folderCrumbs = isFolderMode && folderTypeid && folderRelPath !== null
+    ? buildFolderBreadcrumbs(folderTypeid, folderRelPath, markdownVaults)
+    : [];
+
+  const listFilter = useMemo<AssetFilter>(() => {
+    if (isFolderMode && folderAbsPath) {
+      return { ...assetFilter, parentPath: folderAbsPath };
+    }
+    return assetFilter;
+  }, [assetFilter, isFolderMode, folderAbsPath]);
 
   const handleNewConfirm = useCallback(async (name: string) => {
     if (!name.trim() || !newTypeTarget) return;
@@ -212,6 +389,25 @@ export function AssetsPage() {
         <div className="min-w-0 flex-1">
           {isEditorMode && currentDock?.pointer ? (
             <AssetEditorRouter pointer={currentDock.pointer} />
+          ) : isFolderMode ? (
+            <div className="flex h-full flex-col">
+              <FolderBreadcrumb
+                crumbs={folderCrumbs}
+                onNavigate={(p) => navigation.openDock(p)}
+                onClear={() => navigation.openDock(DockPointer.forAssetList('markdown'))}
+              />
+              <div className="min-h-0 flex-1">
+                <AssetListView
+                  recordType="markdown"
+                  onNew={creatableTypes.has('markdown') ? () => handleNew('markdown') : undefined}
+                  refreshKey={refreshKey}
+                  onRowClick={hasEditor('markdown') ? handleRowClick : undefined}
+                  filter={listFilter}
+                  onFilterChange={setAssetFilter}
+                  onProjectFilter={handleProjectFilter}
+                />
+              </div>
+            </div>
           ) : selectedType ? (
             <AssetListView
               recordType={selectedType}

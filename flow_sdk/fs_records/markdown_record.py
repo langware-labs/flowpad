@@ -89,6 +89,29 @@ def _doc_search_dirs() -> list[Path]:
     return dirs
 
 
+def _resolve_vault_root(path: Path) -> str | None:
+    """Return the canonical abs path of the scan root that owns `path`, if any.
+
+    Walks _doc_search_dirs() looking for the first root that is an ancestor of
+    `path.resolve()`. Resolved before comparison so symlinks agree.
+    """
+    try:
+        target = path.resolve()
+    except OSError:
+        return None
+    for root in _doc_search_dirs():
+        try:
+            root_resolved = root.resolve()
+        except OSError:
+            continue
+        try:
+            target.relative_to(root_resolved)
+        except ValueError:
+            continue
+        return str(root_resolved)
+    return None
+
+
 # Map from directory name to asset_type
 _DIR_TO_ASSET_TYPE: dict[str, str] = {
     "workflows": "workflow",
@@ -170,6 +193,19 @@ class MarkdownRecord(Record):
             data["parent_id"] = parent_id
         if scope:
             data["scope"] = scope
+
+        # Folder containment for the Obsidian-style wiki tree. parent_path is the
+        # immediate containing directory (canonical absolute path). vault_root is
+        # the scan root that owns the file (one of _doc_search_dirs entries).
+        if path is not None:
+            try:
+                resolved = path.resolve()
+                data["parent_path"] = str(resolved.parent)
+            except OSError:
+                pass
+            vault = _resolve_vault_root(path)
+            if vault:
+                data["vault_root"] = vault
 
         rec = cls(**data)
         # Set asset_ref to point to the source .md file (replaces _data["source_path"])

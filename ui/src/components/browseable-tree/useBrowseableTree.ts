@@ -152,19 +152,20 @@ export function useBrowseableTree(roots: BrowseableRoot[]) {
       }
       if (chain.length === 0) return null;
 
-      const idsToExpand = chain.slice(0, -1).map((n) => n.id);
-      // Also ensure the chain is visible by priming caches when we can
-      // infer a parent→children relationship from two adjacent nodes.
+      // Expand every node in the chain whose `hasChildren !== false`.
+      // This keeps editor-file leaves (hasChildren: false) untouched while
+      // ensuring folder leaves auto-expand themselves on deep-link.
+      const nodesToExpand = chain.filter((n) => n.hasChildren !== false);
       setState((prev) => {
         const expandedIds = new Set(prev.expandedIds);
-        for (const id of idsToExpand) expandedIds.add(id);
+        for (const n of nodesToExpand) expandedIds.add(n.id);
         return { ...prev, expandedIds };
       });
 
-      // For each ancestor that doesn't yet have cached children, trigger a
-      // fresh load. We don't try to stitch a partial chain into the cache;
-      // the adapter's listChildren is the source of truth.
-      for (const node of chain.slice(0, -1)) {
+      // For each expandable node that doesn't yet have cached children,
+      // trigger a fresh load. We don't try to stitch a partial chain into
+      // the cache; the adapter's listChildren is the source of truth.
+      for (const node of nodesToExpand) {
         if (!node.listChildren) continue;
         const existing = state.loadStates.get(node.id);
         if (existing?.status !== 'ready') {

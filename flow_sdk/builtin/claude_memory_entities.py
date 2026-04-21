@@ -26,6 +26,11 @@ class Markdown(Entity):
     asset_type: str = APIField(default="")
     source_path: str = APIField(default="")
     status: str = APIField(default="")
+    # Folder-containment fields (populated at index time by MarkdownRecord.from_markdown).
+    # parent_path is the immediate containing directory; vault_root is the scan root.
+    # These power the Obsidian-style Wiki folder tree in the UI.
+    parent_path: str = APIField(default="")
+    vault_root: str = APIField(default="")
     _api_visible: ClassVar[bool] = True
 
 
