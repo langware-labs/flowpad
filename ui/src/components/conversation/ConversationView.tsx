@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Sparkles } from 'lucide-react';
-import { AgenticProcess, Conversation, dataContext, dataManager, FlowMessage, Spec, Task, TypeId } from '@sdk';
+import { FolderOpen, Sparkles } from 'lucide-react';
+import { AgenticProcess, Conversation, dataContext, dataManager, FlowMessage, ProcessStatus, Spec, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ExpansionRequest } from '@sdk/FlowSync/query';
 import { AttachmentType } from '@sdk/entities/flow-message';
@@ -16,9 +16,10 @@ interface ConversationViewProps {
   conversationId: string;
   task: ITask;
   senderName?: string;
+  onChooseProject?: () => void;
 }
 
-export function ConversationView({ conversationId, task, senderName }: ConversationViewProps) {
+export function ConversationView({ conversationId, task, senderName, onChooseProject }: ConversationViewProps) {
   const { navigation } = useDockNavigation();
   const taskId = task.id ?? '';
   const [lastExecutedCount, setLastExecutedCount] = useState(-1);
@@ -35,6 +36,8 @@ export function ConversationView({ conversationId, task, senderName }: Conversat
   const pointers = conversation?.conversationMessageIds ?? [];
   const taskMeta = (task.metadata as Record<string, unknown> | undefined) ?? {};
   const storedSessionId = taskMeta.agentic_session_id as string | undefined;
+  const storedWorkdir = taskMeta.agentic_workdir as string | undefined;
+  const storedProcessId = taskMeta.agentic_process_id as string | undefined;
   const storedExecutedCount = (taskMeta.agentic_executed_count as number | undefined) ?? -1;
   // Effective cursor: use local state if already set this session, otherwise fall back to DB value
   const effectiveExecutedCount = lastExecutedCount >= 0 ? lastExecutedCount : storedExecutedCount;
@@ -102,21 +105,58 @@ export function ConversationView({ conversationId, task, senderName }: Conversat
       const workdir = taskMeta.project_root as string | undefined
         ?? dataContext.project?.fs_storage_mount_path;
 
-      // In-memory cache: PTY is still live, send instruction directly
+      // ── Session routing ────────────────────────────────────────────────
+      // Priority: in-memory cache → reconnect live process → resume dead session → first spawn
       const cached = taskSessionCache.get(taskId);
       if (cached) {
+        // PTY client still live in this browser session — send directly
         await cached.executeInstruction(prompt, { sync: false });
         navigation.openDock(cached.dockPointer);
+      } else if (storedProcessId) {
+        // Page was refreshed — try to reconnect to the existing process
+        const existingProcess = await dataManager.getByTypeId<AgenticProcess>(
+          new TypeId(AgenticProcess.type, storedProcessId),
+        ).catch(() => null);
+
+        const isAlive = existingProcess &&
+          existingProcess.status !== ProcessStatus.STOPPED &&
+          existingProcess.status !== ProcessStatus.FAILED &&
+          existingProcess.status !== ProcessStatus.STOPPING;
+
+        if (isAlive) {
+          // Process is still running — reconnect PTY and deliver instruction via start()
+          // (avoids the stale workerStatus check in executeInstruction after a page refresh)
+          await existingProcess!.start({ instruction: prompt });
+          taskSessionCache.set(taskId, existingProcess!);
+          navigation.openDock(existingProcess!.dockPointer);
+        } else {
+          // Process is dead — close it, spawn a resumed session with the same Claude session_id
+          if (existingProcess) await existingProcess.close().catch(() => {});
+          const { process: resumed } = await AgenticProcess.spawn(
+            { workdir: storedWorkdir ?? workdir, resumeSessionId: storedSessionId },
+            { instruction: prompt, visible: true },
+          );
+          taskSessionCache.set(taskId, resumed);
+          navigation.openDock(resumed.dockPointer);
+          const tResume = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId));
+          if (tResume) {
+            tResume.metadata = { ...(tResume.metadata ?? {}), agentic_process_id: resumed.id };
+            await tResume.save();
+          }
+        }
       } else if (storedSessionId) {
-        // App restarted — resume the Claude session transcript via a new spawn.
-        // spawn({ resumeSessionId }) never conflicts with an existing PTY; it
-        // creates a fresh AgenticProcess entity that continues the same transcript.
+        // Legacy: session_id stored but process_id not tracked — resume fresh
         const { process: resumed } = await AgenticProcess.spawn(
-          { workdir, resumeSessionId: storedSessionId },
+          { workdir: storedWorkdir ?? workdir, resumeSessionId: storedSessionId },
           { instruction: prompt, visible: true },
         );
         taskSessionCache.set(taskId, resumed);
         navigation.openDock(resumed.dockPointer);
+        const tLegacy = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId));
+        if (tLegacy) {
+          tLegacy.metadata = { ...(tLegacy.metadata ?? {}), agentic_process_id: resumed.id };
+          await tLegacy.save();
+        }
       } else {
         // First run — spawn a brand-new session
         const { process: agenticProcess } = await AgenticProcess.spawn(
@@ -125,11 +165,16 @@ export function ConversationView({ conversationId, task, senderName }: Conversat
         );
         taskSessionCache.set(taskId, agenticProcess);
         navigation.openDock(agenticProcess.dockPointer);
-        // Persist the Claude session_id (not entity id) — stable across process entities
+        // Persist session_id, workdir, and process_id — all needed for reliable resume
         if (agenticProcess.session_id) {
           const t = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId));
           if (t) {
-            t.metadata = { ...(t.metadata ?? {}), agentic_session_id: agenticProcess.session_id };
+            t.metadata = {
+              ...(t.metadata ?? {}),
+              agentic_session_id: agenticProcess.session_id,
+              agentic_workdir: workdir,
+              agentic_process_id: agenticProcess.id,
+            };
             await t.save();
           }
         }
@@ -166,20 +211,32 @@ export function ConversationView({ conversationId, task, senderName }: Conversat
         </div>
       )}
 
-      {/* Execute button — shown only for shared tasks (spec_id present) */}
+      {/* Execute + Choose Project buttons */}
       {task.spec_id && (
-        <button
-          onClick={() => void handleExecute()}
-          disabled={executing || (hasExecuted && !hasDelta)}
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Sparkles className="h-4 w-4" />
-          {executing
-            ? 'Starting…'
-            : hasExecuted
-              ? 'Continue Execution with Claude Code'
-              : 'Execute the task with Claude Code'}
-        </button>
+        <div className="flex gap-1">
+          <button
+            onClick={() => void handleExecute()}
+            disabled={executing}
+            className="flex flex-[19] items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Sparkles className="h-4 w-4" />
+            {executing
+              ? 'Starting…'
+              : hasExecuted
+                ? 'Continue Execution with Claude Code'
+                : 'Execute the task with Claude Code'}
+          </button>
+          {onChooseProject && (
+            <button
+              onClick={onChooseProject}
+              title="Choose project folder"
+              className="flex flex-[4] items-center justify-center gap-1.5 rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <FolderOpen className="h-4 w-4 shrink-0" />
+              Choose Project
+            </button>
+          )}
+        </div>
       )}
 
       <MessageComposer task={task} onSent={() => void refetch()} />

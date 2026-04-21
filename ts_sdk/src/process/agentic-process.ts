@@ -217,12 +217,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       ...(options.resumeSessionId
         ? options.forkSession
           ? { resume: true, fork_session_id: options.resumeSessionId }
-          : { resume: true }
+          : { resume: true, session_id: options.resumeSessionId }
         : {}),
     });
 
     const process = await new AgenticProcess({
       cli_config: cliConfig.toJson(),
+      // When resuming, seed session_id on the entity so Python's start() keeps it
+      // instead of generating a new UUID (which would break transcript lookup).
+      ...(options.resumeSessionId && !options.forkSession ? { session_id: options.resumeSessionId } : {}),
       context_data: {
         instructions: options.instructions,
         project_id: options.projectId,
