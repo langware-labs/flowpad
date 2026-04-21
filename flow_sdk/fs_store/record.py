@@ -104,13 +104,50 @@ def parse_record_stem(stem: str) -> tuple[str, str]:
     return record_type, uid
 
 
-# Fields excluded from to_dict() and from_dict() output
+# Fields excluded from to_dict() and from_dict() output.
+# `system` is included here so from_dict() skips it (it's derived from source_file
+# on every read); to_dict() re-adds it explicitly after the main serialization loop.
 _SKIP_SERIALIZE: frozenset[str] = frozenset({
     "source_file", "path",
     "json_path",
     "fs_sync", "storage_layout",
     "raw_json",
+    "system",
 })
+
+
+# ---------------------------------------------------------------------------
+# System-asset path check: a Record is "system" iff its source_file lives under
+# the SDK-shipped system_projects/ directory. Resolved lazily + cached so the
+# first call pays the importlib.resources cost and subsequent calls are cheap.
+# ---------------------------------------------------------------------------
+
+_SYSTEM_PROJECTS_ROOT_CACHE: "Path | None" = None
+
+
+def _system_projects_root_cached() -> "Path | None":
+    global _SYSTEM_PROJECTS_ROOT_CACHE
+    if _SYSTEM_PROJECTS_ROOT_CACHE is None:
+        try:
+            from flow_sdk.config import system_projects_root
+            _SYSTEM_PROJECTS_ROOT_CACHE = system_projects_root().resolve()
+        except Exception:
+            _SYSTEM_PROJECTS_ROOT_CACHE = None
+    return _SYSTEM_PROJECTS_ROOT_CACHE
+
+
+def _is_system_path(source: "str | Path | None") -> bool:
+    """Return True when `source` sits under the SDK system_projects/ tree."""
+    if not source:
+        return False
+    root = _system_projects_root_cached()
+    if root is None:
+        return False
+    try:
+        Path(str(source)).resolve().relative_to(root)
+    except (ValueError, OSError):
+        return False
+    return True
 
 _FS_SYNC_SKIP = frozenset({"fs_sync", "storage_layout", "source_file", "path"})
 
@@ -492,6 +529,35 @@ class Record:
     @path.setter
     def path(self, value: str | None) -> None:
         object.__setattr__(self, "_path", value)
+
+    # -- System-asset marker: True when any known source location of this record
+    # lives under the SDK-shipped system_projects/ tree. Derived on read so it
+    # always reflects the current source and the current SDK install location.
+    # Some record classes keep their source path in _source_file, others in an
+    # FSRef (_asset_ref / _record_folder_ref / _asset_folder_ref) or expose a
+    # `source_path` property — we check all the common locations.
+
+    @property
+    def system(self) -> bool:
+        candidates: list[Any] = []
+        for attr in ("_source_file",):
+            v = getattr(self, attr, None)
+            if v:
+                candidates.append(v)
+        for attr in ("_asset_ref", "_asset_folder_ref", "_record_folder_ref"):
+            ref = getattr(self, attr, None)
+            if ref is not None:
+                path_val = getattr(ref, "path", None)
+                if path_val:
+                    candidates.append(path_val)
+        # source_path property when defined (MarkdownRecord, SkillRecord, etc.)
+        try:
+            sp = self.source_path  # type: ignore[attr-defined]
+        except Exception:
+            sp = None
+        if sp:
+            candidates.append(sp)
+        return any(_is_system_path(c) for c in candidates)
 
     @property
     def record_folder_ref(self) -> "Any":  # FSRef | None
@@ -947,6 +1013,10 @@ class Record:
                 result["children"] = _convert(value)
                 continue
             result[key] = _convert(value)
+
+        # Computed system flag — always derived from source_file at serialization
+        # time so the persisted value can't drift from the canonical path rule.
+        result["system"] = self.system
 
         return result
 

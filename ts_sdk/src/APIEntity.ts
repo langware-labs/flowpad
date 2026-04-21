@@ -42,6 +42,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   static icon: string | null = null;
   id: string;
   uname?: string;
+  system?: boolean;
   created_by?: string;
   created_date?: Date;
   updated_by?: string;
