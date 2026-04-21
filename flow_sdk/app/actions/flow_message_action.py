@@ -341,10 +341,12 @@ async def _download_and_unpack_bundle(fm_id: str, attachment_filename: str) -> b
     Returns True if the bundle was successfully unpacked, False otherwise.
     """
     from flow_sdk.fs_records.flow_message_bundle import FlowMessageExistsError, unpack_bundle
+    logger.info("[bundle] downloading fm=%s file=%s", fm_id, attachment_filename)
     bundle_bytes = await hub_get(
         BuiltinEntityType.FLOW_MESSAGE, fm_id, "fs", f"download/{attachment_filename}", raw=True
     )
     if not bundle_bytes:
+        logger.warning("[bundle] download returned no bytes for fm=%s", fm_id)
         return False
     local_user = await User.get_one({"uname": "local"})
     local_user_id = local_user.id if local_user else ""
@@ -352,10 +354,16 @@ async def _download_and_unpack_bundle(fm_id: str, attachment_filename: str) -> b
         tmp_path = Path(tmp.name)
         tmp.write(bundle_bytes)
     try:
+        logger.info("[bundle] unpacking fm=%s size=%d", fm_id, len(bundle_bytes))
         await unpack_bundle(tmp_path, local_user_id, overwrite=False)
+        logger.info("[bundle] unpack success fm=%s", fm_id)
         return True
     except FlowMessageExistsError:
+        logger.info("[bundle] already materialized fm=%s", fm_id)
         return True  # already materialized — counts as success
+    except Exception as e:
+        logger.error("[bundle] unpack failed fm=%s: %s", fm_id, e, exc_info=True)
+        return False
     finally:
         tmp_path.unlink(missing_ok=True)
 
