@@ -4,7 +4,7 @@
  */
 
 // Flow entity class - kept for backward compatibility (many UI files still import it)
-export { Flow, FlowExecutionStatus, UserAction } from './flow';
+export { Flow, SendStatus, FlowExecutionStatus, UserAction } from './flow';
 export type {
   ChatMessageFeedback,
   ChatRole,

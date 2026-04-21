@@ -9,7 +9,7 @@
  */
 
 import { AgenticProcess, type Shell } from '@sdk';
-import { WorkerStatus } from '@sdk/process/agentic-types.js';
+import { hasWorkerStarted, WorkerStatus } from '@sdk/process/agentic-types.js';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -57,9 +57,10 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
 
   const hasSession = !!process.session_id;
   const workerStatus = process.workerStatus;
+  // Fork needs at least one real turn to have happened — exclude INITIALIZING
+  // (worker spun up but no transcript yet) and IDLE (no session linked).
   const canFork = hasSession
-    && workerStatus !== WorkerStatus.INIT
-    && workerStatus !== WorkerStatus.EMPTY
+    && hasWorkerStarted(workerStatus)
     && workerStatus !== WorkerStatus.IDLE;
   const canToggle = hasSession;
   const workdir = process.workdir ?? '';

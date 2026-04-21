@@ -1,10 +1,11 @@
 ---
-description: Classify a Claude Code session transcript into a category with a title, command, and confidence score.
+name: classify
+description: Classify a Claude Code session transcript into a category with a title,
+  command, and confidence score.
 model: sonnet
 permission_mode: bypassPermissions
 max_turns: 10
 ---
-
 # Session Classifier
 
 You are a specialist at classifying Claude Code session transcripts.

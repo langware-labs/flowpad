@@ -16,8 +16,9 @@ from flow_sdk.app.actions.listen import set_plan_auto_approve
 from flow_sdk.builtin.cli_workers import ClaudeCliOptions
 from flow_sdk.core import Entity, action
 from flow_sdk.flowpad_types.enums import WorkerType
-from flow_sdk.fs_records.agent_status import AgenticProcessStatus, is_terminal as is_worker_terminal
-from flow_sdk.fs_records.agentic_process_lifecycle import AgenticProcessLifecycleStatus
+from flow_sdk.fs_records.agent_status import WorkerStatus, is_terminal as is_worker_terminal
+from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
 from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
@@ -94,7 +95,7 @@ async def _poll_for_completion(agentic_process_id: str, session_id: str | None) 
     """
     from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 
-    TERMINAL = {AgenticProcessStatus.COMPLETE, AgenticProcessStatus.ERROR, AgenticProcessStatus.INTERRUPTED}
+    TERMINAL = {WorkerStatus.COMPLETE, WorkerStatus.ERROR, WorkerStatus.INTERRUPTED}
 
     await asyncio.sleep(1)  # give Claude time to start and write the first JSONL entry
     for _ in range(1800):  # poll up to 30 min (1800 * 1 s)
@@ -108,11 +109,11 @@ async def _poll_for_completion(agentic_process_id: str, session_id: str | None) 
 
             new_status = record.status
             try:
-                status_enum = AgenticProcessStatus(str(new_status))
+                status_enum = WorkerStatus(str(new_status))
             except ValueError:
                 continue
 
-            if status_enum == AgenticProcessStatus.API_TIMEOUT:
+            if status_enum == WorkerStatus.API_TIMEOUT:
                 _AgenticProcess = globals().get("AgenticProcess")
                 if _AgenticProcess:
                     proc = await _AgenticProcess.get_by_id(agentic_process_id)
@@ -133,13 +134,13 @@ async def _poll_for_completion(agentic_process_id: str, session_id: str | None) 
                 return  # entity deleted
 
             if proc.status in {
-                AgenticProcessLifecycleStatus.STOPPING.value,
-                AgenticProcessLifecycleStatus.STOPPED.value,
-                AgenticProcessLifecycleStatus.FAILED.value,
+                ProcessStatus.STOPPING.value,
+                ProcessStatus.STOPPED.value,
+                ProcessStatus.FAILED.value,
             }:
                 return  # already up to date — WS was already sent
 
-            proc.status = AgenticProcessLifecycleStatus.STOPPED.value
+            proc.status = ProcessStatus.STOPPED.value
             await proc.save()
             logger.info(
                 "AgenticProcess %s: completion monitor set lifecycle=%s worker_status=%s",
@@ -172,12 +173,12 @@ def _build_run_result(proc: "AgenticProcess") -> "RunResult":
     status_enum = proc._discover_status_from_transcript()
     if status_enum is None:
         try:
-            lifecycle = AgenticProcessLifecycleStatus(proc.status)
+            lifecycle = ProcessStatus(proc.status)
         except ValueError:
-            lifecycle = AgenticProcessLifecycleStatus.STOPPED
-        status_enum = AgenticProcessStatus.ERROR if lifecycle == AgenticProcessLifecycleStatus.FAILED else AgenticProcessStatus.IDLE
+            lifecycle = ProcessStatus.STOPPED
+        status_enum = WorkerStatus.ERROR if lifecycle == ProcessStatus.FAILED else WorkerStatus.IDLE
 
-    ok = status_enum not in (AgenticProcessStatus.ERROR, AgenticProcessStatus.INTERRUPTED)
+    ok = status_enum not in (WorkerStatus.ERROR, WorkerStatus.INTERRUPTED)
     return RunResult(
         text=text,
         session_id=proc.session_id or "",
@@ -200,7 +201,7 @@ class AgenticProcess(Entity):
     cli_config: dict[str, Any] = APIField(default_factory=dict)
     workdir: str | None = APIField(default=None)
     favorite_index: int | None = APIField(default=None)
-    status: str = APIField(default=AgenticProcessLifecycleStatus.NEW.value)
+    status: str = APIField(default=ProcessStatus.NEW.value)
     session_id: str | None = APIField(default=None)
     use_worker_history: bool = APIField(default=False)
     shell_mode: bool = APIField(default=False, description="False=direct PTY spawn (default), True=legacy zsh intermediary")
@@ -217,7 +218,6 @@ class AgenticProcess(Entity):
     shell_id: str | None = APIField(default=None)
     sidecar_shell_id: str | None = APIField(default=None)
     visible: bool = APIField(default=False, description="Whether this process is visible in the tabs view")
-    is_active: bool = APIField(default=False)
     queue: dict | None = APIField(default=None)
     additional_dirs: list[str] = APIField(default_factory=list, description="Extra directories passed to Claude via --add-dir")
     embedded_agent_ids: list[str] = APIField(default_factory=list, description="Agent ids injected via --agents at session launch")
@@ -348,15 +348,15 @@ class AgenticProcess(Entity):
                     return ApiFailResponse(message=f"Compute node not found for linked shell {shell.id}")
 
             if self.status in (
-                AgenticProcessLifecycleStatus.STARTING.value,
-                AgenticProcessLifecycleStatus.LIVE.value,
+                ProcessStatus.STARTING.value,
+                ProcessStatus.RUNNING.value,
             ) and self.shell_id:
                 if shell is not None and await shell.has_attachable_pty():
-                    if self.status != AgenticProcessLifecycleStatus.LIVE.value:
-                        self.status = AgenticProcessLifecycleStatus.LIVE.value
+                    if self.status != ProcessStatus.RUNNING.value:
+                        self.status = ProcessStatus.RUNNING.value
                         await self.save()
                     return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=False))
-                if self.status == AgenticProcessLifecycleStatus.STARTING.value:
+                if self.status == ProcessStatus.STARTING.value:
                     await self._drop_stale_shell(shell, reason="starting process is missing an attachable PTY")
                     shell = None
 
@@ -394,7 +394,7 @@ class AgenticProcess(Entity):
             # Get existing shell or create a new one
             shell = await self._get_or_create_shell()
             self.shell_id = shell.id
-            self.status = AgenticProcessLifecycleStatus.STARTING.value
+            self.status = ProcessStatus.STARTING.value
             # Save session_id + shell_id before launching Claude so revalidation
             # can observe STARTING and avoid issuing a second open.
             await self.save()
@@ -431,20 +431,20 @@ class AgenticProcess(Entity):
                     name=f"completion-monitor-{self.id[:8]}",
                 )
 
-            self.status = AgenticProcessLifecycleStatus.LIVE.value
+            self.status = ProcessStatus.RUNNING.value
             await self.save()
 
             return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=is_resume))
 
         except asyncio.CancelledError:
             logger.warning("AgenticProcess %s start cancelled (status=%s shell_id=%s)", self.id, self.status, self.shell_id)
-            self.status = AgenticProcessLifecycleStatus.FAILED.value
+            self.status = ProcessStatus.FAILED.value
             await self.save()
             raise
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} start error: {e}")
             self.shell_id = None
-            self.status = AgenticProcessLifecycleStatus.FAILED.value
+            self.status = ProcessStatus.FAILED.value
             await self.save()
             return ApiFailResponse(message=str(e))
 
@@ -465,7 +465,7 @@ class AgenticProcess(Entity):
             # Clear sidecar but NOT shell_id — shell entity stays alive for restart.
             self.context_data = {**self.context_data, "_shell_exit_pending": True}
             self.sidecar_shell_id = None
-            self.status = AgenticProcessLifecycleStatus.STOPPING.value
+            self.status = ProcessStatus.STOPPING.value
             await self.save()
 
             if shell:
@@ -475,7 +475,7 @@ class AgenticProcess(Entity):
             else:
                 logger.warning("AgenticProcess %s: Shell entity %s not found on exit", self.id, self.shell_id)
 
-            self.status = AgenticProcessLifecycleStatus.STOPPED.value
+            self.status = ProcessStatus.STOPPED.value
             await self.save()
             logger.info(
                 "AgenticProcess %s: exited (session_id preserved: %s)",
@@ -494,7 +494,7 @@ class AgenticProcess(Entity):
 
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} exit error: {e}")
-            self.status = AgenticProcessLifecycleStatus.FAILED.value
+            self.status = ProcessStatus.FAILED.value
             await self.save()
             return ApiFailResponse(message=str(e))
 
@@ -541,20 +541,20 @@ class AgenticProcess(Entity):
             worker_status = self._discover_status_from_transcript()
             if worker_status and is_worker_terminal(worker_status):
                 return
-            if self.status == AgenticProcessLifecycleStatus.FAILED.value:
+            if self.status == ProcessStatus.FAILED.value:
                 return
             if deadline and asyncio.get_event_loop().time() > deadline:
                 raise TimeoutError(f"Process did not reach terminal state within {timeout}s")
             await asyncio.sleep(2.0)
 
     async def waitForIdle(self, timeout: float | None = None) -> None:
-        """Block until waiting_for_prompt is True.
+        """Block until the worker is ready for input (``is_ready_for_input(self)``).
 
         Polling interval: 2s. Raises TimeoutError if timeout elapses first.
         """
         deadline = (asyncio.get_event_loop().time() + timeout) if timeout else None
         while True:
-            if self.waiting_for_prompt:
+            if is_ready_for_input(self):
                 return
             if deadline and asyncio.get_event_loop().time() > deadline:
                 raise TimeoutError(f"Process did not reach idle state within {timeout}s")
@@ -600,7 +600,7 @@ class AgenticProcess(Entity):
         """Async-iterate JSONL transcript entries as they are written by Claude.
 
         Yields parsed dicts, one per transcript line. Stops automatically when
-        waiting_for_prompt becomes True (Claude finished its turn).
+        ``is_ready_for_input(self)`` becomes True (Claude finished its turn).
 
         Args:
             timeout: Maximum seconds to wait for the process to reach idle.
@@ -632,7 +632,7 @@ class AgenticProcess(Entity):
             else:
                 await asyncio.sleep(poll_interval)
 
-        from flow_sdk.fs_records.agent_status import _tail_status as _tail_status_fn, AgenticProcessStatus as _APS
+        from flow_sdk.fs_records.agent_status import _tail_status as _tail_status_fn, WorkerStatus as _APS
 
         offset = 0
         while True:
@@ -848,8 +848,8 @@ class AgenticProcess(Entity):
     def to_dict(self) -> dict:
         d = super().to_dict()
         computed = self._discover_status_from_transcript()
-        d["worker_status"] = str(computed) if computed else AgenticProcessStatus.IDLE.value
-        d["waiting_for_prompt"] = self._waiting_for_prompt_from_status(computed)
+        d["worker_status"] = str(computed) if computed else WorkerStatus.IDLE.value
+        d["ready_for_input"] = is_ready_for_input(self, computed)
         return d
 
     @model_serializer(mode="wrap")
@@ -860,23 +860,11 @@ class AgenticProcess(Entity):
         if data is None:
             return None
         computed = self._discover_status_from_transcript()
-        data["worker_status"] = str(computed) if computed else AgenticProcessStatus.IDLE.value
-        data["waiting_for_prompt"] = self._waiting_for_prompt_from_status(computed)
+        data["worker_status"] = str(computed) if computed else WorkerStatus.IDLE.value
+        data["ready_for_input"] = is_ready_for_input(self, computed)
         return data
 
-    def _waiting_for_prompt_from_status(self, computed: "AgenticProcessStatus | None") -> bool:
-        """Compute waiting_for_prompt from an already-resolved transcript status."""
-        if self.status != AgenticProcessLifecycleStatus.LIVE.value:
-            return False
-        if computed is None:
-            return not bool(self.session_id)
-        return computed in {
-            AgenticProcessStatus.COMPLETE,
-            AgenticProcessStatus.INTERRUPTED,
-            AgenticProcessStatus.IDLE,
-        }
-
-    def _discover_status_from_transcript(self) -> AgenticProcessStatus | None:
+    def _discover_status_from_transcript(self) -> WorkerStatus | None:
         """Derive status from the Claude session transcript record."""
         session = self._discover_claude_record_session(self.session_id)
         return session.status if session else None
@@ -887,39 +875,17 @@ class AgenticProcess(Entity):
         worker_status = self._discover_status_from_transcript()
         return ApiSuccessResponse(data={
             "status": self.status,
-            "worker_status": str(worker_status) if worker_status else AgenticProcessStatus.IDLE.value,
+            "worker_status": str(worker_status) if worker_status else WorkerStatus.IDLE.value,
+            "ready_for_input": is_ready_for_input(self, worker_status),
         })
 
     @property
-    def waiting_for_prompt(self) -> bool:
-        """True when the process is live and ready for the user's next prompt.
-
-        Covers:
-        - complete: Claude finished its turn cleanly (end_turn)
-        - interrupted: user hit Escape, Claude stopped mid-run, back at prompt
-        - idle (no session linked): process is live but never been given a prompt
-        """
-        if self.status != AgenticProcessLifecycleStatus.LIVE.value:
-            return False
-        worker_status = self._discover_status_from_transcript()
-        if worker_status is None:
-            # No transcript found. If session_id is unset the process was never
-            # prompted — it is waiting. If session_id is set, Claude was just
-            # launched and the transcript hasn't been written yet — still busy.
-            return not bool(self.session_id)
-        return worker_status in {
-            AgenticProcessStatus.COMPLETE,
-            AgenticProcessStatus.INTERRUPTED,
-            AgenticProcessStatus.IDLE,
-        }
-
-    @property
     def is_idle(self) -> bool:
-        """True when not actively running."""
+        """True when not in a running lifecycle state (NEW/STOPPED/FAILED)."""
         return self.status in {
-            AgenticProcessLifecycleStatus.NEW.value,
-            AgenticProcessLifecycleStatus.STOPPED.value,
-            AgenticProcessLifecycleStatus.FAILED.value,
+            ProcessStatus.NEW.value,
+            ProcessStatus.STOPPED.value,
+            ProcessStatus.FAILED.value,
         }
 
     async def is_running(self) -> bool:
@@ -1006,7 +972,7 @@ class AgenticProcess(Entity):
 
         try:
             shell_id = self.shell_id
-            self.status = AgenticProcessLifecycleStatus.STOPPING.value
+            self.status = ProcessStatus.STOPPING.value
             self.visible = False
             await self.save()
 
@@ -1018,13 +984,13 @@ class AgenticProcess(Entity):
 
             self.shell_id = None
             self.sidecar_shell_id = None
-            self.status = AgenticProcessLifecycleStatus.STOPPED.value
+            self.status = ProcessStatus.STOPPED.value
             await self.save()
             return True
 
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} close error: {e}")
-            self.status = AgenticProcessLifecycleStatus.FAILED.value
+            self.status = ProcessStatus.FAILED.value
             await self.save()
             return False
 
@@ -1058,7 +1024,7 @@ class AgenticProcess(Entity):
         return ApiSuccessResponse(
             data={
                 "id": self.id,
-                "status": AgenticProcessLifecycleStatus.STOPPED.value,
+                "status": ProcessStatus.STOPPED.value,
                 "terminated": True,
             }
         )
@@ -1210,14 +1176,14 @@ class AgenticProcess(Entity):
                         await proc.save()
                         return
                     proc.sidecar_shell_id = None
-                    if proc.status == AgenticProcessLifecycleStatus.STARTING.value:
-                        proc.status = AgenticProcessLifecycleStatus.FAILED.value
+                    if proc.status == ProcessStatus.STARTING.value:
+                        proc.status = ProcessStatus.FAILED.value
                     elif proc.status not in {
-                        AgenticProcessLifecycleStatus.STOPPING.value,
-                        AgenticProcessLifecycleStatus.STOPPED.value,
-                        AgenticProcessLifecycleStatus.FAILED.value,
+                        ProcessStatus.STOPPING.value,
+                        ProcessStatus.STOPPED.value,
+                        ProcessStatus.FAILED.value,
                     }:
-                        proc.status = AgenticProcessLifecycleStatus.STOPPED.value
+                        proc.status = ProcessStatus.STOPPED.value
                     await proc.save()
 
                     if session_id:

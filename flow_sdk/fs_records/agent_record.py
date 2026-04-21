@@ -38,6 +38,13 @@ def _agent_search_dirs() -> list[Path]:
 
     _add(Path.home() / ".claude" / "agents")
 
+    # SDK-shipped system agents under the Flowpad Assistant system project.
+    try:
+        from flow_sdk.config import flowpad_assistant_project_root
+        _add(flowpad_assistant_project_root() / ".claude" / "agents")
+    except Exception:
+        pass
+
     from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
     for real in iter_claude_project_paths():
         _add(real / ".claude" / "agents")

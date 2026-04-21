@@ -15,9 +15,9 @@ This plan builds that primitives layer — and nothing else. Scope is deliberate
 - Karpathy ingest/lint/query ops, `index.md` / `log.md` conventions.
 - Frontend wikilink rendering, backlinks panel, graph view — APIs only.
 - Typed edges (`uses`, `depends_on`, `contradicts`), confidence/provenance fields.
-- Inline `#hashtag` extraction from body.
 - Projecting DB-only records (tasks, sessions, projects) as graph nodes.
 - FTS column restructuring (see Migration note).
+- Typed tag attributes, tag aliases, tag hierarchies beyond `/`-nesting (Obsidian doesn't have these; we don't either).
 
 ## Files to modify / create
 
@@ -203,6 +203,68 @@ WHERE target_resolved_id IS NULL
 ```
 
 For each hit, re-run resolver; if now resolves → `UPDATE`. Cheap per-create. Full unresolved sweep only on startup and explicit `/reindex`.
+
+### 9. Tags (reference: Obsidian)
+
+**Reference behavior — Obsidian defines the spec.** No divergence; no separate "labels" concept surfaced to users.
+
+**What counts as a tag:**
+- **Inline in body:** `#project`, `#status/in-progress`, `#area/research`. Nesting via `/`.
+- **YAML frontmatter:** `tags: [project, status/in-progress]` or block-list form.
+- Both feed a single tag index. Frontmatter form does **not** require the leading `#`.
+
+**Parser rules** (extend `wikilink_parser.py`):
+- `#tag` regex: `(?<![\w/#])#([A-Za-z][\w/-]*)` — must be preceded by whitespace / start / punctuation (not `##heading`, not `part#of#word`), at least one letter leading, allows `/` for nesting, `-` and `_` inside.
+- Skip fenced code, inline code, and link/URL contexts (already part of the extractor's code-fence pass).
+- Emit as `ParsedTag(tag: str, source: "body" | "frontmatter", line: int, col: int)` — sibling to `ParsedLink`, not merged.
+- Nested-tag normalization: store both the full tag (`project/alpha`) and its parent chain (`project`) at query time via prefix match — no separate rows per ancestor.
+
+**Storage — `tag_refs` table (separate from `links`):**
+
+```sql
+CREATE TABLE IF NOT EXISTS tag_refs (
+    id        INTEGER PRIMARY KEY,
+    src_type  TEXT NOT NULL,
+    src_id    TEXT NOT NULL,
+    src_path  TEXT NOT NULL,
+    tag       TEXT NOT NULL,           -- canonical form, no leading '#'
+    source    TEXT NOT NULL,           -- 'body' | 'frontmatter'
+    line      INTEGER,                 -- NULL for frontmatter-sourced
+    col       INTEGER
+);
+
+CREATE INDEX idx_tag_refs_tag      ON tag_refs(tag);
+CREATE INDEX idx_tag_refs_src      ON tag_refs(src_type, src_id);
+CREATE INDEX idx_tag_refs_prefix   ON tag_refs(tag COLLATE NOCASE);  -- for prefix queries
+```
+
+**Why a separate table (not `links` with `kind='tag'`):**
+- Tags have no `target_resolved_id` — they're a namespace, not a record. Forcing them into `links` adds nullable columns and complicates the resolver.
+- Query shapes differ: "records with tag X and Y" is a two-join on `tag_refs`; "backlinks to note X" stays on `links`. Keeping them separate keeps each query simple.
+- The graph-neighbors endpoint unions both at read time (see API below) — users see one graph.
+
+**Entity exposure (aligned with `docs/CLAUDE.md` rule 6):**
+- Override `meta_dict()` on `MarkdownRecord` / `AssetRecord` to include a sorted deduped `tags` list merging body-extracted + frontmatter.
+- Tags land in the Entity row via existing indexing pipeline — no new column needed; the `labels`/`tags` field already exists on `DBEntity`.
+- Upsert into `tag_refs` happens on the same single-writer queue as `links` (one transaction per record re-extract): `DELETE FROM tag_refs WHERE src_path=?; INSERT ...`.
+
+**API — extend `routes/links.py`:**
+
+```
+GET  /api/v1/tags                             → [{tag, count}], optionally filter by prefix
+GET  /api/v1/tags/{tag}/records               → records carrying tag (exact or prefix via ?prefix=true)
+GET  /api/v1/links/neighbors?path=...&depth=1 → now unions links + tag_refs; tags appear as pseudo-nodes
+```
+
+**Tags vs `DBEntity.labels`:**
+- `labels` is internal (used by the DB index layer). It stays internal.
+- User-facing wiki tags are the `tags` field — single concept, Obsidian-compatible.
+- If anything currently writes into both, unify at the `meta_dict()` override rather than in the frontend.
+
+**Non-goals (tags-specific):**
+- Tag renames / bulk-edit — deferred.
+- Tag aliases — Obsidian doesn't support them; skip.
+- Confidence / typed tag attributes — belongs with typed edges in a later phase.
 
 ## Things to reuse (do not rebuild)
 

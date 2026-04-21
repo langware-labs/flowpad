@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess, ProcessError, RunResult
-from flow_sdk.fs_records.agent_status import AgenticProcessStatus
-from flow_sdk.fs_records.agentic_process_lifecycle import AgenticProcessLifecycleStatus
+from flow_sdk.fs_records.agent_status import WorkerStatus
+from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
 from flow_sdk.responses.response import ApiSuccessResponse
 from flow_sdk.fs_store.record import (
     get_default_records_data_root,
@@ -43,7 +43,7 @@ def _proc(**kwargs) -> AgenticProcess:
 def test_defaults():
     """New process has NEW lifecycle status, no session_id, no shell_id."""
     proc = AgenticProcess()
-    assert proc.status == AgenticProcessLifecycleStatus.NEW.value
+    assert proc.status == ProcessStatus.NEW.value
     assert proc.session_id is None
     assert proc.shell_id is None
 
@@ -90,7 +90,7 @@ async def test_is_running_returns_false_when_no_shell():
 async def test_wait_returns_when_no_transcript():
     """wait() returns quickly when lifecycle has already failed and no transcript exists."""
     proc = _proc()
-    proc.status = AgenticProcessLifecycleStatus.FAILED.value
+    proc.status = ProcessStatus.FAILED.value
     await proc.wait(timeout=2.0)
 
 
@@ -276,7 +276,7 @@ async def test_context_manager_calls_start_and_stop():
 async def test_start_promotes_stuck_starting_process_to_live_when_pty_is_attachable():
     """A wedged STARTING process should heal back to LIVE when its shell PTY is still attachable."""
     proc = _proc(
-        status=AgenticProcessLifecycleStatus.STARTING.value,
+        status=ProcessStatus.STARTING.value,
         shell_id="shell-123",
         session_id="session-123",
     )
@@ -294,7 +294,7 @@ async def test_start_promotes_stuck_starting_process_to_live_when_pty_is_attacha
         result = await proc.start()
 
     assert isinstance(result, ApiSuccessResponse)
-    assert proc.status == AgenticProcessLifecycleStatus.LIVE.value
+    assert proc.status == ProcessStatus.RUNNING.value
     shell.ensure_live_compute_node_binding.assert_awaited_once_with()
     shell.has_attachable_pty.assert_awaited_once()
     save.assert_awaited_once()
@@ -334,7 +334,7 @@ def test_run_result_ok_when_complete():
     result = RunResult(
         text="done",
         session_id="abc",
-        status=AgenticProcessStatus.COMPLETE,
+        status=WorkerStatus.COMPLETE,
         ok=True,
     )
     assert result.ok is True
@@ -345,7 +345,7 @@ def test_run_result_not_ok_when_error():
     result = RunResult(
         text="",
         session_id="abc",
-        status=AgenticProcessStatus.ERROR,
+        status=WorkerStatus.ERROR,
         ok=False,
     )
     assert result.ok is False
@@ -356,7 +356,7 @@ def test_run_result_not_ok_when_interrupted():
     result = RunResult(
         text="",
         session_id="abc",
-        status=AgenticProcessStatus.INTERRUPTED,
+        status=WorkerStatus.INTERRUPTED,
         ok=False,
     )
     assert result.ok is False
@@ -369,10 +369,10 @@ def test_run_result_not_ok_when_interrupted():
 def test_process_error_carries_status_and_session_id():
     """ProcessError stores status and session_id for programmatic inspection."""
     err = ProcessError(
-        status=AgenticProcessStatus.ERROR,
+        status=WorkerStatus.ERROR,
         session_id="err-session-123",
     )
-    assert err.status == AgenticProcessStatus.ERROR
+    assert err.status == WorkerStatus.ERROR
     assert err.session_id == "err-session-123"
     assert isinstance(err, Exception)
 
@@ -401,5 +401,5 @@ def test_is_idle_true_when_not_running():
 def test_is_idle_false_when_running():
     """is_idle is False when lifecycle is LIVE."""
     proc = _proc()
-    proc.status = AgenticProcessLifecycleStatus.LIVE.value
+    proc.status = ProcessStatus.RUNNING.value
     assert proc.is_idle is False

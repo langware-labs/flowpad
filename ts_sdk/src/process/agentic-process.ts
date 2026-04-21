@@ -95,10 +95,11 @@ export interface IAgenticProcess extends IEntity {
   visible?: boolean;
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
-  /** Backend TTL live field: true if a PTY session is actually alive (30s TTL) */
-  is_active?: boolean;
-  /** True when Claude has finished its turn and is waiting for user input */
-  waiting_for_prompt?: boolean;
+  /**
+   * Derived: true when the worker is ready for a new user prompt.
+   * Computed server-side via ``is_ready_for_input``. Read-only on the wire.
+   */
+  ready_for_input?: boolean;
   /** @internal — use AgenticProcess.cliOptions getter/setter instead */
   cli_config?: Record<string, any>;
   /** Extra directories passed to Claude via --add-dir */
@@ -424,7 +425,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   private _status: ProcessStatus = ProcessStatus.NEW;
 
   /** Granular transcript-derived worker status. */
-  private _workerStatus: WorkerStatus = WorkerStatus.IDLE;
+  private _workerStatus: WorkerStatus = WorkerStatus.INITIALIZING;
 
   /** Backend-owned lifecycle status. Read-only outside this class. */
   get status(): ProcessStatus {
@@ -473,12 +474,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /** Serialized TypeId ("type-id") of the entity this process is attached to (trigger, markdown, …). */
   target_typeid_str: string | null = null;
-
-  /** Backend TTL live field: true if a PTY session is actually alive (30s TTL) */
-  is_active: boolean = false;
-
-  /** True when Claude has finished its turn and is waiting for user input */
-  waiting_for_prompt: boolean = false;
 
   /** Deserialize cli_config into a live ClaudeCliOptions instance.
    *
@@ -542,7 +537,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.context_data = entity.context_data;
     this.favorite_index = entity.favorite_index;
     this.status = (entity.status as ProcessStatus) ?? ProcessStatus.NEW;
-    this.workerStatus = (entity.worker_status as WorkerStatus) ?? WorkerStatus.IDLE;
+    this.workerStatus = (entity.worker_status as WorkerStatus) ?? WorkerStatus.INITIALIZING;
     this.session_id = entity.session_id;
     this.use_worker_history = entity.use_worker_history;
     this.shell_mode = entity.shell_mode;
@@ -551,8 +546,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.sidecar_shell_id = entity.sidecar_shell_id;
     this.collaboration_session_id = entity.collaboration_session_id ?? null;
     this.target_typeid_str = entity.target_typeid_str ?? null;
-    this.is_active = entity.is_active ?? false;
-    this.waiting_for_prompt = entity.waiting_for_prompt ?? false;
   }
 
   /**
@@ -1424,8 +1417,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (elementType === 'status' && typeof data.data === 'object' && data.data !== null) {
       const statusData = data.data as Record<string, unknown>;
       if (statusData.status && typeof statusData.status === 'string') {
+        const oldWorker = this.workerStatus;
         this.workerStatus = statusData.status as WorkerStatus;
-        this.emit('state_change', { status: this.status });
+        this.emit('state_change', {
+          field: 'workerStatus',
+          oldValue: oldWorker,
+          newValue: this.workerStatus,
+        });
         if (this.workerStatus === WorkerStatus.ERROR || this.workerStatus === WorkerStatus.INTERRUPTED) {
           this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
         }
@@ -1440,27 +1438,39 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /**
    * Called by the store when the backend pushes an entity update via WebSocket.
    * Propagates state changes (including COMPLETE) so output() terminates correctly.
+   *
+   * The ``state_change`` event carries a delta payload:
+   *   { field: 'status' | 'workerStatus', oldValue, newValue }
+   * so subscribers can distinguish lifecycle transitions from worker-status updates
+   * without re-reading the entity.
    * @internal
    */
   protected onEntityUpdate(data: Partial<IAgenticProcess>): void {
     if (data.status) {
+      const oldStatus = this.status;
       this.status = data.status as ProcessStatus;
-      this.emit('state_change', { status: this.status });
+      this.emit('state_change', {
+        field: 'status',
+        oldValue: oldStatus,
+        newValue: this.status,
+      });
       if (this.status === ProcessStatus.FAILED && !isWorkerTerminal(this.workerStatus)) {
         this._markError(new Error(`Process ended with lifecycle status: ${this.status}`));
       }
     }
     if (data.worker_status) {
+      const oldWorker = this.workerStatus;
       this.workerStatus = data.worker_status as WorkerStatus;
-      this.emit('state_change', { status: this.status });
+      this.emit('state_change', {
+        field: 'workerStatus',
+        oldValue: oldWorker,
+        newValue: this.workerStatus,
+      });
       if (this.workerStatus === WorkerStatus.COMPLETE) {
         this._markComplete();
       } else if (this.workerStatus === WorkerStatus.ERROR || this.workerStatus === WorkerStatus.INTERRUPTED) {
         this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
       }
-    }
-    if (data.waiting_for_prompt !== undefined) {
-      this.waiting_for_prompt = data.waiting_for_prompt;
     }
   }
 
