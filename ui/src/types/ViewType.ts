@@ -66,7 +66,8 @@ export interface ViewerMeta {
     | 'Zap'
     | 'CheckSquare'
     | 'SearchIcon'
-    | 'Workflow';
+    | 'Workflow'
+    | 'Inbox';
   /** Where this viewer renders: 'overview' tab or dedicated tab */
   tabLocation: 'overview' | 'dedicated';
   /** Can this viewer be manually added as a tab? */
@@ -289,5 +290,11 @@ export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
     iconName: 'BookOpen',
     tabLocation: 'dedicated',
     canAddAsTab: true,
+  },
+  [ViewType.INBOX]: {
+    title: 'Inbox',
+    iconName: 'Inbox',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
   },
 };

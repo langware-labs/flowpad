@@ -30,6 +30,8 @@ export interface IFlowMessage extends IEntity {
   sender_name?: string | null;
   receiver_address?: string | null;
   receiver_address_type?: string | null;
+  is_read?: boolean;
+  is_archived?: boolean;
 }
 
 @registerEntity
@@ -42,6 +44,8 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   sender_name?: string | null;
   receiver_address?: string | null;
   receiver_address_type?: string | null;
+  is_read?: boolean;
+  is_archived?: boolean;
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -54,6 +58,8 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.sender_name = entity.sender_name;
     this.receiver_address = entity.receiver_address;
     this.receiver_address_type = entity.receiver_address_type;
+    this.is_read = entity.is_read ?? false;
+    this.is_archived = entity.is_archived ?? false;
   }
 }
 
