@@ -41,6 +41,7 @@ from .routes import (
     auth_api_router,
     auth_router,
     chat_router,
+    debug_router,
     detection_router,
     directory_router,
     hooks_router,
@@ -164,6 +165,7 @@ server.add_router(webhook_api_router)
 server.add_router(assets_router)
 server.add_router(project_router, prefix="/api/v1")
 server.add_router(compute_register_router)
+server.add_router(debug_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)
