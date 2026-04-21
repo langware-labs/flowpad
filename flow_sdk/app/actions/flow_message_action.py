@@ -28,6 +28,7 @@ from flow_sdk.fs_records.flow_message_bundle import FlowMessageExistsError
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse, ApiResponse
 from flow_sdk._compat import UTC
+from flow_sdk.utils.hub import hub_get
 
 logger = logging.getLogger(__name__)
 
@@ -235,7 +236,7 @@ async def create_task_bundle() -> ApiResponse:
         return ApiFailResponse(message=f"Failed to create task bundle: {str(e)}")
 
 
-@action.get(action_name="open", types=["flow_message"])
+@action.get(action_name="open", types=[BuiltinEntityType.FLOW_MESSAGE.value])
 async def open_flow_message() -> ApiResponse:
     """Deep-link handler: fetch FlowMessage from hub and redirect to IncomingTaskDialog.
 
@@ -245,14 +246,13 @@ async def open_flow_message() -> ApiResponse:
     """
     from flow_sdk.builtin.flow_message import AttachmentType
     from flow_sdk.server.routes.notify import handle_notification_deep_link
-    from flow_sdk.utils.hub import hub_get
 
     request_info = get_current_request_info()
     if not request_info or not request_info.target_entity_typeid:
         return ApiFailResponse(message="No request info found", status_code=400)
 
     flow_message_id = str(request_info.target_entity_typeid.id)
-    data = await hub_get("flow_message", flow_message_id)
+    data = await hub_get(BuiltinEntityType.FLOW_MESSAGE.value, flow_message_id)
     meta = (data or {}).get("metadata") or {}
 
     # Extract the first REPO attachment URL — only this triggers the git flow.
@@ -263,8 +263,35 @@ async def open_flow_message() -> ApiResponse:
         "",
     )
 
+    task_id = (meta.get("task_id") or (data or {}).get("task_id") or "").strip()
+    attachment_filename = ((data or {}).get("attachment_filename") or "").strip()
+
+    # No REPO attachment — if the task doesn't exist locally and a bundle is available, unpack it.
+    if not repo_url and task_id and attachment_filename:
+        try:
+            existing = await Task.get_one({"id": task_id})
+            if not existing:
+                local_user = await User.get_one({"uname": "local"})
+                local_user_id = local_user.id if local_user else ""
+                bundle_bytes = await hub_get(
+                    BuiltinEntityType.FLOW_MESSAGE.value, flow_message_id, "fs", f"download/{attachment_filename}", raw=True
+                )
+                if bundle_bytes:
+                    with tempfile.NamedTemporaryFile(suffix=".flowmsg", delete=False) as tmp:
+                        tmp_path = Path(tmp.name)
+                        tmp.write(bundle_bytes)
+                    try:
+                        from flow_sdk.fs_records.flow_message_bundle import unpack_bundle
+                        await unpack_bundle(tmp_path, local_user_id, overwrite=False)
+                    except FlowMessageExistsError:
+                        pass
+                    finally:
+                        tmp_path.unlink(missing_ok=True)
+        except Exception as e:
+            logger.warning("[open_flow_message] failed to materialize task (non-fatal): %s", e)
+
     return await handle_notification_deep_link(
-        task_id=(meta.get("task_id") or (data or {}).get("task_id") or "").strip(),
+        task_id=task_id,
         project_url=repo_url,
         branch=(meta.get("branch") or (data or {}).get("branch") or "").strip(),
         repo_id=(meta.get("repo_id") or (data or {}).get("repo_id") or "").strip(),
@@ -284,3 +311,230 @@ async def download_flow_message() -> ApiResponse:
     except Exception as e:
         logger.error(f"[flow_message_action] download error: {e}", exc_info=True)
         return ApiFailResponse(message=f"Download failed: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# Inbox actions
+# ---------------------------------------------------------------------------
+
+_LAST_FETCH_PATH = FLOW_HOME / ".inbox_last_fetch.json"
+
+
+def _load_last_fetch() -> Optional[str]:
+    """Return ISO timestamp of last successful hub fetch, or None."""
+    try:
+        if _LAST_FETCH_PATH.exists():
+            return _json.loads(_LAST_FETCH_PATH.read_text()).get("last_fetch")
+    except Exception:
+        pass
+    return None
+
+
+def _save_last_fetch(ts: str) -> None:
+    _LAST_FETCH_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _LAST_FETCH_PATH.write_text(_json.dumps({"last_fetch": ts}))
+
+
+@action.get(action_name="inbox-list", types=None)
+async def inbox_list() -> ApiResponse:
+    """Return all non-archived local FlowMessages, newest first."""
+    try:
+        from flow_sdk.db.drivers.query import QueryFilter
+        flt = QueryFilter(type=BuiltinEntityType.FLOW_MESSAGE.value)
+        all_messages = await FlowMessage.get_all(flt)
+        messages = [m for m in all_messages if not m.is_archived]
+        messages.sort(key=lambda m: m.created_date or "", reverse=True)
+        return ApiSuccessResponse(data=[m.model_dump(mode="json") for m in messages])
+    except Exception as e:
+        logger.error("[flow_message_action] inbox-list error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed to list inbox: {str(e)}")
+
+
+async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
+    """Pull new FlowMessages from hub, materialize attachments locally."""
+    since = _load_last_fetch()
+    fetch_started = datetime.now(UTC).isoformat()
+
+    hub_params: dict = {}
+    if since:
+        hub_params["since"] = since
+
+    result = await hub_get(BuiltinEntityType.FLOW_MESSAGE.value, params=hub_params)
+    if result is None:
+        return ApiFailResponse(message="Hub unavailable or not configured")
+    raw_messages = result if isinstance(result, list) else []
+
+    created_ids: list[str] = []
+    for raw in raw_messages:
+        fm_id = (raw.get("id") or "").strip()
+        if not fm_id:
+            continue
+
+        existing = await FlowMessage.get_one({"id": fm_id})
+        if existing:
+            continue
+
+        # Process attachments
+        attachments: list[Attachment] = []
+        for att in (raw.get("attachment") or []):
+            att_type_str = att.get("attachment_type", "")
+            att_data = att.get("data", "")
+            try:
+                att_type = AttachmentType(att_type_str)
+            except ValueError:
+                continue
+
+            if att_type == AttachmentType.TYPE_ID:
+                # Fetch referenced entity from hub (best-effort)
+                try:
+                    parts = att_data.split("-", 1)
+                    if len(parts) == 2:
+                        await hub_get(parts[0], parts[1])
+                except Exception:
+                    pass
+            elif att_type == AttachmentType.FILE:
+                # Download file bytes from hub
+                try:
+                    filename = att_data.split("/")[-1]
+                    file_bytes = await hub_get(BuiltinEntityType.FLOW_MESSAGE.value, fm_id, "fs", filename, raw=True)
+                    if file_bytes:
+                        dest = FLOW_HOME / "inbox" / fm_id
+                        dest.mkdir(parents=True, exist_ok=True)
+                        (dest / filename).write_bytes(file_bytes)
+                        att_data = str(dest / filename)
+                except Exception:
+                    pass
+
+            attachments.append(Attachment(attachment_type=att_type, data=att_data))
+
+        # Build context TypeIds
+        context: list[TypeId] = []
+        for c in (raw.get("context") or []):
+            try:
+                if isinstance(c, str):
+                    context.append(TypeId(c))
+                elif isinstance(c, dict):
+                    context.append(TypeId(type=c.get("type", ""), id=c.get("id", "")))
+            except Exception:
+                pass
+
+        # If the sender uploaded a .flowmsg bundle, unpack it — this materializes
+        # the Task, Spec, and Conversation locally in one shot.
+        attachment_filename = (raw.get("attachment_filename") or "").strip()
+        if attachment_filename:
+            try:
+                bundle_bytes = await hub_get(
+                    BuiltinEntityType.FLOW_MESSAGE.value, fm_id, "fs", f"download/{attachment_filename}", raw=True
+                )
+                if bundle_bytes:
+                    local_user = await User.get_one({"uname": "local"})
+                    local_user_id = local_user.id if local_user else ""
+                    with tempfile.NamedTemporaryFile(suffix=".flowmsg", delete=False) as tmp:
+                        tmp_path = Path(tmp.name)
+                        tmp.write(bundle_bytes)
+                    try:
+                        from flow_sdk.fs_records.flow_message_bundle import FlowMessageExistsError, unpack_bundle
+                        await unpack_bundle(tmp_path, local_user_id, overwrite=False)
+                        created_ids.append(fm_id)
+                    except FlowMessageExistsError:
+                        created_ids.append(fm_id)  # already materialized
+                    finally:
+                        tmp_path.unlink(missing_ok=True)
+                    continue  # entity saved by unpack_bundle — skip the manual save below
+            except Exception as e:
+                logger.warning("[inbox-fetch] bundle unpack failed for %s (falling back): %s", fm_id, e)
+
+        try:
+            fm = FlowMessage.model_validate({
+                "id": fm_id,
+                "text": raw.get("text", ""),
+                "instruction": raw.get("instruction"),
+                "context": context,
+                "attachment": attachments,
+                "sender_id": raw.get("sender_id"),
+                "sender_name": raw.get("sender_name"),
+                "receiver_address": raw.get("receiver_address"),
+                "receiver_address_type": raw.get("receiver_address_type"),
+                "is_read": False,
+                "is_archived": False,
+            })
+            await fm.save(someone_typeid)
+            created_ids.append(fm_id)
+        except Exception as e:
+            logger.warning("[inbox-fetch] failed to save message %s: %s", fm_id, e)
+
+    _save_last_fetch(fetch_started)
+    return ApiSuccessResponse(data={"created": len(created_ids), "ids": created_ids})
+
+
+@action.post(action_name="inbox-fetch", types=None)
+async def inbox_fetch() -> ApiResponse:
+    """Fetch new FlowMessages from hub since last check."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        return await handle_inbox_fetch(request_info.someone_typeid)
+    except Exception as e:
+        logger.error("[flow_message_action] inbox-fetch error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Fetch failed: {str(e)}")
+
+
+@action.post(action_name="inbox-update", types=[BuiltinEntityType.FLOW_MESSAGE.value])
+async def inbox_update() -> ApiResponse:
+    """Update is_read / is_archived on a single FlowMessage."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No target entity")
+        if not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+
+        fm_id = str(request_info.target_entity_typeid.id)
+        fm = await FlowMessage.get_one({"id": fm_id})
+        if not fm:
+            return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
+
+        body = await request_info.get_post_data() or {}
+        if "is_read" in body:
+            fm.is_read = bool(body["is_read"])
+        if "is_archived" in body:
+            fm.is_archived = bool(body["is_archived"])
+
+        await fm.save(request_info.someone_typeid)
+        return ApiSuccessResponse(data={"id": fm_id, "is_read": fm.is_read, "is_archived": fm.is_archived})
+    except Exception as e:
+        logger.error("[flow_message_action] inbox-update error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Update failed: {str(e)}")
+
+
+@action.post(action_name="inbox-bulk-update", types=None)
+async def inbox_bulk_update() -> ApiResponse:
+    """Bulk update is_read / is_archived across all FlowMessages."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+
+        body = await request_info.get_post_data() or {}
+        from flow_sdk.db.drivers.query import QueryFilter
+        flt = QueryFilter(type=BuiltinEntityType.FLOW_MESSAGE.value)
+        messages = await FlowMessage.get_all(flt)
+
+        count = 0
+        for fm in messages:
+            changed = False
+            if "is_read" in body:
+                fm.is_read = bool(body["is_read"])
+                changed = True
+            if "is_archived" in body:
+                fm.is_archived = bool(body["is_archived"])
+                changed = True
+            if changed:
+                await fm.save(request_info.someone_typeid)
+                count += 1
+
+        return ApiSuccessResponse(data={"updated": count})
+    except Exception as e:
+        logger.error("[flow_message_action] inbox-bulk-update error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Bulk update failed: {str(e)}")

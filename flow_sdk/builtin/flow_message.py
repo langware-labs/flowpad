@@ -41,6 +41,8 @@ class FlowMessage(Entity):
     sender_name: Optional[str] = APIField(None)
     receiver_address: Optional[str] = APIField(None)
     receiver_address_type: Optional[str] = APIField(None)  # "email"|"id"|"slack"|...
+    is_read: bool = APIField(default=False)
+    is_archived: bool = APIField(default=False)
     _api_visible: ClassVar[bool] = True
 
     async def to_file(self, dest_dir: Path | None = None) -> Path:

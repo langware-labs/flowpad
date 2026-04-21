@@ -180,6 +180,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     # 3. Write spec + manifest + conversation.jsonl to git repo
     conversation_id: Optional[str] = None
     spec_file_path = ""
+    fm = None
     if project_root:
         tasks_root = Path(project_root) / "tasks"
         spec_root = tasks_root / "spec"
@@ -308,6 +309,22 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     email_error: Optional[str] = None
     if hub_configured and not hub_flow_message_id:
         email_error = f"Email to {recipient_email} could not be sent — the notification service did not confirm delivery."
+
+    # 5a. Upload .flowmsg bundle to hub so the recipient can materialize the task on their end.
+    if hub_flow_message_id and fm:
+        try:
+            from flow_sdk.utils.hub import hub_post, hub_put
+            zip_path = await fm.to_file()
+            bundle_filename = f"{_meaningful_name(task_title)}.flowmsg"
+            content = zip_path.read_bytes()
+            await hub_post(
+                "flow_message", {}, hub_flow_message_id, "fs", f"upload/{bundle_filename}",
+                files={"uploaded_file": (bundle_filename, content, "application/zip")},
+            )
+            zip_path.unlink(missing_ok=True)
+            await hub_put("flow_message", hub_flow_message_id, {"attachment_filename": bundle_filename})
+        except Exception as _upload_err:
+            logger.warning("[notification_action] bundle upload to hub failed (non-fatal): %s", _upload_err)
 
     # 6. Save Notification locally
     notification = Notification.model_validate({
