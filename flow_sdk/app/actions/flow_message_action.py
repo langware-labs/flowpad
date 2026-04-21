@@ -397,7 +397,13 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
     logger.warning("[inbox-fetch][DEBUG] hub result type=%s value=%s", type(result).__name__, result)
     if result is None:
         return ApiFailResponse(message="Hub unavailable or not configured")
-    raw_messages = result if isinstance(result, list) else []
+    # Hub may return a list directly, or {"items": [...], "total": N}, or {"data": [...]}
+    if isinstance(result, list):
+        raw_messages = result
+    elif isinstance(result, dict):
+        raw_messages = result.get("items") or result.get("data") or result.get("results") or []
+    else:
+        raw_messages = []
     logger.warning("[inbox-fetch][DEBUG] raw_messages count=%d ids=%s", len(raw_messages), [m.get("id") for m in raw_messages])
 
     created_ids: list[str] = []
