@@ -846,6 +846,8 @@ export interface ProjectListItem {
   cwd: string | null;
   session_count: number;
   modified_at: string | null;
+  /** True when this project entry represents an SDK-shipped system project. */
+  system?: boolean;
 }
 
 /**

@@ -220,6 +220,10 @@ export function AssetsPage() {
     setAssetFilter(prev => ({ ...prev, projectIds: ids }));
   }, []);
 
+  const handleIncludeSystemChange = useCallback((next: boolean) => {
+    setAssetFilter(prev => ({ ...prev, includeSystem: next }));
+  }, []);
+
   const {
     mode,
     typeName: selectedType,
@@ -372,6 +376,8 @@ export function AssetsPage() {
             projectIds={assetFilter.projectIds}
             onScopeChange={handleScopeChange}
             onProjectIdsChange={handleProjectIdsChange}
+            includeSystem={assetFilter.includeSystem ?? false}
+            onIncludeSystemChange={handleIncludeSystemChange}
           />
         </div>
       </div>

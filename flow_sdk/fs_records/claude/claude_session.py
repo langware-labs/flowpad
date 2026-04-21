@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Literal
-from flow_sdk.fs_records.agent_status import AgenticProcessStatus, _tail_status
+from flow_sdk.fs_records.agent_status import WorkerStatus, _tail_status
 from flow_sdk._compat import Self
 
 from flow_sdk.fs_store import Record, RecordType
@@ -154,11 +154,11 @@ class ClaudeSessionRecord(Record):
         return self.jsonl_path or ""
 
     @property
-    def status(self) -> AgenticProcessStatus:
+    def status(self) -> WorkerStatus:
         """Derive status from the last 4 KB of the JSONL transcript (tail-read, ~60µs)."""
         path = self.jsonl_path
         if not path:
-            return AgenticProcessStatus.IDLE
+            return WorkerStatus.IDLE
         return _tail_status(path)
 
     def to_dict(self) -> dict:

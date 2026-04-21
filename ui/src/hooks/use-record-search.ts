@@ -24,6 +24,7 @@ export interface SearchFilters {
   time_preset?: '1h' | '1d' | '1w' | 'custom';
   time_start?: string;  // ISO string (used when time_preset === 'custom')
   time_end?: string;    // ISO string (used when time_preset === 'custom')
+  include_system?: boolean;  // Show SDK-shipped system-project entities. Default off.
 }
 
 export interface SearchCalibration {
@@ -120,6 +121,7 @@ export function useRecordSearch(
       if (filters.record_type) params.set('record_type', filters.record_type);
       if (filters.status) params.set('status', filters.status);
       if (filters.scope) params.set('scope', filters.scope);
+      if (filters.include_system) params.set('include_system', 'true');
       if (col_weights) params.set('col_weights', col_weights.join(','));
       if (recency_boost) params.set('recency_boost', String(recency_boost));
       if (recency_factor) params.set('recency_factor', String(recency_factor));
@@ -153,7 +155,7 @@ export function useRecordSearch(
       cancelledRef.current = true;
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [query, filters.record_type, filters.status, filters.scope, filters.time_preset, filters.time_start, filters.time_end, col_weights, recency_boost, recency_factor, overfetch, type_scores, debounceMs]);
+  }, [query, filters.record_type, filters.status, filters.scope, filters.time_preset, filters.time_start, filters.time_end, filters.include_system, col_weights, recency_boost, recency_factor, overfetch, type_scores, debounceMs]);
 
   return { results, isLoading, error, indexerReady, latencyMs };
 }

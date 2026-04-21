@@ -2,7 +2,7 @@
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
 
-import { dataContext, fsStore, isProcessLive, Shell, type AgenticProcess } from '@sdk';
+import { dataContext, fsStore, ProcessStatus, Shell, type AgenticProcess } from '@sdk';
 import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
 import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
@@ -274,7 +274,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const [shellReady, setShellReady] = useState(false);
   // Keep shellRef in sync so callbacks and hooks that capture shellRef still work.
   shellRef.current = shell;
-  const processIsActive = isProcessLive(process?.status ?? '');
+  const processIsActive = process?.status === ProcessStatus.RUNNING;
 
   // Notify parent when the worker session ID becomes known (or clears)
   useEffect(() => {

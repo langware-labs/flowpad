@@ -72,6 +72,13 @@ def _doc_search_dirs() -> list[Path]:
 
     _add(Path.home() / ".claude" / "docs")
 
+    # SDK-shipped system docs under the Flowpad Assistant system project.
+    try:
+        from flow_sdk.config import flowpad_assistant_project_root
+        _add(flowpad_assistant_project_root() / ".claude" / "docs")
+    except Exception:
+        pass
+
     from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
     for real in iter_claude_project_paths():
         for docs_dir in _find_docs_subdirs(real):

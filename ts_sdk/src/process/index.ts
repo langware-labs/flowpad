@@ -11,13 +11,16 @@ export {
   ProcessStatus,
   WorkerStatus,
   parseUIUri,
+  isProcessRunning,
   isProcessActive,
   isProcessStartable,
-  isProcessLive,
   isWorkerRunning,
   isWorkerTerminal,
+  hasWorkerStarted,
+  isReadyForInput,
+  getDisplayStatus,
 } from './agentic-types';
-export type { ParsedUIUri, UIComponentPayload } from './agentic-types';
+export type { ParsedUIUri, UIComponentPayload, StatusBearingProcess } from './agentic-types';
 
 export { AgenticProcess } from './agentic-process';
 export type { IAgenticProcess, ProcessState, ExecuteOptions, SpawnResult } from './agentic-process';

@@ -1,23 +1,45 @@
-/** Shared status and UI types for AgenticProcess. */
+/**
+ * Shared status and UI types for AgenticProcess.
+ *
+ * ## Two-axis status model
+ *
+ * ``ProcessStatus`` — **app/user-level lifecycle** of the process container.
+ * Backend-owned FSM. Stored. Transitions are explicit (writers in
+ * ``flow_sdk/builtin/agentic_process/agentic_process.py``):
+ *     NEW → STARTING → RUNNING → STOPPING → STOPPED,  any → FAILED.
+ *
+ * ``WorkerStatus`` — **expert-level state of the worker** running inside the
+ * process (Claude Code session). Derived from the JSONL transcript on every
+ * serialize via ``_tail_status`` in ``flow_sdk/fs_records/agent_status.py``;
+ * never stored. Only meaningful when ``ProcessStatus ∈ {RUNNING, STOPPING,
+ * STOPPED}`` — in any other lifecycle state, treat as undefined.
+ *
+ * ## Invariants
+ *
+ * - ``_RUNNING_STATUSES`` (Python) and ``WORKER_RUNNING_STATUSES`` (here) are
+ *   byte-for-byte identical, verified by a contract test against
+ *   ``test_fixtures/status_sets.json``.
+ * - ``isReadyForInput(process)`` is the single canonical "can the user send now?"
+ *   predicate. There is no stored ``waiting_for_prompt`` or ``is_active`` field.
+ */
 
 /**
- * Backend-owned process lifecycle status enum.
+ * App/user-level lifecycle of the AgenticProcess container.
  *
- * This is Flowpad's control-plane FSM for an AgenticProcess resource.
- * It is not derived from Claude transcript output.
+ * Backend-owned. Stored. Transitions are explicit (no derivation).
  */
 export enum ProcessStatus {
   NEW = 'new',
   STARTING = 'starting',
-  LIVE = 'live',
+  RUNNING = 'running',
   STOPPING = 'stopping',
   STOPPED = 'stopped',
   FAILED = 'failed',
 }
 
-const ACTIVE_PROCESS_STATUSES = new Set<ProcessStatus>([
+const RUNNING_PROCESS_STATUSES = new Set<ProcessStatus>([
   ProcessStatus.STARTING,
-  ProcessStatus.LIVE,
+  ProcessStatus.RUNNING,
   ProcessStatus.STOPPING,
 ]);
 
@@ -27,44 +49,54 @@ const STARTABLE_PROCESS_STATUSES = new Set<ProcessStatus>([
   ProcessStatus.FAILED,
 ]);
 
-export function isProcessActive(status: ProcessStatus): boolean {
-  return ACTIVE_PROCESS_STATUSES.has(status);
+/** True while the process container is running (STARTING/RUNNING/STOPPING). */
+export function isProcessRunning(status: ProcessStatus): boolean {
+  return RUNNING_PROCESS_STATUSES.has(status);
 }
 
+/** @deprecated Use ``isProcessRunning``. Kept as an alias during the rename sweep. */
+export const isProcessActive = isProcessRunning;
+
+/** True when ``start()`` can be invoked (NEW/STOPPED/FAILED). */
 export function isProcessStartable(status: ProcessStatus): boolean {
   return STARTABLE_PROCESS_STATUSES.has(status);
 }
 
-export function isProcessLive(status: ProcessStatus): boolean {
-  return status === ProcessStatus.LIVE;
-}
-
 /**
- * Transcript-derived worker execution status.
- * Mirrors the Python ``AgenticProcessStatus`` enum in
- * ``flow_sdk/fs_records/agent_status.py`` and arrives on the wire as the
- * ``worker_status`` field on ``AgenticProcess``.
+ * Expert-level state of the worker running inside the process.
  *
- * Internal to the SDK — not part of the public API.
- * Use ``ProcessStatus`` (lifecycle) for external consumers.
+ * Mirrors the Python ``WorkerStatus`` enum in ``flow_sdk/fs_records/agent_status.py``.
+ * Arrives on the wire as the ``worker_status`` field on ``AgenticProcess``.
+ *
+ * Only meaningful when ``ProcessStatus ∈ {RUNNING, STOPPING, STOPPED}``.
  */
 export enum WorkerStatus {
-  INIT         = 'init',
-  EMPTY        = 'empty',
+  /** Worker spun up; transcript not yet materialised. Replaces the former INIT + EMPTY split. */
+  INITIALIZING = 'initializing',
+  /** Workflow default — no Claude session linked yet; ready for input. */
   IDLE         = 'idle',
+  /** Terminal — finished cleanly (end_turn / last-prompt). */
   COMPLETE     = 'complete',
+  /** Terminal — abnormal end (stop_sequence / crash). */
   ERROR        = 'error',
+  /** Terminal — user interrupted (Escape / Ctrl-C). */
   INTERRUPTED  = 'interrupted',
+  /** Terminal — stale file >5 min with no terminal signal. */
   INACTIVE     = 'inactive',
+  /** Active — user message received; Claude hasn't responded yet. */
   WAITING      = 'waiting',
+  /** Active — assistant generating. */
   THINKING     = 'thinking',
+  /** Active — Claude dispatched tool(s). */
   TOOL_CALL    = 'tool_call',
+  /** Active — tool is executing (progress events). */
   TOOL_RUNNING = 'tool_running',
-  RUNNING      = 'running',
-  PAUSED       = 'paused',
-  STEPPING     = 'stepping',
+  /** Active — Anthropic API error, Claude is retrying mid-turn. */
   API_ERROR    = 'api_error',
+  /** Terminal — JSONL stalled in WAITING, needs intervention. */
   API_TIMEOUT  = 'api_timeout',
+  /** Parse fallback — last JSONL entry did not match any known pattern. Replaces the former RUNNING catchall. */
+  UNKNOWN      = 'unknown',
 }
 
 const WORKER_RUNNING_STATUSES = new Set<WorkerStatus>([
@@ -72,9 +104,7 @@ const WORKER_RUNNING_STATUSES = new Set<WorkerStatus>([
   WorkerStatus.THINKING,
   WorkerStatus.TOOL_CALL,
   WorkerStatus.TOOL_RUNNING,
-  WorkerStatus.RUNNING,
-  WorkerStatus.PAUSED,
-  WorkerStatus.STEPPING,
+  WorkerStatus.API_ERROR,
 ]);
 
 const WORKER_TERMINAL_STATUSES = new Set<WorkerStatus>([
@@ -82,14 +112,87 @@ const WORKER_TERMINAL_STATUSES = new Set<WorkerStatus>([
   WorkerStatus.ERROR,
   WorkerStatus.INTERRUPTED,
   WorkerStatus.INACTIVE,
+  WorkerStatus.API_TIMEOUT,
 ]);
 
+const READY_WORKER_STATUSES = new Set<WorkerStatus>([
+  WorkerStatus.IDLE,
+  WorkerStatus.COMPLETE,
+  WorkerStatus.INTERRUPTED,
+]);
+
+/** True while the worker is mid-turn (WAITING/THINKING/TOOL_CALL/TOOL_RUNNING/API_ERROR). */
 export function isWorkerRunning(status: WorkerStatus): boolean {
   return WORKER_RUNNING_STATUSES.has(status);
 }
 
+/** True when the worker turn has ended and cannot be resumed in place. */
 export function isWorkerTerminal(status: WorkerStatus): boolean {
   return WORKER_TERMINAL_STATUSES.has(status);
+}
+
+/**
+ * True when the worker has started (has some transcript beyond INITIALIZING)
+ * and is not in the ready-for-input baseline. Used to gate operations like
+ * "fork" that are only sensible after at least one turn has happened.
+ */
+export function hasWorkerStarted(status: WorkerStatus): boolean {
+  return status !== WorkerStatus.INITIALIZING;
+}
+
+/**
+ * Minimal shape for ``isReadyForInput`` / ``getDisplayStatus`` callers.
+ * Avoids coupling to the full ``AgenticProcess`` class.
+ */
+export interface StatusBearingProcess {
+  status?: ProcessStatus | string;
+  workerStatus?: WorkerStatus | string;
+  worker_status?: WorkerStatus | string;
+  session_id?: string | null;
+}
+
+function resolveStatus(p: StatusBearingProcess): ProcessStatus | undefined {
+  return (p.status as ProcessStatus) ?? undefined;
+}
+
+function resolveWorkerStatus(p: StatusBearingProcess): WorkerStatus | undefined {
+  const w = p.workerStatus ?? p.worker_status;
+  return (w as WorkerStatus) ?? undefined;
+}
+
+/**
+ * Single canonical "can the caller send a new user prompt?" predicate.
+ *
+ * Contract (mirrored by the Python ``is_ready_for_input`` in
+ * ``flow_sdk/builtin/agentic_process/status_predicates.py``):
+ *
+ *     status == RUNNING  AND  workerStatus ∈ {IDLE, COMPLETE, INTERRUPTED}
+ *
+ * Special case: if ``workerStatus`` is missing and ``session_id`` is falsy,
+ * treat as ready (process is live but never been prompted).
+ */
+export function isReadyForInput(p: StatusBearingProcess): boolean {
+  if (resolveStatus(p) !== ProcessStatus.RUNNING) return false;
+  const worker = resolveWorkerStatus(p);
+  if (worker === undefined) return !p.session_id;
+  return READY_WORKER_STATUSES.has(worker);
+}
+
+/**
+ * Pick the right status to display for a given process:
+ * - when the process is in a running lifecycle state, surface the fine-grained ``workerStatus``
+ * - otherwise, surface the coarse ``status``
+ *
+ * Extracts the pattern that used to live inline at ``TabbedTerminal.tsx:118``
+ * so every surface renders the same way.
+ */
+export function getDisplayStatus(p: StatusBearingProcess): ProcessStatus | WorkerStatus | undefined {
+  const status = resolveStatus(p);
+  if (status === undefined) return undefined;
+  if (isProcessRunning(status)) {
+    return resolveWorkerStatus(p) ?? status;
+  }
+  return status;
 }
 
 /**

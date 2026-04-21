@@ -92,7 +92,8 @@ async def test_prompt_annotation_created_and_visible(bootstrapped_client, local_
 
     # ── 4. Wait for Claude to finish ─────────────────────────────────────────
     await process.wait(timeout=120)
-    assert process.waiting_for_prompt is True, "Process should be waiting for prompt after completion"
+    from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
+    assert is_ready_for_input(process) is True, "Process should be ready for input after completion"
 
     # ── 5. Verify annotation was created ─────────────────────────────────────
     # The UserPromptSubmit hook fires synchronously when prompt() is called,

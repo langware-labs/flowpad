@@ -1,9 +1,9 @@
 import { Button } from '@src/components/ui/button';
+import { StatusIndicator } from '@src/components/agentic-progress/shared/status-indicator';
 import { useProcessState } from '@src/hooks/use-process-state';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { isProcessActive, ProcessStatus } from '@sdk';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
-import { FolderOpen, Loader2, Terminal } from 'lucide-react';
+import { FolderOpen, Terminal } from 'lucide-react';
 import type { ProcessEntry } from './workflow-run-store';
 
 interface WorkflowRunsListProps {
@@ -49,8 +49,6 @@ function WorkflowRunItem({
 }) {
   const { navigation } = useDockNavigation();
   const state = useProcessState(entry.process);
-  const isRunning = isProcessActive(state.status);
-  const isError = state.status === ProcessStatus.FAILED;
 
   const handleOpenSession = () => {
     navigation.openDock(entry.process.dockPointer);
@@ -69,16 +67,8 @@ function WorkflowRunItem({
     <div
       className={`group flex items-center gap-1 px-2 py-1.5 ${isCurrent ? 'bg-muted/50' : ''}`}
     >
-      {/* Status indicator */}
-      <div className="flex-shrink-0">
-        {isRunning ? (
-          <Loader2 className="h-3 w-3 animate-spin text-green-500" />
-        ) : isError ? (
-          <div className="h-3 w-3 rounded-full bg-destructive" />
-        ) : (
-          <div className="h-3 w-3 rounded-full bg-muted-foreground/40" />
-        )}
-      </div>
+      {/* Status indicator — reuses the canonical config from status-indicator.tsx. */}
+      <StatusIndicator status={state.status} size="sm" className="flex-shrink-0" />
 
       {/* Label */}
       <span className="min-w-0 flex-1 truncate text-xs">{label}</span>

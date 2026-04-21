@@ -24,6 +24,7 @@ pytestmark = [
 
 from flow_sdk.fs_records.agent_record import AgentRecord as Agent
 from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
 from flow_sdk.flowpad_types.enums import WorkerType
 
 SAMPLE_SESSION = (
@@ -84,11 +85,11 @@ async def test_agentic_process_hello_world(local_project, local_compute_node):
     agentic_dirs_before = _agentic_project_dirs()
 
     process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
-    assert process.waiting_for_prompt is False
+    assert is_ready_for_input(process) is False
 
     result: ApiResponse = await process.prompt("Create a text file named hello.txt with the content 'Hello World'.")
     assert isinstance(result, ApiSuccessResponse)
-    assert process.waiting_for_prompt is False
+    assert is_ready_for_input(process) is False
 
     async def _diagnose():
         """Print Claude process vitals every 5s while stream_transcript runs."""
@@ -111,7 +112,7 @@ async def test_agentic_process_hello_world(local_project, local_compute_node):
             print(
                 f"  [diag] status={process.status!r} shell={shell_status!r} "
                 f"pid={worker_pid} alive={worker_alive} exit={exit_code!r} "
-                f"worker_status={worker_status!r} waiting={process.waiting_for_prompt}"
+                f"worker_status={worker_status!r} waiting={is_ready_for_input(process)}"
             )
 
     import asyncio as _asyncio
@@ -124,7 +125,7 @@ async def test_agentic_process_hello_world(local_project, local_compute_node):
     finally:
         diag_task.cancel()
 
-    assert process.waiting_for_prompt is True
+    assert is_ready_for_input(process) is True
 
     # Claude runs in the @local project workdir — verify hello.txt landed there.
     assert process.workdir, "process.workdir should be set after start()"
@@ -160,7 +161,7 @@ async def test_agentic_process_classify(local_project, local_compute_node):
         detail = _fmt_entry(entry)
         print(f"  [{t}] {detail}" if detail else f"  [{t}]")
 
-    assert process.waiting_for_prompt is True
+    assert is_ready_for_input(process) is True
 
     assert process.workdir, "process.workdir should be set after start()"
     workdir = Path(process.workdir)
@@ -195,7 +196,7 @@ async def test_agentic_process_clock_agent(local_project, local_compute_node):
         detail = _fmt_entry(entry)
         print(f"  [{t}] {detail}" if detail else f"  [{t}]")
 
-    assert process.waiting_for_prompt is True
+    assert is_ready_for_input(process) is True
 
     assert process.workdir, "process.workdir should be set after start()"
     workdir = Path(process.workdir)
@@ -223,7 +224,7 @@ async def test_agentic_process_classify_with_agent(local_project, local_compute_
         detail = _fmt_entry(entry)
         print(f"  [{t}] {detail}" if detail else f"  [{t}]")
 
-    assert process.waiting_for_prompt is True
+    assert is_ready_for_input(process) is True
 
     assert process.workdir, "process.workdir should be set after start()"
     workdir = Path(process.workdir)
@@ -255,7 +256,7 @@ async def test_agentic_process_analyze_with_agent(local_project, local_compute_n
         detail = _fmt_entry(entry)
         print(f"  [{t}] {detail}" if detail else f"  [{t}]")
 
-    assert process.waiting_for_prompt is True
+    assert is_ready_for_input(process) is True
 
     assert process.workdir, "process.workdir should be set after start()"
     workdir = Path(process.workdir)
@@ -292,7 +293,7 @@ async def test_agentic_process_fix_it_with_agent(local_project, local_compute_no
         detail = _fmt_entry(entry)
         print(f"  [{t}] {detail}" if detail else f"  [{t}]")
 
-    assert process.waiting_for_prompt is True
+    assert is_ready_for_input(process) is True
 
     assert process.workdir, "process.workdir should be set after start()"
     workdir = Path(process.workdir)
@@ -330,7 +331,7 @@ async def test_agentic_process_lists_system_skills(local_project, local_compute_
         detail = _fmt_entry(entry)
         print(f"  [{t}] {detail}" if detail else f"  [{t}]")
 
-    assert process.waiting_for_prompt is True
+    assert is_ready_for_input(process) is True
 
     assert process.workdir, "process.workdir should be set after start()"
     workdir = Path(process.workdir)
@@ -376,7 +377,7 @@ async def test_agentic_process_local_assets_skill(tmp_path, local_project, local
         detail = _fmt_entry(entry)
         print(f"  [{t}] {detail}" if detail else f"  [{t}]")
 
-    assert process.waiting_for_prompt is True
+    assert is_ready_for_input(process) is True
 
     assert process.workdir, "process.workdir should be set after start()"
     workdir = Path(process.workdir)

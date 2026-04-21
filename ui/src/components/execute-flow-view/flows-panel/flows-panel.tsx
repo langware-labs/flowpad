@@ -1,6 +1,6 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { normalizeVfsPathToLocal } from '@sdk/react/hooks/use-fs-item-flows';
-import { Flow, FlowExecutionStatus, FSItem, QueryFilter, QueryRequest } from '@sdk';
+import { Flow, SendStatus, FSItem, QueryFilter, QueryRequest } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -40,15 +40,15 @@ const formatRelativeTime = (timestamp?: string | Date) => {
 /**
  * Get status display info
  */
-const getStatusDisplay = (status?: FlowExecutionStatus) => {
+const getStatusDisplay = (status?: SendStatus) => {
   switch (status) {
-    case FlowExecutionStatus.Running:
+    case SendStatus.Running:
       return { label: 'Running', color: 'text-green-500', icon: Play };
-    case FlowExecutionStatus.Canceled:
+    case SendStatus.Canceled:
       return { label: 'Canceled', color: 'text-yellow-500', icon: Square };
-    case FlowExecutionStatus.Error:
+    case SendStatus.Error:
       return { label: 'Error', color: 'text-red-500', icon: Square };
-    case FlowExecutionStatus.Ready:
+    case SendStatus.Ready:
     default:
       return { label: 'Ready', color: 'text-muted-foreground', icon: Square };
   }
@@ -60,9 +60,9 @@ interface FlowItemProps {
 }
 
 function FlowItem({ flow, onTerminalClick }: FlowItemProps) {
-  const statusDisplay = getStatusDisplay(flow.executionStatus);
+  const statusDisplay = getStatusDisplay(flow.sendStatus);
   const StatusIcon = statusDisplay.icon;
-  const isRunning = flow.executionStatus === FlowExecutionStatus.Running;
+  const isRunning = flow.sendStatus === SendStatus.Running;
   const hasTerminal = !!flow.current_terminal_id;
   const shortId = flow.id?.slice(0, 8) || 'unknown';
 

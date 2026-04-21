@@ -1,4 +1,4 @@
-import { AgenticProcess, dataContext, isProcessLive, Shell, ShellStatus, type ComputeNode } from '@sdk';
+import { AgenticProcess, dataContext, getDisplayStatus, isProcessRunning, isReadyForInput, ProcessStatus, Shell, ShellStatus, type ComputeNode } from '@sdk';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { Button } from '@src/components/ui/button';
@@ -114,8 +114,9 @@ const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: str
   statusReason,
 }) => {
   const workdir = process.workdir;
-  const isActive = process.is_active;
-  const status = isProcessLive(process.status) ? process.workerStatus : process.status;
+  // "Alive" under the new model = the process container is in a running lifecycle state.
+  const isAlive = isProcessRunning(process.status ?? ProcessStatus.NEW);
+  const status = getDisplayStatus(process) ?? ProcessStatus.NEW;
   const workerSessionId = process.session_id ?? null;
 
   return (
@@ -123,7 +124,7 @@ const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: str
       {statusReason && <p className="text-[11px] text-amber-500">{statusReason}</p>}
       <div className="flex items-center gap-2">
         <span
-          className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-muted-foreground'}`}
+          className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${isAlive ? 'bg-emerald-500' : 'bg-muted-foreground'}`}
         />
         <span className="text-[11px] font-semibold capitalize text-foreground">{status}</span>
       </div>
@@ -485,10 +486,10 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
 
     void shell.updateDisplay({ name: newName, is_pty: !injectRename });
 
-    // Inject /rename only when user-initiated AND Claude is at the prompt (waiting_for_prompt),
+    // Inject /rename only when user-initiated AND the worker is ready for input,
     // never when the title came from xterm (PTY escape sequence), to avoid a loop
     // where Claude sets the title → we inject /rename → Claude sets the title again.
-    if (injectRename && session.shellId === activeShellId && contextAgenticProcess?.waiting_for_prompt) {
+    if (injectRename && session.shellId === activeShellId && contextAgenticProcess && isReadyForInput(contextAgenticProcess)) {
       void shell.sendInput(`/rename ${newName}\r`);
     }
   };

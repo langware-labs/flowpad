@@ -1,4 +1,4 @@
-import { AgenticProcess, FlowElementTypes } from '@sdk';
+import { AgenticProcess, FlowElementTypes, isReadyForInput } from '@sdk';
 import { useEntity, useEntityData } from '@sdk/react/hooks';
 import { X } from 'lucide-react';
 import { KeyboardEvent, useEffect, useRef, useState } from 'react';
@@ -29,7 +29,7 @@ export function AssetExecutionPanel({ execution, onClose }: AssetExecutionPanelP
   const { process, send } = execution;
   const { flowData: items } = useEntityData(process?.typeId ?? null);
   const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
-  const isRunning = !!process && !liveProcess?.waiting_for_prompt;
+  const isRunning = !!process && !!liveProcess && !isReadyForInput(liveProcess);
 
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);

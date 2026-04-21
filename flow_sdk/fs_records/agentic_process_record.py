@@ -7,8 +7,8 @@ from typing import Any, ClassVar, TYPE_CHECKING
 
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.property_record import PropertyRecord
-from flow_sdk.fs_records.agent_status import AgenticProcessStatus
-from flow_sdk.fs_records.agentic_process_lifecycle import AgenticProcessLifecycleStatus
+from flow_sdk.fs_records.agent_status import WorkerStatus
+from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
 
 if TYPE_CHECKING:
     from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
@@ -44,7 +44,7 @@ class AgenticProcessRecord(Record):
 
     def __init__(self, **kwargs: Any):
         kwargs.setdefault("type", RecordType.AGENTIC_PROCESS)
-        kwargs.setdefault("status", AgenticProcessLifecycleStatus.NEW)
+        kwargs.setdefault("status", ProcessStatus.NEW)
         # Migrate old field names from pre-existing records on disk
         if "pty_session_id" in kwargs and "pty_pid" not in kwargs:
             kwargs["pty_pid"] = kwargs.pop("pty_session_id")
@@ -144,22 +144,22 @@ class AgenticProcessRecord(Record):
         sid = self.worker_session_id
         return ClaudeSessionRecord.discover_one(sid) if sid else None
 
-    def discover_worker_status(self, worker_session_id: str | None = None) -> AgenticProcessStatus:
+    def discover_worker_status(self, worker_session_id: str | None = None) -> WorkerStatus:
         """Derive worker_status from the Claude session transcript (tail-read, ~60µs)."""
         from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 
         sid = worker_session_id or self.worker_session_id
         if not sid:
-            return AgenticProcessStatus.IDLE
+            return WorkerStatus.IDLE
 
         session = (
             self.claude_session_record
             if not worker_session_id
             else ClaudeSessionRecord.discover_one(worker_session_id)
         )
-        return session.status if session else AgenticProcessStatus.IDLE
+        return session.status if session else WorkerStatus.IDLE
 
-    def discover_status(self, worker_session_id: str | None = None) -> AgenticProcessStatus:
+    def discover_status(self, worker_session_id: str | None = None) -> WorkerStatus:
         """Backward-compatible alias for transcript-derived worker_status."""
         return self.discover_worker_status(worker_session_id)
 

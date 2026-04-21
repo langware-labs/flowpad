@@ -1,4 +1,4 @@
-import { AgenticProcess, dataContext } from '@sdk';
+import { AgenticProcess, dataContext, isReadyForInput } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Play, Square } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
@@ -25,7 +25,7 @@ export function useAgentExecution(sourcePath: string): AgentExecutionHandle {
   processRef.current = process;
 
   const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
-  const isRunning = !!process && !liveProcess?.waiting_for_prompt;
+  const isRunning = !!process && !!liveProcess && !isReadyForInput(liveProcess);
 
   const run = useCallback(() => {
     setPanelOpen(true);
