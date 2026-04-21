@@ -84,10 +84,6 @@ def _auth_headers() -> dict[str, str]:
     if not api_key:
         from flow_sdk.cli.auth import get_api_key
         api_key = get_api_key()
-    if api_key:
-        logger.warning("[hub] using key: %s...%s", api_key[:8], api_key[-4:])
-    else:
-        logger.warning("[hub] no API key found")
     return {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
 
