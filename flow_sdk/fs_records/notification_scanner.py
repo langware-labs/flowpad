@@ -253,11 +253,7 @@ async def _create_conversation_from_disk(
     else:
         conv.id = Conversation.allocate_id(conv.model_dump())
 
-    logger.warning("[_create_conversation_from_disk] task_id=%s conv_id=%s pointers=%d message_ids=%s",
-                   task_id, conversation_id, len(pointers), [p.get("message_id") for p in pointers])
     conv = await conv.save(owner_typeid)
-    logger.warning("[_create_conversation_from_disk] saved conv id=%s message_count=%s message_ids=%s",
-                   conv.id, conv.message_count, conv.message_ids)
 
     # Record-level parent-child composition (conversation → task via parent_ref)
     rec = ConversationRecord.from_jsonl(jsonl_path, task_id, conv.id)
