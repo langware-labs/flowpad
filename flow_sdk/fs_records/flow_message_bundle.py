@@ -346,6 +346,13 @@ async def unpack_bundle(
                         task_data = json.loads(manifest_file.read_text(encoding="utf-8"))
                         task_id = task_data.get("id") or entry_id
                         existing_task = await Task.get_one({"id": task_id})
+                        # Patch sender_email into existing task metadata if the bundle has it
+                        # and it was missing (e.g. task imported before sender_email was added)
+                        if existing_task and not overwrite:
+                            bundle_sender_email = (task_data.get("metadata") or {}).get("sender_email") or ""
+                            if bundle_sender_email and not (existing_task.metadata or {}).get("sender_email"):
+                                existing_task.metadata = {**(existing_task.metadata or {}), "sender_email": bundle_sender_email}
+                                await existing_task.save(owner_typeid)
                         if existing_task is None or overwrite:
                             # Merge metadata: keep agentic_* keys from existing task so
                             # session resume still works after re-upload.
