@@ -392,10 +392,13 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
     if since:
         hub_params["since"] = since
 
+    logger.warning("[inbox-fetch][DEBUG] since=%r params=%s", since, hub_params)
     result = await hub_get(BuiltinEntityType.FLOW_MESSAGE, params=hub_params)
+    logger.warning("[inbox-fetch][DEBUG] hub result type=%s value=%s", type(result).__name__, result)
     if result is None:
         return ApiFailResponse(message="Hub unavailable or not configured")
     raw_messages = result if isinstance(result, list) else []
+    logger.warning("[inbox-fetch][DEBUG] raw_messages count=%d ids=%s", len(raw_messages), [m.get("id") for m in raw_messages])
 
     created_ids: list[str] = []
     for raw in raw_messages:
