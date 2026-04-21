@@ -319,8 +319,17 @@ export function AssetsPage() {
   }, [newTypeTarget, navigation, toast]);
 
   const handleRowClick = useCallback((result: SearchResult) => {
-    navigation.openDock(DockPointer.forAssetEditor(result.record_type, result.source_path));
-  }, [navigation]);
+    const path = result.source_path;
+    if (!path || !path.startsWith('/')) {
+      toast({
+        title: 'Asset has no file on disk',
+        description: `${result.name || result.record_id} is indexed without a valid source path and cannot be opened.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    navigation.openDock(DockPointer.forAssetEditor(result.record_type, path));
+  }, [navigation, toast]);
 
   const handleProjectFilter = useCallback(async (label: string) => {
     try {
