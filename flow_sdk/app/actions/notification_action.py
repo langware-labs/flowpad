@@ -442,15 +442,19 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     # Upload reply to hub so the original sender can fetch it via inbox
     sender_name: str = (local_user.name or local_user.email or "") if local_user else ""
     recipient_email_for_reply = (task.metadata or {}).get("sender_email") or ""
+    logger.warning("[append_conversation][DEBUG] task_id=%s task.metadata=%s sender_name=%s recipient_email_from_metadata=%r hub_base_url=%r",
+                   task_id, task.metadata, sender_name, recipient_email_for_reply, hub_base_url())
 
     # Fallback: read sender_email directly from manifest.json on disk (handles tasks
     # imported before sender_email was added to the manifest schema)
     if not recipient_email_for_reply:
         project_root = (task.metadata or {}).get("project_root") or ""
+        logger.warning("[append_conversation][DEBUG] recipient_email empty, trying manifest fallback. project_root=%r", project_root)
         if project_root:
             import json as _json2
             from pathlib import Path as _Path2
             tasks_dir = _Path2(project_root) / "tasks"
+            logger.warning("[append_conversation][DEBUG] tasks_dir=%s exists=%s", tasks_dir, tasks_dir.is_dir())
             if tasks_dir.is_dir():
                 for _td in tasks_dir.iterdir():
                     if not _td.is_dir() or _td.name == "spec":
@@ -460,15 +464,20 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
                         continue
                     try:
                         _md = _json2.loads(_mf.read_text(encoding="utf-8"))
+                        logger.warning("[append_conversation][DEBUG] manifest %s: task_id=%r sender_email=%r", _mf, _md.get("task_id"), _md.get("sender_email"))
                         if _md.get("task_id") == task_id:
                             recipient_email_for_reply = _md.get("sender_email") or ""
+                            logger.warning("[append_conversation][DEBUG] matched manifest, recipient_email=%r", recipient_email_for_reply)
                             break
-                    except Exception:
-                        pass
+                    except Exception as _me:
+                        logger.warning("[append_conversation][DEBUG] manifest read error: %s", _me)
+
+    logger.warning("[append_conversation][DEBUG] final recipient_email=%r, will_upload=%s", recipient_email_for_reply, bool(recipient_email_for_reply and hub_base_url()))
     if recipient_email_for_reply and hub_base_url():
         try:
             import uuid as _uuid
             hub_reply_id = str(_uuid.uuid4())
+            logger.warning("[append_conversation][DEBUG] posting to hub: hub_reply_id=%s recipient=%s", hub_reply_id, recipient_email_for_reply)
             hub_data = await hub_post(BuiltinEntityType.FLOW_MESSAGE, {
                 "flow_message_id": hub_reply_id,
                 "recipient_email": recipient_email_for_reply,
@@ -478,19 +487,25 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
                 "task_title": task.title or "",
                 "message": message,
             }, action="send")
+            logger.warning("[append_conversation][DEBUG] hub_post(send) response: %s", hub_data)
             hub_reply_fm_id = (hub_data or {}).get("flow_message_id")
             if hub_reply_fm_id:
                 zip_path = await reply_fm.to_file()
                 bundle_filename = f"reply-{_meaningful_name(task.title or 'reply')}.flowmsg"
                 content = zip_path.read_bytes()
-                await hub_post(
+                logger.warning("[append_conversation][DEBUG] uploading bundle: hub_reply_fm_id=%s filename=%s size=%d", hub_reply_fm_id, bundle_filename, len(content))
+                upload_resp = await hub_post(
                     BuiltinEntityType.FLOW_MESSAGE, {}, hub_reply_fm_id, "fs", "upload",
                     files={"uploaded_file": (bundle_filename, content, "application/zip")},
                 )
+                logger.warning("[append_conversation][DEBUG] upload response: %s", upload_resp)
                 zip_path.unlink(missing_ok=True)
-                await hub_put(BuiltinEntityType.FLOW_MESSAGE, hub_reply_fm_id, {"attachment_filename": bundle_filename})
+                put_resp = await hub_put(BuiltinEntityType.FLOW_MESSAGE, hub_reply_fm_id, {"attachment_filename": bundle_filename})
+                logger.warning("[append_conversation][DEBUG] hub_put(attachment_filename) response: %s", put_resp)
+            else:
+                logger.warning("[append_conversation][DEBUG] hub_post(send) returned no flow_message_id, hub_data=%s", hub_data)
         except Exception as _hub_err:
-            logger.warning("[append_conversation] hub reply upload failed (non-fatal): %s", _hub_err)
+            logger.warning("[append_conversation] hub reply upload failed (non-fatal): %s", _hub_err, exc_info=True)
 
     # Append pointer to conversation + keep message_ids in sync
     reply_ts = datetime.now(UTC).isoformat()
