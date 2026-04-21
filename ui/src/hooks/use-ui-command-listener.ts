@@ -1,4 +1,4 @@
-import { ConnectionManager, dataManager, TypeId, type UiCommandMessage } from '@sdk';
+import { ConnectionManager, DockPointerData, dataManager, TypeId, ViewType, type IDockPointer, type UiCommandMessage } from '@sdk';
 import { useEffect } from 'react';
 import { buildDockUrl, stripDockPortion } from '@src/navigation/url-builder';
 
@@ -34,25 +34,26 @@ export function useUiCommandListener(): void {
       }
 
       // Cache-first; fall back to network. The server already confirmed
-      // existence, so a cache miss just means we fetch it now.
+      // existence, so the entity is real — we only try to resolve it to
+      // get entity-specific `dockPointer` overrides (Shell → SHELL view,
+      // AgenticProcess → SHELL view, etc.). If the type has no TS class
+      // registered, or the fetch fails, we fall back to the generic
+      // HOME + typeId pointer — navigation still works, we just land on
+      // the entity's home view instead of its bespoke one.
       let entity = dataManager.getByTypeIdFromCache(typeId);
       if (!entity) {
         try {
           entity = await dataManager.getByTypeId(typeId);
-        } catch (err) {
-          console.warn('[ui_command] getByTypeId failed', typeId.toString(), err);
-          return;
+        } catch {
+          entity = null;
         }
       }
-      if (!entity) {
-        console.warn('[ui_command] entity not retrievable', typeId.toString());
-        return;
-      }
 
-      const pointer = entity.dockPointer;
-      if (!pointer || !pointer.viewType) {
-        console.warn('[ui_command] entity has no dockPointer', typeId.toString());
-        return;
+      let pointer: IDockPointer;
+      if (entity && entity.dockPointer && entity.dockPointer.viewType) {
+        pointer = entity.dockPointer;
+      } else {
+        pointer = new DockPointerData(ViewType.HOME, typeId.toString());
       }
 
       // Build the dock URL relative to the current path. This preserves
