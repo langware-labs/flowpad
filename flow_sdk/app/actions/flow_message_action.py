@@ -397,7 +397,7 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
                 # Download file bytes from hub
                 try:
                     filename = att_data.split("/")[-1]
-                    file_bytes = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id, "fs", filename, raw=True)
+                    file_bytes = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id, "fs", f"download/{filename}", raw=True)
                     if file_bytes:
                         dest = FLOW_HOME / "inbox" / fm_id
                         dest.mkdir(parents=True, exist_ok=True)
