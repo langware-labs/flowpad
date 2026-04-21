@@ -265,6 +265,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
                 "spec_dir": spec_dir_name,
                 "shared_by_id": sender_id,
                 "sender_name": sender_name,
+                "sender_email": local_user.email if local_user else "",
                 "conversation_id": conversation_id,
                 "created_at": datetime.now(UTC).isoformat(),
                 "repo_id": repo_id_val,
@@ -437,6 +438,36 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
             )
 
     reply_fm = await reply_fm.save(someone_typeid)
+
+    # Upload reply to hub so the original sender can fetch it via inbox
+    sender_name: str = (local_user.name or local_user.email or "") if local_user else ""
+    recipient_email_for_reply = (task.metadata or {}).get("sender_email") or ""
+    if recipient_email_for_reply and hub_base_url():
+        try:
+            import uuid as _uuid
+            hub_reply_id = str(_uuid.uuid4())
+            hub_data = await hub_post(BuiltinEntityType.FLOW_MESSAGE, {
+                "flow_message_id": hub_reply_id,
+                "recipient_email": recipient_email_for_reply,
+                "sender_id": sender_id,
+                "sender_name": sender_name,
+                "task_id": task_id,
+                "task_title": task.title or "",
+                "message": message,
+            }, action="send")
+            hub_reply_fm_id = (hub_data or {}).get("flow_message_id")
+            if hub_reply_fm_id:
+                zip_path = await reply_fm.to_file()
+                bundle_filename = f"reply-{_meaningful_name(task.title or 'reply')}.flowmsg"
+                content = zip_path.read_bytes()
+                await hub_post(
+                    BuiltinEntityType.FLOW_MESSAGE, {}, hub_reply_fm_id, "fs", "upload",
+                    files={"uploaded_file": (bundle_filename, content, "application/zip")},
+                )
+                zip_path.unlink(missing_ok=True)
+                await hub_put(BuiltinEntityType.FLOW_MESSAGE, hub_reply_fm_id, {"attachment_filename": bundle_filename})
+        except Exception as _hub_err:
+            logger.warning("[append_conversation] hub reply upload failed (non-fatal): %s", _hub_err)
 
     # Append pointer to conversation + keep message_ids in sync
     reply_ts = datetime.now(UTC).isoformat()
