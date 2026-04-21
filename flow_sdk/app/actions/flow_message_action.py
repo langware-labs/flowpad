@@ -414,20 +414,17 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
 
         existing = await FlowMessage.get_one({"id": fm_id})
         if existing:
-            # Re-materialize if the referenced task is missing locally
             attachment_filename = (raw.get("attachment_filename") or "").strip()
             if attachment_filename:
-                ref_task_id = next(
-                    (c.split("-", 1)[1] for c in (raw.get("context") or [])
-                     if isinstance(c, str) and c.startswith(BuiltinEntityType.TASK.value + "-")),
-                    None,
-                )
-                if ref_task_id and not await Task.get_one({"id": ref_task_id}):
-                    try:
-                        if await _download_and_unpack_bundle(fm_id, attachment_filename):
-                            created_ids.append(fm_id)
-                    except Exception as e:
-                        logger.warning("[inbox-fetch] re-materialize failed for %s: %s", fm_id, e)
+                # Always re-unpack bundles when we find an existing FM keyed by the hub FM ID.
+                # The hub ID and the bundle's internal FM ID are different — a previous fetch
+                # may have saved a stub (hub ID) via the fallback path without updating the
+                # conversation. Re-unpacking is fast (FlowMessageExistsError if already done).
+                try:
+                    if await _download_and_unpack_bundle(fm_id, attachment_filename):
+                        created_ids.append(fm_id)
+                except Exception as e:
+                    logger.warning("[inbox-fetch] re-materialize failed for %s: %s", fm_id, e)
             continue
 
         # Process attachments — normalise hub TypeId dict format
@@ -510,7 +507,8 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
                         tmp_path.unlink(missing_ok=True)
                     continue  # entity saved by unpack_bundle — skip the manual save below
             except Exception as e:
-                logger.warning("[inbox-fetch] bundle unpack failed for %s (falling back): %s", fm_id, e)
+                logger.warning("[inbox-fetch] bundle unpack failed for %s (will retry next fetch): %s", fm_id, e)
+                continue  # don't save a stub with hub ID — that would block re-unpack next time
 
         try:
             fm = FlowMessage.model_validate({
