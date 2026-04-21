@@ -1,19 +1,59 @@
 import {
   AgenticProcess,
   ComputeNode,
-  Flow,
   FlowElementTypes,
   TypeId,
   type FlowData,
 } from '@sdk';
-import { useProcess, useProcessActions, useProcessExecution, useProcessStream } from '@sdk/react/hooks';
+import { useProcess } from '@sdk/react/hooks';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
-import ChatMessage from '@src/pages/flow-page/chat-panel/chat-message/chat-message';
+import ChatMessage from './chat-message/chat-message';
 import { useProject } from '@src/hooks/useProject';
 import { cn } from '@src/lib/utils';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CompactChatInput } from './CompactChatInput';
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
+
+/**
+ * Subscribe to the `flowDataStream.items` on an AgenticProcess.
+ *
+ * The SDK's generic `useProcessStream` hook is Flow-specific — it reads
+ * `flow.stream.items`, which doesn't exist on AgenticProcess. AgenticProcess
+ * exposes `.flowDataStream` (an EventEmitter emitting `'data'`). This local
+ * hook bridges that gap so this panel can stay off the Flow abstraction.
+ */
+function useAgenticProcessStream(process: AgenticProcess | null): FlowData[] {
+  const snapshotRef = useRef<FlowData[]>([]);
+
+  const subscribe = useCallback((cb: () => void) => {
+    if (!process) return () => {};
+    const onData = () => cb();
+    const onClear = () => cb();
+    process.flowDataStream.on('data', onData);
+    process.flowDataStream.on('clear', onClear);
+    return () => {
+      process.flowDataStream.off('data', onData);
+      process.flowDataStream.off('clear', onClear);
+    };
+  }, [process]);
+
+  const getSnapshot = useCallback(() => {
+    if (!process) {
+      if (snapshotRef.current.length !== 0) snapshotRef.current = [];
+      return snapshotRef.current;
+    }
+    const items = process.flowDataStream.items as FlowData[];
+    if (
+      items.length !== snapshotRef.current.length ||
+      items.some((v, i) => v !== snapshotRef.current[i])
+    ) {
+      snapshotRef.current = [...items];
+    }
+    return snapshotRef.current;
+  }, [process]);
+
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
 
 interface EntityChatPanelProps {
   /**
@@ -30,18 +70,20 @@ interface EntityChatPanelProps {
  * Compact chat panel attached to an arbitrary host entity (markdown file, trigger, …).
  *
  * Process lifecycle:
- *   - Queries AgenticProcess by `target_typeid_str === target.toString()`.
- *   - If a process already exists, it's reused (chat persistence is free).
- *   - If none, one is created lazily on the first send via `computeNode.createProcess`,
- *     then `flow.sendMessage(text)` on the resulting Flow.
- *
- * Keeps intentionally off the legacy `useSendMessageStore` singleton so it can
- * coexist with the flow-page `ChatPanel` without clobbering its pendingMessage.
+ *   - Queries AgenticProcess by `target_typeid_str === target`.
+ *   - If a process already exists, reuse it (chat persistence survives reloads).
+ *   - If none, create one lazily on the first send via `computeNode.createProcess({
+ *       targetTypeIdStr, outputFormat: "stream-json" })`. Print-mode processes
+ *     don't spawn a PTY, so no `start({headless})` needed.
+ *   - Every send invokes `process.prompt(text)` which POSTs to the streaming
+ *     `prompt` action on AgenticProcess; FlowData flows into `process.flowDataStream`
+ *     and renders via `useProcessStream`.
  */
 export function EntityChatPanel({ target, className }: EntityChatPanelProps) {
   const targetStr = target ?? '';
 
-  // 1. Find an existing attached process (latest wins).
+  // 1. Find an existing attached process (latest wins; user's explicit pick
+  //    comes later via the History button — v1 just auto-picks newest).
   const { processes, isLoading: listLoading } = useProcessesForTarget(targetStr);
   const latestProcess: AgenticProcess | null = useMemo(() => {
     if (!processes.length) return null;
@@ -52,63 +94,38 @@ export function EntityChatPanel({ target, className }: EntityChatPanelProps) {
     })[0] ?? null;
   }, [processes]);
 
-  // 2. Resolve the Flow entity for the process.
+  // 2. Resolve the full AgenticProcess entity (the one returned by
+  //    useProcessesForTarget may be partial; useProcess gives us the watched instance).
   const processTypeId = useMemo(
     () => (latestProcess?.id ? new TypeId(AgenticProcess.type, latestProcess.id) : null),
     [latestProcess?.id],
   );
-  const { data: flow } = useProcess(processTypeId, { enabled: !!processTypeId });
-  const { data: stream } = useProcessStream(flow as Flow | null);
-  const { isRunning } = useProcessExecution(flow as Flow | null);
-  const { send } = useProcessActions(flow as Flow | null);
+  const { data: resolvedProcess } = useProcess(processTypeId, { enabled: !!processTypeId });
 
-  // 3. Project workdir (needed for lazy create).
-  const { project } = useProject();
-
-  // Creation guard so we don't spawn two processes when the user double-sends.
+  // 3. Creation guard — a locally-spawned process survives until the query
+  //    picks it up on the next tick.
   const createInFlightRef = useRef(false);
-  const [createdFlow, setCreatedFlow] = useState<Flow | null>(null);
-  const effectiveFlow: Flow | null = (flow as Flow | null) ?? createdFlow;
-  // If the queried process catches up to a just-created one, drop the local handle.
+  const [localProcess, setLocalProcess] = useState<AgenticProcess | null>(null);
   useEffect(() => {
-    if (createdFlow && flow) setCreatedFlow(null);
-  }, [flow, createdFlow]);
-  const { send: sendOnCreated } = useProcessActions(createdFlow);
+    if (localProcess && resolvedProcess?.id === localProcess.id) setLocalProcess(null);
+  }, [resolvedProcess?.id, localProcess]);
 
-  const handleSend = useCallback(async (text: string) => {
-    if (!targetStr) return;
+  const activeProcess: AgenticProcess | null =
+    (resolvedProcess as AgenticProcess | null | undefined) ?? localProcess;
 
-    // Reuse existing process if we have one.
-    if (effectiveFlow) {
-      if (flow) await send(text);
-      else await sendOnCreated(text);
-      return;
-    }
+  // Hydrate history on first resolution. Per AgenticProcess.loadHistory, safe to
+  // call repeatedly — internally guarded by `_historyLoaded`.
+  useEffect(() => {
+    if (!activeProcess) return;
+    void activeProcess.loadHistory().catch((err) => {
+      console.error('[EntityChatPanel] loadHistory failed', err);
+    });
+  }, [activeProcess?.id]);
 
-    // Lazy create.
-    if (createInFlightRef.current) return;
-    createInFlightRef.current = true;
-    try {
-      const computeNode = await ComputeNode.getById('@local');
-      if (!computeNode) throw new Error('No local compute node');
-      const workdir = project?.fs_storage_mount_path ?? undefined;
-      const newProcess = await computeNode.createProcess({
-        workdir,
-        projectId: project?.id,
-        targetTypeIdStr: targetStr,
-      });
-      await newProcess.start({ headless: true });
-      // Wrap the spawned process as a Flow so useProcessActions can drive it.
-      const flowHandle = new Flow({ id: newProcess.id });
-      setCreatedFlow(flowHandle);
-      await flowHandle.sendMessage(text, { processId: newProcess.id, flowMode: 'Agent' });
-    } finally {
-      createInFlightRef.current = false;
-    }
-  }, [effectiveFlow, flow, send, sendOnCreated, targetStr, project]);
-
+  // Stream ingestion — FlowStreamProcessor (inside AgenticProcess.prompt) appends
+  // to flowDataStream; our local hook subscribes to its 'data' event.
+  const items = useAgenticProcessStream(activeProcess);
   const messages = useMemo(() => {
-    const items: FlowData[] = stream?.data ?? [];
     return items.filter((d) => {
       const t: string = d.elementType;
       return (
@@ -117,27 +134,64 @@ export function EntityChatPanel({ target, className }: EntityChatPanelProps) {
         t === FlowElementTypes.TEXT
       );
     });
-  }, [stream]);
+  }, [items]);
+
+  // 4. Project workdir + id (lazy-create inputs).
+  const { project } = useProject();
+
+  // 5. In-flight tracking for the send button gate.
+  const [sending, setSending] = useState(false);
+
+  const handleSend = useCallback(async (text: string) => {
+    if (!targetStr || sending) return;
+    setSending(true);
+    try {
+      let proc = activeProcess;
+
+      // Lazy-create on first send.
+      if (!proc) {
+        if (createInFlightRef.current) return;
+        createInFlightRef.current = true;
+        try {
+          const computeNode = await ComputeNode.getById('@local');
+          if (!computeNode) throw new Error('No local compute node');
+          const newProcess = await computeNode.createProcess({
+            workdir: project?.fs_storage_mount_path ?? undefined,
+            projectId: project?.id,
+            targetTypeIdStr: targetStr,
+            outputFormat: 'stream-json',
+          });
+          setLocalProcess(newProcess);
+          proc = newProcess;
+        } finally {
+          createInFlightRef.current = false;
+        }
+      }
+
+      if (!proc) throw new Error('process creation failed');
+
+      await proc.prompt(text);
+    } catch (err) {
+      console.error('[EntityChatPanel] prompt failed', err);
+    } finally {
+      setSending(false);
+    }
+  }, [activeProcess, sending, targetStr, project]);
 
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
-  // Scroll-to-bottom on new message.
   useEffect(() => {
     scrollRef.current?.scrollToBottom();
   }, [messages.length]);
 
-  const hasFlow = !!effectiveFlow;
-  const showEmptyState = !hasFlow && !listLoading && !createInFlightRef.current;
-  const sendDisabled = !targetStr || isRunning || createInFlightRef.current;
+  const showEmptyState = !activeProcess && !listLoading && !sending;
+  const sendDisabled = !targetStr || sending;
 
   return (
     <div
       className={cn('flex h-full min-h-0 flex-col bg-background', className)}
       data-testid="entity-chat-panel"
     >
-      <AutoScrollContainer
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto"
-      >
+      <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
         {showEmptyState && (
           <div className="p-3 text-[11px] text-muted-foreground">
             Ask about this document. The conversation will persist.
@@ -159,5 +213,5 @@ export function EntityChatPanel({ target, className }: EntityChatPanelProps) {
   );
 }
 
-// Re-export so outer callers can thread the SDK types without a second import.
-export type { AgenticProcess, Flow, FlowData, TypeId };
+// Re-export so outer callers can thread SDK types without a second import.
+export type { AgenticProcess, FlowData, TypeId };

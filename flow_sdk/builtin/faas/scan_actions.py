@@ -256,6 +256,7 @@ class ScanActionsMixin:
                 debug=bool(context_data.pop("debug", True)),
                 worktree=bool(context_data.pop("worktree", False)),
                 agents_json=context_data.pop("agents_json", None),
+                output_format=context_data.pop("output_format", None),
             )
 
             if fork_session and resume_session_id:
