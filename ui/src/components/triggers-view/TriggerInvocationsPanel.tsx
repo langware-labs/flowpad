@@ -5,8 +5,8 @@ import { cn } from '@src/lib/utils';
 import { useTriggerLog } from '@src/hooks/useTriggerLog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { StatusIndicator } from '@src/components/agentic-progress/shared/status-indicator';
-import { AgenticProcess, QueryFilter, QueryRequest, type ITrigger, type ProcessStatus } from '@sdk';
-import { useEntitiesQuery } from '@sdk/react/hooks';
+import { AgenticProcess, Trigger, TypeId, type ITrigger, type ProcessStatus } from '@sdk';
+import { useProcessesForTarget } from '@src/components/entity-chat-panel';
 import { ExternalLink } from 'lucide-react';
 import { useMemo } from 'react';
 
@@ -37,22 +37,13 @@ export function TriggerInvocationsPanel({ trigger }: Props) {
   const { entries, isLoading } = useTriggerLog(trigger?.id ?? null);
   const { navigation } = useDockNavigation();
 
-  // Subscribe to all agentic processes this trigger spawned, so each row
-  // can show live status. Matches on the `trigger_id` field via QueryFilter $EQ.
-  const processesQuery = useMemo(
-    () => new QueryRequest({
-      type: AgenticProcess.type,
-      scope: [],
-      name: `triggerInvocations:processes:${trigger?.id ?? 'none'}`,
-      query: new QueryFilter({ match: { trigger_id: trigger?.id ?? '' } as Record<string, unknown> }),
-    }),
+  // Subscribe to all agentic processes this trigger spawned so each row can show
+  // live status. Shares the generic `useProcessesForTarget` hook with EntityChatPanel.
+  const targetStr = useMemo(
+    () => (trigger?.id ? new TypeId(Trigger.type, trigger.id).toString() : ''),
     [trigger?.id],
   );
-
-  const { data: processes = [] } = useEntitiesQuery<AgenticProcess>(
-    processesQuery,
-    { enabled: !!trigger?.id },
-  );
+  const { processes } = useProcessesForTarget(targetStr, { enabled: !!trigger?.id });
 
   const processById = useMemo(() => {
     const map = new Map<string, AgenticProcess>();

@@ -107,8 +107,8 @@ export interface IAgenticProcess extends IEntity {
   project_id?: string | null;
   /** CollaborationSession this process was spawned in, if any */
   collaboration_session_id?: string | null;
-  /** Trigger that spawned this process, if any */
-  trigger_id?: string | null;
+  /** Serialized TypeId ("type-id") of the entity this process is attached to (trigger, markdown, …). */
+  target_typeid_str?: string | null;
 }
 
 /**
@@ -471,8 +471,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** CollaborationSession this process was spawned in, if any */
   collaboration_session_id: string | null = null;
 
-  /** Trigger that spawned this process, if any */
-  trigger_id: string | null = null;
+  /** Serialized TypeId ("type-id") of the entity this process is attached to (trigger, markdown, …). */
+  target_typeid_str: string | null = null;
 
   /** Backend TTL live field: true if a PTY session is actually alive (30s TTL) */
   is_active: boolean = false;
@@ -550,7 +550,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.visible = entity.visible;
     this.sidecar_shell_id = entity.sidecar_shell_id;
     this.collaboration_session_id = entity.collaboration_session_id ?? null;
-    this.trigger_id = entity.trigger_id ?? null;
+    this.target_typeid_str = entity.target_typeid_str ?? null;
     this.is_active = entity.is_active ?? false;
     this.waiting_for_prompt = entity.waiting_for_prompt ?? false;
   }

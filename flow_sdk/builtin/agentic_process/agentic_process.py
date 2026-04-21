@@ -210,9 +210,9 @@ class AgenticProcess(Entity):
         default=None,
         description="CollaborationSession this process was spawned in, if any",
     )
-    trigger_id: str | None = APIField(
+    target_typeid_str: str | None = APIField(
         default=None,
-        description="Trigger that spawned this process, if any",
+        description='Serialized TypeId ("type-id") of the entity this process is attached to (trigger, markdown, …).',
     )
     shell_id: str | None = APIField(default=None)
     sidecar_shell_id: str | None = APIField(default=None)

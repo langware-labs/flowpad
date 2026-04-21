@@ -70,6 +70,9 @@ export interface AgenticContext {
 
   /** Extra directories to expose to Claude via --add-dir */
   additionalDirs?: string[];
+
+  /** Serialized TypeId ("type-id") of the entity this process attaches to (markdown, trigger, …). */
+  targetTypeIdStr?: string;
 }
 
 /**
@@ -129,5 +132,6 @@ export function serializeAgenticContext(ctx: AgenticContext): Record<string, unk
     debug: ctx.debug,
     worktree: ctx.worktree,
     additional_dirs: ctx.additionalDirs ?? [],
+    target_typeid_str: ctx.targetTypeIdStr,
   };
 }

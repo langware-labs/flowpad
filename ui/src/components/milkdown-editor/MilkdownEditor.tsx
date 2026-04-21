@@ -1,4 +1,4 @@
-import { Editor, rootCtx, defaultValueCtx, editorViewCtx, parserCtx } from '@milkdown/core';
+import { Editor, rootCtx, defaultValueCtx, editorViewCtx, editorViewOptionsCtx, parserCtx } from '@milkdown/core';
 import { Milkdown, MilkdownProvider, useEditor, useInstance } from '@milkdown/react';
 import {
   commonmark,
@@ -385,6 +385,9 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
   // Track the last markdown we emitted via onChange so we can tell user edits
   // apart from external content changes (e.g. file rewritten on disk).
   const lastEmittedRef = useRef(displayContent);
+  // Live mirror of isReadOnly so ProseMirror's `editable` closure reads current value.
+  const isReadOnlyRef = useRef(isReadOnly);
+  isReadOnlyRef.current = isReadOnly;
 
   // Keep ref in sync so editor uses latest content when re-initialized (e.g. after save)
   useEffect(() => {
@@ -397,6 +400,12 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
         .config((ctx) => {
           ctx.set(rootCtx, root);
           ctx.set(defaultValueCtx, initialContentRef.current);
+          // Read-only modes disable editing but keep the DOM interactive
+          // (anchors remain clickable, hover events still fire).
+          ctx.update(editorViewOptionsCtx, (prev) => ({
+            ...prev,
+            editable: () => !isReadOnlyRef.current,
+          }));
           const lctx = ctx.get(listenerCtx);
           if (onChange) {
             lctx.markdownUpdated((_, markdown) => {
@@ -445,6 +454,21 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
     }
   }, [get]);
 
+  // Toggle editable on mode change. setProps forces ProseMirror to re-read the
+  // editable closure (which is backed by isReadOnlyRef) and update contenteditable.
+  useEffect(() => {
+    const editor = get?.();
+    if (!editor) return;
+    try {
+      editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        view.setProps({ editable: () => !isReadOnlyRef.current });
+      });
+    } catch {
+      // view not ready yet — initial config already applied the correct value
+    }
+  }, [isReadOnly, get]);
+
   // Sync external content changes into the live ProseMirror doc.
   // useEditor's dep array doesn't include content, so without this the editor
   // keeps its initial state when the file is rewritten on disk.
@@ -468,7 +492,7 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
   }, [displayContent, get]);
 
   return (
-    <div className={`milkdown-editor-wrapper h-full ${isReadOnly ? 'pointer-events-none opacity-80' : ''}`}>
+    <div className="milkdown-editor-wrapper h-full">
       <Milkdown />
     </div>
   );
@@ -483,6 +507,11 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
 
   useEffect(() => () => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); }, []);
 
+  // Clear any open link popup when switching into view mode.
+  useEffect(() => {
+    if (editorMode === 'view') setLinkPopup(null);
+  }, [editorMode]);
+
   const cancelHide = useCallback(() => {
     if (hideTimerRef.current) { clearTimeout(hideTimerRef.current); hideTimerRef.current = null; }
   }, []);
@@ -495,6 +524,8 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
   }, [cancelHide]);
 
   const handleMouseOver = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    // View mode is wiki-style: no hover popup, clicks open directly.
+    if (editorMode === 'view') return;
     const anchor = (e.target as HTMLElement).closest('a') as HTMLElement | null;
     if (anchor) {
       const href = anchor.getAttribute('href');
@@ -507,7 +538,23 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
     } else {
       scheduleHide();
     }
-  }, [cancelHide, scheduleHide]);
+  }, [cancelHide, scheduleHide, editorMode]);
+
+  // View mode: intercept anchor clicks and open immediately (wiki-style).
+  const handleContainerClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (editorMode !== 'view') return;
+    const anchor = (e.target as HTMLElement).closest('a') as HTMLElement | null;
+    if (!anchor) return;
+    const href = anchor.getAttribute('href');
+    if (!href) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (/^https?:\/\//.test(href)) {
+      window.open(href, '_blank', 'noopener,noreferrer');
+    } else {
+      onLinkClick?.(href);
+    }
+  }, [editorMode, onLinkClick]);
 
   const handleOpenLink = useCallback((href: string) => {
     setLinkPopup(null);
@@ -647,6 +694,7 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
           className="min-h-0 flex-1 overflow-auto"
           onMouseOver={handleMouseOver}
           onMouseLeave={scheduleHide}
+          onClickCapture={handleContainerClick}
         >
           <MilkdownEditorInner content={content} onChange={onChange} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} editorRef={editorRef} />
         </div>
