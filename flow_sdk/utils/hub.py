@@ -94,8 +94,10 @@ async def hub_get(
     sub_path: str | None = None,
     *,
     scope: list[tuple[str, str]] | None = None,
-) -> Optional[dict[str, Any]]:
-    """GET a hub graph endpoint. Returns the response `data` dict on success, None on failure.
+    params: dict[str, str] | None = None,
+    raw: bool = False,
+) -> Optional[dict[str, Any] | bytes]:
+    """GET a hub graph endpoint. Returns the response on success, None on failure.
 
     Returns None immediately if FLOWPAD_HUB_URL is not configured.
 
@@ -105,16 +107,19 @@ async def hub_get(
         action:      Optional action name (requires entity_id).
         sub_path:    Optional sub-path appended after action (e.g. "download/report.pdf" for fs).
         scope:       Optional list of (entity_type, entity_id) pairs that prefix the path.
+        params:      Optional query parameters (e.g. {"since": "<iso-timestamp>"}).
+        raw:         If True, return raw bytes instead of parsing JSON (for file downloads).
     """
     url = hub_graph_url(entity_type, entity_id, action, sub_path, scope=scope)
     if not url:
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping GET %s/%s", entity_type, entity_id)
         return None
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(url, headers=_auth_headers())
+        timeout = 60 if raw else 10
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.get(url, headers=_auth_headers(), params=params or {})
             if resp.status_code == 200:
-                return resp.json().get("data") or {}
+                return resp.content if raw else resp.json().get("data") or {}
             logger.warning("[hub] GET %s returned %s: %s", url, resp.status_code, resp.text[:200])
             return None
     except Exception as e:
@@ -130,6 +135,7 @@ async def hub_post(
     sub_path: str | None = None,
     *,
     scope: list[tuple[str, str]] | None = None,
+    files: dict | None = None,
 ) -> Optional[dict[str, Any]]:
     """POST to a hub graph endpoint. Returns the response `data` dict on success, None on failure.
 
@@ -137,19 +143,24 @@ async def hub_post(
 
     Args:
         entity_type: The entity type (e.g. "notification", "task").
-        payload:     The JSON body to POST.
+        payload:     The JSON body to POST (ignored when files is set).
         entity_id:   The entity ID. Required when action is given.
         action:      Optional action name (requires entity_id).
         sub_path:    Optional sub-path appended after action (e.g. "upload/report.pdf" for fs).
         scope:       Optional list of (entity_type, entity_id) pairs that prefix the path.
+        files:       If set, sends a multipart request instead of JSON (for file uploads).
     """
     url = hub_graph_url(entity_type, entity_id, action, sub_path, scope=scope)
     if not url:
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping POST %s/%s", entity_type, entity_id)
         return None
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.post(url, json=payload, headers=_auth_headers())
+        timeout = 60 if files else 10
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            if files:
+                resp = await client.post(url, headers=_auth_headers(), files=files)
+            else:
+                resp = await client.post(url, json=payload, headers=_auth_headers())
             if resp.status_code == 200:
                 return resp.json().get("data") or {}
             logger.warning("[hub] POST %s returned %s: %s", url, resp.status_code, resp.text[:200])
@@ -157,3 +168,29 @@ async def hub_post(
     except Exception as e:
         logger.warning("[hub] POST %s error (non-fatal): %s", url, e)
         return None
+
+
+async def hub_put(
+    entity_type: str,
+    entity_id: str,
+    payload: dict[str, Any],
+    *,
+    scope: list[tuple[str, str]] | None = None,
+) -> Optional[dict[str, Any]]:
+    """PUT to a hub entity endpoint (update). Returns the response `data` dict on success, None on failure."""
+    url = hub_graph_url(entity_type, entity_id, scope=scope)
+    if not url:
+        logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping PUT %s/%s", entity_type, entity_id)
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.put(url, json=payload, headers=_auth_headers())
+            if resp.status_code == 200:
+                return resp.json().get("data") or {}
+            logger.warning("[hub] PUT %s returned %s: %s", url, resp.status_code, resp.text[:200])
+            return None
+    except Exception as e:
+        logger.warning("[hub] PUT %s error (non-fatal): %s", url, e)
+        return None
+
+
