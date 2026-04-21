@@ -1,4 +1,3 @@
-import { TypeId } from '@sdk';
 import type { MilkdownPlugin } from '@milkdown/ctx';
 import { useMemo, useState } from 'react';
 import { MilkdownEditor, type MilkdownEditorMode } from './MilkdownEditor';
@@ -37,10 +36,12 @@ export function MilkdownEditorWithSidePanel({
 }: MilkdownEditorWithSidePanelProps) {
   const [activeTab, setActiveTab] = useState<MdSideTabId>(MD_SIDE_TABS_DEFAULT);
 
-  const target = useMemo<TypeId | null>(() => {
-    if (!sourcePath) return null;
-    return new TypeId('markdown_file', sourcePath);
-  }, [sourcePath]);
+  // Markdown files aren't first-class entities — their paths don't pass TypeId's
+  // isValidIdentifier check. Build the attachment key as a plain string instead.
+  const target = useMemo<string | null>(
+    () => (sourcePath ? `markdown_file-${sourcePath}` : null),
+    [sourcePath],
+  );
 
   return (
     <div className="flex h-full w-full" data-testid="md-editor-with-side-panel">

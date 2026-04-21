@@ -1,7 +1,6 @@
-import type { TypeId } from '@sdk';
-
 interface BacklinksTabProps {
-  target: TypeId | null;
+  /** Serialized attachment key; reserved for the future backlinks lookup. */
+  target: string | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- target reserved for future lookup

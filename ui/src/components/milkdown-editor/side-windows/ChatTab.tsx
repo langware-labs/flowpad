@@ -1,8 +1,8 @@
 import { EntityChatPanel } from '@src/components/entity-chat-panel';
-import type { TypeId } from '@sdk';
 
 interface ChatTabProps {
-  target: TypeId | null;
+  /** Serialized attachment key (e.g. `markdown_file-<path>`). */
+  target: string | null;
 }
 
 export function ChatTab({ target }: ChatTabProps) {
