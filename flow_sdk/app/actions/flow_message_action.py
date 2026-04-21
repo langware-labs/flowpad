@@ -2,7 +2,7 @@
 
   POST /api/v1/graph/flow-message-upload      — upload .flowmsg (multipart, global action)
   POST /api/v1/graph/flow-message-create      — create task+spec+conv+FlowMessage locally, no email/git
-  GET  /api/v1/graph/flow_message/{id}/file-download  — download .flowmsg (entity-scoped)
+  GET  /api/v1/graph/flow_message/{id}/create-and-download-local-flowmsg  — download .flowmsg (entity-scoped)
   GET  /api/v1/graph/flow_message/{id}/open   — deep-link: fetch from hub and open IncomingTaskDialog
 """
 import json as _json
@@ -300,7 +300,7 @@ async def open_flow_message() -> ApiResponse:
     )
 
 
-@action.get(action_name="file-download", types=["flow_message"])
+@action.get(action_name="create-and-download-local-flowmsg", types=["flow_message"])
 async def download_flow_message() -> ApiResponse:
     try:
         request_info = get_current_request_info()

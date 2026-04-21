@@ -10,7 +10,8 @@ import { useEffect, useState } from 'react';
 import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
 import { useContext } from '@sdk/react/hooks';
 import { sendNotification } from '@sdk/entities/notifications';
-import { createTaskBundle, downloadFlowMessageUrl, DeliveryMode } from '@sdk/entities/flow-message';
+import { createTaskBundle, DeliveryMode } from '@sdk/entities/flow-message';
+import { ActionInfo } from '@sdk/models/ActionInfo';
 import { oauthService, OAUTH_PROVIDERS } from '@sdk';
 import { toast } from 'sonner';
 import { Mail, Download, Github } from 'lucide-react';
@@ -141,7 +142,7 @@ export function SendPlanNotificationDialog({
         message: message.trim() || null,
         team_space_id: null,
       });
-      const url = downloadFlowMessageUrl(result.flow_message_id);
+      const url = new ActionInfo('file-download', 'flow_message', result.flow_message_id, 'GET').fullActionUrl;
       const a = document.createElement('a');
       a.href = url;
       a.download = '';
