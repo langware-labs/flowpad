@@ -9,6 +9,7 @@ import {
   fetchInboxFromHub,
   updateMessage,
   bulkUpdateMessages,
+  openInboxMessage,
   type InboxMessage,
 } from './inbox-api';
 import { InboxMessageRow } from './InboxMessageRow';
@@ -93,12 +94,14 @@ export function InboxView() {
         return next;
       });
 
-      // Navigate to task — find first "task-{uuid}" entry in context
-      const taskContext = message.context.find((c) => c.startsWith('task-'));
-      if (taskContext) {
-        const taskId = taskContext.replace(/^task-/, '');
-        navigation.openDock(DockPointer.forTasks(taskId));
-      }
+      // Open via inbox-open to materialize the task if needed, then navigate
+      void openInboxMessage(message.id).then((result) => {
+        const taskId = result?.task_id
+          ?? message.context.find((c) => c.startsWith('task-'))?.replace(/^task-/, '');
+        if (taskId) {
+          navigation.openDock(DockPointer.forTasks(taskId));
+        }
+      });
     },
     [navigation, setUnreadCount],
   );

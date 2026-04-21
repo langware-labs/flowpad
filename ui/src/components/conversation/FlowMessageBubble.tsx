@@ -2,7 +2,7 @@ import { FlowMessage, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage } from '@sdk/entities/conversation';
-import { downloadFlowMessageUrl, AttachmentType } from '@sdk/entities/flow-message';
+import { downloadFlowMessageUrl } from '@sdk/entities/flow-message';
 import { MessageBubble } from './MessageBubble';
 import { Download, Paperclip } from 'lucide-react';
 
@@ -31,10 +31,6 @@ export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBub
     timestamp,
   };
 
-  const fileAttachments = (fm.attachment ?? []).filter(
-    (a) => a.attachment_type === AttachmentType.FILE,
-  );
-
   return (
     <div>
       <MessageBubble
@@ -42,24 +38,18 @@ export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBub
         flowMessageId={messageId}
         senderName={fm.sender_name ?? ''}
       />
-      {fileAttachments.length > 0 && (
-        <div className="mt-1.5 flex flex-wrap gap-1.5 px-1">
-          {fileAttachments.map((a, i) => {
-            const filename = a.data.split('/').pop() ?? a.data;
-            return (
-              <a
-                key={i}
-                href={downloadFlowMessageUrl(messageId)}
-                download
-                className="flex items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-[11px] text-foreground hover:bg-muted transition-colors max-w-[200px]"
-                title={filename}
-              >
-                <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
-                <span className="truncate">{filename}</span>
-                <Download className="h-3 w-3 shrink-0 text-muted-foreground" />
-              </a>
-            );
-          })}
+      {fm.attachment_filename && (
+        <div className="mt-1.5 px-1">
+          <a
+            href={downloadFlowMessageUrl(messageId, fm.attachment_filename)}
+            download
+            className="flex items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-[11px] text-foreground hover:bg-muted transition-colors max-w-[200px]"
+            title={fm.attachment_filename}
+          >
+            <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
+            <span className="truncate">{fm.attachment_filename}</span>
+            <Download className="h-3 w-3 shrink-0 text-muted-foreground" />
+          </a>
         </div>
       )}
     </div>
