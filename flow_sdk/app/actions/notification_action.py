@@ -159,6 +159,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     task_meta: dict = {
         "sender_name": sender_name,
         "sender_email": local_user.email if local_user else "",
+        "recipient_email": recipient_email or "",
     }
     if team_space_id:
         task_meta["team_space_id"] = team_space_id
@@ -444,21 +445,18 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     # Upload reply to hub so the original sender can fetch it via inbox
     sender_name: str = (local_user.name or local_user.email or "") if local_user else ""
 
-    # Resolve recipient: prefer sender_email from metadata, fall back to hub user lookup by ID
-    recipient_email_for_reply = (task.metadata or {}).get("sender_email") or ""
+    # Resolve recipient email: depends on whether I'm the original sender or the recipient.
+    # - If I sent the task (shared_by_id == my id): reply goes to the recipient (stored in recipient_email).
+    # - If I received the task (shared_by_id != my id): reply goes to the sender (stored in sender_email).
     original_sender_id = task.shared_by_id or ""
-    logger.warning("[append_conversation][DEBUG] task_id=%s shared_by_id=%r sender_email_from_meta=%r hub=%r",
-                   task_id, original_sender_id, recipient_email_for_reply, hub_base_url())
-
-    if not recipient_email_for_reply and original_sender_id:
-        try:
-            sender_user = await User.get_one({"id": original_sender_id})
-            logger.warning("[append_conversation][DEBUG] local user lookup for %s: %s", original_sender_id, sender_user)
-            recipient_email_for_reply = ((sender_user.email if sender_user else None) or "").strip()
-        except Exception as _ue:
-            logger.warning("[append_conversation][DEBUG] local user lookup failed: %s", _ue)
-
-    logger.warning("[append_conversation][DEBUG] final recipient_email=%r will_upload=%s", recipient_email_for_reply, bool(recipient_email_for_reply and hub_base_url()))
+    task_meta = task.metadata or {}
+    local_user_id_str = local_user.id if local_user else ""
+    if original_sender_id and original_sender_id == local_user_id_str:
+        # I am the original sender — reply to the recipient
+        recipient_email_for_reply = task_meta.get("recipient_email") or ""
+    else:
+        # I am the recipient — reply to the original sender
+        recipient_email_for_reply = task_meta.get("sender_email") or ""
     if recipient_email_for_reply and hub_base_url():
         try:
             import uuid as _uuid
