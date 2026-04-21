@@ -180,6 +180,25 @@ async def _pack_flow_message_entry(fm_id: str, attachment_dir: Path) -> None:
 # _rewrite_file_attachments
 # ---------------------------------------------------------------------------
 
+def _normalise_attachments(fm_data: dict) -> None:
+    """Normalise attachment dicts to the {'attachment_type': ..., 'data': ...} format.
+
+    Handles TypeId dict format that may appear in bundle files created by older
+    hub or sender code: {'type': 'spec', 'id': '...'} → {'attachment_type': 'type_id', 'data': 'spec-...'}.
+    Mutates fm_data in-place.
+    """
+    raw = fm_data.get("attachment") or []
+    normalised = []
+    for att in raw:
+        if not isinstance(att, dict):
+            continue
+        if "attachment_type" in att:
+            normalised.append(att)
+        elif "type" in att and "id" in att:
+            normalised.append({"attachment_type": AttachmentType.TYPE_ID.value, "data": f"{att['type']}-{att['id']}"})
+    fm_data["attachment"] = normalised
+
+
 def _rewrite_file_attachments(fm_data: dict, tmp_root: Path, task_id: str) -> None:
     """Copy FILE attachments from the extracted zip to a permanent location and
     rewrite their `data` field from zip-relative paths to absolute disk paths."""
@@ -381,6 +400,7 @@ async def unpack_bundle(
                         fm_id = fm_data.get("id") or entry_id
                         existing_fm = await FlowMessage.get_one({"id": fm_id})
                         if existing_fm is None or overwrite:
+                            _normalise_attachments(fm_data)
                             _rewrite_file_attachments(fm_data, tmp_root, task_id or "")
                             inner_fm = FlowMessage.model_validate(fm_data)
                             inner_fm.id = fm_id
@@ -388,6 +408,7 @@ async def unpack_bundle(
 
         # 5. Resolve FILE attachment paths and save the top-level FlowMessage record
         # Bundle stores zip-relative paths; rewrite to absolute paths on this machine.
+        _normalise_attachments(msg_data)
         _rewrite_file_attachments(msg_data, tmp_root, task_id or "")
         top_fm = FlowMessage.model_validate(msg_data)
         top_fm_id = msg_data.get("id") or FlowMessage.allocate_id(msg_data)
