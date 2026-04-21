@@ -252,7 +252,7 @@ async def open_flow_message() -> ApiResponse:
         return ApiFailResponse(message="No request info found", status_code=400)
 
     flow_message_id = str(request_info.target_entity_typeid.id)
-    data = await hub_get(BuiltinEntityType.FLOW_MESSAGE.value, flow_message_id)
+    data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, flow_message_id)
     meta = (data or {}).get("metadata") or {}
 
     # Extract the first REPO attachment URL — only this triggers the git flow.
@@ -274,7 +274,7 @@ async def open_flow_message() -> ApiResponse:
                 local_user = await User.get_one({"uname": "local"})
                 local_user_id = local_user.id if local_user else ""
                 bundle_bytes = await hub_get(
-                    BuiltinEntityType.FLOW_MESSAGE.value, flow_message_id, "fs", f"download/{attachment_filename}", raw=True
+                    BuiltinEntityType.FLOW_MESSAGE, flow_message_id, "fs", f"download/{attachment_filename}", raw=True
                 )
                 if bundle_bytes:
                     with tempfile.NamedTemporaryFile(suffix=".flowmsg", delete=False) as tmp:
@@ -359,7 +359,7 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
     if since:
         hub_params["since"] = since
 
-    result = await hub_get(BuiltinEntityType.FLOW_MESSAGE.value, params=hub_params)
+    result = await hub_get(BuiltinEntityType.FLOW_MESSAGE, params=hub_params)
     if result is None:
         return ApiFailResponse(message="Hub unavailable or not configured")
     raw_messages = result if isinstance(result, list) else []
@@ -389,14 +389,15 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
                 try:
                     parts = att_data.split("-", 1)
                     if len(parts) == 2:
-                        await hub_get(parts[0], parts[1])
+                        entity_enum = BuiltinEntityType(parts[0])
+                        await hub_get(entity_enum, parts[1])
                 except Exception:
                     pass
             elif att_type == AttachmentType.FILE:
                 # Download file bytes from hub
                 try:
                     filename = att_data.split("/")[-1]
-                    file_bytes = await hub_get(BuiltinEntityType.FLOW_MESSAGE.value, fm_id, "fs", filename, raw=True)
+                    file_bytes = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id, "fs", filename, raw=True)
                     if file_bytes:
                         dest = FLOW_HOME / "inbox" / fm_id
                         dest.mkdir(parents=True, exist_ok=True)
@@ -424,7 +425,7 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
         if attachment_filename:
             try:
                 bundle_bytes = await hub_get(
-                    BuiltinEntityType.FLOW_MESSAGE.value, fm_id, "fs", f"download/{attachment_filename}", raw=True
+                    BuiltinEntityType.FLOW_MESSAGE, fm_id, "fs", f"download/{attachment_filename}", raw=True
                 )
                 if bundle_bytes:
                     local_user = await User.get_one({"uname": "local"})
