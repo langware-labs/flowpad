@@ -108,7 +108,7 @@ async def _entity_to_result(ent) -> dict:
         "snippet": getattr(ent, "_fts_snippet", None),
         "status": getattr(ent, "status", None) or "",
         "scope": getattr(ent, "scope", "") or "",
-        "source_path": await _entity_source_path(ent) or name or ent.id,
+        "source_path": await _entity_source_path(ent) or "",
         "created_at": str(getattr(ent, "created_date", "") or ""),
         "modified_at": str(getattr(ent, "updated_date", "") or ""),
     }

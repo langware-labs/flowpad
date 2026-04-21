@@ -514,13 +514,11 @@ def get_skills_from_folder(folder: Path, scope: str) -> list[dict]:
 
 
 def get_system_skills() -> list[dict]:
-    """Get system skills from ~/Flowpad workspace/.flow/system_assets/skills."""
+    """Get system skills shipped inside the Flowpad Assistant system project."""
+    from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
+
     skills: list[dict] = []
-    # Primary: new system_assets layout
-    system_skills_dir = HOME / "Flowpad workspace" / ".flow" / "system_assets" / "skills"
-    # Fallback: legacy path
-    if not system_skills_dir.exists():
-        system_skills_dir = HOME / "Flowpad workspace" / ".flow" / "system_skills"
+    system_skills_dir = flowpad_assistant_project_root() / ".claude" / "skills"
     if not system_skills_dir.exists():
         return skills
 
@@ -543,9 +541,11 @@ def get_system_skills() -> list[dict]:
 
 
 def get_system_agents() -> list[dict]:
-    """Get system agents from ~/Flowpad workspace/.flow/system_assets/agents."""
+    """Get system agents shipped inside the Flowpad Assistant system project."""
+    from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
+
     agents: list[dict] = []
-    system_agents_dir = HOME / "Flowpad workspace" / ".flow" / "system_assets" / "agents"
+    system_agents_dir = flowpad_assistant_project_root() / ".claude" / "agents"
     if not system_agents_dir.exists():
         return agents
 

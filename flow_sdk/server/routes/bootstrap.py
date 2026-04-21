@@ -41,9 +41,14 @@ from flow_sdk.builtin.user import User
 from flow_sdk.builtin.workspace import Workspace
 from flow_sdk.config import (
     AGENT_MOUNT_FOLDER,
+    FLOWPAD_ASSISTANT_DIRNAME,
+    FLOWPAD_ASSISTANT_PROJECT_NAME,
+    FLOWPAD_ASSISTANT_PROJECT_UNAME,
     ComputeProviderType,
     StorageProvider,
+    flowpad_assistant_project_root,
     get_os_root_path,
+    system_projects_root,
 )
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.core.schema import get_public_schema
@@ -417,8 +422,9 @@ def build_app_paths() -> AppPaths:
     skills = f"{workspace}/.claude/skills"
     user_skills = f"{home}/.claude/skills"
     user_agents = f"{home}/.claude/agents"
-    system_skills = f"{workspace}/.flow/system_assets/skills"
-    system_agents = f"{workspace}/.flow/system_assets/agents"
+    _assistant_root = flowpad_assistant_project_root()
+    system_skills = str(_assistant_root / ".claude" / "skills")
+    system_agents = str(_assistant_root / ".claude" / "agents")
     logs = f"{home}/.flow/logs"
     settings = f"{workspace}/.flow/settings.json"
 
@@ -948,59 +954,70 @@ async def get_or_create_sandbox_compute_node(
 
 
 # ---------------------------------------------------------------------------
-# File system setup (migrated from desktop_loader.py:init_desktop_entities)
+# System projects — Project records mounted at SDK-shipped asset folders.
 # ---------------------------------------------------------------------------
 
 
-def _copy_system_assets(workspace_path: Path) -> None:
-    """Copy SDK-bundled system assets to workspace/.flow/system_assets/.
+async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list[Project]:
+    """Upsert one Project per subdirectory of flow_sdk/system_projects/.
 
-    Uses shutil.copytree with dirs_exist_ok=True so new assets are
-    added on upgrade without deleting user modifications.
-    Source: flow_sdk/system_assets/
-    Destination: ~/Flowpad workspace/.flow/system_assets/
-
-    A stamp file (.sync_stamp) stores the SDK version last synced.
-    Re-copy is skipped when the stamp matches the current version.
-
-    Also ensures backward-compat system_skills dir exists (symlink or plain dir).
+    Idempotent: queried by uname. Updates fs_storage_mount_path when the SDK
+    install path moves (e.g. editable → wheel). Currently only the Flowpad
+    Assistant is shipped, but the loop accommodates future system projects.
     """
-    import flow_sdk
+    root = system_projects_root()
+    if not root.is_dir():
+        logging.info(f"[bootstrap] No system_projects/ at {root}, skipping")
+        return []
 
-    source = Path(flow_sdk.__file__).parent / "system_assets"
-    dest = workspace_path / ".flow" / "system_assets"
-    stamp = dest / ".sync_stamp"
-
-    if source.exists():
-        # Skip copy if already synced for this version
-        try:
-            if stamp.exists() and stamp.read_text().strip() == __version__:
-                logging.info(f"System assets already up-to-date (v{__version__}), skipping copy")
-            else:
-                shutil.copytree(str(source), str(dest), dirs_exist_ok=True)
-                stamp.write_text(__version__)
-                logging.info(f"System assets copied to: {dest}")
-        except Exception as e:
-            logging.warning(f"Failed to copy system assets: {e}")
-    else:
-        dest.mkdir(parents=True, exist_ok=True)
-        logging.info(f"System assets dir ensured at: {dest} (no bundled source)")
-
-    # Ensure backward-compat system_skills path exists
-    system_skills_path = workspace_path / ".flow" / "system_skills"
-    skills_source = dest / "skills"
-    if not system_skills_path.exists():
-        if skills_source.is_dir():
-            try:
-                system_skills_path.symlink_to(skills_source)
-                logging.info(f"Symlinked system_skills -> {skills_source}")
-            except OSError:
-                # Symlinks may fail on some Windows configs; just mkdir
-                system_skills_path.mkdir(parents=True, exist_ok=True)
-                logging.info(f"System skills folder ensured at: {system_skills_path}")
+    ensured: list[Project] = []
+    for sub in sorted(root.iterdir()):
+        if not sub.is_dir() or sub.name.startswith('.'):
+            continue
+        if sub.name == FLOWPAD_ASSISTANT_DIRNAME:
+            uname = FLOWPAD_ASSISTANT_PROJECT_UNAME
+            display_name = FLOWPAD_ASSISTANT_PROJECT_NAME
         else:
-            system_skills_path.mkdir(parents=True, exist_ok=True)
-            logging.info(f"System skills folder ensured at: {system_skills_path}")
+            uname = sub.name
+            display_name = sub.name.replace('_', ' ').title()
+
+        mount_path = str(sub)
+        existing = await Project.get_by_prop("uname", uname, "project")
+        if existing:
+            if existing.fs_storage_mount_path != mount_path:
+                existing.fs_storage_mount_path = mount_path
+                await existing.save()
+                logging.info(f"[bootstrap] Updated system project '{uname}' mount → {mount_path}")
+            ensured.append(existing)
+            continue
+
+        project = Project(
+            type="project",
+            uname=uname,
+            name=display_name,
+            fs_storage_mount_path=mount_path,
+            fs_storage_provider=StorageProvider.LOCAL.value,
+            visitor_role="owner",
+        )
+        try:
+            await project.save(owner=desktop_user)
+        except Exception as save_error:
+            if "already exist" in str(save_error):
+                retry = await Project.get_by_prop("uname", uname, "project")
+                if retry:
+                    ensured.append(retry)
+                    continue
+            raise
+        await project.set_visitor_role("owner")
+        ensured.append(project)
+        logging.info(f"[bootstrap] Created system project '{uname}' at {mount_path}")
+
+    return ensured
+
+
+# ---------------------------------------------------------------------------
+# File system setup (migrated from desktop_loader.py:init_desktop_entities)
+# ---------------------------------------------------------------------------
 
 
 def setup_desktop_filesystem() -> None:
@@ -1183,6 +1200,11 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         _t.time("get_or_create_local_user")
         project = await get_or_create_local_project(desktop_user=user)
         _t.time("get_or_create_local_project")
+        try:
+            await _ensure_system_projects(desktop_user=user)
+        except Exception as e:
+            logging.warning(f"[bootstrap] Failed to ensure system projects (non-fatal): {e}")
+        _t.time("ensure_system_projects")
         workspace = await get_or_create_local_workspace(desktop_user=user)
         _t.time("get_or_create_local_workspace")
         compute_node = await get_or_create_local_compute_node(local_project=project, desktop_user=user)
