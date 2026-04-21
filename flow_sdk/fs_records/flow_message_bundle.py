@@ -293,24 +293,15 @@ async def unpack_bundle(
         owner_typeid = local_user.typeid if local_user else None
 
         attachment_dir = tmp_root / "attachment"
-        conflicts: list[dict] = []
 
-        # 3. Process attachments — check for conflicts first
-        if attachment_dir.exists():
-            for entry_dir in sorted(attachment_dir.iterdir()):
-                if not entry_dir.is_dir():
-                    continue
-                name = entry_dir.name  # e.g. "spec-@<id>"
-                entry_type, _, entry_id = name.partition("-@")
-                if not entry_type or not entry_id:
-                    continue
-
-                existing = await _check_entity_exists(entry_type, entry_id)
-                if existing and not overwrite:
-                    conflicts.append({"type": entry_type, "id": entry_id})
-
-        if conflicts:
-            raise FlowMessageExistsError(conflicts)
+        # 3. Conflict check: only raise if the top-level FlowMessage itself already exists.
+        # Task/spec/conversation attachments may already exist (e.g. a reply bundle references
+        # a task the recipient already imported) — those are skipped silently during materialise.
+        top_fm_id_check = msg_data.get("id")
+        if top_fm_id_check and not overwrite:
+            existing_top = await _check_entity_exists(BuiltinEntityType.FLOW_MESSAGE.value, top_fm_id_check)
+            if existing_top:
+                raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
 
         # 4. Materialize attachments
         # Process in dependency order: spec → task → conversation → flow_message
