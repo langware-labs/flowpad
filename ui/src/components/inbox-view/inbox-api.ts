@@ -58,6 +58,17 @@ export async function updateMessage(
   return dataManager.callAction<typeof patch, UpdateResult>(action);
 }
 
+export interface OpenResult {
+  task_id: string | null;
+  conversation_id: string | null;
+}
+
+/** Materialize the task for a FlowMessage (downloads bundle if task missing locally). */
+export async function openInboxMessage(messageId: string): Promise<OpenResult | null> {
+  const action = new ActionInfo('inbox-open', 'flow_message', messageId, 'GET');
+  return dataManager.callAction<null, OpenResult>(action);
+}
+
 /** Bulk mark all read / unread / archive all */
 export async function bulkUpdateMessages(
   patch: { is_read?: boolean; is_archived?: boolean },

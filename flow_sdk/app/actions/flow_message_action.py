@@ -335,6 +335,31 @@ def _save_last_fetch(ts: str) -> None:
     _LAST_FETCH_PATH.write_text(_json.dumps({"last_fetch": ts}))
 
 
+async def _download_and_unpack_bundle(fm_id: str, attachment_filename: str) -> bool:
+    """Download the .flowmsg bundle from the hub and unpack it locally.
+
+    Returns True if the bundle was successfully unpacked, False otherwise.
+    """
+    from flow_sdk.fs_records.flow_message_bundle import FlowMessageExistsError, unpack_bundle
+    bundle_bytes = await hub_get(
+        BuiltinEntityType.FLOW_MESSAGE, fm_id, "fs", f"download/{attachment_filename}", raw=True
+    )
+    if not bundle_bytes:
+        return False
+    local_user = await User.get_one({"uname": "local"})
+    local_user_id = local_user.id if local_user else ""
+    with tempfile.NamedTemporaryFile(suffix=".flowmsg", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+        tmp.write(bundle_bytes)
+    try:
+        await unpack_bundle(tmp_path, local_user_id, overwrite=False)
+        return True
+    except FlowMessageExistsError:
+        return True  # already materialized — counts as success
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
 @action.get(action_name="inbox-list", types=None)
 async def inbox_list() -> ApiResponse:
     """Return all non-archived local FlowMessages, newest first."""
@@ -372,6 +397,20 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
 
         existing = await FlowMessage.get_one({"id": fm_id})
         if existing:
+            # Re-materialize if the referenced task is missing locally
+            attachment_filename = (raw.get("attachment_filename") or "").strip()
+            if attachment_filename:
+                ref_task_id = next(
+                    (c.split("-", 1)[1] for c in (raw.get("context") or [])
+                     if isinstance(c, str) and c.startswith(BuiltinEntityType.TASK.value + "-")),
+                    None,
+                )
+                if ref_task_id and not await Task.get_one({"id": ref_task_id}):
+                    try:
+                        if await _download_and_unpack_bundle(fm_id, attachment_filename):
+                            created_ids.append(fm_id)
+                    except Exception as e:
+                        logger.warning("[inbox-fetch] re-materialize failed for %s: %s", fm_id, e)
             continue
 
         # Process attachments — normalise hub TypeId dict format
@@ -445,7 +484,7 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
                         tmp_path = Path(tmp.name)
                         tmp.write(bundle_bytes)
                     try:
-                        from flow_sdk.fs_records.flow_message_bundle import FlowMessageExistsError, unpack_bundle
+                        from flow_sdk.fs_records.flow_message_bundle import unpack_bundle
                         await unpack_bundle(tmp_path, local_user_id, overwrite=False)
                         created_ids.append(fm_id)
                     except FlowMessageExistsError:
@@ -477,6 +516,43 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
 
     _save_last_fetch(fetch_started)
     return ApiSuccessResponse(data={"created": len(created_ids), "ids": created_ids})
+
+
+@action.get(action_name="inbox-open", types=[BuiltinEntityType.FLOW_MESSAGE.value])
+async def inbox_open() -> ApiResponse:
+    """Materialize the task referenced by a FlowMessage (downloads bundle if needed).
+
+    Returns {task_id, conversation_id} so the UI can navigate to the task.
+    """
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found", status_code=400)
+
+        flow_message_id = str(request_info.target_entity_typeid.id)
+
+        # Fetch hub data to get attachment_filename and context
+        hub_data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, flow_message_id)
+        attachment_filename = ((hub_data or {}).get("attachment_filename") or "").strip()
+        raw_context = (hub_data or {}).get("context") or []
+
+        task_id = None
+        conv_id = None
+        for c in raw_context:
+            type_part, _, id_part = (c if isinstance(c, str) else f"{c.get('type','')}-{c.get('id','')}").partition("-")
+            if type_part == BuiltinEntityType.TASK.value:
+                task_id = id_part
+            elif type_part == BuiltinEntityType.CONVERSATION.value:
+                conv_id = id_part
+
+        # If task not local and bundle available, download and unpack
+        if task_id and attachment_filename and not await Task.get_one({"id": task_id}):
+            await _download_and_unpack_bundle(flow_message_id, attachment_filename)
+
+        return ApiSuccessResponse(data={"task_id": task_id, "conversation_id": conv_id})
+    except Exception as e:
+        logger.error("[flow_message_action] inbox-open error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Open failed: {str(e)}")
 
 
 @action.post(action_name="inbox-fetch", types=None)
