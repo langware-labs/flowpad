@@ -123,8 +123,10 @@ async def hub_get(
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.get(url, headers=_auth_headers(), params=params or {})
             if resp.status_code == 200:
-                return resp.content if raw else resp.json().get("data") or {}
-            logger.warning("[hub] GET %s returned %s: %s", url, resp.status_code, resp.text[:200])
+                result = resp.content if raw else resp.json().get("data") or {}
+                logger.info("[hub] GET %s -> 200 (%s bytes)", url, len(resp.content))
+                return result
+            logger.warning("[hub] GET %s returned %s: %s", url, resp.status_code, resp.text[:500])
             return None
     except Exception as e:
         logger.warning("[hub] GET %s error (non-fatal): %s", url, e)
