@@ -448,29 +448,41 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     # Fallback: read sender_email directly from manifest.json on disk (handles tasks
     # imported before sender_email was added to the manifest schema)
     if not recipient_email_for_reply:
+        import json as _json2
+        from pathlib import Path as _Path2
+        from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
+
         project_root = (task.metadata or {}).get("project_root") or ""
         logger.warning("[append_conversation][DEBUG] recipient_email empty, trying manifest fallback. project_root=%r", project_root)
+
+        # Build list of roots to search: stored project_root first, then all known roots
+        _roots_to_search = []
         if project_root:
-            import json as _json2
-            from pathlib import Path as _Path2
-            tasks_dir = _Path2(project_root) / "tasks"
-            logger.warning("[append_conversation][DEBUG] tasks_dir=%s exists=%s", tasks_dir, tasks_dir.is_dir())
-            if tasks_dir.is_dir():
-                for _td in tasks_dir.iterdir():
-                    if not _td.is_dir() or _td.name == "spec":
-                        continue
-                    _mf = _td / "manifest.json"
-                    if not _mf.exists():
-                        continue
-                    try:
-                        _md = _json2.loads(_mf.read_text(encoding="utf-8"))
-                        logger.warning("[append_conversation][DEBUG] manifest %s: task_id=%r sender_email=%r", _mf, _md.get("task_id"), _md.get("sender_email"))
-                        if _md.get("task_id") == task_id:
-                            recipient_email_for_reply = _md.get("sender_email") or ""
-                            logger.warning("[append_conversation][DEBUG] matched manifest, recipient_email=%r", recipient_email_for_reply)
-                            break
-                    except Exception as _me:
-                        logger.warning("[append_conversation][DEBUG] manifest read error: %s", _me)
+            _roots_to_search.append(_Path2(project_root))
+        _roots_to_search.extend(p for p in iter_claude_project_paths() if str(p) != project_root)
+        logger.warning("[append_conversation][DEBUG] searching %d project roots", len(_roots_to_search))
+
+        for _pr in _roots_to_search:
+            tasks_dir = _pr / "tasks"
+            if not tasks_dir.is_dir():
+                continue
+            for _td in tasks_dir.iterdir():
+                if not _td.is_dir() or _td.name == "spec":
+                    continue
+                _mf = _td / "manifest.json"
+                if not _mf.exists():
+                    continue
+                try:
+                    _md = _json2.loads(_mf.read_text(encoding="utf-8"))
+                    logger.warning("[append_conversation][DEBUG] manifest %s: task_id=%r sender_email=%r", _mf, _md.get("task_id"), _md.get("sender_email"))
+                    if _md.get("task_id") == task_id:
+                        recipient_email_for_reply = _md.get("sender_email") or ""
+                        logger.warning("[append_conversation][DEBUG] matched manifest in %s, recipient_email=%r", _pr, recipient_email_for_reply)
+                        break
+                except Exception as _me:
+                    logger.warning("[append_conversation][DEBUG] manifest read error: %s", _me)
+            if recipient_email_for_reply:
+                break
 
     logger.warning("[append_conversation][DEBUG] final recipient_email=%r, will_upload=%s", recipient_email_for_reply, bool(recipient_email_for_reply and hub_base_url()))
     if recipient_email_for_reply and hub_base_url():
