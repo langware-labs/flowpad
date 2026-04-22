@@ -2,6 +2,11 @@ import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 
+export enum DeliveryMode {
+  EMAIL = 'email',
+  REPO = 'repo',
+}
+
 export enum AttachmentType {
   TYPE_ID = 'type_id',
   FILE = 'file',
@@ -25,6 +30,10 @@ export interface IFlowMessage extends IEntity {
   sender_name?: string | null;
   receiver_address?: string | null;
   receiver_address_type?: string | null;
+  /** User-given filename of the uploaded .flowmsg zip stored via fs/upload, e.g. "my-share.flowmsg". Null when no file was uploaded. */
+  attachment_filename?: string | null;
+  is_read?: boolean;
+  is_archived?: boolean;
 }
 
 @registerEntity
@@ -37,6 +46,9 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   sender_name?: string | null;
   receiver_address?: string | null;
   receiver_address_type?: string | null;
+  attachment_filename?: string | null;
+  is_read?: boolean;
+  is_archived?: boolean;
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -49,6 +61,9 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.sender_name = entity.sender_name;
     this.receiver_address = entity.receiver_address;
     this.receiver_address_type = entity.receiver_address_type;
+    this.attachment_filename = entity.attachment_filename;
+    this.is_read = entity.is_read ?? false;
+    this.is_archived = entity.is_archived ?? false;
   }
 }
 
@@ -78,8 +93,10 @@ export async function uploadFlowMessage(
   return res!;
 }
 
-export function downloadFlowMessageUrl(messageId: string): string {
-  const action = new ActionInfo('file-download', 'flow_message', messageId, 'GET');
+/** Returns the hub fs/download URL for a FlowMessage's stored .flowmsg bundle. */
+export function downloadFlowMessageUrl(messageId: string, attachmentFilename: string): string {
+  const action = new ActionInfo('fs', 'flow_message', messageId, 'GET');
+  action.subpath = `download/${attachmentFilename}`;
   return action.fullActionUrl;
 }
 

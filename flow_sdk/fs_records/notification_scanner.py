@@ -163,6 +163,7 @@ async def _process_manifest(
             "repo_id": manifest_repo_id,
             "branch": manifest_branch,
             "sender_name": sender_name,
+            "sender_email": data.get("sender_email") or "",
         },
     })
     task = await task.save(owner_typeid)
