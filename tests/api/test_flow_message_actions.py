@@ -1,7 +1,7 @@
 """Tests for FlowMessage HTTP actions (upload and download).
 
   POST /api/v1/graph/flow-message-upload   — upload .flowmsg (multipart)
-  GET  /api/v1/graph/flow_message/{id}/file-download  — download .flowmsg
+  GET  /api/v1/graph/flow_message/{id}/create-and-download-local-flowmsg  — download .flowmsg
 """
 
 import io
@@ -165,7 +165,7 @@ async def test_download_flow_message_returns_zip(bootstrapped_client):
 
     # Download
     download_resp = await bootstrapped_client.get(
-        f"/api/v1/graph/flow_message/{message_id}/file-download",
+        f"/api/v1/graph/flow_message/{message_id}/create-and-download-local-flowmsg",
     )
     assert download_resp.status_code == 200, (
         f"Expected 200 for download, got {download_resp.status_code}: {download_resp.text}"
