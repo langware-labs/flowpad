@@ -318,6 +318,7 @@ async def unpack_bundle(
             return _TYPE_ORDER.get(t, 99)
 
         conversation_id: str | None = None
+        task_id: str = ""
         if attachment_dir.exists():
             for entry_dir in sorted(attachment_dir.iterdir(), key=_entry_sort_key):
                 if not entry_dir.is_dir():
@@ -408,12 +409,13 @@ async def unpack_bundle(
                         fm_data.pop("expand", None)
                         fm_id = fm_data.get("id") or entry_id
                         existing_fm = await FlowMessage.get_one({"id": fm_id})
-                        if existing_fm is None or overwrite:
-                            _normalise_attachments(fm_data)
-                            _rewrite_file_attachments(fm_data, tmp_root, task_id or "")
-                            inner_fm = FlowMessage.model_validate(fm_data)
-                            inner_fm.id = fm_id
-                            await inner_fm.save(owner_typeid)
+                        if existing_fm is not None and not overwrite:
+                            raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": fm_id}])
+                        _normalise_attachments(fm_data)
+                        _rewrite_file_attachments(fm_data, tmp_root, task_id or "")
+                        inner_fm = FlowMessage.model_validate(fm_data)
+                        inner_fm.id = fm_id
+                        await inner_fm.save(owner_typeid)
 
         # 5. Resolve FILE attachment paths and save the top-level FlowMessage record
         # Bundle stores zip-relative paths; rewrite to absolute paths on this machine.
