@@ -442,6 +442,24 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
 
     reply_fm = await reply_fm.save(someone_typeid)
 
+    # Append pointer to conversation BEFORE packing the bundle so the
+    # bundle's conversation.jsonl includes the reply message pointer.
+    reply_ts = datetime.now(UTC).isoformat()
+    if conv.data_path:
+        from flow_sdk.fs_records.conversation_record import ConversationRecord
+        rec = ConversationRecord.from_jsonl(Path(conv.data_path), task_id, conv.id)
+        rec.append_message_pointer(reply_fm.id, reply_ts)
+    existing_ids_raw: list = []
+    if conv.message_ids:
+        try:
+            existing_ids_raw = _json.loads(conv.message_ids)
+        except Exception:
+            existing_ids_raw = []
+    existing_ids_raw.append({"message_id": reply_fm.id, "timestamp": reply_ts})
+    conv.message_ids = _json.dumps(existing_ids_raw)
+    conv.message_count = len(existing_ids_raw)
+    conv = await conv.save(someone_typeid)
+
     # Upload reply to hub so the original sender can fetch it via inbox
     sender_name: str = (local_user.name or local_user.email or "") if local_user else ""
 
@@ -461,7 +479,6 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         try:
             import uuid as _uuid
             hub_reply_id = str(_uuid.uuid4())
-            logger.warning("[append_conversation][DEBUG] posting to hub: hub_reply_id=%s recipient=%s", hub_reply_id, recipient_email_for_reply)
             hub_data = await hub_post(BuiltinEntityType.FLOW_MESSAGE, {
                 "flow_message_id": hub_reply_id,
                 "recipient_email": recipient_email_for_reply,
@@ -471,42 +488,21 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
                 "task_title": task.title or "",
                 "message": message,
             }, action="send")
-            logger.warning("[append_conversation][DEBUG] hub_post(send) response: %s", hub_data)
             hub_reply_fm_id = (hub_data or {}).get("flow_message_id")
             if hub_reply_fm_id:
                 zip_path = await reply_fm.to_file()
                 bundle_filename = f"reply-{_meaningful_name(task.title or 'reply')}.flowmsg"
                 content = zip_path.read_bytes()
-                logger.warning("[append_conversation][DEBUG] uploading bundle: hub_reply_fm_id=%s filename=%s size=%d", hub_reply_fm_id, bundle_filename, len(content))
                 upload_resp = await hub_post(
                     BuiltinEntityType.FLOW_MESSAGE, {}, hub_reply_fm_id, "fs", "upload",
                     files={"uploaded_file": (bundle_filename, content, "application/zip")},
                 )
-                logger.warning("[append_conversation][DEBUG] upload response: %s", upload_resp)
                 zip_path.unlink(missing_ok=True)
-                put_resp = await hub_put(BuiltinEntityType.FLOW_MESSAGE, hub_reply_fm_id, {"attachment_filename": bundle_filename})
-                logger.warning("[append_conversation][DEBUG] hub_put(attachment_filename) response: %s", put_resp)
+                await hub_put(BuiltinEntityType.FLOW_MESSAGE, hub_reply_fm_id, {"attachment_filename": bundle_filename})
             else:
-                logger.warning("[append_conversation][DEBUG] hub_post(send) returned no flow_message_id, hub_data=%s", hub_data)
+                logger.warning("[append_conversation] hub_post(send) returned no flow_message_id")
         except Exception as _hub_err:
             logger.warning("[append_conversation] hub reply upload failed (non-fatal): %s", _hub_err, exc_info=True)
-
-    # Append pointer to conversation + keep message_ids in sync
-    reply_ts = datetime.now(UTC).isoformat()
-    if conv.data_path:
-        from flow_sdk.fs_records.conversation_record import ConversationRecord
-        rec = ConversationRecord.from_jsonl(Path(conv.data_path), task_id, conv.id)
-        rec.append_message_pointer(reply_fm.id, reply_ts)
-    existing_ids_raw: list = []
-    if conv.message_ids:
-        try:
-            existing_ids_raw = _json.loads(conv.message_ids)
-        except Exception:
-            existing_ids_raw = []
-    existing_ids_raw.append({"message_id": reply_fm.id, "timestamp": reply_ts})
-    conv.message_ids = _json.dumps(existing_ids_raw)
-    conv.message_count = len(existing_ids_raw)
-    conv = await conv.save(someone_typeid)
 
     # Notify UI so conversation refreshes automatically
     try:
