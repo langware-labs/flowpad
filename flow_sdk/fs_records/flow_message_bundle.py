@@ -390,26 +390,6 @@ async def unpack_bundle(
                         )
                         if conv:
                             conversation_id = conv.id
-                            # Ensure the top-level FM pointer is present in the conversation JSONL.
-                            # Old bundles were packed before the reply pointer was appended, so it
-                            # may be missing from the bundle's conversation.jsonl. Add it now.
-                            if top_fm_id_check and perm_jsonl.exists():
-                                perm_content = perm_jsonl.read_text(encoding="utf-8")
-                                if top_fm_id_check not in perm_content:
-                                    _rec = ConversationRecord.from_jsonl(perm_jsonl, task_id_for_conv or "", conv.id)
-                                    _rec.append_message_pointer(top_fm_id_check, datetime.now(UTC).isoformat())
-                                    # Re-read JSONL and update Conversation entity message_ids
-                                    _updated_ptrs: list[dict] = []
-                                    for _line in perm_jsonl.read_text(encoding="utf-8").splitlines():
-                                        _line = _line.strip()
-                                        if _line:
-                                            try:
-                                                _updated_ptrs.append(json.loads(_line))
-                                            except Exception:
-                                                pass
-                                    conv.message_ids = json.dumps(_updated_ptrs) if _updated_ptrs else None
-                                    conv.message_count = len(_updated_ptrs)
-                                    conv = await conv.save(owner_typeid)
                             # Notify frontend that conversation was updated (e.g. new reply arrived)
                             try:
                                 send_resource_sync(
