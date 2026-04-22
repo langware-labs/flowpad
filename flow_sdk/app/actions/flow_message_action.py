@@ -202,7 +202,8 @@ async def upload_flow_message() -> ApiResponse:
             return ApiFailResponse(message="No file uploaded", status_code=400)
 
         overwrite_qp = request_info.request.query_params.get("overwrite", "false")
-        overwrite = overwrite_qp.lower() in ("true", "1", "yes")
+        overwrite_form = str(post_data.get("overwrite", "false")).lower()
+        overwrite = overwrite_qp.lower() in ("true", "1", "yes") or overwrite_form in ("true", "1", "yes")
         return await handle_upload_flow_message(upload_file, overwrite)
     except Exception as e:
         logger.error(f"[flow_message_action] upload error: {e}", exc_info=True)

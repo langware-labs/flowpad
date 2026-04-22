@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from flow_sdk.builtin.flow_message import FlowMessage
+from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
 from flow_sdk.fs_records.flow_message_bundle import (
     FlowMessageExistsError,
     pack_bundle,
@@ -27,13 +27,18 @@ from flow_sdk.fs_records.flow_message_bundle import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+_TASK_UUID    = "a1a1a1a1-0000-0000-0000-000000000001"
+_CONV_UUID    = "b2b2b2b2-0000-0000-0000-000000000002"
+_SPEC_UUID    = "c3c3c3c3-0000-0000-0000-000000000003"
+_TASK2_UUID   = "d4d4d4d4-0000-0000-0000-000000000004"
+
+
 def _make_flow_message(fm_id: str = "aaaa1111-0000-0000-0000-000000000001") -> FlowMessage:
     fm = FlowMessage(
         text="Hello, world!",
         instruction="Do something",
-        context=[{"type": "task", "id": "task-id-001"}, {"type": "conversation", "id": "conv-id-001"}],
+        context=[{"type": "task", "id": _TASK_UUID}, {"type": "conversation", "id": _CONV_UUID}],
         attachment=[],
-        sender_id="user-001",
         sender_name="Alice",
         receiver_address="bob@example.com",
         receiver_address_type="email",
@@ -79,7 +84,7 @@ class TestPackBundle:
         """pack_bundle includes attachment/flow_message-@<id>/message.json for flow_message entries."""
         fm = _make_flow_message()
         inner_id = "bbbb2222-0000-0000-0000-000000000002"
-        fm.attachment = [{"type": "flow_message", "id": inner_id}]
+        fm.attachment = [Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"flow_message-{inner_id}")]
 
         inner_fm = FlowMessage(text="inner msg")
         inner_fm.id = inner_id
@@ -98,8 +103,8 @@ class TestPackBundle:
         from flow_sdk.builtin.spec import Spec
 
         fm = _make_flow_message()
-        spec_id = "spec-id-0001"
-        fm.attachment = [{"type": "spec", "id": spec_id}]
+        spec_id = _SPEC_UUID
+        fm.attachment = [Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"spec-{spec_id}")]
 
         mock_spec = Spec(title="My Spec", content="# Content", spec_type="plan")
         mock_spec.id = spec_id
@@ -121,8 +126,8 @@ class TestPackBundle:
         from flow_sdk.builtin.task import Task
 
         fm = _make_flow_message()
-        task_id = "task-id-0001"
-        fm.attachment = [{"type": "task", "id": task_id}]
+        task_id = _TASK2_UUID
+        fm.attachment = [Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"task-{task_id}")]
 
         mock_task = Task(title="My Task")
         mock_task.id = task_id
@@ -258,13 +263,14 @@ class TestUnpackBundle:
         from flow_sdk.builtin.conversation import Conversation
         from flow_sdk.builtin.user import User
 
-        conv_id = "conv-id-9999"
+        conv_id = "cccc9999-0000-0000-0000-000000000009"
+        task_id = "eeee1010-0000-0000-0000-000000000010"
         fm_id = "hhhh8888-0000-0000-0000-000000000008"
         fm_data = {
             "id": fm_id,
             "type": "flow_message",
             "text": "msg with conv",
-            "context": [{"type": "conversation", "id": conv_id}, {"type": "task", "id": "t-001"}],
+            "context": [{"type": "conversation", "id": conv_id}, {"type": "task", "id": task_id}],
             "attachment": [],
         }
         zip_path = _write_flowmsg_zip(tmp_path, fm_data)
@@ -273,12 +279,10 @@ class TestUnpackBundle:
         jsonl_path = tmp_path / "conversation.jsonl"
         jsonl_path.write_text("")
 
-        mock_conv = Conversation(task_id="t-001", data_path=str(jsonl_path))
+        mock_conv = Conversation(task_id=task_id, data_path=str(jsonl_path))
         mock_conv.id = conv_id
 
-        saved_fm = FlowMessage(text="msg with conv")
-        saved_fm.id = fm_id
-        saved_fm.context = fm_data["context"]
+        saved_fm = FlowMessage.model_validate(fm_data)
 
         with (
             patch.object(User, "get_one", new=AsyncMock(return_value=None)),
