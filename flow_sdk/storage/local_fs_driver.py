@@ -248,11 +248,7 @@ class LocalStorageDriver(StorageDriver):
             raise StorageError(f"Failed to stream file: {e}")
 
     def get_storage_path(self, vfs_path: str) -> str:
-        # On Windows, absolute vfs_paths (e.g. "C:\...") must be returned as-is
-        # because the base class path-joining logic would mangle them.
         # Relative paths go through the base class which handles mount_path correctly.
-        if sys.platform == "win32" and os.path.isabs(vfs_path):
-            return os.path.normpath(vfs_path)
         return super().get_storage_path(vfs_path)
 
     async def list_dir(self, vfs_path: str | None = None) -> List[FSItem]:
