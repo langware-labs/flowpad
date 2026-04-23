@@ -30,12 +30,15 @@ async def real_project_cwd_fn(
 
     out: list[FSRef] = []
     for node in nodes:
-        for real in iter_claude_project_paths():
+        for real in iter_claude_project_paths(include_temp=opts.include_temp):
+            # Explicit scope override: entering a project subtree,
+            # regardless of the parent root's scope.
             out.append(
                 FSRef(
                     real,
                     record_type=RecordType.REAL_PROJECT_CWD,
                     parent=node,
+                    scope="project",
                 )
             )
     return out

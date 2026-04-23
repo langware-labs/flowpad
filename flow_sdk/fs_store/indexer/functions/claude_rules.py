@@ -1,10 +1,7 @@
-"""Indexer functions: CLAUDE_RULES discovery.
+"""Indexer function: <root> -> CLAUDE_RULES.
 
-Two registrations:
-  USER_HOME_FOLDER -> CLAUDE_RULES  (~/.claude/rules/*.md)
-  REAL_PROJECT_CWD -> CLAUDE_RULES  (<cwd>/.claude/rules/*.md)
-
-Reproduces flow_sdk/fs_records/claude/claude_rules.py:_external_source_iter.
+Emits CLAUDE_RULES for every `*.md` in `<root>/.claude/rules/`. Register on
+USER_HOME_FOLDER, REAL_PROJECT_CWD, CWD_ROOT; scope inherits via FSRef.
 """
 
 from __future__ import annotations
@@ -16,34 +13,21 @@ from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 
-async def claude_rules_user_fn(
+async def claude_rules_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:
-    """USER_HOME_FOLDER -> CLAUDE_RULES. User scope."""
     out: list[FSRef] = []
+    seen: set[str] = set()
     for node in nodes:
         rules = Path(node.path) / ".claude" / "rules"
         if not rules.is_dir():
             continue
         for md in sorted(rules.glob("*.md")):
-            out.append(
-                FSRef(md, record_type=RecordType.CLAUDE_RULES, parent=node)
-            )
-    return out
-
-
-async def claude_rules_project_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
-) -> list[FSRef]:
-    """REAL_PROJECT_CWD -> CLAUDE_RULES. Project scope."""
-    out: list[FSRef] = []
-    for node in nodes:
-        rules = Path(node.path) / ".claude" / "rules"
-        if not rules.is_dir():
-            continue
-        for md in sorted(rules.glob("*.md")):
+            key = str(md.resolve())
+            if key in seen:
+                continue
+            seen.add(key)
             out.append(
                 FSRef(md, record_type=RecordType.CLAUDE_RULES, parent=node)
             )

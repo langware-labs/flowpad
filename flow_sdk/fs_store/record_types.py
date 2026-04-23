@@ -110,6 +110,8 @@ class RecordType(StrEnum):
 
     USER_HOME_FOLDER = "user_home_folder"
     REAL_PROJECT_CWD = "real_project_cwd"
+    SYSTEM_ROOT = "system_root"
+    CWD_ROOT = "cwd_root"
 
 
 class SkillitRecordType(StrEnum):

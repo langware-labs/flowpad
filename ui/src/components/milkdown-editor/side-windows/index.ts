@@ -1,4 +1,3 @@
-export { SideWindow } from './SideWindow';
 export { ChatTab } from './ChatTab';
 export { BacklinksTab } from './BacklinksTab';
 export {

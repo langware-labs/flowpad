@@ -1,8 +1,14 @@
 """Indexer functions: CLAUDE_MD discovery.
 
-Two registrations:
-  USER_HOME_FOLDER -> CLAUDE_MD  (home/.claude/CLAUDE.md + CLAUDE.local.md)
-  REAL_PROJECT_CWD -> CLAUDE_MD  (project CLAUDE.md, .claude/CLAUDE.md, CLAUDE.local.md)
+Two functions, split by *file layout* (not by scope — scope inherits via FSRef):
+
+  claude_md_in_claude_subdir_fn
+      <root>/.claude/CLAUDE.md, <root>/.claude/CLAUDE.local.md
+      Register on USER_HOME_FOLDER (matches legacy ~/.claude/CLAUDE.md).
+
+  claude_md_in_project_root_fn
+      <root>/CLAUDE.md, <root>/CLAUDE.local.md, <root>/.claude/CLAUDE.md
+      Register on REAL_PROJECT_CWD (matches legacy <project>/CLAUDE.md etc.).
 
 Reproduces flow_sdk/fs_records/claude/claude_claude_md.py:_external_source_iter.
 """
@@ -16,11 +22,10 @@ from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 
-async def claude_md_user_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
+async def claude_md_in_claude_subdir_fn(
+    nodes: list[FSRef], opts: IndexerOptions,
 ) -> list[FSRef]:
-    """USER_HOME_FOLDER -> CLAUDE_MD. User scope: ~/.claude/CLAUDE{,.local}.md."""
+    """<root>/.claude/CLAUDE.md + .claude/CLAUDE.local.md."""
     out: list[FSRef] = []
     for node in nodes:
         home = Path(node.path) / ".claude"
@@ -37,11 +42,10 @@ async def claude_md_user_fn(
     return out
 
 
-async def claude_md_project_fn(
-    nodes: list[FSRef],
-    opts: IndexerOptions,
+async def claude_md_in_project_root_fn(
+    nodes: list[FSRef], opts: IndexerOptions,
 ) -> list[FSRef]:
-    """REAL_PROJECT_CWD -> CLAUDE_MD. Project scope: CLAUDE.md, .claude/CLAUDE.md, CLAUDE.local.md."""
+    """<root>/CLAUDE.md, <root>/CLAUDE.local.md, <root>/.claude/CLAUDE.md."""
     out: list[FSRef] = []
     for node in nodes:
         for rel in ("CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"):
