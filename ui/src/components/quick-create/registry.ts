@@ -44,7 +44,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Skill.createInProject(project, name, folderVfsPath);
       return {
-        pointer: saved.source_path ? DockPointer.forAssetEditor('skill', saved.source_path) : undefined,
+        pointer: saved.asset_ref ? DockPointer.forAssetEditor('skill', saved.asset_ref) : undefined,
         toastTitle: 'Skill created',
       };
     },
@@ -57,9 +57,8 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     defaultFolder: '.claude/agents',
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Agent.createInProject(project, name, folderVfsPath);
-      const sourcePath = (saved as unknown as { source_path?: string }).source_path;
       return {
-        pointer: sourcePath ? DockPointer.forAssetEditor('agent', sourcePath) : undefined,
+        pointer: saved.asset_ref ? DockPointer.forAssetEditor('agent', saved.asset_ref) : undefined,
         toastTitle: 'Agent created',
       };
     },
@@ -72,7 +71,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Workflow.createInProject(project, name, folderVfsPath);
       return {
-        pointer: saved.source_vfs_path ? DockPointer.forAssetEditor('workflow', saved.source_vfs_path) : undefined,
+        pointer: saved.asset_ref ? DockPointer.forAssetEditor('workflow', saved.asset_ref) : undefined,
         toastTitle: 'Workflow created',
       };
     },
@@ -99,7 +98,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     create: async ({ project, name, folderVfsPath }) => {
       const md = await MarkdownAsset.createInProject(project, name, folderVfsPath);
       return {
-        pointer: DockPointer.forAssetEditor('markdown', md.source_vfs_path),
+        pointer: DockPointer.forAssetEditor('markdown', md.asset_ref),
         toastTitle: 'Markdown created',
       };
     },

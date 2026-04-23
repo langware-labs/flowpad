@@ -183,7 +183,7 @@ async def test_search_filter_only_browse_returns_records(bootstrapped_client):
         assert "record_id" in r
         assert "status" in r
         assert "modified_at" in r
-        assert "source_path" in r
+        assert "asset_ref" in r
 
 
 @pytest.mark.asyncio

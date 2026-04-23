@@ -23,7 +23,7 @@ export class Workflow extends APIEntity<Workflow> {
   description?: string;
 
   /** VFS path to the workflow file (e.g., workflows/<uuid>/main.md) */
-  source_vfs_path?: string;
+  asset_ref?: string;
 
   /** ID of the parent project */
   project_id?: string;
@@ -35,7 +35,7 @@ export class Workflow extends APIEntity<Workflow> {
     super(entity);
     this.name = entity.name;
     this.description = entity.description;
-    this.source_vfs_path = entity.source_vfs_path;
+    this.asset_ref = entity.asset_ref;
     this.project_id = entity.project_id;
     this.tab_index = entity.tab_index ?? null;
   }
@@ -53,7 +53,7 @@ export class Workflow extends APIEntity<Workflow> {
 
   /**
    * Create a new workflow in the given project. Writes the initial .md file
-   * first and then persists the entity with `source_vfs_path` set — atomic,
+   * first and then persists the entity with `asset_ref` set — atomic,
    * so a failed file write never leaves an orphan entity behind. Falls back
    * to `@local` project when `project` is null.
    */
@@ -80,10 +80,10 @@ export class Workflow extends APIEntity<Workflow> {
     const vfsPath = vfsBase ? `${vfsBase}/${folder}/${safeName}.md` : `${folder}/${safeName}.md`;
 
     // Atomic create: write the file first, then persist the entity with its
-    // source_vfs_path already set. If the file write fails, no orphan entity
+    // asset_ref already set. If the file write fails, no orphan entity
     // is left behind (Record rule R10 — the file is the source of truth).
     await fsManager.writeFile(computeNode.typeId, vfsPath, `# ${name.trim()}\n`);
-    const workflow = new Workflow({ name: name.trim(), source_vfs_path: vfsPath });
+    const workflow = new Workflow({ name: name.trim(), asset_ref: vfsPath });
     return workflow.save();
   }
 
@@ -93,7 +93,7 @@ export class Workflow extends APIEntity<Workflow> {
   }
 
   /**
-   * Rename this workflow: renames the linked file and updates name + source_vfs_path.
+   * Rename this workflow: renames the linked file and updates name + asset_ref.
    */
   async rename(newName: string): Promise<void> {
     const trimmed = newName.trim();
@@ -103,11 +103,11 @@ export class Workflow extends APIEntity<Workflow> {
     const computeNode = await ComputeNode.getById('@local');
     if (!computeNode) throw new Error('No local compute node');
 
-    if (this.source_vfs_path) {
+    if (this.asset_ref) {
       const safeName = trimmed.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
-      await fsManager.rename(computeNode.typeId, this.source_vfs_path, `${safeName}.md`);
-      const dir = this.source_vfs_path.replace(/\/[^/]+$/, '');
-      this.source_vfs_path = `${dir}/${safeName}.md`;
+      await fsManager.rename(computeNode.typeId, this.asset_ref, `${safeName}.md`);
+      const dir = this.asset_ref.replace(/\/[^/]+$/, '');
+      this.asset_ref = `${dir}/${safeName}.md`;
     }
 
     this.name = trimmed;
@@ -126,7 +126,7 @@ export class Workflow extends APIEntity<Workflow> {
     const flowSkillPath = systemSkills
       ? `/${systemSkills}/flow/SKILL.md`
       : '~/.flow/system_assets/skills/flow/SKILL.md';
-    const instruction = `Run workflow at /${this.source_vfs_path} using the flow skill located at: ${flowSkillPath}`;
+    const instruction = `Run workflow at /${this.asset_ref} using the flow skill located at: ${flowSkillPath}`;
     const workdir = dataContext.project?.fs_storage_mount_path;
 
     const { process, shell } = await AgenticProcess.spawn(

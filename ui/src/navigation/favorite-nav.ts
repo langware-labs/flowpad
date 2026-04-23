@@ -17,7 +17,7 @@ function asSearchResult(bookmark: Bookmark): SearchResult | null {
     scope: '',
     created_at: bookmark.created_date ? new Date(bookmark.created_date).toISOString() : '',
     modified_at: bookmark.updated_date ? new Date(bookmark.updated_date).toISOString() : '',
-    source_path: (nav.source_path as string | undefined) ?? '',
+    asset_ref: (nav.asset_ref as string | undefined) ?? (nav.source_path as string | undefined) ?? '',
     session_id: nav.session_id as string | undefined,
   };
 }

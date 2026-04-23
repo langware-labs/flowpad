@@ -24,7 +24,7 @@ class Markdown(Entity):
     _abstract: ClassVar[bool] = True
     name: str = APIField(default="")
     asset_type: str = APIField(default="")
-    source_path: str = APIField(default="")
+    asset_ref: str = APIField(default="")
     status: str = APIField(default="")
     # Folder-containment fields (populated at index time by MarkdownRecord.from_markdown).
     # parent_path is the immediate containing directory; vault_root is the scan root.

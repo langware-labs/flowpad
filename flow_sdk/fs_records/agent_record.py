@@ -111,17 +111,6 @@ class AgentRecord(Record):
             object.__getattribute__(self, "__dict__")["prompt_text"] = prompt_val
 
     @property
-    def source_path(self) -> str:
-        """Absolute path to the agent .md file on disk."""
-        ar = self.asset_ref
-        if ar is not None:
-            return ar.path
-        rd = self.record_dir
-        if rd is not None and self.name:
-            return str(rd / f"{self.name}.md")
-        return ""
-
-    @property
     def agent_doc(self) -> "Any":  # FrontMatterFsRef | None
         """FrontMatterFsRef pointing to the agent's .md file."""
         from flow_sdk.fs_store.fs_ref import FrontMatterFsRef
@@ -139,10 +128,9 @@ class AgentRecord(Record):
         return self.agent_doc
 
     def meta_dict(self) -> dict:
+        # Keep asset-mtime as updated_date so the FTS layer sees the freshest
+        # timestamp — base asset_ref injection is handled by Record.meta_dict.
         result = super().meta_dict()
-        sp = self.source_path
-        if sp:
-            result["source_path"] = sp
         try:
             import os as _os
             from datetime import datetime as _dt, timezone as _tz
@@ -251,9 +239,8 @@ class AgentRecord(Record):
         p = Path(path)
         text = p.read_text(encoding="utf-8")
         rec = cls.from_markdown(text, name=p.stem)
-        from flow_sdk.fs_store.fs_ref import FrontMatterFsRef, FSRef
+        from flow_sdk.fs_store.fs_ref import FrontMatterFsRef
         rec.asset_ref = FrontMatterFsRef(p)
-        rec.asset_folder_ref = FSRef(p.parent)
         return rec
 
     # -- Claude Code --agents JSON -----------------------------------------
@@ -332,9 +319,8 @@ class AgentRecord(Record):
             if rec.asset_ref is None:
                 md_files = list(p.glob("*.md"))
                 if md_files:
-                    from flow_sdk.fs_store.fs_ref import FrontMatterFsRef, FSRef
+                    from flow_sdk.fs_store.fs_ref import FrontMatterFsRef
                     object.__setattr__(rec, "_asset_ref", FrontMatterFsRef(md_files[0].resolve()))
-                    object.__setattr__(rec, "_asset_folder_ref", FSRef(md_files[0].parent.resolve()))
             return rec
 
         # Markdown bootstrap: dir contains only .md (external asset folder)

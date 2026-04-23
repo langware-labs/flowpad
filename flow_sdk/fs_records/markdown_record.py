@@ -216,7 +216,7 @@ class MarkdownRecord(Record):
                 data["vault_root"] = vault
 
         rec = cls(**data)
-        # Set asset_ref to point to the source .md file (replaces _data["source_path"])
+        # Set asset_ref to point to the source .md file
         if path is not None:
             from flow_sdk.fs_store.fs_ref import FSRef
             object.__setattr__(rec, "_asset_ref", FSRef(path))
@@ -229,25 +229,12 @@ class MarkdownRecord(Record):
         text = p.read_text(encoding="utf-8")
         return cls.from_markdown(text, path=p)
 
-    @property
-    def source_path(self) -> str | None:
-        """Path to the source .md file. Compat accessor — prefer asset_ref.path."""
-        ar = self.asset_ref
-        if ar is not None:
-            return ar.path
-        # also check attrs written by save()
-        return getattr(self, "source_path_field", None) or getattr(self, "asset_ref_path", None)
-
     def _asset_paths(self):
         """The source .md file."""
         ar = self.asset_ref
         if ar is not None and ar.exists():
             return [ar._path]
-        src = getattr(self, "source_path_field", None)
-        if not src:
-            return []
-        p = Path(src)
-        return [p] if p.exists() else []
+        return []
 
     @property
     def name(self) -> str:  # type: ignore[override]
@@ -288,10 +275,8 @@ class MarkdownRecord(Record):
         return " ".join(parts) if parts else None
 
     def meta_dict(self) -> dict:
+        # Base Record.meta_dict injects asset_ref; we only set the display name.
         result = super().meta_dict()
-        sp = self.source_path
-        if sp:
-            result["source_path"] = sp
         result["name"] = self.name
         return result
 

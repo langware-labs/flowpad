@@ -20,7 +20,7 @@ class Skill(Entity):
     type: str = APIField(default=BuiltinEntityType.SKILL.value)
     name: str = APIField(default="")
     description: str = APIField(default="")
-    source_path: str = APIField(default="")
+    asset_ref: str = APIField(default="")
     _api_visible: ClassVar[bool] = True
     _icon: ClassVar[str] = "Sparkles"
 
@@ -61,7 +61,7 @@ class Skill(Entity):
 
         try:
             await asyncio.to_thread(_write)
-            self.source_path = str(skill_md_path.parent)
+            self.asset_ref = str(skill_md_path.parent)
         except Exception:
             pass
 

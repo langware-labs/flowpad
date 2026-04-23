@@ -241,37 +241,34 @@ class Project(Entity):
             data={"compute_node": compute_node.model_dump() if compute_node else None}
         )
 
-    async def _get_process_by_source_impl(self, source_vfs_path: str):
-        """Find an existing process entity associated with the given source file path."""
+    async def _get_process_by_source_impl(self, asset_ref: str):
+        """Find an existing process entity associated with the given asset_ref."""
         from flow_sdk.builtin.process import Flow
 
-        if not source_vfs_path:
-            raise HTTPException(status_code=400, detail="source_vfs_path is required")
+        if not asset_ref:
+            raise HTTPException(status_code=400, detail="asset_ref is required")
 
-        # Query all child process entities of this project
         process_filter = QueryFilter.by_type(Flow.get_type())
         child_processes = await self.get_children(child_filter=process_filter)
 
-        # Find the process with matching source_vfs_path
         for child in child_processes:
             process_entity = child.value
             if (
                 isinstance(process_entity, Flow)
-                and process_entity.source_vfs_path == source_vfs_path
+                and process_entity.asset_ref == asset_ref
             ):
                 return ApiSuccessResponse(data=process_entity)
 
-        # No process found with this source path
         return ApiSuccessResponse(data=None)
 
     @action.get(action_name="get-process-by-source")
-    async def get_process_by_source(self, source_vfs_path: str):
-        return await self._get_process_by_source_impl(source_vfs_path)
+    async def get_process_by_source(self, asset_ref: str):
+        return await self._get_process_by_source_impl(asset_ref)
 
     @action.get(action_name="get-flow-by-source")
-    async def get_flow_by_source(self, source_vfs_path: str):
+    async def get_flow_by_source(self, asset_ref: str):
         """Backward-compatible alias for get_process_by_source."""
-        return await self._get_process_by_source_impl(source_vfs_path)
+        return await self._get_process_by_source_impl(asset_ref)
 
     @action.get(action_name="get-compute-node")
     async def get_compute_node_action(self):

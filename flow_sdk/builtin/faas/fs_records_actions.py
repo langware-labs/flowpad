@@ -36,13 +36,9 @@ class FsRecordsActionsMixin:
         return getattr(ent, "name", None) or getattr(ent, "title", "") or ""
 
     @staticmethod
-    async def _resolve_source_path(ent) -> str:
-        """Resolve the on-disk path for an entity, with a record-level fallback."""
-        path = (
-            getattr(ent, "source_file", None)
-            or (ent.asset_ref.path if getattr(ent, "asset_ref", None) else None)
-            or getattr(ent, "source_path", None)
-        )
+    async def _resolve_asset_ref(ent) -> str:
+        """Resolve the on-disk asset_ref for an entity, with a record-level fallback."""
+        path = getattr(ent, "asset_ref", None) or getattr(ent, "source_file", None)
         if path:
             return path
         try:
@@ -55,7 +51,9 @@ class FsRecordsActionsMixin:
                     if ent_name:
                         rec = record_cls.get(ent_name)
             if rec:
-                return getattr(rec, "source_path", None) or ""
+                ar = getattr(rec, "_asset_ref", None)
+                if ar is not None:
+                    return getattr(ar, "path", None) or ""
         except Exception:
             pass
         return ""
@@ -87,7 +85,7 @@ class FsRecordsActionsMixin:
                             "scope": getattr(ent, "scope", "") or "",
                             "created_at": (d.isoformat() if (d := getattr(ent, "created_date", None)) else ""),
                             "modified_at": (d.isoformat() if (d := getattr(ent, "updated_date", None)) else ""),
-                            "source_path": await self._resolve_source_path(ent),
+                            "asset_ref": await self._resolve_asset_ref(ent),
                             "labels": getattr(ent, "labels", None) or [],
                         }
                     for extra_field in ("session_id", "worker_session_id"):
@@ -132,7 +130,7 @@ class FsRecordsActionsMixin:
                     "scope": getattr(ent, "scope", "") or "",
                     "created_at": (d.isoformat() if (d := getattr(ent, "created_date", None)) else ""),
                     "modified_at": (d.isoformat() if (d := getattr(ent, "updated_date", None)) else ""),
-                    "source_path": await self._resolve_source_path(ent),
+                    "asset_ref": await self._resolve_asset_ref(ent),
                     "labels": getattr(ent, "labels", None) or [],
                 }
             for extra_field in ("session_id", "worker_session_id"):
@@ -167,6 +165,10 @@ class FsRecordsActionsMixin:
         qp = request_info.request.query_params
         filter_type = qp.get("type", "").strip()
         trigger = qp.get("trigger", "auto").strip() or "auto"
+        limit_types_raw = qp.get("limit_types", "").strip()
+        limit_types = int(limit_types_raw) if limit_types_raw.isdigit() else None
+        limit_per_type_raw = qp.get("limit_per_type", "").strip()
+        limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
 
         # Type filter + validation
         types_filter: list[RecordType] | None = None
@@ -178,9 +180,13 @@ class FsRecordsActionsMixin:
                     message=f"Unknown record type '{filter_type}'",
                     status_code=400,
                 )
+        elif limit_types is not None:
+            types_filter = list(INDEXABLE_TYPES)[:limit_types]
 
         # Activity tracking for duplicate-prevention + UI progress
-        total = 1 if filter_type else len(INDEXABLE_TYPES)
+        total = 1 if filter_type else (
+            len(types_filter) if types_filter is not None else len(INDEXABLE_TYPES)
+        )
         try:
             activity = self._start_activity("scan", total=total, timeout_seconds=600)
         except RuntimeError as e:
@@ -222,7 +228,10 @@ class FsRecordsActionsMixin:
         try:
             t0 = time.perf_counter()
             nodes = await get_shared_indexer().scan(IndexerOptions(
-                types=types_filter, on_progress=emit, verbose=False,
+                types=types_filter,
+                limit_per_type=limit_per_type,
+                on_progress=emit,
+                verbose=False,
             ))
             scan_ms = round((time.perf_counter() - t0) * 1000, 1)
         finally:
@@ -288,13 +297,16 @@ class FsRecordsActionsMixin:
         )
 
         if filter_type:
-            if not per_type:
+            # Pull the exact bucket for the filtered type — DFS walker visits
+            # scaffold types first (USER_HOME_FOLDER, etc.), so `per_type[0]`
+            # is typically the wrong bucket.
+            b = by_type.get(filter_type)
+            if b is None:
                 return ApiSuccessResponse(data={
                     "type": filter_type, "count": 0, "total_bytes": 0,
                     "avg_bytes": 0, "scan_ms": scan_ms, "records": [],
                     "min_bytes": 0, "max_bytes": 0, "last_scan_at": last_scan_at,
                 })
-            b = per_type[0]
             records = b["_records"]
             sizes = [r["size_bytes"] for r in records] if records else [0]
             return ApiSuccessResponse(data={
@@ -379,6 +391,10 @@ class FsRecordsActionsMixin:
         filter_type = qp.get("type", "").strip()
         trigger = qp.get("trigger", "manual").strip() or "manual"
         rebuild = qp.get("rebuild", "").strip().lower() in ("true", "1")
+        limit_types_raw = qp.get("limit_types", "").strip()
+        limit_types = int(limit_types_raw) if limit_types_raw.isdigit() else None
+        limit_per_type_raw = qp.get("limit_per_type", "").strip()
+        limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
 
         # Type filter + validation
         types_filter: list[RecordType] | None = None
@@ -390,6 +406,8 @@ class FsRecordsActionsMixin:
                     message=f"Unknown record type '{filter_type}'",
                     status_code=400,
                 )
+        elif limit_types is not None:
+            types_filter = list(INDEXABLE_TYPES)[:limit_types]
 
         driver = get_db_driver()
 
@@ -404,7 +422,9 @@ class FsRecordsActionsMixin:
                 await driver.fts_clear()
 
         # Activity tracking for duplicate-prevention + UI progress
-        total = 1 if filter_type else len(INDEXABLE_TYPES)
+        total = 1 if filter_type else (
+            len(types_filter) if types_filter is not None else len(INDEXABLE_TYPES)
+        )
         try:
             activity = self._start_activity("index", total=total, timeout_seconds=600)
         except RuntimeError as e:
@@ -442,7 +462,10 @@ class FsRecordsActionsMixin:
 
         try:
             result = await get_shared_indexer().index(IndexerOptions(
-                types=types_filter, on_progress=emit, verbose=False,
+                types=types_filter,
+                limit_per_type=limit_per_type,
+                on_progress=emit,
+                verbose=False,
             ))
         finally:
             self._complete_activity("index")

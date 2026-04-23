@@ -523,6 +523,7 @@ class SQLiteDBDriver(DBDriver):
             rows = result.fetchall()
             columns = result.keys()
 
+            entity_cols = {col.name for col in EntitySchema.__table__.columns}
             entities_with_score: list[tuple[float, Any]] = []
             for row in rows:
                 row_dict = dict(zip(columns, row))
@@ -533,7 +534,9 @@ class SQLiteDBDriver(DBDriver):
                 bm25_score = row_dict.pop("_bm25_score", 0.0) or 0.0
                 # Use title snippet if the match is in title; fall back to content snippet
                 snippet_val = snippet_title if snippet_title and "<mark>" in (snippet_title or "") else snippet_content
-                schema = EntitySchema(**row_dict)
+                # Filter to columns EntitySchema knows — stale DBs can have extra
+                # leftover columns (e.g. old ``content_hash``) that would crash kwargs.
+                schema = EntitySchema(**{k: v for k, v in row_dict.items() if k in entity_cols})
                 try:
                     entity = self._schema_to_entity(schema)
                     entity._fts_snippet = snippet_val  # type: ignore[attr-defined]
@@ -599,12 +602,13 @@ class SQLiteDBDriver(DBDriver):
             result = await session.execute(text(sql), params)
             rows = result.fetchall()
             columns = result.keys()
+            entity_cols = {col.name for col in EntitySchema.__table__.columns}
             entities: list[Any] = []
             for row in rows:
                 row_dict = dict(zip(columns, row))
                 fts_title = row_dict.pop("_fts_title", None) or None
                 fts_description = row_dict.pop("_fts_description", None) or None
-                schema = EntitySchema(**row_dict)
+                schema = EntitySchema(**{k: v for k, v in row_dict.items() if k in entity_cols})
                 try:
                     entity = self._schema_to_entity(schema)
                     entity._fts_title = fts_title  # type: ignore[attr-defined]

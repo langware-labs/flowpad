@@ -51,8 +51,8 @@ async def test_workflow_run_creates_hello_world():
 
     try:
         # 2. Build a Workflow entity pointing at the temp file (no DB save required)
-        # source_vfs_path is stored without the leading "/" (VFS convention)
-        workflow = Workflow(source_vfs_path=str(workflow_path).lstrip("/"))
+        # asset_ref is stored without the leading "/" (VFS convention)
+        workflow = Workflow(asset_ref=str(workflow_path).lstrip("/"))
 
         # 3. Run the workflow — saves record canonically, launches Claude CLI directly
         process = await workflow.run()

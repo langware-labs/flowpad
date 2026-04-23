@@ -40,24 +40,12 @@ class ClaudeCommandFsRecord(Record):
     _indexed_by_default: ClassVar[bool] = True
 
     @property
-    def source_path(self) -> str:
-        return self.source_file or ""
-
-    @property
     def search_title(self) -> str | None:
         return self.name or getattr(self, "command_name", None) or None
 
     @property
     def search_content(self) -> str | None:
         return getattr(self, "content", None) or None
-
-    def meta_dict(self) -> dict:
-        data = super().meta_dict()
-        # Include source file path so the entity DB can resolve navigation without a disk lookup
-        sf = self.source_file
-        if sf:
-            data["source_path"] = sf
-        return data
 
     def __init__(self, **kwargs):
         if "type" not in kwargs:
@@ -71,8 +59,8 @@ class ClaudeCommandFsRecord(Record):
             self.id = f"{scope_val}:{self.command_name}"
             if not self.name:
                 self.name = self.command_name
-        from flow_sdk.fs_store.fs_ref import FSRef
-        object.__setattr__(self, "_asset_ref", FSRef("/", read_only=True))
+        # Commands don't own a disk-backed asset until from_fsref / discover
+        # points them at one; leave _asset_ref unset.
 
     @classmethod
     async def from_fsref(cls, ref) -> list["ClaudeCommandFsRecord"]:
@@ -88,6 +76,8 @@ class ClaudeCommandFsRecord(Record):
             scope=ref.scope or "user",
         )
         rec.source_file = str(md_file)
+        from flow_sdk.fs_store.fs_ref import FSRef
+        object.__setattr__(rec, "_asset_ref", FSRef(md_file))
         return [rec]
 
     @classmethod
@@ -122,6 +112,8 @@ class ClaudeCommandFsRecord(Record):
                     scope=dir_scope,
                 )
                 rec.source_file = str(md_file)
+                from flow_sdk.fs_store.fs_ref import FSRef
+                object.__setattr__(rec, "_asset_ref", FSRef(md_file))
                 records.append(rec)
         return records
 

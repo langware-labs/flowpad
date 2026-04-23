@@ -13,7 +13,7 @@ interface PlainMarkdownAssetEditorProps {
  * Thin wrapper for markdown asset types that don't have a dedicated editor
  * (plan, claude_md, claude_memory, claude_rules, command, markdown).
  *
- * Resolves the backing entity by `source_path` so Chat + Backlinks tabs key
+ * Resolves the backing entity by `asset_ref` so Chat + Backlinks tabs key
  * on the real TypeId (`"plan-<uuid>"`, …) instead of a path-based pseudo.
  */
 export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAssetEditorProps) {

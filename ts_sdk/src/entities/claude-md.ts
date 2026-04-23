@@ -3,7 +3,7 @@ import { IEntity } from '../IEntity';
 
 export interface IClaudeMd extends IEntity {
   name?: string;
-  source_path?: string;
+  asset_ref?: string;
   file_path?: string;
   filename?: string;
   asset_type?: string;
@@ -18,7 +18,7 @@ export class ClaudeMd extends APIEntity<ClaudeMd> implements IClaudeMd {
   static type: string = 'claude_md';
 
   name?: string;
-  source_path?: string;
+  asset_ref?: string;
   file_path?: string;
   filename?: string;
   asset_type?: string;
@@ -29,7 +29,7 @@ export class ClaudeMd extends APIEntity<ClaudeMd> implements IClaudeMd {
   constructor(entity: Partial<IClaudeMd> = {}) {
     super(entity);
     this.name = entity.name;
-    this.source_path = entity.source_path;
+    this.asset_ref = entity.asset_ref;
     this.file_path = entity.file_path;
     this.filename = entity.filename;
     this.asset_type = entity.asset_type;

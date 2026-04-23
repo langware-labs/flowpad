@@ -4,7 +4,7 @@ import { IEntity } from '../IEntity';
 export interface IPlan extends IEntity {
   name?: string;
   description?: string;
-  source_path?: string;
+  asset_ref?: string;
   asset_type?: string;
   parent_path?: string;
   vault_root?: string;
@@ -21,7 +21,7 @@ export class Plan extends APIEntity<Plan> implements IPlan {
 
   name?: string;
   description?: string;
-  source_path?: string;
+  asset_ref?: string;
   asset_type?: string;
   parent_path?: string;
   vault_root?: string;
@@ -30,7 +30,7 @@ export class Plan extends APIEntity<Plan> implements IPlan {
     super(entity);
     this.name = entity.name;
     this.description = entity.description;
-    this.source_path = entity.source_path;
+    this.asset_ref = entity.asset_ref;
     this.asset_type = entity.asset_type;
     this.parent_path = entity.parent_path;
     this.vault_root = entity.vault_root;

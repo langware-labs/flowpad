@@ -28,11 +28,10 @@ async def _reindex_all() -> int:
     return result.total_indexed
 
 
-async def _entity_source_path(ent) -> str:
-    """Resolve source_path for an entity: check common fields, then fall back to its record."""
+async def _entity_asset_ref(ent) -> str:
+    """Resolve asset_ref for an entity: check asset_ref field, fall back to record/legacy mounts."""
     path = (
-        getattr(ent, "source_path", None)
-        or getattr(ent, "source_vfs_path", None)
+        getattr(ent, "asset_ref", None)
         or getattr(ent, "fs_storage_mount_path", None)
         or getattr(ent, "file_path", None)
         or getattr(ent, "work_dir", None)
@@ -43,15 +42,15 @@ async def _entity_source_path(ent) -> str:
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         rec = await ent.get_record()
         if rec is None:
-            # For record types where entity ID (UUID) differs from record ID (name),
-            # fall back to looking up by name (e.g. agent records keyed by agent name).
             record_cls = SchemaRegistry.get_record_cls(ent.type or ent.get_type())
             if record_cls:
                 ent_name = getattr(ent, "name", None) or getattr(ent, "uname", None)
                 if ent_name:
                     rec = record_cls.get(ent_name)
         if rec:
-            return getattr(rec, "source_path", None) or ""
+            ar = getattr(rec, "_asset_ref", None)
+            if ar is not None:
+                return getattr(ar, "path", None) or ""
     except Exception:
         pass
     return ""
@@ -107,7 +106,7 @@ async def _entity_to_result(ent) -> dict:
         "snippet": getattr(ent, "_fts_snippet", None),
         "status": getattr(ent, "status", None) or "",
         "scope": getattr(ent, "scope", "") or "",
-        "source_path": await _entity_source_path(ent) or "",
+        "asset_ref": await _entity_asset_ref(ent) or "",
         "created_at": str(getattr(ent, "created_date", "") or ""),
         "modified_at": str(getattr(ent, "updated_date", "") or ""),
     }

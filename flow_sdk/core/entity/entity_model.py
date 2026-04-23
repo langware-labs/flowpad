@@ -510,7 +510,7 @@ class Entity(DBEntity):
         await super().save(user_id, notify=notify)
         # Sync entity metadata down to its record on disk.
         # Call self.store() (not self._store()) so subclass overrides run
-        # — e.g. Skill/Agent set source_path by writing their content file.
+        # — e.g. Skill/Agent set asset_ref by writing their content file.
         await self.store()
         # Invalidate authorization cache since entity properties have changed
         from ..auth.auth_cache import get_auth_cache

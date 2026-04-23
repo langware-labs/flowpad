@@ -3,7 +3,7 @@ import type { SearchResult } from '@src/hooks/use-record-search';
 import { DockPointer } from './DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { CheckSquare, Search, GitBranch, FileText } from 'lucide-react';
-import { Agent, AgenticProcess, dataContext, FSRef, Project, RecordType, Skill, Task } from '@sdk';
+import { Agent, AgenticProcess, dataContext, Project, RecordType, Skill, Task } from '@sdk';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import type { NavigationActions } from './NavigationActions';
 
@@ -26,9 +26,9 @@ export interface RecordTypeNav {
 
 /** Extract the Claude session UUID from a search result */
 function sessionIdFromResult(result: SearchResult): string {
-  // source_path: "/path/to/<uuid>.jsonl" — derive session UUID from filename
-  if (result.source_path) {
-    const filename = result.source_path.split('/').pop() ?? '';
+  // asset_ref: "/path/to/<uuid>.jsonl" — derive session UUID from filename
+  if (result.asset_ref) {
+    const filename = result.asset_ref.split('/').pop() ?? '';
     const id = filename.replace(/\.jsonl$/i, '');
     if (id) return id;
   }
@@ -36,10 +36,10 @@ function sessionIdFromResult(result: SearchResult): string {
   return result.record_id.replace(/^claude_session-/, '');
 }
 
-/** Extract the project encoded name from a session search result's source_path */
+/** Extract the project encoded name from a session search result's asset_ref */
 function projectEncodedNameFromResult(result: SearchResult): string {
-  // source_path: "/.../.claude/projects/<project_encoded>/<uuid>.jsonl"
-  const parts = result.source_path.split('/');
+  // asset_ref: "/.../.claude/projects/<project_encoded>/<uuid>.jsonl"
+  const parts = result.asset_ref.split('/');
   parts.pop(); // remove filename
   return parts.pop() ?? '';
 }
@@ -47,7 +47,7 @@ function projectEncodedNameFromResult(result: SearchResult): string {
 
 export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   skill: {
-    dockPointer: (r) => new Skill({ id: r.record_id, source_path: r.source_path || undefined }).searchDockPointer,
+    dockPointer: (r) => new Skill({ id: r.record_id, asset_ref: r.asset_ref || undefined }).searchDockPointer,
     actions: [
       { icon: Search, name: 'All skills', dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'skill' }) },
     ],
@@ -62,15 +62,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   },
   agent: {
     dockPointer: (r) => {
-      const localTypeId = dataContext.computeNodeTypeId;
-      const agent = new Agent({ id: r.record_id, name: r.name || undefined });
-      if (localTypeId && r.source_path) {
-        // source_path is an absolute machine path — strip leading '/' to get VFS entity sub-path.
-        // The folder is the parent directory (strip filename).
-        const vfsSubPath = r.source_path.replace(/^\//, '');
-        const folderVfsSubPath = vfsSubPath.replace(/\/[^/]+$/, '');
-        agent.asset_folder_ref = new FSRef(folderVfsSubPath, localTypeId);
-      }
+      const agent = new Agent({ id: r.record_id, name: r.name || undefined, asset_ref: r.asset_ref || undefined });
       return agent.searchDockPointer;
     },
   },
@@ -92,8 +84,8 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     },
   },
   command: {
-    dockPointer: (r) => r.source_path
-      ? new DockPointer(ViewType.ASSETS, `editor/command/${r.source_path.replace(/^\//, '')}`)
+    dockPointer: (r) => r.asset_ref
+      ? new DockPointer(ViewType.ASSETS, `editor/command/${r.asset_ref.replace(/^\//, '')}`)
       : null,
   },
   comment: {
@@ -105,33 +97,33 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     },
   },
   [RecordType.MARKDOWN]: {
-    dockPointer: (r) => r.source_path
-      ? new DockPointer(ViewType.ASSETS, `editor/${RecordType.MARKDOWN}/${r.source_path.replace(/^\//, '')}`)
+    dockPointer: (r) => r.asset_ref
+      ? new DockPointer(ViewType.ASSETS, `editor/${RecordType.MARKDOWN}/${r.asset_ref.replace(/^\//, '')}`)
       : null,
   },
   plan: {
-    dockPointer: (r) => r.source_path
-      ? new DockPointer(ViewType.ASSETS, `editor/plan/${r.source_path.replace(/^\//, '')}`)
+    dockPointer: (r) => r.asset_ref
+      ? new DockPointer(ViewType.ASSETS, `editor/plan/${r.asset_ref.replace(/^\//, '')}`)
       : null,
   },
   workflow: {
-    dockPointer: (r) => r.source_path
-      ? new DockPointer(ViewType.ASSETS, `editor/workflow/${r.source_path.replace(/^\//, '')}`)
+    dockPointer: (r) => r.asset_ref
+      ? new DockPointer(ViewType.ASSETS, `editor/workflow/${r.asset_ref.replace(/^\//, '')}`)
       : null,
   },
   claude_md: {
-    dockPointer: (r) => r.source_path
-      ? new DockPointer(ViewType.ASSETS, `editor/claude_md/${r.source_path.replace(/^\//, '')}`)
+    dockPointer: (r) => r.asset_ref
+      ? new DockPointer(ViewType.ASSETS, `editor/claude_md/${r.asset_ref.replace(/^\//, '')}`)
       : null,
   },
   claude_memory: {
-    dockPointer: (r) => r.source_path
-      ? new DockPointer(ViewType.ASSETS, `editor/claude_memory/${r.source_path.replace(/^\//, '')}`)
+    dockPointer: (r) => r.asset_ref
+      ? new DockPointer(ViewType.ASSETS, `editor/claude_memory/${r.asset_ref.replace(/^\//, '')}`)
       : null,
   },
   claude_rules: {
-    dockPointer: (r) => r.source_path
-      ? new DockPointer(ViewType.ASSETS, `editor/claude_rules/${r.source_path.replace(/^\//, '')}`)
+    dockPointer: (r) => r.asset_ref
+      ? new DockPointer(ViewType.ASSETS, `editor/claude_rules/${r.asset_ref.replace(/^\//, '')}`)
       : null,
   },
   claude_settings: {

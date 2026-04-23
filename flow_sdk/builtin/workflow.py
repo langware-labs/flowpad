@@ -24,7 +24,7 @@ class Workflow(Entity):
     type: str = APIField(default=BuiltinEntityType.WORKFLOW.value)
     name: str | None = APIField(default=None, description="Display name of the workflow")
     description: str | None = APIField(default=None, description="Description of the workflow")
-    source_vfs_path: str | None = APIField(
+    asset_ref: str | None = APIField(
         default=None, description="VFS path to the workflow file (e.g., workflows/<uuid>/main.md)"
     )
     project_id: str | None = APIField(default=None, description="ID of the parent project")
@@ -36,7 +36,7 @@ class Workflow(Entity):
     async def run(self) -> "AgenticProcess":
         """Execute the workflow by running its source content as an agentic process.
 
-        Reads source_vfs_path and runs it via AgenticProcess.
+        Reads asset_ref and runs it via AgenticProcess.
         No HTTP API calls — uses the Claude CLI directly.
 
         Returns:
@@ -46,10 +46,10 @@ class Workflow(Entity):
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.flowpad_types.enums import WorkerType
 
-        if not self.source_vfs_path:
+        if not self.asset_ref:
             raise ValueError("No source file linked to this workflow")
 
-        abs_path = Path("/" + self.source_vfs_path.lstrip("/"))
+        abs_path = Path("/" + self.asset_ref.lstrip("/"))
         if not abs_path.exists():
             raise FileNotFoundError(f"Workflow file not found: {abs_path}")
 

@@ -47,7 +47,7 @@ export function PlansCategory({ projectId }: Props) {
       {results.map((p) => (
         <li
           key={p.record_id}
-          onClick={() => navigation.openDock(DockPointer.forAssetEditor('plan', p.source_path))}
+          onClick={() => navigation.openDock(DockPointer.forAssetEditor('plan', p.asset_ref))}
           className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <ListChecks className="h-3.5 w-3.5 flex-shrink-0" />

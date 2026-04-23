@@ -42,10 +42,10 @@ export function WorkflowsPage() {
   );
 
   const selectedFsRef = useMemo(() => {
-    if (!selectedWorkflow?.source_vfs_path || !fsTypeId) return null;
-    const path = selectedWorkflow.source_vfs_path.replace(/^\//, '');
+    if (!selectedWorkflow?.asset_ref || !fsTypeId) return null;
+    const path = selectedWorkflow.asset_ref.replace(/^\//, '');
     return new FSRef(path, fsTypeId);
-  }, [selectedWorkflow?.source_vfs_path, fsTypeId]);
+  }, [selectedWorkflow?.asset_ref, fsTypeId]);
 
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Workflow | null>(null);
@@ -92,12 +92,12 @@ export function WorkflowsPage() {
 
   const handleOpenExternal = useCallback(
     async (workflow: Workflow) => {
-      if (!workflow.source_vfs_path || !fsTypeId?.id) {
+      if (!workflow.asset_ref || !fsTypeId?.id) {
         toast({ title: 'No file linked to this workflow', variant: 'destructive' });
         return;
       }
       try {
-        await openExternalFromComputeNode(fsTypeId.id, workflow.source_vfs_path);
+        await openExternalFromComputeNode(fsTypeId.id, workflow.asset_ref);
       } catch (err) {
         console.error('[WorkflowsPage] Open external failed:', err);
         toast({ title: 'Failed to open file', variant: 'destructive' });

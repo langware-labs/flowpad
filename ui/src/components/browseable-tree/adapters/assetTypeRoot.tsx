@@ -97,14 +97,14 @@ async function fetchAssetsOfType(
  * Build a child Browseable from a SearchResult.
  */
 function assetChild(typeName: string, result: SearchResult): Browseable {
-  const label = result.name || basename(result.source_path) || '(untitled)';
+  const label = result.name || basename(result.asset_ref) || '(untitled)';
   return {
-    id: `asset:${typeName}:${result.source_path}`,
+    id: `asset:${typeName}:${result.asset_ref}`,
     kind: 'asset',
     label,
     icon: <FileText className="h-3.5 w-3.5 flex-shrink-0" />,
     hasChildren: false,
-    pointer: DockPointer.forAssetEditor(typeName, result.source_path),
+    pointer: DockPointer.forAssetEditor(typeName, result.asset_ref),
   };
 }
 
