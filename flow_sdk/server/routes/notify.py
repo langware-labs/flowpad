@@ -52,14 +52,19 @@ _REDIRECT_HTML = """<!DOCTYPE html>
 
 
 async def handle_notification_deep_link(
-    project_url: str,
     task_id: str,
+    project_url: str = "",
     branch: str = "",
     repo_id: str = "",
     sender_name: str = "",
     task_title: str = "",
 ) -> HTMLResponse:
-    """Redirect the browser to HomeLanding with task_action=open params."""
+    """Redirect the browser to HomeLanding with task_action=open params.
+
+    project_url: repo URL from a REPO attachment (flow_message path) or task
+                 metadata (notification path).  When empty the UI navigates
+                 directly to the task without a git pull/clone dialog.
+    """
     port = _get_ui_port()
 
     params: dict = {"task_action": "open"}

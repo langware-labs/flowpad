@@ -44,7 +44,10 @@ import type React from 'react';
 import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
-import { Loader2, PackageSearch, X, CheckCircle2, Hammer } from 'lucide-react';
+import { Loader2, PackageSearch, X, CheckCircle2, Hammer, Inbox, RefreshCw } from 'lucide-react';
+import { useInboxStore } from '@src/store/use-inbox-store';
+import { listInboxMessages, fetchInboxFromHub } from '@src/components/inbox-view/inbox-api';
+import { ViewType } from '@src/types/ViewType';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDevMode } from '@src/contexts/dev-mode-context';
 import type { LastScanResult } from '@sdk';
@@ -92,7 +95,6 @@ export function HomeLanding() {
       const branch = params.get('branch') || undefined;
       const repoId = params.get('repo_id') || undefined;
       if (taskId) {
-        setPendingTask({ taskId, taskTitle, senderName, projectUrl, branch, repoId });
         // Clean URL so refreshing doesn't re-trigger
         const url = new URL(window.location.href);
         url.searchParams.delete('task_action');
@@ -103,6 +105,14 @@ export function HomeLanding() {
         url.searchParams.delete('branch');
         url.searchParams.delete('repo_id');
         window.history.replaceState(null, '', url.toString());
+
+        if (projectUrl) {
+          // Has a REPO attachment — show pull/clone dialog
+          setPendingTask({ taskId, taskTitle, senderName, projectUrl, branch, repoId });
+        } else {
+          // No REPO attachments — navigate directly to the task
+          navigation.openDock(DockPointer.fromUrl('tasks', `task-${taskId}`));
+        }
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,7 +135,7 @@ export function HomeLanding() {
 
   // Skill creation tasks for the Learnings tab
   const { data: allTasks, refetch: taskRefetch, excludeTasks } = useProjectTasks();
-  const { archiveTask } = useTaskMutations({ refetch: taskRefetch, excludeTasks });
+  const { archiveTask, removeTasks } = useTaskMutations({ refetch: taskRefetch, excludeTasks });
   const learningTasks = useMemo(
     () => allTasks.filter((t) => t.status !== 'archived' && !t.archived_at),
     [allTasks],
@@ -192,6 +202,24 @@ export function HomeLanding() {
     if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
     setShowJoinExisting(true);
   };
+
+  // Inbox state
+  const { unreadCount, setUnreadCount } = useInboxStore();
+  const [inboxRefreshing, setInboxRefreshing] = useState(false);
+  useEffect(() => {
+    void listInboxMessages().then((msgs) => setUnreadCount(msgs.filter((m) => !m.is_read).length));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const handleInboxRefresh = useCallback(async () => {
+    setInboxRefreshing(true);
+    try {
+      await fetchInboxFromHub();
+      const msgs = await listInboxMessages();
+      setUnreadCount(msgs.filter((m) => !m.is_read).length);
+    } finally {
+      setInboxRefreshing(false);
+    }
+  }, [setUnreadCount]);
 
   const [memoPanelOpen, setMemoPanelOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -551,8 +579,39 @@ export function HomeLanding() {
 
       {/* Main row: Sidebar + Content */}
       <div className="flex min-h-0 flex-1 gap-6 px-4 pb-4">
-        {/* Left column: Bookmarks */}
-        <div className="w-72 shrink-0">
+        {/* Left column: Inbox header + Bookmarks */}
+        <div className="w-72 shrink-0 flex flex-col gap-2">
+          {/* Inbox icon row */}
+          <div className="flex items-center justify-between px-1">
+            <button
+              className="flex items-center gap-1.5 rounded-md px-1 py-1 text-sm font-medium hover:bg-accent transition-colors"
+              onClick={() => navigation.openTab(ViewType.INBOX)}
+            >
+              <div className="relative">
+                <Inbox className="h-4 w-4 text-muted-foreground" />
+                {unreadCount > 0 && (
+                  <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-destructive px-0.5 text-[8px] font-bold leading-none text-destructive-foreground">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </div>
+              <span className="text-muted-foreground hover:text-foreground transition-colors">Inbox</span>
+              {unreadCount > 0 && (
+                <span className="text-xs text-muted-foreground">({unreadCount})</span>
+              )}
+            </button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => void handleInboxRefresh()}
+              disabled={inboxRefreshing}
+              title="Fetch new messages from hub"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${inboxRefreshing ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+
           <BookmarkColumn
             learningTasks={learningTasks}
             bookmarks={bookmarks}
@@ -561,6 +620,7 @@ export function HomeLanding() {
             onErrorClick={() => navigation.openLens('heartbeat', 'errors', 'open')}
             onAddComment={createComment}
             onArchiveLearning={(task) => void archiveTask(task)}
+            onArchiveAllLearnings={() => void removeTasks(learningTasks)}
             onCloseBookmark={(m) => void closeBookmark(m)}
             onDeleteBookmark={(m) => void deleteBookmark(m)}
             onRemindBookmark={(m, mins) => void remindBookmark(m, mins)}
