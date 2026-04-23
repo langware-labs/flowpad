@@ -513,6 +513,10 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         someone_typeid=someone_typeid,
     )
 
+    uploaded_files = body.get("files") or []
+    if not isinstance(uploaded_files, list):
+        uploaded_files = [uploaded_files]
+
     conv: Optional[Conversation] = None
     fm = None
     spec_file_path = ""
@@ -553,6 +557,11 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
             message=message,
             someone_typeid=someone_typeid,
         )
+
+    # Attach uploaded files to the FlowMessage (stored in entity VFS, included in bundle)
+    if uploaded_files and fm:
+        await _attach_uploaded_files(fm, uploaded_files, task.id, task_title)
+        fm = await fm.save(someone_typeid)
 
     hub_flow_message_id, email_error = await _send_hub_notification(
         recipient_email=recipient_email,
@@ -641,7 +650,7 @@ async def _create_reply_flow_message(
     return await reply_fm.save(someone_typeid)
 
 
-async def _attach_uploaded_files(reply_fm: "FlowMessage", uploaded_files: list, task_id: str, task_title: str) -> None:
+async def _attach_uploaded_files(reply_fm: "FlowMessage", uploaded_files: list) -> None:
     """Save uploaded files into the FlowMessage entity's VFS storage and append FILE attachments.
 
     Files are stored at data/{filename} within the entity's embedded storage root so they can
@@ -783,7 +792,7 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     if not isinstance(uploaded_files, list):
         uploaded_files = [uploaded_files]
     if uploaded_files:
-        await _attach_uploaded_files(reply_fm, uploaded_files, task_id, task.title or "")
+        await _attach_uploaded_files(reply_fm, uploaded_files)
         reply_fm = await reply_fm.save(someone_typeid)
 
     # Append pointer BEFORE packing the bundle so conversation.jsonl is up-to-date in the zip

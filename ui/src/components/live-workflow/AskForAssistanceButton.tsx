@@ -33,29 +33,32 @@ function extractSessionText(
   parts.push('## Session\n\n');
 
   for (const fd of flowData) {
-    const data = fd.data as any;
-    if (fd.elementType === FlowElementTypes.USER_MESSAGE) {
-      const content = data?.content ?? '';
+    // Use fd.content (getter) — works for both live stream and history-loaded items.
+    // fd.data for history items is the raw string, so data?.content would be undefined.
+    const content = (fd as any).content as string ?? '';
+    const role: string = (fd as any).attributes?.role ?? '';
+    const et = fd.elementType;
+
+    // session_history.py uses element-type "chat" for both user (role=user) and assistant
+    const isUser = et === FlowElementTypes.USER_MESSAGE || (et === FlowElementTypes.CHAT && role === 'user');
+    const isAssistant = (et === FlowElementTypes.CHAT && role !== 'user') || et === FlowElementTypes.TEXT;
+
+    if (isUser) {
       if (content) parts.push(`**User:** ${content}\n\n`);
-    } else if (fd.elementType === FlowElementTypes.CHAT || fd.elementType === FlowElementTypes.TEXT) {
-      const content = data?.content ?? '';
+    } else if (isAssistant) {
       if (content) parts.push(`**Assistant:** ${content}\n\n`);
-    } else if (fd.elementType === FlowElementTypes.SHELL_INPUT) {
-      const content = data?.content ?? '';
+    } else if (et === FlowElementTypes.SHELL_INPUT) {
       if (content) parts.push(`\`\`\`bash\n$ ${content}\n\`\`\`\n\n`);
-    } else if (
-      fd.elementType === FlowElementTypes.SHELL ||
-      fd.elementType === FlowElementTypes.SHELL_OUTPUT
-    ) {
-      const stdout = data?.stdout ?? data?.content ?? '';
+    } else if (et === FlowElementTypes.SHELL || et === FlowElementTypes.SHELL_OUTPUT) {
+      const data = (fd as any).data as any;
+      const stdout = data?.stdout ?? content ?? '';
       const stderr = data?.stderr ?? '';
       const output = [stdout, stderr].filter(Boolean).join('\n');
       if (output) parts.push(`\`\`\`\n${output}\n\`\`\`\n\n`);
-    } else if (fd.elementType === FlowElementTypes.ERROR) {
-      const content = data?.content ?? data?.message ?? '';
+    } else if (et === FlowElementTypes.ERROR) {
       if (content) parts.push(`**Error:** ${content}\n\n`);
     }
-    // REASONING skipped (too verbose)
+    // REASONING, TOOL_CALL, TOOL_RESULT skipped (too verbose)
   }
 
   return parts.join('');
