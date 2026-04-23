@@ -652,12 +652,15 @@ async def _attach_uploaded_files(reply_fm: "FlowMessage", uploaded_files: list, 
 
     fm_typeid = reply_fm.typeid
     storage = get_entity_embedded_storage(fm_typeid)
+    logger.info("[_attach_uploaded_files] fm_typeid=%s storage.mount_path=%s", fm_typeid, storage.mount_path)
     for uf in uploaded_files:
+        logger.info("[_attach_uploaded_files] uf=%r has_read=%s filename=%s", uf, hasattr(uf, "read"), getattr(uf, "filename", None))
         if not hasattr(uf, "read"):
             continue
         filename = getattr(uf, "filename", None) or "file"
         vfs_subpath = f"data/{filename}"
         local_path = Path(storage.get_storage_path(vfs_subpath))
+        logger.info("[_attach_uploaded_files] writing file to local_path=%s attachment.data=%s", local_path, vfs_subpath)
         local_path.parent.mkdir(parents=True, exist_ok=True)
         content = await uf.read()
         local_path.write_bytes(content)

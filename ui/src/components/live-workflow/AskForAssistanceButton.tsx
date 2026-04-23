@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AgenticProcess, FlowElementTypes } from '@sdk';
-import type { FlowData } from '@sdk';
+import type { FlowData } from '@sdk'; // FlowData used as cast type for flowDataStream items
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { AskForAssistanceDialog } from './AskForAssistanceDialog';
 
@@ -83,28 +83,12 @@ export function AskForAssistanceButton({ process }: AskForAssistanceButtonProps)
   const [dialogOpen, setDialogOpen] = useState(false);
   const [sessionTitle, setSessionTitle] = useState('');
   const [sessionContent, setSessionContent] = useState('');
-  const [loading, setLoading] = useState(false);
 
-  const handleOpen = async () => {
-    setLoading(true);
-    try {
-      let items: readonly FlowData[] = [];
-
-      const entity = process as any;
-      if (entity?.flowDataStream) {
-        // Load history if not already loaded
-        if (typeof entity.loadHistory === 'function' && !entity.historyLoaded) {
-          await entity.loadHistory();
-        }
-        items = entity.flowDataStream.items as readonly FlowData[];
-      }
-
-      setSessionTitle(getSessionTitle(process));
-      setSessionContent(extractSessionText(items, process));
-      setDialogOpen(true);
-    } finally {
-      setLoading(false);
-    }
+  const handleOpen = () => {
+    const items: readonly FlowData[] = ((process as any)?.flowDataStream?.items as readonly FlowData[]) ?? [];
+    setSessionTitle(getSessionTitle(process));
+    setSessionContent(extractSessionText(items, process));
+    setDialogOpen(true);
   };
 
   return (
@@ -112,9 +96,8 @@ export function AskForAssistanceButton({ process }: AskForAssistanceButtonProps)
       <Tooltip>
         <TooltipTrigger asChild>
           <button
-            className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
-            onClick={() => void handleOpen()}
-            disabled={loading}
+            className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent"
+            onClick={handleOpen}
             aria-label="Ask for Assistance"
           >
             <PersonRaisedHandIcon size={14} />
