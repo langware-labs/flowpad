@@ -814,6 +814,22 @@ class Record:
         inp.mkdir(parents=True, exist_ok=True)
         return inp
 
+    @property
+    def assets_dir(self) -> Path:
+        """The assets subdirectory — materialization target for embedded_assets.
+
+        Layout under this dir mirrors Claude's discovery conventions:
+        ``.claude/agents/<name>.md`` and ``.claude/skills/<name>/SKILL.md``.
+        The parent (`assets_dir` itself) is what gets appended to
+        `additional_dirs` so Claude sees everything via `--add-dir`.
+        """
+        d = self.data_dir
+        if d is None:
+            raise ValueError("No path or source_file set")
+        a = d / "assets"
+        a.mkdir(parents=True, exist_ok=True)
+        return a
+
     def compute_record_hash(self) -> str:
         """SHA256 of record content files (16 hex chars)."""
         rd = self.record_dir
