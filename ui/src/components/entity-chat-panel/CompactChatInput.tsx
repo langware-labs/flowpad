@@ -1,12 +1,14 @@
 import { cn } from '@src/lib/utils';
 import { Send } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
 interface CompactChatInputProps {
   onSend: (text: string) => void | Promise<void>;
   disabled?: boolean;
   placeholder?: string;
   className?: string;
+  /** Optional node rendered between the textarea and the Send button (e.g. a status indicator). */
+  statusSlot?: ReactNode;
 }
 
 /**
@@ -19,6 +21,7 @@ export function CompactChatInput({
   disabled = false,
   placeholder = 'Ask about this doc…',
   className,
+  statusSlot,
 }: CompactChatInputProps) {
   const [value, setValue] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -56,6 +59,7 @@ export function CompactChatInput({
         className="min-h-[28px] flex-1 resize-none rounded border bg-transparent px-2 py-1 text-xs outline-none focus:border-primary disabled:opacity-50"
         data-testid="entity-chat-input"
       />
+      {statusSlot}
       <button
         type="button"
         onMouseDown={(e) => { e.preventDefault(); void send(); }}

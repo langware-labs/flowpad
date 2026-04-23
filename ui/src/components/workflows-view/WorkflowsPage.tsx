@@ -23,6 +23,7 @@ import {
   type TypeId,
   Workflow,
 } from '@sdk';
+import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
 import { ComputeNode, openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { ExternalLink, FilePlus, GitFork, Loader2, Play, Save, Trash2, Workflow as WorkflowIcon, Zap } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState, KeyboardEvent } from 'react';
@@ -205,11 +206,32 @@ function WorkflowEditor({
     const runPath = workflow.preparedPath ?? workflow.source_vfs_path;
     const instruction = `Run workflow at /${runPath} using the flow skill located at: ${flowSkillPath}`;
     const workdir = dataContext.project?.fs_storage_mount_path;
-    const { process, shell } = await AgenticProcess.spawn(
-      { permissionMode: 'bypassPermissions', workdir, scope: [workflow.typeId] },
-      { instruction },
-    );
-    onProcessChange({ process, shell: shell! });
+
+    // Workflow runs execute in WorkerMode.CLI — no PTY, no xterm. The user opts
+    // into an Interactive view later via the Open-in-Terminal button on the
+    // status line (navigation.openDock → loadProcess flips visible=true).
+    const cliOptions = new ClaudeCliOptions({
+      permission_mode: 'bypassPermissions',
+      print_mode: true,
+      output_format: 'stream-json',
+      // `verbose` is auto-enabled when output_format === 'stream-json', but keep
+      // it explicit so the worker config reads the same way on both sides.
+      verbose: true,
+    });
+    const process = await new AgenticProcess({
+      cli_config: cliOptions.toJson(),
+      context_data: {
+        project_id: dataContext.project?.id,
+      },
+      workdir,
+      visible: false,
+    }).save([workflow.typeId]);
+
+    // Fire and forget — `prompt` streams FlowData via the CLI worker subprocess;
+    // the status line tracks the turn via worker_status / ready_for_input.
+    void process.prompt(instruction);
+
+    onProcessChange({ process });
   }, [workflow, onProcessChange]);
 
   const doPrepare = useCallback(async () => {
@@ -422,41 +444,28 @@ function WorkflowEditor({
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : activeEntry ? (
-            <ResizablePanelGroup direction="vertical" className="h-full">
-              <ResizablePanel defaultSize={70} minSize={20}>
-                <div className="flex h-full overflow-hidden">
-                  <div className="min-w-0 flex-1 overflow-auto" ref={editorContainerRef}>
-                    <MilkdownEditor content={content} onChange={handleChange} />
-                  </div>
-                  {processEntry && (
-                    <WorkflowTraceGutter
-                      workerSessionId={workerSessionId}
-                      editorContainerRef={editorContainerRef as React.RefObject<HTMLDivElement>}
-                      displayEvents={
-                        selectedHistoryIdx !== null
-                          ? (traceHistory[selectedHistoryIdx]?.events ?? [])
-                          : currentTraceEvents
-                      }
-                      traceHistory={traceHistory}
-                      selectedHistoryIdx={selectedHistoryIdx}
-                      onSelectHistory={setSelectedHistoryIdx}
-                    />
-                  )}
-                </div>
-              </ResizablePanel>
-              <ResizableHandle withHandle />
-              <ResizablePanel defaultSize={30} minSize={10}>
-                <InteractiveTerminal
-                  sessionId={activeEntry.shell.id}
-                  process={activeEntry.process}
-                  active
-                  embedded
-                  onClose={() => void handleClose()}
-                  onWorkerSessionId={setWorkerSessionId}
-                  className="h-full"
+            // CLI-mode runs: no embedded terminal. The editor + trace gutter
+            // fill the pane; detailed output is one Open-in-Terminal click away
+            // via the status line in the WorkflowRunsList on the right.
+            <div className="flex h-full overflow-hidden">
+              <div className="min-w-0 flex-1 overflow-auto" ref={editorContainerRef}>
+                <MilkdownEditor content={content} onChange={handleChange} />
+              </div>
+              {processEntry && (
+                <WorkflowTraceGutter
+                  workerSessionId={workerSessionId}
+                  editorContainerRef={editorContainerRef as React.RefObject<HTMLDivElement>}
+                  displayEvents={
+                    selectedHistoryIdx !== null
+                      ? (traceHistory[selectedHistoryIdx]?.events ?? [])
+                      : currentTraceEvents
+                  }
+                  traceHistory={traceHistory}
+                  selectedHistoryIdx={selectedHistoryIdx}
+                  onSelectHistory={setSelectedHistoryIdx}
                 />
-              </ResizablePanel>
-            </ResizablePanelGroup>
+              )}
+            </div>
           ) : (
             <div className="h-full overflow-auto">
               <MilkdownEditor content={content} onChange={handleChange} />

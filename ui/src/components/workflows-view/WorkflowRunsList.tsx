@@ -1,9 +1,10 @@
 import { Button } from '@src/components/ui/button';
-import { StatusIndicator } from '@src/components/agentic-progress/shared/status-indicator';
-import { useProcessState } from '@src/hooks/use-process-state';
+import { ProcessStatusLine } from '@src/components/agentic-progress/shared/process-status-line';
+import { useEntity } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
-import { FolderOpen, Terminal } from 'lucide-react';
+import { FolderOpen } from 'lucide-react';
+import { AgenticProcess } from '@sdk';
 import type { ProcessEntry } from './workflow-run-store';
 
 interface WorkflowRunsListProps {
@@ -48,16 +49,19 @@ function WorkflowRunItem({
   computeNodeId: string | undefined;
 }) {
   const { navigation } = useDockNavigation();
-  const state = useProcessState(entry.process);
+  // Watch the live entity so worker_status / visible / ready_for_input updates
+  // propagate into the status line without the component keeping its own state.
+  const { data: live } = useEntity<AgenticProcess>(entry.process.typeId ?? null);
+  const process = live ?? entry.process;
 
-  const handleOpenSession = () => {
-    navigation.openDock(entry.process.dockPointer);
+  const handleOpenInTerminal = () => {
+    navigation.openDock(process.dockPointer);
   };
 
   const handleOpenFolder = async () => {
-    if (!computeNodeId || !entry.process.workdir) return;
+    if (!computeNodeId || !process.workdir) return;
     try {
-      await openExternalFromComputeNode(computeNodeId, entry.process.workdir);
+      await openExternalFromComputeNode(computeNodeId, process.workdir);
     } catch (err) {
       console.error('[WorkflowRunItem] Failed to open folder:', err);
     }
@@ -67,35 +71,31 @@ function WorkflowRunItem({
     <div
       className={`group flex items-center gap-1 px-2 py-1.5 ${isCurrent ? 'bg-muted/50' : ''}`}
     >
-      {/* Status indicator — reuses the canonical config from status-indicator.tsx. */}
-      <StatusIndicator status={state.status} size="sm" className="flex-shrink-0" />
+      {/*
+        One-liner: status icon + worker-status label ("Thinking" / "Using tool"
+        / "Complete" …) + "Run N" secondary + Open-in-Terminal button gated on
+        ready_for_input. The click navigates to /dock/shell/agentic_process-<id>;
+        the loader flips visible=true → WorkerMode.Interactive on the fly.
+      */}
+      <ProcessStatusLine
+        process={process}
+        secondary={label}
+        onOpenInTerminal={handleOpenInTerminal}
+        size="sm"
+        className="min-w-0 flex-1"
+      />
 
-      {/* Label */}
-      <span className="min-w-0 flex-1 truncate text-xs">{label}</span>
-
-      {/* Actions */}
-      <div className="flex flex-shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
+      {process.workdir && computeNodeId && (
         <Button
           variant="ghost"
           size="icon"
-          className="h-5 w-5"
-          title="Open Claude session"
-          onClick={handleOpenSession}
+          className="h-5 w-5 flex-shrink-0 opacity-0 group-hover:opacity-100"
+          title="Open output folder"
+          onClick={() => void handleOpenFolder()}
         >
-          <Terminal className="h-3 w-3" />
+          <FolderOpen className="h-3 w-3" />
         </Button>
-        {entry.process.workdir && computeNodeId && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-5 w-5"
-            title="Open output folder"
-            onClick={() => void handleOpenFolder()}
-          >
-            <FolderOpen className="h-3 w-3" />
-          </Button>
-        )}
-      </div>
+      )}
     </div>
   );
 }

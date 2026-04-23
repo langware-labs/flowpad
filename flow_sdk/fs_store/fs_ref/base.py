@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from flow_sdk.fs_store.record_types import RecordType
 
 
 def _read_existing_frontmatter(path: Path) -> dict:
@@ -26,10 +30,21 @@ class FSRef:
     navigating, and serializing. No knowledge of Record, Entity, or HTTP.
     """
 
-    def __init__(self, path: str | Path, read_only: bool = False, parent: "FSRef | None" = None) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        read_only: bool = False,
+        parent: "FSRef | None" = None,
+        record_type: "RecordType | None" = None,
+    ) -> None:
         self._path = Path(path).resolve()
         self._read_only_flag: bool = read_only
         self._parent: "FSRef | None" = parent
+        self._record_type: "RecordType | None" = record_type
+
+    @property
+    def record_type(self) -> "RecordType | None":
+        return self._record_type
 
     @property
     def read_only(self) -> bool:

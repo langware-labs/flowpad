@@ -141,7 +141,7 @@ export function hasWorkerStarted(status: WorkerStatus): boolean {
 }
 
 /**
- * Minimal shape for ``isReadyForInput`` / ``getDisplayStatus`` callers.
+ * Minimal shape for ``isReadyForInput`` / ``getDisplayStatus`` / ``getWorkerMode`` callers.
  * Avoids coupling to the full ``AgenticProcess`` class.
  */
 export interface StatusBearingProcess {
@@ -149,6 +149,30 @@ export interface StatusBearingProcess {
   workerStatus?: WorkerStatus | string;
   worker_status?: WorkerStatus | string;
   session_id?: string | null;
+  /** Router for ``WorkerMode`` — true when the process has an attached PTY. */
+  visible?: boolean;
+}
+
+/**
+ * Which mode the worker is currently running in.
+ *
+ * Derived from ``visible``; not stored as its own field. The routing is:
+ * - ``visible === true``  → ``Interactive`` (PTY worker, xterm in the dock)
+ * - ``visible === false`` → ``CLI`` (headless ``claude -p`` subprocess per turn)
+ *
+ * ``session_id`` survives both directions — both modes write the same
+ * ``~/.claude/projects/<encoded-cwd>/<sid>.jsonl``. Switching is therefore
+ * two-way: opening a shell tab flips ``visible=true`` (via ``/open``);
+ * closing the tab flips it back (via ``/close``).
+ */
+export enum WorkerMode {
+  Interactive = 'interactive',
+  CLI         = 'cli',
+}
+
+/** Derive the worker mode from the process' ``visible`` field. */
+export function getWorkerMode(p: StatusBearingProcess): WorkerMode {
+  return p.visible ? WorkerMode.Interactive : WorkerMode.CLI;
 }
 
 function resolveStatus(p: StatusBearingProcess): ProcessStatus | undefined {
@@ -176,6 +200,18 @@ export function isReadyForInput(p: StatusBearingProcess): boolean {
   const worker = resolveWorkerStatus(p);
   if (worker === undefined) return !p.session_id;
   return READY_WORKER_STATUSES.has(worker);
+}
+
+/**
+ * UX-level "cannot accept input right now" flag — the negation of
+ * ``isReadyForInput``. Surfaces that need a single boolean to gate input
+ * fields, show a busy spinner, or drive a shortcut condition should use this.
+ *
+ * Covers every non-ready state: worker mid-turn (THINKING / TOOL_* / …),
+ * process not yet RUNNING (NEW / STARTING), STOPPING, terminal, or errored.
+ */
+export function isBusy(p: StatusBearingProcess): boolean {
+  return !isReadyForInput(p);
 }
 
 /**

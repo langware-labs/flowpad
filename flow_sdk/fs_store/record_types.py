@@ -109,6 +109,9 @@ class RecordType(StrEnum):
 
     COLLABORATION_SESSION = "collaboration_session"
 
+    USER_HOME_FOLDER = "user_home_folder"
+    REAL_PROJECT_CWD = "real_project_cwd"
+
 
 class SkillitRecordType(StrEnum):
     SKILLIT_SESSION = "skillit_session"
