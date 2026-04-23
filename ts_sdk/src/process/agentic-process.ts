@@ -104,6 +104,8 @@ export interface IAgenticProcess extends IEntity {
   cli_config?: Record<string, any>;
   /** Extra directories passed to Claude via --add-dir */
   additional_dirs?: string[];
+  /** Serialized TypeIds of entities materialized under the process's assets dir. */
+  embedded_asset_refs?: string[];
   /** Owning project ID */
   project_id?: string | null;
   /** CollaborationSession this process was spawned in, if any */
@@ -927,6 +929,39 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     actionInfo.bodyParameters = { source_vfs_path: sourcePath };
     await dataManager.callAction(actionInfo);
   }
+
+  /**
+   * Unified attach/detach/list for file-backed entities (agents, skills, …)
+   * materialized under the process's assets dir and discovered by Claude via
+   * ``--add-dir``. Mirrors Python ``process.attach_embedded_asset`` /
+   * ``detach_embedded_asset`` / ``list_embedded_assets``.
+   *
+   * Pass a serialized TypeId (``agent-<id>`` / ``skill-<id>``) or the entity
+   * itself — ``typeId.toString()`` is extracted automatically.
+   */
+  readonly embeddedAssets = {
+    attach: async (entityOrRef: { typeId?: { toString(): string } } | string): Promise<void> => {
+      const ref = typeof entityOrRef === 'string'
+        ? entityOrRef
+        : entityOrRef.typeId?.toString() ?? '';
+      if (!ref) throw new Error('embeddedAssets.attach: empty ref');
+      const actionInfo = new ActionInfo('attach-embedded-asset', AgenticProcess.type, this.id, 'POST');
+      actionInfo.bodyParameters = { entity_ref: ref };
+      await dataManager.callAction(actionInfo);
+      this.embedded_asset_refs = Array.from(new Set([...(this.embedded_asset_refs ?? []), ref]));
+    },
+    detach: async (entityOrRef: { typeId?: { toString(): string } } | string): Promise<void> => {
+      const ref = typeof entityOrRef === 'string'
+        ? entityOrRef
+        : entityOrRef.typeId?.toString() ?? '';
+      if (!ref) throw new Error('embeddedAssets.detach: empty ref');
+      const actionInfo = new ActionInfo('detach-embedded-asset', AgenticProcess.type, this.id, 'POST');
+      actionInfo.bodyParameters = { entity_ref: ref };
+      await dataManager.callAction(actionInfo);
+      this.embedded_asset_refs = (this.embedded_asset_refs ?? []).filter((r) => r !== ref);
+    },
+    list: (): string[] => [...(this.embedded_asset_refs ?? [])],
+  };
 
   /**
    * Print-mode streaming prompt. Available on ``visible === false`` (print-mode)

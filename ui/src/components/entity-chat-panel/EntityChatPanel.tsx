@@ -21,8 +21,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
-import { History, MessageSquarePlus } from 'lucide-react';
+import { History, MessageSquarePlus, Settings } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { ChatSettingsPopover } from './ChatSettingsPopover';
 import { CompactChatInput } from './CompactChatInput';
 import { useDerivedWorkerStatus } from './hooks/useDerivedWorkerStatus';
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
@@ -182,10 +183,16 @@ export function EntityChatPanel({ target, className, onProcessCreated }: EntityC
   // 5. In-flight tracking for the send button gate.
   const [sending, setSending] = useState(false);
 
+  // Pre-first-send settings — applied at lazy-create time.
+  const [pendingAttachedRefs, setPendingAttachedRefs] = useState<string[]>([]);
+  const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
+
   const startNewChat = useCallback(() => {
     setSelectedProcessId(null);
     setLocalProcess(null);
     setForceNew(true);
+    setPendingAttachedRefs([]);
+    setPendingProjectId(null);
   }, []);
 
   const selectChat = useCallback((processId: string) => {
@@ -193,6 +200,25 @@ export function EntityChatPanel({ target, className, onProcessCreated }: EntityC
     setLocalProcess(null);
     setForceNew(false);
   }, []);
+
+  const liveAttachedRefs = activeProcess?.embedded_asset_refs ?? [];
+  const effectiveAttachedRefs = activeProcess ? liveAttachedRefs : pendingAttachedRefs;
+
+  const handleAttach = useCallback(async (ref: string) => {
+    if (activeProcess) {
+      await activeProcess.embeddedAssets.attach(ref);
+    } else {
+      setPendingAttachedRefs((prev) => (prev.includes(ref) ? prev : [...prev, ref]));
+    }
+  }, [activeProcess]);
+
+  const handleDetach = useCallback(async (ref: string) => {
+    if (activeProcess) {
+      await activeProcess.embeddedAssets.detach(ref);
+    } else {
+      setPendingAttachedRefs((prev) => prev.filter((r) => r !== ref));
+    }
+  }, [activeProcess]);
 
   const handleSend = useCallback(async (text: string) => {
     if (!targetStr || sending) return;
@@ -209,11 +235,15 @@ export function EntityChatPanel({ target, className, onProcessCreated }: EntityC
           if (!computeNode) throw new Error('No local compute node');
           const newProcess = await computeNode.createProcess({
             workdir: project?.fs_storage_mount_path ?? undefined,
-            projectId: project?.id,
+            projectId: pendingProjectId ?? project?.id,
             targetTypeIdStr: targetStr,
             outputFormat: 'stream-json',
           });
           if (onProcessCreated) await onProcessCreated(newProcess);
+          for (const ref of pendingAttachedRefs) {
+            try { await newProcess.embeddedAssets.attach(ref); }
+            catch (err) { console.error('[EntityChatPanel] attach on create failed', ref, err); }
+          }
           setLocalProcess(newProcess);
           proc = newProcess;
         } finally {
@@ -229,7 +259,7 @@ export function EntityChatPanel({ target, className, onProcessCreated }: EntityC
     } finally {
       setSending(false);
     }
-  }, [activeProcess, sending, targetStr, project, onProcessCreated]);
+  }, [activeProcess, sending, targetStr, project, onProcessCreated, pendingProjectId, pendingAttachedRefs]);
 
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
   useEffect(() => {
@@ -277,6 +307,26 @@ export function EntityChatPanel({ target, className, onProcessCreated }: EntityC
         activeId={activeProcess?.id ?? null}
         onNewChat={startNewChat}
         onPickChat={selectChat}
+        settingsSlot={
+          <ChatSettingsPopover
+            attachedRefs={effectiveAttachedRefs}
+            onAttach={handleAttach}
+            onDetach={handleDetach}
+            activeProcess={activeProcess}
+            projectId={activeProcess ? (activeProcess.project_id ?? null) : (pendingProjectId ?? project?.id ?? null)}
+            onProjectChange={setPendingProjectId}
+            trigger={
+              <button
+                type="button"
+                title="Chat settings"
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                data-testid="entity-chat-settings"
+              >
+                <Settings className="h-3.5 w-3.5" />
+              </button>
+            }
+          />
+        }
       />
       <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
         {showEmptyState && (
@@ -308,17 +358,19 @@ function ChatHistoryHeader({
   activeId,
   onNewChat,
   onPickChat,
+  settingsSlot,
 }: {
   processes: AgenticProcess[];
   activeId: string | null;
   onNewChat: () => void;
   onPickChat: (id: string) => void;
+  settingsSlot?: React.ReactNode;
 }) {
   const iconBtn =
-    'flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
+    'flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
   return (
     <div
-      className="flex flex-shrink-0 items-center justify-end gap-0.5 px-2 py-1"
+      className="flex flex-shrink-0 items-center justify-end gap-0.5 border-b px-2 py-1"
       data-testid="entity-chat-header"
     >
       <button
@@ -328,7 +380,7 @@ function ChatHistoryHeader({
         className={iconBtn}
         data-testid="entity-chat-new"
       >
-        <MessageSquarePlus className="h-3 w-3" />
+        <MessageSquarePlus className="h-3.5 w-3.5" />
       </button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -339,7 +391,7 @@ function ChatHistoryHeader({
             className={iconBtn}
             data-testid="entity-chat-history"
           >
-            <History className="h-3 w-3" />
+            <History className="h-3.5 w-3.5" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-72" data-testid="entity-chat-history-menu">
@@ -373,6 +425,7 @@ function ChatHistoryHeader({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+      {settingsSlot}
     </div>
   );
 }

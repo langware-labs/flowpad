@@ -238,6 +238,13 @@ class AgenticProcess(Entity):
     queue: dict | None = APIField(default=None)
     additional_dirs: list[str] = APIField(default_factory=list, description="Extra directories passed to Claude via --add-dir")
     embedded_agent_ids: list[str] = APIField(default_factory=list, description="Agent ids injected via --agents at session launch")
+    embedded_asset_refs: list[str] = APIField(
+        default_factory=list,
+        description=(
+            "Serialized TypeIds of entities whose files have been materialized into the "
+            "process's <record_dir>/assets folder. Claude discovers them via --add-dir."
+        ),
+    )
     worker_type: WorkerType | None = APIField(default=None, validation_alias="workerType")
 
     # ── Construction ──────────────────────────────────────────────────────────
@@ -962,6 +969,143 @@ class AgenticProcess(Entity):
         for rec in _agents:
             result.update(rec.to_agents_cli_json())
         return result or None
+
+    # ── Embedded assets ────────────────────────────────────────────────────────
+    # Unified attach/detach for agents, skills, and any future file-backed entity.
+    # Materializes the entity's files under <record_dir>/assets/.claude/<type>/… so
+    # Claude discovers them via `--add-dir <record_dir>/assets`.
+
+    async def _assets_dir_path(self) -> "Path":
+        """The filesystem directory where embedded assets are materialized."""
+        from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
+        from flow_sdk.fs_store.record import get_default_records_root, record_stem
+
+        record = None
+        try:
+            record = await self.get_record()
+        except Exception:
+            pass
+
+        if record and record.record_dir:
+            return record.assets_dir
+
+        # Fallback: synthesize the path from the process id if the record can't
+        # be resolved (e.g. the process was saved moments ago and the store
+        # hasn't reindexed). Matches the pattern used by get_input_dir.
+        root = get_default_records_root()
+        d = root / AgenticProcessRecord._record_type / record_stem(
+            AgenticProcessRecord._record_type, self.id
+        )
+        a = d / "assets"
+        a.mkdir(parents=True, exist_ok=True)
+        return a
+
+    def _ensure_assets_dir_in_add_dirs(self, assets_dir: "Path") -> None:
+        """Idempotently append the assets dir to additional_dirs."""
+        target = str(assets_dir)
+        current = list(self.additional_dirs or [])
+        if target not in current:
+            current.append(target)
+            self.additional_dirs = current
+
+    async def _materialize_entity(self, entity_ref: str, assets_dir: "Path") -> str | None:
+        """Copy the referenced entity's files under ``assets_dir/.claude/<type>/…``.
+
+        Returns the entity's display name on success, ``None`` if the entity
+        type is unsupported for embedding. Raises for resolution / IO failures.
+        """
+        import shutil
+        from flow_sdk.fs_records.agent_record import AgentRecord
+        from flow_sdk.fs_records.skill_record import SkillRecord
+
+        ent_type, _, ent_id = entity_ref.partition("-")
+        if not ent_type or not ent_id:
+            raise ValueError(f"Invalid entity_ref: {entity_ref!r}")
+
+        if ent_type == "agent":
+            agent = AgentRecord.load_agent(ent_id)
+            if agent is None:
+                raise FileNotFoundError(f"Agent not found: {ent_id}")
+            target_dir = assets_dir / ".claude" / "agents"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            src = agent.asset_ref._path if agent.asset_ref else None
+            if src is None or not src.exists():
+                raise FileNotFoundError(f"Agent source missing: {ent_id}")
+            target = target_dir / f"{agent.name or ent_id}.md"
+            shutil.copyfile(src, target)
+            return agent.name or ent_id
+
+        if ent_type == "skill":
+            skill = SkillRecord.discover_one(ent_id)
+            if skill is None:
+                raise FileNotFoundError(f"Skill not found: {ent_id}")
+            target_root = assets_dir / ".claude" / "skills"
+            skill.copy_to(target_root)
+            return skill.name or ent_id
+
+        return None  # Unsupported type — caller decides to fail loudly.
+
+    async def _unmaterialize_entity(self, entity_ref: str, assets_dir: "Path") -> None:
+        """Best-effort removal of the files laid down by _materialize_entity."""
+        import shutil
+        from flow_sdk.fs_records.agent_record import AgentRecord
+        from flow_sdk.fs_records.skill_record import SkillRecord
+
+        ent_type, _, ent_id = entity_ref.partition("-")
+        if ent_type == "agent":
+            agent = AgentRecord.load_agent(ent_id)
+            name = agent.name if agent else ent_id
+            target = assets_dir / ".claude" / "agents" / f"{name}.md"
+            if target.exists():
+                target.unlink()
+        elif ent_type == "skill":
+            skill = SkillRecord.discover_one(ent_id)
+            name = skill.name if skill else ent_id
+            target = assets_dir / ".claude" / "skills" / name
+            if target.exists():
+                shutil.rmtree(target)
+
+    @action.post(action_name="attach-embedded-asset")
+    async def attach_embedded_asset(self, entity_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
+        """Materialize ``entity_ref`` under the process's assets dir + add to --add-dir."""
+        if not entity_ref:
+            return ApiFailResponse(message="entity_ref is required")
+        try:
+            assets_dir = await self._assets_dir_path()
+            name = await self._materialize_entity(entity_ref, assets_dir)
+            if name is None:
+                return ApiFailResponse(message=f"Unsupported entity type for embed: {entity_ref}")
+            self._ensure_assets_dir_in_add_dirs(assets_dir)
+            refs = list(self.embedded_asset_refs or [])
+            if entity_ref not in refs:
+                refs.append(entity_ref)
+                self.embedded_asset_refs = refs
+            await self.save()
+            return ApiSuccessResponse(data={"ok": True, "name": name, "ref": entity_ref})
+        except Exception as exc:
+            logger.exception("attach_embedded_asset failed for %s", entity_ref)
+            return ApiFailResponse(message=str(exc))
+
+    @action.post(action_name="detach-embedded-asset")
+    async def detach_embedded_asset(self, entity_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
+        """Remove materialized files + drop ``entity_ref`` from embedded_asset_refs."""
+        if not entity_ref:
+            return ApiFailResponse(message="entity_ref is required")
+        try:
+            assets_dir = await self._assets_dir_path()
+            await self._unmaterialize_entity(entity_ref, assets_dir)
+            refs = [r for r in (self.embedded_asset_refs or []) if r != entity_ref]
+            self.embedded_asset_refs = refs
+            await self.save()
+            return ApiSuccessResponse(data={"ok": True, "ref": entity_ref})
+        except Exception as exc:
+            logger.exception("detach_embedded_asset failed for %s", entity_ref)
+            return ApiFailResponse(message=str(exc))
+
+    @action.get(action_name="list-embedded-assets")
+    async def list_embedded_assets(self) -> "ApiSuccessResponse":
+        """Return the current embedded_asset_refs."""
+        return ApiSuccessResponse(data={"refs": list(self.embedded_asset_refs or [])})
 
     @property
     def cli_options(self) -> "ClaudeCliOptions":
