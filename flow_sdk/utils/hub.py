@@ -115,7 +115,7 @@ async def hub_get(
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping GET %s/%s", entity_type, entity_id)
         return None
     try:
-        timeout = 60 if raw else 10
+        timeout = httpx.Timeout(connect=10, write=10, read=600, pool=5) if raw else httpx.Timeout(10)
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.get(url, headers=_auth_headers(), params=params or {})
             if resp.status_code == 200:
@@ -157,7 +157,7 @@ async def hub_post(
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping POST %s/%s", entity_type, entity_id)
         return None
     try:
-        timeout = 60 if files else 10
+        timeout = httpx.Timeout(connect=10, write=600, read=60, pool=5) if files else httpx.Timeout(10)
         async with httpx.AsyncClient(timeout=timeout) as client:
             if files:
                 resp = await client.post(url, headers=_auth_headers(), files=files)
