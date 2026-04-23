@@ -47,6 +47,8 @@ class PerTypeIndexResult:
     indexed: int
     errors: int
     duration_ms: float
+    skipped: int = 0
+    skipped: int = 0
 
 
 @dataclass(slots=True)
@@ -61,6 +63,53 @@ class IndexerFunc(Protocol):
     async def __call__(
         self, nodes: list[FSRef], opts: IndexerOptions
     ) -> list[FSRef]: ...
+
+
+async def _load_updated_map(driver: Any, type_name: str) -> dict[str, float]:
+    """Return `{id: updated_date_ts}` for every entity row of `type_name`.
+
+    Single-query bulk preload used by `FSIndexer.index()` for the skip-fresh
+    check. Rows with `updated_date is None` are dropped (they'd always fail
+    the freshness comparison anyway).
+
+    SQLite stores `updated_date` as an ISO-like string ("YYYY-MM-DD HH:MM:SS[.µs]")
+    written by the ORM from `datetime.now(UTC)`, so we parse as UTC to match
+    file mtime semantics (epoch seconds).
+    """
+    from datetime import datetime, timezone
+
+    from sqlalchemy import text
+
+    async with await driver._get_session() as session:
+        result = await session.execute(
+            text("SELECT id, updated_date FROM entities WHERE type = :t"),
+            {"t": type_name},
+        )
+        rows = result.fetchall()
+    out: dict[str, float] = {}
+    for r in rows:
+        ud = r[1]
+        if ud is None:
+            continue
+        if hasattr(ud, "timestamp"):
+            # datetime object — honor its tzinfo, default to UTC if naive
+            dt = ud if ud.tzinfo is not None else ud.replace(tzinfo=timezone.utc)
+            out[r[0]] = dt.timestamp()
+            continue
+        if isinstance(ud, str):
+            try:
+                dt = datetime.fromisoformat(ud.replace(" ", "T"))
+            except ValueError:
+                continue
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            out[r[0]] = dt.timestamp()
+            continue
+        try:
+            out[r[0]] = float(ud)
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 class FSIndexer:
@@ -107,6 +156,15 @@ class FSIndexer:
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
         from flow_sdk.db import get_db_driver
 
+        # Bulk-preload {id: updated_date_ts} per type — one DB query each.
+        # Used for the skip-fresh check: if an asset's mtime is <= the DB
+        # row's updated_date, no re-parse needed.
+        driver = get_db_driver()
+        type_names = {str(r.record_type) for r in targets if r.record_type is not None}
+        valid_map: dict[str, dict[str, float]] = {}
+        for tn in type_names:
+            valid_map[tn] = await _load_updated_map(driver, tn)
+
         per_type_counts: dict[RecordType, dict[str, float]] = {}
         seen_types: set[RecordType] = set()
         fts_batch: list = []
@@ -124,8 +182,18 @@ class FSIndexer:
                 continue
 
             acc = per_type_counts.setdefault(
-                ref.record_type, {"indexed": 0, "errors": 0, "duration_ms": 0.0}
+                ref.record_type, {"indexed": 0, "errors": 0, "duration_ms": 0.0, "skipped": 0}
             )
+
+            # Skip-fresh: in-memory dict lookup, one stat(), no parse.
+            rt_name = str(ref.record_type)
+            last_ts = valid_map.get(rt_name, {}).get(info.record_cls.getId(ref))
+            if last_ts is not None:
+                asset_ts = info.record_cls.asset_hash_for_ref(ref)
+                if asset_ts and asset_ts <= last_ts:
+                    acc["skipped"] += 1
+                    continue
+
             t_start = time.perf_counter()
             try:
                 records = await info.record_cls.from_fsref(ref)
@@ -150,6 +218,7 @@ class FSIndexer:
                 indexed=int(acc["indexed"]),
                 errors=int(acc["errors"]),
                 duration_ms=round(acc["duration_ms"], 2),
+                skipped=int(acc.get("skipped", 0)),
             )
             per_type[rt] = pt
             if opts.on_progress is not None:

@@ -25,7 +25,7 @@ class RecordProvider(Protocol):
         """Return all records of the given type."""
         ...
 
-    def discover_one(self, record_type: str, uid: str) -> Record | None:
+    def get(self, record_type: str, uid: str) -> Record | None:
         """Return a single record by type + uid, or None."""
         ...
 
@@ -51,7 +51,7 @@ class RecordProvider(Protocol):
 class FSProvider:
     """Filesystem-backed record provider.
 
-    Delegates discover/discover_one to Record.discover()/Record.discover_one().
+    Delegates discover/get to Record.discover()/Record.get().
     query() applies RecordQuery in-memory (no pushdown).
     """
 
@@ -61,11 +61,11 @@ class FSProvider:
         cls = type_registry.get(record_type) or BaseRecord
         return cls.discover(scope=scope)
 
-    def discover_one(self, record_type: str, uid: str) -> Record | None:
+    def get(self, record_type: str, uid: str) -> Record | None:
         from .factory.type_registry import type_registry
         from .record import Record as BaseRecord
         cls = type_registry.get(record_type) or BaseRecord
-        return cls.discover_one(uid)
+        return cls.get(uid)
 
     def query(self, q: RecordQuery) -> list[Record]:
         """In-memory filter — no pushdown for local FS."""
@@ -101,8 +101,8 @@ class GmailProvider:
     def discover(self, record_type: str, scope: Scope | None = None) -> list[Record]:
         raise NotImplementedError("GmailProvider.discover() not yet implemented")
 
-    def discover_one(self, record_type: str, uid: str) -> Record | None:
-        raise NotImplementedError("GmailProvider.discover_one() not yet implemented")
+    def get(self, record_type: str, uid: str) -> Record | None:
+        raise NotImplementedError("GmailProvider.get() not yet implemented")
 
     def query(self, q: RecordQuery) -> list[Record]:
         raise NotImplementedError("GmailProvider.query() not yet implemented")

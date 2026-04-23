@@ -395,7 +395,7 @@ class ScanActionsMixin:
                 from flow_sdk.builtin.project import Project
                 from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 
-                session_rec = ClaudeSessionRecord.discover_one(session_id)
+                session_rec = ClaudeSessionRecord.get(session_id)
                 if session_rec:
                     if session_rec.cwd and not workdir:
                         workdir = session_rec.cwd
@@ -438,7 +438,7 @@ class ScanActionsMixin:
             # Set resume flag if transcript exists on disk (O(1) with workdir, O(P) fallback).
             # Once resume=True is stored we skip this check on subsequent calls.
             if not process.cli_config.get("resume"):
-                record = ClaudeSessionRecord.discover_one(session_id, project=process.workdir)
+                record = ClaudeSessionRecord.get(session_id, project=process.workdir)
                 if record:
                     from flow_sdk.builtin.cli_workers import factory as _cli_factory
                     _cmd = _cli_factory(process.cli_config, worker_type="claude")

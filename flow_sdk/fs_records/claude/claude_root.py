@@ -45,7 +45,7 @@ class ClaudeRootFsRecord(Record):
     def projects(self) -> list[ClaudeProjectFsRecord]:
         """Return all project directories as ``ClaudeProjectFsRecord``."""
         from .claude_project import ClaudeProjectFsRecord
-        return list(ClaudeProjectFsRecord._external_source_iter())
+        return ClaudeProjectFsRecord.discover()
 
     @property
     def active_sessions(self):

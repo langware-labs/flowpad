@@ -65,7 +65,7 @@ async def test_process_status_after_start(bootstrapped_client):
     assert result.status == "SUCCESS", f"open failed: {result.message}"
 
     entity = await _get_process_entity(bootstrapped_client, process_id)
-    assert entity.get("status") == "live", f"Expected live lifecycle status after open, got {entity.get('status')}"
+    assert entity.get("status") == "running", f"Expected running lifecycle status after open, got {entity.get('status')}"
     assert entity.get("worker_status") in (
         "idle",
         "init",
@@ -121,7 +121,7 @@ async def test_process_status_after_kill_pty(bootstrapped_client):
 
 @pytest.mark.asyncio
 async def test_process_status_full_lifecycle(bootstrapped_client):
-    """Full lifecycle: new -> live -> stopped, with worker_status kept separate."""
+    """Full lifecycle: new -> running -> stopped, with worker_status kept separate."""
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     compute_node_id = _get_default_compute_node_id(bootstrap.json())
 
@@ -141,7 +141,7 @@ async def test_process_status_full_lifecycle(bootstrapped_client):
     assert result.status == "SUCCESS", f"open failed: {result.message}"
 
     entity = await _get_process_entity(bootstrapped_client, process_id)
-    assert entity.get("status") == "live", f"Step 2: Expected live lifecycle status, got {entity.get('status')}"
+    assert entity.get("status") == "running", f"Step 2: Expected running lifecycle status, got {entity.get('status')}"
     assert entity.get("worker_status") in (
         "idle",
         "init",

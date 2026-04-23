@@ -103,6 +103,43 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
 
     expect(outputs.length, 'Expected at least one FlowData item').toBeGreaterThan(0);
     expect(content.length, 'Expected non-empty CHAT/TEXT content').toBeGreaterThan(0);
+
+    // ── History restore: fetch a fresh process instance (empty flowDataStream)
+    //    and verify loadHistory rebuilds the turn from the transcript.
+    expect(proc.session_id, 'session_id should be set after executeInstruction').toBeTruthy();
+
+    const fresh = await dataManager.getByTypeId<AgenticProcess>(proc.typeId);
+    expect(fresh, 'fresh process fetch should resolve').not.toBeNull();
+    expect(
+      fresh!.flowDataStream.items.length,
+      'fresh process stream should start empty before loadHistory',
+    ).toBe(0);
+
+    await fresh!.loadHistory({ force: true });
+    const restored = fresh!.flowDataStream.items;
+    console.log(
+      '[load_embedded_agent] restored element types:',
+      restored.map((o) => o.elementType).join(', '),
+    );
+    expect(restored.length, 'loadHistory should populate the stream').toBeGreaterThan(0);
+
+    const userMessage = restored.find(
+      (r) => r.elementType === FlowElementTypes.USER_MESSAGE
+        || (r.attributes && r.attributes.role === 'user'),
+    );
+    expect(userMessage, 'restored history should contain a user message').toBeDefined();
+    expect(
+      String(userMessage!.data ?? userMessage!.content ?? ''),
+      'user message content should be "Say hello"',
+    ).toContain('Say hello');
+
+    const assistantContent = chatContent(
+      restored.filter((r) => r.attributes?.role === 'assistant'),
+    );
+    expect(
+      assistantContent.length,
+      'restored history should contain assistant content',
+    ).toBeGreaterThan(0);
   }, TIMEOUT);
 
   it('multi-turn: second executeInstruction on the same process produces output', async () => {

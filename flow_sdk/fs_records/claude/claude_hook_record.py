@@ -152,6 +152,19 @@ class ClaudeHookRecord(Record):
         return rec
 
     @classmethod
+    def getId(cls, ref) -> str:
+        """File-level identifier for skip-fresh.
+
+        CLAUDE_HOOK is 1:N — one settings.json produces many hook records,
+        each with its own `_stable_hook_hash(source, event, matcher, command)`
+        id set by `from_fsref`. At the asset level, the meaningful skip-fresh
+        key is the source file: if the file hasn't changed, none of the hook
+        records derived from it have changed either. This method returns
+        that file-level identifier; individual record ids stay per-hook."""
+        import uuid
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, f"hook_source:{ref._path.resolve()}"))
+
+    @classmethod
     async def from_fsref(cls, ref) -> list["ClaudeHookRecord"]:
         """Indexer entry point — parse one settings-like file into N hook records.
 
@@ -187,25 +200,6 @@ class ClaudeHookRecord(Record):
         return list(_parse_hooks_from_file(path, scope))
 
     @classmethod
-    def discovery_items_count(cls, limit: int | None = None) -> int:
-        count = len(ClaudeHookRecordList())
-        return min(count, limit) if limit is not None else count
-
-    @classmethod
-    def discover_iter(cls, limit: int | None = None, scope: "Scope | None" = None, **kwargs: Any) -> Iterator[ClaudeHookRecord]:
-        rl = ClaudeHookRecordList(search_paths=kwargs.get("search_paths"))
-        count = 0
-        for rec in rl:
-            if scope is not None:
-                scope_val = scope.value if hasattr(scope, "value") else str(scope)
-                if _scope_str(rec.scope) != scope_val:
-                    continue
-            yield rec
-            count += 1
-            if limit is not None and count >= limit:
-                return
-
-    @classmethod
     def discover(
         cls,
         scope: Scope | None = None,
@@ -227,7 +221,7 @@ class ClaudeHookRecord(Record):
         return records
 
     @classmethod
-    def discover_one(
+    def get(
         cls,
         uid: str,
         scope: Scope | None = None,

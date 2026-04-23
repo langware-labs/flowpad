@@ -90,7 +90,7 @@ async def test_close_session_transitions_record(session_manager, use_tmp_records
             await session_manager.close_session(pty_key)
 
     # Verify record was transitioned to CLOSED
-    reloaded = ShellRecord.discover_one("sess-close-test")
+    reloaded = ShellRecord.get("sess-close-test")
     assert reloaded is not None
     assert reloaded.status == ShellStatus.CLOSED
 

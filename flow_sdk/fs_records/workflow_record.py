@@ -11,7 +11,7 @@ import os
 import uuid
 from pathlib import Path
 
-from typing import Any, ClassVar, Iterator
+from typing import Any, ClassVar
 
 from flow_sdk.fs_store import Record, RecordType
 
@@ -93,34 +93,6 @@ class WorkflowRecord(Record):
         return cls(file_path=path)
 
     @classmethod
-    def _external_source_count(cls, limit: int | None = None) -> int:
-        seen: set[str] = set()
-        for workflows_dir in _workflow_search_dirs():
-            for md_file in workflows_dir.glob("*.md"):
-                seen.add(str(md_file.resolve()))
-        count = len(seen)
-        return min(count, limit) if limit is not None else count
-
-    @classmethod
     async def from_fsref(cls, ref) -> list["WorkflowRecord"]:
         """Indexer entry point — construct from an FSRef emitted by workflow_fn."""
         return [cls(file_path=ref._path, id=_workflow_id(ref._path))]
-
-    @classmethod
-    def _external_source_iter(cls, limit: int | None = None) -> Iterator["WorkflowRecord"]:
-        seen: set[str] = set()
-        count = 0
-        for workflows_dir in _workflow_search_dirs():
-            for md_file in sorted(workflows_dir.glob("*.md")):
-                key = str(md_file.resolve())
-                if key in seen:
-                    continue
-                seen.add(key)
-                try:
-                    rec = cls(file_path=md_file, id=_workflow_id(md_file))
-                    yield rec
-                    count += 1
-                    if limit is not None and count >= limit:
-                        return
-                except Exception:
-                    continue

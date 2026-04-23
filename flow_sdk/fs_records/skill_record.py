@@ -147,8 +147,8 @@ class SkillRecord(Record):
             parts.append(doc.read())
         return "\n".join(parts) if parts else None
 
-    def _fingerprint_paths(self):
-        """Fingerprint the skill's own content files (SKILL.md + skill.yaml/yml)."""
+    def _asset_paths(self):
+        """Skill assets are the inner content files — dir mtime won't catch edits to these."""
         ar = self.asset_ref
         base_dir: Path | None = ar._path if ar is not None else self.record_dir
         if base_dir is None:
@@ -159,6 +159,19 @@ class SkillRecord(Record):
             if p.exists():
                 paths.append(p)
         return paths
+
+    @classmethod
+    def asset_hash_for_ref(cls, ref) -> float:
+        """Skill folder — stat inner content files, since dir mtime doesn't
+        update when a child's content is edited."""
+        base = ref._path
+        ts = 0.0
+        for name in ("SKILL.md", "skill.yaml", "skill.yml"):
+            try:
+                ts = max(ts, (base / name).stat().st_mtime)
+            except OSError:
+                pass
+        return ts
 
     @property
     def yaml_fields(self) -> dict[str, Any]:
@@ -249,20 +262,6 @@ class SkillRecord(Record):
         return rec
 
     @classmethod
-    def discovery_items_count(cls, limit: int | None = None) -> int:
-        """Count skill directories across all search dirs (fast, no YAML reads)."""
-        seen: set[str] = set()
-        for skills_dir in _skill_search_dirs():
-            for entry in skills_dir.iterdir():
-                if not entry.is_dir():
-                    continue
-                if not (entry / "SKILL.md").exists() and not (entry / "skill.yaml").exists():
-                    continue
-                seen.add(str(entry.resolve()))
-        count = len(seen)
-        return min(count, limit) if limit is not None else count
-
-    @classmethod
     async def from_fsref(cls, ref) -> list["SkillRecord"]:
         """Indexer entry point — construct from an FSRef emitted by skill_fn."""
         from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
@@ -277,12 +276,42 @@ class SkillRecord(Record):
         return [rec]
 
     @classmethod
-    def discover_iter(cls, limit: int | None = None, scope: Scope | None = None, **kwargs: Any):
-        """Lazy generator — yields one SkillRecord per skill directory."""
+    def getId(cls, ref) -> str:
+        """Id = whatever `load_record` produces.
+
+        Two cases inside load_record:
+          - Shadow record dir (contains metadata.json / data.json): id comes
+            from the metadata blob.
+          - Live skill dir (yaml/SKILL.md only): id = skill_name (yaml.name,
+            else the folder name split on the "-@" convention).
+        Call through load_record so both cases stay consistent with
+        `from_fsref(ref)[0].id`."""
+        try:
+            rec = cls.load_record(ref._path)
+            return str(rec.id)
+        except Exception:
+            folder_name = ref._path.name
+            return folder_name.split("-@", 1)[-1] if "-@" in folder_name else folder_name
+
+    @classmethod
+    def get(cls, uid: str, **kwargs: Any) -> "SkillRecord | None":
+        """Find a skill by uid: records_root first, then the .claude/skills directories."""
+        rec = super().get(uid, **kwargs)
+        if rec is not None:
+            return rec
+        for rec in cls.discover():
+            if rec.id == uid:
+                return rec
+        return None
+
+    @classmethod
+    def discover(cls, scope: Scope | None = None, **kwargs: Any) -> list["SkillRecord"]:
+        """Discover all skill directories from user and project .claude/skills/ folders."""
         from flow_sdk.fs_store.fs_ref import FSRef
+        results: list[SkillRecord] = []
         seen: set[str] = set()
-        count = 0
         user_dir = (Path.home() / ".claude" / "skills").resolve()
+        limit = kwargs.get("limit")
         for skills_dir in _skill_search_dirs():
             is_user_dir = skills_dir.resolve() == user_dir
             rec_scope = Scope.USER if is_user_dir else Scope.PROJECT
@@ -300,25 +329,12 @@ class SkillRecord(Record):
                     object.__setattr__(rec, "scope", rec_scope)
                     if rec.asset_ref is None:
                         object.__setattr__(rec, "_asset_ref", FSRef(entry.resolve()))
-                    yield rec
-                    count += 1
-                    if limit is not None and count >= limit:
-                        return
+                    results.append(rec)
+                    if limit is not None and len(results) >= limit:
+                        return results
                 except Exception:
                     continue
-
-    @classmethod
-    def _external_source_find_one(cls, uid: str) -> "SkillRecord | None":
-        """Find a skill by its uuid5-derived ID from the .claude/skills directories."""
-        for rec in cls.discover_iter():
-            if rec.id == uid:
-                return rec
-        return None
-
-    @classmethod
-    def discover(cls, scope: Scope | None = None, **kwargs: Any) -> list["SkillRecord"]:
-        """Discover all skill directories from user and project .claude/skills/ folders."""
-        return list(cls.discover_iter(scope=scope, **kwargs))
+        return results
 
     def copy_to_claude_user_home(self) -> Path:
         return self.copy_to(Path.home() / ".claude" / "skills")

@@ -98,7 +98,7 @@ describe('useActiveTerminals', () => {
     // Deliver process data - linked to sh-1
     await act(async () => {
       shared().watchCallbacks.get('useActiveTerminals:processes')?.([
-        makeProcess({ id: 'proc-1', shell_id: 'sh-1', status: 'live' }),
+        makeProcess({ id: 'proc-1', shell_id: 'sh-1', status: 'running' }),
       ]);
     });
 
@@ -123,7 +123,7 @@ describe('useActiveTerminals', () => {
 
     await act(async () => {
       shared().watchCallbacks.get('useActiveTerminals:processes')?.([
-        makeProcess({ id: 'proc-orphan', shell_id: null, status: 'live' }),
+        makeProcess({ id: 'proc-orphan', shell_id: null, status: 'running' }),
       ]);
     });
 
@@ -167,7 +167,7 @@ describe('useActiveTerminals', () => {
 
     await act(async () => {
       shared().watchCallbacks.get('useActiveTerminals:processes')?.([
-        makeProcess({ id: 'proc-1', shell_id: 'sh-main', sidecar_shell_id: 'sh-sidecar', status: 'live' }),
+        makeProcess({ id: 'proc-1', shell_id: 'sh-main', sidecar_shell_id: 'sh-sidecar', status: 'running' }),
       ]);
     });
 

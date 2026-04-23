@@ -13,7 +13,7 @@ via FSRef):
       Register on REAL_PROJECT_CWD, CWD_ROOT.
 
 Reproduces flow_sdk/fs_records/markdown_record.py:_doc_search_dirs
-+ _find_docs_subdirs + _external_source_iter. FLOWPAD_DOC_DIRS env-var
++ _find_docs_subdirs + indexer function. FLOWPAD_DOC_DIRS env-var
 support is deferred (empty on this machine; separate follow-up if needed).
 """
 

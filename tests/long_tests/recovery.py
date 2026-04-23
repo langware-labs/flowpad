@@ -451,7 +451,7 @@ async def test_agentic_process_recovery_no_http(tmp_path):
         deadline = time.monotonic() + 30.0
         session_rec = None
         while time.monotonic() < deadline:
-            session_rec = ClaudeSessionRecord.discover_one(session_id)
+            session_rec = ClaudeSessionRecord.get(session_id)
             if session_rec:
                 break
             await asyncio.sleep(0.5)

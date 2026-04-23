@@ -238,7 +238,7 @@ class ClaudeSessionRecord(Record):
                 pass
 
         # status: "complete" is correct for all finished sessions.
-        # Active sessions are re-indexed on change via index_required.
+        # Active sessions are re-indexed on change via asset_hash / is_valid.
         result["status"] = "complete"
 
         # message_count: set cheaply by from_jsonl() via binary line count.
@@ -423,23 +423,32 @@ class ClaudeSessionRecord(Record):
         return self._parse_fts()[1]
 
     @classmethod
-    def discovery_items_count(cls, limit: int | None = None) -> int:
-        """Count JSONL session files across ~/.claude/projects/ dirs (fast, no file reads)."""
-        projects_dir = Path.home() / ".claude" / "projects"
-        if not projects_dir.is_dir():
-            return 0
-        count = sum(
-            1
-            for d in projects_dir.iterdir()
-            if d.is_dir()
-            for _ in d.glob("*.jsonl")
-        )
-        return min(count, limit) if limit is not None else count
-
-    @classmethod
     async def from_fsref(cls, ref) -> list["ClaudeSessionRecord"]:
         """Indexer entry point — construct from an FSRef emitted by claude_sessions_fn."""
         return [cls.from_jsonl(ref._path)]
+
+    @classmethod
+    def getId(cls, ref) -> str:
+        """Id = `sessionId` field from the jsonl first-line envelope (what
+        `ClaudeSessionRecord.__init__` sets as self.id). Falls back to the
+        filename stem (jsonl files are typically <sessionId>.jsonl anyway)."""
+        try:
+            with ref._path.open("rb") as fh:
+                head = fh.read(4096).decode("utf-8", errors="replace")
+            for line in head.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                except json.JSONDecodeError:
+                    break
+                sid = raw.get("sessionId")
+                if sid:
+                    return str(sid)
+        except OSError:
+            pass
+        return ref._path.stem
 
     @classmethod
     def discover_paths_iter(cls, limit: int | None = None, **kwargs):
@@ -458,25 +467,23 @@ class ClaudeSessionRecord(Record):
                     return
 
     @classmethod
-    def discover_iter(cls, limit: int | None = None, scope=None, **kwargs):
-        """Lazy generator — yields one ClaudeSessionRecord per JSONL file."""
-        for jsonl_file in cls.discover_paths_iter(limit=limit):
-            try:
-                yield cls.from_jsonl(jsonl_file)
-            except (json.JSONDecodeError, OSError):
-                continue
-
-    @classmethod
     def discover(cls, scope=None, **kwargs) -> list[ClaudeSessionRecord]:
         """Find all session JSONL files under ~/.claude/projects/.
 
         Uses the fast minimal ``from_jsonl()`` — only reads the first few lines
         of each JSONL to extract session ID and slug.  Stats are loaded lazily.
         """
-        return list(cls.discover_iter(scope=scope, **kwargs))
+        limit = kwargs.get("limit")
+        results: list[ClaudeSessionRecord] = []
+        for jsonl_file in cls.discover_paths_iter(limit=limit):
+            try:
+                results.append(cls.from_jsonl(jsonl_file))
+            except (json.JSONDecodeError, OSError):
+                continue
+        return results
 
     @classmethod
-    def discover_one(cls, uid: str, scope=None, **kwargs) -> ClaudeSessionRecord | None:
+    def get(cls, uid: str, scope=None, **kwargs) -> ClaudeSessionRecord | None:
         """Find a specific session by session ID.
 
         Pass ``project="/abs/path"`` for O(1) lookup via the encoded

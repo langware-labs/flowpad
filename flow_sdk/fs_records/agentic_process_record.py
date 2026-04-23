@@ -142,7 +142,7 @@ class AgenticProcessRecord(Record):
         """Return the linked ClaudeSessionRecord, or None if not found."""
         from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
         sid = self.worker_session_id
-        return ClaudeSessionRecord.discover_one(sid) if sid else None
+        return ClaudeSessionRecord.get(sid) if sid else None
 
     def discover_worker_status(self, worker_session_id: str | None = None) -> WorkerStatus:
         """Derive worker_status from the Claude session transcript (tail-read, ~60µs)."""
@@ -155,7 +155,7 @@ class AgenticProcessRecord(Record):
         session = (
             self.claude_session_record
             if not worker_session_id
-            else ClaudeSessionRecord.discover_one(worker_session_id)
+            else ClaudeSessionRecord.get(worker_session_id)
         )
         return session.status if session else WorkerStatus.IDLE
 

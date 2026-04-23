@@ -42,9 +42,7 @@ class TaskResource(Record):
         """Indexer entry point — parse `<task_dir>/manifest.json` into a TaskResource.
 
         Task id lives inside the JSON (`task_id` field), not in the directory
-        name. Legacy `SchemaRegistry.index_type(TASK)` falls back to iterating
-        DB-stored records (no _external_source_iter); this walker is the
-        canonical path going forward.
+        name. FSIndexer is the canonical scan path.
         """
         import json
         manifest = ref._path
@@ -64,6 +62,19 @@ class TaskResource(Record):
         rec = cls(**kwargs)
         rec.source_file = str(manifest)
         return [rec]
+
+    @classmethod
+    def getId(cls, ref) -> str:
+        """Id = `task_id` field inside manifest.json.
+
+        Matches `from_fsref` which constructs the record with `id=task_id`.
+        Falls back to the parent directory name when manifest is unreadable."""
+        import json
+        try:
+            data = json.loads(ref._path.read_text(encoding="utf-8"))
+            return str(data.get("task_id") or data.get("id") or ref._path.parent.name)
+        except (json.JSONDecodeError, OSError):
+            return ref._path.parent.name
 
     @property
     def search_title(self) -> str | None:

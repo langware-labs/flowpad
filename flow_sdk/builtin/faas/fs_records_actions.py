@@ -53,7 +53,7 @@ class FsRecordsActionsMixin:
                 if record_cls:
                     ent_name = getattr(ent, "name", None) or getattr(ent, "uname", None)
                     if ent_name:
-                        rec = record_cls.discover_one(ent_name)
+                        rec = record_cls.get(ent_name)
             if rec:
                 return getattr(rec, "source_path", None) or ""
         except Exception:
@@ -186,9 +186,24 @@ class FsRecordsActionsMixin:
         except RuntimeError as e:
             return ApiFailResponse(message=str(e), status_code=409)
 
-        # Translate ProgressEvent → activity updates → WebSocket broadcast
+        # Translate ProgressEvent → activity updates → WebSocket broadcast.
+        # Scaffolding types (USER_HOME_FOLDER, SYSTEM_ROOT, REAL_PROJECT_CWD,
+        # CWD_ROOT, PROJECT) are DFS waypoints the walker touches to reach the
+        # leaf record types; they should not show up in user-facing progress.
+        _SCAFFOLD_TYPES = {
+            RecordType.USER_HOME_FOLDER,
+            RecordType.SYSTEM_ROOT,
+            RecordType.REAL_PROJECT_CWD,
+            RecordType.CWD_ROOT,
+            RecordType.PROJECT,
+        }
+
         async def emit(ev: ProgressEvent) -> None:
             if ev.stage == "type_complete":
+                if ev.record_type in _SCAFFOLD_TYPES:
+                    return
+                if types_filter and ev.record_type not in types_filter:
+                    return
                 activity.sub_activity_name = str(ev.record_type)
                 activity.sub_done = ev.count
                 activity.sub_total = ev.count
@@ -215,6 +230,7 @@ class FsRecordsActionsMixin:
 
         # Bucket FSRefs by record_type; compute count / total_bytes per type.
         # For single-type calls, also collect a per-record list.
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR_rec  # noqa: PLC0415
         by_type: dict[str, dict] = {}
         for n in nodes:
             if n.record_type is None:
@@ -228,8 +244,18 @@ class FsRecordsActionsMixin:
                 st = n._path.stat()
                 b["total_bytes"] += st.st_size
                 if filter_type:
+                    # Use the record class's own id resolution so the returned
+                    # `id` is a valid record id (not a filesystem path).
+                    _info = _SR_rec.get(key)
+                    if _info is not None and _info.record_cls is not None:
+                        try:
+                            rec_id = _info.record_cls.getId(n)
+                        except Exception:
+                            rec_id = str(n._path)
+                    else:
+                        rec_id = str(n._path)
                     b["_records"].append({
-                        "id": str(n._path),
+                        "id": rec_id,
                         "name": n._path.stem,
                         "size_bytes": st.st_size,
                         "modified_at": st.st_mtime,
@@ -327,94 +353,6 @@ class FsRecordsActionsMixin:
             }
         )
 
-    # ------------------------------------------------------------------
-    # DataManager phase endpoints
-    # ------------------------------------------------------------------
-
-    def _parse_dm_opts(self, request_info) -> dict:
-        """Parse common DataManager options from query params / request body."""
-        params = request_info.query_params or {}
-        body = request_info.body or {}
-        types_raw = params.get("types") or body.get("types")
-        if isinstance(types_raw, str):
-            types_raw = [t.strip() for t in types_raw.split(",") if t.strip()]
-        limit_raw = params.get("limit") or body.get("limit")
-        limit = int(limit_raw) if limit_raw is not None else None
-        skip_fresh_raw = params.get("skip_fresh") or body.get("skip_fresh", False)
-        skip_fresh = str(skip_fresh_raw).lower() in ("true", "1", "yes")
-        return {"types": types_raw or None, "limit": limit, "skip_fresh": skip_fresh}
-
-    async def _handle_fs_records_index_scan(self, request_info) -> ApiResponse:
-        """POST /fs-records/index/scan — filesystem discovery only, no DB writes."""
-        from flow_sdk.fs_store.data_manager import DataManager, ScanOptions  # noqa: PLC0415
-
-        opts_kwargs = self._parse_dm_opts(request_info)
-        opts = ScanOptions(types=opts_kwargs["types"], limit=opts_kwargs["limit"])
-        dm = DataManager()
-        result = await dm.scan(opts)
-        by_type_counts = {t: len(recs) for t, recs in result.by_type.items()}
-        return ApiSuccessResponse(data={
-            "total": result.total,
-            "by_type": by_type_counts,
-            "duration_ms": result.duration_ms,
-        })
-
-    async def _handle_fs_records_index_meta(self, request_info) -> ApiResponse:
-        """POST /fs-records/index/meta — scan then write Entity rows."""
-        from flow_sdk.fs_store.data_manager import DataManager, ScanOptions, IndexMetaOptions  # noqa: PLC0415
-
-        opts_kwargs = self._parse_dm_opts(request_info)
-        dm = DataManager()
-        discovery = await dm.scan(ScanOptions(types=opts_kwargs["types"], limit=opts_kwargs["limit"]))
-        result = await dm.index_meta(
-            discovery.records,
-            IndexMetaOptions(skip_fresh=opts_kwargs["skip_fresh"]),
-        )
-        return ApiSuccessResponse(data={
-            "indexed": result.indexed,
-            "skipped": result.skipped,
-            "errors": result.errors,
-            "duration_ms": result.duration_ms,
-        })
-
-    async def _handle_fs_records_index_search(self, request_info) -> ApiResponse:
-        """POST /fs-records/index/search — scan then write FTS entries."""
-        from flow_sdk.fs_store.data_manager import DataManager, ScanOptions, IndexSearchOptions  # noqa: PLC0415
-
-        opts_kwargs = self._parse_dm_opts(request_info)
-        dm = DataManager()
-        discovery = await dm.scan(ScanOptions(types=opts_kwargs["types"], limit=opts_kwargs["limit"]))
-        result = await dm.index_search(
-            discovery.records,
-            IndexSearchOptions(),
-        )
-        return ApiSuccessResponse(data={
-            "indexed": result.indexed,
-            "errors": result.errors,
-            "duration_ms": result.duration_ms,
-        })
-
-    async def _handle_fs_records_index_all(self, request_info) -> ApiResponse:
-        """POST /fs-records/index/all — full scan → meta → search pipeline."""
-        from flow_sdk.fs_store.data_manager import DataManager, IndexAllOptions  # noqa: PLC0415
-
-        opts_kwargs = self._parse_dm_opts(request_info)
-        opts = IndexAllOptions(
-            types=opts_kwargs["types"],
-            limit=opts_kwargs["limit"],
-            skip_fresh=opts_kwargs["skip_fresh"],
-        )
-        dm = DataManager()
-        result = await dm.index_all(opts)
-        return ApiSuccessResponse(data={
-            "total_discovered": result.discovery.total,
-            "indexed": result.meta.indexed,
-            "skipped": result.meta.skipped,
-            "fts_indexed": result.search.indexed,
-            "errors": result.meta.errors + result.search.errors,
-            "duration_ms": result.duration_ms,
-        })
-
     async def _handle_fs_records_index(self, request_info) -> ApiResponse:
         """Index fs_records into the Entity DB via Record.sync_to_db().
 
@@ -472,8 +410,21 @@ class FsRecordsActionsMixin:
         except RuntimeError as e:
             return ApiFailResponse(message=str(e), status_code=409)
 
+        # Scaffolding types the walker traverses but the user didn't request.
+        _SCAFFOLD_TYPES_IDX = {
+            RecordType.USER_HOME_FOLDER,
+            RecordType.SYSTEM_ROOT,
+            RecordType.REAL_PROJECT_CWD,
+            RecordType.CWD_ROOT,
+            RecordType.PROJECT,
+        }
+
         async def emit(ev: ProgressEvent) -> None:
             if ev.stage == "type_complete":
+                if ev.record_type in _SCAFFOLD_TYPES_IDX:
+                    return
+                if types_filter and ev.record_type not in types_filter:
+                    return
                 activity.sub_activity_name = str(ev.record_type)
                 activity.sub_done = ev.indexed
                 activity.sub_total = ev.indexed
@@ -572,19 +523,7 @@ class FsRecordsActionsMixin:
         if segments and segments[0] == "scan" and method == "get":
             return await self._handle_fs_records_scan(request_info)
 
-        # Phase-specific index endpoints (DataManager): POST /fs-records/index/{phase}
-        if len(segments) >= 2 and segments[0] == "index" and method == "post":
-            phase = segments[1]
-            if phase == "scan":
-                return await self._handle_fs_records_index_scan(request_info)
-            if phase == "meta":
-                return await self._handle_fs_records_index_meta(request_info)
-            if phase == "search":
-                return await self._handle_fs_records_index_search(request_info)
-            if phase == "all":
-                return await self._handle_fs_records_index_all(request_info)
-
-        # Index: POST /fs-records/index or /fs-records/index?type=X (backward compat)
+        # Index: POST /fs-records/index or /fs-records/index?type=X
         if segments and segments[0] == "index" and method == "post":
             return await self._handle_fs_records_index(request_info)
 
@@ -741,7 +680,7 @@ class FsRecordsActionsMixin:
                     from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 
                     project = rec.data.get("project", "") if rec.data else ""
-                    session = ClaudeSessionRecord.discover_one(ref.id, project=project)
+                    session = ClaudeSessionRecord.get(ref.id, project=project)
                     session_dict = session.meta_dict() if session else None
                     if cache is not None:
                         cache[ref.id] = session_dict

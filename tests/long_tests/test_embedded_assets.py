@@ -81,21 +81,21 @@ def _make_skill_dir(root: Path, name: str) -> Path:
 
 @pytest.mark.asyncio
 async def test_attach_agent_by_id_materializes_and_updates_add_dirs(isolate_records):
-    """Attach a real agent by its uuid id. Backend must resolve via discover_one."""
+    """Attach a real agent by its uuid id. Backend must resolve via get."""
     # Point agent discovery at our tmp home dir so load_agent finds it there too.
     agent_md = _make_agent_md(isolate_records / "home", "my-long-test-agent")
     agent_uid = _uid_for_path(agent_md)
     agent_ref = f"agent-{agent_uid}"
 
-    # Stub AgentRecord.discover_one to return the fixture regardless of uid.
+    # Stub AgentRecord.get to return the fixture regardless of uid.
     import shutil as _sh
     from flow_sdk.fs_store.fs_ref import FSRef, FrontMatterFsRef
     fixture = AgentRecord.from_file(agent_md)
     fixture.id = agent_uid
     monkeypatch_target = AgentRecord  # noqa: F841 — readable
 
-    orig_discover = AgentRecord.discover_one
-    AgentRecord.discover_one = classmethod(lambda cls, uid, **kw: fixture if uid == agent_uid else orig_discover.__func__(cls, uid, **kw))
+    orig_discover = AgentRecord.get
+    AgentRecord.get = classmethod(lambda cls, uid, **kw: fixture if uid == agent_uid else orig_discover.__func__(cls, uid, **kw))
     try:
         proc = AgenticProcess(id=str(uuid.uuid4()))
         resp = await proc.attach_embedded_asset(entity_ref=agent_ref)
@@ -113,7 +113,7 @@ async def test_attach_agent_by_id_materializes_and_updates_add_dirs(isolate_reco
         assert [str(r) for r in proc.embedded_asset_refs] == [agent_ref]
         assert proc.additional_dirs.count(str(assets_dir)) == 1
     finally:
-        AgentRecord.discover_one = orig_discover
+        AgentRecord.get = orig_discover
 
 
 @pytest.mark.asyncio
@@ -126,8 +126,8 @@ async def test_attach_skill_by_id_copies_whole_folder(isolate_records):
     fixture = SkillRecord.load_record(skill_folder)
     fixture.id = skill_uid
 
-    orig_discover = SkillRecord.discover_one
-    SkillRecord.discover_one = classmethod(lambda cls, uid, **kw: fixture if uid == skill_uid else orig_discover.__func__(cls, uid, **kw))
+    orig_discover = SkillRecord.get
+    SkillRecord.get = classmethod(lambda cls, uid, **kw: fixture if uid == skill_uid else orig_discover.__func__(cls, uid, **kw))
     try:
         proc = AgenticProcess(id=str(uuid.uuid4()))
         resp = await proc.attach_embedded_asset(entity_ref=skill_ref)
@@ -139,7 +139,7 @@ async def test_attach_skill_by_id_copies_whole_folder(isolate_records):
         skill_target_md = assets_dir / ".claude" / "skills" / "my-long-test-skill" / "SKILL.md"
         assert skill_target_md.is_file(), f"Expected SKILL.md at {skill_target_md}"
     finally:
-        SkillRecord.discover_one = orig_discover
+        SkillRecord.get = orig_discover
 
 
 @pytest.mark.asyncio
@@ -151,8 +151,8 @@ async def test_detach_removes_file_and_ref(isolate_records):
     fixture = AgentRecord.from_file(agent_md)
     fixture.id = agent_uid
 
-    orig_discover = AgentRecord.discover_one
-    AgentRecord.discover_one = classmethod(lambda cls, uid, **kw: fixture if uid == agent_uid else orig_discover.__func__(cls, uid, **kw))
+    orig_discover = AgentRecord.get
+    AgentRecord.get = classmethod(lambda cls, uid, **kw: fixture if uid == agent_uid else orig_discover.__func__(cls, uid, **kw))
     try:
         proc = AgenticProcess(id=str(uuid.uuid4()))
         await proc.attach_embedded_asset(entity_ref=agent_ref)
@@ -166,7 +166,7 @@ async def test_detach_removes_file_and_ref(isolate_records):
         assert agent_ref not in [str(r) for r in proc.embedded_asset_refs]
         assert not materialized.exists(), "Detach should remove materialized file"
     finally:
-        AgentRecord.discover_one = orig_discover
+        AgentRecord.get = orig_discover
 
 
 @pytest.mark.asyncio
@@ -178,8 +178,8 @@ async def test_list_returns_refs(isolate_records):
     fixture = AgentRecord.from_file(agent_md)
     fixture.id = agent_uid
 
-    orig_discover = AgentRecord.discover_one
-    AgentRecord.discover_one = classmethod(lambda cls, uid, **kw: fixture if uid == agent_uid else orig_discover.__func__(cls, uid, **kw))
+    orig_discover = AgentRecord.get
+    AgentRecord.get = classmethod(lambda cls, uid, **kw: fixture if uid == agent_uid else orig_discover.__func__(cls, uid, **kw))
     try:
         proc = AgenticProcess(id=str(uuid.uuid4()))
         await proc.attach_embedded_asset(entity_ref=agent_ref)
@@ -187,4 +187,4 @@ async def test_list_returns_refs(isolate_records):
         resp = await proc.list_embedded_assets()
         assert resp.data == {"refs": [agent_ref]}
     finally:
-        AgentRecord.discover_one = orig_discover
+        AgentRecord.get = orig_discover

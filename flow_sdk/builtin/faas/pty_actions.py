@@ -398,7 +398,7 @@ class PtyActionsMixin:
             from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
             from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
 
-            existing_record = ShellRecord.discover_one(shell_id)
+            existing_record = ShellRecord.get(shell_id)
             if not existing_record:
                 record = ShellRecord(
                     id=shell_id,
@@ -537,7 +537,7 @@ class PtyActionsMixin:
         if project:
             kwargs["project"] = project
 
-        record = ClaudeSessionRecord.discover_one(session_id, **kwargs)
+        record = ClaudeSessionRecord.get(session_id, **kwargs)
         if not record:
             return ApiSuccessResponse(data=[])
 
@@ -585,7 +585,7 @@ class PtyActionsMixin:
 
         try:
             if uuid_param:
-                record = await loop.run_in_executor(None, lambda: cls.discover_one(uuid_param, **kwargs))
+                record = await loop.run_in_executor(None, lambda: cls.get(uuid_param, **kwargs))
                 if not record:
                     # Return 200 with null data — the session file may not exist yet
                     # during normal startup (race condition), so this is not an error.
@@ -633,7 +633,7 @@ class PtyActionsMixin:
         if not shell_id:
             return ApiFailResponse(message="shell_id is required")
 
-        record = ShellRecord.discover_one(shell_id)
+        record = ShellRecord.get(shell_id)
         if not record:
             return ApiFailResponse(message="Shell session not found")
 
@@ -973,7 +973,7 @@ class PtyActionsMixin:
         try:
             from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
 
-            record = ShellRecord.discover_one(shell_id)
+            record = ShellRecord.get(shell_id)
             if record:
                 object.__setattr__(record, "state", ShellStatus.CLOSED)
                 dirty = object.__getattribute__(record, "_dirty_keys")

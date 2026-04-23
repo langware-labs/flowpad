@@ -213,6 +213,7 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
     <>
       <MarkdownEditor
         fsRef={fsRef}
+        chatTarget={resolvedWorkflow.typeId.toString()}
         toolbar={toolbar}
         extraSideTabs={[runsTab]}
         activeSideTab={activeSideTab}

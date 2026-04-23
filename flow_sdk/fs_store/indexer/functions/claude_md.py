@@ -10,7 +10,7 @@ Two functions, split by *file layout* (not by scope — scope inherits via FSRef
       <root>/CLAUDE.md, <root>/CLAUDE.local.md, <root>/.claude/CLAUDE.md
       Register on REAL_PROJECT_CWD (matches legacy <project>/CLAUDE.md etc.).
 
-Reproduces flow_sdk/fs_records/claude/claude_claude_md.py:_external_source_iter.
+Reproduces flow_sdk/fs_records/claude/claude_claude_md.py:indexer function.
 """
 
 from __future__ import annotations

@@ -89,11 +89,16 @@ def load_session_history(session_id: str) -> list[FlowData]:
             content = message.get("content", [])
             text = _extract_text_content(content)
             if text:
+                # Use USER_MESSAGE element-type (not CHAT) so the TS
+                # FlowDataStream.ingest branch routes it through the
+                # user-message dedup path instead of consolidating it into
+                # an adjacent assistant CHAT group (which collapses user +
+                # assistant into one merged item).
                 history.append(
                     FlowData(
                         flow_value=text,
                         attributes={
-                            "element-type": FlowElementType.CHAT,
+                            "element-type": FlowElementType.USER_MESSAGE,
                             "data-type": FlowDataType.TEXT,
                             "role": "user",
                         },

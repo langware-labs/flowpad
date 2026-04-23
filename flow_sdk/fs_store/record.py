@@ -18,7 +18,6 @@ import os
 import platform
 import shutil
 import subprocess
-import time
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -220,7 +219,7 @@ class Record:
 
     ID:
       id    — always a UUID (v4 random, or v5 derived via identity_key/fingerprint)
-              used for filesystem stem and discover_one()
+              used for filesystem stem and get()
     """
 
     # Subclasses set this to auto-register in the type registry.
@@ -253,8 +252,6 @@ class Record:
     _user_asset: ClassVar[bool] = False
     # Subclasses set this to True to surface the type in quick-create menus.
     _creatable: ClassVar[bool] = False
-    # Subclasses set this to cap how many records are scanned by default (None = no limit).
-    _scan_limit: ClassVar[int | None] = None
     # Extra field names concatenated into the embedding text.
     index_fields: ClassVar[list[str]] = []
     # Map of property key → RecordField (computed mode). Defined by subclasses.
@@ -830,67 +827,6 @@ class Record:
         a.mkdir(parents=True, exist_ok=True)
         return a
 
-    def compute_record_hash(self) -> str:
-        """SHA256 of record content files (16 hex chars)."""
-        rd = self.record_dir
-        if rd is None:
-            return "0" * 16
-        h = hashlib.sha256()
-        # Primary: metadata.json (contains all fields)
-        p = rd / "metadata.json"
-        if p.exists():
-            h.update(p.read_bytes())
-        # Named FSRef children (live directly in record folder)
-        for key in sorted(getattr(type(self), "_domain_fsref_keys", [])):
-            named_p = rd / f"{key}.json"
-            if named_p.exists():
-                h.update(named_p.read_bytes())
-        return h.hexdigest()[:16]
-
-    def _fingerprint_paths(self) -> list[Path]:
-        """Return paths to stat for fingerprint computation."""
-        rd = self.record_dir
-        if rd is None:
-            return []
-        paths = []
-        # Primary: metadata.json (contains all fields)
-        p = rd / "metadata.json"
-        if p.exists():
-            paths.append(p)
-        # Named FSRef children (live directly in record folder)
-        for key in sorted(getattr(type(self), "_domain_fsref_keys", [])):
-            named_p = rd / f"{key}.json"
-            if named_p.exists():
-                paths.append(named_p)
-        return paths
-
-    @property
-    def content_fingerprint(self) -> str:
-        """Lightweight content fingerprint based on file mtime + size.
-
-        O(1) filesystem stat calls — no file reads. Returns 16 hex chars.
-        For FOLDER layout: combines stats of metadata.json + data/_obj_data.json.
-        For FILE layout: stat of source_file.
-        Returns '0' * 16 if no files exist.
-        """
-        rd = self.record_dir
-        if rd is None:
-            return "0" * 16
-        h = hashlib.md5()
-        for p in self._fingerprint_paths():
-            try:
-                st = p.stat()
-                h.update(f"{st.st_mtime}:{st.st_size}".encode())
-            except OSError:
-                pass
-        digest = h.hexdigest()[:16]
-        return digest if digest != hashlib.md5(b"").hexdigest()[:16] else "0" * 16
-
-    @property
-    def fingerprint(self) -> str:
-        """Backward-compatible alias for content_fingerprint."""
-        return self.content_fingerprint
-
     @property
     def identity_key(self) -> str | None:
         """Overridable hook for deterministic id derivation.
@@ -902,67 +838,6 @@ class Record:
         Must only access instance attrs (already populated from kwargs at __init__ time).
         """
         return None
-
-    @property
-    def index_state_dir(self) -> Path | None:
-        """Directory where flow-internal index state files (hash sentinels) are stored.
-
-        Always resolves through ``record_folder_ref`` which is always under
-        records_root — never an external source directory (skill folders, etc.).
-        Returns None when the record has no type/id to form a default path.
-        """
-        rfr = self.record_folder_ref
-        if rfr is None:
-            return None
-        return Path(rfr._path)
-
-    def write_hash_file(self, fingerprint: str) -> None:
-        """Write <fingerprint>.<timestamp>.hash in index_state_dir. Removes old markers."""
-        rd = self.index_state_dir
-        if rd is None:
-            return
-        rd.mkdir(parents=True, exist_ok=True)
-        for old in rd.glob("*.hash"):
-            old.unlink(missing_ok=True)
-        timestamp = int(time.time())
-        (rd / f"{fingerprint}.{timestamp}.hash").touch()
-
-    def read_hash_file(self) -> tuple[str, float] | None:
-        """Return (fingerprint, timestamp) from hash sentinel file, or None."""
-        rd = self.index_state_dir
-        if rd is None or not rd.is_dir():
-            return None
-        for f in rd.glob("*.hash"):
-            parts = f.stem.split(".")
-            if len(parts) == 2:
-                try:
-                    return parts[0], float(parts[1])
-                except ValueError:
-                    pass
-        return None
-
-    def record_update_required(self, ttl: float = 30.0) -> bool:
-        """True if hash sentinel missing, TTL expired, or fingerprint mismatch."""
-        result = self.read_hash_file()
-        if result is None:
-            return True
-        stored_fingerprint, timestamp = result
-        if time.time() - timestamp > ttl:
-            return True
-        return self.content_fingerprint != stored_fingerprint
-
-    @property
-    def index_required(self) -> bool:
-        """True if this record needs (re-)indexing.
-
-        Returns True when the hash sentinel file is absent. Does not check fingerprint
-        match or TTL — those are for live-refresh decisions.
-        """
-        rd = self.index_state_dir
-        if rd is None:
-            return False
-        sentinel_files = list(rd.glob("*.hash"))
-        return len(sentinel_files) == 0
 
     @property
     def default_path(self) -> Path | None:
@@ -1046,6 +921,125 @@ class Record:
         raise NotImplementedError(
             f"{cls.__name__} has no from_fsref parser — override required"
         )
+
+    @classmethod
+    def getId(cls, ref: "FSRef") -> str:
+        """Cheap, read-only identifier for this asset.
+
+        Default: uuid5(NAMESPACE_URL, resolved path) — matches the existing
+        private `_plan_id` / `_rule_id` / `_mem_id` / `_md_id` / `_spec_id` /
+        `_workflow_id` helpers, so records keyed by path-uuid5 remain findable.
+
+        Override on types whose id is content-derived (session id in JSONL,
+        task_id in manifest.json) or name-derived (project encoded dir,
+        skill folder, agent name). The invariant is:
+            cls.getId(ref) == (await cls.from_fsref(ref))[0].id
+        for 1:1 types. For 1:N types (CLAUDE_HOOK), getId returns a file-
+        level identifier used for skip-fresh; individual record ids are set
+        by from_fsref.
+        """
+        import uuid
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, str(ref._path.resolve())))
+
+    @classmethod
+    def genId(cls, ref: "FSRef") -> str:
+        """Content-derived identifier.
+
+        In Phase 7a, `genId` == `getId`. The split exists so future phases
+        can introduce per-type minting (write an `_id` into the asset on
+        first encounter) behind `genId` without changing `getId`'s semantics.
+        """
+        return cls.getId(ref)
+
+    # ── Asset freshness (Phase 7b) ───────────────────────────────────────────
+    # Skip-fresh is keyed on the DB's `updated_date` column, not a sentinel
+    # file. The comparison is: asset_hash (mtime of the source asset) vs
+    # entity.updated_date (set by the DB on every write). If the asset is
+    # older than or equal to the last DB write, the record is valid.
+
+    def _asset_paths(self) -> list[Path]:
+        """Paths whose max mtime defines this record's `asset_hash`.
+
+        Default: [asset_ref._path] if set, else [Path(source_file)] if it's
+        a real asset (not the `metadata.json` shadow). Override for folder-
+        based types whose content lives in specific inner files — skill
+        dirs use SKILL.md + skill.yaml, for example.
+        """
+        try:
+            ar = object.__getattribute__(self, "_asset_ref")
+        except AttributeError:
+            ar = None
+        if ar is not None and ar._path.exists() and ar._path.is_file():
+            return [ar._path]
+        sf = self.source_file
+        if sf:
+            p = Path(sf)
+            if p.exists() and p.is_file() and p.name != "metadata.json":
+                return [p]
+        return []
+
+    @property
+    def asset_hash(self) -> float:
+        """Max `st_mtime` across `_asset_paths()`. Returns 0.0 when no asset.
+
+        This is the signal the indexer compares against DB `updated_date`
+        to decide whether to re-parse. Cheap: one `stat()` per path.
+        """
+        ts = 0.0
+        for p in self._asset_paths():
+            try:
+                ts = max(ts, p.stat().st_mtime)
+            except OSError:
+                pass
+        return ts
+
+    def is_valid(self) -> bool:
+        """True when the DB copy of this record is current.
+
+        Compares `asset_hash` (source mtime) to `updated_date` (last DB
+        write). Returns False when either is missing or when the asset is
+        newer than the DB row — meaning the indexer needs to re-parse.
+        """
+        from datetime import datetime as _dt, timezone as _tz
+
+        ah = self.asset_hash
+        if ah <= 0:
+            return False
+        ud = object.__getattribute__(self, "__dict__").get("updated_date")
+        if ud is None:
+            return False
+        if hasattr(ud, "timestamp"):
+            dt = ud if getattr(ud, "tzinfo", None) is not None else ud.replace(tzinfo=_tz.utc)
+            stored_ts = dt.timestamp()
+        elif isinstance(ud, str):
+            try:
+                dt = _dt.fromisoformat(ud.replace(" ", "T"))
+            except ValueError:
+                return False
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=_tz.utc)
+            stored_ts = dt.timestamp()
+        else:
+            try:
+                stored_ts = float(ud)
+            except (TypeError, ValueError):
+                return False
+        return ah <= stored_ts
+
+    @classmethod
+    def asset_hash_for_ref(cls, ref: "FSRef") -> float:
+        """`asset_hash` computed from an FSRef alone (no record instance).
+
+        Used by FSIndexer's skip-fresh check before parsing. Default is
+        `mtime(ref._path)` — correct for every file-backed type. Folder-
+        backed types (SkillRecord) override to stat the inner content
+        files, since directory mtime doesn't update when a child's content
+        is edited.
+        """
+        try:
+            return ref._path.stat().st_mtime
+        except OSError:
+            return 0.0
 
     @classmethod
     def from_dict(cls, data: dict) -> "Record":
@@ -1271,194 +1265,72 @@ class Record:
 
     # -- Discovery (overridable by subclasses) --
 
-    # -- External-source hooks (override in subclasses for multi-source discovery) --
-
-    @classmethod
-    def _external_source_iter(cls: type[T], limit: int | None = None) -> Any:
-        """Yield records from sources other than records_root.
-
-        Override alongside ``_external_source_count`` and ``_external_source_find_one``
-        to add a second discovery source (e.g. ``~/.claude/projects/``).
-        The base implementation yields nothing.
-        """
-        return iter([])
-
-    @classmethod
-    def _external_source_count(cls, limit: int | None = None) -> int:
-        """Count records from the external source.
-
-        Override when ``_external_source_iter`` is overridden so that
-        ``discovery_items_count()`` — and therefore progress-bar totals — stay accurate.
-        """
-        return 0
-
-    @classmethod
-    def _external_source_find_one(cls: type[T], uid: str) -> T | None:
-        """O(1) lookup in the external source by uid.
-
-        Override alongside ``_external_source_iter`` so that ``discover_one()``
-        can find records that live outside records_root without a full scan.
-        """
-        return None
-
     @classmethod
     def discover(cls: type[T], scope: Scope | None = None, **kwargs: Any) -> list[T]:
-        """Find all records of this type on disk.
+        """Find all records of this type on disk (records_root scan).
 
-        Default implementation: directory-scan of ``records_root / <type> /``,
-        then appends any records from ``_external_source_iter()`` (deduped by id).
-        Source-file-backed records override this to parse their source file.
+        Directory scan of ``records_root / <type> /``. Subclasses with external
+        storage (JSONL, flat .md files, etc.) override this to replace or
+        augment the default walk.
 
         Parameters:
             scope: optional scope filter (not used by default scan)
             **kwargs: passed to subclass overrides
         """
-        return list(cls.discover_iter(scope=scope, **kwargs))
-
-    @classmethod
-    def discovery_items_count(cls, limit: int | None = None) -> int:
-        """Return the number of discoverable items for this record type.
-
-        Base implementation: counts subdirectories in ``records_root / _record_type /``
-        plus any items reported by ``_external_source_count()``.
-        Subclasses that fully override ``discover()`` should also override this method.
-
-        Raises NotImplementedError if ``_record_type`` is empty and no override is
-        provided — callers should treat that as "unknown" and fall back to a full scan.
-        """
         record_type = str(getattr(cls, "_record_type", ""))
         if not record_type:
-            raise NotImplementedError(
-                f"{cls.__name__}.discovery_items_count() not implemented — "
-                "override this method or set _record_type"
-            )
+            return []
+        limit = kwargs.get("limit")
+        results: list[T] = []
         type_dir = get_default_records_root() / record_type
-        count = sum(1 for e in type_dir.iterdir() if e.is_dir() and _NAME_SEP in e.name) if type_dir.is_dir() else 0
-        count += cls._external_source_count()
-        return min(count, limit) if limit is not None else count
-
-    @classmethod
-    def discover_iter(cls: type[T], limit: int | None = None, scope: Scope | None = None, **kwargs: Any):
-        """Lazy generator — yields one Record at a time without building a full list.
-
-        Phase 1: records_root directory scan (standard storage).
-        Phase 2: ``_external_source_iter()`` with seen-id dedup (O(1) per record).
-
-        Callers can emit progress events without waiting for all records to load.
-        Subclasses that fully replace discovery should override this method directly.
-        """
-        record_type = str(getattr(cls, "_record_type", ""))
-        if not record_type:
-            # Fallback: wrap discover() lazily — no external source in this path
-            count = 0
-            for rec in cls._records_root_discover(scope=scope, **kwargs):
-                yield rec
-                count += 1
-                if limit is not None and count >= limit:
-                    return
-            return
-
-        seen_ids: set[str] = set()
-        count = 0
-
-        # Phase 1: records_root
-        type_dir = get_default_records_root() / record_type
-        if type_dir.is_dir():
-            for entry in sorted(type_dir.iterdir()):
-                if not entry.is_dir() or _NAME_SEP not in entry.name:
-                    continue
-                # Skip folders with no data file (no metadata.json and no migratable old format)
-                meta_file = entry / _META_JSON
-                if not meta_file.exists() and _migrate_old_format(entry) is None:
-                    continue
-                try:
-                    rec = cls.load_record(entry)
-                    seen_ids.add(rec.id)
-                    yield rec
-                    count += 1
-                    if limit is not None and count >= limit:
-                        return
-                except (json.JSONDecodeError, OSError, ValueError):
-                    continue
-
-        # Phase 2: external source (deduped)
-        remaining = None if limit is None else max(0, limit - count)
-        for rec in cls._external_source_iter(limit=remaining):
-            if rec.id not in seen_ids:
-                seen_ids.add(rec.id)
-                yield rec
-                count += 1
-                if limit is not None and count >= limit:
-                    return
-
-    @classmethod
-    def _records_root_discover(cls: type[T], scope: Scope | None = None, **kwargs: Any):
-        """Internal: yield records from records_root only (no external source).
-
-        Used by the no-_record_type fallback path in discover_iter().
-        """
-        record_type = getattr(cls, "_record_type", "") or cls().type
-        if not record_type:
-            return
-
-        records_root = get_default_records_root()
-        type_dir = records_root / record_type
         if not type_dir.is_dir():
-            return
-
+            return results
         for entry in sorted(type_dir.iterdir()):
             if not entry.is_dir() or _NAME_SEP not in entry.name:
                 continue
             meta_file = entry / _META_JSON
-            if meta_file.exists():
-                try:
-                    yield cls.load_record(entry)
-                except (json.JSONDecodeError, OSError, ValueError):
-                    continue
-                continue
-            # Try migrating old format
-            migrated = _migrate_old_format(entry)
-            if migrated is None:
+            if not meta_file.exists() and _migrate_old_format(entry) is None:
                 continue
             try:
-                rec = cls.load_record(entry)
-                rec.path = str(entry)
-                yield rec
+                results.append(cls.load_record(entry))
+                if limit is not None and len(results) >= limit:
+                    return results
             except (json.JSONDecodeError, OSError, ValueError):
                 continue
+        return results
 
     @classmethod
-    def discover_one(cls: type[T], uid: str, scope: Scope | None = None, **kwargs: Any) -> T | None:
-        """Find a single record by uid.
+    def get(cls: type[T], uid: str, **kwargs: Any) -> T | None:
+        """O(1) disk load of a single record by uid.
 
-        Tries records_root first (O(1) path lookup), then ``_external_source_find_one()``.
+        Looks in ``records_root / <type> / <type>-@<uid>/`` and returns the
+        loaded record, or None if absent. Subclasses with alternative on-disk
+        layouts (e.g. JSONL sessions, flat .md skills) override this method
+        directly.
         """
         record_type = getattr(cls, "_record_type", "") or cls().type
         if not record_type:
             return None
 
-        # O(1) records_root lookup
         records_root = get_default_records_root()
         stem = record_stem(record_type, uid)
         folder = records_root / record_type / stem
-        if folder.is_dir():
-            meta_file = folder / _META_JSON
-            if meta_file.exists():
-                try:
-                    return cls.load_record(folder)
-                except (json.JSONDecodeError, OSError):
-                    return None
-            # Try migrating old format
-            migrated = _migrate_old_format(folder)
-            if migrated is not None:
-                try:
-                    return cls.load_record(folder)
-                except (json.JSONDecodeError, OSError):
-                    return None
-            # fall through to external source
-
-        # O(1) external source lookup
-        return cls._external_source_find_one(uid)
+        if not folder.is_dir():
+            return None
+        meta_file = folder / _META_JSON
+        if meta_file.exists():
+            try:
+                return cls.load_record(folder)
+            except (json.JSONDecodeError, OSError):
+                return None
+        # Try migrating old format
+        migrated = _migrate_old_format(folder)
+        if migrated is not None:
+            try:
+                return cls.load_record(folder)
+            except (json.JSONDecodeError, OSError):
+                return None
+        return None
 
     # ── State cache ───────────────────────────────────────────────────────
 
@@ -1694,7 +1566,6 @@ class Record:
         # the record — avoids 3-4 file writes per record on bulk re-index runs
         # (sessions, skills, etc.) when nothing has changed.
         changed = {k: v for k, v in metadata.items() if getattr(self, k, None) != v}
-        self.write_hash_file(self.content_fingerprint)
         if not changed:
             return False
         for k, v in changed.items():

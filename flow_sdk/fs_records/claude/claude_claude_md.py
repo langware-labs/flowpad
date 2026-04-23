@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
-from typing import ClassVar, Iterator
+from typing import ClassVar
 
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.fs_ref import FSRef
@@ -64,60 +64,6 @@ class ClaudeMdFsRecord(Record):
     async def from_fsref(cls, ref) -> list["ClaudeMdFsRecord"]:
         """Indexer entry point — construct from an FSRef emitted by claude_md_*_fn."""
         return [cls._from_md_file(ref._path, scope=ref.scope or "project")]
-
-    @classmethod
-    def _external_source_iter(cls, limit: int | None = None) -> Iterator["ClaudeMdFsRecord"]:
-        count = 0
-
-        # User-level CLAUDE.md files
-        for name in ("CLAUDE.md", "CLAUDE.local.md"):
-            candidate = _CLAUDE_HOME / name
-            if candidate.is_file():
-                yield cls._from_md_file(candidate, scope="user")
-                count += 1
-                if limit is not None and count >= limit:
-                    return
-
-        # Project-level CLAUDE.md files
-        from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
-        for real_path in iter_claude_project_paths():
-            for rel in ("CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"):
-                candidate = real_path / rel
-                if candidate.is_file():
-                    yield cls._from_md_file(candidate, scope="project")
-                    count += 1
-                    if limit is not None and count >= limit:
-                        return
-
-    @classmethod
-    def _external_source_count(cls, limit: int | None = None) -> int:
-        count = 0
-        for name in ("CLAUDE.md", "CLAUDE.local.md"):
-            if (_CLAUDE_HOME / name).is_file():
-                count += 1
-        from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
-        for real_path in iter_claude_project_paths():
-            for rel in ("CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"):
-                if (real_path / rel).is_file():
-                    count += 1
-        return min(count, limit) if limit is not None else count
-
-    @classmethod
-    def discovery_items_count(cls, limit: int | None = None) -> int:
-        # discover_iter deduplicates: external records already on disk are skipped.
-        # The unique count is max(disk, ext), not disk + ext.
-        ext = cls._external_source_count()
-        base = super().discovery_items_count()  # type: ignore[misc]  # disk + ext (no limit)
-        disk = max(0, base - ext)
-        count = max(disk, ext)
-        return min(count, limit) if limit is not None else count
-
-    @classmethod
-    def _external_source_find_one(cls, uid: str) -> "ClaudeMdFsRecord | None":
-        for rec in cls._external_source_iter():
-            if rec.id == uid:
-                return rec
-        return None
 
     def save(self) -> None:
         ar = object.__getattribute__(self, "_asset_ref")

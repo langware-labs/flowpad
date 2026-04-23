@@ -152,47 +152,6 @@ class ClaudePlanRecord(Record):
         """Indexer entry point — construct from an FSRef emitted by claude_plan_fn."""
         return [cls._from_md_file(ref._path)]
 
-    @classmethod
-    def _external_source_iter(cls, limit: int | None = None) -> Iterator["ClaudePlanRecord"]:
-        seen: set[str] = set()
-        count = 0
-        for plans_dir in _plan_search_dirs():
-            for md_file in sorted(plans_dir.glob("*.md")):
-                key = str(md_file.resolve())
-                if key in seen:
-                    continue
-                seen.add(key)
-                yield cls._from_md_file(md_file)
-                count += 1
-                if limit is not None and count >= limit:
-                    return
-
-    @classmethod
-    def _external_source_count(cls, limit: int | None = None) -> int:
-        seen: set[str] = set()
-        for plans_dir in _plan_search_dirs():
-            for md_file in plans_dir.glob("*.md"):
-                seen.add(str(md_file.resolve()))
-        count = len(seen)
-        return min(count, limit) if limit is not None else count
-
-    @classmethod
-    def discovery_items_count(cls, limit: int | None = None) -> int:
-        # discover_iter deduplicates: external records already on disk are skipped.
-        # The unique count is max(disk, ext), not disk + ext.
-        ext = cls._external_source_count()
-        base = super().discovery_items_count()  # type: ignore[misc]  # disk + ext (no limit)
-        disk = max(0, base - ext)
-        count = max(disk, ext)
-        return min(count, limit) if limit is not None else count
-
-    @classmethod
-    def _external_source_find_one(cls, uid: str) -> "ClaudePlanRecord | None":
-        for rec in cls._external_source_iter():
-            if rec.id == uid:
-                return rec
-        return None
-
     def save(self) -> None:
         ar = object.__getattribute__(self, "_asset_ref")
         if ar is not None:

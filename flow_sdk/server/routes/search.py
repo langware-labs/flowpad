@@ -49,7 +49,7 @@ async def _entity_source_path(ent) -> str:
             if record_cls:
                 ent_name = getattr(ent, "name", None) or getattr(ent, "uname", None)
                 if ent_name:
-                    rec = record_cls.discover_one(ent_name)
+                    rec = record_cls.get(ent_name)
         if rec:
             return getattr(rec, "source_path", None) or ""
     except Exception:

@@ -408,7 +408,7 @@ class Shell(Entity):
         """
         from flow_sdk.fs_records.shell_record import ShellRecord  # noqa: PLC0415
 
-        record = ShellRecord.discover_one(self.pty_pid or self.id)
+        record = ShellRecord.get(self.pty_pid or self.id)
         if record and record.pty_stream_ref.exists():
             return record.pty_stream_ref.read_bytes()
         return b""

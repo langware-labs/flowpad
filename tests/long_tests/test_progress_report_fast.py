@@ -3,8 +3,6 @@ Fast tests for progress_report WebSocket events.
 
 Tests both sub-activity (per-record) and job-level (per-type) progress_report events
 using minimal record counts (3 records) so the test suite runs quickly.
-
-These replace/supplement the slower tests in test_scan_index_progress_ws.py.
 """
 
 from __future__ import annotations

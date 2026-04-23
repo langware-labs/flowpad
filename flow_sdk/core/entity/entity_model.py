@@ -213,7 +213,7 @@ class Entity(DBEntity):
         record_cls = SchemaRegistry.get_record_cls(type_name)
         if record_cls is None:
             return None
-        return record_cls.discover_one(self.id)
+        return record_cls.get(self.id)
 
     async def updateSearchIndex(self) -> None:
         """Write this entity's searchable content into the FTS5 table.
@@ -261,7 +261,7 @@ class Entity(DBEntity):
         if record_cls is None:
             service_log.debug(f"_store: no Record class registered for entity type '{type_name}'")
             return None
-        record = record_cls.discover_one(entity.id)
+        record = record_cls.get(entity.id)
         if record is None:
             record = record_cls(id=entity.id)
         import asyncio
@@ -278,15 +278,18 @@ class Entity(DBEntity):
         return record
 
     async def check_and_refresh_record(self) -> bool:
-        """If record is stale, run discover + index. Returns True if refresh happened."""
+        """If the asset is newer than the DB row, re-sync. Returns True if refresh happened."""
         record = await self.get_record()
         if record is None:
             return False
-        ttl = getattr(type(record), '_record_ttl', 30.0)
-        if not record.record_update_required(ttl=ttl):
+        # Propagate the entity's updated_date to the record so is_valid() has
+        # a reference point — the DB row is the source of truth.
+        if self.updated_date is not None:
+            object.__getattribute__(record, "__dict__")["updated_date"] = self.updated_date
+        if record.is_valid():
             return False
         try:
-            await record.sync_to_db()   # discover() is called inside sync_to_db() → writes hash file
+            await record.sync_to_db()
         except Exception:
             pass
         return True
