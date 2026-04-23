@@ -490,7 +490,8 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
 
     local_user = await User.get_one({"uname": "local"})
     sender_id: Optional[str] = local_user.id if local_user else None
-    sender_name: str = (local_user.name or local_user.email or "") if local_user else ""
+    body_sender_name = (body.get("sender_name") or "").strip()
+    sender_name: str = body_sender_name or ((local_user.name or local_user.email or "") if local_user else "")
     sender_email: str = (local_user.email or "") if local_user else ""
 
     project_root = find_project_root(project_path) if project_path else None
@@ -766,7 +767,8 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
 
     local_user = await User.get_one({"uname": "local"})
     sender_id: Optional[str] = local_user.id if local_user else None
-    sender_name: str = (local_user.name or local_user.email or "") if local_user else ""
+    body_sender_name = (body.get("sender_name") or "").strip()
+    sender_name: str = body_sender_name or ((local_user.name or local_user.email or "") if local_user else "")
 
     reply_fm = await _create_reply_flow_message(
         task_id=task_id,
@@ -880,6 +882,24 @@ async def refresh_notifications() -> ApiResponse:
     except Exception as e:
         logger.error(f"[notification_action] refresh error: {e}", exc_info=True)
         return ApiFailResponse(message=f"Failed to refresh: {str(e)}")
+
+
+@action.post(action_name="update-local-user-name", types=None)
+async def update_local_user_name() -> ApiResponse:
+    """Update the local user's display name."""
+    request_info = get_current_request_info()
+    if not request_info:
+        return ApiFailResponse(message="No request info found")
+    body = await request_info.get_post_data() or {}
+    new_name = (body.get("name") or "").strip()
+    if not new_name:
+        return ApiFailResponse(message="name is required")
+    local_user = await User.get_one({"uname": "local"})
+    if not local_user:
+        return ApiFailResponse(message="Local user not found")
+    local_user.name = new_name
+    await local_user.save()
+    return ApiSuccessResponse(data={"name": new_name})
 
 
 @action.get(action_name="open", types=["notification"])

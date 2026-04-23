@@ -8,13 +8,14 @@
 
 import { useEffect, useState } from 'react';
 import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
+import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { useContext } from '@sdk/react/hooks';
 import { sendNotification } from '@sdk/entities/notifications';
 import { createTaskBundle, DeliveryMode } from '@sdk/entities/flow-message';
 import { ActionInfo } from '@sdk/models/ActionInfo';
 import { oauthService, OAUTH_PROVIDERS } from '@sdk';
 import { toast } from 'sonner';
-import { Mail, Download, Github } from 'lucide-react';
+import { Mail, Download, Github, Pencil } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import {
   Dialog,
@@ -63,12 +64,15 @@ export function SendPlanNotificationDialog({
   planContent,
 }: SendPlanNotificationDialogProps) {
   const { cloudLoginAvailable } = useContext();
+  const { localUser, updateName } = useLocalUser();
   const [mode, setMode] = useState<DeliveryMode>(DeliveryMode.EMAIL);
   const [recipientId, setRecipientId] = useState('');
   const [specTitle, setSpecTitle] = useState('');
   const [specContent, setSpecContent] = useState('');
   const [message, setMessage] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  const [senderName, setSenderName] = useState('');
+  const [editingName, setEditingName] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -86,8 +90,13 @@ export function SendPlanNotificationDialog({
       setSuccess(false);
       setGitError(null);
       setEmailError(null);
+      setEditingName(false);
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (localUser?.name) setSenderName(localUser.name);
+  }, [localUser?.name]);
 
   const handleClose = () => {
     if (busy) return;
@@ -109,6 +118,7 @@ export function SendPlanNotificationDialog({
         message: message.trim() || null,
         plan_id: null,
         project_path: workdir ?? null,
+        sender_name: senderName.trim() || null,
       });
       if (result.git_error) {
         setGitError(result.git_error);
@@ -214,6 +224,42 @@ export function SendPlanNotificationDialog({
                   <TooltipContent>Coming Soon</TooltipContent>
                 </Tooltip>
               </TooltipProvider>
+            </div>
+
+            {/* From */}
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="font-medium">From:</span>
+              {editingName ? (
+                <input
+                  className="border-b border-input bg-transparent text-xs text-foreground focus:outline-none"
+                  value={senderName}
+                  onChange={(e) => setSenderName(e.target.value)}
+                  onBlur={async () => {
+                    setEditingName(false);
+                    if (senderName.trim() && senderName.trim() !== localUser?.name) {
+                      await updateName(senderName.trim());
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.currentTarget.blur();
+                    if (e.key === 'Escape') { setSenderName(localUser?.name ?? ''); setEditingName(false); }
+                  }}
+                  autoFocus
+                />
+              ) : (
+                <>
+                  <span>{senderName || '...'}</span>
+                  <button
+                    type="button"
+                    onClick={() => setEditingName(true)}
+                    className="text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                    title="Edit sender name"
+                    disabled={busy}
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                </>
+              )}
             </div>
 
             {/* Recipient */}

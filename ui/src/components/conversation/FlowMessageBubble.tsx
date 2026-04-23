@@ -1,11 +1,12 @@
-import { dataContext, dataManager, FlowMessage, QueryRequest, TypeId, User } from '@sdk';
+import { FlowMessage, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import { AttachmentType, downloadFlowMessageUrl } from '@sdk/entities/flow-message';
 import { ActionInfo } from '@sdk/models/ActionInfo';
 import { MessageBubble } from './MessageBubble';
+import { useLocalUser } from './useLocalUser';
 import { Download, Paperclip } from 'lucide-react';
 
 function localBundleUrl(messageId: string): string {
@@ -18,24 +19,6 @@ function fileAttachmentUrl(messageId: string, vfsPath: string): string {
   return action.fullActionUrl;
 }
 
-// Module-level cache so we only query once per session across all bubbles
-let _localUserIdPromise: Promise<string | null> | null = null;
-function getLocalUserId(): Promise<string | null> {
-  if (_localUserIdPromise) return _localUserIdPromise;
-  _localUserIdPromise = (async () => {
-    // Fast path: context user is already the local user
-    if (dataContext.user?.isLocal) return dataContext.user.id ?? null;
-    // Slow path: context user is a cloud user — query to find the local one
-    try {
-      const users = await dataManager.query(new QueryRequest({ type: User.type }));
-      return (users as User[]).find((u) => u.isLocal)?.id ?? null;
-    } catch {
-      return null;
-    }
-  })();
-  return _localUserIdPromise;
-}
-
 interface FlowMessageBubbleProps {
   messageId: string;
   timestamp: string;
@@ -46,16 +29,13 @@ export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBub
   const { data: fm } = useEntity<FlowMessage>(
     new TypeId(FlowMessage.type, messageId),
   );
-  const [localUserId, setLocalUserId] = useState<string | null>(null);
-
-  useEffect(() => {
-    void getLocalUserId().then(setLocalUserId);
-  }, []);
+  const { localUser, updateName } = useLocalUser();
+  const [overrideName, setOverrideName] = useState<string | null>(null);
 
   if (!fm) return null;
 
-  const isCurrentUser = !!(fm.sender_id && localUserId && fm.sender_id === localUserId);
-  const displayName = isCurrentUser ? 'You' : (fm.sender_name || 'Unknown');
+  const isCurrentUser = !!(fm.sender_id && localUser?.id && fm.sender_id === localUser.id);
+  const displayName = overrideName ?? (fm.sender_name || (isCurrentUser ? (localUser?.name || 'You') : 'Unknown'));
 
   const role =
     fm.sender_id && task.shared_by_id && fm.sender_id === task.shared_by_id
@@ -79,6 +59,10 @@ export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBub
         message={message}
         flowMessageId={messageId}
         senderName={displayName}
+        onEditName={isCurrentUser ? async (newName) => {
+          setOverrideName(newName);
+          await updateName(newName);
+        } : undefined}
       />
       {fm.attachment_filename && (
         <div className="mt-1.5 px-1">
