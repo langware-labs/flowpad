@@ -618,16 +618,20 @@ async def _find_task_conversation(task: Task) -> Optional[Conversation]:
     return conv
 
 
-async def _create_reply_flow_message(
+def _build_reply_flow_message(
     *,
     task_id: str,
     conv_id: str,
     message: str,
     sender_id: Optional[str],
     sender_name: str,
-    someone_typeid: str,
 ) -> "FlowMessage":
-    """Build and save the FlowMessage entity for a conversation reply."""
+    """Build (but do not save) the FlowMessage entity for a conversation reply.
+
+    The caller is responsible for attaching any uploaded files and then saving.
+    Building before saving means there is only ever one save, so the frontend
+    entity cache always receives the final version with FILE attachments included.
+    """
     from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
     from flow_sdk.fs_store.type_id import TypeId
 
@@ -647,7 +651,7 @@ async def _create_reply_flow_message(
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv_id))),
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=reply_fm.id))),
     ]
-    return await reply_fm.save(someone_typeid)
+    return reply_fm
 
 
 async def _attach_uploaded_files(reply_fm: "FlowMessage", uploaded_files: list) -> None:
@@ -779,13 +783,12 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     body_sender_name = (body.get("sender_name") or "").strip()
     sender_name: str = body_sender_name or ((local_user.name or local_user.email or "") if local_user else "")
 
-    reply_fm = await _create_reply_flow_message(
+    reply_fm = _build_reply_flow_message(
         task_id=task_id,
         conv_id=conv.id,
         message=message,
         sender_id=sender_id,
         sender_name=sender_name,
-        someone_typeid=someone_typeid,
     )
 
     uploaded_files = body.get("files") or []
@@ -793,7 +796,7 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         uploaded_files = [uploaded_files]
     if uploaded_files:
         await _attach_uploaded_files(reply_fm, uploaded_files)
-        reply_fm = await reply_fm.save(someone_typeid)
+    reply_fm = await reply_fm.save(someone_typeid)
 
     # Append pointer BEFORE packing the bundle so conversation.jsonl is up-to-date in the zip
     conv = await _append_message_to_conversation(
