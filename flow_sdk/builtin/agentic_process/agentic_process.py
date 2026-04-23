@@ -972,13 +972,18 @@ class AgenticProcess(Entity):
         Embedded agents are injected via --agents.
         Callers add runtime env vars via add_env() before calling to_shell_string().
         """
-        import flow_sdk
+        from flow_sdk.config import flowpad_assistant_project_root
         cmd = ClaudeCliOptions.from_json(self.cli_config)
         cmd.session_id = self.session_id
         cmd.workdir = self.workdir
         if cmd.workdir:
             cmd.env_vars.setdefault("CLAUDE_PROJECT_DIR", cmd.workdir)
-        core_dir = str(Path(flow_sdk.__file__).parent / "system_assets" / "core")
+        # Every process gets the Flowpad Assistant system project on --add-dir so
+        # Claude can discover SDK-shipped skills and agents via its standard
+        # `.claude/skills/` and `.claude/agents/` lookup. The previous default
+        # pointed at `system_assets/core` which was removed in the rename sweep
+        # that consolidated assets under `system_projects/flowpad_assistant/`.
+        core_dir = str(flowpad_assistant_project_root())
         extra = [d for d in (self.additional_dirs or []) if d != core_dir]
         cmd.add_dirs = [core_dir] + extra
         agents_json = self.get_agents_json()
