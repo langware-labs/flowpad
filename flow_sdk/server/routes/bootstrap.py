@@ -101,6 +101,23 @@ def get_default_desktop_email() -> str:
     return f"{hostname}@{DESKTOP_EMAIL_DOMAIN}"
 
 
+def get_name() -> Optional[str]:
+    """Get user full name from git config user.name."""
+    try:
+        result = subprocess.run(
+            ["git", "config", "user.name"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        name = result.stdout.strip()
+        if name:
+            return name
+    except Exception:
+        pass
+    return None
+
+
 def get_email() -> Optional[str]:
     """Get user email from git config or OS-specific sources.
 
