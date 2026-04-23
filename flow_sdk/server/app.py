@@ -83,8 +83,8 @@ async def _on_server_startup():
 
     threading.Thread(target=run_old_record_cleanup, daemon=True, name="old-record-cleanup").start()
 
-    # Search uses FTS5 (built into SQLite) — no external indexer needed.
-    print("  Search indexer: FTS5 (SQLite built-in)")
+    # Search uses FTS5 (built into SQLite) — no external index needed.
+    print("  Search index: FTS5 (SQLite built-in)")
 
     # Start cron job scheduler
     try:

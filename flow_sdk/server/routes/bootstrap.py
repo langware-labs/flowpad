@@ -1019,16 +1019,6 @@ async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list
         ensured.append(project)
         logging.info(f"[bootstrap] Created system project '{uname}' at {mount_path}")
 
-    # One-shot discovery for markdown records shipped under the system projects
-    # so the collab Docs sidebar has content on first open without waiting for
-    # a manual "Scan & index" click. Idempotent; subsequent calls are cheap.
-    if ensured:
-        try:
-            from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-            await SchemaRegistry.discover(types=["markdown"], trigger="bootstrap")
-        except Exception as e:
-            logging.warning(f"[bootstrap] markdown scan after system projects failed (non-fatal): {e}")
-
     return ensured
 
 
