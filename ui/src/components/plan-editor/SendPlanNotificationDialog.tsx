@@ -119,6 +119,7 @@ export function SendPlanNotificationDialog({
         plan_id: null,
         project_path: workdir ?? null,
         sender_name: senderName.trim() || null,
+        files: files.length > 0 ? files : undefined,
       });
       if (result.git_error) {
         setGitError(result.git_error);
