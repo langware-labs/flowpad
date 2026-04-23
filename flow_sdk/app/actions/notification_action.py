@@ -643,11 +643,11 @@ async def _create_reply_flow_message(
 async def _attach_uploaded_files(reply_fm: "FlowMessage", uploaded_files: list, task_id: str, task_title: str) -> None:
     """Save uploaded files into the FlowMessage entity's VFS storage and append FILE attachments.
 
-    Files are stored at files/{filename} within the entity's VFS root so they can be served
-    via the standard GET /api/v1/graph/flow_message/{id}/fs/download/files/{filename} endpoint.
+    Files are stored at data/{filename} within the entity's embedded storage root so they can
+    be served via GET /api/v1/graph/flow_message/{id}/fs/download/data/{filename}.
     """
     from flow_sdk.builtin.flow_message import Attachment, AttachmentType
-    from flow_sdk.request_context.methods import get_entity_embedded_storage
+    from flow_sdk.storage import get_entity_embedded_storage
 
     fm_typeid = reply_fm.typeid
     storage = get_entity_embedded_storage(fm_typeid)
