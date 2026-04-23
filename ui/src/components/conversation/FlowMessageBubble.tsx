@@ -1,4 +1,4 @@
-import { FlowMessage, TypeId } from '@sdk';
+import { dataContext, FlowMessage, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage } from '@sdk/entities/conversation';
@@ -9,6 +9,12 @@ import { Download, Paperclip } from 'lucide-react';
 
 function localBundleUrl(messageId: string): string {
   return new ActionInfo('create-and-download-local-flowmsg', 'flow_message', messageId, 'GET').fullActionUrl;
+}
+
+function fileAttachmentUrl(messageId: string, filename: string): string {
+  const action = new ActionInfo('download-attachment', 'flow_message', messageId, 'GET');
+  action.queryParameters = { filename };
+  return action.fullActionUrl;
 }
 
 interface FlowMessageBubbleProps {
@@ -24,6 +30,10 @@ export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBub
 
   if (!fm) return null;
 
+  const currentUserId = dataContext.user?.id;
+  const isCurrentUser = !!(fm.sender_id && currentUserId && fm.sender_id === currentUserId);
+  const displayName = isCurrentUser ? 'You' : (fm.sender_name || 'Unknown');
+
   const role =
     fm.sender_id && task.shared_by_id && fm.sender_id === task.shared_by_id
       ? 'sender'
@@ -36,7 +46,7 @@ export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBub
     timestamp,
   };
 
-  const hasFileAttachments = (fm.attachment ?? []).some(
+  const fileAttachments = (fm.attachment ?? []).filter(
     (a) => a.attachment_type === AttachmentType.FILE,
   );
 
@@ -45,7 +55,7 @@ export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBub
       <MessageBubble
         message={message}
         flowMessageId={messageId}
-        senderName={fm.sender_name ?? ''}
+        senderName={displayName}
       />
       {fm.attachment_filename && (
         <div className="mt-1.5 px-1">
@@ -61,15 +71,31 @@ export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBub
           </a>
         </div>
       )}
-      {hasFileAttachments && (
-        <div className="mt-1 flex justify-end">
+      {fileAttachments.length > 0 && (
+        <div className="mt-1.5 space-y-1 px-1">
+          {fileAttachments.map((a) => {
+            const name = a.data.split('/').pop() ?? a.data;
+            return (
+              <a
+                key={a.data}
+                href={fileAttachmentUrl(messageId, name)}
+                download={name}
+                className="flex items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-[11px] text-foreground hover:bg-muted transition-colors max-w-[200px]"
+                title={name}
+              >
+                <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
+                <span className="truncate">{name}</span>
+                <Download className="h-3 w-3 shrink-0 text-muted-foreground" />
+              </a>
+            );
+          })}
           <a
             href={localBundleUrl(messageId)}
             download
             className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
           >
             <Download className="h-3 w-3" />
-            Download attachments
+            Download all attachments
           </a>
         </div>
       )}
