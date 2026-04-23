@@ -36,6 +36,7 @@ ProgressCallback = Callable[[ProgressEvent], Awaitable[None]]
 class IndexerOptions:
     verbose: bool = True
     limit: int | None = None
+    limit_per_type: int | None = None  # per-type cap on parsed records in index()
     include_temp: bool = False  # walk temp-path projects (/tmp, /var/folders, …)
     types: list[RecordType] | None = None  # index() filter; None = all types
     on_progress: ProgressCallback | None = None
@@ -184,6 +185,11 @@ class FSIndexer:
             acc = per_type_counts.setdefault(
                 ref.record_type, {"indexed": 0, "errors": 0, "duration_ms": 0.0, "skipped": 0}
             )
+
+            # Per-type cap: once we've indexed `limit_per_type` records of this
+            # type, skip further refs of the same type.
+            if opts.limit_per_type is not None and acc["indexed"] >= opts.limit_per_type:
+                continue
 
             # Skip-fresh: in-memory dict lookup, one stat(), no parse.
             rt_name = str(ref.record_type)

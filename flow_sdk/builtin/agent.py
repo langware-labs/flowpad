@@ -22,7 +22,7 @@ class Agent(Entity):
     type: str = APIField(default=BuiltinEntityType.AGENT.value)
     name: str | None = APIField(default=None)
     description: str | None = APIField(default=None)
-    source_path: str = APIField(default="")
+    asset_ref: str = APIField(default="")
     _api_visible: bool = True
     _icon: ClassVar[str] = "Bot"
 
@@ -63,7 +63,7 @@ class Agent(Entity):
 
         try:
             await asyncio.to_thread(_write)
-            self.source_path = str(agent_md_path)
+            self.asset_ref = str(agent_md_path)
         except Exception:
             pass
 

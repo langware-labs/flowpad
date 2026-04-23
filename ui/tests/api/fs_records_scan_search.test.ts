@@ -278,7 +278,7 @@ describe('fs-records full cycle: scan → index → search', () => {
       scope: string;
       created_at: string;
       modified_at: string;
-      source_path: string;
+      asset_ref: string;
     }>;
 
     // If any skills were indexed, verify the result shape
@@ -292,7 +292,7 @@ describe('fs-records full cycle: scan → index → search', () => {
       expect(result).toHaveProperty('scope');
       expect(result).toHaveProperty('created_at');
       expect(result).toHaveProperty('modified_at');
-      expect(result).toHaveProperty('source_path');
+      expect(result).toHaveProperty('asset_ref');
     }
   });
 });

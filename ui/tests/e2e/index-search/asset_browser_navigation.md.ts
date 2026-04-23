@@ -58,8 +58,8 @@ test.describe('Asset Browser Navigation', () => {
     expect(page.url()).toContain('/dock/assets');
   });
 
-  // ── Test 4: API — skill assets have source_path ──────────────────────────
-  test('indexed skills have source_path field in search results', async ({ request }) => {
+  // ── Test 4: API — skill assets have asset_ref ──────────────────────────
+  test('indexed skills have asset_ref field in search results', async ({ request }) => {
     // Index skills first
     await request.post(`${CN_FS_BASE}/index?type=skill`);
 
@@ -67,10 +67,10 @@ test.describe('Asset Browser Navigation', () => {
     expect(res.status()).toBe(200);
 
     const body = await res.json();
-    const results = body.data.results as Array<{ source_path?: string; name: string }>;
+    const results = body.data.results as Array<{ asset_ref?: string; name: string }>;
     if (results.length > 0) {
-      // source_path should be present (may be null for records without a source file)
-      expect(results[0]).toHaveProperty('source_path');
+      // asset_ref should be present (may be null for records without a source file)
+      expect(results[0]).toHaveProperty('asset_ref');
     }
   });
 

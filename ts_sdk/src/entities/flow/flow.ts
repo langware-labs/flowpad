@@ -182,7 +182,7 @@ export class Flow extends APIEntity<Flow> {
   workspace_id?: string;
   agent_id?: string;
   project_id?: string;
-  source_vfs_path?: string;
+  asset_ref?: string;
   current_compute_node_id?: string;
   current_terminal_id?: string;
   private _state: IFlowState | null = null;

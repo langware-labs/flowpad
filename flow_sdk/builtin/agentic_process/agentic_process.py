@@ -213,7 +213,7 @@ class AgenticProcess(Entity):
     type: str = APIField(default="agentic_process")
 
     instruction_content: str | None = APIField(default=None)
-    source_vfs_path: str | None = APIField(default=None)
+    asset_ref: str | None = APIField(default=None)
     context: dict[str, Any] = APIField(default_factory=dict)
     context_data: dict[str, Any] = APIField(default_factory=dict)
     cli_config: dict[str, Any] = APIField(default_factory=dict)
@@ -919,16 +919,16 @@ class AgenticProcess(Entity):
     # ── State ─────────────────────────────────────────────────────────────────
 
     @action.post(action_name="load-embedded-agent")
-    async def load_embedded_agent_action(self, source_vfs_path: str = "") -> "ApiSuccessResponse | ApiFailResponse":
+    async def load_embedded_agent_action(self, asset_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
         """Load an agent from a VFS path and embed it into this process.
 
         Merges the agent spec into cli_config.agents_json so it survives across
         HTTP requests without relying on in-memory state.
         """
         from flow_sdk.fs_records.agent_record import AgentRecord
-        if not source_vfs_path:
-            return ApiFailResponse(message="source_vfs_path is required")
-        abs_path = Path("/" + source_vfs_path.lstrip("/"))
+        if not asset_ref:
+            return ApiFailResponse(message="asset_ref is required")
+        abs_path = Path("/" + asset_ref.lstrip("/"))
         if not abs_path.exists():
             return ApiFailResponse(message=f"Agent file not found: {abs_path}")
         agent = AgentRecord.from_file(abs_path)

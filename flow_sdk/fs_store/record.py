@@ -327,7 +327,6 @@ class Record:
         object.__setattr__(self, "fs_sync", False)
         object.__setattr__(self, "_record_folder_ref", None)   # FSRef | None — record folder
         object.__setattr__(self, "_asset_ref", None)  # FSRef | None — external content
-        object.__setattr__(self, "_asset_folder_ref", None)  # FSRef | None — folder asset was discovered from
 
         # Merge _data dict first (lowest priority)
         if _data is not None:
@@ -530,9 +529,7 @@ class Record:
     # -- System-asset marker: True when any known source location of this record
     # lives under the SDK-shipped system_projects/ tree. Derived on read so it
     # always reflects the current source and the current SDK install location.
-    # Some record classes keep their source path in _source_file, others in an
-    # FSRef (_asset_ref / _record_folder_ref / _asset_folder_ref) or expose a
-    # `source_path` property — we check all the common locations.
+    # Records keep their source path in _source_file or in _asset_ref (FSRef).
 
     @property
     def system(self) -> bool:
@@ -541,19 +538,12 @@ class Record:
             v = getattr(self, attr, None)
             if v:
                 candidates.append(v)
-        for attr in ("_asset_ref", "_asset_folder_ref", "_record_folder_ref"):
+        for attr in ("_asset_ref", "_record_folder_ref"):
             ref = getattr(self, attr, None)
             if ref is not None:
                 path_val = getattr(ref, "path", None)
                 if path_val:
                     candidates.append(path_val)
-        # source_path property when defined (MarkdownRecord, SkillRecord, etc.)
-        try:
-            sp = self.source_path  # type: ignore[attr-defined]
-        except Exception:
-            sp = None
-        if sp:
-            candidates.append(sp)
         return any(_is_system_path(c) for c in candidates)
 
     @property
@@ -604,15 +594,6 @@ class Record:
     @asset_ref.setter
     def asset_ref(self, value: "Any") -> None:
         object.__setattr__(self, "_asset_ref", value)
-
-    @property
-    def asset_folder_ref(self) -> "Any":  # FSRef | None
-        """FSRef pointing to the folder from which this asset was discovered."""
-        return object.__getattribute__(self, "_asset_folder_ref")
-
-    @asset_folder_ref.setter
-    def asset_folder_ref(self, value: "Any") -> None:
-        object.__setattr__(self, "_asset_folder_ref", value)
 
     @property
     def main_ref(self) -> "Any":  # FSRef | None
@@ -1932,9 +1913,21 @@ class Record:
         All non-None fields from to_dict() are included.  Internal fields
         (source_file, path, fs_sync, storage_layout) are excluded by to_dict().
         None-valued fields are omitted.
+
+        `asset_ref` is injected here as the single canonical on-disk path
+        so every file-backed record emits it uniformly to the wire + DB.
+        The `_asset_ref` FSRef itself is private (in-memory I/O wrapper);
+        only its `.path` string leaves the server.
         """
         d = self.to_dict()
-        return {k: v for k, v in d.items() if v is not None}
+        result = {k: v for k, v in d.items() if v is not None}
+        try:
+            _ar = object.__getattribute__(self, "_asset_ref")
+        except AttributeError:
+            _ar = None
+        if _ar is not None:
+            result["asset_ref"] = _ar.path
+        return result
 
     def index_content(self) -> str | None:
         """Return searchable text for FTS indexing."""

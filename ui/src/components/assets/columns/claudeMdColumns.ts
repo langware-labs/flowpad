@@ -5,7 +5,7 @@ import type { SearchResult } from '@src/hooks/use-asset-search';
 import { scopeTag } from './columnHelpers';
 
 function claudeMdProjectCell(r: SearchResult, actions?: ColumnActions): React.ReactNode {
-  const sourcePath = r.file_path || r.source_path;
+  const sourcePath = r.file_path || r.asset_ref;
   if (!sourcePath) return '—';
   const parts = sourcePath.replace(/\/$/, '').split('/').filter(Boolean);
   parts.pop(); // remove filename

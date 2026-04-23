@@ -322,7 +322,7 @@ export function AssetsPage() {
   }, [newTypeTarget, navigation, toast]);
 
   const handleRowClick = useCallback((result: SearchResult) => {
-    const path = result.source_path;
+    const path = result.asset_ref;
     if (!path || !path.startsWith('/')) {
       toast({
         title: 'Asset has no file on disk',

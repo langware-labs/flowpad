@@ -16,7 +16,7 @@ export class MarkdownAsset {
     project: { fs_storage_mount_path?: string } | null,
     name: string,
     folderVfsPath?: string,
-  ): Promise<{ source_vfs_path: string }> {
+  ): Promise<{ asset_ref: string }> {
     const { ComputeNode } = await import('./compute-node/compute-node');
     const computeNode = await ComputeNode.getById('@local');
     if (!computeNode) throw new Error('No local compute node');
@@ -29,6 +29,6 @@ export class MarkdownAsset {
 
     const content = `---\ntitle: ${name.trim()}\n---\n\n# ${name.trim()}\n`;
     await fsManager.writeFile(computeNode.typeId, vfsPath, content);
-    return { source_vfs_path: vfsPath };
+    return { asset_ref: vfsPath };
   }
 }

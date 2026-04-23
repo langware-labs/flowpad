@@ -2,5 +2,5 @@ import { registerColumns } from './columnRegistry';
 import { pathCell } from './columnHelpers';
 
 registerColumns('project', [
-  { key: 'source_path', header: 'Path', render: (r) => pathCell(r.source_path) },
+  { key: 'asset_ref', header: 'Path', render: (r) => pathCell(r.asset_ref) },
 ]);

@@ -2,7 +2,7 @@
 
 These tests exercise:
 1. Basic parent-child linking: add_child(), parent, children
-2. Folder + skill asset: move asset to different parent, verify source_vfs_path unchanged
+2. Folder + skill asset: move asset to different parent, verify asset_ref unchanged
 3. Multi-level nesting: add/move/delete, move a whole branch under a new node
 """
 
@@ -34,13 +34,14 @@ def tmp_records_root(tmp_path: Path):
 def make_asset(
     title: str,
     asset_type: str = "doc",
-    source_vfs_path: str | None = None,
+    asset_ref: str | None = None,
 ) -> MarkdownRecord:
     """Create an MarkdownRecord and persist it to disk (using default_path)."""
     kwargs: dict = {"title": title, "asset_type": asset_type}
-    if source_vfs_path:
-        kwargs["source_vfs_path"] = source_vfs_path
     rec = MarkdownRecord(**kwargs)
+    if asset_ref:
+        from flow_sdk.fs_store.fs_ref import FSRef
+        rec.asset_ref = FSRef(asset_ref)
     rec.save()
     assert rec.path is not None, "save() must set path (folder)"
     return rec
@@ -223,22 +224,25 @@ class TestBasicParentChild:
 class TestFolderSkillMove:
     def test_move_skill_to_different_parent(self, tmp_records_root):
         """Moving a skill from folder A to folder B updates parent/child refs.
-        The source_vfs_path (physical file location) must not change."""
+        The asset_ref (physical file location) must not change."""
         folder_a = make_asset("Folder A", "folder")
         folder_b = make_asset("Folder B", "folder")
-        skill = make_asset("My Skill", "skill", source_vfs_path="skills/my-skill/SKILL.md")
+        skill = make_asset("My Skill", "skill", asset_ref="skills/my-skill/SKILL.md")
 
         # Link skill under folder_a
         link_child(folder_a, skill)
 
-        original_vfs_path = getattr(skill, 'source_vfs_path', None)
+        ar = skill.asset_ref
+        original_path = ar.path if ar is not None else None
 
         # Move skill to folder_b
         move_child(skill, folder_a, folder_b)
 
-        # --- Verify source_vfs_path unchanged ---
+        # --- Verify asset_ref unchanged ---
         skill_fresh = reload(skill)
-        assert getattr(skill_fresh, 'source_vfs_path', None) == original_vfs_path, (
+        ar_fresh = skill_fresh.asset_ref
+        fresh_path = ar_fresh.path if ar_fresh is not None else None
+        assert fresh_path == original_path, (
             "Physical file path must not change when moving a record"
         )
 
@@ -262,7 +266,7 @@ class TestFolderSkillMove:
         """After move, directory scan returns skill under new parent only."""
         folder_a = make_asset("Folder A", "folder")
         folder_b = make_asset("Folder B", "folder")
-        skill = make_asset("Skill", "skill", source_vfs_path="skills/s/SKILL.md")
+        skill = make_asset("Skill", "skill", asset_ref="skills/s/SKILL.md")
 
         link_child(folder_a, skill)
 

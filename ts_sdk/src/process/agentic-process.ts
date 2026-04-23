@@ -78,7 +78,7 @@ interface HistoryResponse {
  */
 export interface IAgenticProcess extends IEntity {
   instruction_content?: string;
-  source_vfs_path?: string;
+  asset_ref?: string;
   workdir?: string | null;
   context?: Record<string, unknown>;
   context_data?: Record<string, unknown>;
@@ -415,7 +415,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   instruction_content?: string;
 
   /** Source VFS path of the executed file */
-  source_vfs_path?: string;
+  asset_ref?: string;
 
   /** Serialized execution context */
   context?: Record<string, unknown>;
@@ -537,7 +537,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   constructor(entity: Partial<IAgenticProcess> = {}) {
     super(entity);
     this.instruction_content = entity.instruction_content;
-    this.source_vfs_path = entity.source_vfs_path;
+    this.asset_ref = entity.asset_ref;
     this.context = entity.context;
     this.context_data = entity.context_data;
     this.favorite_index = entity.favorite_index;
@@ -926,7 +926,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   async loadEmbeddedAgent(sourcePath: string): Promise<void> {
     const actionInfo = new ActionInfo('load-embedded-agent', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters = { source_vfs_path: sourcePath };
+    actionInfo.bodyParameters = { asset_ref: sourcePath };
     await dataManager.callAction(actionInfo);
   }
 

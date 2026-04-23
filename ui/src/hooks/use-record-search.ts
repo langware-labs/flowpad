@@ -48,7 +48,7 @@ export interface SearchResult {
   scope: string;
   created_at: string;
   modified_at: string;
-  source_path: string;
+  asset_ref: string;
   message_count?: number;
   labels?: string[];
   session_id?: string;

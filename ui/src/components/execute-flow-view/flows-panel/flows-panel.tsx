@@ -135,7 +135,7 @@ export const FlowsPanel = forwardRef<FlowsPanelRef, FlowsPanelProps>(function Fl
     // Note: Don't expand auth_scopes - not supported on Flow entity
     return QueryFilter.parse(
       {
-        match: { source_vfs_path: normalizedVfsPath || '' },
+        match: { asset_ref: normalizedVfsPath || '' },
       },
       Flow.type,
     );

@@ -94,7 +94,7 @@ export function DocsCategory({ projectId, refreshKey = 0 }: Props) {
           {results.map((d) => (
             <li
               key={d.record_id}
-              onClick={() => navigation.openDock(DockPointer.forAssetEditor('markdown', d.source_path))}
+              onClick={() => navigation.openDock(DockPointer.forAssetEditor('markdown', d.asset_ref))}
               className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <FileText className="h-3.5 w-3.5 flex-shrink-0" />

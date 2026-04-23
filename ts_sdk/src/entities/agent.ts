@@ -1,6 +1,5 @@
 import { APIEntity, registerEntity } from '../APIEntity';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
-import { FSRef } from '../fs/FSRef';
 import { DockPointerData } from '../models/DockPointer';
 import { ViewType } from '../utils/ui/view-types';
 import { dataContext } from '../FlowSync/context';
@@ -66,8 +65,8 @@ export interface IAgentRecord {
 /**
  * Agent entity — backed by a filesystem AgentRecord (.md file).
  *
- * Navigation is entity-centric: searchDockPointer is derived from asset_folder_ref + name,
- * not from a raw source_path string.
+ * Navigation is entity-centric: searchDockPointer is derived from asset_ref,
+ * the canonical on-disk path to the agent's .md file.
  *
  * Legacy cloud fields (site_config, agent_config, histogram, enabled) are kept
  * only for backward compatibility with legacy UI components.
@@ -78,11 +77,8 @@ export class Agent extends APIEntity<Agent> {
   name?: string;
   description?: string;
 
-  /**
-   * FSRef pointing to the folder the agent .md was discovered from.
-   * Populated from search results in record-type-nav.ts.
-   */
-  asset_folder_ref?: FSRef;
+  /** Absolute on-disk path to the agent .md file. */
+  asset_ref?: string;
 
   // Legacy cloud fields — kept for UI compat only
   site_config?: ISiteConfig;
@@ -94,23 +90,17 @@ export class Agent extends APIEntity<Agent> {
     super(entity);
     this.name = entity.name;
     this.description = entity.description;
-    this.asset_folder_ref = entity.asset_folder_ref;
+    this.asset_ref = entity.asset_ref;
     this.histogram = entity.histogram || {};
     this.enabled = entity.enabled ?? true;
     this.agent_config = entity.agent_config;
     this.site_config = entity.site_config;
   }
 
-  /** VFS entity sub-path of the .md file, derived from asset_folder_ref + name. */
-  private get _mdVfsSubPath(): string | null {
-    const afr = this.asset_folder_ref;
-    if (afr && this.name) return `${afr.path}/${this.name}.md`;
-    return null;
-  }
-
   override get searchDockPointer(): DockPointerData {
-    const p = this._mdVfsSubPath;
-    if (p) return new DockPointerData(ViewType.ASSETS, `editor/agent/${p}`);
+    if (this.asset_ref) {
+      return new DockPointerData(ViewType.ASSETS, `editor/agent/${this.asset_ref.replace(/^\//, '')}`);
+    }
     return this.dockPointer;
   }
 
@@ -121,10 +111,8 @@ export class Agent extends APIEntity<Agent> {
   /** FrontMatterFsRef for the agent .md file. */
   get doc(): FrontMatterFsRef | null {
     const typeId = dataContext.computeNodeTypeId;
-    if (!typeId) return null;
-    const p = this._mdVfsSubPath;
-    if (!p) return null;
-    return new FrontMatterFsRef(p, typeId);
+    if (!typeId || !this.asset_ref) return null;
+    return new FrontMatterFsRef(this.asset_ref, typeId);
   }
 
   /**

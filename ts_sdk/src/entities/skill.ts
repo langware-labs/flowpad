@@ -17,14 +17,14 @@ export class Skill extends APIEntity<Skill> {
 
   name: string = '';
   description: string = '';
-  source_path?: string;
+  asset_ref?: string;
   scope?: string;
 
   constructor(entity: Partial<Skill> = {}) {
     super(entity);
     this.name = entity.name ?? '';
     this.description = entity.description ?? '';
-    this.source_path = entity.source_path;
+    this.asset_ref = entity.asset_ref;
     this.scope = entity.scope;
   }
 
@@ -33,13 +33,13 @@ export class Skill extends APIEntity<Skill> {
   }
 
   override get editorDockPointer(): DockPointerData {
-    const path = this.source_path ?? this.id;
+    const path = this.asset_ref ?? this.id;
     return new DockPointerData(ViewType.ASSETS, `editor/skill/${path}`);
   }
 
   override get searchDockPointer(): DockPointerData {
-    if (this.source_path) {
-      return new DockPointerData(ViewType.ASSETS, `editor/skill/${this.source_path.replace(/^\//, '')}`);
+    if (this.asset_ref) {
+      return new DockPointerData(ViewType.ASSETS, `editor/skill/${this.asset_ref.replace(/^\//, '')}`);
     }
     return this.dockPointer;
   }
@@ -47,8 +47,8 @@ export class Skill extends APIEntity<Skill> {
   /** FrontMatterFsRef for SKILL.md. Resolves compute node from dataContext. */
   get doc(): FrontMatterFsRef | null {
     const typeId = dataContext.computeNodeTypeId;
-    if (!typeId || !this.source_path) return null;
-    const mdPath = this.source_path.replace(/\/$/, '') + '/SKILL.md';
+    if (!typeId || !this.asset_ref) return null;
+    const mdPath = this.asset_ref.replace(/\/$/, '') + '/SKILL.md';
     return new FrontMatterFsRef(mdPath, typeId);
   }
 

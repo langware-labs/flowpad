@@ -6,8 +6,8 @@ const stripLeadingSlash = (p: string | undefined | null): string =>
   p ? (p.startsWith('/') ? p.slice(1) : p) : '';
 
 /**
- * Resolve the first-class entity whose `source_path` / `source_vfs_path` matches
- * `fsRef`. Returns null while loading or when no entity with this path exists.
+ * Resolve the first-class entity whose `asset_ref` matches `fsRef`.
+ * Returns null while loading or when no entity with this path exists.
  *
  * Used by the asset editors to bind chat / per-entity affordances to the real
  * entity TypeId instead of a path-keyed pseudo. Skill entities key on the
@@ -30,8 +30,8 @@ export function useEntityByPath<T extends APIEntity<T>>(
     const needle = stripLeadingSlash(fsRef.path);
     return (
       data.find((e: unknown) => {
-        const r = e as { source_path?: string; source_vfs_path?: string };
-        const p = stripLeadingSlash(r.source_path || r.source_vfs_path);
+        const r = e as { asset_ref?: string };
+        const p = stripLeadingSlash(r.asset_ref);
         return p !== '' && p === needle;
       }) ?? null
     );

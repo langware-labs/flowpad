@@ -82,25 +82,6 @@ class SkillRecord(Record):
         kwargs.setdefault("status", "active")
         super().__init__(**kwargs)
 
-    @property
-    def source_path(self) -> str:
-        """Absolute path to the skill content folder (e.g. ~/.claude/skills/<name>/).
-
-        Prefers asset_ref if set, then searches skill dirs by name, then falls back
-        to the entity storage record_dir.
-        """
-        ar = self.asset_ref
-        if ar is not None:
-            return str(ar._path)
-        skill_name = self.name
-        if skill_name:
-            for skills_dir in _skill_search_dirs():
-                skill_dir = skills_dir / skill_name
-                if skill_dir.is_dir():
-                    return str(skill_dir)
-        rd = self.record_dir
-        return str(rd) if rd else ""
-
     # -- FSRef accessors --
 
     @property
@@ -192,10 +173,9 @@ class SkillRecord(Record):
         return {}
 
     def meta_dict(self) -> dict:
+        # Keep asset-mtime as updated_date so FTS sees the freshest timestamp —
+        # base asset_ref injection is handled by Record.meta_dict.
         result = super().meta_dict()
-        sp = self.source_path
-        if sp:
-            result["source_path"] = sp
         try:
             import os as _os
             from datetime import datetime as _dt, timezone as _tz

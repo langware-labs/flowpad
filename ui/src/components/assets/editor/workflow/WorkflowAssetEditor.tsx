@@ -56,7 +56,7 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
   const resolvedWorkflow = useMemo(() => {
     if (providedWorkflow) return providedWorkflow;
     const key = stripLeadingSlash(fsRef.path);
-    return workflows.find((w) => stripLeadingSlash(w.source_vfs_path) === key) ?? null;
+    return workflows.find((w) => stripLeadingSlash(w.asset_ref) === key) ?? null;
   }, [providedWorkflow, workflows, fsRef.path]);
 
   const [activeSideTab, setActiveSideTab] = useState<string>('chat');
@@ -100,12 +100,12 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
   }, [pastRunProcesses, processEntry]);
 
   const doRun = useCallback(async () => {
-    if (!resolvedWorkflow?.source_vfs_path) return;
+    if (!resolvedWorkflow?.asset_ref) return;
     const systemSkills = dataContext.bootstrapInfo?.desktop_info?.paths?.system_skills;
     const flowSkillPath = systemSkills
       ? `/${systemSkills}/flow/SKILL.md`
       : '~/.flow/system_assets/skills/flow/SKILL.md';
-    const instruction = `Run workflow at /${resolvedWorkflow.source_vfs_path} using the flow skill located at: ${flowSkillPath}`;
+    const instruction = `Run workflow at /${resolvedWorkflow.asset_ref} using the flow skill located at: ${flowSkillPath}`;
     const workdir = dataContext.project?.fs_storage_mount_path;
 
     const cliOptions = new ClaudeCliOptions({
@@ -128,7 +128,7 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
   }, [resolvedWorkflow]);
 
   const handleRun = useCallback(async () => {
-    if (!resolvedWorkflow?.source_vfs_path) return;
+    if (!resolvedWorkflow?.asset_ref) return;
     setIsStarting(true);
     try {
       const available = await isMcpAvailable('flow-sdk-mcp');
@@ -177,9 +177,9 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
     <Button
       size="sm"
       onClick={() => void handleRun()}
-      disabled={isRunning || isStarting || !resolvedWorkflow.source_vfs_path}
+      disabled={isRunning || isStarting || !resolvedWorkflow.asset_ref}
       title={
-        !resolvedWorkflow.source_vfs_path
+        !resolvedWorkflow.asset_ref
           ? 'No file linked'
           : isRunning
             ? 'Workflow running…'
