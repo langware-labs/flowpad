@@ -4,7 +4,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, SerializerFunctionWrapHandler, model_serializer
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
@@ -26,9 +26,14 @@ class Attachment(BaseModel):
       - FILE    : data is a path relative to the .flowmsg root
       - REPO    : data is the full repo path (uuid5 is derived from it)
       - URL     : data is a URL
+
+    local_path is a transient field populated at serialization time (API responses
+    only — never stored in DB). For FILE attachments it holds the absolute filesystem
+    path resolved via the entity's embedded storage.
     """
     attachment_type: AttachmentType
     data: str
+    local_path: Optional[str] = None
 
 
 class FlowMessage(Entity):
@@ -37,26 +42,6 @@ class FlowMessage(Entity):
     instruction: Optional[str] = APIField(None)
     context: list[TypeId] = APIField(default_factory=list)
     attachment: list[Attachment] = APIField(default_factory=list)
-
-    @field_validator("attachment", mode="before")
-    @classmethod
-    def _coerce_attachment(cls, v: Any) -> Any:
-        """Coerce TypeId dict format from hub/DB into Attachment format.
-
-        The hub returns entity refs as {'type': 'spec', 'id': '...'}.
-        Old DB records may also have this format from prior inbox-fetch runs.
-        Convert to {'attachment_type': 'type_id', 'data': 'spec-...'} before
-        Pydantic validates the list.
-        """
-        if not isinstance(v, list):
-            return v
-        result = []
-        for item in v:
-            if isinstance(item, dict) and "attachment_type" not in item and "type" in item and "id" in item:
-                result.append({"attachment_type": AttachmentType.TYPE_ID.value, "data": f"{item['type']}-{item['id']}"})
-            else:
-                result.append(item)
-        return result
     sender_id: Optional[str] = APIField(None)
     sender_name: Optional[str] = APIField(None)
     receiver_address: Optional[str] = APIField(None)
@@ -65,6 +50,23 @@ class FlowMessage(Entity):
     is_read: bool = APIField(default=False)
     is_archived: bool = APIField(default=False)
     _api_visible: ClassVar[bool] = True
+
+    @model_serializer(mode="wrap")
+    def _serialize_with_local_paths(
+        self, handler: SerializerFunctionWrapHandler, info: Any
+    ) -> dict[str, Any]:
+        data = handler(self)
+        # Skip local_path resolution when serializing for DB storage
+        if info.context and info.context.get("skip_api_serializer"):
+            return data
+        if data.get("attachment") and self.id:
+            from flow_sdk.storage import get_entity_embedded_storage
+            typeid = TypeId(type="flow_message", id=self.id)
+            storage = get_entity_embedded_storage(typeid)
+            for att in data["attachment"]:
+                if att.get("attachment_type") == AttachmentType.FILE.value:
+                    att["local_path"] = storage.get_storage_path(att.get("data", ""))
+        return data
 
     async def to_file(self, dest_dir: Path | None = None) -> Path:
         """Pack this FlowMessage + attachments into a .flowmsg zip. Returns path to zip."""

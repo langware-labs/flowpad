@@ -18,6 +18,8 @@ export interface Attachment {
   attachment_type: AttachmentType;
   /** TypeId string ("type-id"), relative file path, repo path, or URL */
   data: string;
+  /** Absolute filesystem path — populated server-side for FILE attachments, null for others. */
+  local_path?: string | null;
 }
 
 export interface IFlowMessage extends IEntity {
