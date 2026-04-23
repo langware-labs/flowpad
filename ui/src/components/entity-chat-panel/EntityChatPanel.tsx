@@ -7,7 +7,7 @@ import {
   TypeId,
   type FlowData,
 } from '@sdk';
-import { useProcess } from '@sdk/react/hooks';
+import { useEntity } from '@sdk/react/hooks';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
 import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
 import ChatMessage from './chat-message/chat-message';
@@ -135,22 +135,25 @@ export function EntityChatPanel({ target, className, onProcessCreated }: EntityC
     () => (pickedProcess?.id ? new TypeId(AgenticProcess.type, pickedProcess.id) : null),
     [pickedProcess?.id],
   );
-  const { data: resolvedProcess } = useProcess(processTypeId, { enabled: !!processTypeId });
+  const { data: resolvedProcess } = useEntity<AgenticProcess>(processTypeId, {
+    watch: true,
+    enabled: !!processTypeId,
+  });
 
   // 4. Creation guard — a locally-spawned process survives until the query picks it up.
-  //    When it arrives, pin it as the explicitly-selected chat so forceNew can be cleared
-  //    without losing the active conversation.
+  //    Rather than setState'ing selectedProcessId/forceNew from an effect once the
+  //    query catches up (which cascades into a re-render chain), derive both
+  //    effective values and only drop the local ref via a terminal effect.
   const createInFlightRef = useRef(false);
   const [localProcess, setLocalProcess] = useState<AgenticProcess | null>(null);
+  const resolvedMatchesLocal = !!(
+    localProcess && resolvedProcess?.id === localProcess.id
+  );
   useEffect(() => {
-    if (localProcess && resolvedProcess?.id === localProcess.id) {
-      setSelectedProcessId(localProcess.id);
-      setForceNew(false);
-      setLocalProcess(null);
-    }
-  }, [resolvedProcess?.id, localProcess]);
+    if (resolvedMatchesLocal) setLocalProcess(null);
+  }, [resolvedMatchesLocal]);
 
-  const activeProcess: AgenticProcess | null = forceNew
+  const activeProcess: AgenticProcess | null = forceNew && !resolvedMatchesLocal
     ? localProcess
     : ((resolvedProcess as AgenticProcess | null | undefined) ?? localProcess);
 
@@ -201,7 +204,10 @@ export function EntityChatPanel({ target, className, onProcessCreated }: EntityC
     setForceNew(false);
   }, []);
 
-  const liveAttachedRefs = activeProcess?.embedded_asset_refs ?? [];
+  const liveAttachedRefs = useMemo(
+    () => (activeProcess?.embedded_asset_refs ?? []).map((r) => r.toString()),
+    [activeProcess?.embedded_asset_refs],
+  );
   const effectiveAttachedRefs = activeProcess ? liveAttachedRefs : pendingAttachedRefs;
 
   const handleAttach = useCallback(async (ref: string) => {

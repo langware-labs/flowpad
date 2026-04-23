@@ -104,8 +104,8 @@ export interface IAgenticProcess extends IEntity {
   cli_config?: Record<string, any>;
   /** Extra directories passed to Claude via --add-dir */
   additional_dirs?: string[];
-  /** Serialized TypeIds of entities materialized under the process's assets dir. */
-  embedded_asset_refs?: string[];
+  /** TypeIds of entities materialized under the process's assets dir. */
+  embedded_asset_refs?: TypeId[];
   /** Owning project ID */
   project_id?: string | null;
   /** CollaborationSession this process was spawned in, if any */
@@ -940,28 +940,33 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * itself — ``typeId.toString()`` is extracted automatically.
    */
   readonly embeddedAssets = {
-    attach: async (entityOrRef: { typeId?: { toString(): string } } | string): Promise<void> => {
-      const ref = typeof entityOrRef === 'string'
-        ? entityOrRef
-        : entityOrRef.typeId?.toString() ?? '';
-      if (!ref) throw new Error('embeddedAssets.attach: empty ref');
+    attach: async (entityOrRef: { typeId?: TypeId } | TypeId | string): Promise<void> => {
+      const ref = this._coerceRef(entityOrRef);
       const actionInfo = new ActionInfo('attach-embedded-asset', AgenticProcess.type, this.id, 'POST');
-      actionInfo.bodyParameters = { entity_ref: ref };
+      actionInfo.bodyParameters = { entity_ref: ref.toString() };
       await dataManager.callAction(actionInfo);
-      this.embedded_asset_refs = Array.from(new Set([...(this.embedded_asset_refs ?? []), ref]));
+      const current = this.embedded_asset_refs ?? [];
+      const has = current.some((r) => r.type === ref.type && r.id === ref.id);
+      if (!has) this.embedded_asset_refs = [...current, ref];
     },
-    detach: async (entityOrRef: { typeId?: { toString(): string } } | string): Promise<void> => {
-      const ref = typeof entityOrRef === 'string'
-        ? entityOrRef
-        : entityOrRef.typeId?.toString() ?? '';
-      if (!ref) throw new Error('embeddedAssets.detach: empty ref');
+    detach: async (entityOrRef: { typeId?: TypeId } | TypeId | string): Promise<void> => {
+      const ref = this._coerceRef(entityOrRef);
       const actionInfo = new ActionInfo('detach-embedded-asset', AgenticProcess.type, this.id, 'POST');
-      actionInfo.bodyParameters = { entity_ref: ref };
+      actionInfo.bodyParameters = { entity_ref: ref.toString() };
       await dataManager.callAction(actionInfo);
-      this.embedded_asset_refs = (this.embedded_asset_refs ?? []).filter((r) => r !== ref);
+      this.embedded_asset_refs = (this.embedded_asset_refs ?? [])
+        .filter((r) => !(r.type === ref.type && r.id === ref.id));
     },
-    list: (): string[] => [...(this.embedded_asset_refs ?? [])],
+    list: (): TypeId[] => [...(this.embedded_asset_refs ?? [])],
   };
+
+  /** Normalize the three accepted input shapes to a TypeId. */
+  private _coerceRef(input: { typeId?: TypeId } | TypeId | string): TypeId {
+    if (input instanceof TypeId) return input;
+    if (typeof input === 'string') return new TypeId(input);
+    if (input.typeId) return input.typeId;
+    throw new Error('embeddedAssets: input must be TypeId, entity with typeId, or serialized string');
+  }
 
   /**
    * Print-mode streaming prompt. Available on ``visible === false`` (print-mode)
