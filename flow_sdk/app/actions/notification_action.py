@@ -560,7 +560,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
 
     # Attach uploaded files to the FlowMessage (stored in entity VFS, included in bundle)
     if uploaded_files and fm:
-        await _attach_uploaded_files(fm, uploaded_files, task.id, task_title)
+        await _attach_uploaded_files(fm, uploaded_files)
         fm = await fm.save(someone_typeid)
 
     hub_flow_message_id, email_error = await _send_hub_notification(

@@ -39,7 +39,7 @@ function extractSessionText(
     const role: string = (fd as any).attributes?.role ?? '';
     const et = fd.elementType;
 
-    // session_history.py uses element-type "chat" for both user (role=user) and assistant
+    // History items use USER_MESSAGE for user turns; live stream may use CHAT+role=user
     const isUser = et === FlowElementTypes.USER_MESSAGE || (et === FlowElementTypes.CHAT && role === 'user');
     const isAssistant = (et === FlowElementTypes.CHAT && role !== 'user') || et === FlowElementTypes.TEXT;
 

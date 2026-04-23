@@ -87,6 +87,8 @@ def load_session_history(session_id: str) -> list[FlowData]:
     _log.info(f"[load_session_history] loaded {len(entries)} raw entries from {jsonl_path}")
     history = []
 
+    import uuid as _uuid
+
     for entry in entries:
         entry_type = entry.get("type")
 
@@ -99,9 +101,11 @@ def load_session_history(session_id: str) -> list[FlowData]:
                     FlowData(
                         flow_value=text,
                         attributes={
-                            "element-type": FlowElementType.CHAT,
+                            "element-type": FlowElementType.USER_MESSAGE,
                             "data-type": FlowDataType.TEXT,
                             "role": "user",
+                            "complete": "true",
+                            "group-id": str(_uuid.uuid4()),
                         },
                     )
                 )
@@ -124,6 +128,8 @@ def load_session_history(session_id: str) -> list[FlowData]:
                                         "element-type": FlowElementType.CHAT,
                                         "data-type": FlowDataType.TEXT,
                                         "role": "assistant",
+                                        "complete": "true",
+                                        "group-id": str(_uuid.uuid4()),
                                     },
                                 )
                             )
@@ -137,6 +143,8 @@ def load_session_history(session_id: str) -> list[FlowData]:
                                     attributes={
                                         "element-type": FlowElementType.REASONING,
                                         "data-type": FlowDataType.TEXT,
+                                        "complete": "true",
+                                        "group-id": str(_uuid.uuid4()),
                                     },
                                 )
                             )
@@ -153,6 +161,8 @@ def load_session_history(session_id: str) -> list[FlowData]:
                                     "element-type": FlowElementType.TOOL_CALL,
                                     "data-type": FlowDataType.OBJECT,
                                     "tool-name": block.get("name", ""),
+                                    "complete": "true",
+                                    "group-id": str(_uuid.uuid4()),
                                 },
                             )
                         )
@@ -167,6 +177,8 @@ def load_session_history(session_id: str) -> list[FlowData]:
                                 attributes={
                                     "element-type": FlowElementType.TOOL_RESULT,
                                     "data-type": FlowDataType.OBJECT,
+                                    "complete": "true",
+                                    "group-id": str(_uuid.uuid4()),
                                 },
                             )
                         )
