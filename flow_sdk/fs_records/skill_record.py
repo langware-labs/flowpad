@@ -263,6 +263,20 @@ class SkillRecord(Record):
         return min(count, limit) if limit is not None else count
 
     @classmethod
+    async def from_fsref(cls, ref) -> list["SkillRecord"]:
+        """Indexer entry point — construct from an FSRef emitted by skill_fn."""
+        from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
+        rec = cls.load_record(ref._path)
+        if ref.scope:
+            try:
+                object.__setattr__(rec, "scope", Scope(ref.scope))
+            except (ValueError, TypeError):
+                pass
+        if rec.asset_ref is None:
+            object.__setattr__(rec, "_asset_ref", _FSRef(ref._path.resolve()))
+        return [rec]
+
+    @classmethod
     def discover_iter(cls, limit: int | None = None, scope: Scope | None = None, **kwargs: Any):
         """Lazy generator — yields one SkillRecord per skill directory."""
         from flow_sdk.fs_store.fs_ref import FSRef

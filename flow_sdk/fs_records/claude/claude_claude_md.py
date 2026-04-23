@@ -61,6 +61,11 @@ class ClaudeMdFsRecord(Record):
             return None
 
     @classmethod
+    async def from_fsref(cls, ref) -> list["ClaudeMdFsRecord"]:
+        """Indexer entry point — construct from an FSRef emitted by claude_md_*_fn."""
+        return [cls._from_md_file(ref._path, scope=ref.scope or "project")]
+
+    @classmethod
     def _external_source_iter(cls, limit: int | None = None) -> Iterator["ClaudeMdFsRecord"]:
         count = 0
 

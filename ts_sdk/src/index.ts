@@ -27,6 +27,5 @@ export * from './voice';
 export * from './sentry';
 export * from './types/index';
 export * from './schema/index';
-export * from './pipeline/index';
 export { FSRef } from './fs/FSRef';
 export { FrontMatterFsRef } from './fs/FrontMatterFsRef';

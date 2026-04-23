@@ -382,6 +382,11 @@ class AgentRecord(Record):
     # -- External-source hooks (flat .md files in ~/.claude/agents/ etc.) ----
 
     @classmethod
+    async def from_fsref(cls, ref) -> list["AgentRecord"]:
+        """Indexer entry point — construct from an FSRef emitted by agent_fn."""
+        return [cls.from_file(ref._path)]
+
+    @classmethod
     def _external_source_iter(cls, limit: int | None = None):
         """Yield AgentRecords from flat .md files in agent search dirs."""
         seen: set[str] = set()

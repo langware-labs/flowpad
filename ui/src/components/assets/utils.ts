@@ -1,10 +1,5 @@
 import { ActionInfo, dataManager } from '@sdk';
 
-/** Derive the prepared file path from a source path. */
-export function derivePreparedPath(sourcePath: string): string {
-  return sourcePath.replace(/\.md$/, '.prepared.md');
-}
-
 /** Check if an MCP server is available. */
 export async function isMcpAvailable(serverName: string): Promise<boolean> {
   try {

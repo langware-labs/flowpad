@@ -1,6 +1,5 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { DockPointerData } from '../models/DockPointer';
-import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
 import { fsManager } from '../services/fsService';
 import { ViewType } from '../utils/ui/view-types';
@@ -32,12 +31,6 @@ export class Workflow extends APIEntity<Workflow> {
   /** Tab index for UI display (null = not in tabs, 0+ = tab position) */
   tab_index?: number | null;
 
-  /** VFS path to the prepared file (e.g., workflows/name.prepared.md) */
-  prepared_vfs_path?: string;
-
-  /** VFS path to the generated pipeline.json */
-  pipeline_vfs_path?: string;
-
   constructor(entity: Partial<Workflow> = {}) {
     super(entity);
     this.name = entity.name;
@@ -45,71 +38,6 @@ export class Workflow extends APIEntity<Workflow> {
     this.source_vfs_path = entity.source_vfs_path;
     this.project_id = entity.project_id;
     this.tab_index = entity.tab_index ?? null;
-    this.prepared_vfs_path = entity.prepared_vfs_path;
-    this.pipeline_vfs_path = entity.pipeline_vfs_path;
-  }
-
-  // ── Prepared-file helpers ────────────────────────────────────────────────
-
-  /** Derive the prepared file path from a source path. */
-  static derivePreparedPath(sourcePath: string): string {
-    return sourcePath.replace(/\.md$/, '.prepared.md');
-  }
-
-  /** True when a prepared file path is recorded on this entity. */
-  get isPrepared(): boolean {
-    return !!this.prepared_vfs_path;
-  }
-
-  /** The prepared VFS path, or null if not yet prepared. */
-  get preparedPath(): string | null {
-    return this.prepared_vfs_path ?? null;
-  }
-
-  // ── Pipeline helpers ──────────────────────────────────────────────────────
-
-  /** Derive the pipeline.json path from a source path. */
-  static derivePipelinePath(sourcePath: string): string {
-    return sourcePath.replace(/\.md$/, '.pipeline.json');
-  }
-
-  /** True when a pipeline JSON path is recorded on this entity. */
-  get hasPipeline(): boolean {
-    return !!this.pipeline_vfs_path;
-  }
-
-  /** The pipeline VFS path, or null if not yet generated. */
-  get pipelinePath(): string | null {
-    return this.pipeline_vfs_path ?? null;
-  }
-
-  /**
-   * Call the backend prepare action: parse the AMD markdown into a Pipeline
-   * JSON, write it to VFS, and update pipeline_vfs_path on this entity.
-   */
-  async prepare(): Promise<{ pipeline_vfs_path: string }> {
-    const actionInfo = new ActionInfo('prepare', Workflow.type, this.id, 'POST');
-    const result = await dataManager.callAction<null, { pipeline_vfs_path: string }>(actionInfo);
-    // Sync the new path back onto the local instance
-    if (result?.pipeline_vfs_path) {
-      this.pipeline_vfs_path = result.pipeline_vfs_path;
-    }
-    return result as { pipeline_vfs_path: string };
-  }
-
-  /**
-   * Verify the prepared file actually exists on disk.
-   * If it does not, clears `prepared_vfs_path` and persists the entity.
-   * Returns true when the file is confirmed present.
-   */
-  async verifyPrepared(fsTypeId: TypeId): Promise<boolean> {
-    if (!this.prepared_vfs_path) return false;
-    const exists = await fsManager.exists(fsTypeId, this.prepared_vfs_path);
-    if (!exists) {
-      this.prepared_vfs_path = undefined;
-      await this.save();
-    }
-    return exists;
   }
 
   /**

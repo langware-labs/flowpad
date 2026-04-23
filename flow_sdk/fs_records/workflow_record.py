@@ -61,9 +61,6 @@ class WorkflowRecord(Record):
     _icon: ClassVar[str] = "Workflow"
     index_fields: ClassVar[list[str]] = ["name", "description"]
 
-    # VFS path of the generated pipeline.json (set by the prepare action)
-    pipeline_ref: str | None = None
-
     def __init__(self, file_path: Path | str | None = None, **kwargs: Any):
         kwargs.setdefault("type", RecordType.WORKFLOW)
         if file_path is not None:
@@ -103,6 +100,11 @@ class WorkflowRecord(Record):
                 seen.add(str(md_file.resolve()))
         count = len(seen)
         return min(count, limit) if limit is not None else count
+
+    @classmethod
+    async def from_fsref(cls, ref) -> list["WorkflowRecord"]:
+        """Indexer entry point — construct from an FSRef emitted by workflow_fn."""
+        return [cls(file_path=ref._path, id=_workflow_id(ref._path))]
 
     @classmethod
     def _external_source_iter(cls, limit: int | None = None) -> Iterator["WorkflowRecord"]:

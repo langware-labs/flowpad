@@ -1021,6 +1021,17 @@ class Record:
         return result
 
     @classmethod
+    async def from_fsref(cls, ref: "FSRef") -> list["Record"]:
+        """Construct record(s) from an FSRef emitted by the indexer.
+
+        Override on every terminal record class. Returns a list so types
+        like CLAUDE_HOOK (1 settings.json -> N records) share one signature.
+        """
+        raise NotImplementedError(
+            f"{cls.__name__} has no from_fsref parser — override required"
+        )
+
+    @classmethod
     def from_dict(cls, data: dict) -> "Record":
         """Deserialize from a flat dict — all keys become direct attrs."""
         rec = cls.__new__(cls)

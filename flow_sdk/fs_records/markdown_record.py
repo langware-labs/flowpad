@@ -304,6 +304,11 @@ class MarkdownRecord(Record):
         return min(count, limit) if limit is not None else count
 
     @classmethod
+    async def from_fsref(cls, ref) -> list["MarkdownRecord"]:
+        """Indexer entry point — construct from an FSRef emitted by markdown_fn."""
+        return [cls.from_file(ref._path)]
+
+    @classmethod
     def _external_source_iter(cls, limit: int | None = None) -> Iterator["MarkdownRecord"]:
         seen: set[str] = set()
         count = 0

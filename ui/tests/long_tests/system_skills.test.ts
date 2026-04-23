@@ -1,8 +1,8 @@
 /**
  * System Skills — Integration Test
  *
- * Verifies that bundled system skills (flow, compile-workflow, session_analysis)
- * are visible to Claude via --add-dir system_assets.
+ * Verifies that bundled system skills (flow, session_analysis) are visible
+ * to Claude via --add-dir system_assets.
  *
  * Requires: running backend at localhost:9007 + Claude Code installed
  * Timeout: 180s (real Claude subprocess)
@@ -15,7 +15,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 
-const SYSTEM_SKILLS = ['flow', 'compile-workflow', 'session_analysis'];
+const SYSTEM_SKILLS = ['flow', 'session_analysis'];
 
 describe('system skills visible via --add-dir', () => {
   beforeEach(async (ctx: any) => {

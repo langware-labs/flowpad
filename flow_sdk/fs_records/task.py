@@ -37,6 +37,34 @@ class TaskResource(Record):
         kwargs.setdefault("task_type", TaskType.TASK)
         super().__init__(**kwargs)
 
+    @classmethod
+    async def from_fsref(cls, ref) -> list["TaskResource"]:
+        """Indexer entry point — parse `<task_dir>/manifest.json` into a TaskResource.
+
+        Task id lives inside the JSON (`task_id` field), not in the directory
+        name. Legacy `SchemaRegistry.index_type(TASK)` falls back to iterating
+        DB-stored records (no _external_source_iter); this walker is the
+        canonical path going forward.
+        """
+        import json
+        manifest = ref._path
+        try:
+            data = json.loads(manifest.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return []
+        task_id = data.get("task_id") or data.get("id")
+        if not task_id:
+            return []
+        name = data.get("title") or data.get("name") or manifest.parent.name
+        status = data.get("status") or TaskStatus.TO_DO
+        kwargs: dict[str, Any] = {"id": task_id, "name": name, "status": status}
+        for key in ("description", "objective", "task_type"):
+            if key in data:
+                kwargs[key] = data[key]
+        rec = cls(**kwargs)
+        rec.source_file = str(manifest)
+        return [rec]
+
     @property
     def search_title(self) -> str | None:
         return self.name or None

@@ -341,7 +341,7 @@ async def test_agentic_process_lists_system_skills(local_project, local_compute_
     skills = json.loads(skills_file.read_text())
     assert isinstance(skills, list), f"Expected JSON array, got: {type(skills)}"
     names = [s.lower() if isinstance(s, str) else str(s).lower() for s in skills]
-    for expected in ["flow", "compile-workflow", "session_analysis"]:
+    for expected in ["flow", "session_analysis"]:
         assert any(expected in n for n in names), (
             f"System skill '{expected}' not found in: {names}"
         )
