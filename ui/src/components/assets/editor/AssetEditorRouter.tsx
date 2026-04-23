@@ -25,7 +25,7 @@ interface AssetEditorRouterProps {
 const EDITABLE_TYPES = new Set<string>([
   RecordType.SKILL, RecordType.MARKDOWN, RecordType.AGENT,
   RecordType.CLAUDE_MD, 'claude_memory', 'claude_rules',
-  RecordType.COMMAND, RecordType.PLAN, 'workflow', RecordType.ASSET,
+  RecordType.COMMAND, RecordType.PLAN, 'workflow',
 ]);
 
 export function hasEditor(assetType: string): boolean {
@@ -67,7 +67,6 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
     case RecordType.COMMAND:
     case RecordType.PLAN:
     case 'workflow':
-    case RecordType.ASSET:
       return <MarkdownEditor fsRef={fsRef} />;
     default:
       return (

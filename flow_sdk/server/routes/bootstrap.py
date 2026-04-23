@@ -1182,21 +1182,6 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         await init_db()
         _t.time("init_db")
 
-        # One-time migration: delete all legacy Asset entities
-        try:
-            from flow_sdk.core.entity.entity_model import Entity as _Entity  # noqa: PLC0415
-            _asset_entities = await _Entity.get_all({"type": "asset"})
-            for _ae in _asset_entities:
-                try:
-                    await _ae.delete()
-                except Exception:
-                    pass
-            if _asset_entities:
-                logging.info(f"[bootstrap] Cleaned up {len(_asset_entities)} legacy Asset entities")
-        except Exception as _e:
-            logging.warning(f"[bootstrap] Asset cleanup failed (non-fatal): {_e}")
-        _t.time("cleanup_asset_entities")
-
         # Set up desktop filesystem (.flow/logs, .flow/system_skills, settings.json)
         await asyncio.to_thread(setup_desktop_filesystem)
         _t.time("setup_desktop_filesystem")

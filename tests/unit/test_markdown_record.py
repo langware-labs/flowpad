@@ -1,4 +1,4 @@
-"""Unit tests for AssetRecord parent/child hierarchy using the Record fs_store layer.
+"""Unit tests for MarkdownRecord parent/child hierarchy using the Record fs_store layer.
 
 These tests exercise:
 1. Basic parent-child linking: add_child(), parent, children
@@ -14,7 +14,7 @@ import pytest
 
 from flow_sdk.fs_store.record import get_default_records_root, set_default_records_root
 from flow_sdk.fs_store.record_ref import RecordRef
-from flow_sdk.fs_records.markdown_record import MarkdownRecord as AssetRecord
+from flow_sdk.fs_records.markdown_record import MarkdownRecord
 
 
 # ---------------------------------------------------------------------------
@@ -35,24 +35,24 @@ def make_asset(
     title: str,
     asset_type: str = "doc",
     source_vfs_path: str | None = None,
-) -> AssetRecord:
-    """Create an AssetRecord and persist it to disk (using default_path)."""
+) -> MarkdownRecord:
+    """Create an MarkdownRecord and persist it to disk (using default_path)."""
     kwargs: dict = {"title": title, "asset_type": asset_type}
     if source_vfs_path:
         kwargs["source_vfs_path"] = source_vfs_path
-    rec = AssetRecord(**kwargs)
+    rec = MarkdownRecord(**kwargs)
     rec.save()
     assert rec.path is not None, "save() must set path (folder)"
     return rec
 
 
-def reload(rec: AssetRecord) -> AssetRecord:
-    """Reload an AssetRecord from disk by its directory path."""
+def reload(rec: MarkdownRecord) -> MarkdownRecord:
+    """Reload an MarkdownRecord from disk by its directory path."""
     folder = Path(rec.path)
-    return AssetRecord.load_record(folder)
+    return MarkdownRecord.load_record(folder)
 
 
-def _folder_ref(rec: AssetRecord) -> RecordRef:
+def _folder_ref(rec: MarkdownRecord) -> RecordRef:
     """Build a RecordRef pointing at the record's folder (not metadata.json).
 
     Using the folder path ensures init_record() will run the full split-format
@@ -62,15 +62,15 @@ def _folder_ref(rec: AssetRecord) -> RecordRef:
     return RecordRef(id=rec.id, type=rec.type, path=rec.path)
 
 
-def link_child(parent: AssetRecord, child: AssetRecord) -> None:
+def link_child(parent: MarkdownRecord, child: MarkdownRecord) -> None:
     """Add *child* to *parent* using a folder-path ref and save both."""
     parent.add_child(_folder_ref(child))  # saves parent immediately
     child.parent_ref = _folder_ref(parent)
     child.save()
 
 
-def get_children_of(parent: AssetRecord) -> list[AssetRecord]:
-    """Return all AssetRecord children of *parent* loaded from disk.
+def get_children_of(parent: MarkdownRecord) -> list[MarkdownRecord]:
+    """Return all MarkdownRecord children of *parent* loaded from disk.
 
     Resolves each child ref to its folder so the full split format is loaded.
     """
@@ -83,11 +83,11 @@ def get_children_of(parent: AssetRecord) -> list[AssetRecord]:
         # Ref may point to metadata.json (file) or the record dir – normalise to dir.
         folder = p if p.is_dir() else p.parent
         if folder.exists():
-            results.append(AssetRecord.load_record(folder))
+            results.append(MarkdownRecord.load_record(folder))
     return results
 
 
-def move_child(child: AssetRecord, old_parent: AssetRecord, new_parent: AssetRecord) -> None:
+def move_child(child: MarkdownRecord, old_parent: MarkdownRecord, new_parent: MarkdownRecord) -> None:
     """Move *child* from *old_parent* to *new_parent*, updating all refs on disk."""
     # 1. Remove from old parent's children_refs
     old_fresh = reload(old_parent)
@@ -104,7 +104,7 @@ def move_child(child: AssetRecord, old_parent: AssetRecord, new_parent: AssetRec
     child_fresh.save()
 
 
-def all_assets_with_parent(parent: AssetRecord, root: Path) -> list[AssetRecord]:
+def all_assets_with_parent(parent: MarkdownRecord, root: Path) -> list[MarkdownRecord]:
     """Scan all asset records in *root* and return those whose parent_ref.id == parent.id."""
     results = []
     asset_dir = root / "markdown"
@@ -114,7 +114,7 @@ def all_assets_with_parent(parent: AssetRecord, root: Path) -> list[AssetRecord]
         if not entry.is_dir():
             continue
         try:
-            rec = AssetRecord.load_record(entry)
+            rec = MarkdownRecord.load_record(entry)
             if rec.parent_ref and rec.parent_ref.id == parent.id:
                 results.append(rec)
         except Exception:
@@ -304,7 +304,7 @@ class TestFolderSkillMove:
 
 
 class TestMultiLevelNesting:
-    def _build_tree(self) -> tuple[AssetRecord, ...]:
+    def _build_tree(self) -> tuple[MarkdownRecord, ...]:
         """
         Build this tree and return all nodes:
 
@@ -424,7 +424,7 @@ class TestMultiLevelNesting:
 
         # Deep path: branch_b → branch_a → leaf_a1 via children property
         branch_a_via_children = next(
-            (AssetRecord.load_record(Path(r.path)) for r in b_fresh.children_refs if r.id == branch_a.id and r.path),
+            (MarkdownRecord.load_record(Path(r.path)) for r in b_fresh.children_refs if r.id == branch_a.id and r.path),
             None,
         )
         assert branch_a_via_children is not None

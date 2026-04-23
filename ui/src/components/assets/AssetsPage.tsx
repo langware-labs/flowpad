@@ -39,7 +39,6 @@ import '@src/components/assets/columns/claudeMemoryColumns';
 import '@src/components/assets/columns/claudeMdColumns';
 import '@src/components/assets/columns/claudeRulesColumns';
 // Side-effect filter registrations
-import '@src/components/assets/filters/assetFilters';
 import '@src/components/assets/filters/taskFilters';
 
 interface ParsedAssetPointer {
@@ -122,7 +121,7 @@ function buildFolderBreadcrumbs(
   return crumbs;
 }
 
-const HIDDEN_TYPES = new Set<string>([RecordType.ASSET, RecordType.ANNOTATION]);
+const HIDDEN_TYPES = new Set<string>([RecordType.ANNOTATION]);
 
 const SIDEBAR_COLLAPSED_KEY = 'wiki:sidebar-collapsed';
 

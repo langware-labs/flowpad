@@ -102,7 +102,6 @@ class RecordType(StrEnum):
     # Workflow record type
     WORKFLOW = "workflow"
 
-    ASSET = "asset"
     MARKDOWN = "markdown"
     SPEC = "spec"
     CONVERSATION = "conversation"
