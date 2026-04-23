@@ -639,15 +639,20 @@ async def get_or_create_local_user() -> User:
         if DESKTOP_LABEL not in (existing_by_uname.labels or []):
             existing_by_uname.add_label(DESKTOP_LABEL)
             await existing_by_uname.save()
-        # Update email/name if still defaults
-        if existing_by_uname.name == "Local Desktop User" or not existing_by_uname.email:
-            email = await asyncio.to_thread(get_email) or get_default_desktop_email()
-            git_name = await asyncio.to_thread(get_name)
-            name = git_name or email.split("@")[0].replace(".", " ").title()
+        # Update email/name: always prefer git config user.name over auto-derived names
+        email = await asyncio.to_thread(get_email) or get_default_desktop_email()
+        git_name = await asyncio.to_thread(get_name)
+        name_from_email = email.split("@")[0].replace(".", " ").title()
+        needs_update = (
+            not existing_by_uname.email
+            or existing_by_uname.name == "Local Desktop User"
+            or (git_name and existing_by_uname.name != git_name)
+        )
+        if needs_update:
             existing_by_uname.email = email
-            existing_by_uname.name = name
+            existing_by_uname.name = git_name or name_from_email
             await existing_by_uname.save()
-            logging.info(f"Updated @local user with email: {email}, name: {name}")
+            logging.info(f"Updated @local user with email: {email}, name: {existing_by_uname.name}")
         return existing_by_uname
 
     # Create new desktop user
