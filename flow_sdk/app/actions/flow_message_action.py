@@ -327,7 +327,6 @@ async def _download_and_unpack_bundle(fm_id: str, attachment_filename: str) -> b
     Returns True if the bundle was successfully unpacked, False otherwise.
     """
     from flow_sdk.fs_records.flow_message_bundle import FlowMessageExistsError, unpack_bundle
-    logger.info("[bundle] downloading fm=%s file=%s", fm_id, attachment_filename)
     bundle_bytes = await hub_get(
         BuiltinEntityType.FLOW_MESSAGE, fm_id, "fs", f"download/{attachment_filename}", raw=True
     )
@@ -340,12 +339,9 @@ async def _download_and_unpack_bundle(fm_id: str, attachment_filename: str) -> b
         tmp_path = Path(tmp.name)
         tmp.write(bundle_bytes)
     try:
-        logger.info("[bundle] unpacking fm=%s size=%d", fm_id, len(bundle_bytes))
         await unpack_bundle(tmp_path, local_user_id, overwrite=False)
-        logger.info("[bundle] unpack success fm=%s", fm_id)
         return True
     except FlowMessageExistsError:
-        logger.info("[bundle] already materialized fm=%s", fm_id)
         return True  # already materialized — counts as success
     except Exception as e:
         logger.error("[bundle] unpack failed fm=%s: %s", fm_id, e, exc_info=True)
@@ -355,11 +351,16 @@ async def _download_and_unpack_bundle(fm_id: str, attachment_filename: str) -> b
 
 
 async def handle_inbox_list() -> ApiResponse:
-    """Return all non-archived local FlowMessages, newest first."""
+    """Return all non-archived received FlowMessages (excluding sent), newest first."""
     from flow_sdk.db.drivers.query import QueryFilter
+    current_user = await User.get_one({"uname": "local"})
+    current_user_id = current_user.id if current_user else None
     flt = QueryFilter(type=BuiltinEntityType.FLOW_MESSAGE.value)
     all_messages = await FlowMessage.get_all(flt)
-    messages = [m for m in all_messages if not m.is_archived]
+    messages = [
+        m for m in all_messages
+        if not m.is_archived and m.sender_id != current_user_id
+    ]
     messages.sort(key=lambda m: m.created_date or "", reverse=True)
     return ApiSuccessResponse(data=[m.model_dump(mode="json") for m in messages])
 
@@ -404,7 +405,6 @@ async def _process_single_hub_message(raw: dict) -> str | None:
         return None
     attachment_filename = (raw.get("attachment_filename") or "").strip()
     if not attachment_filename:
-        logger.info("[inbox-fetch] skipping fm=%s: no bundle", fm_id)
         return None
     success = await _download_and_unpack_bundle(fm_id, attachment_filename)
     return fm_id if success else None
@@ -418,7 +418,6 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
     raw_messages = await _fetch_raw_messages_from_hub(since)
     if raw_messages is None:
         return ApiFailResponse(message="Hub unavailable or not configured")
-    logger.info("[inbox-fetch] fetched %d messages from hub", len(raw_messages))
 
     created_ids: list[str] = []
     for raw in raw_messages:

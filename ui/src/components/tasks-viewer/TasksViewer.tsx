@@ -4,7 +4,7 @@
  * For shared tasks (spec_id set), renders SharedTaskView instead of the edit form.
  */
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Task, TypeId, isTypeId, dataManager, QueryRequest } from '@sdk';
 import { useEntity, useProject } from '@sdk/react/hooks';
 import { SharedTaskView } from '@src/components/task-bar/SharedTaskView';
@@ -50,11 +50,13 @@ export function TasksViewer() {
   const [startDate, setStartDate] = useState('');
   const [ttl, setTtl] = useState('');
   const [targetEntity, setTargetEntity] = useState('');
-  const [initialized, setInitialized] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Sync form with loaded task
-  if (existingTask && !initialized) {
+  // Sync form fields when the task first loads (or when navigating to a different task).
+  // Using existingTask?.id as the dependency means we re-populate on task change but do NOT
+  // reset the form on WebSocket updates while the user is actively editing.
+  useEffect(() => {
+    if (!existingTask) return;
     setTitle(existingTask.title || '');
     setDescription(existingTask.descriptionPlainText || '');
     setStatus(existingTask.status || 'open');
@@ -63,8 +65,8 @@ export function TasksViewer() {
     setStartDate(existingTask.start_date ? new Date(existingTask.start_date).toISOString().split('T')[0] : '');
     setTtl(existingTask.ttl != null ? String(existingTask.ttl / (1000 * 60 * 60)) : '');
     setTargetEntity(existingTask.target_entity || '');
-    setInitialized(true);
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existingTask?.id]);
 
   const handleSave = useCallback(async () => {
     const scope = project?.typeId ? [project.typeId] : [];

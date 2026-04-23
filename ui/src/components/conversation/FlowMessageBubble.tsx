@@ -2,9 +2,14 @@ import { FlowMessage, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage } from '@sdk/entities/conversation';
-import { downloadFlowMessageUrl } from '@sdk/entities/flow-message';
+import { AttachmentType, downloadFlowMessageUrl } from '@sdk/entities/flow-message';
+import { ActionInfo } from '@sdk/models/ActionInfo';
 import { MessageBubble } from './MessageBubble';
 import { Download, Paperclip } from 'lucide-react';
+
+function localBundleUrl(messageId: string): string {
+  return new ActionInfo('create-and-download-local-flowmsg', 'flow_message', messageId, 'GET').fullActionUrl;
+}
 
 interface FlowMessageBubbleProps {
   messageId: string;
@@ -31,6 +36,10 @@ export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBub
     timestamp,
   };
 
+  const hasFileAttachments = (fm.attachment ?? []).some(
+    (a) => a.attachment_type === AttachmentType.FILE,
+  );
+
   return (
     <div>
       <MessageBubble
@@ -49,6 +58,18 @@ export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBub
             <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
             <span className="truncate">{fm.attachment_filename}</span>
             <Download className="h-3 w-3 shrink-0 text-muted-foreground" />
+          </a>
+        </div>
+      )}
+      {hasFileAttachments && (
+        <div className="mt-1 flex justify-end">
+          <a
+            href={localBundleUrl(messageId)}
+            download
+            className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          >
+            <Download className="h-3 w-3" />
+            Download attachments
           </a>
         </div>
       )}
