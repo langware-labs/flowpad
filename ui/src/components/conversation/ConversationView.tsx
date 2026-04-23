@@ -91,7 +91,10 @@ export function ConversationView({ conversationId, task, senderName, onChoosePro
         if (fileLines.length > 0) {
           parts.push('', 'File attachments:', ...fileLines);
         }
-        parts.push('', 'Please read through the plan and conversation carefully and implement the required changes. If anything is unclear, ask before proceeding.');
+        const closingInstruction = spec?.spec_type === 'session'
+          ? 'Please read through the above session and conversation carefully and assist the user with the issue he encountered. If anything is unclear, ask before proceeding.'
+          : 'Please read through the plan and conversation carefully and implement the required changes. If anything is unclear, ask before proceeding.';
+        parts.push('', closingInstruction);
         prompt = parts.join('\n');
       } else {
         const msgLines = messages.map(formatMsg).filter(Boolean).join('\n');
