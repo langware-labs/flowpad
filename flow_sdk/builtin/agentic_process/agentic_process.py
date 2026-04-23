@@ -12,6 +12,7 @@ from uuid import uuid4
 from pydantic import SerializationInfo, model_serializer
 
 from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.app.actions.listen import set_plan_auto_approve
 from flow_sdk.builtin.agentic_workers.claude_cli_stream_worker import ClaudeCLIStreamWorker
 from flow_sdk.builtin.agentic_workers.context import AgenticContext as _AgenticContext
@@ -238,10 +239,10 @@ class AgenticProcess(Entity):
     queue: dict | None = APIField(default=None)
     additional_dirs: list[str] = APIField(default_factory=list, description="Extra directories passed to Claude via --add-dir")
     embedded_agent_ids: list[str] = APIField(default_factory=list, description="Agent ids injected via --agents at session launch")
-    embedded_asset_refs: list[str] = APIField(
+    embedded_asset_refs: list[TypeId] = APIField(
         default_factory=list,
         description=(
-            "Serialized TypeIds of entities whose files have been materialized into the "
+            "TypeIds of entities whose files have been materialized into the "
             "process's <record_dir>/assets folder. Claude discovers them via --add-dir."
         ),
     )
@@ -1008,7 +1009,7 @@ class AgenticProcess(Entity):
             current.append(target)
             self.additional_dirs = current
 
-    async def _materialize_entity(self, entity_ref: str, assets_dir: "Path") -> str | None:
+    async def _materialize_entity(self, ref: TypeId, assets_dir: "Path") -> str | None:
         """Copy the referenced entity's files under ``assets_dir/.claude/<type>/…``.
 
         Returns the entity's display name on success, ``None`` if the entity
@@ -1018,67 +1019,69 @@ class AgenticProcess(Entity):
         from flow_sdk.fs_records.agent_record import AgentRecord
         from flow_sdk.fs_records.skill_record import SkillRecord
 
-        ent_type, _, ent_id = entity_ref.partition("-")
-        if not ent_type or not ent_id:
-            raise ValueError(f"Invalid entity_ref: {entity_ref!r}")
-
-        if ent_type == "agent":
-            agent = AgentRecord.load_agent(ent_id)
+        if ref.type == "agent":
+            # Resolve by id (uuid5-derived from the .md path) first, then fall back
+            # to name-based lookup for agents the UI knows by name only.
+            agent = AgentRecord.discover_one(ref.id) or AgentRecord.load_agent(ref.id)
             if agent is None:
-                raise FileNotFoundError(f"Agent not found: {ent_id}")
+                raise FileNotFoundError(f"Agent not found: {ref.id}")
             target_dir = assets_dir / ".claude" / "agents"
             target_dir.mkdir(parents=True, exist_ok=True)
             src = agent.asset_ref._path if agent.asset_ref else None
             if src is None or not src.exists():
-                raise FileNotFoundError(f"Agent source missing: {ent_id}")
-            target = target_dir / f"{agent.name or ent_id}.md"
+                raise FileNotFoundError(f"Agent source missing: {ref.id}")
+            target = target_dir / f"{agent.name or ref.id}.md"
             shutil.copyfile(src, target)
-            return agent.name or ent_id
+            return agent.name or ref.id
 
-        if ent_type == "skill":
-            skill = SkillRecord.discover_one(ent_id)
+        if ref.type == "skill":
+            skill = SkillRecord.discover_one(ref.id)
             if skill is None:
-                raise FileNotFoundError(f"Skill not found: {ent_id}")
+                raise FileNotFoundError(f"Skill not found: {ref.id}")
             target_root = assets_dir / ".claude" / "skills"
             skill.copy_to(target_root)
-            return skill.name or ent_id
+            return skill.name or ref.id
 
         return None  # Unsupported type — caller decides to fail loudly.
 
-    async def _unmaterialize_entity(self, entity_ref: str, assets_dir: "Path") -> None:
+    async def _unmaterialize_entity(self, ref: TypeId, assets_dir: "Path") -> None:
         """Best-effort removal of the files laid down by _materialize_entity."""
         import shutil
         from flow_sdk.fs_records.agent_record import AgentRecord
         from flow_sdk.fs_records.skill_record import SkillRecord
 
-        ent_type, _, ent_id = entity_ref.partition("-")
-        if ent_type == "agent":
-            agent = AgentRecord.load_agent(ent_id)
-            name = agent.name if agent else ent_id
+        if ref.type == "agent":
+            agent = AgentRecord.discover_one(ref.id) or AgentRecord.load_agent(ref.id)
+            name = agent.name if agent else ref.id
             target = assets_dir / ".claude" / "agents" / f"{name}.md"
             if target.exists():
                 target.unlink()
-        elif ent_type == "skill":
-            skill = SkillRecord.discover_one(ent_id)
-            name = skill.name if skill else ent_id
+        elif ref.type == "skill":
+            skill = SkillRecord.discover_one(ref.id)
+            name = skill.name if skill else ref.id
             target = assets_dir / ".claude" / "skills" / name
             if target.exists():
                 shutil.rmtree(target)
 
     @action.post(action_name="attach-embedded-asset")
     async def attach_embedded_asset(self, entity_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
-        """Materialize ``entity_ref`` under the process's assets dir + add to --add-dir."""
+        """Materialize ``entity_ref`` under the process's assets dir + add to --add-dir.
+
+        Wire param is the serialized TypeId string (``agent-<id>`` / ``skill-<id>``);
+        it's parsed into a ``TypeId`` at this boundary.
+        """
         if not entity_ref:
             return ApiFailResponse(message="entity_ref is required")
         try:
+            ref = TypeId(entity_ref)
             assets_dir = await self._assets_dir_path()
-            name = await self._materialize_entity(entity_ref, assets_dir)
+            name = await self._materialize_entity(ref, assets_dir)
             if name is None:
                 return ApiFailResponse(message=f"Unsupported entity type for embed: {entity_ref}")
             self._ensure_assets_dir_in_add_dirs(assets_dir)
             refs = list(self.embedded_asset_refs or [])
-            if entity_ref not in refs:
-                refs.append(entity_ref)
+            if not any(r.type == ref.type and r.id == ref.id for r in refs):
+                refs.append(ref)
                 self.embedded_asset_refs = refs
             await self.save()
             return ApiSuccessResponse(data={"ok": True, "name": name, "ref": entity_ref})
@@ -1088,13 +1091,14 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="detach-embedded-asset")
     async def detach_embedded_asset(self, entity_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
-        """Remove materialized files + drop ``entity_ref`` from embedded_asset_refs."""
+        """Remove materialized files + drop the ref from embedded_asset_refs."""
         if not entity_ref:
             return ApiFailResponse(message="entity_ref is required")
         try:
+            ref = TypeId(entity_ref)
             assets_dir = await self._assets_dir_path()
-            await self._unmaterialize_entity(entity_ref, assets_dir)
-            refs = [r for r in (self.embedded_asset_refs or []) if r != entity_ref]
+            await self._unmaterialize_entity(ref, assets_dir)
+            refs = [r for r in (self.embedded_asset_refs or []) if not (r.type == ref.type and r.id == ref.id)]
             self.embedded_asset_refs = refs
             await self.save()
             return ApiSuccessResponse(data={"ok": True, "ref": entity_ref})
@@ -1104,8 +1108,9 @@ class AgenticProcess(Entity):
 
     @action.get(action_name="list-embedded-assets")
     async def list_embedded_assets(self) -> "ApiSuccessResponse":
-        """Return the current embedded_asset_refs."""
-        return ApiSuccessResponse(data={"refs": list(self.embedded_asset_refs or [])})
+        """Return the current embedded_asset_refs as serialized TypeId strings."""
+        refs = [str(r) for r in (self.embedded_asset_refs or [])]
+        return ApiSuccessResponse(data={"refs": refs})
 
     @property
     def cli_options(self) -> "ClaudeCliOptions":

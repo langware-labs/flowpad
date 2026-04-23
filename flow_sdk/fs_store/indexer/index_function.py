@@ -10,10 +10,26 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Awaitable, Callable, Protocol
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
+
+
+@dataclass(frozen=True, slots=True)
+class ProgressEvent:
+    """Lifecycle signal emitted by scan() / index()."""
+    stage: str                   # "scan_start" | "type_complete" | "scan_end"
+                                 # | "index_start" | "index_end"
+    record_type: RecordType | None = None
+    count: int = 0
+    total_bytes: int = 0
+    indexed: int = 0
+    errors: int = 0
+    duration_ms: float = 0.0
+
+
+ProgressCallback = Callable[[ProgressEvent], Awaitable[None]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +38,7 @@ class IndexerOptions:
     limit: int | None = None
     include_temp: bool = False  # walk temp-path projects (/tmp, /var/folders, …)
     types: list[RecordType] | None = None  # index() filter; None = all types
+    on_progress: ProgressCallback | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +92,9 @@ class FSIndexer:
         opts = opts if opts is not None else IndexerOptions()
         t0 = time.perf_counter()
 
+        if opts.on_progress is not None:
+            await opts.on_progress(ProgressEvent(stage="index_start"))
+
         refs = await self.scan(opts)
 
         if opts.types is None:
@@ -88,10 +108,15 @@ class FSIndexer:
         from flow_sdk.db import get_db_driver
 
         per_type_counts: dict[RecordType, dict[str, float]] = {}
+        seen_types: set[RecordType] = set()
         fts_batch: list = []
         for ref in targets:
             if ref.record_type is None:
                 continue
+            # Emit type_complete once we transition past a type boundary.
+            # (Not strictly per-type-ordered since DFS interleaves, but a
+            # reasonable approximation — most types are contiguous in scan
+            # order due to how claude_projects_fn emits PROJECT nodes first.)
             info = SchemaRegistry.get(str(ref.record_type))
             if info is None or info.record_cls is None:
                 continue
@@ -117,17 +142,35 @@ class FSIndexer:
             if hasattr(driver, "fts_upsert"):
                 await driver.fts_upsert(fts_batch)
 
-        # Build per-type result
-        per_type: dict[RecordType, PerTypeIndexResult] = {
-            rt: PerTypeIndexResult(
+        # Build per-type result + emit type_complete per type
+        per_type: dict[RecordType, PerTypeIndexResult] = {}
+        for rt, acc in per_type_counts.items():
+            pt = PerTypeIndexResult(
                 type=rt,
                 indexed=int(acc["indexed"]),
                 errors=int(acc["errors"]),
                 duration_ms=round(acc["duration_ms"], 2),
             )
-            for rt, acc in per_type_counts.items()
-        }
+            per_type[rt] = pt
+            if opts.on_progress is not None:
+                await opts.on_progress(ProgressEvent(
+                    stage="type_complete",
+                    record_type=rt,
+                    indexed=pt.indexed,
+                    errors=pt.errors,
+                    duration_ms=pt.duration_ms,
+                ))
+
         duration = (time.perf_counter() - t0) * 1000
+
+        if opts.on_progress is not None:
+            await opts.on_progress(ProgressEvent(
+                stage="index_end",
+                indexed=sum(p.indexed for p in per_type.values()),
+                errors=sum(p.errors for p in per_type.values()),
+                duration_ms=duration,
+            ))
+
         return IndexResult(
             per_type=per_type,
             total_indexed=sum(p.indexed for p in per_type.values()),
@@ -139,6 +182,11 @@ class FSIndexer:
         self, opts: IndexerOptions | None = None
     ) -> list[FSRef]:
         opts = opts if opts is not None else IndexerOptions()
+        t0 = time.perf_counter()
+
+        if opts.on_progress is not None:
+            await opts.on_progress(ProgressEvent(stage="scan_start"))
+
         stack: list[FSRef] = list(reversed(self._roots))
         visited: list[FSRef] = []
         seen: set[tuple[str, RecordType | None]] = set()
@@ -157,4 +205,31 @@ class FSIndexer:
                 stack.extend(reversed(children))
             if opts.limit is not None and len(visited) >= opts.limit:
                 break
+
+        # Emit per-type completion events (aggregate by record_type)
+        if opts.on_progress is not None:
+            by_type: dict[RecordType, dict[str, int]] = {}
+            for n in visited:
+                if n.record_type is None:
+                    continue
+                b = by_type.setdefault(n.record_type, {"count": 0, "total_bytes": 0})
+                b["count"] += 1
+                try:
+                    b["total_bytes"] += n._path.stat().st_size
+                except OSError:
+                    pass
+            for rt, b in by_type.items():
+                await opts.on_progress(ProgressEvent(
+                    stage="type_complete",
+                    record_type=rt,
+                    count=b["count"],
+                    total_bytes=b["total_bytes"],
+                ))
+            duration = (time.perf_counter() - t0) * 1000
+            await opts.on_progress(ProgressEvent(
+                stage="scan_end",
+                count=len(visited),
+                duration_ms=duration,
+            ))
+
         return visited

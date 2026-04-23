@@ -148,160 +148,146 @@ class FsRecordsActionsMixin:
         GET /fs-records/scan           → aggregate stats for all registered types
         GET /fs-records/scan?type=X    → per-type stats + record list
 
-        Both paths broadcast ``progress_report`` FlowData events:
-        - sub_activity_name=<type>  → per-record progress within that type
-        - sub_activity_name=None    → job-level progress (types completed / total)
+        Backed by ``FSIndexer.scan()``. Emits ``progress_report`` FlowData
+        events per type via the shared indexer's ``on_progress`` callback.
         """
         import time
 
         import flow_sdk.fs_records  # noqa: F401 — trigger auto-registration
         from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
         from flow_sdk.fs_records.schema_record import SchemaRecord  # noqa: PLC0415
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
+            INDEXABLE_TYPES,
+            IndexerOptions,
+            ProgressEvent,
+            get_shared_indexer,
+        )
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
         qp = request_info.request.query_params
         filter_type = qp.get("type", "").strip()
-        limit_types_raw = qp.get("limit_types", "").strip()
-        limit_types = int(limit_types_raw) if limit_types_raw.isdigit() else None
         trigger = qp.get("trigger", "auto").strip() or "auto"
 
-        # Sync claude_error records from debug logs before scanning.
-        from flow_sdk.fs_records.claude.claude_error import sync_from_debug_logs  # noqa: PLC0415
-        from flow_sdk.fs_store.record import get_default_records_root  # noqa: PLC0415
-
-        await asyncio.to_thread(sync_from_debug_logs, get_default_records_root() / "claude_error")
-
+        # Type filter + validation
+        types_filter: list[RecordType] | None = None
         if filter_type:
-            record_cls = _SR.get_record_cls(filter_type)
-            if record_cls is None:
+            try:
+                types_filter = [RecordType(filter_type)]
+            except ValueError:
                 return ApiFailResponse(
-                    message=f"Unknown record type '{filter_type}'. Available: {_SR.get_all_record_types()}",
+                    message=f"Unknown record type '{filter_type}'",
                     status_code=400,
                 )
-            try:
-                activity = self._start_activity("scan", total=1, timeout_seconds=60)
-            except RuntimeError as e:
-                return ApiFailResponse(message=str(e), status_code=409)
 
-            try:
-                activity.sub_activity_name = filter_type
-                sr = await asyncio.to_thread(SchemaRecord._scan_type, record_cls, True)
-                # Emit sub-activity completion event
-                activity.sub_done = sr.count
-                activity.sub_total = sr.count
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(filter_type),
-                )
-                # Emit job-level completion event
-                activity.done = 1
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(None),
-                )
-            finally:
-                self._complete_activity("scan")
-
-            last_scan_at = SchemaRecord.append_scan(
-                trigger=trigger,
-                duration_ms=sr.scan_ms,
-                total_records=sr.count,
-                total_bytes=sr.total_bytes,
-                types=[],
-                type_name=filter_type,
-            )
-            return ApiSuccessResponse(
-                data={
-                    "type": filter_type,
-                    "count": sr.count,
-                    "total_bytes": sr.total_bytes,
-                    "avg_bytes": sr.avg_bytes,
-                    "scan_ms": sr.scan_ms,
-                    "records": sr.records,
-                    "min_bytes": sr.min_bytes,
-                    "max_bytes": sr.max_bytes,
-                    "last_scan_at": last_scan_at,
-                }
-            )
-
-        # Aggregate scan across indexed-by-default types only
-        all_types = list(_SR.get_default_index_types())
-        if limit_types is not None:
-            all_types = all_types[:limit_types]
-
-        valid_types = [(tn, _SR.get_record_cls(tn)) for tn in all_types]
-        valid_types = [(tn, cls) for tn, cls in valid_types if cls is not None]
-
+        # Activity tracking for duplicate-prevention + UI progress
+        total = 1 if filter_type else len(INDEXABLE_TYPES)
         try:
-            activity = self._start_activity("scan", total=len(valid_types), timeout_seconds=600)
+            activity = self._start_activity("scan", total=total, timeout_seconds=600)
         except RuntimeError as e:
             return ApiFailResponse(message=str(e), status_code=409)
 
-        t_grand = time.perf_counter()
-        type_results = []
-        grand_total = 0
-        grand_bytes = 0
-
-        try:
-            for i, (type_name, record_cls) in enumerate(valid_types):
-                activity.sub_activity_name = type_name
-                activity.sub_done = 0
+        # Translate ProgressEvent → activity updates → WebSocket broadcast
+        async def emit(ev: ProgressEvent) -> None:
+            if ev.stage == "type_complete":
+                activity.sub_activity_name = str(ev.record_type)
+                activity.sub_done = ev.count
+                activity.sub_total = ev.count
                 activity.sub_skipped = 0
-                activity.sub_errors = 0
-                activity.sub_total = 0
-
-                last_progress = None
-                total_bytes_for_type = 0
-                t0_type = time.perf_counter()
-
-                async for progress in SchemaRecord.scan_type_progress(record_cls):
-                    last_progress = progress
-                    total_bytes_for_type += progress.size_bytes
-                    activity.sub_done = progress.done
-                    activity.sub_total = progress.total
-                    await broadcast_progress(
-                        to_entity=str(self.typeid),
-                        flow_data=activity.make_flow_data(type_name),
-                    )
-
-                count = last_progress.done if last_progress else 0
-                scan_ms_type = round((time.perf_counter() - t0_type) * 1000, 1)
-                type_results.append(
-                    {
-                        "type": type_name,
-                        "count": count,
-                        "total_bytes": total_bytes_for_type,
-                        "avg_bytes": total_bytes_for_type // count if count else 0,
-                        "scan_ms": scan_ms_type,
-                    }
+                activity.sub_errors = ev.errors
+                await broadcast_progress(
+                    to_entity=str(self.typeid),
+                    flow_data=activity.make_flow_data(str(ev.record_type)),
                 )
-                grand_total += count
-                grand_bytes += total_bytes_for_type
-
-                # Job-level event after each type completes
-                activity.done = i + 1
+                activity.done = min(activity.done + 1, activity.total)
                 await broadcast_progress(
                     to_entity=str(self.typeid),
                     flow_data=activity.make_flow_data(None),
                 )
+
+        try:
+            t0 = time.perf_counter()
+            nodes = await get_shared_indexer().scan(IndexerOptions(
+                types=types_filter, on_progress=emit, verbose=False,
+            ))
+            scan_ms = round((time.perf_counter() - t0) * 1000, 1)
         finally:
             self._complete_activity("scan")
 
-        scan_ms = round((time.perf_counter() - t_grand) * 1000, 1)
-        SchemaRecord.append_scan(
+        # Bucket FSRefs by record_type; compute count / total_bytes per type.
+        # For single-type calls, also collect a per-record list.
+        by_type: dict[str, dict] = {}
+        for n in nodes:
+            if n.record_type is None:
+                continue
+            key = str(n.record_type)
+            b = by_type.setdefault(key, {
+                "type": key, "count": 0, "total_bytes": 0, "_records": [],
+            })
+            b["count"] += 1
+            try:
+                st = n._path.stat()
+                b["total_bytes"] += st.st_size
+                if filter_type:
+                    b["_records"].append({
+                        "id": str(n._path),
+                        "name": n._path.stem,
+                        "size_bytes": st.st_size,
+                        "modified_at": st.st_mtime,
+                    })
+            except OSError:
+                pass
+
+        for b in by_type.values():
+            b["avg_bytes"] = b["total_bytes"] // b["count"] if b["count"] else 0
+            # Per-type scan_ms is not tracked — the unified walk shares work across
+            # types. Total scan_ms (below) is the meaningful number.
+            b["scan_ms"] = 0.0
+
+        per_type = list(by_type.values())
+        grand_total = sum(b["count"] for b in per_type)
+        grand_bytes = sum(b["total_bytes"] for b in per_type)
+
+        # Strip internal _records key from aggregate response
+        types_for_log = [
+            {k: v for k, v in b.items() if k != "_records"} for b in per_type
+        ]
+
+        last_scan_at = SchemaRecord.append_scan(
             trigger=trigger,
             duration_ms=scan_ms,
             total_records=grand_total,
             total_bytes=grand_bytes,
-            types=type_results,
+            types=types_for_log if not filter_type else [],
+            type_name=filter_type or None,
         )
-        return ApiSuccessResponse(
-            data={
-                "types": type_results,
-                "grand_total": grand_total,
+
+        if filter_type:
+            if not per_type:
+                return ApiSuccessResponse(data={
+                    "type": filter_type, "count": 0, "total_bytes": 0,
+                    "avg_bytes": 0, "scan_ms": scan_ms, "records": [],
+                    "min_bytes": 0, "max_bytes": 0, "last_scan_at": last_scan_at,
+                })
+            b = per_type[0]
+            records = b["_records"]
+            sizes = [r["size_bytes"] for r in records] if records else [0]
+            return ApiSuccessResponse(data={
+                "type": filter_type,
+                "count": b["count"],
+                "total_bytes": b["total_bytes"],
+                "avg_bytes": b["avg_bytes"],
                 "scan_ms": scan_ms,
-            }
-        )
+                "records": records,
+                "min_bytes": min(sizes),
+                "max_bytes": max(sizes),
+                "last_scan_at": last_scan_at,
+            })
+
+        return ApiSuccessResponse(data={
+            "types": types_for_log,
+            "grand_total": grand_total,
+            "scan_ms": scan_ms,
+        })
 
     async def _handle_fs_records_index_status(self, request_info) -> ApiResponse:
         """Return index freshness info.
@@ -435,145 +421,115 @@ class FsRecordsActionsMixin:
         POST /fs-records/index                       → index all registered types
         POST /fs-records/index?type=X                → index one type
         POST /fs-records/index?rebuild=true          → clear + re-index
-        POST /fs-records/index?limit_per_type=N      → limit records per type
-        POST /fs-records/index?limit_types=N         → limit number of types to index
 
-        Broadcasts ``progress_report`` FlowData events during indexing:
-        - sub_activity_name=<type>  → per-record progress within that type
-        - sub_activity_name=None    → job-level progress (types indexed / total)
+        Backed by ``FSIndexer.index()``. Emits ``progress_report`` FlowData
+        events per type via the shared indexer's ``on_progress`` callback.
         """
         import flow_sdk.fs_records  # noqa: F401 — trigger auto-registration
         from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
+        from flow_sdk.db import get_db_driver  # noqa: PLC0415
         from flow_sdk.fs_records.schema_record import SchemaRecord  # noqa: PLC0415
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
+            INDEXABLE_TYPES,
+            IndexerOptions,
+            ProgressEvent,
+            get_shared_indexer,
+        )
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
         qp = request_info.request.query_params
         filter_type = qp.get("type", "").strip()
         trigger = qp.get("trigger", "manual").strip() or "manual"
         rebuild = qp.get("rebuild", "").strip().lower() in ("true", "1")
-        limit_per_type_raw = qp.get("limit_per_type", "").strip()
-        limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
-        limit_types_raw = qp.get("limit_types", "").strip()
-        limit_types = int(limit_types_raw) if limit_types_raw.isdigit() else None
 
-        if rebuild:
-            types = [filter_type] if filter_type else None
-            clear_result, index_results = await SchemaRecord.rebuild_index(types=types, trigger=trigger)
-            return ApiSuccessResponse(
-                data={
-                    "cleared": clear_result.fts_cleared,
-                    "indexed": sum(r.indexed for r in index_results),
-                    "errors": sum(r.errors for r in index_results),
-                    "types": [{"type": r.type_name, "indexed": r.indexed, "errors": r.errors} for r in index_results],
-                }
-            )
-
+        # Type filter + validation
+        types_filter: list[RecordType] | None = None
         if filter_type:
-            record_cls = _SR.get_record_cls(filter_type)
-            if record_cls is None:
+            try:
+                types_filter = [RecordType(filter_type)]
+            except ValueError:
                 return ApiFailResponse(
                     message=f"Unknown record type '{filter_type}'",
                     status_code=400,
                 )
-            try:
-                activity = self._start_activity("index", total=1, timeout_seconds=60)
-            except RuntimeError as e:
-                return ApiFailResponse(message=str(e), status_code=409)
 
-            try:
-                activity.sub_activity_name = filter_type
-                last_progress = None
-                async for progress in SchemaRecord.index_type_progress(record_cls, limit=limit_per_type):
-                    last_progress = progress
-                    activity.sub_done = progress.done
-                    activity.sub_total = progress.total
-                    activity.sub_skipped = progress.skipped
-                    activity.sub_errors = progress.errors
-                    await broadcast_progress(
-                        to_entity=str(self.typeid),
-                        flow_data=activity.make_flow_data(filter_type),
-                    )
-                activity.done = 1
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(None),
-                )
-            finally:
-                self._complete_activity("index")
+        driver = get_db_driver()
 
-            indexed = last_progress.indexed if last_progress else 0
-            errors = last_progress.errors if last_progress else 0
-            _SR.append_index(
-                trigger=trigger,
-                duration_ms=0.0,
-                total_indexed=indexed,
-                types=[],
-                type_name=filter_type,
-            )
-            return ApiSuccessResponse(data={"type": filter_type, "indexed": indexed, "errors": errors})
+        # Rebuild mode: clear DB + FTS for target types first
+        if rebuild:
+            targets = types_filter or INDEXABLE_TYPES
+            for t in targets:
+                await driver.delete_entities_by_type(str(t))
+            if not filter_type:
+                # Only full-clear FTS on aggregate rebuild; per-type rebuild
+                # already cleared matching FTS rows via delete_entities_by_type
+                await driver.fts_clear()
 
-        # No type, no rebuild: additive index across indexed-by-default types only
-        all_types = list(_SR.get_default_index_types())
-        if limit_types is not None:
-            all_types = all_types[:limit_types]
-
-        valid_types = [(tn, _SR.get_record_cls(tn)) for tn in all_types]
-        valid_types = [(tn, cls) for tn, cls in valid_types if cls is not None]
-
+        # Activity tracking for duplicate-prevention + UI progress
+        total = 1 if filter_type else len(INDEXABLE_TYPES)
         try:
-            activity = self._start_activity("index", total=len(valid_types), timeout_seconds=600)
+            activity = self._start_activity("index", total=total, timeout_seconds=600)
         except RuntimeError as e:
             return ApiFailResponse(message=str(e), status_code=409)
 
-        total_indexed = 0
-        results = []
-
-        try:
-            for i, (type_name, record_cls) in enumerate(valid_types):
-                activity.sub_activity_name = type_name
-                activity.sub_done = 0
+        async def emit(ev: ProgressEvent) -> None:
+            if ev.stage == "type_complete":
+                activity.sub_activity_name = str(ev.record_type)
+                activity.sub_done = ev.indexed
+                activity.sub_total = ev.indexed
+                activity.sub_errors = ev.errors
                 activity.sub_skipped = 0
-                activity.sub_errors = 0
-                activity.sub_total = 0
-
-                last_progress = None
-                async for progress in SchemaRecord.index_type_progress(record_cls, limit=limit_per_type):
-                    last_progress = progress
-                    activity.sub_done = progress.done
-                    activity.sub_total = progress.total
-                    activity.sub_skipped = progress.skipped
-                    activity.sub_errors = progress.errors
-                    await broadcast_progress(
-                        to_entity=str(self.typeid),
-                        flow_data=activity.make_flow_data(type_name),
-                    )
-
-                if last_progress is not None:
-                    total_indexed += last_progress.indexed
-                    results.append(
-                        {
-                            "type": type_name,
-                            "indexed": last_progress.indexed,
-                            "errors": last_progress.errors,
-                        }
-                    )
-
-                # Job-level event after each type completes
-                activity.done = i + 1
+                await broadcast_progress(
+                    to_entity=str(self.typeid),
+                    flow_data=activity.make_flow_data(str(ev.record_type)),
+                )
+                activity.done = min(activity.done + 1, activity.total)
                 await broadcast_progress(
                     to_entity=str(self.typeid),
                     flow_data=activity.make_flow_data(None),
                 )
+
+        try:
+            result = await get_shared_indexer().index(IndexerOptions(
+                types=types_filter, on_progress=emit, verbose=False,
+            ))
         finally:
             self._complete_activity("index")
 
-        _SR.append_index(
+        types_out = [
+            {
+                "type": str(rt),
+                "indexed": pt.indexed,
+                "errors": pt.errors,
+                "duration_ms": pt.duration_ms,
+            }
+            for rt, pt in result.per_type.items()
+        ]
+
+        SchemaRecord.append_index(
             trigger=trigger,
-            duration_ms=0.0,
-            total_indexed=total_indexed,
-            types=results,
+            duration_ms=result.duration_ms,
+            total_indexed=result.total_indexed,
+            types=types_out if not filter_type else [],
+            type_name=filter_type or None,
         )
-        return ApiSuccessResponse(data={"indexed": total_indexed, "types": results})
+
+        if filter_type:
+            if not types_out:
+                return ApiSuccessResponse(data={
+                    "type": filter_type, "indexed": 0, "errors": 0,
+                })
+            one = types_out[0]
+            return ApiSuccessResponse(data={
+                "type": one["type"], "indexed": one["indexed"], "errors": one["errors"],
+            })
+
+        return ApiSuccessResponse(data={
+            "indexed": result.total_indexed,
+            "errors": result.total_errors,
+            "types": types_out,
+            "duration_ms": result.duration_ms,
+        })
 
 
     # -- fs-records CRUD action --------------------------------------------------

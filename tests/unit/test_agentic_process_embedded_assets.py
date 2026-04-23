@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.fs_records.agent_record import AgentRecord
 from flow_sdk.fs_store.record import (
@@ -85,10 +86,10 @@ async def test_attach_updates_refs_and_add_dirs(monkeypatch):
     monkeypatch.setattr(AgenticProcess, "get_record", _fake_get_record)
     monkeypatch.setattr(AgenticProcess, "save", lambda self: _aio_noop())
 
-    resp = await proc.attach_embedded_asset(entity_ref="agent-abc")
+    resp = await proc.attach_embedded_asset(entity_ref="agent-24d3d33c-6ff4-55c0-a821-d3f620db4f0a")
     assert resp.status == "SUCCESS"
 
-    assert proc.embedded_asset_refs == ["agent-abc"]
+    assert [str(r) for r in proc.embedded_asset_refs] == ["agent-24d3d33c-6ff4-55c0-a821-d3f620db4f0a"]
     # additional_dirs gets the assets folder exactly once
     assets_entries = [d for d in proc.additional_dirs if d.endswith("/assets")]
     assert len(assets_entries) == 1
@@ -108,21 +109,21 @@ async def test_attach_is_idempotent(monkeypatch):
     monkeypatch.setattr(AgenticProcess, "get_record", _fake_get_record)
     monkeypatch.setattr(AgenticProcess, "save", lambda self: _aio_noop())
 
-    await proc.attach_embedded_asset(entity_ref="agent-x")
-    await proc.attach_embedded_asset(entity_ref="agent-x")
-    assert proc.embedded_asset_refs == ["agent-x"]
+    await proc.attach_embedded_asset(entity_ref="agent-11111111-1111-5111-8111-111111111111")
+    await proc.attach_embedded_asset(entity_ref="agent-11111111-1111-5111-8111-111111111111")
+    assert [str(r) for r in proc.embedded_asset_refs] == ["agent-11111111-1111-5111-8111-111111111111"]
     assert len([d for d in proc.additional_dirs if d.endswith("/assets")]) == 1
 
 
 @pytest.mark.asyncio
 async def test_detach_removes_ref_and_calls_unmaterialize(monkeypatch):
     proc = _proc()
-    proc.embedded_asset_refs = ["agent-y", "agent-z"]
+    proc.embedded_asset_refs = [TypeId("agent-22222222-2222-5222-8222-222222222222"), TypeId("agent-33333333-3333-5333-8333-333333333333")]
 
     captured: list[str] = []
 
     async def _fake_unmat(self, ref, assets_dir):
-        captured.append(ref)
+        captured.append(str(ref))
 
     async def _fake_get_record(self):
         return None
@@ -131,18 +132,18 @@ async def test_detach_removes_ref_and_calls_unmaterialize(monkeypatch):
     monkeypatch.setattr(AgenticProcess, "get_record", _fake_get_record)
     monkeypatch.setattr(AgenticProcess, "save", lambda self: _aio_noop())
 
-    resp = await proc.detach_embedded_asset(entity_ref="agent-y")
+    resp = await proc.detach_embedded_asset(entity_ref="agent-22222222-2222-5222-8222-222222222222")
     assert resp.status == "SUCCESS"
-    assert proc.embedded_asset_refs == ["agent-z"]
-    assert captured == ["agent-y"]
+    assert [str(r) for r in proc.embedded_asset_refs] == ["agent-33333333-3333-5333-8333-333333333333"]
+    assert captured == ["agent-22222222-2222-5222-8222-222222222222"]
 
 
 @pytest.mark.asyncio
 async def test_list_returns_current_refs():
     proc = _proc()
-    proc.embedded_asset_refs = ["agent-a", "skill-b"]
+    proc.embedded_asset_refs = [TypeId("agent-aaaaaaaa-aaaa-5aaa-8aaa-aaaaaaaaaaaa"), TypeId("skill-bbbbbbbb-bbbb-5bbb-8bbb-bbbbbbbbbbbb")]
     resp = await proc.list_embedded_assets()
-    assert resp.data == {"refs": ["agent-a", "skill-b"]}
+    assert resp.data == {"refs": ["agent-aaaaaaaa-aaaa-5aaa-8aaa-aaaaaaaaaaaa", "skill-bbbbbbbb-bbbb-5bbb-8bbb-bbbbbbbbbbbb"]}
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -167,7 +168,7 @@ async def test_materialize_agent_copies_md_to_assets_claude_agents(tmp_path, mon
     assets_dir = tmp_path / "assets_target"
     assets_dir.mkdir()
 
-    name = await proc._materialize_entity("agent-whatever", assets_dir)
+    name = await proc._materialize_entity(TypeId("agent-ffffffff-ffff-5fff-8fff-ffffffffffff"), assets_dir)
     assert name == "helper-agent"
     assert (assets_dir / ".claude" / "agents" / "helper-agent.md").is_file()
 

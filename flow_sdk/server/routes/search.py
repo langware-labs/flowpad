@@ -21,12 +21,11 @@ async def _reindex_all() -> int:
 
     Returns the count of records indexed.
     """
-    from flow_sdk.fs_records.schema_record import SchemaRecord  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer import IndexerOptions, get_shared_indexer  # noqa: PLC0415
 
-    _, index_results = await SchemaRecord.discover(trigger="reindex")
-    total = sum(r.indexed for r in index_results)
-    logger.info("reindex: indexed %d records", total)
-    return total
+    result = await get_shared_indexer().index(IndexerOptions(verbose=False))
+    logger.info("reindex: indexed %d records", result.total_indexed)
+    return result.total_indexed
 
 
 async def _entity_source_path(ent) -> str:
