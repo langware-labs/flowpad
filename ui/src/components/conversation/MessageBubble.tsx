@@ -21,7 +21,7 @@ export function MessageBubble({ message, flowMessageId, senderName }: MessageBub
       <div className="mb-0.5 flex items-center justify-between gap-2">
         <div className="flex items-center gap-1">
           <span className="text-[11px] font-semibold text-muted-foreground">
-            {message.role === 'bot' ? 'Claude' : message.role === 'sender' ? senderName : 'You'}
+            {message.role === 'bot' ? 'Claude' : senderName || (message.role === 'sender' ? 'Sender' : 'Recipient')}
           </span>
           <MessageActions flowMessageId={flowMessageId} />
         </div>

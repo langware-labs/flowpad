@@ -22,6 +22,7 @@ import asyncio
 import json as _json
 import logging
 import re
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -45,7 +46,7 @@ from flow_sdk.discovery.notify import send_resource_sync
 from flow_sdk.fs_store import SyncOperation
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse, ApiResponse
 from flow_sdk.utils.git import find_project_root, git_add_commit_push, git_current_branch, git_pull, git_remote_url, git_repo_full_name, repo_id
-from flow_sdk.utils.hub import hub_base_url, hub_post
+from flow_sdk.utils.hub import hub_base_url, hub_get, hub_post, hub_put
 from flow_sdk.builtin.bookmark import Bookmark
 
 logger = logging.getLogger(__name__)
@@ -155,7 +156,11 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     spec = await spec.save(someone_typeid)
 
     # 2. Create Task entity (conversation_id set after Conversation is created)
-    task_meta: dict = {"sender_name": sender_name}
+    task_meta: dict = {
+        "sender_name": sender_name,
+        "sender_email": local_user.email if local_user else "",
+        "recipient_email": recipient_email or "",
+    }
     if team_space_id:
         task_meta["team_space_id"] = team_space_id
     task = Task.model_validate({
@@ -169,7 +174,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
 
     # 2a. Register task on hub so the recipient can load it via the hub graph API.
     # The hub's generic create endpoint stores it in Neo4j with owner access for the sender.
-    await hub_post("task", {
+    await hub_post(BuiltinEntityType.TASK, {
         "id": task.id,
         "title": task_title,
         "task_type": task.task_type,
@@ -179,6 +184,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     # 3. Write spec + manifest + conversation.jsonl to git repo
     conversation_id: Optional[str] = None
     spec_file_path = ""
+    fm = None
     if project_root:
         tasks_root = Path(project_root) / "tasks"
         spec_root = tasks_root / "spec"
@@ -285,7 +291,9 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     # 5. Post to hub
     branch = git_current_branch(project_root) if project_root else ""
     hub_configured = bool(hub_base_url())
-    hub_data = await hub_post("notify_hub", {
+    flow_message_id = str(uuid.uuid4())
+    hub_data = await hub_post(BuiltinEntityType.FLOW_MESSAGE, {
+        "flow_message_id": flow_message_id,
         "recipient_email": recipient_email,
         "sender_id": sender_id,
         "sender_name": sender_name,
@@ -300,11 +308,27 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         "repo_id": repo_id_val,
         "branch": branch,
         "spec_file_path": spec_file_path,
-    })
-    hub_notification_id: Optional[str] = (hub_data or {}).get("notification_id")
+    }, action="send")
+    hub_flow_message_id: Optional[str] = (hub_data or {}).get("flow_message_id")
     email_error: Optional[str] = None
-    if hub_configured and not hub_notification_id:
+    if hub_configured and not hub_flow_message_id:
         email_error = f"Email to {recipient_email} could not be sent — the notification service did not confirm delivery."
+
+    # 5a. Upload .flowmsg bundle to hub so the recipient can materialize the task on their end.
+    if hub_flow_message_id and fm:
+        try:
+
+            zip_path = await fm.to_file()
+            bundle_filename = f"{_meaningful_name(task_title)}.flowmsg"
+            content = zip_path.read_bytes()
+            await hub_post(
+                BuiltinEntityType.FLOW_MESSAGE, {}, hub_flow_message_id, "fs", "upload",
+                files={"uploaded_file": (bundle_filename, content, "application/zip")},
+            )
+            zip_path.unlink(missing_ok=True)
+            await hub_put(BuiltinEntityType.FLOW_MESSAGE, hub_flow_message_id, {"attachment_filename": bundle_filename})
+        except Exception as _upload_err:
+            logger.warning("[notification_action] bundle upload to hub failed (non-fatal): %s", _upload_err)
 
     # 6. Save Notification locally
     notification = Notification.model_validate({
@@ -314,7 +338,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         "recipient_id": resolved_recipient_id,
         "sender_id": sender_id,
         "delivery_method": DeliveryMethod.EMAIL,
-        "notification_status": NotificationStatus.SENT if hub_notification_id else NotificationStatus.PENDING,
+        "notification_status": NotificationStatus.SENT if hub_flow_message_id else NotificationStatus.PENDING,
         "message": message,
         "metadata": {
             "project_url": project_url,
@@ -322,7 +346,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
             "sender_name": sender_name,
         },
     })
-    notification.id = hub_notification_id or Notification.allocate_id(notification.model_dump())
+    notification.id = hub_flow_message_id or Notification.allocate_id(notification.model_dump())
     notification = await notification.save(someone_typeid)
 
     # 7. If hub failed, add a bookmark so the user sees it in the activity panel.
@@ -344,13 +368,13 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
 
     base = hub_base_url()
     return ApiSuccessResponse(data={
-        "sent": bool(hub_notification_id),
+        "sent": bool(hub_flow_message_id),
         "email_error": email_error,
         "spec_id": spec.id,
         "task_id": task.id,
         "conversation_id": conversation_id,
         "notification_id": notification.id,
-        "notify_url": f"{base}/notify/{notification.id}" if hub_notification_id and base else None,
+        "notify_url": f"{base}/flow_message/{hub_flow_message_id}" if hub_flow_message_id and base else None,
     })
 
 
@@ -418,7 +442,8 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
 
     reply_fm = await reply_fm.save(someone_typeid)
 
-    # Append pointer to conversation + keep message_ids in sync
+    # Append pointer to conversation BEFORE packing the bundle so the
+    # bundle's conversation.jsonl includes the reply message pointer.
     reply_ts = datetime.now(UTC).isoformat()
     if conv.data_path:
         from flow_sdk.fs_records.conversation_record import ConversationRecord
@@ -434,6 +459,50 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     conv.message_ids = _json.dumps(existing_ids_raw)
     conv.message_count = len(existing_ids_raw)
     conv = await conv.save(someone_typeid)
+
+    # Upload reply to hub so the original sender can fetch it via inbox
+    sender_name: str = (local_user.name or local_user.email or "") if local_user else ""
+
+    # Resolve recipient email: depends on whether I'm the original sender or the recipient.
+    # - If I sent the task (shared_by_id == my id): reply goes to the recipient (stored in recipient_email).
+    # - If I received the task (shared_by_id != my id): reply goes to the sender (stored in sender_email).
+    original_sender_id = task.shared_by_id or ""
+    task_meta = task.metadata or {}
+    local_user_id_str = local_user.id if local_user else ""
+    if original_sender_id and original_sender_id == local_user_id_str:
+        # I am the original sender — reply to the recipient
+        recipient_email_for_reply = task_meta.get("recipient_email") or ""
+    else:
+        # I am the recipient — reply to the original sender
+        recipient_email_for_reply = task_meta.get("sender_email") or ""
+    if recipient_email_for_reply and hub_base_url():
+        try:
+            import uuid as _uuid
+            hub_reply_id = str(_uuid.uuid4())
+            hub_data = await hub_post(BuiltinEntityType.FLOW_MESSAGE, {
+                "flow_message_id": hub_reply_id,
+                "recipient_email": recipient_email_for_reply,
+                "sender_id": sender_id,
+                "sender_name": sender_name,
+                "task_id": task_id,
+                "task_title": task.title or "",
+                "message": message,
+            }, action="send")
+            hub_reply_fm_id = (hub_data or {}).get("flow_message_id")
+            if hub_reply_fm_id:
+                zip_path = await reply_fm.to_file()
+                bundle_filename = f"reply-{_meaningful_name(task.title or 'reply')}.flowmsg"
+                content = zip_path.read_bytes()
+                upload_resp = await hub_post(
+                    BuiltinEntityType.FLOW_MESSAGE, {}, hub_reply_fm_id, "fs", "upload",
+                    files={"uploaded_file": (bundle_filename, content, "application/zip")},
+                )
+                zip_path.unlink(missing_ok=True)
+                await hub_put(BuiltinEntityType.FLOW_MESSAGE, hub_reply_fm_id, {"attachment_filename": bundle_filename})
+            else:
+                logger.warning("[append_conversation] hub_post(send) returned no flow_message_id")
+        except Exception as _hub_err:
+            logger.warning("[append_conversation] hub reply upload failed (non-fatal): %s", _hub_err, exc_info=True)
 
     # Notify UI so conversation refreshes automatically
     try:
@@ -529,14 +598,13 @@ async def refresh_notifications() -> ApiResponse:
 async def open_notification() -> ApiResponse:
     """Deep-link handler: fetch notification from hub, redirect to UI dialog."""
     from flow_sdk.server.routes.notify import handle_notification_deep_link
-    from flow_sdk.utils.hub import hub_get
 
     request_info = get_current_request_info()
     if not request_info or not request_info.target_entity_typeid:
         return ApiFailResponse(message="No request info found", status_code=400)
 
     notification_id = str(request_info.target_entity_typeid.id)
-    data = await hub_get("notification", notification_id)
+    data = await hub_get(BuiltinEntityType.NOTIFICATION, notification_id)
 
     meta = data.get("metadata") or {} if data else {}
     return await handle_notification_deep_link(
