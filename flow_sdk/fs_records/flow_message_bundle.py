@@ -180,6 +180,25 @@ async def _pack_flow_message_entry(fm_id: str, attachment_dir: Path) -> None:
 # _rewrite_file_attachments
 # ---------------------------------------------------------------------------
 
+def _normalise_attachments(fm_data: dict) -> None:
+    """Normalise attachment dicts to the {'attachment_type': ..., 'data': ...} format.
+
+    Handles TypeId dict format that may appear in bundle files created by older
+    hub or sender code: {'type': 'spec', 'id': '...'} → {'attachment_type': 'type_id', 'data': 'spec-...'}.
+    Mutates fm_data in-place.
+    """
+    raw = fm_data.get("attachment") or []
+    normalised = []
+    for att in raw:
+        if not isinstance(att, dict):
+            continue
+        if "attachment_type" in att:
+            normalised.append(att)
+        elif "type" in att and "id" in att:
+            normalised.append({"attachment_type": AttachmentType.TYPE_ID.value, "data": f"{att['type']}-{att['id']}"})
+    fm_data["attachment"] = normalised
+
+
 def _rewrite_file_attachments(fm_data: dict, tmp_root: Path, task_id: str) -> None:
     """Copy FILE attachments from the extracted zip to a permanent location and
     rewrite their `data` field from zip-relative paths to absolute disk paths."""
@@ -274,24 +293,16 @@ async def unpack_bundle(
         owner_typeid = local_user.typeid if local_user else None
 
         attachment_dir = tmp_root / "attachment"
-        conflicts: list[dict] = []
 
-        # 3. Process attachments — check for conflicts first
-        if attachment_dir.exists():
-            for entry_dir in sorted(attachment_dir.iterdir()):
-                if not entry_dir.is_dir():
-                    continue
-                name = entry_dir.name  # e.g. "spec-@<id>"
-                entry_type, _, entry_id = name.partition("-@")
-                if not entry_type or not entry_id:
-                    continue
-
-                existing = await _check_entity_exists(entry_type, entry_id)
-                if existing and not overwrite:
-                    conflicts.append({"type": entry_type, "id": entry_id})
-
-        if conflicts:
-            raise FlowMessageExistsError(conflicts)
+        # 3. Conflict check: detect if the top-level FlowMessage already exists, but do NOT
+        # raise yet — we still need to process attachments (step 4) so the conversation.jsonl
+        # is merged and the Conversation entity is updated even on re-unpacks.
+        top_fm_id_check = msg_data.get("id")
+        top_fm_already_exists = False
+        if top_fm_id_check and not overwrite:
+            existing_top = await _check_entity_exists(BuiltinEntityType.FLOW_MESSAGE.value, top_fm_id_check)
+            if existing_top:
+                top_fm_already_exists = True
 
         # 4. Materialize attachments
         # Process in dependency order: spec → task → conversation → flow_message
@@ -307,6 +318,7 @@ async def unpack_bundle(
             return _TYPE_ORDER.get(t, 99)
 
         conversation_id: str | None = None
+        task_id: str = ""
         if attachment_dir.exists():
             for entry_dir in sorted(attachment_dir.iterdir(), key=_entry_sort_key):
                 if not entry_dir.is_dir():
@@ -327,6 +339,13 @@ async def unpack_bundle(
                         task_data = json.loads(manifest_file.read_text(encoding="utf-8"))
                         task_id = task_data.get("id") or entry_id
                         existing_task = await Task.get_one({"id": task_id})
+                        # Patch sender_email into existing task metadata if the bundle has it
+                        # and it was missing (e.g. task imported before sender_email was added)
+                        if existing_task and not overwrite:
+                            bundle_sender_email = (task_data.get("metadata") or {}).get("sender_email") or ""
+                            if bundle_sender_email and not (existing_task.metadata or {}).get("sender_email"):
+                                existing_task.metadata = {**(existing_task.metadata or {}), "sender_email": bundle_sender_email}
+                                await existing_task.save(owner_typeid)
                         if existing_task is None or overwrite:
                             # Merge metadata: keep agentic_* keys from existing task so
                             # session resume still works after re-upload.
@@ -372,6 +391,16 @@ async def unpack_bundle(
                         )
                         if conv:
                             conversation_id = conv.id
+                            # Notify frontend that conversation was updated (e.g. new reply arrived)
+                            try:
+                                send_resource_sync(
+                                    type="conversation",
+                                    id=conv.id,
+                                    operation=SyncOperation.UPDATE,
+                                    data={"event_data": {"task_id": task_id_for_conv or "", "conversation_id": conv.id}},
+                                )
+                            except Exception:
+                                pass
 
                 elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
                     fm_file = entry_dir / "message.json"
@@ -380,14 +409,22 @@ async def unpack_bundle(
                         fm_data.pop("expand", None)
                         fm_id = fm_data.get("id") or entry_id
                         existing_fm = await FlowMessage.get_one({"id": fm_id})
-                        if existing_fm is None or overwrite:
-                            _rewrite_file_attachments(fm_data, tmp_root, task_id or "")
-                            inner_fm = FlowMessage.model_validate(fm_data)
-                            inner_fm.id = fm_id
-                            await inner_fm.save(owner_typeid)
+                        if existing_fm is not None and not overwrite:
+                            raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": fm_id}])
+                        _normalise_attachments(fm_data)
+                        _rewrite_file_attachments(fm_data, tmp_root, task_id or "")
+                        inner_fm = FlowMessage.model_validate(fm_data)
+                        inner_fm.id = fm_id
+                        await inner_fm.save(owner_typeid)
 
         # 5. Resolve FILE attachment paths and save the top-level FlowMessage record
         # Bundle stores zip-relative paths; rewrite to absolute paths on this machine.
+        # Now that conversation/spec/task attachments have been processed, raise if the
+        # top-level FM already existed (callers treat this as "already materialized").
+        if top_fm_already_exists and not overwrite:
+            raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
+
+        _normalise_attachments(msg_data)
         _rewrite_file_attachments(msg_data, tmp_root, task_id or "")
         top_fm = FlowMessage.model_validate(msg_data)
         top_fm_id = msg_data.get("id") or FlowMessage.allocate_id(msg_data)
