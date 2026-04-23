@@ -1,19 +1,21 @@
 /**
- * SendPlanNotificationDialog - Share a plan as a task notification.
- * Pre-populates spec content from the current plan markdown.
- * Supports two delivery modes toggled at the top of the dialog:
- *   Email   — sends via Flowpad Hub (requires recipient)
- *   Download — saves a .flowmsg file locally (no recipient needed)
+ * SendPlanNotificationDialog - Share a plan as a task.
+ * Supports two delivery modes:
+ *   Share via Email — sends via Flowpad Hub (requires recipient)
+ *   Share via Repo  — coming soon (disabled)
+ * A download icon in the top-left lets the user save a .flowmsg file locally.
  */
 
 import { useEffect, useState } from 'react';
 import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
 import { useContext } from '@sdk/react/hooks';
 import { sendNotification } from '@sdk/entities/notifications';
-import { createTaskBundle, downloadFlowMessageUrl } from '@sdk/entities/flow-message';
+import { createTaskBundle, DeliveryMode } from '@sdk/entities/flow-message';
+import { ActionInfo } from '@sdk/models/ActionInfo';
 import { oauthService, OAUTH_PROVIDERS } from '@sdk';
 import { toast } from 'sonner';
-import { Mail, Download } from 'lucide-react';
+import { Mail, Download, Github } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import {
   Dialog,
   DialogContent,
@@ -45,8 +47,6 @@ function extractTitle(markdown: string, filePath: string): string {
   return stem;
 }
 
-type DeliveryMode = 'email' | 'download';
-
 interface SendPlanNotificationDialogProps {
   open: boolean;
   onClose: () => void;
@@ -63,11 +63,8 @@ export function SendPlanNotificationDialog({
   planContent,
 }: SendPlanNotificationDialogProps) {
   const { cloudLoginAvailable } = useContext();
-  const [mode, setMode] = useState<DeliveryMode>('email');
+  const [mode, setMode] = useState<DeliveryMode>(DeliveryMode.EMAIL);
   const [recipientId, setRecipientId] = useState('');
-  const [teamSpaceId, setTeamSpaceId] = useState(
-    () => localStorage.getItem('flowpad.sendNotification.lastTeamSpace') ?? '',
-  );
   const [specTitle, setSpecTitle] = useState('');
   const [specContent, setSpecContent] = useState('');
   const [message, setMessage] = useState('');
@@ -91,15 +88,6 @@ export function SendPlanNotificationDialog({
       setEmailError(null);
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const switchMode = (next: DeliveryMode) => {
-    setMode(next);
-    setError(null);
-    if (next === 'download' && message.startsWith('Hi,')) setMessage('');
-    if (next === 'email' && !message.trim()) {
-      setMessage('Hi,\nGot a new task for you.\nLMK if you have any questions.\nGood luck!');
-    }
-  };
 
   const handleClose = () => {
     if (busy) return;
@@ -147,24 +135,20 @@ export function SendPlanNotificationDialog({
     setBusy(true);
     setError(null);
     try {
-      if (teamSpaceId.trim()) {
-        localStorage.setItem('flowpad.sendNotification.lastTeamSpace', teamSpaceId.trim());
-      }
       const result = await createTaskBundle({
         spec_title: specTitle.trim(),
         spec_content: specContent.trim(),
         task_title: specTitle.trim(),
         message: message.trim() || null,
-        team_space_id: teamSpaceId.trim() || null,
+        team_space_id: null,
       });
-      const url = downloadFlowMessageUrl(result.flow_message_id);
+      const url = new ActionInfo('file-download', 'flow_message', result.flow_message_id, 'GET').fullActionUrl;
       const a = document.createElement('a');
       a.href = url;
       a.download = '';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      onClose();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to create task bundle.');
     } finally {
@@ -172,9 +156,7 @@ export function SendPlanNotificationDialog({
     }
   };
 
-  const canSubmit = mode === 'email'
-    ? recipientId.trim().length > 0 && specTitle.trim().length > 0 && !busy
-    : specTitle.trim().length > 0 && !busy;
+  const canSubmit = recipientId.trim().length > 0 && specTitle.trim().length > 0 && !busy;
 
   return (
     <>
@@ -209,60 +191,42 @@ export function SendPlanNotificationDialog({
             <div className="flex rounded-md border border-input p-0.5">
               <button
                 type="button"
-                onClick={() => switchMode('email')}
+                onClick={() => setMode(DeliveryMode.EMAIL)}
                 disabled={busy}
                 className={cn(
                   'flex flex-1 items-center justify-center gap-2 rounded py-1.5 text-sm font-medium transition-colors',
-                  mode === 'email'
+                  mode === DeliveryMode.EMAIL
                     ? 'bg-primary text-primary-foreground'
                     : 'text-muted-foreground hover:text-foreground',
                 )}
               >
                 <Mail className="h-3.5 w-3.5" />
-                Email
+                Share via Email
               </button>
-              <button
-                type="button"
-                onClick={() => switchMode('download')}
-                disabled={busy}
-                className={cn(
-                  'flex flex-1 items-center justify-center gap-2 rounded py-1.5 text-sm font-medium transition-colors',
-                  mode === 'download'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                <Download className="h-3.5 w-3.5" />
-                Download
-              </button>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="flex flex-1 cursor-not-allowed items-center justify-center gap-2 rounded py-1.5 text-sm font-medium text-muted-foreground opacity-40">
+                      <Github className="h-3.5 w-3.5" />
+                      Share via Repo
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>Coming Soon</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
 
-            {/* Email: recipient */}
-            {mode === 'email' && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Recipient email</label>
-                <Input
-                  value={recipientId}
-                  onChange={(e) => setRecipientId(e.target.value)}
-                  placeholder="user@example.com"
-                  autoFocus
-                  disabled={busy}
-                />
-              </div>
-            )}
-
-            {/* Download: team space */}
-            {mode === 'download' && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Team Space (optional)</label>
-                <Input
-                  value={teamSpaceId}
-                  onChange={(e) => setTeamSpaceId(e.target.value)}
-                  placeholder="e.g. hw-demo"
-                  disabled={busy}
-                />
-              </div>
-            )}
+            {/* Recipient */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Recipient email</label>
+              <Input
+                value={recipientId}
+                onChange={(e) => setRecipientId(e.target.value)}
+                placeholder="user@example.com"
+                autoFocus
+                disabled={busy}
+              />
+            </div>
 
             {/* Spec title */}
             <div className="space-y-1.5">
@@ -271,7 +235,6 @@ export function SendPlanNotificationDialog({
                 value={specTitle}
                 onChange={(e) => setSpecTitle(e.target.value)}
                 placeholder="Title"
-                autoFocus={mode === 'download'}
                 disabled={busy}
               />
             </div>
@@ -295,7 +258,7 @@ export function SendPlanNotificationDialog({
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder="Add a personal note..."
-                rows={mode === 'email' ? 4 : 3}
+                rows={4}
                 disabled={busy}
                 className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               />
@@ -312,32 +275,44 @@ export function SendPlanNotificationDialog({
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="sm:justify-between">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => void handleDownload()}
+                    disabled={!specTitle.trim() || busy}
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Download .flowmsg</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <div className="flex gap-2">
             <Button variant="outline" onClick={handleClose} disabled={busy}>
               Cancel
             </Button>
             <Button
               onClick={() => {
-                if (mode === 'email') {
-                  if (!cloudLoginAvailable) {
-                    (window as any).__postCloudLoginCallback = async () => {
-                      await handleEmail();
-                      await new Promise(resolve => setTimeout(resolve, 1500));
-                    };
-                    void oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
-                    return;
-                  }
-                  void handleEmail();
-                } else {
-                  void handleDownload();
+                if (!cloudLoginAvailable) {
+                  (window as any).__postCloudLoginCallback = async () => {
+                    await handleEmail();
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                  };
+                  void oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
+                  return;
                 }
+                void handleEmail();
               }}
               disabled={!canSubmit}
             >
-              {busy
-                ? mode === 'email' ? 'Sending...' : 'Preparing...'
-                : mode === 'email' ? 'Share as Task' : 'Download .flowmsg'}
+              {busy ? 'Sending...' : 'Share Task'}
             </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

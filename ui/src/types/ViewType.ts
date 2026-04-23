@@ -67,7 +67,8 @@ export interface ViewerMeta {
     | 'CheckSquare'
     | 'SearchIcon'
     | 'Workflow'
-    | 'Users';
+    | 'Users'
+    | 'Inbox';
   /** Where this viewer renders: 'overview' tab or dedicated tab */
   tabLocation: 'overview' | 'dedicated';
   /** Can this viewer be manually added as a tab? */
@@ -296,5 +297,11 @@ export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
     iconName: 'Users',
     tabLocation: 'dedicated',
     canAddAsTab: true,
+  },
+  [ViewType.INBOX]: {
+    title: 'Inbox',
+    iconName: 'Inbox',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
   },
 };
