@@ -1,0 +1,123 @@
+import React, { useMemo, useState } from 'react';
+import { AgenticProcess, FlowElementTypes, TypeId } from '@sdk';
+import type { FlowData } from '@sdk';
+import { useEntityData } from '@src/hooks/flow-hooks/useEntityData';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
+import { AskForAssistanceDialog } from './AskForAssistanceDialog';
+
+// Bootstrap person-raised-hand icon (same as SendToExpertButton)
+const PersonRaisedHandIcon: React.FC<{ className?: string; size?: number }> = ({ className, size = 14 }) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    fill="currentColor"
+    className={className}
+    viewBox="0 0 16 16"
+    width={size}
+    height={size}
+  >
+    <path d="M6 6.207v9.043a.75.75 0 0 0 1.5 0V10.5a.5.5 0 0 1 1 0v4.75a.75.75 0 0 0 1.5 0v-8.5a.25.25 0 1 1 .5 0v2.5a.75.75 0 0 0 1.5 0V6.5a3 3 0 0 0-3-3H6.236a1 1 0 0 1-.447-.106l-.33-.165A.83.83 0 0 1 5 2.488V.75a.75.75 0 0 0-1.5 0v2.083c0 .715.404 1.37 1.044 1.689L5.5 5c.32.32.5.754.5 1.207" />
+    <path d="M8 3a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3" />
+  </svg>
+);
+
+function extractSessionText(
+  flowData: readonly FlowData[],
+  process: AgenticProcess | null | undefined,
+): string {
+  const parts: string[] = [];
+
+  if (process?.instruction_content) {
+    const instruction = process.instruction_content.replace(/<!--.*?-->/gs, '').trim();
+    parts.push(`## Instruction\n${instruction}\n\n`);
+  }
+
+  parts.push('## Session\n\n');
+
+  for (const fd of flowData) {
+    const data = fd.data as any;
+    if (fd.elementType === FlowElementTypes.USER_MESSAGE) {
+      const content = data?.content ?? '';
+      if (content) parts.push(`**User:** ${content}\n\n`);
+    } else if (fd.elementType === FlowElementTypes.CHAT || fd.elementType === FlowElementTypes.TEXT) {
+      const content = data?.content ?? '';
+      if (content) parts.push(`**Assistant:** ${content}\n\n`);
+    } else if (fd.elementType === FlowElementTypes.SHELL_INPUT) {
+      const content = data?.content ?? '';
+      if (content) parts.push(`\`\`\`bash\n$ ${content}\n\`\`\`\n\n`);
+    } else if (
+      fd.elementType === FlowElementTypes.SHELL ||
+      fd.elementType === FlowElementTypes.SHELL_OUTPUT
+    ) {
+      const stdout = data?.stdout ?? data?.content ?? '';
+      const stderr = data?.stderr ?? '';
+      const output = [stdout, stderr].filter(Boolean).join('\n');
+      if (output) parts.push(`\`\`\`\n${output}\n\`\`\`\n\n`);
+    } else if (fd.elementType === FlowElementTypes.ERROR) {
+      const content = data?.content ?? data?.message ?? '';
+      if (content) parts.push(`**Error:** ${content}\n\n`);
+    }
+    // REASONING skipped (too verbose)
+  }
+
+  return parts.join('');
+}
+
+function getSessionTitle(process: AgenticProcess | null | undefined): string {
+  if (process?.context_data && typeof process.context_data === 'object') {
+    const displayName = (process.context_data as Record<string, unknown>).display_name;
+    if (typeof displayName === 'string' && displayName.trim().length > 0) {
+      return displayName.trim();
+    }
+  }
+  if (process?.instruction_content) {
+    const trimmed = process.instruction_content.replace(/<!--.*?-->/g, '').trim();
+    if (trimmed.length > 0) return trimmed.substring(0, 60);
+  }
+  return 'Session';
+}
+
+interface AskForAssistanceButtonProps {
+  process: AgenticProcess;
+}
+
+export function AskForAssistanceButton({ process }: AskForAssistanceButtonProps) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [sessionTitle, setSessionTitle] = useState('');
+  const [sessionContent, setSessionContent] = useState('');
+
+  const processTypeId = useMemo(
+    () => (process.id ? new TypeId(AgenticProcess.type, process.id) : null),
+    [process.id],
+  );
+  const { flowData } = useEntityData(processTypeId);
+
+  const handleOpen = () => {
+    setSessionTitle(getSessionTitle(process));
+    setSessionContent(extractSessionText(flowData, process));
+    setDialogOpen(true);
+  };
+
+  return (
+    <>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent"
+            onClick={handleOpen}
+            aria-label="Ask for Assistance"
+          >
+            <PersonRaisedHandIcon size={14} />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs">Ask for Assistance</TooltipContent>
+      </Tooltip>
+
+      <AskForAssistanceDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        sessionTitle={sessionTitle}
+        sessionContent={sessionContent}
+      />
+    </>
+  );
+}

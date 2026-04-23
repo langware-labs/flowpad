@@ -286,34 +286,6 @@ async def open_flow_message() -> ApiResponse:
         return ApiFailResponse(message=f"Open failed: {str(e)}")
 
 
-@action.get(action_name="download-attachment", types=["flow_message"])
-async def download_flow_message_attachment() -> ApiResponse:
-    """Serve a single FILE-type attachment from a FlowMessage by ?filename= query param."""
-    from fastapi.responses import FileResponse
-    try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.target_entity_typeid:
-            return ApiFailResponse(message="No request info found")
-        fm_id = str(request_info.target_entity_typeid.id)
-        filename = (request_info.request.query_params.get("filename") or "").strip()
-        if not filename:
-            return ApiFailResponse(message="filename query param is required", status_code=400)
-        fm = await FlowMessage.get_one({"id": fm_id})
-        if not fm:
-            return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
-        file_path = next(
-            (Path(a.data) for a in (fm.attachment or [])
-             if a.attachment_type == AttachmentType.FILE and Path(a.data).name == filename),
-            None,
-        )
-        if not file_path or not file_path.exists():
-            return ApiFailResponse(message=f"Attachment not found: {filename}", status_code=404)
-        return FileResponse(str(file_path), filename=filename)
-    except Exception as e:
-        logger.error("[flow_message_action] download-attachment error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Download failed: {str(e)}")
-
-
 @action.get(action_name="create-and-download-local-flowmsg", types=["flow_message"])
 async def download_flow_message() -> ApiResponse:
     try:

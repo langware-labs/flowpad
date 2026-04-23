@@ -562,20 +562,26 @@ async def _create_reply_flow_message(
 
 
 async def _attach_uploaded_files(reply_fm: "FlowMessage", uploaded_files: list, task_id: str, task_title: str) -> None:
-    """Save uploaded file bytes to disk and append FILE attachments to reply_fm (in-place)."""
-    from flow_sdk.builtin.flow_message import Attachment, AttachmentType
-    from flow_sdk.config import FLOW_HOME
+    """Save uploaded files into the FlowMessage entity's VFS storage and append FILE attachments.
 
-    files_dir = FLOW_HOME / "tasks" / f"{_meaningful_name(task_title)}-{task_id[:8]}" / "files"
-    files_dir.mkdir(parents=True, exist_ok=True)
+    Files are stored at files/{filename} within the entity's VFS root so they can be served
+    via the standard GET /api/v1/graph/flow_message/{id}/fs/download/files/{filename} endpoint.
+    """
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType
+    from flow_sdk.request_context.methods import get_entity_storage
+
+    fm_typeid = reply_fm.typeid
+    storage = get_entity_storage(fm_typeid)
     for uf in uploaded_files:
         if not hasattr(uf, "read"):
             continue
         filename = getattr(uf, "filename", None) or "file"
-        file_path = files_dir / filename
+        vfs_subpath = f"data/{filename}"
+        local_path = Path(storage.get_storage_path(vfs_subpath))
+        local_path.parent.mkdir(parents=True, exist_ok=True)
         content = await uf.read()
-        file_path.write_bytes(content)
-        reply_fm.attachment.append(Attachment(attachment_type=AttachmentType.FILE, data=str(file_path)))
+        local_path.write_bytes(content)
+        reply_fm.attachment.append(Attachment(attachment_type=AttachmentType.FILE, data=vfs_subpath))
 
 
 async def _append_message_to_conversation(
