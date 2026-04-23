@@ -66,8 +66,8 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
     tmp_root = Path(tempfile.mkdtemp(prefix="flowmsg_pack_"))
     try:
         # 1. Write top-level message.json
-        # FILE attachment data is stored as absolute paths locally; rewrite to
-        # zip-relative paths so the receiver can find them without our directory layout.
+        # FILE attachment data is stored as a VFS subpath locally (e.g. "data/file.txt");
+        # rewrite to zip-relative paths so the receiver can locate them inside the zip.
         msg_data = flow_message.model_dump(
             mode="python",
             include=_FM_FIELDS,
@@ -86,7 +86,14 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
         # 2. Process each attachment entry
         for entry in flow_message.attachment:
             if entry.attachment_type == AttachmentType.FILE:
-                file_path = Path(entry.data)
+                # entry.data may be an absolute path (legacy) or a VFS subpath (new).
+                # Resolve to a real filesystem path so we can copy it into the zip.
+                if Path(entry.data).is_absolute():
+                    file_path = Path(entry.data)
+                else:
+                    from flow_sdk.storage import get_entity_embedded_storage
+                    storage = get_entity_embedded_storage(flow_message.typeid)
+                    file_path = Path(storage.get_storage_path(entry.data))
                 if file_path.exists():
                     files_dir = attachment_dir / "files"
                     files_dir.mkdir(exist_ok=True)
@@ -181,10 +188,17 @@ async def _pack_flow_message_entry(fm_id: str, attachment_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _rewrite_file_attachments(fm_data: dict, tmp_root: Path, task_id: str) -> None:
-    """Copy FILE attachments from the extracted zip to a permanent location and
-    rewrite their `data` field from zip-relative paths to absolute disk paths."""
-    from flow_sdk.config import FLOW_HOME
+def _rewrite_file_attachments(fm_data: dict, tmp_root: Path, fm_id: str) -> None:
+    """Copy FILE attachments from the extracted zip into the FlowMessage's embedded
+    storage and rewrite their `data` field to a VFS subpath (data/{filename}).
+
+    This mirrors how the sender stores files so that fs/download works identically
+    for both sender and recipient.
+    """
+    from flow_sdk.api.type_id import TypeId
+    from flow_sdk.storage import get_entity_embedded_storage
+    fm_typeid = TypeId(type="flow_message", id=fm_id)
+    storage = get_entity_embedded_storage(fm_typeid)
     for att in fm_data.get("attachment", []):
         if att.get("attachment_type") != AttachmentType.FILE.value:
             continue
@@ -192,11 +206,11 @@ def _rewrite_file_attachments(fm_data: dict, tmp_root: Path, task_id: str) -> No
         src = tmp_root / rel_path
         if not src.exists():
             continue
-        dest_dir = FLOW_HOME / "tasks" / f"files-{task_id[:8]}" if task_id else FLOW_HOME / "tasks" / "files"
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        dest = dest_dir / src.name
+        vfs_subpath = f"data/{src.name}"
+        dest = Path(storage.get_storage_path(vfs_subpath))
+        dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
-        att["data"] = str(dest)
+        att["data"] = vfs_subpath
 
 
 # ---------------------------------------------------------------------------
@@ -393,7 +407,7 @@ async def unpack_bundle(
                         existing_fm = await FlowMessage.get_one({"id": fm_id})
                         if existing_fm is not None and not overwrite:
                             continue  # already exists — skip without aborting the whole unpack
-                        _rewrite_file_attachments(fm_data, tmp_root, task_id or "")
+                        _rewrite_file_attachments(fm_data, tmp_root, fm_id)
                         inner_fm = FlowMessage.model_validate(fm_data)
                         inner_fm.id = fm_id
                         await inner_fm.save(owner_typeid)
@@ -405,9 +419,9 @@ async def unpack_bundle(
         if top_fm_already_exists and not overwrite:
             raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
 
-        _rewrite_file_attachments(msg_data, tmp_root, task_id or "")
-        top_fm = FlowMessage.model_validate(msg_data)
         top_fm_id = msg_data.get("id") or FlowMessage.allocate_id(msg_data)
+        _rewrite_file_attachments(msg_data, tmp_root, top_fm_id)
+        top_fm = FlowMessage.model_validate(msg_data)
         top_fm.id = top_fm_id
         top_fm = await top_fm.save(owner_typeid)
 
