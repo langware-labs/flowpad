@@ -168,48 +168,25 @@ async def _create_spec_and_task(
     return spec, task
 
 
-async def _write_task_to_git(
+async def _create_conversation_and_fm(
     *,
-    project_root: Path,
     spec: Spec,
     task: Task,
-    spec_title: str,
-    spec_type: str,
-    task_title: str,
-    plan_id: Optional[str],
+    task_dir: Path,
     sender_id: Optional[str],
     sender_name: str,
     recipient_email: Optional[str],
     message: Optional[str],
-    repo_id_val: str,
     someone_typeid: str,
-) -> tuple[Conversation, "FlowMessage", str, str]:
-    """Write spec.md, manifest.json, conversation.jsonl; create Conversation + FlowMessage.
+) -> tuple[Conversation, "FlowMessage"]:
+    """Create Conversation + FlowMessage entities for a task directory.
 
-    Returns (conv, fm, spec_file_path, branch_at_write).
+    Shared by both the git path (_write_task_to_git) and the no-git path
+    (_create_local_conversation_and_fm). task_dir must already exist.
     """
     from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
     from flow_sdk.fs_records.conversation_record import ConversationRecord
     from flow_sdk.fs_store.type_id import TypeId
-
-    tasks_root = Path(project_root) / "tasks"
-    spec_root = tasks_root / "spec"
-
-    spec_dir_name = _unique_dir_name(_meaningful_name(spec_title), spec_root)
-    task_dir_name = _unique_dir_name(_meaningful_name(task_title), tasks_root)
-
-    spec_file_path = f"tasks/spec/{spec_dir_name}/spec.md"
-
-    spec_dir = spec_root / spec_dir_name
-    spec_dir.mkdir(parents=True, exist_ok=True)
-    (spec_dir / "spec.md").write_text(
-        f"---\ntitle: \"{spec_title}\"\nspec_type: {spec_type}\n"
-        f"spec_id: {spec.id}\nauthor_id: {sender_id or ''}\nplan_id: {plan_id or ''}\n---\n\n{spec.content}",
-        encoding="utf-8",
-    )
-
-    task_dir = tasks_root / task_dir_name
-    task_dir.mkdir(parents=True, exist_ok=True)
 
     conv = await _create_conversation_entity(task, task_dir / "conversation.jsonl", someone_typeid)
     task.conversation_id = conv.id
@@ -220,7 +197,7 @@ async def _write_task_to_git(
         TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id),
     ]
     fm = FlowMessage.model_validate({
-        "text": message or f"Task shared: {task_title}",
+        "text": message or f"Task shared: {task.title}",
         "context": fm_context,
         "attachment": [],
         "sender_id": sender_id,
@@ -252,6 +229,59 @@ async def _write_task_to_git(
     conv.message_count = len(existing_ids)
     conv = await conv.save(someone_typeid)
 
+    return conv, fm
+
+
+async def _write_task_to_git(
+    *,
+    project_root: Path,
+    spec: Spec,
+    task: Task,
+    spec_title: str,
+    spec_type: str,
+    task_title: str,
+    plan_id: Optional[str],
+    sender_id: Optional[str],
+    sender_name: str,
+    recipient_email: Optional[str],
+    message: Optional[str],
+    repo_id_val: str,
+    someone_typeid: str,
+) -> tuple[Conversation, "FlowMessage", str, str]:
+    """Write spec.md, manifest.json, conversation.jsonl; create Conversation + FlowMessage.
+
+    Returns (conv, fm, spec_file_path, branch_at_write).
+    """
+    tasks_root = Path(project_root) / "tasks"
+    spec_root = tasks_root / "spec"
+
+    spec_dir_name = _unique_dir_name(_meaningful_name(spec_title), spec_root)
+    task_dir_name = _unique_dir_name(_meaningful_name(task_title), tasks_root)
+
+    spec_file_path = f"tasks/spec/{spec_dir_name}/spec.md"
+
+    spec_dir = spec_root / spec_dir_name
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    (spec_dir / "spec.md").write_text(
+        f"---\ntitle: \"{spec_title}\"\nspec_type: {spec_type}\n"
+        f"spec_id: {spec.id}\nauthor_id: {sender_id or ''}\nplan_id: {plan_id or ''}\n---\n\n{spec.content}",
+        encoding="utf-8",
+    )
+
+    task_dir = tasks_root / task_dir_name
+    task_dir.mkdir(parents=True, exist_ok=True)
+
+    conv, fm = await _create_conversation_and_fm(
+        spec=spec,
+        task=task,
+        task_dir=task_dir,
+        sender_id=sender_id,
+        sender_name=sender_name,
+        recipient_email=recipient_email,
+        message=message,
+        someone_typeid=someone_typeid,
+    )
+
     branch_at_write = git_current_branch(project_root)
     (task_dir / "manifest.json").write_text(
         _json.dumps({
@@ -270,6 +300,39 @@ async def _write_task_to_git(
     )
 
     return conv, fm, spec_file_path, branch_at_write
+
+
+async def _create_local_conversation_and_fm(
+    *,
+    spec: Spec,
+    task: Task,
+    task_title: str,
+    sender_id: Optional[str],
+    sender_name: str,
+    recipient_email: Optional[str],
+    message: Optional[str],
+    someone_typeid: str,
+) -> tuple[Conversation, "FlowMessage"]:
+    """Create Conversation + FlowMessage locally without git.
+
+    Used when there is no project_root — ensures a .flowmsg bundle can still
+    be packed and uploaded to the hub so the recipient can materialise the task.
+    """
+    from flow_sdk.config import FLOW_HOME
+
+    task_dir = FLOW_HOME / "tasks" / f"{_meaningful_name(task_title)}-{task.id[:8]}"
+    task_dir.mkdir(parents=True, exist_ok=True)
+
+    return await _create_conversation_and_fm(
+        spec=spec,
+        task=task,
+        task_dir=task_dir,
+        sender_id=sender_id,
+        sender_name=sender_name,
+        recipient_email=recipient_email,
+        message=message,
+        someone_typeid=someone_typeid,
+    )
 
 
 async def _push_task_changes(project_root: Path, task_title: str) -> Optional[str]:
@@ -475,6 +538,20 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
             return ApiSuccessResponse(data={"sent": False, "git_error": git_error})
 
         branch = git_current_branch(project_root)
+    else:
+        # No git project — create Conversation + FlowMessage locally so the
+        # .flowmsg bundle can be packed and uploaded to the hub. Without this
+        # the recipient has no bundle to materialise and gets a 404 on the task.
+        conv, fm = await _create_local_conversation_and_fm(
+            spec=spec,
+            task=task,
+            task_title=task_title,
+            sender_id=sender_id,
+            sender_name=sender_name,
+            recipient_email=recipient_email,
+            message=message,
+            someone_typeid=someone_typeid,
+        )
 
     hub_flow_message_id, email_error = await _send_hub_notification(
         recipient_email=recipient_email,
@@ -537,6 +614,7 @@ async def _create_reply_flow_message(
     conv_id: str,
     message: str,
     sender_id: Optional[str],
+    sender_name: str,
     someone_typeid: str,
 ) -> "FlowMessage":
     """Build and save the FlowMessage entity for a conversation reply."""
@@ -551,6 +629,7 @@ async def _create_reply_flow_message(
         ],
         "attachment": [],
         "sender_id": sender_id,
+        "sender_name": sender_name,
     })
     reply_fm.id = FlowMessage.allocate_id(reply_fm.model_dump())
     reply_fm.attachment = [
@@ -568,10 +647,10 @@ async def _attach_uploaded_files(reply_fm: "FlowMessage", uploaded_files: list, 
     via the standard GET /api/v1/graph/flow_message/{id}/fs/download/files/{filename} endpoint.
     """
     from flow_sdk.builtin.flow_message import Attachment, AttachmentType
-    from flow_sdk.request_context.methods import get_entity_storage
+    from flow_sdk.request_context.methods import get_entity_embedded_storage
 
     fm_typeid = reply_fm.typeid
-    storage = get_entity_storage(fm_typeid)
+    storage = get_entity_embedded_storage(fm_typeid)
     for uf in uploaded_files:
         if not hasattr(uf, "read"):
             continue
@@ -694,6 +773,7 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         conv_id=conv.id,
         message=message,
         sender_id=sender_id,
+        sender_name=sender_name,
         someone_typeid=someone_typeid,
     )
 
