@@ -642,7 +642,8 @@ async def get_or_create_local_user() -> User:
         # Update email/name if still defaults
         if existing_by_uname.name == "Local Desktop User" or not existing_by_uname.email:
             email = await asyncio.to_thread(get_email) or get_default_desktop_email()
-            name = email.split("@")[0].replace(".", " ").title()
+            git_name = await asyncio.to_thread(get_name)
+            name = git_name or email.split("@")[0].replace(".", " ").title()
             existing_by_uname.email = email
             existing_by_uname.name = name
             await existing_by_uname.save()
@@ -655,8 +656,9 @@ async def get_or_create_local_user() -> User:
         email = get_default_desktop_email()
         logging.info(f"No email found for desktop user, using default: {email}")
 
-    # Extract name from email (before @)
-    name = email.split("@")[0].replace(".", " ").title()
+    # Prefer git config user.name; fall back to email-derived name
+    git_name = await asyncio.to_thread(get_name)
+    name = git_name or email.split("@")[0].replace(".", " ").title()
 
     user = User(
         type="user",

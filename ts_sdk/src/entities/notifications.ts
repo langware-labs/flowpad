@@ -29,6 +29,7 @@ export interface SendNotificationParams {
   plan_id?: string | null;
   project_path?: string | null;
   team_space_id?: string | null;
+  sender_name?: string | null;
 }
 
 export async function sendNotification(params: SendNotificationParams): Promise<{ git_error?: string | null; sent?: boolean; email_error?: string | null }> {
