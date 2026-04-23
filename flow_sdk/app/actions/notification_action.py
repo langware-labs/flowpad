@@ -696,6 +696,7 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         uploaded_files = [uploaded_files]
     if uploaded_files:
         await _attach_uploaded_files(reply_fm, uploaded_files, task_id, task.title or "")
+        reply_fm = await reply_fm.save(someone_typeid)
 
     # Append pointer BEFORE packing the bundle so conversation.jsonl is up-to-date in the zip
     conv = await _append_message_to_conversation(
