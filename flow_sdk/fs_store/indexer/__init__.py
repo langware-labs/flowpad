@@ -5,5 +5,6 @@ from flow_sdk.fs_store.indexer.index_function import (
     IndexerFunc,
     IndexerOptions,
 )
+from flow_sdk.fs_store.indexer.roots import default_roots
 
-__all__ = ["FSIndexer", "IndexerFunc", "IndexerOptions"]
+__all__ = ["FSIndexer", "IndexerFunc", "IndexerOptions", "default_roots"]

@@ -1,4 +1,4 @@
-import { MilkdownEditorWithSidePanel } from '@src/components/milkdown-editor/MilkdownEditorWithSidePanel';
+import { MilkdownEditorWithSidePanel, type ExtraSideTab } from '@src/components/milkdown-editor/MilkdownEditorWithSidePanel';
 import { Button } from '@src/components/ui/button';
 import { useMarkdownContent } from '@src/hooks/use-markdown-content';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -38,6 +38,14 @@ interface MarkdownEditorProps {
   fsRef: FSRef;
   /** Optional asset-specific toolbar actions rendered in the header */
   toolbar?: React.ReactNode;
+  /** Appended to the side drawer after Chat + Backlinks. */
+  extraSideTabs?: ExtraSideTab[];
+  /** Controlled active side-drawer tab id. */
+  activeSideTab?: string;
+  /** Fires when the active side-drawer tab changes (including internal clicks). */
+  onActiveSideTabChange?: (id: string) => void;
+  /** Forwarded to the Chat tab — runs once after its backing process is created. */
+  chatOnProcessCreated?: (process: import('@sdk').AgenticProcess) => Promise<void> | void;
 }
 
 /**
@@ -49,13 +57,46 @@ interface MarkdownEditorProps {
  * - Body is rendered by Milkdown (view/review/editor) or Monaco (markdown).
  * - The chosen mode is persisted across docs via localStorage.
  */
-export function MarkdownEditor({ fsRef, toolbar }: MarkdownEditorProps) {
-  return <MarkdownEditorContent fsRef={fsRef} sourcePath={fsRef.path} toolbar={toolbar} />;
+export function MarkdownEditor({
+  fsRef,
+  toolbar,
+  extraSideTabs,
+  activeSideTab,
+  onActiveSideTabChange,
+  chatOnProcessCreated,
+}: MarkdownEditorProps) {
+  return (
+    <MarkdownEditorContent
+      fsRef={fsRef}
+      sourcePath={fsRef.path}
+      toolbar={toolbar}
+      extraSideTabs={extraSideTabs}
+      activeSideTab={activeSideTab}
+      onActiveSideTabChange={onActiveSideTabChange}
+      chatOnProcessCreated={chatOnProcessCreated}
+    />
+  );
 }
 
 // ── Editor content ────────────────────────────────────────────────────────────
 
-function MarkdownEditorContent({ fsRef, sourcePath, toolbar }: { fsRef: FSRef; sourcePath: string; toolbar?: React.ReactNode }) {
+function MarkdownEditorContent({
+  fsRef,
+  sourcePath,
+  toolbar,
+  extraSideTabs,
+  activeSideTab,
+  onActiveSideTabChange,
+  chatOnProcessCreated,
+}: {
+  fsRef: FSRef;
+  sourcePath: string;
+  toolbar?: React.ReactNode;
+  extraSideTabs?: ExtraSideTab[];
+  activeSideTab?: string;
+  onActiveSideTabChange?: (id: string) => void;
+  chatOnProcessCreated?: MarkdownEditorProps['chatOnProcessCreated'];
+}) {
   const { navigation, currentDock } = useDockNavigation();
   const [viewMode, setViewMode] = useState<ViewMode>(readStoredMode);
 
@@ -203,6 +244,10 @@ function MarkdownEditorContent({ fsRef, sourcePath, toolbar }: { fsRef: FSRef; s
             onLinkClick={handleLinkClick}
             editorMode={viewMode}
             sourcePath={sourcePath}
+            extraTabs={extraSideTabs}
+            activeTab={activeSideTab}
+            onActiveTabChange={onActiveSideTabChange}
+            chatOnProcessCreated={chatOnProcessCreated}
           />
         </div>
       )}

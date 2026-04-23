@@ -19,6 +19,7 @@ from flow_sdk.fs_store.record_types import RecordType
 class IndexerOptions:
     verbose: bool = True
     limit: int | None = None
+    include_temp: bool = False  # walk temp-path projects (/tmp, /var/folders, …)
 
 
 class IndexerFunc(Protocol):

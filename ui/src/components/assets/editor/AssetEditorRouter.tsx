@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 import { MarkdownEditor } from './markdown/MarkdownEditor';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { AgentAssetEditor } from './agent/AgentAssetEditor';
+import { WorkflowAssetEditor } from './workflow/WorkflowAssetEditor';
 
 interface AssetEditorRouterProps {
   /** Pointer in the format "editor/<type>/<vfsSubPath>" */
@@ -60,13 +61,14 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
       return <SkillAssetEditor fsRef={fsRef} />;
     case RecordType.AGENT:
       return <AgentAssetEditor fsRef={fsRef} />;
+    case 'workflow':
+      return <WorkflowAssetEditor fsRef={fsRef} />;
     case RecordType.MARKDOWN:
     case RecordType.CLAUDE_MD:
     case 'claude_memory':
     case 'claude_rules':
     case RecordType.COMMAND:
     case RecordType.PLAN:
-    case 'workflow':
       return <MarkdownEditor fsRef={fsRef} />;
     default:
       return (

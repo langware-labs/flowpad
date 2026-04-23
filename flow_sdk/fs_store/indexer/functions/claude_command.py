@@ -1,14 +1,12 @@
-"""Indexer function: USER_HOME_FOLDER -> COMMAND.
+"""Indexer function: <root> -> COMMAND.
 
-Reproduces flow_sdk/fs_records/claude/claude_command.py:_command_search_dirs
-+ discover_iter. Commands live only at user-level ~/.claude/commands/*.md
-and cwd-level .claude/commands/*.md — no per-project iter_claude_project_paths()
-walk in the legacy code.
+Emits COMMAND for every `*.md` in `<root>/.claude/commands/`. Legacy walker
+only searches user (~/.claude/commands) and cwd (<cwd>/.claude/commands),
+so register only on USER_HOME_FOLDER and CWD_ROOT. Scope inherits via FSRef.
 """
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_ref import FSRef
@@ -16,35 +14,24 @@ from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 
-def _emit_commands_from(
-    commands_dir: Path,
-    parent: FSRef,
-    out: list[FSRef],
-    seen: set[str],
-) -> None:
-    if not commands_dir.is_dir():
-        return
-    for md in sorted(commands_dir.glob("*.md")):
-        if not md.is_file():
-            continue
-        key = str(md.resolve())
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(FSRef(md, record_type=RecordType.COMMAND, parent=parent))
-
-
-async def command_user_fn(
-    nodes: list[FSRef], opts: IndexerOptions,
+async def command_fn(
+    nodes: list[FSRef],
+    opts: IndexerOptions,
 ) -> list[FSRef]:
-    """USER_HOME_FOLDER -> COMMAND. User + cwd only (no per-project)."""
     out: list[FSRef] = []
     seen: set[str] = set()
     for node in nodes:
-        _emit_commands_from(
-            Path(node.path) / ".claude" / "commands", node, out, seen
-        )
-        _emit_commands_from(
-            Path(os.getcwd()) / ".claude" / "commands", node, out, seen
-        )
+        commands = Path(node.path) / ".claude" / "commands"
+        if not commands.is_dir():
+            continue
+        for md in sorted(commands.glob("*.md")):
+            if not md.is_file():
+                continue
+            key = str(md.resolve())
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(
+                FSRef(md, record_type=RecordType.COMMAND, parent=node)
+            )
     return out
