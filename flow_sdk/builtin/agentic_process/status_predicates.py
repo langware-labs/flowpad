@@ -1,7 +1,9 @@
-"""Predicates over the two-axis (ProcessStatus, WorkerStatus) model.
+"""Predicates over the two-axis (ProcessStatus, WorkerStatus) model, plus the
+derived ``WorkerMode`` (Interactive / CLI).
 
-Central place for questions like "can the user send now?" — so callers never
-have to recombine lifecycle + worker state by hand.
+Central place for questions like "can the user send now?" and "which worker
+flavour is running?" — so callers never have to recombine lifecycle + worker
+state (or re-derive the mode from ``visible``) by hand.
 
 See ``agentic_process_lifecycle.py`` (ProcessStatus) and ``agent_status.py``
 (WorkerStatus) for the canonical definitions.
@@ -11,6 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from flow_sdk._compat import StrEnum
 from flow_sdk.fs_records.agent_status import (
     WorkerStatus,
     is_running as is_worker_running,
@@ -32,7 +35,31 @@ __all__ = [
     "is_process_startable",
     "is_worker_running",
     "is_worker_terminal",
+    "WorkerMode",
+    "get_worker_mode",
 ]
+
+
+class WorkerMode(StrEnum):
+    """Which mode the worker is currently running in.
+
+    Derived from ``visible``; not stored as its own field. The routing is:
+      - ``visible is True``  → ``INTERACTIVE`` (PTY worker, xterm in the dock)
+      - ``visible is False`` → ``CLI`` (headless ``claude -p`` subprocess per turn)
+
+    ``session_id`` survives both directions — both modes write the same
+    ``~/.claude/projects/<encoded-cwd>/<sid>.jsonl``. Switching is therefore
+    two-way: opening a shell tab flips ``visible=True`` (via the ``open``
+    action); closing the tab flips it back to ``False`` (via ``close``).
+    """
+
+    INTERACTIVE = "interactive"
+    CLI = "cli"
+
+
+def get_worker_mode(process: "AgenticProcess") -> WorkerMode:
+    """Derive ``WorkerMode`` from ``process.visible``."""
+    return WorkerMode.INTERACTIVE if process.visible else WorkerMode.CLI
 
 
 _READY_WORKER_STATES: frozenset[WorkerStatus] = frozenset({

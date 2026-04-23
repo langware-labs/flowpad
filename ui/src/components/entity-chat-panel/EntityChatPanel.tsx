@@ -2,11 +2,13 @@ import {
   AgenticProcess,
   ComputeNode,
   FlowElementTypes,
+  isBusy,
   TypeId,
   type FlowData,
 } from '@sdk';
 import { useProcess } from '@sdk/react/hooks';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
+import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
 import ChatMessage from './chat-message/chat-message';
 import { useProject } from '@src/hooks/useProject';
 import { cn } from '@src/lib/utils';
@@ -184,7 +186,23 @@ export function EntityChatPanel({ target, className }: EntityChatPanelProps) {
   }, [messages.length]);
 
   const showEmptyState = !activeProcess && !listLoading && !sending;
-  const sendDisabled = !targetStr || sending;
+  const busy = !!activeProcess && isBusy(activeProcess);
+  const sendDisabled = !targetStr || sending || busy;
+
+  const statusSlot = activeProcess ? (
+    <span
+      title={getStatusLabel(activeProcess)}
+      className="flex items-center"
+      data-testid="entity-chat-status"
+    >
+      <ProcessStatusIndicator
+        process={activeProcess}
+        showLabel
+        size="sm"
+        className="px-1 text-muted-foreground"
+      />
+    </span>
+  ) : null;
 
   return (
     <div
@@ -208,7 +226,7 @@ export function EntityChatPanel({ target, className }: EntityChatPanelProps) {
           />
         ))}
       </AutoScrollContainer>
-      <CompactChatInput onSend={handleSend} disabled={sendDisabled} />
+      <CompactChatInput onSend={handleSend} disabled={sendDisabled} statusSlot={statusSlot} />
     </div>
   );
 }

@@ -819,13 +819,15 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
               );
             })}
 
+            {/* Toolbar flows after the last tab but sticks to the right edge
+                when tabs overflow. Placement is unconditional, so it does not
+                oscillate with hasTabOverflow. */}
+            {tabEndToolbar && (
+              <div className="sticky right-0 z-10 flex items-center self-stretch bg-muted/30 backdrop-blur-sm">
+                {tabEndToolbar}
+              </div>
+            )}
           </div>
-
-          {/* Always render the toolbar outside the scroll container to prevent
-              an oscillation loop: placing it inside increases scrollWidth,
-              which triggers hasTabOverflow=true, moving it out, shrinking
-              scrollWidth, flipping hasTabOverflow=false, and repeating. */}
-          {tabEndToolbar}
 
           {/* Right Scroll Button */}
           {hasTabOverflow && (

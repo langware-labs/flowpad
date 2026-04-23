@@ -22,7 +22,11 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess, ProcessStatus, WorkerStatus
-from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
+from flow_sdk.builtin.agentic_process.status_predicates import (
+    get_worker_mode,
+    is_ready_for_input,
+    WorkerMode,
+)
 from flow_sdk.fs_records.agent_status import (
     _RUNNING_STATUSES,
     _TERMINAL_STATUSES,
@@ -282,6 +286,32 @@ def test_is_ready_for_input_none_worker_without_session():
     """No transcript yet AND no session_id → never prompted → ready."""
     proc = _FakeProcess(ProcessStatus.RUNNING, None, session_id=None)
     assert is_ready_for_input(proc) is True
+
+
+# ── WorkerMode derivation ────────────────────────────────────────────────────
+
+
+def test_worker_mode_enum_values():
+    """Wire values are stable and exactly two."""
+    assert WorkerMode.INTERACTIVE.value == "interactive"
+    assert WorkerMode.CLI.value == "cli"
+    assert {m.value for m in WorkerMode} == {"interactive", "cli"}
+
+
+class _ModeProc:
+    def __init__(self, visible: bool):
+        self.visible = visible
+
+
+@pytest.mark.parametrize(
+    "visible,expected",
+    [
+        (True, WorkerMode.INTERACTIVE),
+        (False, WorkerMode.CLI),
+    ],
+)
+def test_get_worker_mode_derivation(visible, expected):
+    assert get_worker_mode(_ModeProc(visible)) is expected
 
 
 # ── Field-removal regression guards ──────────────────────────────────────────

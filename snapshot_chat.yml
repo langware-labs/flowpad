@@ -1,0 +1,798 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e7]:
+    - generic [ref=e8]:
+      - list [ref=e11]:
+        - listitem [ref=e12]:
+          - button [ref=e13] [cursor=pointer]:
+            - img [ref=e14]
+          - button [ref=e16] [cursor=pointer]:
+            - img [ref=e17]
+        - listitem [ref=e22]:
+          - button [ref=e23] [cursor=pointer]:
+            - img [ref=e24]
+        - listitem [ref=e27]:
+          - button [ref=e28] [cursor=pointer]:
+            - img [ref=e29]
+        - listitem [ref=e31]:
+          - button [ref=e32] [cursor=pointer]:
+            - img [ref=e33]
+        - listitem [ref=e35]:
+          - button [ref=e36] [cursor=pointer]:
+            - img [ref=e37]
+        - generic [ref=e39]:
+          - img [ref=e42]
+          - listitem [ref=e44]:
+            - button [ref=e45] [cursor=pointer]:
+              - img [ref=e46]
+          - listitem [ref=e50]:
+            - button [ref=e51] [cursor=pointer]:
+              - img [ref=e52]
+      - generic [ref=e54]:
+        - button "Toggle theme" [ref=e55] [cursor=pointer]:
+          - img
+          - generic [ref=e56]: Toggle theme
+        - generic [ref=e58]:
+          - generic [ref=e59]:
+            - heading "Chat Settings" [level=2] [ref=e60]
+            - button [ref=e61] [cursor=pointer]:
+              - img
+          - generic [ref=e64]:
+            - generic [ref=e65]: Rules
+            - textbox "Rules" [ref=e66]:
+              - /placeholder: Enter chat rules...
+          - button "Save Changes" [ref=e68] [cursor=pointer]
+        - generic [ref=e72] [cursor=pointer]: ES
+    - generic [ref=e74]:
+      - tabpanel [ref=e79]:
+        - generic [ref=e80]:
+          - generic [ref=e81]:
+            - button "Hide wiki tree" [ref=e82] [cursor=pointer]:
+              - img [ref=e83]
+            - img [ref=e86]
+            - generic [ref=e88]: Wiki
+            - generic [ref=e90]:
+              - button "All" [ref=e91] [cursor=pointer]
+              - button "User" [ref=e92] [cursor=pointer]
+              - button "Project" [ref=e93] [cursor=pointer]
+              - generic "Show entities shipped in the Flowpad Assistant system project" [ref=e94] [cursor=pointer]:
+                - checkbox "Show system" [ref=e95]
+                - text: Show system
+          - generic [ref=e96]:
+            - tree [ref=e99]:
+              - generic [ref=e100]:
+                - treeitem "Expand Projects 142 Scan for changes" [level=1] [ref=e102] [cursor=pointer]:
+                  - generic [ref=e103]:
+                    - button "Expand" [ref=e104]:
+                      - img [ref=e105]
+                    - generic [ref=e107]:
+                      - img [ref=e108]
+                      - generic "Projects" [ref=e111]
+                      - generic [ref=e112]: "142"
+                  - button "Scan for changes" [ref=e114]:
+                    - generic [ref=e115]:
+                      - img
+                - treeitem "Expand Spec 8 Scan for changes" [level=1] [ref=e117] [cursor=pointer]:
+                  - generic [ref=e118]:
+                    - button "Expand" [ref=e119]:
+                      - img [ref=e120]
+                    - generic [ref=e122]:
+                      - img [ref=e123]
+                      - generic "Spec" [ref=e126]
+                      - generic [ref=e127]: "8"
+                  - button "Scan for changes" [ref=e129]:
+                    - generic [ref=e130]:
+                      - img
+                - treeitem "Expand Agent 11 Scan for changes New Agent" [level=1] [ref=e132] [cursor=pointer]:
+                  - generic [ref=e133]:
+                    - button "Expand" [ref=e134]:
+                      - img [ref=e135]
+                    - generic [ref=e137]:
+                      - img [ref=e138]
+                      - generic "Agent" [ref=e141]
+                      - generic [ref=e142]: "11"
+                  - generic [ref=e143]:
+                    - button "Scan for changes" [ref=e144]:
+                      - generic [ref=e145]:
+                        - img
+                    - button "New Agent" [ref=e146]:
+                      - generic [ref=e147]:
+                        - img
+                - treeitem "Expand Markdown 150 Scan for changes New Markdown" [level=1] [ref=e149] [cursor=pointer]:
+                  - generic [ref=e150]:
+                    - button "Expand" [ref=e151]:
+                      - img [ref=e152]
+                    - generic [ref=e154]:
+                      - img [ref=e155]
+                      - generic "Markdown" [ref=e157]
+                      - generic [ref=e158]: "150"
+                  - generic [ref=e159]:
+                    - button "Scan for changes" [ref=e160]:
+                      - generic [ref=e161]:
+                        - img
+                    - button "New Markdown" [ref=e162]:
+                      - generic [ref=e163]:
+                        - img
+                - treeitem "Expand Bookmark 31 Scan for changes" [level=1] [ref=e165] [cursor=pointer]:
+                  - generic [ref=e166]:
+                    - button "Expand" [ref=e167]:
+                      - img [ref=e168]
+                    - generic [ref=e170]:
+                      - img [ref=e171]
+                      - generic "Bookmark" [ref=e173]
+                      - generic [ref=e174]: "31"
+                  - button "Scan for changes" [ref=e176]:
+                    - generic [ref=e177]:
+                      - img
+                - treeitem "Expand Comment Scan for changes" [level=1] [ref=e179] [cursor=pointer]:
+                  - generic [ref=e180]:
+                    - button "Expand" [ref=e181]:
+                      - img [ref=e182]
+                    - generic [ref=e184]:
+                      - img [ref=e185]
+                      - generic "Comment" [ref=e188]
+                  - button "Scan for changes" [ref=e190]:
+                    - generic [ref=e191]:
+                      - img
+                - treeitem "Expand Claude Md 6 Scan for changes" [level=1] [ref=e193] [cursor=pointer]:
+                  - generic [ref=e194]:
+                    - button "Expand" [ref=e195]:
+                      - img [ref=e196]
+                    - generic [ref=e198]:
+                      - img [ref=e199]
+                      - generic "Claude Md" [ref=e201]
+                      - generic [ref=e202]: "6"
+                  - button "Scan for changes" [ref=e204]:
+                    - generic [ref=e205]:
+                      - img
+                - treeitem "Expand Claude Memory 12 Scan for changes" [level=1] [ref=e207] [cursor=pointer]:
+                  - generic [ref=e208]:
+                    - button "Expand" [ref=e209]:
+                      - img [ref=e210]
+                    - generic [ref=e212]:
+                      - img [ref=e213]
+                      - generic "Claude Memory" [ref=e223]
+                      - generic [ref=e224]: "12"
+                  - button "Scan for changes" [ref=e226]:
+                    - generic [ref=e227]:
+                      - img
+                - generic [ref=e228]:
+                  - treeitem "Collapse Plan 116 Scan for changes" [expanded] [level=1] [ref=e229] [cursor=pointer]:
+                    - generic [ref=e230]:
+                      - button "Collapse" [ref=e231]:
+                        - img [ref=e232]
+                      - generic [ref=e234]:
+                        - img [ref=e235]
+                        - generic "Plan" [ref=e238]
+                        - generic [ref=e239]: "116"
+                    - button "Scan for changes" [ref=e241]:
+                      - generic [ref=e242]:
+                        - img
+                  - generic [ref=e243]:
+                    - 'treeitem "File-Based FlowMessage Transport (`.flowmsg`)" [level=2] [ref=e245] [cursor=pointer]':
+                      - generic [ref=e247]:
+                        - img [ref=e248]
+                        - 'generic "File-Based FlowMessage Transport (`.flowmsg`)" [ref=e251]'
+                    - treeitem "Trigger → Agentic Process Invocation" [level=2] [ref=e253] [cursor=pointer]:
+                      - generic [ref=e255]:
+                        - img [ref=e256]
+                        - generic "Trigger → Agentic Process Invocation" [ref=e259]
+                    - 'treeitem "Plan: Hello World Python File" [level=2] [ref=e261] [cursor=pointer]':
+                      - generic [ref=e263]:
+                        - img [ref=e264]
+                        - 'generic "Plan: Hello World Python File" [ref=e267]'
+                    - 'treeitem "Sunset the `Processor` naming" [level=2] [ref=e269] [cursor=pointer]':
+                      - generic [ref=e271]:
+                        - img [ref=e272]
+                        - 'generic "Sunset the `Processor` naming" [ref=e275]'
+                    - treeitem "Phase 1 — System Project Foundation" [level=2] [ref=e277] [cursor=pointer]:
+                      - generic [ref=e279]:
+                        - img [ref=e280]
+                        - generic "Phase 1 — System Project Foundation" [ref=e283]
+                    - treeitem "Full Attendance System Plan" [level=2] [ref=e285] [cursor=pointer]:
+                      - generic [ref=e287]:
+                        - img [ref=e288]
+                        - generic "Full Attendance System Plan" [ref=e291]
+                    - 'treeitem "Plan: Hello Python Script" [level=2] [ref=e293] [cursor=pointer]':
+                      - generic [ref=e295]:
+                        - img [ref=e296]
+                        - 'generic "Plan: Hello Python Script" [ref=e299]'
+                    - treeitem "Collaborative \"Team Session\" — Start button, Team side window, URL-driven windows" [level=2] [ref=e301] [cursor=pointer]:
+                      - generic [ref=e303]:
+                        - img [ref=e304]
+                        - generic "Collaborative \"Team Session\" — Start button, Team side window, URL-driven windows" [ref=e307]
+                    - 'treeitem "Plan: Move Search Bar to Top Bar (Right Side)" [level=2] [ref=e309] [cursor=pointer]':
+                      - generic [ref=e311]:
+                        - img [ref=e312]
+                        - 'generic "Plan: Move Search Bar to Top Bar (Right Side)" [ref=e315]'
+                    - treeitem "Wiki Link Graph Primitives — flowpad-oss" [level=2] [ref=e317] [cursor=pointer]:
+                      - generic [ref=e319]:
+                        - img [ref=e320]
+                        - generic "Wiki Link Graph Primitives — flowpad-oss" [ref=e323]
+                    - 'treeitem "Plan: Anchor InteractiveTerminal process to context" [level=2] [ref=e325] [cursor=pointer]':
+                      - generic [ref=e327]:
+                        - img [ref=e328]
+                        - 'generic "Plan: Anchor InteractiveTerminal process to context" [ref=e331]'
+                    - 'treeitem "Plan: Generic \"Favorite\" on top of the existing Bookmark entity" [level=2] [ref=e333] [cursor=pointer]':
+                      - generic [ref=e335]:
+                        - img [ref=e336]
+                        - 'generic "Plan: Generic \"Favorite\" on top of the existing Bookmark entity" [ref=e339]'
+                    - 'treeitem "Tab toolbar: pinnable openers + resume Claude by session id" [level=2] [ref=e341] [cursor=pointer]':
+                      - generic [ref=e343]:
+                        - img [ref=e344]
+                        - 'generic "Tab toolbar: pinnable openers + resume Claude by session id" [ref=e347]'
+                    - treeitem "Add E2B Sandbox Terminal — Plan" [level=2] [ref=e349] [cursor=pointer]:
+                      - generic [ref=e351]:
+                        - img [ref=e352]
+                        - generic "Add E2B Sandbox Terminal — Plan" [ref=e355]
+                    - 'treeitem "Plan: Align `AgenticProcess` status fields (`ProcessStatus` + `WorkerStatus`)" [level=2] [ref=e357] [cursor=pointer]':
+                      - generic [ref=e359]:
+                        - img [ref=e360]
+                        - 'generic "Plan: Align `AgenticProcess` status fields (`ProcessStatus` + `WorkerStatus`)" [ref=e363]'
+                    - treeitem "Plan — Shared PTY Router (Multi-Client, Single Active Writer)" [level=2] [ref=e365] [cursor=pointer]:
+                      - generic [ref=e367]:
+                        - img [ref=e368]
+                        - generic "Plan — Shared PTY Router (Multi-Client, Single Active Writer)" [ref=e371]
+                    - treeitem "Make the CollaborationSpace left menu real" [level=2] [ref=e373] [cursor=pointer]:
+                      - generic [ref=e375]:
+                        - img [ref=e376]
+                        - generic "Make the CollaborationSpace left menu real" [ref=e379]
+                    - 'treeitem "Rename URL namespace: `/dock/collaboration` → `/dock/project`, `/session` → `/collaborative_session`" [level=2] [ref=e381] [cursor=pointer]':
+                      - generic [ref=e383]:
+                        - img [ref=e384]
+                        - 'generic "Rename URL namespace: `/dock/collaboration` → `/dock/project`, `/session` → `/collaborative_session`" [ref=e387]'
+                    - treeitem "Wiki Markdown Folder Tree (Obsidian-style)" [level=2] [ref=e389] [cursor=pointer]:
+                      - generic [ref=e391]:
+                        - img [ref=e392]
+                        - generic "Wiki Markdown Folder Tree (Obsidian-style)" [ref=e395]
+                    - treeitem "Tab-switch perf fix — RCA & plan" [level=2] [ref=e397] [cursor=pointer]:
+                      - generic [ref=e399]:
+                        - img [ref=e400]
+                        - generic "Tab-switch perf fix — RCA & plan" [ref=e403]
+                    - 'treeitem "Plan: Remove generic \"session\" from comments/docs" [level=2] [ref=e405] [cursor=pointer]':
+                      - generic [ref=e407]:
+                        - img [ref=e408]
+                        - 'generic "Plan: Remove generic \"session\" from comments/docs" [ref=e411]'
+                    - 'treeitem "Plan: Entity-Centric Asset Refs & Pointer System Cleanup" [level=2] [ref=e413] [cursor=pointer]':
+                      - generic [ref=e415]:
+                        - img [ref=e416]
+                        - 'generic "Plan: Entity-Centric Asset Refs & Pointer System Cleanup" [ref=e419]'
+                    - 'treeitem "Migrate `Notification` → `FlowMessage` (hard cut)" [level=2] [ref=e421] [cursor=pointer]':
+                      - generic [ref=e423]:
+                        - img [ref=e424]
+                        - 'generic "Migrate `Notification` → `FlowMessage` (hard cut)" [ref=e427]'
+                    - 'treeitem "Plan: Plan Editor Enhancements" [level=2] [ref=e429] [cursor=pointer]':
+                      - generic [ref=e431]:
+                        - img [ref=e432]
+                        - 'generic "Plan: Plan Editor Enhancements" [ref=e435]'
+                    - 'treeitem "Fix: Agentic Process Workdir Resolution" [level=2] [ref=e437] [cursor=pointer]':
+                      - generic [ref=e439]:
+                        - img [ref=e440]
+                        - 'generic "Fix: Agentic Process Workdir Resolution" [ref=e443]'
+                    - 'treeitem "Plan: Simplify Fork — Backend Action + Frontend Cleanup" [level=2] [ref=e445] [cursor=pointer]':
+                      - generic [ref=e447]:
+                        - img [ref=e448]
+                        - 'generic "Plan: Simplify Fork — Backend Action + Frontend Cleanup" [ref=e451]'
+                    - treeitem "Docker Provider — Reuse & Simplicity Refactor" [level=2] [ref=e453] [cursor=pointer]:
+                      - generic [ref=e455]:
+                        - img [ref=e456]
+                        - generic "Docker Provider — Reuse & Simplicity Refactor" [ref=e459]
+                    - 'treeitem "Plan: Tabbed side window on Markdown editor + EntityChatPanel" [level=2] [ref=e461] [cursor=pointer]':
+                      - generic [ref=e463]:
+                        - img [ref=e464]
+                        - 'generic "Plan: Tabbed side window on Markdown editor + EntityChatPanel" [ref=e467]'
+                    - 'treeitem "Plan: Markdown Base Entity for All Markdown-Backed Records" [level=2] [ref=e469] [cursor=pointer]':
+                      - generic [ref=e471]:
+                        - img [ref=e472]
+                        - 'generic "Plan: Markdown Base Entity for All Markdown-Backed Records" [ref=e475]'
+                    - 'treeitem "Plan: Consolidate PTY Logic into PtyConnection" [level=2] [ref=e477] [cursor=pointer]':
+                      - generic [ref=e479]:
+                        - img [ref=e480]
+                        - 'generic "Plan: Consolidate PTY Logic into PtyConnection" [ref=e483]'
+                    - treeitem "Hello World in Python" [level=2] [ref=e485] [cursor=pointer]:
+                      - generic [ref=e487]:
+                        - img [ref=e488]
+                        - generic "Hello World in Python" [ref=e491]
+                    - 'treeitem "Plan: Create hello world.txt" [level=2] [ref=e493] [cursor=pointer]':
+                      - generic [ref=e495]:
+                        - img [ref=e496]
+                        - 'generic "Plan: Create hello world.txt" [ref=e499]'
+                    - 'treeitem "Plan: Click-to-open git diff modal in GitPanel" [level=2] [ref=e501] [cursor=pointer]':
+                      - generic [ref=e503]:
+                        - img [ref=e504]
+                        - 'generic "Plan: Click-to-open git diff modal in GitPanel" [ref=e507]'
+                    - treeitem "Agent Toolbar + Execution Panel" [level=2] [ref=e509] [cursor=pointer]:
+                      - generic [ref=e511]:
+                        - img [ref=e512]
+                        - generic "Agent Toolbar + Execution Panel" [ref=e515]
+                    - 'treeitem "Plan: \"Open from History\" — Resume Closed Agentic Processes" [level=2] [ref=e517] [cursor=pointer]':
+                      - generic [ref=e519]:
+                        - img [ref=e520]
+                        - 'generic "Plan: \"Open from History\" — Resume Closed Agentic Processes" [ref=e523]'
+                    - 'treeitem "Plan: Add `workdir` to `dataContext` for Footer" [level=2] [ref=e525] [cursor=pointer]':
+                      - generic [ref=e527]:
+                        - img [ref=e528]
+                        - 'generic "Plan: Add `workdir` to `dataContext` for Footer" [ref=e531]'
+                    - 'treeitem "Plan: Hello World in Python" [level=2] [selected] [ref=e533] [cursor=pointer]':
+                      - generic [ref=e535]:
+                        - img [ref=e536]
+                        - 'generic "Plan: Hello World in Python" [ref=e539]'
+                    - 'treeitem "Plan: FrontMatterFsRef — Unified Frontmatter Abstraction" [level=2] [ref=e541] [cursor=pointer]':
+                      - generic [ref=e543]:
+                        - img [ref=e544]
+                        - 'generic "Plan: FrontMatterFsRef — Unified Frontmatter Abstraction" [ref=e547]'
+                    - 'treeitem "Plan: Hello World Python File" [level=2] [ref=e549] [cursor=pointer]':
+                      - generic [ref=e551]:
+                        - img [ref=e552]
+                        - 'generic "Plan: Hello World Python File" [ref=e555]'
+                    - 'treeitem "Plan: RecordField — Unified Descriptor for Stored and Computed Fields" [level=2] [ref=e557] [cursor=pointer]':
+                      - generic [ref=e559]:
+                        - img [ref=e560]
+                        - 'generic "Plan: RecordField — Unified Descriptor for Stored and Computed Fields" [ref=e563]'
+                    - 'treeitem "Plan: Debug Time Column in TimeGutter" [level=2] [ref=e565] [cursor=pointer]':
+                      - generic [ref=e567]:
+                        - img [ref=e568]
+                        - 'generic "Plan: Debug Time Column in TimeGutter" [ref=e571]'
+                    - treeitem "Workflow Prepare Feature" [level=2] [ref=e573] [cursor=pointer]:
+                      - generic [ref=e575]:
+                        - img [ref=e576]
+                        - generic "Workflow Prepare Feature" [ref=e579]
+                    - 'treeitem "Plan: Env Table UI — Interface Path" [level=2] [ref=e581] [cursor=pointer]':
+                      - generic [ref=e583]:
+                        - img [ref=e584]
+                        - 'generic "Plan: Env Table UI — Interface Path" [ref=e587]'
+                    - 'treeitem "Plan: Prompt Index Panel" [level=2] [ref=e589] [cursor=pointer]':
+                      - generic [ref=e591]:
+                        - img [ref=e592]
+                        - 'generic "Plan: Prompt Index Panel" [ref=e595]'
+                    - 'treeitem "Plan: Zero-Logic Frontend — Simplified Agentic Process Spawn Flow" [level=2] [ref=e597] [cursor=pointer]':
+                      - generic [ref=e599]:
+                        - img [ref=e600]
+                        - 'generic "Plan: Zero-Logic Frontend — Simplified Agentic Process Spawn Flow" [ref=e603]'
+                    - 'treeitem "Plan: Time/Index Debug Column + Trace Filter Dropdown" [level=2] [ref=e605] [cursor=pointer]':
+                      - generic [ref=e607]:
+                        - img [ref=e608]
+                        - 'generic "Plan: Time/Index Debug Column + Trace Filter Dropdown" [ref=e611]'
+                    - 'treeitem "Plan: Status Cleanup & Simplification" [level=2] [ref=e613] [cursor=pointer]':
+                      - generic [ref=e615]:
+                        - img [ref=e616]
+                        - 'generic "Plan: Status Cleanup & Simplification" [ref=e619]'
+                    - 'treeitem "Plan: Claude Code CLI Options — Complete Spec + Stress Tests" [level=2] [ref=e621] [cursor=pointer]':
+                      - generic [ref=e623]:
+                        - img [ref=e624]
+                        - 'generic "Plan: Claude Code CLI Options — Complete Spec + Stress Tests" [ref=e627]'
+                    - 'treeitem "Plan: Rename \"pane\" → \"mcp_app\" (MCP Apps spec compatibility)" [level=2] [ref=e629] [cursor=pointer]':
+                      - generic [ref=e631]:
+                        - img [ref=e632]
+                        - 'generic "Plan: Rename \"pane\" → \"mcp_app\" (MCP Apps spec compatibility)" [ref=e635]'
+                    - treeitem "Remove SessionItem — Unify on ClaudeSessionRecord" [level=2] [ref=e637] [cursor=pointer]:
+                      - generic [ref=e639]:
+                        - img [ref=e640]
+                        - generic "Remove SessionItem — Unify on ClaudeSessionRecord" [ref=e643]
+                    - 'treeitem "Plan: Record System — JSONFsRef + StorageLayout Simplification" [level=2] [ref=e645] [cursor=pointer]':
+                      - generic [ref=e647]:
+                        - img [ref=e648]
+                        - 'generic "Plan: Record System — JSONFsRef + StorageLayout Simplification" [ref=e651]'
+                    - treeitem "PTY Viewer — Full Interpretation Enhancement" [level=2] [ref=e653] [cursor=pointer]:
+                      - generic [ref=e655]:
+                        - img [ref=e656]
+                        - generic "PTY Viewer — Full Interpretation Enhancement" [ref=e659]
+                    - 'treeitem "Plan: Introduce `metadata_ref` as Single Write Target for Records" [level=2] [ref=e661] [cursor=pointer]':
+                      - generic [ref=e663]:
+                        - img [ref=e664]
+                        - 'generic "Plan: Introduce `metadata_ref` as Single Write Target for Records" [ref=e667]'
+                    - 'treeitem "Plan: Add Version to Bootstrap & Footer" [level=2] [ref=e669] [cursor=pointer]':
+                      - generic [ref=e671]:
+                        - img [ref=e672]
+                        - 'generic "Plan: Add Version to Bootstrap & Footer" [ref=e675]'
+                    - treeitem "Fix status tests + open() return type" [level=2] [ref=e677] [cursor=pointer]:
+                      - generic [ref=e679]:
+                        - img [ref=e680]
+                        - generic "Fix status tests + open() return type" [ref=e683]
+                    - 'treeitem "Plan: Remove AgenticProcess `state` — Replace with Transcript-Derived `status`" [level=2] [ref=e685] [cursor=pointer]':
+                      - generic [ref=e687]:
+                        - img [ref=e688]
+                        - 'generic "Plan: Remove AgenticProcess `state` — Replace with Transcript-Derived `status`" [ref=e691]'
+                    - 'treeitem "Plan: Inline Quick Search Results on Home Landing" [level=2] [ref=e693] [cursor=pointer]':
+                      - generic [ref=e695]:
+                        - img [ref=e696]
+                        - 'generic "Plan: Inline Quick Search Results on Home Landing" [ref=e699]'
+                    - 'treeitem "Plan: Play Button on Home Page WorkflowStrip" [level=2] [ref=e701] [cursor=pointer]':
+                      - generic [ref=e703]:
+                        - img [ref=e704]
+                        - 'generic "Plan: Play Button on Home Page WorkflowStrip" [ref=e707]'
+                    - 'treeitem "Plan: Lazy Record Discovery with Progress Reporting" [level=2] [ref=e709] [cursor=pointer]':
+                      - generic [ref=e711]:
+                        - img [ref=e712]
+                        - 'generic "Plan: Lazy Record Discovery with Progress Reporting" [ref=e715]'
+                    - treeitem "DB I/O Error Detection & \"Data Scan Required\" Screen" [level=2] [ref=e717] [cursor=pointer]:
+                      - generic [ref=e719]:
+                        - img [ref=e720]
+                        - generic "DB I/O Error Detection & \"Data Scan Required\" Screen" [ref=e723]
+                    - 'treeitem "Plan: Dev Server JSON Support (`~/.flow/dev_server.json`)" [level=2] [ref=e725] [cursor=pointer]':
+                      - generic [ref=e727]:
+                        - img [ref=e728]
+                        - 'generic "Plan: Dev Server JSON Support (`~/.flow/dev_server.json`)" [ref=e731]'
+                    - 'treeitem "Plan: Remove PTY from AgenticProcess — Pure Shell Consumer" [level=2] [ref=e733] [cursor=pointer]':
+                      - generic [ref=e735]:
+                        - img [ref=e736]
+                        - 'generic "Plan: Remove PTY from AgenticProcess — Pure Shell Consumer" [ref=e739]'
+                    - 'treeitem "Plan: Hello World Python File" [level=2] [ref=e741] [cursor=pointer]':
+                      - generic [ref=e743]:
+                        - img [ref=e744]
+                        - 'generic "Plan: Hello World Python File" [ref=e747]'
+                    - 'treeitem "Plan: AgenticProcess.spawn() Refactor" [level=2] [ref=e749] [cursor=pointer]':
+                      - generic [ref=e751]:
+                        - img [ref=e752]
+                        - 'generic "Plan: AgenticProcess.spawn() Refactor" [ref=e755]'
+                    - 'treeitem "Plan: Shell API Consolidation" [level=2] [ref=e757] [cursor=pointer]':
+                      - generic [ref=e759]:
+                        - img [ref=e760]
+                        - 'generic "Plan: Shell API Consolidation" [ref=e763]'
+                    - 'treeitem "Plan: Lift sniffer entity lifecycle into SnifferManager" [level=2] [ref=e765] [cursor=pointer]':
+                      - generic [ref=e767]:
+                        - img [ref=e768]
+                        - 'generic "Plan: Lift sniffer entity lifecycle into SnifferManager" [ref=e771]'
+                    - 'treeitem "Plan: Search Result Snippets with Match Highlighting" [level=2] [ref=e773] [cursor=pointer]':
+                      - generic [ref=e775]:
+                        - img [ref=e776]
+                        - 'generic "Plan: Search Result Snippets with Match Highlighting" [ref=e779]'
+                    - 'treeitem "AgenticProcess Real PTY Tests + `prompt()` API" [level=2] [ref=e781] [cursor=pointer]':
+                      - generic [ref=e783]:
+                        - img [ref=e784]
+                        - 'generic "AgenticProcess Real PTY Tests + `prompt()` API" [ref=e787]'
+                    - 'treeitem "Plan: Complete Layer Separation — ComputeNode PTY Action Handlers" [level=2] [ref=e789] [cursor=pointer]':
+                      - generic [ref=e791]:
+                        - img [ref=e792]
+                        - 'generic "Plan: Complete Layer Separation — ComputeNode PTY Action Handlers" [ref=e795]'
+                    - 'treeitem "Plan: Clean CLI options — single source of truth, no backward compat" [level=2] [ref=e797] [cursor=pointer]':
+                      - generic [ref=e799]:
+                        - img [ref=e800]
+                        - 'generic "Plan: Clean CLI options — single source of truth, no backward compat" [ref=e803]'
+                    - treeitem "Pipeline Feature Plan" [level=2] [ref=e805] [cursor=pointer]:
+                      - generic [ref=e807]:
+                        - img [ref=e808]
+                        - generic "Pipeline Feature Plan" [ref=e811]
+                    - 'treeitem "Plan: Claude Code Leak — Multi-Agent Source Analysis for Viral Blog Post" [level=2] [ref=e813] [cursor=pointer]':
+                      - generic [ref=e815]:
+                        - img [ref=e816]
+                        - 'generic "Plan: Claude Code Leak — Multi-Agent Source Analysis for Viral Blog Post" [ref=e819]'
+                    - 'treeitem "Plan: Remove ClaudeErrorRecordList — Use Standard Record Scan" [level=2] [ref=e821] [cursor=pointer]':
+                      - generic [ref=e823]:
+                        - img [ref=e824]
+                        - 'generic "Plan: Remove ClaudeErrorRecordList — Use Standard Record Scan" [ref=e827]'
+                    - 'treeitem "Plan: Record 3-Part Architecture — Gap Analysis & Refactor Distance" [level=2] [ref=e829] [cursor=pointer]':
+                      - generic [ref=e831]:
+                        - img [ref=e832]
+                        - 'generic "Plan: Record 3-Part Architecture — Gap Analysis & Refactor Distance" [ref=e835]'
+                    - treeitem "Hello World React App" [level=2] [ref=e837] [cursor=pointer]:
+                      - generic [ref=e839]:
+                        - img [ref=e840]
+                        - generic "Hello World React App" [ref=e843]
+                    - 'treeitem "Plan: Shell Manager → PtyConnection Refactor" [level=2] [ref=e845] [cursor=pointer]':
+                      - generic [ref=e847]:
+                        - img [ref=e848]
+                        - 'generic "Plan: Shell Manager → PtyConnection Refactor" [ref=e851]'
+                    - 'treeitem "Plan: Write `pty_mux.md` — PTY & Mux Architecture Doc" [level=2] [ref=e853] [cursor=pointer]':
+                      - generic [ref=e855]:
+                        - img [ref=e856]
+                        - 'generic "Plan: Write `pty_mux.md` — PTY & Mux Architecture Doc" [ref=e859]'
+                    - 'treeitem "Plan: CronEvent Entity + Scheduler + UI" [level=2] [ref=e861] [cursor=pointer]':
+                      - generic [ref=e863]:
+                        - img [ref=e864]
+                        - 'generic "Plan: CronEvent Entity + Scheduler + UI" [ref=e867]'
+                    - 'treeitem "Plan: Shell SDK Store + `useShell` Hook — Clean PTY Architecture" [level=2] [ref=e869] [cursor=pointer]':
+                      - generic [ref=e871]:
+                        - img [ref=e872]
+                        - 'generic "Plan: Shell SDK Store + `useShell` Hook — Clean PTY Architecture" [ref=e875]'
+                    - treeitem "Remove DomainObject" [level=2] [ref=e877] [cursor=pointer]:
+                      - generic [ref=e879]:
+                        - img [ref=e880]
+                        - generic "Remove DomainObject" [ref=e883]
+                    - 'treeitem "Plan: Delete `flow_sdk/domain/` — Consolidate into `builtin/`" [level=2] [ref=e885] [cursor=pointer]':
+                      - generic [ref=e887]:
+                        - img [ref=e888]
+                        - 'generic "Plan: Delete `flow_sdk/domain/` — Consolidate into `builtin/`" [ref=e891]'
+                    - treeitem "Simplify ClaudeSessionRecord FTS Content" [level=2] [ref=e893] [cursor=pointer]:
+                      - generic [ref=e895]:
+                        - img [ref=e896]
+                        - generic "Simplify ClaudeSessionRecord FTS Content" [ref=e899]
+                    - treeitem "Skill Scope + record_data_ref Removal" [level=2] [ref=e901] [cursor=pointer]:
+                      - generic [ref=e903]:
+                        - img [ref=e904]
+                        - generic "Skill Scope + record_data_ref Removal" [ref=e907]
+                    - 'treeitem "Plan: Status Cleanup & Simplification" [level=2] [ref=e909] [cursor=pointer]':
+                      - generic [ref=e911]:
+                        - img [ref=e912]
+                        - 'generic "Plan: Status Cleanup & Simplification" [ref=e915]'
+                    - 'treeitem "Plan: API_TIMEOUT Status Detection and Worker Kill" [level=2] [ref=e917] [cursor=pointer]':
+                      - generic [ref=e919]:
+                        - img [ref=e920]
+                        - 'generic "Plan: API_TIMEOUT Status Detection and Worker Kill" [ref=e923]'
+                    - 'treeitem "Plan: DB Path Selector" [level=2] [ref=e925] [cursor=pointer]':
+                      - generic [ref=e927]:
+                        - img [ref=e928]
+                        - 'generic "Plan: DB Path Selector" [ref=e931]'
+                    - 'treeitem "Plan: Claude Code Memory Files as User-Visible Entities" [level=2] [ref=e933] [cursor=pointer]':
+                      - generic [ref=e935]:
+                        - img [ref=e936]
+                        - 'generic "Plan: Claude Code Memory Files as User-Visible Entities" [ref=e939]'
+                    - 'treeitem "Plan: Hello World Python File" [level=2] [ref=e941] [cursor=pointer]':
+                      - generic [ref=e943]:
+                        - img [ref=e944]
+                        - 'generic "Plan: Hello World Python File" [ref=e947]'
+                    - treeitem "Context" [level=2] [ref=e949] [cursor=pointer]:
+                      - generic [ref=e951]:
+                        - img [ref=e952]
+                        - generic "Context" [ref=e955]
+                    - treeitem "Rule Violations Fix Plan" [level=2] [ref=e957] [cursor=pointer]:
+                      - generic [ref=e959]:
+                        - img [ref=e960]
+                        - generic "Rule Violations Fix Plan" [ref=e963]
+                    - 'treeitem "Plan: Launch Flowpad 0.2.0 Open Source" [level=2] [ref=e965] [cursor=pointer]':
+                      - generic [ref=e967]:
+                        - img [ref=e968]
+                        - 'generic "Plan: Launch Flowpad 0.2.0 Open Source" [ref=e971]'
+                    - 'treeitem "Plan: last_scan_info — Scan Stats in Search UI" [level=2] [ref=e973] [cursor=pointer]':
+                      - generic [ref=e975]:
+                        - img [ref=e976]
+                        - 'generic "Plan: last_scan_info — Scan Stats in Search UI" [ref=e979]'
+                    - treeitem "Queue Button for AgenticProcess Terminal" [level=2] [ref=e981] [cursor=pointer]:
+                      - generic [ref=e983]:
+                        - img [ref=e984]
+                        - generic "Queue Button for AgenticProcess Terminal" [ref=e987]
+                    - 'treeitem "Plan: Shared `claude_hook_events` SDK Module" [level=2] [ref=e989] [cursor=pointer]':
+                      - generic [ref=e991]:
+                        - img [ref=e992]
+                        - 'generic "Plan: Shared `claude_hook_events` SDK Module" [ref=e995]'
+                    - 'treeitem "Plan: Extract fs-records into FsRecordsActionsMixin" [level=2] [ref=e997] [cursor=pointer]':
+                      - generic [ref=e999]:
+                        - img [ref=e1000]
+                        - 'generic "Plan: Extract fs-records into FsRecordsActionsMixin" [ref=e1003]'
+                    - treeitem "Shell/Record Cleanup & scan_for_recovery Removal" [level=2] [ref=e1005] [cursor=pointer]:
+                      - generic [ref=e1007]:
+                        - img [ref=e1008]
+                        - generic "Shell/Record Cleanup & scan_for_recovery Removal" [ref=e1011]
+                    - 'treeitem "Plan: sanitize_git.sh — Full Open-Source Prep (Updated Removal List)" [level=2] [ref=e1013] [cursor=pointer]':
+                      - generic [ref=e1015]:
+                        - img [ref=e1016]
+                        - 'generic "Plan: sanitize_git.sh — Full Open-Source Prep (Updated Removal List)" [ref=e1019]'
+                    - 'treeitem "Plan: Annotation Entity — Auto-created from UserPromptSubmit" [level=2] [ref=e1021] [cursor=pointer]':
+                      - generic [ref=e1023]:
+                        - img [ref=e1024]
+                        - 'generic "Plan: Annotation Entity — Auto-created from UserPromptSubmit" [ref=e1027]'
+                    - 'treeitem "Plan: Hello World React App" [level=2] [ref=e1029] [cursor=pointer]':
+                      - generic [ref=e1031]:
+                        - img [ref=e1032]
+                        - 'generic "Plan: Hello World React App" [ref=e1035]'
+                    - 'treeitem "Plan: Refactor status ownership — Claude session owns the logic" [level=2] [ref=e1037] [cursor=pointer]':
+                      - generic [ref=e1039]:
+                        - img [ref=e1040]
+                        - 'generic "Plan: Refactor status ownership — Claude session owns the logic" [ref=e1043]'
+                    - 'treeitem "Plan: Long Vitest — Classify Session Integration Test" [level=2] [ref=e1045] [cursor=pointer]':
+                      - generic [ref=e1047]:
+                        - img [ref=e1048]
+                        - 'generic "Plan: Long Vitest — Classify Session Integration Test" [ref=e1051]'
+                    - 'treeitem "Plan: Column Header Bar + Toolbar Consolidation" [level=2] [ref=e1053] [cursor=pointer]':
+                      - generic [ref=e1055]:
+                        - img [ref=e1056]
+                        - 'generic "Plan: Column Header Bar + Toolbar Consolidation" [ref=e1059]'
+                    - 'treeitem "Plan: Remove `uid` — Fix Non-UUID Record IDs + Remove uid Indirection" [level=2] [ref=e1061] [cursor=pointer]':
+                      - generic [ref=e1063]:
+                        - img [ref=e1064]
+                        - 'generic "Plan: Remove `uid` — Fix Non-UUID Record IDs + Remove uid Indirection" [ref=e1067]'
+                    - 'treeitem "Plan: Record Metadata Simplification + sync_to_db Fix" [level=2] [ref=e1069] [cursor=pointer]':
+                      - generic [ref=e1071]:
+                        - img [ref=e1072]
+                        - 'generic "Plan: Record Metadata Simplification + sync_to_db Fix" [ref=e1075]'
+                    - treeitem "Consolidate to single Shell-driven launch path in AgenticProcess" [level=2] [ref=e1077] [cursor=pointer]:
+                      - generic [ref=e1079]:
+                        - img [ref=e1080]
+                        - generic "Consolidate to single Shell-driven launch path in AgenticProcess" [ref=e1083]
+                    - 'treeitem "Plan: AgenticProcess Layer Refactor (Layer 3 of 3)" [level=2] [ref=e1085] [cursor=pointer]':
+                      - generic [ref=e1087]:
+                        - img [ref=e1088]
+                        - 'generic "Plan: AgenticProcess Layer Refactor (Layer 3 of 3)" [ref=e1091]'
+                    - 'treeitem "Plan: Set resume flag at upsertSessionProcess time via transcript existence check" [level=2] [ref=e1093] [cursor=pointer]':
+                      - generic [ref=e1095]:
+                        - img [ref=e1096]
+                        - 'generic "Plan: Set resume flag at upsertSessionProcess time via transcript existence check" [ref=e1099]'
+                    - 'treeitem "Plan: Port cli_workers to TypeScript" [level=2] [ref=e1101] [cursor=pointer]':
+                      - generic [ref=e1103]:
+                        - img [ref=e1104]
+                        - 'generic "Plan: Port cli_workers to TypeScript" [ref=e1107]'
+                    - 'treeitem "Plan: cli_workers TypeScript Port" [level=2] [ref=e1109] [cursor=pointer]':
+                      - generic [ref=e1111]:
+                        - img [ref=e1112]
+                        - 'generic "Plan: cli_workers TypeScript Port" [ref=e1115]'
+                    - 'treeitem "Plan: Workflow Trace Annotation Column" [level=2] [ref=e1117] [cursor=pointer]':
+                      - generic [ref=e1119]:
+                        - img [ref=e1120]
+                        - 'generic "Plan: Workflow Trace Annotation Column" [ref=e1123]'
+                    - 'treeitem "Plan: Asset Editor Pattern — Skill Migration + Dock Routing" [level=2] [ref=e1125] [cursor=pointer]':
+                      - generic [ref=e1127]:
+                        - img [ref=e1128]
+                        - 'generic "Plan: Asset Editor Pattern — Skill Migration + Dock Routing" [ref=e1131]'
+                    - 'treeitem "Plan: Add ClaudeSessionEntity so message_count is stored in DB and returned in search" [level=2] [ref=e1133] [cursor=pointer]':
+                      - generic [ref=e1135]:
+                        - img [ref=e1136]
+                        - 'generic "Plan: Add ClaudeSessionEntity so message_count is stored in DB and returned in search" [ref=e1139]'
+                    - 'treeitem "Plan: Entity–Record ID Sync + Project Asset Creation" [level=2] [ref=e1141] [cursor=pointer]':
+                      - generic [ref=e1143]:
+                        - img [ref=e1144]
+                        - 'generic "Plan: Entity–Record ID Sync + Project Asset Creation" [ref=e1147]'
+                    - treeitem "Graph Query Benchmark Plan" [level=2] [ref=e1149] [cursor=pointer]:
+                      - generic [ref=e1151]:
+                        - img [ref=e1152]
+                        - generic "Graph Query Benchmark Plan" [ref=e1155]
+                    - 'treeitem "Plan: Fix Memo \"Open Session\" — navigate to correct process via dockPointer" [level=2] [ref=e1157] [cursor=pointer]':
+                      - generic [ref=e1159]:
+                        - img [ref=e1160]
+                        - 'generic "Plan: Fix Memo \"Open Session\" — navigate to correct process via dockPointer" [ref=e1163]'
+                    - 'treeitem "Plan: AgenticProcess.add_dir() + Default System Assets via --add-dir" [level=2] [ref=e1165] [cursor=pointer]':
+                      - generic [ref=e1167]:
+                        - img [ref=e1168]
+                        - 'generic "Plan: AgenticProcess.add_dir() + Default System Assets via --add-dir" [ref=e1171]'
+                - treeitem "Expand Claude Rules Scan for changes" [level=1] [ref=e1173] [cursor=pointer]:
+                  - generic [ref=e1174]:
+                    - button "Expand" [ref=e1175]:
+                      - img [ref=e1176]
+                    - generic [ref=e1178]:
+                      - img [ref=e1179]
+                      - generic "Claude Rules" [ref=e1181]
+                  - button "Scan for changes" [ref=e1183]:
+                    - generic [ref=e1184]:
+                      - img
+                - treeitem "Expand Skill 176 Scan for changes New Skill" [level=1] [ref=e1186] [cursor=pointer]:
+                  - generic [ref=e1187]:
+                    - button "Expand" [ref=e1188]:
+                      - img [ref=e1189]
+                    - generic [ref=e1191]:
+                      - img [ref=e1192]
+                      - generic "Skill" [ref=e1194]
+                      - generic [ref=e1195]: "176"
+                  - generic [ref=e1196]:
+                    - button "Scan for changes" [ref=e1197]:
+                      - generic [ref=e1198]:
+                        - img
+                    - button "New Skill" [ref=e1199]:
+                      - generic [ref=e1200]:
+                        - img
+                - treeitem "Expand Task 29 Scan for changes New Task" [level=1] [ref=e1202] [cursor=pointer]:
+                  - generic [ref=e1203]:
+                    - button "Expand" [ref=e1204]:
+                      - img [ref=e1205]
+                    - generic [ref=e1207]:
+                      - img [ref=e1208]
+                      - generic "Task" [ref=e1211]
+                      - generic [ref=e1212]: "29"
+                  - generic [ref=e1213]:
+                    - button "Scan for changes" [ref=e1214]:
+                      - generic [ref=e1215]:
+                        - img
+                    - button "New Task" [ref=e1216]:
+                      - generic [ref=e1217]:
+                        - img
+                - treeitem "Expand Workflow 7 Scan for changes New Workflow" [level=1] [ref=e1219] [cursor=pointer]:
+                  - generic [ref=e1220]:
+                    - button "Expand" [ref=e1221]:
+                      - img [ref=e1222]
+                    - generic [ref=e1224]:
+                      - img [ref=e1225]
+                      - generic "Workflow" [ref=e1229]
+                      - generic [ref=e1230]: "7"
+                  - generic [ref=e1231]:
+                    - button "Scan for changes" [ref=e1232]:
+                      - generic [ref=e1233]:
+                        - img
+                    - button "New Workflow" [ref=e1234]:
+                      - generic [ref=e1235]:
+                        - img
+            - generic [ref=e1237]:
+              - generic [ref=e1238]:
+                - button "Wiki" [ref=e1239] [cursor=pointer]:
+                  - img
+                  - text: Wiki
+                - generic [ref=e1240]:
+                  - generic [ref=e1242]: proud-spinning-whale.md
+                  - generic [ref=e1243]: Users/shlom/.claude/plans
+                - generic [ref=e1244]:
+                  - button "view" [ref=e1245] [cursor=pointer]:
+                    - img [ref=e1246]
+                    - text: view
+                  - button "review" [ref=e1249] [cursor=pointer]:
+                    - img [ref=e1250]
+                    - text: review
+                  - button "editor" [ref=e1252] [cursor=pointer]:
+                    - img [ref=e1253]
+                    - text: editor
+                  - button "markdown" [ref=e1256] [cursor=pointer]:
+                    - img [ref=e1257]
+                    - text: markdown
+                - button "Copy path to clipboard" [ref=e1262] [cursor=pointer]:
+                  - img [ref=e1263]
+              - generic [ref=e1268]:
+                - generic [ref=e1270]:
+                  - generic [ref=e1271]:
+                    - button "Bold" [ref=e1272] [cursor=pointer]:
+                      - img [ref=e1273]
+                    - button "Italic" [ref=e1275] [cursor=pointer]:
+                      - img [ref=e1276]
+                    - button "Inline code" [ref=e1278] [cursor=pointer]:
+                      - img [ref=e1279]
+                    - button "Select text to add a link" [disabled] [ref=e1282]:
+                      - img [ref=e1283]
+                    - button "Normal text" [ref=e1287] [cursor=pointer]:
+                      - img [ref=e1288]
+                    - button "Heading 1" [ref=e1290] [cursor=pointer]:
+                      - img [ref=e1291]
+                    - button "Heading 2" [ref=e1293] [cursor=pointer]:
+                      - img [ref=e1294]
+                    - button "Heading 3" [ref=e1296] [cursor=pointer]:
+                      - img [ref=e1297]
+                    - button "Bullet list" [ref=e1301] [cursor=pointer]:
+                      - img [ref=e1302]
+                    - button "Ordered list" [ref=e1303] [cursor=pointer]:
+                      - img [ref=e1304]
+                    - button "Code block" [ref=e1307] [cursor=pointer]:
+                      - img [ref=e1308]
+                  - textbox [ref=e1316]:
+                    - 'heading "Plan: Hello cWorld in Python" [level=1] [ref=e1317]'
+                    - heading "Context" [level=2] [ref=e1318]
+                    - paragraph [ref=e1319]: Create a simple Python "Hello, World!" program as an introduction to the project.
+                    - heading "Implementation" [level=2] [ref=e1320]
+                    - paragraph [ref=e1321]:
+                      - strong [ref=e1322]: "File to create:"
+                      - code [ref=e1323]: hello_world.py
+                    - code [ref=e1325]: print("Hello, World!")
+                    - heading "Steps" [level=2] [ref=e1326]
+                    - list [ref=e1327]:
+                      - listitem [ref=e1328]:
+                        - paragraph [ref=e1329]:
+                          - text: Create
+                          - code [ref=e1330]: hello_world.py
+                          - text: in the current working directory with a single
+                          - code [ref=e1331]: print
+                          - text: statement.
+                    - heading "Verification" [level=2] [ref=e1332]
+                    - paragraph [ref=e1333]: "Run the script to confirm output:"
+                    - code [ref=e1335]: "python3 hello_world.py # Expected output: Hello, World!"
+                    - paragraph [ref=e1336]
+                - generic [ref=e1337]:
+                  - generic [ref=e1338]:
+                    - button "Chat" [ref=e1339] [cursor=pointer]:
+                      - img [ref=e1340]
+                      - generic [ref=e1342]: Chat
+                    - button "Backlinks" [ref=e1343] [cursor=pointer]:
+                      - img [ref=e1344]
+                      - generic [ref=e1347]: Backlinks
+                  - generic [ref=e1352]:
+                    - textbox "Ask about this doc…" [ref=e1353]
+                    - button "Send" [disabled] [ref=e1354]:
+                      - img [ref=e1355]
+      - contentinfo [ref=e1358]:
+        - generic [ref=e1359]:
+          - button "Settings" [ref=e1361] [cursor=pointer]:
+            - img [ref=e1362]
+          - generic [ref=e1365]:
+            - button "Switch Project" [ref=e1366] [cursor=pointer]:
+              - img [ref=e1367]
+              - generic [ref=e1370]: Switch Project
+            - button "First" [ref=e1371] [cursor=pointer]
+            - button "/Users/shlom/Flowpad workspace/First" [ref=e1372] [cursor=pointer]:
+              - generic [ref=e1373]: /Users/shlom/Flowpad workspace/First
+              - img [ref=e1374]
+          - generic [ref=e1378]:
+            - button "Flowpad docs" [ref=e1379] [cursor=pointer]:
+              - img [ref=e1380]
+              - generic [ref=e1382]: Flowpad docs
+            - button "5h 4600% · 7d 5800% · $5.89" [ref=e1390] [cursor=pointer]:
+              - generic [ref=e1384]: 5h 4600% · 7d 5800% · $5.89
+            - generic [ref=e1385]: v0.2.13
+            - generic [ref=e1386]:
+              - generic [ref=e1387]: Powered by
+              - link "Flowpad.ai Logo" [ref=e1388] [cursor=pointer]:
+                - /url: https://flowpad.ai
+                - img "Flowpad.ai Logo" [ref=e1389]

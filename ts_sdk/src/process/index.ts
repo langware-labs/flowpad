@@ -10,6 +10,7 @@
 export {
   ProcessStatus,
   WorkerStatus,
+  WorkerMode,
   parseUIUri,
   isProcessRunning,
   isProcessActive,
@@ -18,7 +19,9 @@ export {
   isWorkerTerminal,
   hasWorkerStarted,
   isReadyForInput,
+  isBusy,
   getDisplayStatus,
+  getWorkerMode,
 } from './agentic-types';
 export type { ParsedUIUri, UIComponentPayload, StatusBearingProcess } from './agentic-types';
 
