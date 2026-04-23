@@ -188,7 +188,7 @@ async def test_open_correctly_reconnects_claude_session(bootstrapped_client):
             f"/api/v1/graph/agentic_process/{process_id}"
         )
         proc = ApiResponse(**proc_resp.json()).data
-        assert proc["status"] == "live"
+        assert proc["status"] == "running"
         assert proc["shell_id"] is not None
         assert proc["session_id"] == session_id
 
@@ -228,8 +228,8 @@ async def test_open_registers_on_exit_so_status_updates(bootstrapped_client):
             f"/api/v1/graph/agentic_process/{process_id}"
         )
         proc = ApiResponse(**proc_resp.json()).data
-        assert proc["status"] != "live", (
-            "BUG: process.status stays 'live' after the shell closes.\n"
+        assert proc["status"] != "running", (
+            "BUG: process.status stays 'running' after the shell closes.\n"
             "on_exit was never registered because open() was not called properly."
         )
 
@@ -342,7 +342,7 @@ async def test_open_preserves_session_id_after_restart(bootstrapped_client):
         proc = ApiResponse(**proc_resp.json()).data
         assert proc["session_id"] == session_id
         assert proc["shell_id"] == new_shell_id
-        assert proc["status"] == "live"
+        assert proc["status"] == "running"
 
     finally:
         jsonl_path.unlink(missing_ok=True)

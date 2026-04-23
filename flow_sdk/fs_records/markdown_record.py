@@ -8,15 +8,17 @@ from __future__ import annotations
 
 import os
 import re
+import uuid
 from pathlib import Path
 
-from typing import Any, ClassVar, Iterator
+from typing import Any, ClassVar
 
 from flow_sdk.fs_store import Record, RecordType
 
 from ._frontmatter import (
     _extract_body,
     _extract_frontmatter,
+    _render_frontmatter,
     _yaml_load,
 )
 
@@ -181,7 +183,6 @@ class MarkdownRecord(Record):
 
         raw_id = fields.get("asset_id") or fields.get("id")
         if not raw_id and path is not None:
-            import uuid
             asset_id = str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
         else:
             asset_id = raw_id
@@ -237,8 +238,8 @@ class MarkdownRecord(Record):
         # also check attrs written by save()
         return getattr(self, "source_path_field", None) or getattr(self, "asset_ref_path", None)
 
-    def _fingerprint_paths(self):
-        """Fingerprint the source .md file by mtime + size."""
+    def _asset_paths(self):
+        """The source .md file."""
         ar = self.asset_ref
         if ar is not None and ar.exists():
             return [ar._path]
@@ -295,54 +296,70 @@ class MarkdownRecord(Record):
         return result
 
     @classmethod
-    def _external_source_count(cls, limit: int | None = None) -> int:
-        seen: set[str] = set()
-        for docs_dir in _doc_search_dirs():
-            for md_file in docs_dir.rglob("*.md"):
-                seen.add(str(md_file.resolve()))
-        count = len(seen)
-        return min(count, limit) if limit is not None else count
-
-    @classmethod
     async def from_fsref(cls, ref) -> list["MarkdownRecord"]:
         """Indexer entry point — construct from an FSRef emitted by markdown_fn."""
         return [cls.from_file(ref._path)]
 
-    @classmethod
-    def _external_source_iter(cls, limit: int | None = None) -> Iterator["MarkdownRecord"]:
-        seen: set[str] = set()
-        count = 0
-        for docs_dir in _doc_search_dirs():
-            for md_file in sorted(docs_dir.rglob("*.md")):
-                key = str(md_file.resolve())
-                if key in seen:
-                    continue
-                seen.add(key)
-                try:
-                    yield cls.from_file(md_file)
-                    count += 1
-                    if limit is not None and count >= limit:
-                        return
-                except Exception:
-                    continue
+    # ── Portable identity (Phase 7c) ─────────────────────────────────────────
+    # MarkdownRecord opts into `asset_id` minting: genId writes a stable uuid
+    # into the file's YAML frontmatter on first encounter, so the id survives
+    # path moves / cross-machine sync. getId is read-only.
+
+    _mintable: ClassVar[bool] = True
 
     @classmethod
-    def discover(cls, project_dir: str | Path = "", **kwargs) -> list["MarkdownRecord"]:
-        """Discover MarkdownRecords.
+    def _read_frontmatter_asset_id(cls, path: Path) -> str | None:
+        """Return `asset_id` from the file's frontmatter, or None if absent."""
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        fm = _extract_frontmatter(text)
+        if not fm:
+            return None
+        fields = _yaml_load(fm) or {}
+        raw = fields.get("asset_id") or fields.get("id")
+        return str(raw).strip() if isinstance(raw, str) and raw.strip() else None
 
-        If project_dir is given: walk all .md files in that directory tree.
-        Otherwise: use _external_source_iter() to discover from source files
-        directly, bypassing the stale records-root cache.
+    @classmethod
+    def getId(cls, ref) -> str:
+        """asset_id from frontmatter when present; else uuid5 of resolved path."""
+        existing = cls._read_frontmatter_asset_id(ref._path)
+        if existing:
+            return existing
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, str(ref._path.resolve())))
+
+    @classmethod
+    def genId(cls, ref) -> str:
+        """Read asset_id, or mint one into the frontmatter and return it.
+
+        Idempotent: if the file already has an `asset_id`, no write happens.
+        Otherwise a fresh `uuid4()` is inserted at the top of the frontmatter,
+        preserving every other field and the markdown body verbatim.
         """
-        if not project_dir:
-            # Always discover from source files — the records-root cache may
-            # have stale metadata (e.g. title="") that would shadow fresh data.
-            return list(cls._external_source_iter())
-        results: list[MarkdownRecord] = []
-        p = Path(project_dir)
-        for md_file in sorted(p.rglob("*.md")):
-            try:
-                results.append(cls.from_file(md_file))
-            except Exception:
-                continue
-        return results
+        existing = cls._read_frontmatter_asset_id(ref._path)
+        if existing:
+            return existing
+        new_id = str(uuid.uuid4())
+        try:
+            text = ref._path.read_text(encoding="utf-8")
+        except OSError:
+            return new_id  # can't write; still return a usable id
+        fm = _extract_frontmatter(text)
+        body = _extract_body(text)
+        fields: dict = {}
+        if fm:
+            parsed = _yaml_load(fm)
+            if isinstance(parsed, dict):
+                fields.update(parsed)
+        # Insert asset_id at the front for readability
+        merged = {"asset_id": new_id, **{k: v for k, v in fields.items() if k not in ("asset_id",)}}
+        try:
+            ref._path.write_text(
+                _render_frontmatter(merged) + "\n\n" + body + ("\n" if body and not body.endswith("\n") else ""),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+        return new_id
+

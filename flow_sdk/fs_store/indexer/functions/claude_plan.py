@@ -6,7 +6,7 @@ on USER_HOME_FOLDER, REAL_PROJECT_CWD, and CWD_ROOT; scope inherits from
 whichever root the call chain started at.
 
 Reproduces the path set of flow_sdk/fs_records/claude/claude_plan.py:
-_plan_search_dirs + _external_source_iter. FLOWPAD_PLAN_DIRS env-var
+_plan_search_dirs + indexer function. FLOWPAD_PLAN_DIRS env-var
 support is deferred (empty on this machine; separate follow-up if needed).
 """
 

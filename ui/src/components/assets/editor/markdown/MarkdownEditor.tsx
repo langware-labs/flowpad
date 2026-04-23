@@ -36,6 +36,11 @@ const MODE_ICONS: Record<ViewMode, React.ComponentType<{ className?: string }>> 
 interface MarkdownEditorProps {
   /** FSRef to the .md file — carries path + typeId + read/write. */
   fsRef: FSRef;
+  /**
+   * Serialized TypeId of the entity this markdown belongs to (e.g. `"plan-<id>"`).
+   * Keys Chat + Backlinks tabs. Null disables chat persistence on this file.
+   */
+  chatTarget: string | null;
   /** Optional asset-specific toolbar actions rendered in the header */
   toolbar?: React.ReactNode;
   /** Appended to the side drawer after Chat + Backlinks. */
@@ -59,6 +64,7 @@ interface MarkdownEditorProps {
  */
 export function MarkdownEditor({
   fsRef,
+  chatTarget,
   toolbar,
   extraSideTabs,
   activeSideTab,
@@ -69,6 +75,7 @@ export function MarkdownEditor({
     <MarkdownEditorContent
       fsRef={fsRef}
       sourcePath={fsRef.path}
+      chatTarget={chatTarget}
       toolbar={toolbar}
       extraSideTabs={extraSideTabs}
       activeSideTab={activeSideTab}
@@ -83,6 +90,7 @@ export function MarkdownEditor({
 function MarkdownEditorContent({
   fsRef,
   sourcePath,
+  chatTarget,
   toolbar,
   extraSideTabs,
   activeSideTab,
@@ -91,6 +99,7 @@ function MarkdownEditorContent({
 }: {
   fsRef: FSRef;
   sourcePath: string;
+  chatTarget: string | null;
   toolbar?: React.ReactNode;
   extraSideTabs?: ExtraSideTab[];
   activeSideTab?: string;
@@ -243,7 +252,7 @@ function MarkdownEditorContent({
             onChange={handleBodyChange}
             onLinkClick={handleLinkClick}
             editorMode={viewMode}
-            sourcePath={sourcePath}
+            chatTarget={chatTarget}
             extraTabs={extraSideTabs}
             activeTab={activeSideTab}
             onActiveTabChange={onActiveSideTabChange}

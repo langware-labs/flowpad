@@ -43,7 +43,7 @@ class CliLogRecord(Record):
                  level, duration_ms
 
     Entries live in a JSONL file (not individual record folders), so
-    discover/discover_one are overridden to read from the JSONL.
+    discover/get are overridden to read from the JSONL.
     The record is read-only through the fs-records action.
     """
 
@@ -85,7 +85,7 @@ class CliLogRecord(Record):
         return read_entries(limit=kwargs.get("limit", MAX_ENTRIES))
 
     @classmethod
-    def discover_one(cls, uid: str, scope: Scope | None = None, **kwargs: Any) -> "CliLogRecord | None":
+    def get(cls, uid: str, scope: Scope | None = None, **kwargs: Any) -> "CliLogRecord | None":
         """Find a single entry by id in the JSONL log file."""
         for rec in read_entries():
             if rec.id == uid:
@@ -128,7 +128,7 @@ class CliLogSettingsRecord(Record):
 def load_settings() -> CliLogSettingsRecord:
     """Load settings record from disk. Returns defaults if missing."""
     try:
-        rec = CliLogSettingsRecord.discover_one(_SETTINGS_UID)
+        rec = CliLogSettingsRecord.get(_SETTINGS_UID)
         if rec is not None:
             return rec
     except Exception:
@@ -139,7 +139,7 @@ def load_settings() -> CliLogSettingsRecord:
 def save_settings(level: str) -> None:
     """Save settings record to disk."""
     try:
-        rec = CliLogSettingsRecord.discover_one(_SETTINGS_UID) or CliLogSettingsRecord()
+        rec = CliLogSettingsRecord.get(_SETTINGS_UID) or CliLogSettingsRecord()
         rec.level = level
         rec.save()
     except Exception:

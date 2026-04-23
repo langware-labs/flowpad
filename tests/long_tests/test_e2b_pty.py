@@ -20,7 +20,30 @@ import uuid
 import pytest
 
 E2B_KEY = os.getenv("E2B_KEY")
-pytestmark = pytest.mark.skipif(not E2B_KEY, reason="E2B_KEY not set")
+
+
+def _e2b_reachable() -> bool:
+    """True iff E2B_KEY is set AND the API is reachable — else skip.
+
+    Avoids flaky failures when network egress to api.e2b.dev is blocked even
+    though a key is configured (CI sandboxes, offline dev, etc).
+    """
+    if not E2B_KEY:
+        return False
+    try:
+        import socket
+        socket.setdefaulttimeout(2.0)
+        sock = socket.create_connection(("api.e2b.dev", 443), timeout=2.0)
+        sock.close()
+        return True
+    except OSError:
+        return False
+
+
+pytestmark = pytest.mark.skipif(
+    not _e2b_reachable(),
+    reason="E2B_KEY not set or api.e2b.dev unreachable",
+)
 
 
 # ---------------------------------------------------------------------------

@@ -85,7 +85,7 @@ async def _index_session_on_close(session_id: str, pty_title: str | None = None)
     """
     try:
         from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
-        record = ClaudeSessionRecord.discover_one(session_id)
+        record = ClaudeSessionRecord.get(session_id)
         if record:
             if pty_title:
                 inst = object.__getattribute__(record, "__dict__")
@@ -121,7 +121,7 @@ async def _poll_for_completion(agentic_process_id: str, session_id: str | None) 
         try:
             if not session_id:
                 break
-            record = ClaudeSessionRecord.discover_one(session_id)
+            record = ClaudeSessionRecord.get(session_id)
             if record is None:
                 continue  # transcript not written yet
 
@@ -180,7 +180,7 @@ def _build_run_result(proc: "AgenticProcess") -> "RunResult":
     token_usage: dict | None = None
     if proc.session_id:
         try:
-            record = ClaudeSessionRecord.discover_one(proc.session_id)
+            record = ClaudeSessionRecord.get(proc.session_id)
             if record:
                 text = record.last_assistant_text or ""
                 models_used = list(record.models_used) if hasattr(record, "models_used") else []
@@ -651,7 +651,7 @@ class AgenticProcess(Entity):
         while transcript_path is None:
             if loop.time() > deadline:
                 raise TimeoutError("stream_transcript: transcript file did not appear within timeout")
-            record = ClaudeSessionRecord.discover_one(session_id)
+            record = ClaudeSessionRecord.get(session_id)
             if record and record.jsonl_path:
                 transcript_path = Path(record.jsonl_path)
             else:
@@ -1022,7 +1022,7 @@ class AgenticProcess(Entity):
         if ref.type == "agent":
             # Resolve by id (uuid5-derived from the .md path) first, then fall back
             # to name-based lookup for agents the UI knows by name only.
-            agent = AgentRecord.discover_one(ref.id) or AgentRecord.load_agent(ref.id)
+            agent = AgentRecord.get(ref.id) or AgentRecord.load_agent(ref.id)
             if agent is None:
                 raise FileNotFoundError(f"Agent not found: {ref.id}")
             target_dir = assets_dir / ".claude" / "agents"
@@ -1035,7 +1035,7 @@ class AgenticProcess(Entity):
             return agent.name or ref.id
 
         if ref.type == "skill":
-            skill = SkillRecord.discover_one(ref.id)
+            skill = SkillRecord.get(ref.id)
             if skill is None:
                 raise FileNotFoundError(f"Skill not found: {ref.id}")
             target_root = assets_dir / ".claude" / "skills"
@@ -1051,13 +1051,13 @@ class AgenticProcess(Entity):
         from flow_sdk.fs_records.skill_record import SkillRecord
 
         if ref.type == "agent":
-            agent = AgentRecord.discover_one(ref.id) or AgentRecord.load_agent(ref.id)
+            agent = AgentRecord.get(ref.id) or AgentRecord.load_agent(ref.id)
             name = agent.name if agent else ref.id
             target = assets_dir / ".claude" / "agents" / f"{name}.md"
             if target.exists():
                 target.unlink()
         elif ref.type == "skill":
-            skill = SkillRecord.discover_one(ref.id)
+            skill = SkillRecord.get(ref.id)
             name = skill.name if skill else ref.id
             target = assets_dir / ".claude" / "skills" / name
             if target.exists():
@@ -1111,6 +1111,30 @@ class AgenticProcess(Entity):
         """Return the current embedded_asset_refs as serialized TypeId strings."""
         refs = [str(r) for r in (self.embedded_asset_refs or [])]
         return ApiSuccessResponse(data={"refs": refs})
+
+    @action.get(action_name="get-history")
+    async def get_history_action(self) -> "ApiSuccessResponse":
+        """Return this process's transcript as a list of FlowData dicts.
+
+        Reads the Claude CLI JSONL (``~/.claude/projects/*/<session_id>.jsonl``)
+        via ``load_session_history`` and serializes each FlowData via Pydantic
+        ``model_dump``. The UI's ``AgenticProcess.loadHistory`` ingests these
+        into its local ``flowDataStream``, deduping against live items.
+
+        Stateless — works for processes that have exited (no live worker
+        required). Empty result is a success with ``history=[]``, not a 404.
+        """
+        from flow_sdk.builtin.agentic_workers.session_history import load_session_history
+
+        history = load_session_history(self.session_id) if self.session_id else []
+        return ApiSuccessResponse(
+            data={
+                "session_id": self.session_id,
+                "use_worker_history": True,
+                "count": len(history),
+                "history": [fd.model_dump(mode="python") for fd in history],
+            }
+        )
 
     @property
     def cli_options(self) -> "ClaudeCliOptions":
@@ -1298,7 +1322,7 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="open")
     async def _http_open(self) -> ApiSuccessResponse | ApiFailResponse:
-        """HTTP: Start PTY and move lifecycle status to starting/live.
+        """HTTP: Start PTY and move lifecycle status to starting/running.
 
         POST body: {instruction?, visible?, session_id?}
         """
@@ -1401,7 +1425,7 @@ class AgenticProcess(Entity):
         """Discover the ClaudeSessionRecord associated with this agentic process's session_id."""
         if not session_id:
             return None
-        return ClaudeSessionRecord.discover_one(session_id)
+        return ClaudeSessionRecord.get(session_id)
 
     async def _find_resumable_session(self, session_id: str) -> str | None:
         """Walk up the fork chain to find a session ID with a transcript on disk."""
@@ -1409,7 +1433,7 @@ class AgenticProcess(Entity):
         seen: set[str] = set()
         while candidate and candidate not in seen:
             seen.add(candidate)
-            if ClaudeSessionRecord.discover_one(candidate) is not None:
+            if ClaudeSessionRecord.get(candidate) is not None:
                 return candidate
             procs = await AgenticProcess.get_all()
             parent = next((p for p in procs if p.session_id == candidate), None)

@@ -4,9 +4,10 @@ Test 1: Create a Project record in records_root for a temp folder (no ~/.claude/
         entry). Index it → entity in DB. Mutate the record name on disk. Run discover()
         + sync_to_db(). Assert the updated name is reflected in the DB entity.
 
-Test 2: Same setup. Mutate the record name on disk and delete the hash sentinel so
-        record_update_required() returns True. Without running discover(), call
-        entity.check_and_refresh_record(). Assert the updated name is in the DB.
+Test 2: Same setup. Mutate the record name on disk and bump the asset's mtime
+        past the DB row's updated_date so is_valid() returns False. Without running
+        discover(), call entity.check_and_refresh_record(). Assert the updated name
+        is in the DB.
 """
 
 import uuid
@@ -44,7 +45,7 @@ async def test_discover_picks_up_updated_project_name(bootstrapped_client):
                 fs_storage_mount_path=workdir,
             )
             rec.save()
-            assert ClaudeProjectFsRecord.discover_one(entity_id) is not None, \
+            assert ClaudeProjectFsRecord.get(entity_id) is not None, \
                 "Record should be discoverable after save()"
 
             # 2. Index it → creates Project entity in DB
@@ -53,18 +54,15 @@ async def test_discover_picks_up_updated_project_name(bootstrapped_client):
             assert project is not None
             assert project.name == "Original Name"
 
-            # 3. Mutate name on disk — delete sentinel to force re-index on next sync
+            # 3. Mutate name on disk; subsequent sync_to_db picks up the new value.
             rec.name = "Updated Project Name"
             rec.save()
-            if rec.index_state_dir:
-                for h in rec.index_state_dir.glob("*.hash"):
-                    h.unlink()
 
             # 4. Discover by id — must find the mutated record in records_root.
-            # discover_iter() filters out temp-path mount paths on purpose, so
-            # iterate via discover_one() which is an O(1) direct lookup.
-            found = ClaudeProjectFsRecord.discover_one(entity_id)
-            assert found is not None, "discover_one() must find the record in records_root"
+            # discover() filters out temp-path mount paths on purpose, so
+            # iterate via get() which is an O(1) direct lookup.
+            found = ClaudeProjectFsRecord.get(entity_id)
+            assert found is not None, "get() must find the record in records_root"
             assert found.name == "Updated Project Name"
 
             # 5. Index the found record — pushes updated name into DB
@@ -82,8 +80,10 @@ async def test_discover_picks_up_updated_project_name(bootstrapped_client):
 
 
 @pytest.mark.asyncio
-async def test_hash_change_triggers_reindex_via_check_and_refresh(bootstrapped_client):
-    """Stale hash sentinel causes check_and_refresh_record() to re-index without discover()."""
+async def test_asset_newer_than_db_triggers_reindex_via_check_and_refresh(bootstrapped_client):
+    """Bumping asset mtime past DB updated_date → check_and_refresh_record() re-syncs."""
+    import os, time as _time
+
     with tempfile.TemporaryDirectory() as records_tmp, \
          tempfile.TemporaryDirectory() as workdir:
 
@@ -107,16 +107,16 @@ async def test_hash_change_triggers_reindex_via_check_and_refresh(bootstrapped_c
             assert project.name == "Original Name"
 
             # 2. Silently mutate name on disk
-            rec = ClaudeProjectFsRecord.discover_one(entity_id)
+            rec = ClaudeProjectFsRecord.get(entity_id)
             assert rec is not None
             rec.name = "Silently Changed Name"
             rec.save()
 
-            # 3. Delete the hash sentinel — record_update_required() returns True
-            if rec.index_state_dir:
-                for h in rec.index_state_dir.glob("*.hash"):
-                    h.unlink()
-            assert rec.index_required, "index_required must be True after sentinel deleted"
+            # 3. Push asset paths' mtime past the DB row's updated_date so
+            #    is_valid() returns False on the next check.
+            future_ts = _time.time() + 10
+            for p in rec._asset_paths():
+                os.utime(p, (future_ts, future_ts))
 
             # 4. Do NOT call discover(). Trigger re-index via check_and_refresh_record().
             refreshed_flag = await project.check_and_refresh_record()

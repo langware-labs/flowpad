@@ -2,7 +2,7 @@ import { EntityChatPanel } from '@src/components/entity-chat-panel';
 import type { AgenticProcess } from '@sdk';
 
 interface ChatTabProps {
-  /** Serialized attachment key (e.g. `markdown_file-<path>`). */
+  /** Serialized entity TypeId (e.g. `"plan-<uuid>"`). Null → chat disabled. */
   target: string | null;
   /** Optional hook run once after the backing process is created. */
   onProcessCreated?: (process: AgenticProcess) => Promise<void> | void;

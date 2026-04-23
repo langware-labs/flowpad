@@ -252,7 +252,7 @@ class PtySessionManager:
         try:
             from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
 
-            record = ShellRecord.discover_one(shell_id)
+            record = ShellRecord.get(shell_id)
             if record:
                 record.close()
         except Exception as e:

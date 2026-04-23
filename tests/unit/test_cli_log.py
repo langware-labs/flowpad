@@ -34,7 +34,7 @@ def _patch_paths(tmp_path, monkeypatch):
     """Redirect all cli_log I/O to tmp_path."""
     monkeypatch.setattr(cli_log, "CLI_LOG_DIR", tmp_path)
     monkeypatch.setattr(cli_log, "CLI_LOG_FILE", tmp_path / "cli.log.jsonl")
-    # Redirect fs_records root so discover_one/save use tmp_path
+    # Redirect fs_records root so get/save use tmp_path
     monkeypatch.setattr(record_mod, "_DEFAULT_RECORDS_ROOT", tmp_path / "records")
 
 
@@ -445,7 +445,7 @@ class TestSettings:
 
     def test_default_settings(self):
         """No record on disk returns level=info."""
-        with mock.patch.object(CliLogSettingsRecord, "discover_one", return_value=None):
+        with mock.patch.object(CliLogSettingsRecord, "get", return_value=None):
             s = load_settings()
         assert s.level == "info"
 

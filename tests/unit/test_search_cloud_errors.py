@@ -220,9 +220,9 @@ def _create_error_record(records_root: Path, fingerprint: str):
 
 
 def _reload_record(backing, rec_id):
-    """Reload a record from disk via discover_one (reads metadata.json)."""
+    """Reload a record from disk via get (reads metadata.json)."""
     from flow_sdk.fs_records.claude.claude_error import ClaudeErrorRecord
-    rec = ClaudeErrorRecord.discover_one(rec_id)
+    rec = ClaudeErrorRecord.get(rec_id)
     assert rec is not None, f"Record {rec_id} not found after reload"
     return rec
 

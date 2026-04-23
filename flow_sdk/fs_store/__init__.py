@@ -1,6 +1,5 @@
 """File-system backed storage utilities."""
 
-from .data_manager import DataManager as DataManager
 from .exceptions import ReadOnlyProviderError as ReadOnlyProviderError
 from .exceptions import ReadOnlyRecordError as ReadOnlyRecordError
 from .factory.type_registry import type_registry as type_registry

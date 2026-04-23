@@ -1,6 +1,6 @@
 """Indexer function: PROJECT -> CLAUDE_MEMORY.
 
-Reproduces flow_sdk/fs_records/claude/claude_memory.py:_external_source_iter.
+Reproduces flow_sdk/fs_records/claude/claude_memory.py:indexer function.
 Memories live at ~/.claude/projects/<encoded>/memory/*.md — scoped to the
 encoded project dir (the PROJECT node in our model), not the decoded cwd.
 """

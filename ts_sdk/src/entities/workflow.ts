@@ -52,9 +52,10 @@ export class Workflow extends APIEntity<Workflow> {
   }
 
   /**
-   * Create a new workflow scoped to the given project: saves the entity, writes
-   * the initial .md file under `<project>/workflows/<name>.md`, and links
-   * source_vfs_path. Falls back to `@local` project when `project` is null.
+   * Create a new workflow in the given project. Writes the initial .md file
+   * first and then persists the entity with `source_vfs_path` set — atomic,
+   * so a failed file write never leaves an orphan entity behind. Falls back
+   * to `@local` project when `project` is null.
    */
   static async createInProject(
     project: { fs_storage_mount_path?: string } | null,
@@ -78,15 +79,12 @@ export class Workflow extends APIEntity<Workflow> {
     const safeName = name.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
     const vfsPath = vfsBase ? `${vfsBase}/${folder}/${safeName}.md` : `${folder}/${safeName}.md`;
 
-    const workflow = new Workflow({ name: name.trim() });
-    const saved = await workflow.save();
-
+    // Atomic create: write the file first, then persist the entity with its
+    // source_vfs_path already set. If the file write fails, no orphan entity
+    // is left behind (Record rule R10 — the file is the source of truth).
     await fsManager.writeFile(computeNode.typeId, vfsPath, `# ${name.trim()}\n`);
-
-    saved.source_vfs_path = vfsPath;
-    await saved.save();
-
-    return saved;
+    const workflow = new Workflow({ name: name.trim(), source_vfs_path: vfsPath });
+    return workflow.save();
   }
 
   /** Backward-compat alias: create a workflow in the default (@local) project. */

@@ -32,8 +32,12 @@ interface MilkdownEditorWithSidePanelProps {
   editorMode?: MilkdownEditorMode;
   plugins?: MilkdownPlugin[];
   onLinkClick?: (href: string) => void;
-  /** File path used to derive the chat target TypeId. Chat persistence is keyed by this. */
-  sourcePath: string;
+  /**
+   * Serialized TypeId of the first-class entity this file belongs to (e.g.
+   * `"plan-<uuid>"`, `"agent-<uuid>"`). Chat + Backlinks are keyed by this.
+   * Null disables those tabs' persistence (chat cannot open, history empty).
+   */
+  chatTarget: string | null;
   /** Appended after Chat + Backlinks. Use for asset-type-specific tabs (e.g. workflow Runs). */
   extraTabs?: ExtraSideTab[];
   /** Controlled active tab id. If omitted, drawer manages its own state. */
@@ -46,10 +50,9 @@ interface MilkdownEditorWithSidePanelProps {
 
 /**
  * Wraps `MilkdownEditor` with a fixed-width tabbed side window (Chat, Backlinks).
- * The side panel is always on; Chat is the default tab.
- *
- * Target TypeId convention: `markdown_file-<sourcePath>`. The path is stable for a
- * file's lifetime; rename breaks continuity (tracked as a known limitation).
+ * The side panel is always on; Chat is the default tab. Callers must supply a
+ * real entity TypeId as `chatTarget`; files without a backing entity cannot
+ * host chat.
  */
 export function MilkdownEditorWithSidePanel({
   content,
@@ -57,7 +60,7 @@ export function MilkdownEditorWithSidePanel({
   editorMode,
   plugins,
   onLinkClick,
-  sourcePath,
+  chatTarget,
   extraTabs,
   activeTab: activeTabProp,
   onActiveTabChange,
@@ -74,11 +77,6 @@ export function MilkdownEditorWithSidePanel({
     [activeTabProp, onActiveTabChange],
   );
 
-  const target = useMemo<string | null>(
-    () => (sourcePath ? `markdown_file-${sourcePath}` : null),
-    [sourcePath],
-  );
-
   const tabs = useMemo<TabDescriptor[]>(() => {
     const base = MD_SIDE_TABS_ORDER.map((id) => MD_SIDE_TABS[id] as TabDescriptor);
     const extras: TabDescriptor[] = (extraTabs ?? []).map(({ id, label, icon, description }) => ({
@@ -92,12 +90,12 @@ export function MilkdownEditorWithSidePanel({
 
   const panels = useMemo<Record<string, ReactNode>>(() => {
     const base: Record<string, ReactNode> = {
-      chat: <ChatTab target={target} onProcessCreated={chatOnProcessCreated} />,
-      backlinks: <BacklinksTab target={target} />,
+      chat: <ChatTab target={chatTarget} onProcessCreated={chatOnProcessCreated} />,
+      backlinks: <BacklinksTab target={chatTarget} />,
     };
     for (const t of extraTabs ?? []) base[t.id] = t.panel;
     return base;
-  }, [target, extraTabs, chatOnProcessCreated]);
+  }, [chatTarget, extraTabs, chatOnProcessCreated]);
 
   return (
     <div className="flex h-full w-full" data-testid="md-editor-with-side-panel">

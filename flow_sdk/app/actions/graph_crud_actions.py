@@ -190,7 +190,7 @@ async def handle_record_action():
     if rec is None:
         # Try by uname as well
         if getattr(entity, "uname", None):
-            rec = rec_cls.discover_one(entity.uname)
+            rec = rec_cls.get(entity.uname)
     if rec is None:
         return ApiFailResponse(message="Record not found", status_code=404)
 

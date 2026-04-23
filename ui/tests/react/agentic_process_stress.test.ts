@@ -292,13 +292,13 @@ describe('AgenticProcess WS entity updates — integration', () => {
     const process = new AgenticProcess({
       id: uuidv4(),
       
-      status: ProcessStatus.LIVE,
+      status: ProcessStatus.RUNNING,
       worker_status: 'running' as any,
       is_active: false,
     });
     registerProcess(process);
 
-    expect(process.status).toBe(ProcessStatus.LIVE);
+    expect(process.status).toBe(ProcessStatus.RUNNING);
     expect(process.workerStatus).toBe('running');
     expect(process.is_active).toBe(false);
   });
@@ -307,13 +307,13 @@ describe('AgenticProcess WS entity updates — integration', () => {
     const process = new AgenticProcess({
       id: uuidv4(),
       
-      status: ProcessStatus.LIVE,
+      status: ProcessStatus.RUNNING,
       worker_status: 'running' as any,
       is_active: true,
     });
     registerProcess(process);
 
-    expect(process.status).toBe(ProcessStatus.LIVE);
+    expect(process.status).toBe(ProcessStatus.RUNNING);
     expect(process.workerStatus).toBe('running');
     expect(process.is_active).toBe(true);
   });
@@ -327,14 +327,14 @@ describe('AgenticProcess WS entity updates — integration', () => {
 
     (process as any).onEntityUpdate({ status: ProcessStatus.STARTING });
     (process as any).onEntityUpdate({ worker_status: 'running' });
-    (process as any).onEntityUpdate({ status: ProcessStatus.LIVE });
+    (process as any).onEntityUpdate({ status: ProcessStatus.RUNNING });
     (process as any).onEntityUpdate({ worker_status: 'idle' });
 
     expect(statuses).toEqual([
-      { status: ProcessStatus.STARTING, workerStatus: 'idle' },
+      { status: ProcessStatus.STARTING, workerStatus: 'initializing' },
       { status: ProcessStatus.STARTING, workerStatus: 'running' },
-      { status: ProcessStatus.LIVE, workerStatus: 'running' },
-      { status: ProcessStatus.LIVE, workerStatus: 'idle' },
+      { status: ProcessStatus.RUNNING, workerStatus: 'running' },
+      { status: ProcessStatus.RUNNING, workerStatus: 'idle' },
     ]);
   });
 });

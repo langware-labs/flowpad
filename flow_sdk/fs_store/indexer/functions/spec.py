@@ -1,6 +1,6 @@
 """Indexer function: REAL_PROJECT_CWD -> SPEC.
 
-Reproduces flow_sdk/fs_records/spec_record.py:_external_source_iter.
+Reproduces flow_sdk/fs_records/spec_record.py:indexer function.
 Specs live only at <project>/specs/<name>/spec.md — no user-level equivalent.
 """
 

@@ -2,7 +2,7 @@ import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { FSRef, RecordType } from '@sdk';
 import { RefreshCw } from 'lucide-react';
 import { useMemo } from 'react';
-import { MarkdownEditor } from './markdown/MarkdownEditor';
+import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { AgentAssetEditor } from './agent/AgentAssetEditor';
 import { WorkflowAssetEditor } from './workflow/WorkflowAssetEditor';
@@ -69,7 +69,7 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
     case 'claude_rules':
     case RecordType.COMMAND:
     case RecordType.PLAN:
-      return <MarkdownEditor fsRef={fsRef} />;
+      return <PlainMarkdownAssetEditor fsRef={fsRef} assetType={assetType} />;
     default:
       return (
         <div className="flex h-full items-center justify-center text-sm text-muted-foreground">

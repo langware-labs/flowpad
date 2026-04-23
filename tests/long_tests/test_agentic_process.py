@@ -140,6 +140,39 @@ async def test_agentic_process_hello_world(local_project, local_compute_node):
         f"New agentic-process project dirs appeared in ~/.claude/projects/: {new_agentic}"
     )
 
+    # ── get-history action: transcript should be materialized, convertible to
+    #    FlowData, and reachable through the same server action the UI uses.
+    from flow_sdk.builtin.agentic_workers.session_history import load_session_history
+
+    assert process.session_id, "process.session_id must be set after prompt completes"
+
+    # Direct converter: reads the JSONL and produces FlowData in-process.
+    direct_history = load_session_history(process.session_id)
+    assert direct_history, (
+        f"load_session_history returned empty for session {process.session_id}"
+    )
+    roles = {item.attributes.get("role") for item in direct_history if item.attributes}
+    assert "user" in roles, f"expected a user entry in history, got roles={roles}"
+    assert "assistant" in roles, f"expected an assistant entry in history, got roles={roles}"
+
+    # Server action: invoke the same method the @action.get handler runs. The
+    # Python decorator just registers an HTTP route; the method remains
+    # callable directly, so this validates the full response shape the TS
+    # client consumes via loadHistory.
+    action_resp = await process.get_history_action()
+    assert isinstance(action_resp, ApiSuccessResponse), (
+        f"expected ApiSuccessResponse, got {type(action_resp).__name__}"
+    )
+    data = action_resp.data or {}
+    assert data.get("session_id") == process.session_id
+    assert data.get("count") == len(direct_history)
+    history_items = data.get("history") or []
+    assert history_items, "server action returned empty history"
+    first = history_items[0]
+    # Shape matches what TS FlowData.fromJSON expects.
+    for key in ("flow_value", "attributes", "index", "created_time"):
+        assert key in first, f"missing {key!r} in history item: {first}"
+
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(180)

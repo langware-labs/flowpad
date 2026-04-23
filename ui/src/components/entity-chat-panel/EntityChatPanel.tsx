@@ -71,10 +71,9 @@ function useAgenticProcessStream(process: AgenticProcess | null): FlowData[] {
 
 interface EntityChatPanelProps {
   /**
-   * Serialized attachment key, stored as-is in `AgenticProcess.target_typeid_str`.
-   * Real entities: `new TypeId(Trigger.type, id).toString()` → `"trigger-<id>"`.
-   * Markdown files (pseudo-entity): `"markdown_file-<path>"` — built inline since file paths
-   * don't pass `TypeId.isValidIdentifier`.
+   * Serialized entity TypeId, stored as-is in `AgenticProcess.target_typeid_str`.
+   * Callers pass `entity.typeId.toString()` — e.g. `"plan-<uuid>"`, `"agent-<uuid>"`,
+   * `"trigger-<uuid>"`. Null disables chat (send is guarded on non-empty target).
    */
   target: string | null;
   className?: string;

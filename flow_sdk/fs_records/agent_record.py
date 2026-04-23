@@ -140,6 +140,9 @@ class AgentRecord(Record):
 
     def meta_dict(self) -> dict:
         result = super().meta_dict()
+        sp = self.source_path
+        if sp:
+            result["source_path"] = sp
         try:
             import os as _os
             from datetime import datetime as _dt, timezone as _tz
@@ -227,8 +230,11 @@ class AgentRecord(Record):
         return cls(**data)
 
     @classmethod
-    def _external_source_find_one(cls, uid: str) -> "AgentRecord | None":
-        """Find an agent by name/id: checks user dirs then system assets."""
+    def get(cls, uid: str, **kwargs: Any) -> "AgentRecord | None":
+        """Find an agent by name/id: records_root first, then user dirs, then system assets."""
+        rec = super().get(uid, **kwargs)
+        if rec is not None:
+            return rec
         for agents_dir in _agent_search_dirs():
             md = agents_dir / f"{uid}.md"
             if md.exists():
@@ -387,10 +393,31 @@ class AgentRecord(Record):
         return [cls.from_file(ref._path)]
 
     @classmethod
-    def _external_source_iter(cls, limit: int | None = None):
-        """Yield AgentRecords from flat .md files in agent search dirs."""
+    def getId(cls, ref) -> str:
+        """Id = agent name — prefer frontmatter `name` field, else filename stem.
+
+        Matches `AgentRecord.from_file` which sets `id = agent_name` where
+        agent_name is the yaml.name from frontmatter (or fallback to stem)."""
+        try:
+            text = ref._path.read_text(encoding="utf-8")
+            fm_raw = _extract_frontmatter(text)
+            if fm_raw:
+                fields = _yaml_load(fm_raw) or {}
+                name = fields.get("name")
+                if isinstance(name, str) and name.strip():
+                    return name.strip()
+        except OSError:
+            pass
+        return ref._path.stem
+
+    # -- Loader helpers ----------------------------------------------------
+
+    @classmethod
+    def discover(cls, scope: Scope | None = None, **kwargs: Any) -> list["AgentRecord"]:
+        """Discover all agent .md files from user and project .claude/agents/ folders."""
+        results: list[AgentRecord] = []
         seen: set[str] = set()
-        count = 0
+        limit = kwargs.get("limit")
         for agents_dir in _agent_search_dirs():
             for f in sorted(agents_dir.glob("*.md")):
                 key = str(f.resolve())
@@ -398,29 +425,12 @@ class AgentRecord(Record):
                     continue
                 seen.add(key)
                 try:
-                    yield cls.from_file(f)
-                    count += 1
-                    if limit is not None and count >= limit:
-                        return
+                    results.append(cls.from_file(f))
+                    if limit is not None and len(results) >= limit:
+                        return results
                 except Exception:
                     continue
-
-    @classmethod
-    def _external_source_count(cls, limit: int | None = None) -> int:
-        """Count flat .md agent files across all search dirs (fast, no reads)."""
-        seen: set[str] = set()
-        for agents_dir in _agent_search_dirs():
-            for f in agents_dir.glob("*.md"):
-                seen.add(str(f.resolve()))
-        count = len(seen)
-        return min(count, limit) if limit is not None else count
-
-    # -- Loader helpers ----------------------------------------------------
-
-    @classmethod
-    def discover(cls, scope: Scope | None = None, **kwargs: Any) -> list["AgentRecord"]:
-        """Discover all agent .md files from user and project .claude/agents/ folders."""
-        return list(cls.discover_iter(scope=scope, **kwargs))
+        return results
 
     @staticmethod
     def load_from_dir(agent_dir: Path) -> AgentRecord | None:

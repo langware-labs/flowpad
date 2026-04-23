@@ -1,6 +1,6 @@
 # Record Discovery & PropertyRecord System
 
-> **Naming note:** This document covers the **Record-level discovery** mechanism (`Record.discovery()`, `PropertyRecord` descriptors, and `state.json` TTL caching). It does **not** cover the **Flowpad app discovery** module (`flow_sdk/discovery/flowpad_discovery.py`), which detects whether the Flowpad desktop app is running via `~/.flow/server.json` and health checks. For Flowpad app discovery, see [`flow_sdk/discovery/`](../flow_sdk/discovery/__init__.py). For filesystem scan and index orchestration, see [scan-and-discovery.md](data-management/scan-and-discovery.md).
+> **Naming note:** This document covers the **Record-level discovery** mechanism (`Record.discovery()`, `PropertyRecord` descriptors, and `state.json` TTL caching). It does **not** cover the **Flowpad app discovery** module (`flow_sdk/discovery/flowpad_discovery.py`), which detects whether the Flowpad desktop app is running via `~/.flow/server.json` and health checks. For Flowpad app discovery, see [`flow_sdk/discovery/`](../flow_sdk/discovery/__init__.py). For filesystem indexing, see [`flow_sdk/fs_store/indexer/`](../flow_sdk/fs_store/indexer/__init__.py).
 
 ## Overview
 

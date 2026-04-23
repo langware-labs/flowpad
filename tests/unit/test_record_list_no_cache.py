@@ -20,7 +20,7 @@ def _make_mock_record(uid: str = "r1", record_type: str = "test"):
 def _make_record_class(records: list | None = None):
     cls = MagicMock()
     cls.discover = MagicMock(return_value=records or [])
-    cls.discover_one = MagicMock(return_value=None)
+    cls.get = MagicMock(return_value=None)
     cls.from_dict = MagicMock(side_effect=lambda d: _make_mock_record(d.get("uid", "new")))
     return cls
 

@@ -73,59 +73,6 @@ class ClaudeMemoryRecord(Record):
         real = str(real_path) if real_path else "/" + encoded.lstrip("-").replace("-", "/")
         return [cls._from_md_file(md_path, project_path=real, project_encoded=encoded)]
 
-    @classmethod
-    def _external_source_iter(
-        cls, limit: int | None = None
-    ) -> Iterator["ClaudeMemoryRecord"]:
-        if not _CLAUDE_PROJECTS.is_dir():
-            return
-        from flow_sdk.fs_records._claude_projects import _real_path_from_jsonl
-        count = 0
-        for project_dir in sorted(_CLAUDE_PROJECTS.iterdir()):
-            if not project_dir.is_dir():
-                continue
-            mem_dir = project_dir / "memory"
-            if not mem_dir.is_dir():
-                continue
-            encoded = project_dir.name
-            real_path = _real_path_from_jsonl(project_dir)
-            real = str(real_path) if real_path else "/" + encoded.lstrip("-").replace("-", "/")
-            for md_file in sorted(mem_dir.glob("*.md")):
-                yield cls._from_md_file(md_file, project_path=real, project_encoded=encoded)
-                count += 1
-                if limit is not None and count >= limit:
-                    return
-
-    @classmethod
-    def _external_source_count(cls, limit: int | None = None) -> int:
-        if not _CLAUDE_PROJECTS.is_dir():
-            return 0
-        count = 0
-        for project_dir in _CLAUDE_PROJECTS.iterdir():
-            if not project_dir.is_dir():
-                continue
-            mem_dir = project_dir / "memory"
-            if mem_dir.is_dir():
-                count += sum(1 for _ in mem_dir.glob("*.md"))
-        return min(count, limit) if limit is not None else count
-
-    @classmethod
-    def discovery_items_count(cls, limit: int | None = None) -> int:
-        # discover_iter deduplicates: external records already on disk are skipped.
-        # The unique count is max(disk, ext), not disk + ext.
-        ext = cls._external_source_count()
-        base = super().discovery_items_count()  # type: ignore[misc]  # disk + ext (no limit)
-        disk = max(0, base - ext)
-        count = max(disk, ext)
-        return min(count, limit) if limit is not None else count
-
-    @classmethod
-    def _external_source_find_one(cls, uid: str) -> "ClaudeMemoryRecord | None":
-        for rec in cls._external_source_iter():
-            if rec.id == uid:
-                return rec
-        return None
-
     def save(self) -> None:
         ar = object.__getattribute__(self, "_asset_ref")
         if ar is not None:

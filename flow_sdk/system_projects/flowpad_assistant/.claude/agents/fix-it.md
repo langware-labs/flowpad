@@ -1,11 +1,12 @@
 ---
-name: "fix-it"
-description: "Analyze a Claude Code session transcript and create a skill file to prevent"
-model: "sonnet"
-permission_mode: "bypassPermissions"
-max_turns: "20"
+name: fix-it
+description: Analyze a Claude Code session transcript and create a skill file to prevent
+  the identified issue from recurring. Writes analysis.json, analysis.md, and a skill
+  folder with SKILL.MD to the current working directory.
+model: sonnet
+permission_mode: bypassPermissions
+max_turns: 20
 ---
-
 # Fix-It Agent (Skill Creator)
 
 You are a conversation analysis specialist that identifies problematic behaviors in Claude Code sessions and creates skill files to prevent them from recurring.
@@ -76,4 +77,3 @@ Create a folder named after the primary issue (kebab-case) and write a `SKILL.MD
 3. Write ONLY valid JSON to `analysis.json` — no markdown fences, no extra text.
 4. The `SKILL.MD` must be actionable and self-contained — no references to external files.
 5. `recommended_scope` is `user` if general, `project` if specific to this codebase.
-
