@@ -11,6 +11,7 @@
 import { AgenticProcess, claudeSessionManager, type Shell } from '@sdk';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
+import { AskForAssistanceButton } from '@src/components/live-workflow/AskForAssistanceButton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import {
@@ -303,6 +304,9 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
         {!embedded && (
           <CommitMergeButton process={process} onInjectPrompt={handleInjectPrompt} />
         )}
+
+        {/* Ask for Assistance — hidden in embedded mode */}
+        {!embedded && <AskForAssistanceButton process={process} />}
 
         {/* Open terminal in current folder — hidden in embedded mode */}
         {!embedded && (

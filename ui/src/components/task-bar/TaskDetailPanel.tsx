@@ -3,8 +3,7 @@
  * Read-only display; editing happens in the full dock view.
  */
 
-import { ArrowLeft, ExternalLink, FileText, MessageSquare, Send } from 'lucide-react';
-import { useState } from 'react';
+import { ArrowLeft, ExternalLink, FileText, MessageSquare } from 'lucide-react';
 import { Spec, Task, TypeId, User } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ExpansionRequest } from '@sdk/FlowSync/query';
@@ -12,7 +11,6 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { getPriorityColor, PRIORITY_CONFIG } from './constants';
 import { getAnalysisPath, getTaskTypeLabel, openAnalysisReport } from './task-utils';
-import { SendNotificationDialog } from './SendNotificationDialog';
 import { ConversationView } from '@src/components/conversation/ConversationView';
 
 interface TaskDetailPanelProps {
@@ -26,7 +24,6 @@ function displayName(user: User | null | undefined, fallback?: string | null): s
 
 export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
   const { navigation } = useDockNavigation();
-  const [notificationDialogOpen, setNotificationDialogOpen] = useState(false);
   const blobExpansion = new ExpansionRequest({ expand: ['blobs'] });
   const isSharedTask = !!task.spec_id;
 
@@ -170,26 +167,13 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
         )}
       </div>
 
-      {/* Footer: Open full view + Send Notification */}
-      <div className="flex items-center justify-between border-t border-border p-3">
+      {/* Footer: Open full view */}
+      <div className="flex items-center border-t border-border p-3">
         <button onClick={handleOpenFullView} className="flex items-center gap-1.5 text-xs text-primary hover:underline">
           <ExternalLink className="h-3 w-3" />
           Open full view
         </button>
-        <button
-          onClick={() => setNotificationDialogOpen(true)}
-          className="flex items-center gap-1.5 text-xs text-primary hover:underline"
-        >
-          <Send className="h-3 w-3" />
-          Send Notification
-        </button>
       </div>
-
-      <SendNotificationDialog
-        task={task}
-        open={notificationDialogOpen}
-        onClose={() => setNotificationDialogOpen(false)}
-      />
     </div>
   );
 }

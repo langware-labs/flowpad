@@ -11,9 +11,9 @@ function localBundleUrl(messageId: string): string {
   return new ActionInfo('create-and-download-local-flowmsg', 'flow_message', messageId, 'GET').fullActionUrl;
 }
 
-function fileAttachmentUrl(messageId: string, filename: string): string {
-  const action = new ActionInfo('download-attachment', 'flow_message', messageId, 'GET');
-  action.queryParameters = { filename };
+function fileAttachmentUrl(messageId: string, vfsPath: string): string {
+  const action = new ActionInfo('fs', 'flow_message', messageId, 'GET');
+  action.subpath = `download/${vfsPath}`;
   return action.fullActionUrl;
 }
 
@@ -78,7 +78,7 @@ export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBub
             return (
               <a
                 key={a.data}
-                href={fileAttachmentUrl(messageId, name)}
+                href={fileAttachmentUrl(messageId, a.data)}
                 download={name}
                 className="flex items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-[11px] text-foreground hover:bg-muted transition-colors max-w-[200px]"
                 title={name}
