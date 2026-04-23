@@ -134,11 +134,6 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       ? new DockPointer(ViewType.ASSETS, `editor/claude_rules/${r.source_path.replace(/^\//, '')}`)
       : null,
   },
-  asset: {
-    dockPointer: (r) => r.source_path
-      ? new DockPointer(ViewType.ASSETS, `editor/asset/${r.source_path.replace(/^\//, '')}`)
-      : null,
-  },
   claude_settings: {
     dockPointer: () => DockPointer.forSettings(),
   },

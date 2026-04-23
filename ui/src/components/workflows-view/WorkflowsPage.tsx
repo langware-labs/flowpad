@@ -25,7 +25,7 @@ import {
 } from '@sdk';
 import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
 import { ComputeNode, openExternalFromComputeNode } from '@sdk/entities/compute-node';
-import { ExternalLink, FilePlus, GitFork, Loader2, Play, Save, Trash2, Workflow as WorkflowIcon, Zap } from 'lucide-react';
+import { ExternalLink, FilePlus, GitFork, Loader2, PanelRightClose, PanelRightOpen, Play, Save, Trash2, Workflow as WorkflowIcon, Zap } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState, KeyboardEvent } from 'react';
 import { WorkflowTraceGutter } from './WorkflowTraceGutter';
 import { WorkflowRunsList } from './WorkflowRunsList';
@@ -51,6 +51,7 @@ async function enableMcp(serverName: string, scope: 'user' | 'project'): Promise
 }
 
 import { workflowRunStore, type ProcessEntry } from './workflow-run-store';
+import { useProcessesForTarget } from '@src/components/entity-chat-panel';
 
 /** Load and edit the markdown file linked to a workflow entity */
 function WorkflowEditor({
@@ -81,6 +82,9 @@ function WorkflowEditor({
   const [mcpEnabling, setMcpEnabling] = useState(false);
   // 'source' | 'prepared' | 'pipeline' — which view to show
   const [viewMode, setViewMode] = useState<'source' | 'prepared' | 'pipeline'>('source');
+  // Runs drawer visibility. Default: closed. User toggles via the header button
+  // (opens) and the drawer's own X close button (closes).
+  const [showRunsDrawer, setShowRunsDrawer] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Annotation state
@@ -225,6 +229,12 @@ function WorkflowEditor({
       },
       workdir,
       visible: false,
+      // Denormalised pointer to the parent workflow — this is how the runs list
+      // (via useProcessesForTarget) finds past executions. The scope argument to
+      // save() used to be the vehicle for this, but the backend's
+      // `/graph/workflow/<id>/agentic_process` path doesn't actually filter, so
+      // we use the same target_typeid_str convention Triggers already follow.
+      target_typeid_str: workflow.typeId.toString(),
     }).save([workflow.typeId]);
 
     // Fire and forget — `prompt` streams FlowData via the CLI worker subprocess;
@@ -428,6 +438,37 @@ function WorkflowEditor({
           <Button variant="ghost" size="sm" onClick={() => void handleOpenExternal()} title="Open in external editor">
             <ExternalLink className="h-4 w-4" />
           </Button>
+          <Button
+            variant={showRunsDrawer ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setShowRunsDrawer((v) => !v)}
+            title={showRunsDrawer ? 'Hide runs' : 'Show runs'}
+            data-testid="workflow-runs-drawer-toggle"
+            data-open={showRunsDrawer ? 'true' : 'false'}
+            className={
+              showRunsDrawer
+                ? 'ring-2 ring-primary/40 ring-offset-1 ring-offset-background'
+                : undefined
+            }
+          >
+            {showRunsDrawer ? (
+              <PanelRightClose className="mr-1 h-4 w-4" />
+            ) : (
+              <PanelRightOpen className="mr-1 h-4 w-4" />
+            )}
+            Runs
+            {runHistory.length > 0 && (
+              <span
+                className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] ${
+                  showRunsDrawer
+                    ? 'bg-primary-foreground/20 text-primary-foreground'
+                    : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                {runHistory.length}
+              </span>
+            )}
+          </Button>
         </div>
       </div>
 
@@ -474,11 +515,12 @@ function WorkflowEditor({
         </div>
 
         {/* Runs list panel */}
-        {runHistory.length > 0 && (
+        {showRunsDrawer && (
           <WorkflowRunsList
             entries={runHistory}
             currentEntry={processEntry}
             computeNodeId={fsTypeId?.id}
+            onClose={() => setShowRunsDrawer(false)}
           />
         )}
       </div>
@@ -567,22 +609,38 @@ export function WorkflowsPage() {
     }
   }, [selectedId, setWorkflowProcess]);
 
-  // Load child processes from DB when workflow is selected
+  // Past runs: query AgenticProcesses whose target_typeid_str matches the workflow's
+  // serialized TypeId. This replaces the old scope-based query (which returned a flat
+  // list because the `/graph/workflow/<id>/agentic_process` URL path doesn't filter
+  // server-side — see WorkflowsPage history for details).
+  const selectedWorkflowTargetStr = useMemo(
+    () => (selectedWorkflow?.typeId ? selectedWorkflow.typeId.toString() : ''),
+    [selectedWorkflow?.typeId],
+  );
+  const { processes: pastRunProcesses } = useProcessesForTarget(selectedWorkflowTargetStr, {
+    enabled: !!selectedWorkflowTargetStr,
+  });
+
   useEffect(() => {
     if (!selectedWorkflow?.id) return;
-    void AgenticProcess.query(new QueryRequest({ type: AgenticProcess.type, scope: [selectedWorkflow.typeId] }), true)
-      .then((processes) => {
-        const sorted = [...processes].sort(
-          (a, b) => (b.created_date?.getTime() ?? 0) - (a.created_date?.getTime() ?? 0),
-        );
-        setRunHistoryMap((prev) => {
-          const next = new Map(prev);
-          const liveMap = new Map((prev.get(selectedWorkflow.id) ?? []).map((e) => [e.process.id!, e]));
-          next.set(selectedWorkflow.id, sorted.map((p) => liveMap.get(p.id!) ?? { process: p }));
-          return next;
-        });
-      });
-  }, [selectedWorkflow?.id]);
+    // `created_date` arrives as either a `Date` (when AgenticProcess was
+    // hydrated via a watched query) or an ISO string (raw API JSON via
+    // useEntitiesQuery / useProcessesForTarget). Normalise before comparing.
+    const toMs = (d: unknown): number => {
+      if (d instanceof Date) return d.getTime();
+      if (typeof d === 'string') return new Date(d).getTime() || 0;
+      return 0;
+    };
+    const sorted = [...pastRunProcesses].sort(
+      (a, b) => toMs(b.created_date) - toMs(a.created_date),
+    );
+    setRunHistoryMap((prev) => {
+      const next = new Map(prev);
+      const liveMap = new Map((prev.get(selectedWorkflow.id) ?? []).map((e) => [e.process.id!, e]));
+      next.set(selectedWorkflow.id, sorted.map((p) => liveMap.get(p.id!) ?? { process: p }));
+      return next;
+    });
+  }, [selectedWorkflow?.id, pastRunProcesses]);
 
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Workflow | null>(null);

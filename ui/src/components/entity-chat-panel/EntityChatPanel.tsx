@@ -3,6 +3,7 @@ import {
   ComputeNode,
   FlowElementTypes,
   isBusy,
+  type StatusBearingProcess,
   TypeId,
   type FlowData,
 } from '@sdk';
@@ -14,6 +15,7 @@ import { useProject } from '@src/hooks/useProject';
 import { cn } from '@src/lib/utils';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CompactChatInput } from './CompactChatInput';
+import { useDerivedWorkerStatus } from './hooks/useDerivedWorkerStatus';
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
 
 /**
@@ -186,17 +188,29 @@ export function EntityChatPanel({ target, className }: EntityChatPanelProps) {
   }, [messages.length]);
 
   const showEmptyState = !activeProcess && !listLoading && !sending;
-  const busy = !!activeProcess && isBusy(activeProcess);
+
+  // CLI-mode processes don't get entity patches mid-turn, so fall back to a
+  // derivation over flowDataStream events. See useDerivedWorkerStatus.
+  const derivedWorkerStatus = useDerivedWorkerStatus(activeProcess);
+  const indicatorProcess: StatusBearingProcess | null = activeProcess
+    ? {
+        status: activeProcess.status,
+        workerStatus: derivedWorkerStatus ?? activeProcess.workerStatus,
+        session_id: activeProcess.session_id,
+      }
+    : null;
+
+  const busy = !!indicatorProcess && isBusy(indicatorProcess);
   const sendDisabled = !targetStr || sending || busy;
 
-  const statusSlot = activeProcess ? (
+  const statusSlot = indicatorProcess ? (
     <span
-      title={getStatusLabel(activeProcess)}
+      title={getStatusLabel(indicatorProcess)}
       className="flex items-center"
       data-testid="entity-chat-status"
     >
       <ProcessStatusIndicator
-        process={activeProcess}
+        process={indicatorProcess}
         showLabel
         size="sm"
         className="px-1 text-muted-foreground"

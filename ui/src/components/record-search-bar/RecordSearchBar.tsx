@@ -9,7 +9,7 @@ import { KeyboardEvent, useCallback, useRef, useState } from 'react';
 const RECORD_TYPES = [
   'bookmark', 'claude_session', RecordType.SKILL, RecordType.AGENT, 'claude_hook', RecordType.COMMAND,
   RecordType.ANNOTATION, 'comment', RecordType.TASK, 'workflow', RecordType.MARKDOWN, RecordType.PLAN,
-  RecordType.CLAUDE_MD, 'claude_memory', 'claude_rules', RecordType.PROJECT, RecordType.ASSET,
+  RecordType.CLAUDE_MD, 'claude_memory', 'claude_rules', RecordType.PROJECT,
 ];
 const TIME_PRESETS = [
   { value: '1h', label: '1h' },

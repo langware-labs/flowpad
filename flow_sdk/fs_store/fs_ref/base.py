@@ -36,15 +36,29 @@ class FSRef:
         read_only: bool = False,
         parent: "FSRef | None" = None,
         record_type: "RecordType | None" = None,
+        scope: str | None = None,
     ) -> None:
         self._path = Path(path).resolve()
         self._read_only_flag: bool = read_only
         self._parent: "FSRef | None" = parent
         self._record_type: "RecordType | None" = record_type
+        self._scope: str | None = scope
 
     @property
     def record_type(self) -> "RecordType | None":
         return self._record_type
+
+    @property
+    def scope(self) -> str | None:
+        """Ambient scope inherited from the parent chain.
+
+        If this ref has an explicit scope, returns it. Otherwise walks up
+        `.parent` until it finds a scoped ancestor, or None if none exists.
+        Scope is a property of position in the tree, not of the leaf.
+        """
+        if self._scope is not None:
+            return self._scope
+        return self._parent.scope if self._parent is not None else None
 
     @property
     def read_only(self) -> bool:

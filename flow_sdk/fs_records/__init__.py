@@ -15,8 +15,6 @@ from .agent_status import is_idle as is_worker_idle
 from .agent_status import is_terminal as is_worker_terminal
 from .artifact import Artifact as Artifact
 from .markdown_record import MarkdownRecord as MarkdownRecord
-from . import asset_record as _asset_record  # noqa: F401 — trigger "asset" type_registry
-from .markdown_record import MarkdownRecord as AssetRecord  # noqa: F401 — backward compat alias
 from .annotation_record import AnnotationRecord as AnnotationRecord
 from .bookmark import BookmarkRecord as BookmarkRecord
 from .comment_record import CommentRecord as CommentRecord

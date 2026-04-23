@@ -3,7 +3,7 @@ import { ProcessStatusLine } from '@src/components/agentic-progress/shared/proce
 import { useEntity } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
-import { FolderOpen } from 'lucide-react';
+import { FolderOpen, X } from 'lucide-react';
 import { AgenticProcess } from '@sdk';
 import type { ProcessEntry } from './workflow-run-store';
 
@@ -11,18 +11,37 @@ interface WorkflowRunsListProps {
   entries: ProcessEntry[];
   currentEntry: ProcessEntry | null;
   computeNodeId: string | undefined;
+  /** Optional close handler rendered as an X in the drawer header. */
+  onClose?: () => void;
 }
 
-export function WorkflowRunsList({ entries, currentEntry, computeNodeId }: WorkflowRunsListProps) {
+export function WorkflowRunsList({ entries, currentEntry, computeNodeId, onClose }: WorkflowRunsListProps) {
   return (
-    <div className="flex w-44 flex-shrink-0 flex-col border-l">
-      <div className="flex h-[52px] flex-shrink-0 items-center border-b px-3">
+    <div className="flex w-44 flex-shrink-0 flex-col border-l" data-testid="workflow-runs-drawer">
+      <div className="flex h-[52px] flex-shrink-0 items-center gap-1 border-b px-3">
         <span className="text-xs font-medium text-muted-foreground">Runs</span>
         <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
           {entries.length}
         </span>
+        {onClose && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto h-6 w-6"
+            onClick={onClose}
+            aria-label="Close runs drawer"
+            data-testid="workflow-runs-drawer-close"
+          >
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto py-1">
+        {entries.length === 0 && (
+          <div className="px-3 py-6 text-center text-[11px] text-muted-foreground">
+            No runs yet.
+          </div>
+        )}
         {entries.map((entry, idx) => (
           <WorkflowRunItem
             key={entry.process.id}
