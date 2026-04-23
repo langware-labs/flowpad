@@ -103,6 +103,306 @@ async def _create_conversation_entity(
     return conv
 
 
+async def _resolve_recipient(recipient_id: str) -> tuple[Optional[str], str]:
+    """Return (recipient_email, resolved_recipient_id) or raise ValueError."""
+    recipient_user = await User.get_one({"id": recipient_id})
+    if not recipient_user:
+        recipient_user = await User.get_one({"email": recipient_id})
+
+    if recipient_user:
+        return recipient_user.email, recipient_user.id
+    if "@" in recipient_id:
+        return recipient_id, recipient_id
+    raise ValueError(f"Recipient not found: {recipient_id}")
+
+
+async def _create_spec_and_task(
+    *,
+    spec_title: str,
+    spec_content: str,
+    spec_type: str,
+    plan_id: Optional[str],
+    task_title: str,
+    sender_id: Optional[str],
+    sender_name: str,
+    sender_email: str,
+    recipient_email: Optional[str],
+    team_space_id: Optional[str],
+    someone_typeid: str,
+) -> tuple[Spec, Task]:
+    """Create Spec + Task entities locally and register the task on the hub."""
+    spec = Spec.model_validate({
+        "title": spec_title,
+        "content": spec_content,
+        "spec_type": spec_type,
+        "plan_id": plan_id,
+        "author_id": sender_id,
+    })
+    spec.id = Spec.allocate_id(spec.model_dump())
+    spec = await spec.save(someone_typeid)
+
+    task_meta: dict = {
+        "sender_name": sender_name,
+        "sender_email": sender_email,
+        "recipient_email": recipient_email or "",
+    }
+    if team_space_id:
+        task_meta["team_space_id"] = team_space_id
+    task = Task.model_validate({
+        "title": task_title,
+        "spec_id": spec.id,
+        "shared_by_id": sender_id,
+        "metadata": task_meta,
+    })
+    task.id = Task.allocate_id(task.model_dump())
+    task = await task.save(someone_typeid)
+
+    # Register task on hub so the recipient can load it via the hub graph API.
+    await hub_post(BuiltinEntityType.TASK, {
+        "id": task.id,
+        "title": task_title,
+        "task_type": task.task_type,
+        "status": task.status,
+    })
+
+    return spec, task
+
+
+async def _write_task_to_git(
+    *,
+    project_root: Path,
+    spec: Spec,
+    task: Task,
+    spec_title: str,
+    spec_type: str,
+    task_title: str,
+    plan_id: Optional[str],
+    sender_id: Optional[str],
+    sender_name: str,
+    recipient_email: Optional[str],
+    message: Optional[str],
+    repo_id_val: str,
+    someone_typeid: str,
+) -> tuple[Conversation, "FlowMessage", str, str]:
+    """Write spec.md, manifest.json, conversation.jsonl; create Conversation + FlowMessage.
+
+    Returns (conv, fm, spec_file_path, branch_at_write).
+    """
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
+    from flow_sdk.fs_records.conversation_record import ConversationRecord
+    from flow_sdk.fs_store.type_id import TypeId
+
+    tasks_root = Path(project_root) / "tasks"
+    spec_root = tasks_root / "spec"
+
+    spec_dir_name = _unique_dir_name(_meaningful_name(spec_title), spec_root)
+    task_dir_name = _unique_dir_name(_meaningful_name(task_title), tasks_root)
+
+    spec_file_path = f"tasks/spec/{spec_dir_name}/spec.md"
+
+    spec_dir = spec_root / spec_dir_name
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    (spec_dir / "spec.md").write_text(
+        f"---\ntitle: \"{spec_title}\"\nspec_type: {spec_type}\n"
+        f"spec_id: {spec.id}\nauthor_id: {sender_id or ''}\nplan_id: {plan_id or ''}\n---\n\n{spec.content}",
+        encoding="utf-8",
+    )
+
+    task_dir = tasks_root / task_dir_name
+    task_dir.mkdir(parents=True, exist_ok=True)
+
+    conv = await _create_conversation_entity(task, task_dir / "conversation.jsonl", someone_typeid)
+    task.conversation_id = conv.id
+    task = await task.save(someone_typeid)
+
+    fm_context = [
+        TypeId(type=BuiltinEntityType.TASK.value, id=task.id),
+        TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id),
+    ]
+    fm = FlowMessage.model_validate({
+        "text": message or f"Task shared: {task_title}",
+        "context": fm_context,
+        "attachment": [],
+        "sender_id": sender_id,
+        "sender_name": sender_name,
+        "receiver_address": recipient_email,
+        "receiver_address_type": "email",
+    })
+    fm.id = FlowMessage.allocate_id(fm.model_dump())
+    fm.attachment = [
+        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.SPEC.value, id=spec.id))),
+        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.TASK.value, id=task.id))),
+        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))),
+        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm.id))),
+    ]
+    fm = await fm.save(someone_typeid)
+
+    fm_ts = datetime.now(UTC).isoformat()
+    if conv.data_path:
+        rec = ConversationRecord.from_jsonl(Path(conv.data_path), task.id, conv.id)
+        rec.append_message_pointer(fm.id, fm_ts)
+    existing_ids: list = []
+    if conv.message_ids:
+        try:
+            existing_ids = _json.loads(conv.message_ids)
+        except Exception:
+            existing_ids = []
+    existing_ids.append({"message_id": fm.id, "timestamp": fm_ts})
+    conv.message_ids = _json.dumps(existing_ids)
+    conv.message_count = len(existing_ids)
+    conv = await conv.save(someone_typeid)
+
+    branch_at_write = git_current_branch(project_root)
+    (task_dir / "manifest.json").write_text(
+        _json.dumps({
+            "task_id": task.id,
+            "title": task_title,
+            "spec_id": spec.id,
+            "spec_dir": spec_dir_name,
+            "shared_by_id": sender_id,
+            "sender_name": sender_name,
+            "conversation_id": conv.id,
+            "created_at": datetime.now(UTC).isoformat(),
+            "repo_id": repo_id_val,
+            "branch": branch_at_write,
+        }, indent=2, default=str),
+        encoding="utf-8",
+    )
+
+    return conv, fm, spec_file_path, branch_at_write
+
+
+async def _push_task_changes(project_root: Path, task_title: str) -> Optional[str]:
+    """Git add/commit/push the tasks directory. Returns an error string on failure, else None."""
+    push_result = await git_add_commit_push(project_root, ["tasks"], f"chore: share task '{task_title}'")
+    if not push_result.ok and push_result.message and "Nothing to commit" not in push_result.message:
+        return push_result.message
+    if push_result.warning:
+        return push_result.warning
+    return None
+
+
+async def _send_hub_notification(
+    *,
+    recipient_email: Optional[str],
+    sender_id: Optional[str],
+    sender_name: str,
+    task: Task,
+    spec: Spec,
+    message: Optional[str],
+    project_url: str,
+    repo_id_val: str,
+    branch: str,
+    spec_file_path: str,
+    fm: Optional["FlowMessage"],
+    task_title: str,
+) -> tuple[Optional[str], Optional[str]]:
+    """POST notification to hub and upload the .flowmsg bundle.
+
+    Returns (hub_flow_message_id, email_error).
+    """
+    hub_configured = bool(hub_base_url())
+    flow_message_id = str(uuid.uuid4())
+    hub_data = await hub_post(BuiltinEntityType.FLOW_MESSAGE, {
+        "flow_message_id": flow_message_id,
+        "recipient_email": recipient_email,
+        "sender_id": sender_id,
+        "sender_name": sender_name,
+        "task_id": task.id,
+        "task_title": task_title,
+        "spec_id": spec.id,
+        "spec_title": spec.title,
+        "spec_content": spec.content or None,
+        "spec_type": spec.spec_type,
+        "message": message,
+        "project_url": project_url,
+        "repo_id": repo_id_val,
+        "branch": branch,
+        "spec_file_path": spec_file_path,
+    }, action="send")
+    hub_flow_message_id: Optional[str] = (hub_data or {}).get("flow_message_id")
+    email_error: Optional[str] = None
+    if hub_configured and not hub_flow_message_id:
+        email_error = f"Email to {recipient_email} could not be sent — the notification service did not confirm delivery."
+
+    if hub_flow_message_id and fm:
+        await _upload_bundle_to_hub(hub_flow_message_id, fm, task_title)
+
+    return hub_flow_message_id, email_error
+
+
+async def _upload_bundle_to_hub(hub_flow_message_id: str, fm: "FlowMessage", task_title: str) -> None:
+    """Pack and upload the .flowmsg bundle to the hub (best-effort, non-fatal)."""
+    try:
+        zip_path = await fm.to_file()
+        bundle_filename = f"{_meaningful_name(task_title)}.flowmsg"
+        content = zip_path.read_bytes()
+        await hub_post(
+            BuiltinEntityType.FLOW_MESSAGE, {}, hub_flow_message_id, "fs", "upload",
+            files={"uploaded_file": (bundle_filename, content, "application/zip")},
+        )
+        zip_path.unlink(missing_ok=True)
+        await hub_put(BuiltinEntityType.FLOW_MESSAGE, hub_flow_message_id, {"attachment_filename": bundle_filename})
+    except Exception as _upload_err:
+        logger.warning("[notification_action] bundle upload to hub failed (non-fatal): %s", _upload_err)
+
+
+async def _save_local_notification(
+    *,
+    task: Task,
+    resolved_recipient_id: str,
+    sender_id: Optional[str],
+    sender_name: str,
+    project_url: str,
+    message: Optional[str],
+    hub_flow_message_id: Optional[str],
+    someone_typeid: str,
+) -> Notification:
+    """Create and save a local Notification entity."""
+    notification = Notification.model_validate({
+        "notification_type": NotificationType.RESOURCE_ACTION,
+        "notification_target": f"task-@{task.id}",
+        "notification_subtype": CrudAction.CREATE,
+        "recipient_id": resolved_recipient_id,
+        "sender_id": sender_id,
+        "delivery_method": DeliveryMethod.EMAIL,
+        "notification_status": NotificationStatus.SENT if hub_flow_message_id else NotificationStatus.PENDING,
+        "message": message,
+        "metadata": {
+            "project_url": project_url,
+            "spec_id": task.spec_id,
+            "sender_name": sender_name,
+        },
+    })
+    notification.id = hub_flow_message_id or Notification.allocate_id(notification.model_dump())
+    return await notification.save(someone_typeid)
+
+
+async def _save_failure_bookmark(
+    *,
+    task_id: str,
+    task_title: str,
+    recipient_email: Optional[str],
+    notification_id: str,
+    someone_typeid: str,
+) -> None:
+    """Save a bookmark so the user sees the delivery failure in the activity panel."""
+    failure_bookmark = Bookmark.model_validate({
+        "bookmark_type": "notification_failed",
+        "title": f"Email not sent: {task_title}",
+        "content": f"Task was created but the notification email to {recipient_email} could not be confirmed. You may want to follow up manually.",
+        "source": "notification",
+        "data": {
+            "task_id": task_id,
+            "recipient_email": recipient_email,
+            "task_title": task_title,
+            "notification_id": notification_id,
+        },
+        "status": "open",
+    })
+    await failure_bookmark.save(someone_typeid)
+
+
 async def handle_send_notification(body: dict, someone_typeid: str) -> ApiResponse:
     """Create Spec + Task + Conversation, write to git repo, push, post to hub."""
     recipient_id = (body.get("recipient_id") or "").strip()
@@ -120,251 +420,96 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     if not spec_title:
         return ApiFailResponse(message="spec_title is required")
 
-    # Resolve recipient — accept email address or user ID
-    recipient_user = await User.get_one({"id": recipient_id})
-    if not recipient_user:
-        recipient_user = await User.get_one({"email": recipient_id})
-
-    recipient_email: Optional[str] = None
-    resolved_recipient_id: str = recipient_id
-    if recipient_user:
-        recipient_email = recipient_user.email
-        resolved_recipient_id = recipient_user.id
-    elif "@" in recipient_id:
-        recipient_email = recipient_id
-    else:
-        return ApiFailResponse(message=f"Recipient not found: {recipient_id}")
+    try:
+        recipient_email, resolved_recipient_id = await _resolve_recipient(recipient_id)
+    except ValueError as e:
+        return ApiFailResponse(message=str(e))
 
     local_user = await User.get_one({"uname": "local"})
     sender_id: Optional[str] = local_user.id if local_user else None
     sender_name: str = (local_user.name or local_user.email or "") if local_user else ""
+    sender_email: str = (local_user.email or "") if local_user else ""
 
     project_root = find_project_root(project_path) if project_path else None
     project_url = git_remote_url(project_root) if project_root else ""
     repo_full_name = git_repo_full_name(project_root) if project_root else ""
     repo_id_val = repo_id(repo_full_name) if repo_full_name else ""
 
-    # 1. Create Spec entity
-    spec = Spec.model_validate({
-        "title": spec_title,
-        "content": spec_content,
-        "spec_type": spec_type,
-        "plan_id": plan_id,
-        "author_id": sender_id,
-    })
-    spec.id = Spec.allocate_id(spec.model_dump())
-    spec = await spec.save(someone_typeid)
+    spec, task = await _create_spec_and_task(
+        spec_title=spec_title,
+        spec_content=spec_content,
+        spec_type=spec_type,
+        plan_id=plan_id,
+        task_title=task_title,
+        sender_id=sender_id,
+        sender_name=sender_name,
+        sender_email=sender_email,
+        recipient_email=recipient_email,
+        team_space_id=team_space_id,
+        someone_typeid=someone_typeid,
+    )
 
-    # 2. Create Task entity (conversation_id set after Conversation is created)
-    task_meta: dict = {
-        "sender_name": sender_name,
-        "sender_email": local_user.email if local_user else "",
-        "recipient_email": recipient_email or "",
-    }
-    if team_space_id:
-        task_meta["team_space_id"] = team_space_id
-    task = Task.model_validate({
-        "title": task_title,
-        "spec_id": spec.id,
-        "shared_by_id": sender_id,
-        "metadata": task_meta,
-    })
-    task.id = Task.allocate_id(task.model_dump())
-    task = await task.save(someone_typeid)
-
-    # 2a. Register task on hub so the recipient can load it via the hub graph API.
-    # The hub's generic create endpoint stores it in Neo4j with owner access for the sender.
-    await hub_post(BuiltinEntityType.TASK, {
-        "id": task.id,
-        "title": task_title,
-        "task_type": task.task_type,
-        "status": task.status,
-    })
-
-    # 3. Write spec + manifest + conversation.jsonl to git repo
-    conversation_id: Optional[str] = None
-    spec_file_path = ""
+    conv: Optional[Conversation] = None
     fm = None
+    spec_file_path = ""
+    branch = ""
     if project_root:
-        tasks_root = Path(project_root) / "tasks"
-        spec_root = tasks_root / "spec"
-
-        spec_dir_name = _unique_dir_name(_meaningful_name(spec_title), spec_root)
-        task_dir_name = _unique_dir_name(_meaningful_name(task_title), tasks_root)
-
-        spec_file_path = f"tasks/spec/{spec_dir_name}/spec.md"
-
-        spec_dir = spec_root / spec_dir_name
-        spec_dir.mkdir(parents=True, exist_ok=True)
-        (spec_dir / "spec.md").write_text(
-            f"---\ntitle: \"{spec_title}\"\nspec_type: {spec_type}\n"
-            f"spec_id: {spec.id}\nauthor_id: {sender_id or ''}\nplan_id: {plan_id or ''}\n---\n\n{spec_content}",
-            encoding="utf-8",
+        conv, fm, spec_file_path, branch = await _write_task_to_git(
+            project_root=project_root,
+            spec=spec,
+            task=task,
+            spec_title=spec_title,
+            spec_type=spec_type,
+            task_title=task_title,
+            plan_id=plan_id,
+            sender_id=sender_id,
+            sender_name=sender_name,
+            recipient_email=recipient_email,
+            message=message,
+            repo_id_val=repo_id_val,
+            someone_typeid=someone_typeid,
         )
 
-        task_dir = tasks_root / task_dir_name
-        task_dir.mkdir(parents=True, exist_ok=True)
-
-        # 3a. Create Conversation entity + conversation.jsonl (empty pointer-index)
-        conv = await _create_conversation_entity(
-            task,
-            task_dir / "conversation.jsonl",
-            someone_typeid,
-        )
-        conversation_id = conv.id
-
-        # Update task with conversation_id
-        task.conversation_id = conversation_id
-        task = await task.save(someone_typeid)
-
-        # 3b. Save FlowMessage record for this initial share
-        from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
-        from flow_sdk.fs_store.type_id import TypeId
-        fm_context = [
-            TypeId(type=BuiltinEntityType.TASK.value, id=task.id),
-            TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conversation_id),
-        ]
-        fm = FlowMessage.model_validate({
-            "text": message or f"Task shared: {task_title}",
-            "context": fm_context,
-            "attachment": [],
-            "sender_id": sender_id,
-            "sender_name": sender_name,
-            "receiver_address": recipient_email,
-            "receiver_address_type": "email",
-        })
-        fm.id = FlowMessage.allocate_id(fm.model_dump())
-        fm.attachment = [
-            Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.SPEC.value, id=spec.id))),
-            Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.TASK.value, id=task.id))),
-            Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conversation_id))),
-            Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm.id))),
-        ]
-        fm = await fm.save(someone_typeid)
-
-        # Append FlowMessage pointer to conversation + keep message_ids in sync
-        fm_ts = datetime.now(UTC).isoformat()
-        if conv.data_path:
-            from flow_sdk.fs_records.conversation_record import ConversationRecord
-            rec = ConversationRecord.from_jsonl(Path(conv.data_path), task.id, conv.id)
-            rec.append_message_pointer(fm.id, fm_ts)
-        existing_ids: list = []
-        if conv.message_ids:
-            try:
-                existing_ids = _json.loads(conv.message_ids)
-            except Exception:
-                existing_ids = []
-        existing_ids.append({"message_id": fm.id, "timestamp": fm_ts})
-        conv.message_ids = _json.dumps(existing_ids)
-        conv.message_count = len(existing_ids)
-        conv = await conv.save(someone_typeid)
-
-        # 3c. Write manifest
-        branch_at_write = git_current_branch(project_root) if project_root else ""
-        (task_dir / "manifest.json").write_text(
-            _json.dumps({
-                "task_id": task.id,
-                "title": task_title,
-                "spec_id": spec.id,
-                "spec_dir": spec_dir_name,
-                "shared_by_id": sender_id,
-                "sender_name": sender_name,
-                "conversation_id": conversation_id,
-                "created_at": datetime.now(UTC).isoformat(),
-                "repo_id": repo_id_val,
-                "branch": branch_at_write,
-            }, indent=2, default=str),
-            encoding="utf-8",
-        )
-
-    # 4. Git push — if it fails, abort before sending the email
-    if project_root:
-        push_result = await git_add_commit_push(project_root, ["tasks"], f"chore: share task '{task_title}'")
-        git_error: Optional[str] = None
-        if not push_result.ok and push_result.message and "Nothing to commit" not in push_result.message:
-            git_error = push_result.message
-        elif push_result.warning:
-            git_error = push_result.warning
+        git_error = await _push_task_changes(project_root, task_title)
         if git_error:
             return ApiSuccessResponse(data={"sent": False, "git_error": git_error})
 
-    # 5. Post to hub
-    branch = git_current_branch(project_root) if project_root else ""
-    hub_configured = bool(hub_base_url())
-    flow_message_id = str(uuid.uuid4())
-    hub_data = await hub_post(BuiltinEntityType.FLOW_MESSAGE, {
-        "flow_message_id": flow_message_id,
-        "recipient_email": recipient_email,
-        "sender_id": sender_id,
-        "sender_name": sender_name,
-        "task_id": task.id,
-        "task_title": task_title,
-        "spec_id": spec.id,
-        "spec_title": spec_title,
-        "spec_content": spec_content or None,
-        "spec_type": spec_type,
-        "message": message,
-        "project_url": project_url,
-        "repo_id": repo_id_val,
-        "branch": branch,
-        "spec_file_path": spec_file_path,
-    }, action="send")
-    hub_flow_message_id: Optional[str] = (hub_data or {}).get("flow_message_id")
-    email_error: Optional[str] = None
-    if hub_configured and not hub_flow_message_id:
-        email_error = f"Email to {recipient_email} could not be sent — the notification service did not confirm delivery."
+        branch = git_current_branch(project_root)
 
-    # 5a. Upload .flowmsg bundle to hub so the recipient can materialize the task on their end.
-    if hub_flow_message_id and fm:
-        try:
+    hub_flow_message_id, email_error = await _send_hub_notification(
+        recipient_email=recipient_email,
+        sender_id=sender_id,
+        sender_name=sender_name,
+        task=task,
+        spec=spec,
+        message=message,
+        project_url=project_url,
+        repo_id_val=repo_id_val,
+        branch=branch,
+        spec_file_path=spec_file_path,
+        fm=fm,
+        task_title=task_title,
+    )
 
-            zip_path = await fm.to_file()
-            bundle_filename = f"{_meaningful_name(task_title)}.flowmsg"
-            content = zip_path.read_bytes()
-            await hub_post(
-                BuiltinEntityType.FLOW_MESSAGE, {}, hub_flow_message_id, "fs", "upload",
-                files={"uploaded_file": (bundle_filename, content, "application/zip")},
-            )
-            zip_path.unlink(missing_ok=True)
-            await hub_put(BuiltinEntityType.FLOW_MESSAGE, hub_flow_message_id, {"attachment_filename": bundle_filename})
-        except Exception as _upload_err:
-            logger.warning("[notification_action] bundle upload to hub failed (non-fatal): %s", _upload_err)
+    notification = await _save_local_notification(
+        task=task,
+        resolved_recipient_id=resolved_recipient_id,
+        sender_id=sender_id,
+        sender_name=sender_name,
+        project_url=project_url,
+        message=message,
+        hub_flow_message_id=hub_flow_message_id,
+        someone_typeid=someone_typeid,
+    )
 
-    # 6. Save Notification locally
-    notification = Notification.model_validate({
-        "notification_type": NotificationType.RESOURCE_ACTION,
-        "notification_target": f"task-@{task.id}",
-        "notification_subtype": CrudAction.CREATE,
-        "recipient_id": resolved_recipient_id,
-        "sender_id": sender_id,
-        "delivery_method": DeliveryMethod.EMAIL,
-        "notification_status": NotificationStatus.SENT if hub_flow_message_id else NotificationStatus.PENDING,
-        "message": message,
-        "metadata": {
-            "project_url": project_url,
-            "spec_id": spec.id,
-            "sender_name": sender_name,
-        },
-    })
-    notification.id = hub_flow_message_id or Notification.allocate_id(notification.model_dump())
-    notification = await notification.save(someone_typeid)
-
-    # 7. If hub failed, add a bookmark so the user sees it in the activity panel.
     if email_error:
-        failure_bookmark = Bookmark.model_validate({
-            "bookmark_type": "notification_failed",
-            "title": f"Email not sent: {task_title}",
-            "content": f"Task was created but the notification email to {recipient_email} could not be confirmed. You may want to follow up manually.",
-            "source": "notification",
-            "data": {
-                "task_id": task.id,
-                "recipient_email": recipient_email,
-                "task_title": task_title,
-                "notification_id": notification.id,
-            },
-            "status": "open",
-        })
-        await failure_bookmark.save(someone_typeid)
+        await _save_failure_bookmark(
+            task_id=task.id,
+            task_title=task_title,
+            recipient_email=recipient_email,
+            notification_id=notification.id,
+            someone_typeid=someone_typeid,
+        )
 
     base = hub_base_url()
     return ApiSuccessResponse(data={
@@ -372,10 +517,148 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         "email_error": email_error,
         "spec_id": spec.id,
         "task_id": task.id,
-        "conversation_id": conversation_id,
+        "conversation_id": conv.id if conv else None,
         "notification_id": notification.id,
         "notify_url": f"{base}/flow_message/{hub_flow_message_id}" if hub_flow_message_id and base else None,
     })
+
+
+async def _find_task_conversation(task: Task) -> Optional[Conversation]:
+    """Look up the Conversation for a task — by task_id first, then by task.conversation_id."""
+    conv = await Conversation.get_one({"task_id": task.id})
+    if not conv and task.conversation_id:
+        conv = await Conversation.get_one({"id": task.conversation_id})
+    return conv
+
+
+async def _create_reply_flow_message(
+    *,
+    task_id: str,
+    conv_id: str,
+    message: str,
+    sender_id: Optional[str],
+    someone_typeid: str,
+) -> "FlowMessage":
+    """Build and save the FlowMessage entity for a conversation reply."""
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
+    from flow_sdk.fs_store.type_id import TypeId
+
+    reply_fm = FlowMessage.model_validate({
+        "text": message,
+        "context": [
+            TypeId(type=BuiltinEntityType.TASK.value, id=task_id),
+            TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv_id),
+        ],
+        "attachment": [],
+        "sender_id": sender_id,
+    })
+    reply_fm.id = FlowMessage.allocate_id(reply_fm.model_dump())
+    reply_fm.attachment = [
+        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.TASK.value, id=task_id))),
+        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv_id))),
+        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=reply_fm.id))),
+    ]
+    return await reply_fm.save(someone_typeid)
+
+
+async def _attach_uploaded_files(reply_fm: "FlowMessage", uploaded_files: list, task_id: str, task_title: str) -> None:
+    """Save uploaded file bytes to disk and append FILE attachments to reply_fm (in-place)."""
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType
+    from flow_sdk.config import FLOW_HOME
+
+    files_dir = FLOW_HOME / "tasks" / f"{_meaningful_name(task_title)}-{task_id[:8]}" / "files"
+    files_dir.mkdir(parents=True, exist_ok=True)
+    for uf in uploaded_files:
+        if not hasattr(uf, "read"):
+            continue
+        filename = getattr(uf, "filename", None) or "file"
+        file_path = files_dir / filename
+        content = await uf.read()
+        file_path.write_bytes(content)
+        reply_fm.attachment.append(Attachment(attachment_type=AttachmentType.FILE, data=str(file_path)))
+
+
+async def _append_message_to_conversation(
+    *,
+    conv: Conversation,
+    task_id: str,
+    fm_id: str,
+    someone_typeid: str,
+) -> Conversation:
+    """Write pointer to conversation.jsonl and update message_ids / message_count on the entity."""
+    from flow_sdk.fs_records.conversation_record import ConversationRecord
+
+    reply_ts = datetime.now(UTC).isoformat()
+    if conv.data_path:
+        rec = ConversationRecord.from_jsonl(Path(conv.data_path), task_id, conv.id)
+        rec.append_message_pointer(fm_id, reply_ts)
+    existing_ids: list = []
+    if conv.message_ids:
+        try:
+            existing_ids = _json.loads(conv.message_ids)
+        except Exception:
+            existing_ids = []
+    existing_ids.append({"message_id": fm_id, "timestamp": reply_ts})
+    conv.message_ids = _json.dumps(existing_ids)
+    conv.message_count = len(existing_ids)
+    return await conv.save(someone_typeid)
+
+
+def _resolve_reply_recipient_email(task: Task, local_user_id: str) -> str:
+    """Return the email address the reply should be delivered to.
+
+    Direction: if I am the original sender → deliver to recipient; otherwise → deliver to sender.
+    """
+    task_meta = task.metadata or {}
+    if task.shared_by_id and task.shared_by_id == local_user_id:
+        return task_meta.get("recipient_email") or ""
+    return task_meta.get("sender_email") or ""
+
+
+async def _send_reply_to_hub(
+    *,
+    reply_fm: "FlowMessage",
+    task: Task,
+    task_id: str,
+    message: str,
+    sender_id: Optional[str],
+    sender_name: str,
+    recipient_email: str,
+) -> None:
+    """POST the reply notification to hub and upload the .flowmsg bundle (best-effort)."""
+    if not recipient_email or not hub_base_url():
+        return
+    try:
+        hub_reply_id = str(uuid.uuid4())
+        hub_data = await hub_post(BuiltinEntityType.FLOW_MESSAGE, {
+            "flow_message_id": hub_reply_id,
+            "recipient_email": recipient_email,
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+            "task_id": task_id,
+            "task_title": task.title or "",
+            "message": message,
+        }, action="send")
+        hub_reply_fm_id = (hub_data or {}).get("flow_message_id")
+        if hub_reply_fm_id:
+            await _upload_bundle_to_hub(hub_reply_fm_id, reply_fm, f"reply-{task.title or 'reply'}")
+        else:
+            logger.warning("[append_conversation] hub_post(send) returned no flow_message_id")
+    except Exception as _hub_err:
+        logger.warning("[append_conversation] hub reply upload failed (non-fatal): %s", _hub_err, exc_info=True)
+
+
+def _notify_ui_conversation_updated(conv_id: str, task_id: str, fm_id: str) -> None:
+    """Fire-and-forget sync event so the UI refreshes the conversation panel."""
+    try:
+        send_resource_sync(
+            type="conversation",
+            id=conv_id,
+            operation=SyncOperation.UPDATE,
+            data={"event_data": {"conversation_id": conv_id, "task_id": task_id, "flow_message_id": fm_id}},
+        )
+    except Exception:
+        pass
 
 
 async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResponse:
@@ -392,135 +675,53 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     if not task:
         return ApiFailResponse(message=f"Task not found: {task_id}")
 
-    local_user = await User.get_one({"uname": "local"})
-    sender_id: Optional[str] = local_user.id if local_user else None
-
-    # Find the Conversation entity — try by task_id first, then by task.conversation_id
-    conv = await Conversation.get_one({"task_id": task_id})
-    if not conv and task.conversation_id:
-        conv = await Conversation.get_one({"id": task.conversation_id})
+    conv = await _find_task_conversation(task)
     if not conv:
         return ApiFailResponse(message=f"No conversation found for task {task_id}")
 
-    # Save FlowMessage record for this reply
-    from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
-    from flow_sdk.fs_store.type_id import TypeId
-    reply_fm = FlowMessage.model_validate({
-        "text": message,
-        "context": [
-            TypeId(type=BuiltinEntityType.TASK.value, id=task_id),
-            TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id),
-        ],
-        "attachment": [],
-        "sender_id": sender_id,
-    })
-    reply_fm.id = FlowMessage.allocate_id(reply_fm.model_dump())
-    reply_fm.attachment = [
-        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.TASK.value, id=task_id))),
-        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))),
-        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=reply_fm.id))),
-    ]
+    local_user = await User.get_one({"uname": "local"})
+    sender_id: Optional[str] = local_user.id if local_user else None
+    sender_name: str = (local_user.name or local_user.email or "") if local_user else ""
 
-    # Save any uploaded files to disk and add FILE attachments
+    reply_fm = await _create_reply_flow_message(
+        task_id=task_id,
+        conv_id=conv.id,
+        message=message,
+        sender_id=sender_id,
+        someone_typeid=someone_typeid,
+    )
+
     uploaded_files = body.get("files") or []
     if not isinstance(uploaded_files, list):
         uploaded_files = [uploaded_files]
     if uploaded_files:
-        from flow_sdk.config import FLOW_HOME
-        files_dir = FLOW_HOME / "tasks" / f"{_meaningful_name(task.title)}-{task_id[:8]}" / "files"
-        files_dir.mkdir(parents=True, exist_ok=True)
-        for uf in uploaded_files:
-            if not hasattr(uf, "read"):
-                continue
-            filename = getattr(uf, "filename", None) or "file"
-            file_path = files_dir / filename
-            content = await uf.read()
-            file_path.write_bytes(content)
-            reply_fm.attachment.append(
-                Attachment(attachment_type=AttachmentType.FILE, data=str(file_path))
-            )
+        await _attach_uploaded_files(reply_fm, uploaded_files, task_id, task.title or "")
 
-    reply_fm = await reply_fm.save(someone_typeid)
+    # Append pointer BEFORE packing the bundle so conversation.jsonl is up-to-date in the zip
+    conv = await _append_message_to_conversation(
+        conv=conv,
+        task_id=task_id,
+        fm_id=reply_fm.id,
+        someone_typeid=someone_typeid,
+    )
 
-    # Append pointer to conversation BEFORE packing the bundle so the
-    # bundle's conversation.jsonl includes the reply message pointer.
-    reply_ts = datetime.now(UTC).isoformat()
-    if conv.data_path:
-        from flow_sdk.fs_records.conversation_record import ConversationRecord
-        rec = ConversationRecord.from_jsonl(Path(conv.data_path), task_id, conv.id)
-        rec.append_message_pointer(reply_fm.id, reply_ts)
-    existing_ids_raw: list = []
-    if conv.message_ids:
-        try:
-            existing_ids_raw = _json.loads(conv.message_ids)
-        except Exception:
-            existing_ids_raw = []
-    existing_ids_raw.append({"message_id": reply_fm.id, "timestamp": reply_ts})
-    conv.message_ids = _json.dumps(existing_ids_raw)
-    conv.message_count = len(existing_ids_raw)
-    conv = await conv.save(someone_typeid)
+    recipient_email = _resolve_reply_recipient_email(task, local_user.id if local_user else "")
+    await _send_reply_to_hub(
+        reply_fm=reply_fm,
+        task=task,
+        task_id=task_id,
+        message=message,
+        sender_id=sender_id,
+        sender_name=sender_name,
+        recipient_email=recipient_email,
+    )
 
-    # Upload reply to hub so the original sender can fetch it via inbox
-    sender_name: str = (local_user.name or local_user.email or "") if local_user else ""
+    _notify_ui_conversation_updated(conv.id, task_id, reply_fm.id)
 
-    # Resolve recipient email: depends on whether I'm the original sender or the recipient.
-    # - If I sent the task (shared_by_id == my id): reply goes to the recipient (stored in recipient_email).
-    # - If I received the task (shared_by_id != my id): reply goes to the sender (stored in sender_email).
-    original_sender_id = task.shared_by_id or ""
-    task_meta = task.metadata or {}
-    local_user_id_str = local_user.id if local_user else ""
-    if original_sender_id and original_sender_id == local_user_id_str:
-        # I am the original sender — reply to the recipient
-        recipient_email_for_reply = task_meta.get("recipient_email") or ""
-    else:
-        # I am the recipient — reply to the original sender
-        recipient_email_for_reply = task_meta.get("sender_email") or ""
-    if recipient_email_for_reply and hub_base_url():
-        try:
-            import uuid as _uuid
-            hub_reply_id = str(_uuid.uuid4())
-            hub_data = await hub_post(BuiltinEntityType.FLOW_MESSAGE, {
-                "flow_message_id": hub_reply_id,
-                "recipient_email": recipient_email_for_reply,
-                "sender_id": sender_id,
-                "sender_name": sender_name,
-                "task_id": task_id,
-                "task_title": task.title or "",
-                "message": message,
-            }, action="send")
-            hub_reply_fm_id = (hub_data or {}).get("flow_message_id")
-            if hub_reply_fm_id:
-                zip_path = await reply_fm.to_file()
-                bundle_filename = f"reply-{_meaningful_name(task.title or 'reply')}.flowmsg"
-                content = zip_path.read_bytes()
-                upload_resp = await hub_post(
-                    BuiltinEntityType.FLOW_MESSAGE, {}, hub_reply_fm_id, "fs", "upload",
-                    files={"uploaded_file": (bundle_filename, content, "application/zip")},
-                )
-                zip_path.unlink(missing_ok=True)
-                await hub_put(BuiltinEntityType.FLOW_MESSAGE, hub_reply_fm_id, {"attachment_filename": bundle_filename})
-            else:
-                logger.warning("[append_conversation] hub_post(send) returned no flow_message_id")
-        except Exception as _hub_err:
-            logger.warning("[append_conversation] hub reply upload failed (non-fatal): %s", _hub_err, exc_info=True)
-
-    # Notify UI so conversation refreshes automatically
-    try:
-        send_resource_sync(
-            type="conversation",
-            id=conv.id,
-            operation=SyncOperation.UPDATE,
-            data={"event_data": {"conversation_id": conv.id, "task_id": task_id, "flow_message_id": reply_fm.id}},
-        )
-    except Exception:
-        pass
-
-    # Git push the updated conversation.jsonl
     project_root_str = (task.metadata or {}).get("project_root")
     if project_root_str:
-        project_root = Path(project_root_str)
         await git_add_commit_push(
-            project_root,
+            Path(project_root_str),
             ["tasks"],
             f"chore: update conversation for task '{task.title}'",
         )
