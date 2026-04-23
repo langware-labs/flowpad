@@ -392,7 +392,7 @@ async def unpack_bundle(
                         fm_id = fm_data.get("id") or entry_id
                         existing_fm = await FlowMessage.get_one({"id": fm_id})
                         if existing_fm is not None and not overwrite:
-                            raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": fm_id}])
+                            continue  # already exists — skip without aborting the whole unpack
                         _rewrite_file_attachments(fm_data, tmp_root, task_id or "")
                         inner_fm = FlowMessage.model_validate(fm_data)
                         inner_fm.id = fm_id
