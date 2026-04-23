@@ -11,12 +11,11 @@ URL structure follows the Flowpad Hub API guidelines:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 import httpx
 
-if TYPE_CHECKING:
-    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +28,7 @@ def hub_base_url() -> Optional[str]:
 
 
 def hub_graph_url(
-    entity_type: "BuiltinEntityType",
+    entity_type: BuiltinEntityType,
     entity_id: str | None = None,
     action: str | None = None,
     sub_path: str | None = None,
@@ -88,7 +87,7 @@ def _auth_headers() -> dict[str, str]:
 
 
 async def hub_get(
-    entity_type: "BuiltinEntityType",
+    entity_type: BuiltinEntityType,
     entity_id: str | None = None,
     action: str | None = None,
     sub_path: str | None = None,
@@ -130,7 +129,7 @@ async def hub_get(
 
 
 async def hub_post(
-    entity_type: "BuiltinEntityType",
+    entity_type: BuiltinEntityType,
     payload: dict[str, Any],
     entity_id: str | None = None,
     action: str | None = None,
@@ -173,7 +172,7 @@ async def hub_post(
 
 
 async def hub_put(
-    entity_type: "BuiltinEntityType",
+    entity_type: BuiltinEntityType,
     entity_id: str,
     payload: dict[str, Any],
     *,
