@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AgenticProcess, FlowElementTypes } from '@sdk';
-import type { FlowData } from '@sdk'; // FlowData used as cast type for flowDataStream items
+import type { FlowData } from '@sdk';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { AskForAssistanceDialog } from './AskForAssistanceDialog';
 
@@ -83,12 +83,22 @@ export function AskForAssistanceButton({ process }: AskForAssistanceButtonProps)
   const [dialogOpen, setDialogOpen] = useState(false);
   const [sessionTitle, setSessionTitle] = useState('');
   const [sessionContent, setSessionContent] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleOpen = () => {
-    const items: readonly FlowData[] = ((process as any)?.flowDataStream?.items as readonly FlowData[]) ?? [];
-    setSessionTitle(getSessionTitle(process));
-    setSessionContent(extractSessionText(items, process));
-    setDialogOpen(true);
+  const handleOpen = async () => {
+    setLoading(true);
+    try {
+      const entity = process as any;
+      if (typeof entity?.loadHistory === 'function') {
+        await entity.loadHistory({ force: false });
+      }
+      const items: readonly FlowData[] = (entity?.flowDataStream?.items as readonly FlowData[]) ?? [];
+      setSessionTitle(getSessionTitle(process));
+      setSessionContent(extractSessionText(items, process));
+      setDialogOpen(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -96,8 +106,9 @@ export function AskForAssistanceButton({ process }: AskForAssistanceButtonProps)
       <Tooltip>
         <TooltipTrigger asChild>
           <button
-            className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent"
-            onClick={handleOpen}
+            className="inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={() => void handleOpen()}
+            disabled={loading}
             aria-label="Ask for Assistance"
           >
             <PersonRaisedHandIcon size={14} />
