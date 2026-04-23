@@ -57,6 +57,23 @@ class ClaudeMemoryRecord(Record):
             return None
 
     @classmethod
+    async def from_fsref(cls, ref) -> list["ClaudeMemoryRecord"]:
+        """Indexer entry point — construct from an FSRef emitted by claude_memory_fn.
+
+        ref._path is `<encoded_project_dir>/memory/<name>.md`. The parent
+        FSRef (PROJECT) carries the encoded dir name; the decoded cwd is
+        read from a session JSONL in that dir.
+        """
+        from flow_sdk.fs_records._claude_projects import _real_path_from_jsonl
+        md_path = ref._path
+        # encoded project dir: md_path.parent is `memory/`, .parent.parent is the encoded dir
+        project_dir = md_path.parent.parent
+        encoded = project_dir.name
+        real_path = _real_path_from_jsonl(project_dir)
+        real = str(real_path) if real_path else "/" + encoded.lstrip("-").replace("-", "/")
+        return [cls._from_md_file(md_path, project_path=real, project_encoded=encoded)]
+
+    @classmethod
     def _external_source_iter(
         cls, limit: int | None = None
     ) -> Iterator["ClaudeMemoryRecord"]:

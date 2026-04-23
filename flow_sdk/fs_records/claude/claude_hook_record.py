@@ -152,6 +152,41 @@ class ClaudeHookRecord(Record):
         return rec
 
     @classmethod
+    async def from_fsref(cls, ref) -> list["ClaudeHookRecord"]:
+        """Indexer entry point — parse one settings-like file into N hook records.
+
+        Dispatch on file shape:
+          - installed_plugins.json: registry only, no hooks emitted (plugin
+            cache `hooks.json` files are emitted separately by the walker).
+          - plugin cache `hooks.json` (under ~/.claude/plugins/cache/...): apply
+            $CLAUDE_PLUGIN_ROOT resolution and recompute stable id.
+          - settings.json / settings.local.json / .claude.json: standard parse.
+        """
+        path = ref._path
+        scope = ref.scope or "user"
+
+        if path.name == "installed_plugins.json":
+            return []
+
+        # Plugin-cache hooks.json: ~/.claude/plugins/cache/<vendor>/<plugin>/<ver>/hooks/hooks.json
+        if path.name == "hooks.json" and "plugins" in path.parts and "cache" in path.parts:
+            install_path = str(path.parent.parent)  # `hooks/` -> install dir
+            plugin_name = path.parent.parent.parent.name if len(path.parents) >= 4 else ""
+            records = list(_parse_hooks_from_file(path, "plugin"))
+            for rec in records:
+                rec.command = _resolve_plugin_root(rec.command, install_path)
+                rec.plugin_name = plugin_name
+                rec.id = _stable_hook_hash(
+                    str(path),
+                    _escape_json_pointer(rec.event_type),
+                    rec.matcher,
+                    rec.command,
+                )
+            return records
+
+        return list(_parse_hooks_from_file(path, scope))
+
+    @classmethod
     def discovery_items_count(cls, limit: int | None = None) -> int:
         count = len(ClaudeHookRecordList())
         return min(count, limit) if limit is not None else count

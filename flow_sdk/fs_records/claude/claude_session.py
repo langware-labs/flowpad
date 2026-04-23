@@ -437,6 +437,11 @@ class ClaudeSessionRecord(Record):
         return min(count, limit) if limit is not None else count
 
     @classmethod
+    async def from_fsref(cls, ref) -> list["ClaudeSessionRecord"]:
+        """Indexer entry point — construct from an FSRef emitted by claude_sessions_fn."""
+        return [cls.from_jsonl(ref._path)]
+
+    @classmethod
     def discover_paths_iter(cls, limit: int | None = None, **kwargs):
         """Lazy generator — yields Path objects for each JSONL file (no file reads)."""
         projects_dir = Path.home() / ".claude" / "projects"

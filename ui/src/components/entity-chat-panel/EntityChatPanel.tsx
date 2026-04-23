@@ -13,7 +13,6 @@ import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-
 import ChatMessage from './chat-message/chat-message';
 import { useProject } from '@src/hooks/useProject';
 import { cn } from '@src/lib/utils';
-import { Button } from '@src/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -273,6 +272,12 @@ export function EntityChatPanel({ target, className, onProcessCreated }: EntityC
       className={cn('flex h-full min-h-0 flex-col bg-background', className)}
       data-testid="entity-chat-panel"
     >
+      <ChatHistoryHeader
+        processes={sortedProcesses}
+        activeId={activeProcess?.id ?? null}
+        onNewChat={startNewChat}
+        onPickChat={selectChat}
+      />
       <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
         {showEmptyState && (
           <div className="p-3 text-[11px] text-muted-foreground">
@@ -297,3 +302,77 @@ export function EntityChatPanel({ target, className, onProcessCreated }: EntityC
 
 // Re-export so outer callers can thread SDK types without a second import.
 export type { AgenticProcess, FlowData, TypeId };
+
+function ChatHistoryHeader({
+  processes,
+  activeId,
+  onNewChat,
+  onPickChat,
+}: {
+  processes: AgenticProcess[];
+  activeId: string | null;
+  onNewChat: () => void;
+  onPickChat: (id: string) => void;
+}) {
+  const iconBtn =
+    'flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
+  return (
+    <div
+      className="flex flex-shrink-0 items-center justify-end gap-0.5 px-2 py-1"
+      data-testid="entity-chat-header"
+    >
+      <button
+        type="button"
+        onClick={onNewChat}
+        title="New chat"
+        className={iconBtn}
+        data-testid="entity-chat-new"
+      >
+        <MessageSquarePlus className="h-3 w-3" />
+      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            title="Chat history"
+            disabled={processes.length === 0}
+            className={iconBtn}
+            data-testid="entity-chat-history"
+          >
+            <History className="h-3 w-3" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-72" data-testid="entity-chat-history-menu">
+          <DropdownMenuLabel className="text-[11px] font-medium text-muted-foreground">
+            Past chats
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {processes.length === 0 ? (
+            <div className="px-2 py-1.5 text-[11px] text-muted-foreground">No past chats</div>
+          ) : (
+            processes.map((p) => {
+              const when = p.updated_date || p.created_date;
+              const ts = when ? new Date(when) : null;
+              return (
+                <DropdownMenuItem
+                  key={p.id}
+                  onSelect={() => p.id && onPickChat(p.id)}
+                  data-active={p.id === activeId ? 'true' : 'false'}
+                  className="flex flex-col items-start gap-0.5"
+                >
+                  <span className="text-xs">
+                    {ts ? ts.toLocaleString() : 'Unknown time'}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {p.id?.slice(0, 8)}
+                    {p.id === activeId ? ' · current' : ''}
+                  </span>
+                </DropdownMenuItem>
+              );
+            })
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}

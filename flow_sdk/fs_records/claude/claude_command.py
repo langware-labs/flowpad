@@ -80,6 +80,22 @@ class ClaudeCommandFsRecord(Record):
         return min(count, limit) if limit is not None else count
 
     @classmethod
+    async def from_fsref(cls, ref) -> list["ClaudeCommandFsRecord"]:
+        """Indexer entry point — construct from an FSRef emitted by command_fn."""
+        md_file = ref._path
+        try:
+            content = md_file.read_text(encoding="utf-8")
+        except OSError:
+            return []
+        rec = cls(
+            command_name=md_file.stem,
+            content=content,
+            scope=ref.scope or "user",
+        )
+        rec.source_file = str(md_file)
+        return [rec]
+
+    @classmethod
     def discover_iter(cls, limit: int | None = None, scope: Scope | None = None, **kwargs: Any) -> Iterator[ClaudeCommandFsRecord]:
         scope_filter = scope.value if hasattr(scope, "value") else str(scope) if scope else None
         count = 0

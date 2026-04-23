@@ -109,6 +109,11 @@ class ClaudeProjectFsRecord(Record):
         )
 
     @classmethod
+    async def from_fsref(cls, ref) -> list["ClaudeProjectFsRecord"]:
+        """Indexer entry point — construct from an FSRef emitted by claude_projects_fn."""
+        return [cls._from_claude_dir(ref._path)]
+
+    @classmethod
     def _external_source_iter(cls, limit: int | None = None):
         """Yield projects discovered from ``~/.claude/projects/``."""
         projects_dir = _CLAUDE_PROJECTS_DIR

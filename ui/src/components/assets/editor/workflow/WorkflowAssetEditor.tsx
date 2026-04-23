@@ -1,7 +1,6 @@
 import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownEditor';
 import { enableMcp, isMcpAvailable } from '@src/components/assets/utils';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/MilkdownEditorWithSidePanel';
-import { PipelineViewer } from '@src/components/pipeline-viewer';
 import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
 import {
   workflowRunStore,
@@ -28,10 +27,8 @@ import {
   dataContext,
 } from '@sdk';
 import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
-import { GitFork, History, Loader2, Play, Zap } from 'lucide-react';
+import { History, Loader2, Play } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-
-type ViewMode = 'source' | 'prepared' | 'pipeline';
 
 interface WorkflowAssetEditorProps {
   /** FSRef to the workflow's source markdown file. */
@@ -46,8 +43,8 @@ const stripLeadingSlash = (p: string | undefined | null): string =>
 /**
  * Unified editor for workflow `.md` files. Mounted from both the wiki
  * (`AssetEditorRouter`) and the Workflows sidebar (`WorkflowsPage`) — one
- * surface, two entry points. Wraps `MarkdownEditor` and injects workflow
- * toolbar actions + a `Runs` tab into its side drawer.
+ * surface, two entry points. Wraps `MarkdownEditor` and injects a `Run`
+ * toolbar button + a `Runs` tab into its side drawer.
  */
 export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: WorkflowAssetEditorProps) {
   const { toast } = useToast();
@@ -62,18 +59,11 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
     return workflows.find((w) => stripLeadingSlash(w.source_vfs_path) === key) ?? null;
   }, [providedWorkflow, workflows, fsRef.path]);
 
-  const [viewMode, setViewMode] = useState<ViewMode>('source');
   const [activeSideTab, setActiveSideTab] = useState<string>('chat');
   const [processEntry, setProcessEntry] = useState<ProcessEntry | null>(null);
-  const [isPreparing, setIsPreparing] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
-  const [isPipelinePreparing, setIsPipelinePreparing] = useState(false);
   const [showMcpModal, setShowMcpModal] = useState(false);
   const [mcpEnabling, setMcpEnabling] = useState(false);
-
-  useEffect(() => {
-    setViewMode('source');
-  }, [resolvedWorkflow?.id]);
 
   // WorkflowStrip's Play button stashes a live ProcessEntry here before
   // navigating — drain it on mount so we show the run in progress.
@@ -110,13 +100,12 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
   }, [pastRunProcesses, processEntry]);
 
   const doRun = useCallback(async () => {
-    if (!resolvedWorkflow) return;
+    if (!resolvedWorkflow?.source_vfs_path) return;
     const systemSkills = dataContext.bootstrapInfo?.desktop_info?.paths?.system_skills;
     const flowSkillPath = systemSkills
       ? `/${systemSkills}/flow/SKILL.md`
       : '~/.flow/system_assets/skills/flow/SKILL.md';
-    const runPath = resolvedWorkflow.preparedPath ?? resolvedWorkflow.source_vfs_path;
-    const instruction = `Run workflow at /${runPath} using the flow skill located at: ${flowSkillPath}`;
+    const instruction = `Run workflow at /${resolvedWorkflow.source_vfs_path} using the flow skill located at: ${flowSkillPath}`;
     const workdir = dataContext.project?.fs_storage_mount_path;
 
     const cliOptions = new ClaudeCliOptions({
@@ -137,55 +126,6 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
     setProcessEntry({ process });
     setActiveSideTab('runs');
   }, [resolvedWorkflow]);
-
-  const doPrepare = useCallback(async () => {
-    if (!resolvedWorkflow?.source_vfs_path) return;
-    const systemSkills = dataContext.bootstrapInfo?.desktop_info?.paths?.system_skills;
-    const compileSkillPath = systemSkills
-      ? `/${systemSkills}/compile-workflow/SKILL.md`
-      : '~/.flow/system_assets/skills/compile-workflow/SKILL.md';
-    const derived = Workflow.derivePreparedPath(resolvedWorkflow.source_vfs_path);
-    const instruction = `Prepare workflow at /${resolvedWorkflow.source_vfs_path}, write prepared steps to /${derived}, using the compile-workflow skill at: ${compileSkillPath}`;
-    const workdir = dataContext.project?.fs_storage_mount_path;
-    await AgenticProcess.spawn(
-      { permissionMode: 'bypassPermissions', workdir },
-      { instruction },
-    );
-    resolvedWorkflow.prepared_vfs_path = derived;
-    await resolvedWorkflow.save();
-  }, [resolvedWorkflow]);
-
-  const handlePrepare = useCallback(async () => {
-    if (!resolvedWorkflow?.source_vfs_path) return;
-    setIsPreparing(true);
-    try {
-      const available = await isMcpAvailable('flow-sdk-mcp');
-      if (!available) {
-        setShowMcpModal(true);
-        return;
-      }
-      await doPrepare();
-    } catch (err) {
-      console.error('[WorkflowAssetEditor] Prepare failed:', err);
-      toast({ title: 'Failed to prepare workflow', variant: 'destructive' });
-    } finally {
-      setIsPreparing(false);
-    }
-  }, [resolvedWorkflow, doPrepare, toast]);
-
-  const handleGeneratePipeline = useCallback(async () => {
-    if (!resolvedWorkflow?.source_vfs_path) return;
-    setIsPipelinePreparing(true);
-    try {
-      await resolvedWorkflow.prepare();
-      toast({ title: 'Pipeline generated' });
-    } catch (err) {
-      console.error('[WorkflowAssetEditor] Generate pipeline failed:', err);
-      toast({ title: 'Failed to generate pipeline', variant: 'destructive' });
-    } finally {
-      setIsPipelinePreparing(false);
-    }
-  }, [resolvedWorkflow, toast]);
 
   const handleRun = useCallback(async () => {
     if (!resolvedWorkflow?.source_vfs_path) return;
@@ -223,17 +163,6 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
     [doRun, toast],
   );
 
-  const currentFsRef = useMemo(() => {
-    if (
-      viewMode === 'prepared' &&
-      resolvedWorkflow?.isPrepared &&
-      resolvedWorkflow.preparedPath
-    ) {
-      return new FSRef(stripLeadingSlash(resolvedWorkflow.preparedPath), fsRef.typeId);
-    }
-    return fsRef;
-  }, [viewMode, resolvedWorkflow, fsRef]);
-
   if (!resolvedWorkflow) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -245,87 +174,25 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
   const isRunning = !!processEntry;
 
   const toolbar = (
-    <>
-      {(resolvedWorkflow.isPrepared || resolvedWorkflow.hasPipeline) && (
-        <div className="flex items-center rounded-md border bg-background">
-          <Button
-            variant={viewMode === 'source' ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-8 rounded-r-none border-0 px-3 text-xs"
-            onClick={() => setViewMode('source')}
-          >
-            Source
-          </Button>
-          {resolvedWorkflow.isPrepared && (
-            <Button
-              variant={viewMode === 'prepared' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-8 rounded-none border-x px-3 text-xs"
-              onClick={() => setViewMode('prepared')}
-            >
-              Prepared
-            </Button>
-          )}
-          {resolvedWorkflow.hasPipeline && (
-            <Button
-              variant={viewMode === 'pipeline' ? 'secondary' : 'ghost'}
-              size="sm"
-              className="h-8 rounded-l-none border-0 px-3 text-xs"
-              onClick={() => setViewMode('pipeline')}
-            >
-              Pipeline
-            </Button>
-          )}
-        </div>
+    <Button
+      size="sm"
+      onClick={() => void handleRun()}
+      disabled={isRunning || isStarting || !resolvedWorkflow.source_vfs_path}
+      title={
+        !resolvedWorkflow.source_vfs_path
+          ? 'No file linked'
+          : isRunning
+            ? 'Workflow running…'
+            : 'Run workflow'
+      }
+    >
+      {isRunning || isStarting ? (
+        <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+      ) : (
+        <Play className="mr-1 h-4 w-4" />
       )}
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => void handleGeneratePipeline()}
-        disabled={isPipelinePreparing || !resolvedWorkflow.source_vfs_path}
-        title="Generate pipeline view from workflow markdown"
-      >
-        {isPipelinePreparing ? (
-          <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-        ) : (
-          <GitFork className="mr-1 h-4 w-4" />
-        )}
-        {isPipelinePreparing ? 'Generating…' : 'Pipeline'}
-      </Button>
-      <Button
-        size="sm"
-        variant="secondary"
-        onClick={() => void handlePrepare()}
-        disabled={isPreparing || isRunning || isStarting || !resolvedWorkflow.source_vfs_path}
-        title={!resolvedWorkflow.source_vfs_path ? 'No file linked' : 'Prepare workflow'}
-      >
-        {isPreparing ? (
-          <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-        ) : (
-          <Zap className="mr-1 h-4 w-4" />
-        )}
-        {isPreparing ? 'Preparing…' : 'Prepare'}
-      </Button>
-      <Button
-        size="sm"
-        onClick={() => void handleRun()}
-        disabled={isRunning || isStarting || isPreparing || !resolvedWorkflow.source_vfs_path}
-        title={
-          !resolvedWorkflow.source_vfs_path
-            ? 'No file linked'
-            : isRunning
-              ? 'Workflow running…'
-              : 'Run workflow'
-        }
-      >
-        {isRunning || isStarting ? (
-          <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-        ) : (
-          <Play className="mr-1 h-4 w-4" />
-        )}
-        {isRunning ? 'Running…' : isStarting ? 'Starting…' : 'Run'}
-      </Button>
-    </>
+      {isRunning ? 'Running…' : isStarting ? 'Starting…' : 'Run'}
+    </Button>
   );
 
   const runsTab: ExtraSideTab = {
@@ -344,17 +211,13 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
 
   return (
     <>
-      {viewMode === 'pipeline' && resolvedWorkflow.hasPipeline ? (
-        <PipelineViewer pipelinePath={resolvedWorkflow.pipelinePath!} fsTypeId={fsRef.typeId} />
-      ) : (
-        <MarkdownEditor
-          fsRef={currentFsRef}
-          toolbar={toolbar}
-          extraSideTabs={[runsTab]}
-          activeSideTab={activeSideTab}
-          onActiveSideTabChange={setActiveSideTab}
-        />
-      )}
+      <MarkdownEditor
+        fsRef={fsRef}
+        toolbar={toolbar}
+        extraSideTabs={[runsTab]}
+        activeSideTab={activeSideTab}
+        onActiveSideTabChange={setActiveSideTab}
+      />
 
       <AlertDialog open={showMcpModal} onOpenChange={setShowMcpModal}>
         <AlertDialogContent>
