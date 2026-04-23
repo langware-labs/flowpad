@@ -105,6 +105,7 @@ export function AskForAssistanceDialog({
         plan_id: null,
         project_path: null,
         sender_name: senderName.trim() || null,
+        files: files.length > 0 ? files : undefined,
       });
       if (result.git_error) {
         setGitError(result.git_error);
