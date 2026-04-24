@@ -13,8 +13,9 @@ Usage::
 
 from flow_sdk.builtin.cli_workers.base import WorkerCLIOptions
 from flow_sdk.builtin.cli_workers.claude_cli import ClaudeCliOptions
+from flow_sdk.builtin.cli_workers.codex_cli import CodexCliOptions
 
-__all__ = ["WorkerCLIOptions", "ClaudeCliOptions", "factory"]
+__all__ = ["WorkerCLIOptions", "ClaudeCliOptions", "CodexCliOptions", "factory"]
 
 
 def factory(cli_json: dict, worker_type: str) -> WorkerCLIOptions:
@@ -32,4 +33,6 @@ def factory(cli_json: dict, worker_type: str) -> WorkerCLIOptions:
     """
     if worker_type == "claude":
         return ClaudeCliOptions.from_json(cli_json)
+    if worker_type == "codex":
+        return CodexCliOptions.from_json(cli_json)
     raise ValueError(f"Unknown worker_type: {worker_type!r}")

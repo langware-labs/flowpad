@@ -69,6 +69,30 @@ class ClaudeProjectFsRecord(Record):
         return self.data.get("real_path") or None
 
     @property
+    def session_count(self) -> int:
+        """Count of JSONL session files under this project's ``~/.claude/projects/`` dir.
+
+        Works for both discovery sources: Phase 2 records carry ``_path`` pointing at the
+        project dir; Phase 1 records_root records carry ``encoded_path`` and we resolve
+        it against ``_CLAUDE_PROJECTS_DIR``. Returns 0 when no session dir exists.
+        """
+        project_dir: Path | None = None
+        path_attr = getattr(self, "_path", None) or self.source_file
+        if path_attr:
+            candidate = Path(path_attr)
+            if candidate.is_dir():
+                project_dir = candidate
+        if project_dir is None:
+            encoded = self.data.get("encoded_path") or ""
+            if encoded:
+                candidate = _CLAUDE_PROJECTS_DIR / encoded
+                if candidate.is_dir():
+                    project_dir = candidate
+        if project_dir is None:
+            return 0
+        return sum(1 for _ in project_dir.glob("*.jsonl"))
+
+    @property
     def sessions(self) -> list[ClaudeSessionRecord]:
         """Return all sessions in this project as ``ClaudeSessionRecord``."""
         project_dir = Path(self.path or self.source_file) if (self.path or self.source_file) else None

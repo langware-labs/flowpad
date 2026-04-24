@@ -173,7 +173,10 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
           const cwd = record?.cwd ?? undefined;
           const computeNode = dataContext.computeNode;
           if (!computeNode) throw new Error('[Fork] No compute node');
-          const p = await computeNode.createProcess(cwd ? { workdir: cwd } : {});
+          const p = await computeNode.createProcess(
+            cwd ? { workdir: cwd } : {},
+            { visible: true, watchProcess: false },
+          );
           void navigation.openShellProcess(p.id);
         },
       },

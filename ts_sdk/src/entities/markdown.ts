@@ -1,11 +1,57 @@
+import { APIEntity, registerEntity } from '../APIEntity';
+import { IEntity } from '../IEntity';
 import { fsManager } from '../services/fsService';
+
+export interface IMarkdown extends IEntity {
+  name?: string;
+  asset_ref?: string;
+  asset_type?: string;
+  parent_path?: string;
+  vault_root?: string;
+  title?: string;
+  tags?: string[];
+  links?: string[];
+  scope?: string;
+}
+
+/**
+ * Markdown (Docs) entity — wiki/markdown files under `.claude/docs/*.md`.
+ * Registered so `useEntitiesQuery({ type: 'markdown' })` materializes backend
+ * rows into Markdown instances instead of silently dropping them.
+ */
+@registerEntity
+export class Markdown extends APIEntity<Markdown> implements IMarkdown {
+  static type: string = 'markdown';
+
+  name?: string;
+  asset_ref?: string;
+  asset_type?: string;
+  parent_path?: string;
+  vault_root?: string;
+  title?: string;
+  tags?: string[];
+  links?: string[];
+  scope?: string;
+
+  constructor(entity: Partial<IMarkdown> = {}) {
+    super(entity);
+    this.name = entity.name;
+    this.asset_ref = entity.asset_ref;
+    this.asset_type = entity.asset_type;
+    this.parent_path = entity.parent_path;
+    this.vault_root = entity.vault_root;
+    this.title = entity.title;
+    this.tags = entity.tags;
+    this.links = entity.links;
+    this.scope = entity.scope;
+  }
+}
 
 /**
  * MarkdownAsset — thin helper for quick-create of markdown assets.
  *
- * Markdown is not a first-class entity today (it's written directly to disk as a file).
- * This class provides a createInProject static so the quick-create registry can
- * treat it uniformly alongside Skill/Agent/Task/Workflow.
+ * Separate from the `Markdown` entity class above because quick-create writes
+ * a file to disk and returns the VFS path; it is not itself an Entity save.
  */
 export class MarkdownAsset {
   /**
