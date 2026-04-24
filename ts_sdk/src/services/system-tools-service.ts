@@ -287,6 +287,52 @@ export class SystemToolsService extends EventEmitter {
     return dataManager.scanInfo ?? { total_indexed: 0, last_indexed_at: null, never_indexed: true, stale: false };
   }
 
+  /**
+   * Fetch the in-flight scan/index activity from the backend and re-seed state.
+   *
+   * Called after a page refresh so the rebuild-index progress modal can reopen
+   * mid-job. Returns the active job_name (or null) so callers can decide whether
+   * to auto-open their progress UI.
+   */
+  async refreshActivityStatus(): Promise<SystemActivity | null> {
+    try {
+      const data = await apiClient.get<{
+        job_name: SystemActivity;
+        done: number;
+        total: number;
+        sub_activity_name: string | null;
+        sub_done: number;
+        sub_total: number;
+        sub_skipped: number;
+        sub_errors: number;
+      } | null>(`${FS_RECORDS_BASE}/activity-status`);
+
+      if (!data) {
+        // No activity running — clear any stale local state
+        if (this.currentActivity !== null) this._setActivity(null);
+        return null;
+      }
+
+      this.currentActivity = data.job_name;
+      this.activityProgress = {
+        total: data.total ?? 0,
+        done: [],
+        current: data.sub_activity_name,
+        pending: [],
+        jobDone: data.done,
+        jobTotal: data.total,
+        recordsDone: data.sub_activity_name ? data.sub_done : undefined,
+        recordsTotal: data.sub_activity_name ? data.sub_total : undefined,
+        recordsSkipped: data.sub_activity_name ? data.sub_skipped : undefined,
+        recordsErrors: data.sub_activity_name ? data.sub_errors : undefined,
+      };
+      this.emit('state_changed');
+      return data.job_name;
+    } catch {
+      return null;
+    }
+  }
+
   // ---- scan index (fs-records) ---------------------------------------------
 
   /** Index a single record type into the entity DB / FTS. */

@@ -122,12 +122,10 @@ class ClaudeProjectFsRecord(Record):
     def _from_claude_dir(cls, d: Path) -> "ClaudeProjectFsRecord":
         encoded = d.name
         real = "/" + encoded.lstrip("-").replace("-", "/")
-        session_count = sum(1 for f in d.glob("*.jsonl"))
         return cls(
             id=_project_id(encoded),
             encoded_path=encoded,
             real_path=real,
-            session_count=session_count,
             path=str(d),
         )
 

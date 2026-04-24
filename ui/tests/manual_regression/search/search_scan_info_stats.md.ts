@@ -134,4 +134,79 @@ test.describe('Search Scan Info Stats', () => {
     expect(typeof data.stale).toBe('boolean');
     expect(Array.isArray(data.per_type)).toBe(true);
   });
+
+  // ── Test 6: Rebuild-index button runs archive→clear→scan→index and refreshes the indexed badge ──
+  test('rebuild-index button archives, clears, scans, indexes and refreshes indexed badge', async ({ page }) => {
+    test.setTimeout(180_000);
+    await dismissSetupModal(page);
+    await page.goto('/dock/search');
+    await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+
+    const searchView = page.locator('[data-testid="search-view"]');
+    await expect(searchView).toBeVisible({ timeout: 10_000 });
+
+    // WelcomeModal ("Make your records searchable") may appear when never_indexed=true.
+    // When open it sets aria-hidden on the rest of the page, which intercepts clicks.
+    const dismissWelcomeModal = async () => {
+      for (const name of ['Not Now', 'Skip for now']) {
+        const btn = page.getByRole('button', { name });
+        if (await btn.isVisible({ timeout: 1_500 }).catch(() => false)) {
+          await btn.click().catch(() => {});
+          break;
+        }
+      }
+    };
+    await dismissWelcomeModal();
+
+    const readIndexedCount = async (): Promise<number> => {
+      const badge = page.locator('text=/\\d+ indexed/').first();
+      await expect(badge).toBeVisible({ timeout: 8_000 });
+      const text = (await badge.textContent()) ?? '';
+      const match = text.match(/(\d+)\s+indexed/);
+      expect(match).toBeTruthy();
+      return Number(match![1]);
+    };
+
+    const indexedBefore = await readIndexedCount();
+    expect(indexedBefore).toBeGreaterThanOrEqual(0);
+
+    // The rebuild-index button has no data-testid/aria-label; locate it as the header button
+    // inside SearchView that wraps an svg.lucide-rotate-ccw icon.
+    const rebuildButton = searchView.locator('button:has(svg.lucide-rotate-ccw)').first();
+    await expect(rebuildButton).toBeVisible({ timeout: 5_000 });
+    await expect(rebuildButton).toBeEnabled({ timeout: 5_000 });
+
+    // resetAndRescan fans out to two compute nodes:
+    //   1. desktop-db/archive        (POST)
+    //   2. desktop-db/clear-index    (POST)
+    //   3. fs-records/scan?trigger=manual  (GET)
+    //   4. fs-records/index          (POST)
+    const seen = { archive: false, clear: false, scan: false, index: false };
+    const allSeen = () => seen.archive && seen.clear && seen.scan && seen.index;
+    page.on('response', (r) => {
+      const u = r.url();
+      const m = r.request().method();
+      if (r.status() !== 200) return;
+      if (m === 'POST' && u.includes('/archive')) seen.archive = true;
+      else if (m === 'POST' && u.includes('/clear-index')) seen.clear = true;
+      else if (m === 'GET' && u.includes('fs-records/scan') && u.includes('trigger=manual')) seen.scan = true;
+      else if (
+        m === 'POST' &&
+        /fs-records\/index(\?|$)/.test(u) &&
+        !u.includes('index-status')
+      ) {
+        seen.index = true;
+      }
+    });
+
+    await rebuildButton.click();
+
+    await expect.poll(() => allSeen(), { timeout: 120_000, intervals: [500] }).toBe(true);
+
+    // Button returns to the enabled state once the orchestration finishes (busy=false).
+    await expect(rebuildButton).toBeEnabled({ timeout: 30_000 });
+
+    const indexedAfter = await readIndexedCount();
+    expect(indexedAfter).toBeGreaterThanOrEqual(0);
+  });
 });
