@@ -54,6 +54,17 @@ class AgenticContext(BaseModel):
     # Fork session - when True with resume_session_id, creates a fork instead of resuming in-place
     fork_session: bool = False
 
+    # Pre-assigned session id — when set, the worker passes ``--session-id``
+    # to the CLI for fresh runs (no ``--resume``). Lets callers reserve a
+    # session id before the worker starts so transcript discovery doesn't
+    # have to wait for the first ``system:init`` event.
+    session_id: str | None = None
+
+    # Reasoning-effort override for the parent CLI ("low"/"medium"/"high"/...).
+    # Only honoured by workers that map to a CLI flag for it (currently
+    # Claude's ``--effort``); ignored elsewhere.
+    effort: str | None = None
+
     @model_validator(mode="after")
     def set_defaults(self) -> "AgenticContext":
         """Initialize defaults."""

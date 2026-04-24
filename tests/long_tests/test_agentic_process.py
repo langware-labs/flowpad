@@ -142,7 +142,7 @@ async def test_agentic_process_hello_world(local_project, local_compute_node):
 
     # ── get-history action: transcript should be materialized, convertible to
     #    FlowData, and reachable through the same server action the UI uses.
-    from flow_sdk.builtin.agentic_workers.session_history import load_session_history
+    from flow_sdk.builtin.agentic_workers.claude_worker import load_session_history
 
     assert process.session_id, "process.session_id must be set after prompt completes"
 
@@ -348,10 +348,9 @@ async def test_agentic_process_fix_it_with_agent(local_project, local_compute_no
 @pytest.mark.timeout(240)
 @pytest.mark.flaky(reruns=2, reruns_delay=5)
 async def test_agentic_process_lists_system_skills(local_project, local_compute_node):
-    """Verify that system skills are visible to Claude via --add-dir system_assets."""
-    import flow_sdk
-    from pathlib import Path as _Path
-    system_skills_path = _Path(flow_sdk.__file__).parent / "system_assets" / "available" / "skills"
+    """Verify that system skills are visible to Claude via --add-dir."""
+    from flow_sdk.config import flowpad_assistant_project_root
+    system_skills_path = flowpad_assistant_project_root() / ".claude" / "skills"
 
     process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
     await process.prompt(

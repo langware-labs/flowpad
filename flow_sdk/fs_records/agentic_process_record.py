@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any, ClassVar, TYPE_CHECKING
 
 from flow_sdk.fs_store import Record, RecordType
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.property_record import PropertyRecord
 from flow_sdk.fs_records.agent_status import WorkerStatus
 from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
@@ -53,6 +55,75 @@ class AgenticProcessRecord(Record):
         kwargs.setdefault("project_encoded_name", None)
         kwargs.setdefault("project_id", None)
         super().__init__(**kwargs)
+
+    # ── Execution-folder layout ──────────────────────────────────────────────
+    # Per-process artifacts live under `<record_dir>/execution/{input,output,assets}/`.
+    # `_dir` getters return Path (auto-mkdir; override the Record-base layout so
+    # input/output/assets sit under execution/); `_folder` getters return FSRef
+    # wrappers for UI / wire use.
+
+    @property
+    def exe_folder(self) -> FSRef | None:
+        rd = self.record_dir
+        if rd is None:
+            return None
+        p = Path(rd) / "execution"
+        p.mkdir(parents=True, exist_ok=True)
+        return FSRef(p)
+
+    @property
+    def input_dir(self) -> Path:
+        rd = self.record_dir
+        if rd is None:
+            raise ValueError("No record_dir set")
+        p = Path(rd) / "execution" / "input"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    @property
+    def output_dir(self) -> Path:
+        rd = self.record_dir
+        if rd is None:
+            raise ValueError("No record_dir set")
+        p = Path(rd) / "execution" / "output"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    @property
+    def assets_dir(self) -> Path:
+        rd = self.record_dir
+        if rd is None:
+            raise ValueError("No record_dir set")
+        p = Path(rd) / "execution" / "assets"
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    @property
+    def input_folder(self) -> FSRef | None:
+        return FSRef(self.input_dir) if self.record_dir is not None else None
+
+    @property
+    def output_folder(self) -> FSRef | None:
+        return FSRef(self.output_dir) if self.record_dir is not None else None
+
+    @property
+    def assets_folder(self) -> FSRef | None:
+        return FSRef(self.assets_dir) if self.record_dir is not None else None
+
+    def meta_dict(self) -> dict:
+        """Inject the per-process execution folder refs onto the Entity row.
+
+        The record-side getters compute paths from record_dir; Entity consumers
+        want them as serialized FSRef dicts (matching the wire format the TS
+        side already expects via `FSRef.fromJson`).
+        """
+        result = super().meta_dict()
+        type_id = "compute_node-@local"
+        for attr in ("exe_folder", "input_folder", "output_folder", "assets_folder"):
+            ref = getattr(self, attr, None)
+            if ref is not None:
+                result[attr] = ref.to_dict(type_id=type_id)
+        return result
 
     @property
     def project_encoded_name(self) -> str | None:

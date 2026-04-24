@@ -2,7 +2,6 @@ import { Button } from '@src/components/ui/button';
 import { ProcessStatusLine } from '@src/components/agentic-progress/shared/process-status-line';
 import { useEntity } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { FolderOpen } from 'lucide-react';
 import { AgenticProcess } from '@sdk';
 import type { ProcessEntry } from './workflow-run-store';
@@ -59,11 +58,11 @@ function WorkflowRunItem({
   };
 
   const handleOpenFolder = async () => {
-    if (!computeNodeId || !process.workdir) return;
+    if (!process.output_folder) return;
     try {
-      await openExternalFromComputeNode(computeNodeId, process.workdir);
+      await process.output_folder.open();
     } catch (err) {
-      console.error('[WorkflowRunItem] Failed to open folder:', err);
+      console.error('[WorkflowRunItem] Failed to open output folder:', err);
     }
   };
 
@@ -79,7 +78,7 @@ function WorkflowRunItem({
         className="min-w-0 flex-1"
       />
 
-      {process.workdir && computeNodeId && (
+      {process.output_folder && (
         <Button
           variant="ghost"
           size="icon"

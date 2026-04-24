@@ -31,7 +31,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from flow_sdk.builtin.cli_workers.claude_cli import ClaudeCliOptions  # noqa: E402
+from flow_sdk.builtin.agentic_workers.claude_worker import ClaudeCliOptions  # noqa: E402
 
 
 PROMPT = (

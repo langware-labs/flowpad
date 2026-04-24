@@ -110,9 +110,11 @@ export function useActAccordingToClassification(
           },
         );
 
-        // 2. Resolve outputDir now that we have process.id
+        // 2. Output folder — prefer the process's own FSRef; fall back to the
+        //    legacy layout so pre-migration processes still work.
         const normalizedHome = ctx.homePath.startsWith('/') ? ctx.homePath : `/${ctx.homePath}`;
-        const resolvedOutputDir = `${normalizedHome}/.flow/sessions/${process.id}`;
+        const resolvedOutputDir =
+          process.output_folder?.path ?? `${normalizedHome}/.flow/sessions/${process.id}`;
         await fsManager.mkdir(ctx.computeNodeTypeId, resolvedOutputDir);
 
         // 3. Task + ProcessResult creation

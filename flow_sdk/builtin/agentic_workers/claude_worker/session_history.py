@@ -136,6 +136,7 @@ def load_session_history(session_id: str) -> list[FlowData]:
                                     attributes={
                                         "element-type": FlowElementType.REASONING,
                                         "data-type": FlowDataType.TEXT,
+                                        "role": "assistant",
                                     },
                                 )
                             )
@@ -152,6 +153,7 @@ def load_session_history(session_id: str) -> list[FlowData]:
                                     "element-type": FlowElementType.TOOL_CALL,
                                     "data-type": FlowDataType.OBJECT,
                                     "tool-name": block.get("name", ""),
+                                    "role": "assistant",
                                 },
                             )
                         )

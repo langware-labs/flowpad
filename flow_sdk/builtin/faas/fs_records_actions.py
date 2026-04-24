@@ -439,15 +439,43 @@ class FsRecordsActionsMixin:
             RecordType.PROJECT,
         }
 
+        def _skip(ev: ProgressEvent) -> bool:
+            if ev.record_type in _SCAFFOLD_TYPES_IDX:
+                return True
+            if types_filter and ev.record_type not in types_filter:
+                return True
+            return False
+
         async def emit(ev: ProgressEvent) -> None:
-            if ev.stage == "type_complete":
-                if ev.record_type in _SCAFFOLD_TYPES_IDX:
-                    return
-                if types_filter and ev.record_type not in types_filter:
+            if ev.stage == "type_start":
+                if _skip(ev):
                     return
                 activity.sub_activity_name = str(ev.record_type)
-                activity.sub_done = ev.indexed
-                activity.sub_total = ev.indexed
+                activity.sub_done = 0
+                activity.sub_total = ev.sub_total
+                activity.sub_errors = 0
+                activity.sub_skipped = 0
+                await broadcast_progress(
+                    to_entity=str(self.typeid),
+                    flow_data=activity.make_flow_data(str(ev.record_type)),
+                )
+            elif ev.stage == "type_progress":
+                if _skip(ev):
+                    return
+                activity.sub_activity_name = str(ev.record_type)
+                activity.sub_done = ev.sub_done
+                activity.sub_total = ev.sub_total
+                activity.sub_errors = ev.errors
+                await broadcast_progress(
+                    to_entity=str(self.typeid),
+                    flow_data=activity.make_flow_data(str(ev.record_type)),
+                )
+            elif ev.stage == "type_complete":
+                if _skip(ev):
+                    return
+                activity.sub_activity_name = str(ev.record_type)
+                activity.sub_done = ev.sub_done or ev.indexed
+                activity.sub_total = ev.sub_total or ev.indexed
                 activity.sub_errors = ev.errors
                 activity.sub_skipped = 0
                 await broadcast_progress(

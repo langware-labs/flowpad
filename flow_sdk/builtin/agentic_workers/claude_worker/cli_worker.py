@@ -24,8 +24,8 @@ import shutil
 import uuid
 from typing import Any, AsyncIterator
 
-from flow_sdk.builtin.agentic_workers.agentic_worker import AgenticWorker
-from flow_sdk.builtin.agentic_workers.context import AgenticContext
+from flow_sdk.builtin.agentic_workers.base.context import AgenticContext
+from flow_sdk.builtin.agentic_workers.base.worker import AgenticWorker
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData, FlowDataType, FlowElementType
 
 logger = logging.getLogger(__name__)

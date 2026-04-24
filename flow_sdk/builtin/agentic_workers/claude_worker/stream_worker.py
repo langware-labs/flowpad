@@ -29,13 +29,13 @@ import os
 import shutil
 from typing import AsyncIterator
 
-from flow_sdk.builtin.agentic_workers.agentic_worker import AgenticWorker
-from flow_sdk.builtin.agentic_workers.claude_event_to_flowdata import (
+from flow_sdk.builtin.agentic_workers.base.context import AgenticContext
+from flow_sdk.builtin.agentic_workers.base.worker import AgenticWorker
+from flow_sdk.builtin.agentic_workers.claude_worker.cli import ClaudeCliOptions
+from flow_sdk.builtin.agentic_workers.claude_worker.event_to_flowdata import (
     convert_line,
     final_end_frame,
 )
-from flow_sdk.builtin.agentic_workers.context import AgenticContext
-from flow_sdk.builtin.cli_workers.claude_cli import ClaudeCliOptions
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowData,
     FlowDataType,
@@ -159,16 +159,23 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         if not shutil.which("claude"):
             return None, {}
 
+        # Resume takes priority — when ``resume_session_id`` is set, attach
+        # ``--resume <sid>``. Otherwise honour ``context.session_id`` (a
+        # pre-allocated UUID the caller wants Claude to use) so transcript
+        # discovery doesn't race the first ``system:init`` event.
+        resume_sid = context.resume_session_id
+        fresh_sid = context.session_id if not resume_sid else None
         opts = ClaudeCliOptions(
             workdir=context.workdir,
             env_vars=dict(context.env_vars) if context.env_vars else None,
             model=context.model,
             permission_mode=context.permission_mode,
-            session_id=context.resume_session_id,
-            resume=bool(context.resume_session_id),
-            fork_session_id=None if not context.fork_session else context.resume_session_id,
+            session_id=resume_sid or fresh_sid,
+            resume=bool(resume_sid),
+            fork_session_id=None if not context.fork_session else resume_sid,
             output_format="stream-json",
             print_mode=True,
+            effort=context.effort,
             # verbose=True is auto-enabled by ClaudeCliOptions when
             # output_format == "stream-json".
         )

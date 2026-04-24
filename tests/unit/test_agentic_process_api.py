@@ -141,7 +141,7 @@ def test_fork_factory_passes_workdir():
 def test_claude_project_dir_lookup_uses_fork_session_id():
     """When forking, CLAUDE_PROJECT_DIR lookup uses fork_session_id, not the new session_id."""
     from unittest.mock import MagicMock
-    from flow_sdk.builtin.cli_workers.claude_cli import ClaudeCliOptions
+    from flow_sdk.builtin.agentic_workers.claude_worker import ClaudeCliOptions
 
     proc = _proc(session_id="new-session-uuid")
     # Simulate cli_options with fork_session_id set

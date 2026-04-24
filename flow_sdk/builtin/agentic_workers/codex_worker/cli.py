@@ -14,7 +14,7 @@ Notes on flag mapping:
 - ``--json``                               → emit JSONL events to stdout
 - ``-m <model>``                           → model
 
-Logger namespace: ``flow_sdk.builtin.cli_workers.codex_cli`` so codex-CLI log
+Logger namespace: ``flow_sdk.builtin.agentic_workers.codex_worker.cli`` so codex-CLI log
 lines are easy to filter independently of the Claude CLI lines.
 """
 
@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from flow_sdk.builtin.cli_workers.base import WorkerCLIOptions
+from flow_sdk.builtin.agentic_workers.base.cli_options import WorkerCLIOptions
 
 logger = logging.getLogger(__name__)
 

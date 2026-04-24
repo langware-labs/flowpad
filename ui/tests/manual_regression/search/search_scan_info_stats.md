@@ -46,7 +46,7 @@ test 6: SearchView rebuild-index button archives, clears, scans, indexes and ref
 - [browser] if the WelcomeModal ("Make your records searchable") is visible, dismiss it via the "Not Now" button (or "Skip for now" on older builds)
 - [browser] wait up to 8 seconds for the "N indexed" badge to appear
 - [browser] read the leading integer N from the "N indexed" badge and remember it as INDEXED_BEFORE
-- [browser] locate the RotateCcw rebuild-index Button inside [data-testid="search-view"] (the header Button that wraps an svg.lucide-rotate-ccw; tooltip "Archive, clear & rescan index")
+- [browser] locate the rebuild-index Button via data-testid="rebuild-index" (ghost-icon button with the PackageSearch icon; tooltip "Refresh search data")
 - [browser] validate that button is enabled (not disabled)
 - [browser] start listening for POST {API_URL}/api/v1/graph/compute_node/@local/desktop-db/archive
 - [browser] start listening for POST {API_URL}/api/v1/graph/compute_node/@local/desktop-db/clear-index

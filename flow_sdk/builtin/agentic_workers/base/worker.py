@@ -8,7 +8,7 @@ No bloat: no pydantic-ai, no GraphRunContext, no WorkerConfig
 from abc import ABC, abstractmethod
 from typing import AsyncIterator
 
-from flow_sdk.builtin.agentic_workers.context import AgenticContext
+from flow_sdk.builtin.agentic_workers.base.context import AgenticContext
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 
 

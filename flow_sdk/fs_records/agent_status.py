@@ -111,6 +111,97 @@ _TAIL_BYTES = 4096
 _ACTIVE_SECONDS = 300  # JSONL mtime within 5 min → session still being written
 
 
+def _has_pending_tool_use(chunk: str) -> bool:
+    """True when the latest assistant ``tool_use`` has no completion evidence.
+
+    Walks the JSONL chunk forward (oldest→newest) and tracks the most recent
+    ``assistant`` entry whose ``stop_reason == "tool_use"``. If a completion
+    signal — ``file-history-snapshot``, a ``user`` event with a ``tool_result``
+    block, or another ``assistant`` with ``stop_reason == "end_turn"`` —
+    appears after that entry, the tool has been resolved. Otherwise the worker
+    is mid-tool execution and ``last-prompt`` is a premature idle marker.
+    """
+    pending = False
+    for line in chunk.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        t = entry.get("type", "")
+        msg = entry.get("message", {}) if isinstance(entry.get("message"), dict) else {}
+        if t == "assistant":
+            stop = msg.get("stop_reason")
+            if stop == "tool_use":
+                pending = True
+            elif stop == "end_turn":
+                pending = False
+        elif t == "user" and pending:
+            content = msg.get("content")
+            if isinstance(content, list) and any(
+                isinstance(b, dict) and b.get("type") == "tool_result"
+                for b in content
+            ):
+                pending = False
+        elif t == "file-history-snapshot" and pending:
+            pending = False
+    return pending
+
+
+def _has_completed_assistant(chunk: str) -> bool:
+    """True when at least one ``assistant`` entry has appeared in the chunk.
+
+    Claude 2.x can write ``last-prompt`` as a queue/ack marker BEFORE the
+    assistant turn starts (right after ``user`` + ``attachment`` events).
+    Treating that early ``last-prompt`` as terminal causes the test to exit
+    before Claude has actually thought about the prompt. Requiring at least
+    one assistant entry guarantees Claude has begun (and typically finished)
+    generating output before we consider the turn complete.
+    """
+    for line in chunk.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        if entry.get("type") == "assistant":
+            return True
+    return False
+
+
+def _last_user_is_tool_result(chunk: str) -> bool:
+    """True when the most recent ``user`` entry carries a ``tool_result`` block.
+
+    Distinguishes "user just sent a fresh prompt" (the worker is genuinely
+    WAITING for assistant output) from "user is the tool runtime returning a
+    tool_result" (the worker just finished its side effects). The latter is
+    safe to treat as terminal once no other tool_use remains pending.
+    """
+    for line in reversed(chunk.splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        if entry.get("type") != "user":
+            continue
+        msg = entry.get("message", {}) if isinstance(entry.get("message"), dict) else {}
+        content = msg.get("content")
+        if isinstance(content, list):
+            return any(
+                isinstance(b, dict) and b.get("type") == "tool_result"
+                for b in content
+            )
+        return False
+    return False
+
+
 def _last_user_text(chunk: str) -> str:
     """Extract text content from the last user entry in a JSONL chunk."""
     for line in reversed(chunk.splitlines()):
@@ -215,8 +306,24 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
         if last_type and last_stop_reason is not None:
             break
 
-    # Terminal signals — independent of mtime
+    # Claude 2.x writes ``last-prompt`` as an idle marker — but in PTY mode it
+    # can appear *between* an assistant ``stop_reason=tool_use`` and the actual
+    # tool execution (which the JSONL records via a subsequent
+    # ``file-history-snapshot`` and a SECOND ``last-prompt``). Treating the
+    # first ``last-prompt`` as terminal causes ``stream_transcript`` to exit
+    # before the file write lands, breaking long tests that assert artifacts on
+    # disk. Detect the in-flight tool case by walking forward and checking
+    # whether the most recent ``last-prompt`` is preceded by an unclosed
+    # ``tool_use`` (no ``file-history-snapshot`` or ``end_turn`` after it).
     if last_type == "last-prompt":
+        # ``last-prompt`` can appear *before* any assistant message — Claude
+        # writes a queue/ack marker right after ``user`` + ``attachment`` and
+        # only then starts thinking. Don't declare COMPLETE until there's at
+        # least one assistant entry AND no pending tool execution.
+        if not _has_completed_assistant(chunk):
+            return WorkerStatus.WAITING
+        if _has_pending_tool_use(chunk):
+            return WorkerStatus.TOOL_RUNNING
         return WorkerStatus.COMPLETE
     if last_type == "user" and "interrupted" in _last_user_text(chunk).lower():
         return WorkerStatus.INTERRUPTED
@@ -224,6 +331,7 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
         return WorkerStatus.COMPLETE
     if last_stop_reason == "stop_sequence":
         return WorkerStatus.ERROR
+
 
     # Stale file with no clean termination signal → assumed dead
     if not is_active:

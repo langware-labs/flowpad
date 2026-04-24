@@ -18,7 +18,7 @@ Session continuity:
 Cancel semantics: ``close_session()`` sends SIGTERM → 5 s grace → SIGKILL,
 matching the Claude worker's contract.
 
-Logger namespace: ``flow_sdk.builtin.agentic_workers.codex_cli_stream_worker``
+Logger namespace: ``flow_sdk.builtin.agentic_workers.codex_worker.stream_worker``
 — deliberately distinct from the Claude worker so log filtering by namespace
 gives clean separation between worker types.
 """
@@ -33,16 +33,16 @@ import shutil
 from pathlib import Path
 from typing import AsyncIterator
 
-from flow_sdk.builtin.agentic_workers.agentic_worker import AgenticWorker
-from flow_sdk.builtin.agentic_workers.codex_event_to_flowdata import (
+from flow_sdk.builtin.agentic_workers.base.context import AgenticContext
+from flow_sdk.builtin.agentic_workers.base.worker import AgenticWorker
+from flow_sdk.builtin.agentic_workers.codex_worker.cli import CodexCliOptions
+from flow_sdk.builtin.agentic_workers.codex_worker.event_to_flowdata import (
     convert_line,
     final_end_frame,
 )
-from flow_sdk.builtin.agentic_workers.codex_session_history import (
+from flow_sdk.builtin.agentic_workers.codex_worker.session_history import (
     codex_transcript_path_for_process,
 )
-from flow_sdk.builtin.agentic_workers.context import AgenticContext
-from flow_sdk.builtin.cli_workers.codex_cli import CodexCliOptions
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowData,
     FlowDataType,

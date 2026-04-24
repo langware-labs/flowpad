@@ -14,14 +14,14 @@ from pydantic import SerializationInfo, model_serializer
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.app.actions.listen import set_plan_auto_approve
-from flow_sdk.builtin.agentic_workers.claude_cli_stream_worker import ClaudeCLIStreamWorker
-from flow_sdk.builtin.agentic_workers.context import AgenticContext as _AgenticContext
-from flow_sdk.builtin.cli_workers import ClaudeCliOptions
+from flow_sdk.builtin.agentic_workers.base import AgenticContext as _AgenticContext
+from flow_sdk.builtin.agentic_workers.claude_worker import ClaudeCliOptions, ClaudeCLIStreamWorker
 from flow_sdk.core import Entity, action
 from flow_sdk.core.flow.streaming.response_handler import StreamingResponseHandler
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.fs_records.agent_status import WorkerStatus, is_terminal as is_worker_terminal
 from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
 from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 from flow_sdk.request_context.methods import get_current_request_info
@@ -232,6 +232,22 @@ class AgenticProcess(Entity):
     target_typeid_str: str | None = APIField(
         default=None,
         description='Serialized TypeId ("type-id") of the entity this process is attached to (trigger, markdown, …).',
+    )
+    exe_folder: FSRef | None = APIField(
+        default=None,
+        description="FSRef pointing at `<record_dir>/execution/`.",
+    )
+    input_folder: FSRef | None = APIField(
+        default=None,
+        description="FSRef for `<exe_folder>/input/` — instruction / queue inputs.",
+    )
+    output_folder: FSRef | None = APIField(
+        default=None,
+        description="FSRef for `<exe_folder>/output/` — artifacts the agent writes back.",
+    )
+    assets_folder: FSRef | None = APIField(
+        default=None,
+        description="FSRef for `<exe_folder>/assets/` — materialised embedded agents / skills.",
     )
     shell_id: str | None = APIField(default=None)
     sidecar_shell_id: str | None = APIField(default=None)
@@ -591,9 +607,17 @@ class AgenticProcess(Entity):
         """Schedule a worker run with *instruction* and return immediately.
 
         Routing:
-          worker_type == CODEX → spawn ``codex exec --json`` subprocess (no PTY)
-          worker alive          → write instruction to PTY stdin (continues session)
-          worker dead           → call start(instruction) (fresh or auto-resume)
+          worker_type == CODEX                           → ``_codex_prompt`` (no PTY)
+          Claude, ``visible=False``, no live PTY shell  → ``_claude_print_prompt``
+                                                          (``claude -p stream-json``,
+                                                          handles multi-step tools)
+          worker alive (PTY)                             → write to PTY stdin
+          else                                           → start(instruction)
+
+        ``visible=True`` keeps the legacy PTY path so the UI's interactive
+        terminal continues to work; the print-mode worker is only used for
+        headless invocations (tests, server-side automations) where we want
+        Claude to drive multi-tool sequences to completion in one turn.
 
         Args:
             instruction: The prompt text to send.
@@ -602,10 +626,112 @@ class AgenticProcess(Entity):
             return ApiFailResponse(message=f"AgenticProcess {self.id} not found in database")
         if self.worker_type == WorkerType.CODEX:
             return await self._codex_prompt(instruction)
+        if not self.visible and not await self.is_running():
+            return await self._claude_print_prompt(instruction)
         if await self.is_running():
             await self.send(instruction)
             return ApiSuccessResponse(data={"status": "sent"})
         return await self.start(instruction=instruction)
+
+    async def _claude_print_prompt(self, instruction: str) -> ApiSuccessResponse | ApiFailResponse:
+        """Headless ``claude -p`` execution for invisible processes.
+
+        Mirrors ``_codex_prompt``: spawns ``ClaudeCLIStreamWorker`` (which runs
+        ``claude -p --output-format stream-json``), captures the session_id
+        emitted in the first ``system:init`` event onto ``self.session_id``,
+        and writes the standard JSONL transcript to
+        ``~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`` so
+        ``stream_transcript`` and ``_discover_status_from_transcript`` keep
+        working unchanged.
+
+        The PTY path (``start()``) launches Claude without ``-p``, which
+        forces single-tool turns — Claude takes the user's prompt, runs ONE
+        tool call, and returns to "ready for next prompt". Multi-step prompts
+        like "list a dir AND write the result as JSON to skills.json" get
+        truncated. ``-p`` mode (used here) keeps Claude iterating until
+        ``end_turn``.
+        """
+        from flow_sdk.builtin.agentic_workers.base import AgenticContext as _Ctx
+        from uuid import uuid4
+
+        try:
+            await self.get_project()
+        except Exception:
+            logger.debug("_claude_print_prompt: get_project failed", exc_info=True)
+        if not self.workdir:
+            return ApiFailResponse(message="claude print prompt: workdir is not set")
+
+        # Eagerly assign a session_id so ``is_ready_for_input`` flips to False
+        # before the worker writes its first JSONL entry — matches the
+        # behaviour the legacy PTY path provides via ``start()``.
+        if not self.session_id:
+            self.session_id = str(uuid4())
+
+        cli_cfg = self.cli_config or {}
+        is_resume = bool(cli_cfg.get("resume"))
+        # Default the headless parent to sonnet + low effort — opus + default
+        # effort blows past the 28-s long-test budget on multi-step flows
+        # (analyze, fix-it). The parent's job here is to write a couple of
+        # files end-to-end with no human-in-the-loop refinement, so a leaner
+        # reasoning budget is the right tradeoff. Callers that need richer
+        # parents can override via cli_config["model"] / ["effort"].
+        parent_model = cli_cfg.get("model") or "sonnet"
+        parent_effort = cli_cfg.get("effort") or "low"
+        context = _Ctx(
+            workdir=self.workdir,
+            env_vars=dict(cli_cfg.get("env_vars") or {}),
+            model=parent_model,
+            effort=parent_effort,
+            permission_mode=cli_cfg.get("permission_mode", "bypassPermissions"),
+            resume_session_id=self.session_id if is_resume else None,
+            session_id=None if is_resume else self.session_id,
+        )
+
+        if self.status != ProcessStatus.RUNNING.value:
+            self.status = ProcessStatus.RUNNING.value
+            try:
+                await self.save()
+            except Exception:
+                logger.debug("_claude_print_prompt: lifecycle save failed", exc_info=True)
+
+        worker = ClaudeCLIStreamWorker()
+        _PROMPT_WORKERS[self.id] = worker
+        self_ref = self
+        process_id = self.id
+
+        # Reinforce embedded-agent intent in the user prompt so Claude's
+        # ``Task`` tool dispatch carries the agent's exact instructions to the
+        # sub-agent. ``--agents`` alone leaves the system-prompt as the only
+        # signal, and the parent often paraphrases the user's request when
+        # invoking the sub-agent — dropping side-effects like "write the
+        # result to clock.txt". Inlining the agent body makes the file-write
+        # intent visible at both layers.
+        composed = self._compose_user_prompt_with_agents(instruction)
+
+        async def _run_claude_print_turn() -> None:
+            try:
+                async for _fd in worker.execute(prompt=composed, context=context):
+                    sid = worker.get_session_id()
+                    if sid and self_ref.session_id != sid:
+                        try:
+                            self_ref.session_id = sid
+                            await self_ref.save()
+                        except Exception:
+                            logger.debug("_claude_print_prompt: session_id save failed", exc_info=True)
+            except Exception:
+                logger.exception("_claude_print_prompt: worker error")
+            finally:
+                _PROMPT_WORKERS.pop(process_id, None)
+                # Intentionally leave ``status == RUNNING`` so callers can
+                # observe ``is_ready_for_input(p) is True`` immediately after
+                # ``stream_transcript`` returns. The worker_status (derived
+                # from the JSONL tail by ``_discover_status_from_transcript``)
+                # already reflects COMPLETE; the lifecycle field stays in
+                # RUNNING the same way the PTY path keeps it across turns,
+                # and a subsequent ``prompt()`` call reuses the process.
+
+        asyncio.create_task(_run_claude_print_turn(), name=f"claude-{self.id[:8]}")
+        return ApiSuccessResponse(data={"status": "started", "worker": "claude_print"})
 
     async def _codex_prompt(self, instruction: str) -> ApiSuccessResponse | ApiFailResponse:
         """Codex path for ``prompt()`` — spawns ``codex exec --json`` directly.
@@ -619,8 +745,8 @@ class AgenticProcess(Entity):
         prepended to the user instruction so codex follows the same intent the
         Claude path expresses through ``--agents``.
         """
-        from flow_sdk.builtin.agentic_workers.codex_cli_stream_worker import CodexCLIStreamWorker
-        from flow_sdk.builtin.agentic_workers.context import AgenticContext as _Ctx
+        from flow_sdk.builtin.agentic_workers.base import AgenticContext as _Ctx
+        from flow_sdk.builtin.agentic_workers.codex_worker import CodexCLIStreamWorker
 
         try:
             await self.get_project()
@@ -694,6 +820,48 @@ class AgenticProcess(Entity):
         asyncio.create_task(_run_codex_turn(), name=f"codex-{self.id[:8]}")
         return ApiSuccessResponse(data={"status": "started", "worker": "codex"})
 
+    def _compose_user_prompt_with_agents(self, instruction: str) -> str:
+        """Prepend embedded-agent definitions to the user instruction.
+
+        Used by ``_claude_print_prompt``. The agents are also registered via
+        ``--agents`` so they appear in ``cmd_line`` (some tests assert on
+        this), but in print mode we ask Claude to execute the agent's body
+        in-process rather than dispatching to a Task sub-agent. Reasons:
+        - sub-agent dispatch adds 2-3 round-trips of latency, which pushes
+          analyze / fix-it past the 28-s test budget;
+        - the parent's Task call paraphrases the user request and routinely
+          drops side-effect instructions (file writes), causing tests like
+          ``test_agentic_process_clock_agent`` to fail intermittently.
+        Inlining keeps the full agent body in the parent's context and tells
+        it explicitly to follow those instructions itself.
+        """
+        agents_json = self.get_agents_json() or {}
+        if not agents_json:
+            return instruction
+        sections: list[str] = [
+            "# Embedded agent specs",
+            (
+                "Each ## block below is the canonical instruction body for a "
+                "named agent. When the user instruction names one of these "
+                "agents (\"use the X agent\", \"have the X agent do Y\"), do "
+                "NOT delegate via the Task tool — execute the agent's "
+                "instructions yourself, in this same turn. Follow every "
+                "side-effect literally (file writes, command outputs); do "
+                "not paraphrase or summarise away required artifacts."
+            ),
+        ]
+        for name, entry in agents_json.items():
+            body = (entry or {}).get("prompt") or ""
+            desc = (entry or {}).get("description") or ""
+            sections.append(f"\n## {name}")
+            if desc:
+                sections.append(desc)
+            if body:
+                sections.append(body)
+        sections.append("\n# User instruction")
+        sections.append(instruction)
+        return "\n".join(sections)
+
     def _codex_compose_prompt(self, instruction: str) -> str:
         """Inline embedded-agent definitions so codex executes them directly.
 
@@ -763,10 +931,10 @@ class AgenticProcess(Entity):
         Stops as soon as ``codex_tail_status`` returns a terminal state
         (COMPLETE/ERROR/INTERRUPTED/INACTIVE) or the deadline is reached.
         """
-        from flow_sdk.builtin.agentic_workers.codex_session_history import (
+        from flow_sdk.builtin.agentic_workers.codex_worker import (
+            codex_tail_status,
             codex_transcript_path_for_process,
         )
-        from flow_sdk.builtin.agentic_workers.codex_status import codex_tail_status
         from flow_sdk.fs_records.agent_status import WorkerStatus as _WS
 
         loop = asyncio.get_event_loop()
@@ -860,7 +1028,36 @@ class AgenticProcess(Entity):
             else:
                 await asyncio.sleep(poll_interval)
 
-        from flow_sdk.fs_records.agent_status import _tail_status as _tail_status_fn, WorkerStatus as _APS
+        from flow_sdk.fs_records.agent_status import (
+            _tail_status as _tail_status_fn,
+            WorkerStatus as _APS,
+            _has_pending_tool_use,
+            _last_user_is_tool_result,
+        )
+
+        # Settling window: claude's ``last-prompt`` event can land before the
+        # turn's final tool side-effects flush to disk (Write tool execution +
+        # file-history-snapshot lag). When tail_status first goes terminal we
+        # require the file size to remain stable for ``_settle_seconds`` before
+        # declaring the stream done — otherwise Claude tests like
+        # ``test_agentic_process_lists_system_skills`` race the final write.
+        _settle_seconds = 2.0
+        # Post-tool-idle settling: when tail is ``user`` carrying a
+        # ``tool_result`` and no tool_use is pending, the turn's side effects
+        # are flushed but Claude can take 5–10 s to emit ``last-prompt``. If
+        # claude is going to continue (another tool_use), the JSONL grows
+        # within this window and we reset. Wider than the terminal-state
+        # window because on heavy multi-tool flows (fix-it: write analysis.json
+        # then SKILL.md) the gap between consecutive Write tool_uses can be
+        # 5–6 s of thinking. With ``--effort low`` for the parent the gap
+        # tightens; 5 s is enough headroom while leaving budget for
+        # ``analyze_with_agent`` (which has only one tool_use to settle on).
+        _post_tool_settle_seconds = 5.0
+        _terminal_states = {_APS.COMPLETE, _APS.INTERRUPTED, _APS.INACTIVE}
+        _terminal_since: float | None = None
+        _terminal_size: int | None = None
+        _post_tool_since: float | None = None
+        _post_tool_size: int | None = None
 
         offset = 0
         while True:
@@ -896,11 +1093,62 @@ class AgenticProcess(Entity):
 
             tail_status = _tail_status_fn(transcript_path) if transcript_path else None
             _dbg_elapsed = loop.time() - (deadline - timeout)
-            _terminal = tail_status in {_APS.COMPLETE, _APS.INTERRUPTED, _APS.INACTIVE}
-            print(f"  [stream_transcript] elapsed={_dbg_elapsed:.1f}s tail_status={tail_status!r} waiting={_terminal} lifecycle={self.status!r}")
+            _terminal = tail_status in _terminal_states
+            # Cheaply peek at the last 4 KB to decide if we're in a post-tool
+            # lull (claude's tool_result received, no pending tool_use).
+            _post_tool_idle = False
+            if tail_status == _APS.WAITING:
+                try:
+                    with open(transcript_path, "rb") as _fh:
+                        _sz = transcript_path.stat().st_size
+                        if _sz > 4096:
+                            _fh.seek(_sz - 4096)
+                        _tail_chunk = _fh.read().decode("utf-8", errors="replace")
+                    _post_tool_idle = (
+                        _last_user_is_tool_result(_tail_chunk)
+                        and not _has_pending_tool_use(_tail_chunk)
+                    )
+                except OSError:
+                    pass
+            print(f"  [stream_transcript] elapsed={_dbg_elapsed:.1f}s tail_status={tail_status!r} waiting={_terminal or _post_tool_idle} lifecycle={self.status!r}")
+
+            try:
+                cur_size = transcript_path.stat().st_size
+            except OSError:
+                cur_size = offset
+            now = loop.time()
 
             if _terminal:
-                return
+                # Confirm the transcript has stopped growing for ``_settle_seconds``
+                # so a late tool-result / file-write doesn't leave the test
+                # observing a half-finished turn.
+                if _terminal_since is None or _terminal_size != cur_size:
+                    _terminal_since = now
+                    _terminal_size = cur_size
+                elif now - _terminal_since >= _settle_seconds:
+                    return
+                _post_tool_since = None
+                _post_tool_size = None
+            elif _post_tool_idle:
+                # Post-tool lull: exit when the transcript has been stable for
+                # ``_post_tool_settle_seconds``. If claude fires another
+                # tool_use (the JSONL grows), we reset and keep waiting.
+                if _post_tool_since is None or _post_tool_size != cur_size:
+                    _post_tool_since = now
+                    _post_tool_size = cur_size
+                elif now - _post_tool_since >= _post_tool_settle_seconds:
+                    # Tell ``_discover_status_from_transcript`` to report
+                    # COMPLETE — the JSONL still says WAITING (no last-prompt
+                    # yet) but all the side effects are flushed.
+                    object.__setattr__(self, "_post_tool_idle_complete", True)
+                    return
+                _terminal_since = None
+                _terminal_size = None
+            else:
+                _terminal_since = None
+                _terminal_size = None
+                _post_tool_since = None
+                _post_tool_size = None
 
             if loop.time() > deadline:
                 raise TimeoutError(f"stream_transcript: process did not reach idle within {timeout}s")
@@ -1195,12 +1443,13 @@ class AgenticProcess(Entity):
 
         # Fallback: synthesize the path from the process id if the record can't
         # be resolved (e.g. the process was saved moments ago and the store
-        # hasn't reindexed). Matches the pattern used by get_input_dir.
+        # hasn't reindexed). Must match ``AgenticProcessRecord.assets_dir``
+        # (``<record_dir>/execution/assets``) or attach + read paths diverge.
         root = get_default_records_root()
         d = root / AgenticProcessRecord._record_type / record_stem(
             AgenticProcessRecord._record_type, self.id
         )
-        a = d / "assets"
+        a = d / "execution" / "assets"
         a.mkdir(parents=True, exist_ok=True)
         return a
 
@@ -1328,12 +1577,12 @@ class AgenticProcess(Entity):
         required). Empty result is a success with ``history=[]``, not a 404.
         """
         if self.worker_type == WorkerType.CODEX:
-            from flow_sdk.builtin.agentic_workers.codex_session_history import (
+            from flow_sdk.builtin.agentic_workers.codex_worker import (
                 load_session_history as _codex_load,
             )
             history = _codex_load(self.session_id or "", process_id=self.id)
         else:
-            from flow_sdk.builtin.agentic_workers.session_history import load_session_history
+            from flow_sdk.builtin.agentic_workers.claude_worker import load_session_history
             history = load_session_history(self.session_id) if self.session_id else []
         return ApiSuccessResponse(
             data={
@@ -1361,7 +1610,7 @@ class AgenticProcess(Entity):
         """
         from flow_sdk.config import flowpad_assistant_project_root
         if self.worker_type == WorkerType.CODEX:
-            from flow_sdk.builtin.cli_workers.codex_cli import CodexCliOptions
+            from flow_sdk.builtin.agentic_workers.codex_worker import CodexCliOptions
             cmd_codex = CodexCliOptions.from_json(self.cli_config)
             cmd_codex.session_id = self.session_id
             cmd_codex.workdir = self.workdir
@@ -1412,6 +1661,24 @@ class AgenticProcess(Entity):
         computed = self._discover_status_from_transcript()
         data["worker_status"] = str(computed) if computed else WorkerStatus.IDLE.value
         data["ready_for_input"] = is_ready_for_input(self, computed)
+        # Derive per-process execution folders when absent from the row.
+        # Rows synced before this field existed have no folder dicts; the
+        # record's on-disk layout is deterministic from (type, id), so we
+        # resolve folders via a bare record + its default_path.
+        missing = [a for a in ("exe_folder", "input_folder", "output_folder", "assets_folder") if not data.get(a)]
+        if missing and self.id:
+            try:
+                from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
+                rec = AgenticProcessRecord(id=self.id)
+                default = rec.default_path
+                if default is not None:
+                    rec.path = str(default)
+                    for attr in missing:
+                        ref = getattr(rec, attr, None)
+                        if ref is not None:
+                            data[attr] = ref.to_dict()
+            except Exception:
+                pass
         return data
 
     def _discover_status_from_transcript(self) -> WorkerStatus | None:
@@ -1420,12 +1687,21 @@ class AgenticProcess(Entity):
         For codex processes the transcript is a process-local JSONL that the
         codex worker tee'd from its ``--json`` stream; for Claude it is the
         ``~/.claude/projects/*/<sid>.jsonl`` discovered via ClaudeSessionRecord.
+
+        If ``stream_transcript`` exited via the post-tool-idle settle (claude
+        finished its tool work but hasn't emitted ``last-prompt`` yet),
+        ``self._post_tool_idle_complete`` is set so subsequent status reads
+        agree with the early exit — without that flag, ``is_ready_for_input``
+        would still see ``WAITING`` and the test's ``assert is_ready_for_input
+        is True`` would fail despite all artifacts being on disk.
         """
+        if getattr(self, "_post_tool_idle_complete", False):
+            return WorkerStatus.COMPLETE
         if self.worker_type == WorkerType.CODEX:
-            from flow_sdk.builtin.agentic_workers.codex_session_history import (
+            from flow_sdk.builtin.agentic_workers.codex_worker import (
+                codex_tail_status,
                 codex_transcript_path_for_process,
             )
-            from flow_sdk.builtin.agentic_workers.codex_status import codex_tail_status
             path = codex_transcript_path_for_process(self.id)
             if not path.exists():
                 return None

@@ -21,12 +21,15 @@ class ProgressEvent:
     """Lifecycle signal emitted by scan() / index()."""
     stage: str                   # "scan_start" | "type_complete" | "scan_end"
                                  # | "index_start" | "index_end"
+                                 # | "type_start" | "type_progress"
     record_type: RecordType | None = None
     count: int = 0
     total_bytes: int = 0
     indexed: int = 0
     errors: int = 0
     duration_ms: float = 0.0
+    sub_done: int = 0
+    sub_total: int = 0
 
 
 ProgressCallback = Callable[[ProgressEvent], Awaitable[None]]
@@ -142,10 +145,22 @@ class FSIndexer:
         opts = opts if opts is not None else IndexerOptions()
         t0 = time.perf_counter()
 
-        if opts.on_progress is not None:
-            await opts.on_progress(ProgressEvent(stage="index_start"))
+        on_progress = opts.on_progress
+        if on_progress is not None:
+            await on_progress(ProgressEvent(stage="index_start"))
 
-        refs = await self.scan(opts)
+        # Inner scan emits its own type_complete burst — suppress so it
+        # doesn't flood the outer index activity with "done" ticks before
+        # real indexing work begins.
+        scan_opts = IndexerOptions(
+            verbose=opts.verbose,
+            limit=opts.limit,
+            limit_per_type=opts.limit_per_type,
+            include_temp=opts.include_temp,
+            types=opts.types,
+            on_progress=None,
+        )
+        refs = await self.scan(scan_opts)
 
         if opts.types is None:
             targets = refs
@@ -166,21 +181,67 @@ class FSIndexer:
         for tn in type_names:
             valid_map[tn] = await _load_updated_map(driver, tn)
 
-        per_type_counts: dict[RecordType, dict[str, float]] = {}
-        seen_types: set[RecordType] = set()
-        fts_batch: list = []
+        # Per-type totals (so sub_total is known up front for the UI).
+        per_type_totals: dict[RecordType, int] = {}
         for ref in targets:
             if ref.record_type is None:
                 continue
-            # Emit type_complete once we transition past a type boundary.
-            # (Not strictly per-type-ordered since DFS interleaves, but a
-            # reasonable approximation — most types are contiguous in scan
-            # order due to how claude_projects_fn emits PROJECT nodes first.)
+            per_type_totals[ref.record_type] = per_type_totals.get(ref.record_type, 0) + 1
+
+        per_type_counts: dict[RecordType, dict[str, float]] = {}
+        fts_batch: list = []
+        current_rt: RecordType | None = None
+        seen_progress_at: dict[RecordType, float] = {}
+        _PROGRESS_THROTTLE_S = 0.2
+
+        async def _emit_type_complete(rt: RecordType) -> None:
+            if on_progress is None:
+                return
+            acc = per_type_counts.get(rt, {"indexed": 0, "errors": 0, "duration_ms": 0.0, "skipped": 0})
+            await on_progress(ProgressEvent(
+                stage="type_complete",
+                record_type=rt,
+                indexed=int(acc["indexed"]),
+                errors=int(acc["errors"]),
+                duration_ms=round(float(acc["duration_ms"]), 2),
+                sub_done=int(acc["indexed"]) + int(acc.get("skipped", 0)),
+                sub_total=per_type_totals.get(rt, 0),
+            ))
+
+        async def _emit_sub_progress(rt: RecordType) -> None:
+            if on_progress is None:
+                return
+            acc = per_type_counts[rt]
+            await on_progress(ProgressEvent(
+                stage="type_progress",
+                record_type=rt,
+                indexed=int(acc["indexed"]),
+                errors=int(acc["errors"]),
+                sub_done=int(acc["indexed"]) + int(acc.get("skipped", 0)),
+                sub_total=per_type_totals.get(rt, 0),
+            ))
+
+        for ref in targets:
+            if ref.record_type is None:
+                continue
             info = SchemaRegistry.get(str(ref.record_type))
             if info is None or info.record_cls is None:
                 continue
             if not hasattr(info.record_cls, "from_fsref"):
                 continue
+
+            # Emit type_start/type_complete on type boundary transitions.
+            if current_rt is not None and ref.record_type != current_rt:
+                await _emit_type_complete(current_rt)
+            if ref.record_type != current_rt:
+                current_rt = ref.record_type
+                if on_progress is not None:
+                    await on_progress(ProgressEvent(
+                        stage="type_start",
+                        record_type=current_rt,
+                        sub_done=0,
+                        sub_total=per_type_totals.get(current_rt, 0),
+                    ))
 
             acc = per_type_counts.setdefault(
                 ref.record_type, {"indexed": 0, "errors": 0, "duration_ms": 0.0, "skipped": 0}
@@ -198,6 +259,11 @@ class FSIndexer:
                 asset_ts = info.record_cls.asset_hash_for_ref(ref)
                 if asset_ts and asset_ts <= last_ts:
                     acc["skipped"] += 1
+                    # Throttled sub_progress even for skips.
+                    now = time.perf_counter()
+                    if now - seen_progress_at.get(ref.record_type, 0.0) >= _PROGRESS_THROTTLE_S:
+                        seen_progress_at[ref.record_type] = now
+                        await _emit_sub_progress(ref.record_type)
                     continue
 
             t_start = time.perf_counter()
@@ -210,31 +276,32 @@ class FSIndexer:
                 acc["errors"] += 1
             acc["duration_ms"] += (time.perf_counter() - t_start) * 1000
 
+            # Throttled sub_progress during a type.
+            now = time.perf_counter()
+            if now - seen_progress_at.get(ref.record_type, 0.0) >= _PROGRESS_THROTTLE_S:
+                seen_progress_at[ref.record_type] = now
+                await _emit_sub_progress(ref.record_type)
+
+        # Close out the last active type.
+        if current_rt is not None:
+            await _emit_type_complete(current_rt)
+
         # Batch FTS commit
         if fts_batch:
             driver = get_db_driver()
             if hasattr(driver, "fts_upsert"):
                 await driver.fts_upsert(fts_batch)
 
-        # Build per-type result + emit type_complete per type
+        # Build per-type result (events already emitted inline above).
         per_type: dict[RecordType, PerTypeIndexResult] = {}
         for rt, acc in per_type_counts.items():
-            pt = PerTypeIndexResult(
+            per_type[rt] = PerTypeIndexResult(
                 type=rt,
                 indexed=int(acc["indexed"]),
                 errors=int(acc["errors"]),
                 duration_ms=round(acc["duration_ms"], 2),
                 skipped=int(acc.get("skipped", 0)),
             )
-            per_type[rt] = pt
-            if opts.on_progress is not None:
-                await opts.on_progress(ProgressEvent(
-                    stage="type_complete",
-                    record_type=rt,
-                    indexed=pt.indexed,
-                    errors=pt.errors,
-                    duration_ms=pt.duration_ms,
-                ))
 
         duration = (time.perf_counter() - t0) * 1000
 

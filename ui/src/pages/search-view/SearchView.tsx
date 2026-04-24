@@ -15,7 +15,7 @@ import { useSystemTools } from '@src/hooks/use-system-tools';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SystemActivity, ActivityProgress } from '@sdk';
-import { AlertCircle, FileSearch, Loader2, Menu, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { AlertCircle, FileSearch, Loader2, Menu, PackageSearch, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 const LS_KEY = 'flowpad-search-filters';
@@ -33,14 +33,16 @@ function activityPhaseLabel(activity: SystemActivity): string {
 }
 
 function activityLabel(activity: SystemActivity, progress: ActivityProgress | null): string {
+  const typesDone = progress?.jobDone ?? progress?.done.length ?? 0;
+  const typesTotal = progress?.jobTotal ?? progress?.total ?? 0;
   switch (activity) {
     case 'archive': return 'Archiving…';
     case 'clear': return 'Clearing index…';
     case 'load_from_archive': return 'Restoring…';
     case 'scan':
-      return progress ? `Scanning… ${progress.done.length}/${progress.total}` : 'Scanning…';
+      return progress ? `Scanning… ${typesDone}/${typesTotal}` : 'Scanning…';
     case 'index':
-      return progress ? `Indexing… ${progress.done.length}/${progress.total}` : 'Indexing…';
+      return progress ? `Indexing… ${typesDone}/${typesTotal}` : 'Indexing…';
   }
 }
 
@@ -260,18 +262,17 @@ export function SearchView() {
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
-              variant="outline"
-              size="sm"
-              className="shrink-0 mt-0.5 gap-2"
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 shrink-0 mt-0.5"
               onClick={handleRebuildIndex}
               disabled={busy}
               data-testid="rebuild-index"
             >
-              <RotateCcw className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
-              Rebuild Index
+              <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Archive, clear &amp; rescan index</TooltipContent>
+          <TooltipContent>Refresh search data</TooltipContent>
         </Tooltip>
       </div>
 
