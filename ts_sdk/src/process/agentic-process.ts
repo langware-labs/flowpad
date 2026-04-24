@@ -1237,7 +1237,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     // attached to the current pty_pid. That holds for repeat visits to a tab during
     // the same app session; first visit still pays the full open + attach round-trip.
     if (
-      this.status === ProcessStatus.LIVE &&
+      this.status === ProcessStatus.RUNNING &&
       this.shell_id &&
       !options?.instruction
     ) {
