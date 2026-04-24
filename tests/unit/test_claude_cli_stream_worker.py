@@ -15,11 +15,11 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.agentic_workers.claude_cli_stream_worker import (
+from flow_sdk.builtin.agentic_workers.base import AgenticContext
+from flow_sdk.builtin.agentic_workers.claude_worker import (
     CANCEL_GRACE_SECONDS,
     ClaudeCLIStreamWorker,
 )
-from flow_sdk.builtin.agentic_workers.context import AgenticContext
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowElementType
 
 
@@ -200,7 +200,7 @@ async def test_no_claude_binary_yields_error_flowdata(tmp_path: Path, monkeypatc
     worker = ClaudeCLIStreamWorker()
     # Force shutil.which to return None so _build_spawn decides no binary.
     monkeypatch.setattr(
-        "flow_sdk.builtin.agentic_workers.claude_cli_stream_worker.shutil.which",
+        "flow_sdk.builtin.agentic_workers.claude_worker.stream_worker.shutil.which",
         lambda _name: None,
     )
     ctx = AgenticContext(workdir=str(tmp_path))

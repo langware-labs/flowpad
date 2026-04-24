@@ -181,7 +181,7 @@ execution.install_output_skills(output_dir, scope="project", project_dir=dir)
 
 Subprocess-based worker that implements the `AgenticWorker` interface.
 
-**File:** `flow_sdk/builtin/agentic_workers/claude_cli_worker.py`
+**File:** `flow_sdk/builtin/agentic_workers/claude_worker/cli_worker.py`
 
 Has two pure, unit-testable static methods:
 
@@ -206,7 +206,7 @@ The `execute()` method launches `claude` via `asyncio.create_subprocess_exec` an
 - `CHAT` — stdout output (complete response)
 - `ERROR` — if subprocess fails or claude binary not found
 
-There is also `ClaudeCodeAgenticWorker` (`flow_sdk/builtin/agentic_workers/claude_code_agentic_worker.py`) which uses the `claude_agent_sdk` Python package directly instead of subprocess. It supports multi-turn sessions, pause/resume, and streaming input injection. It requires `claude_agent_sdk` as an optional dependency.
+There is also `ClaudeCodeAgenticWorker` (`flow_sdk/builtin/agentic_workers/claude_worker/code_agentic_worker.py`) which uses the `claude_agent_sdk` Python package directly instead of subprocess. It supports multi-turn sessions, pause/resume, and streaming input injection. It requires `claude_agent_sdk` as an optional dependency.
 
 ### Artifacts
 

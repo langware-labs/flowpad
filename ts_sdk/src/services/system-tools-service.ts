@@ -133,6 +133,9 @@ export class SystemToolsService extends EventEmitter {
   constructor(userTypeId: { type: string; id: string }) {
     super();
     this.base = `/graph/${userTypeId.type}/${userTypeId.id}/${ACTION}`;
+    // Restore any in-flight scan/index state across page loads (fire-and-forget).
+    // Lets the footer indexing indicator and progress modal reappear after refresh.
+    void this.refreshActivityStatus().catch(() => {/* ignore — offline/boot race */});
     // Keep scanInfo in sync with dataManager
     dataManager.onScanInfoChange((info) => {
       this.scanInfo = info;
@@ -147,14 +150,19 @@ export class SystemToolsService extends EventEmitter {
       const jobName = attrs.job_name as SystemActivity | undefined;
       if (!jobName) return;
 
-      // Auto-initialize if state was lost (e.g. page refresh while job was running)
+      // Auto-initialize if state was lost (e.g. page refresh while job was running).
+      // Seed `total` only from a job-level event (sub_activity_name=null) — otherwise
+      // sub_total (records-within-a-type) would leak in as the orchestration total.
       if (!this.activityProgress || this.currentActivity !== jobName) {
+        const isJobLevel = attrs.sub_activity_name == null;
         this.currentActivity = jobName;
         this.activityProgress = {
-          total: (attrs.total as number) ?? 0,
+          total: isJobLevel ? (attrs.total as number) ?? 0 : 0,
           done: [],
           current: null,
           pending: [],
+          jobDone: isJobLevel ? (attrs.done as number) : undefined,
+          jobTotal: isJobLevel ? (attrs.total as number) : undefined,
         };
         this.emit('state_changed');
       }
@@ -425,13 +433,19 @@ export class SystemToolsService extends EventEmitter {
       );
 
       // 4. Aggregate scan — WS progress_report events drive current/done/records progress
-      this._setActivity('scan', { total: types.length, done: [], current: null, pending: [...types] });
+      this._setActivity('scan', {
+        total: types.length, done: [], current: null, pending: [...types],
+        jobDone: 0, jobTotal: types.length,
+      });
       const scanData = await apiClient.get(`${FS_RECORDS_BASE}/scan?trigger=manual`);
       const scanResult = scanData as unknown as LastScanResult;
       if (scanResult?.types) capturedScanResult = scanResult;
 
       // 5. Aggregate index — WS progress_report events drive current/done/records progress
-      this._setActivity('index', { total: types.length, done: [], current: null, pending: [...types] });
+      this._setActivity('index', {
+        total: types.length, done: [], current: null, pending: [...types],
+        jobDone: 0, jobTotal: types.length,
+      });
       await apiClient.post(`${FS_RECORDS_BASE}/index`);
     } finally {
       // Set lastScanResult before clearing activity so the state_changed event carries both

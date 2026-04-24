@@ -24,10 +24,9 @@ import sys
 import uuid
 from typing import Any, AsyncIterator
 
-from flow_sdk.builtin.agentic_workers.context import AgenticContext
+from flow_sdk.builtin.agentic_workers.base.context import AgenticContext
+from flow_sdk.builtin.agentic_workers.base.worker import AgenticWorker
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData, FlowDataType, FlowElementType
-
-from .agentic_worker import AgenticWorker
 
 logger = logging.getLogger(__name__)
 
@@ -545,7 +544,7 @@ class ClaudeCodeAgenticWorker(AgenticWorker):
 
     def load_history_from_session(self, session_id: str) -> None:
         """Load history from session JSONL file."""
-        from flow_sdk.builtin.agentic_workers.session_history import load_session_history
+        from flow_sdk.builtin.agentic_workers.claude_worker.session_history import load_session_history
 
         self._history = load_session_history(session_id)
         logger.info(f"ClaudeCodeAgenticWorker: Loaded {len(self._history)} history items from session {session_id}")

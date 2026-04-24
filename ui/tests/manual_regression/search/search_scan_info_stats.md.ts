@@ -170,9 +170,7 @@ test.describe('Search Scan Info Stats', () => {
     const indexedBefore = await readIndexedCount();
     expect(indexedBefore).toBeGreaterThanOrEqual(0);
 
-    // The rebuild-index button has no data-testid/aria-label; locate it as the header button
-    // inside SearchView that wraps an svg.lucide-rotate-ccw icon.
-    const rebuildButton = searchView.locator('button:has(svg.lucide-rotate-ccw)').first();
+    const rebuildButton = page.locator('[data-testid="rebuild-index"]');
     await expect(rebuildButton).toBeVisible({ timeout: 5_000 });
     await expect(rebuildButton).toBeEnabled({ timeout: 5_000 });
 

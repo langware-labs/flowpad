@@ -220,7 +220,7 @@ class ScanActionsMixin:
             AgenticProcess entity data
         """
         from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.cli_workers.claude_cli import ClaudeCliOptions
+        from flow_sdk.builtin.agentic_workers.claude_worker import ClaudeCliOptions
 
         try:
             request_info = get_current_request_info()
@@ -440,7 +440,7 @@ class ScanActionsMixin:
             if not process.cli_config.get("resume"):
                 record = ClaudeSessionRecord.get(session_id, project=process.workdir)
                 if record:
-                    from flow_sdk.builtin.cli_workers import factory as _cli_factory
+                    from flow_sdk.builtin.agentic_workers.base import factory as _cli_factory
                     _cmd = _cli_factory(process.cli_config, worker_type="claude")
                     _cmd.resume = True
                     process.cli_config = _cmd.to_json()

@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from flow_sdk.builtin.cli_workers.base import WorkerCLIOptions
+from flow_sdk.builtin.agentic_workers.base.cli_options import WorkerCLIOptions
 
 
 class ClaudeCliOptions(WorkerCLIOptions):
@@ -57,6 +57,7 @@ class ClaudeCliOptions(WorkerCLIOptions):
         add_dirs: list[str] | None = None,
         output_format: str | None = None,
         verbose: bool = False,
+        effort: str | None = None,
     ) -> None:
         super().__init__(workdir=workdir, env_vars=env_vars)
         self.session_id = session_id
@@ -74,6 +75,11 @@ class ClaudeCliOptions(WorkerCLIOptions):
         self.output_format = output_format
         # Required by CLI when output_format == "stream-json"; harmless otherwise.
         self.verbose = verbose or output_format == "stream-json"
+        # ``--effort {low|medium|high|xhigh|max}`` — caps the parent's
+        # reasoning budget. Lower effort means snappier responses, useful for
+        # the headless-orchestration path where the parent only needs to
+        # dispatch to sub-agents and write a brief wrap-up.
+        self.effort = effort
 
         # Auto-inject CLAUDE_PROJECT_DIR from workdir
         if workdir:
@@ -114,6 +120,8 @@ class ClaudeCliOptions(WorkerCLIOptions):
 
         if self.model:
             args.append(f"--model {shlex.quote(self.model)}")
+        if self.effort:
+            args.append(f"--effort {shlex.quote(self.effort)}")
         if self.agents_json:
             args.append(f"--agents {shlex.quote(json.dumps(self.agents_json))}")
         for d in self.add_dirs:
@@ -166,6 +174,7 @@ class ClaudeCliOptions(WorkerCLIOptions):
             "add_dirs": self.add_dirs,
             "output_format": self.output_format,
             "verbose": self.verbose,
+            "effort": self.effort,
         })
         return d
 
@@ -200,6 +209,8 @@ class ClaudeCliOptions(WorkerCLIOptions):
 
         if self.model:
             argv.extend(["--model", self.model])
+        if self.effort:
+            argv.extend(["--effort", self.effort])
         if self.agents_json:
             import json as _json
             argv.extend(["--agents", _json.dumps(self.agents_json)])
@@ -232,4 +243,5 @@ class ClaudeCliOptions(WorkerCLIOptions):
             add_dirs=list(data.get("add_dirs") or []),
             output_format=data.get("output_format"),
             verbose=bool(data.get("verbose", False)),
+            effort=data.get("effort"),
         )

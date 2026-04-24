@@ -29,7 +29,6 @@ import { useToast } from '@src/hooks/use-toast';
 import { ToastAction } from '@src/components/ui/toast';
 import { RestartRequiredOverlay } from './RestartRequiredOverlay';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useDevMode } from '@src/contexts/dev-mode-context';
 import { PTYViewer } from './pty-viewer';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
 
@@ -52,7 +51,6 @@ interface ProcessToolbarProps {
 export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, colVis, onColVisChange, sessionStartTime, lastMessageTime, embedded, onClose, shell }: ProcessToolbarProps) {
   const handleInjectPrompt = useCallback((text: string) => void shell?.sendInput(text + '\r'), [shell]);
   const { navigation } = useDockNavigation();
-  const devMode = useDevMode();
   const [showPtyViewer, setShowPtyViewer] = useState(false);
 
   const hasSession = !!process.session_id;

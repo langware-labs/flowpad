@@ -830,8 +830,8 @@ export function HomeLanding() {
           currentActivity === 'archive' ? 'Archiving…'
           : currentActivity === 'clear' ? 'Clearing index…'
           : currentActivity === 'load_from_archive' ? 'Restoring…'
-          : currentActivity === 'scan' ? `Scanning… ${activityProgress?.done.length ?? 0}/${activityProgress?.total ?? 0}`
-          : `Indexing… ${activityProgress?.done.length ?? 0}/${activityProgress?.total ?? 0}`
+          : currentActivity === 'scan' ? `Scanning… ${activityProgress?.jobDone ?? activityProgress?.done.length ?? 0}/${activityProgress?.jobTotal ?? activityProgress?.total ?? 0}`
+          : `Indexing… ${activityProgress?.jobDone ?? activityProgress?.done.length ?? 0}/${activityProgress?.jobTotal ?? activityProgress?.total ?? 0}`
         ) : 'Activity'}
       />
 

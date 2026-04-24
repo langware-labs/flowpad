@@ -58,7 +58,8 @@ export function useSessionAnalyze(options?: UseSessionAnalyzeOptions): UseSessio
         const generatedWorkerSessionId = crypto.randomUUID();
         const resultUname = `${resultUnamePrefix}_${sessionId.slice(0, 8)}`;
 
-        // 1. Spawn headless — need process.id to build outputDir
+        // 1. Spawn headless — process carries its own output_folder FSRef
+        //    (`<record_dir>/execution/output/`) once persisted.
         const { process } = await AgenticProcess.spawn(
           {
             workdir: cwd,
@@ -72,9 +73,12 @@ export function useSessionAnalyze(options?: UseSessionAnalyzeOptions): UseSessio
           },
         );
 
-        // 2. Resolve outputDir now that we have process.id
+        // 2. Read outputDir from the process's own FSRef (falls back to the
+        //    legacy `~/.flow/sessions/<id>` layout for processes created
+        //    before the execution-folder migration).
         const normalizedHome = ctx.homePath.startsWith('/') ? ctx.homePath : `/${ctx.homePath}`;
-        const resolvedOutputDir = `${normalizedHome}/.flow/sessions/${process.id}`;
+        const resolvedOutputDir =
+          process.output_folder?.path ?? `${normalizedHome}/.flow/sessions/${process.id}`;
         await fsManager.mkdir(ctx.computeNodeTypeId, resolvedOutputDir);
 
         // 3. Task + ProcessResult creation

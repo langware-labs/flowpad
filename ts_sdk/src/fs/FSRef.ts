@@ -86,6 +86,16 @@ export class FSRef {
     await fsManager.delete(this.typeId, this.path).catch(() => {});
   }
 
+  /**
+   * Reveal this path in the OS file manager (Finder / Explorer).
+   * Folders open directly; files can be revealed with `{ select: true }`.
+   * Dispatches to the compute_node `open-external` action via this ref's typeId.
+   */
+  async open(options?: { select?: boolean }): Promise<{ opened: string; selected?: boolean } | null> {
+    const { openExternalFromComputeNode } = await import('../entities/compute-node/system-profile');
+    return openExternalFromComputeNode(this.typeId.id, this.path, options);
+  }
+
   children(): FSRef[] {
     return [];
   }

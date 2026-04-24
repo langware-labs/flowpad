@@ -10,6 +10,7 @@
 
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
+import { FSRef, type FSRefJson } from '../fs/FSRef';
 import { ClaudeCliOptions } from '../cli_workers';
 import { dataContext } from '../FlowSync/context';
 import { FlowDataFactory } from '../entities/flow/flow-data-factory';
@@ -112,6 +113,14 @@ export interface IAgenticProcess extends IEntity {
   collaboration_session_id?: string | null;
   /** Serialized TypeId ("type-id") of the entity this process is attached to (trigger, markdown, …). */
   target_typeid_str?: string | null;
+  /** Root of the per-process execution folder — `<record_dir>/execution/`. */
+  exe_folder?: FSRefJson | null;
+  /** `<exe_folder>/input/` — instruction/queue inputs. */
+  input_folder?: FSRefJson | null;
+  /** `<exe_folder>/output/` — artifacts the agent writes back. */
+  output_folder?: FSRefJson | null;
+  /** `<exe_folder>/assets/` — materialised embedded agents / skills. */
+  assets_folder?: FSRefJson | null;
 }
 
 /**
@@ -480,6 +489,18 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Serialized TypeId ("type-id") of the entity this process is attached to (trigger, markdown, …). */
   target_typeid_str: string | null = null;
 
+  /** Execution folder — `<record_dir>/execution/`. Null until the process has a record on disk. */
+  exe_folder: FSRef | null = null;
+
+  /** `<exe_folder>/input/`. */
+  input_folder: FSRef | null = null;
+
+  /** `<exe_folder>/output/` — where the agent writes artifacts back. */
+  output_folder: FSRef | null = null;
+
+  /** `<exe_folder>/assets/` — materialised embedded agents / skills. */
+  assets_folder: FSRef | null = null;
+
   /** Deserialize cli_config into a live ClaudeCliOptions instance.
    *
    * Mirrors Python AgenticProcess.cli_options property exactly:
@@ -551,6 +572,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.sidecar_shell_id = entity.sidecar_shell_id;
     this.collaboration_session_id = entity.collaboration_session_id ?? null;
     this.target_typeid_str = entity.target_typeid_str ?? null;
+    this.exe_folder = entity.exe_folder ? FSRef.fromJson(entity.exe_folder) : null;
+    this.input_folder = entity.input_folder ? FSRef.fromJson(entity.input_folder) : null;
+    this.output_folder = entity.output_folder ? FSRef.fromJson(entity.output_folder) : null;
+    this.assets_folder = entity.assets_folder ? FSRef.fromJson(entity.assets_folder) : null;
   }
 
   /**

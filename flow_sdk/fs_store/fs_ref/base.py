@@ -37,12 +37,14 @@ class FSRef:
         parent: "FSRef | None" = None,
         record_type: "RecordType | None" = None,
         scope: str | None = None,
+        type_id: str = "compute_node-@local",
     ) -> None:
         self._path = Path(path).resolve()
         self._read_only_flag: bool = read_only
         self._parent: "FSRef | None" = parent
         self._record_type: "RecordType | None" = record_type
         self._scope: str | None = scope
+        self._type_id: str = type_id
 
     @property
     def record_type(self) -> "RecordType | None":
@@ -133,12 +135,12 @@ class FSRef:
     def _ref_type(self) -> str:
         return "folder" if self.is_dir else "file"
 
-    def to_dict(self, type_id: str = "") -> dict:
+    def to_dict(self, type_id: str | None = None) -> dict:
         return {
             "path": self.path,
             "ref_type": self._ref_type(),
             "read_only": self.read_only,
-            "type_id": type_id,
+            "type_id": type_id if type_id is not None else self._type_id,
         }
 
     @classmethod
@@ -146,23 +148,24 @@ class FSRef:
         ref_type = d.get("ref_type", "file")
         path = d["path"]
         read_only = d.get("read_only", False)
+        type_id = d.get("type_id") or "compute_node-@local"
         if ref_type == "json":
             from flow_sdk.fs_store.fs_ref.json_ref import JSONFsRef
 
-            return JSONFsRef(path, read_only=read_only)
+            return JSONFsRef(path, read_only=read_only, type_id=type_id)
         if ref_type == "text":
             from flow_sdk.fs_store.fs_ref.text_ref import TextFsRef
 
-            return TextFsRef(path, read_only=read_only)
+            return TextFsRef(path, read_only=read_only, type_id=type_id)
         if ref_type == "binary":
             from flow_sdk.fs_store.fs_ref.binary_ref import BinaryFsRef
 
-            return BinaryFsRef(path, read_only=read_only)
+            return BinaryFsRef(path, read_only=read_only, type_id=type_id)
         if ref_type == "frontmatter_md":
             from flow_sdk.fs_store.fs_ref.frontmatter_ref import FrontMatterFsRef
 
-            return FrontMatterFsRef(path, read_only=read_only)
-        return cls(path, read_only=read_only)
+            return FrontMatterFsRef(path, read_only=read_only, type_id=type_id)
+        return cls(path, read_only=read_only, type_id=type_id)
 
     @property
     def fingerprint(self) -> str:
@@ -183,3 +186,45 @@ class FSRef:
 
     def __repr__(self) -> str:
         return f"FSRef({self.path!r})"
+
+    # Pydantic v2 compatibility — accept dict on deserialization, emit dict on
+    # serialization. Mirrors the TypeId pattern so FSRef can be a field type
+    # directly on Pydantic entities (wire shape stays `{path, ref_type, …}`).
+    @classmethod
+    def __get_pydantic_core_schema__(cls, source_type, handler):
+        from pydantic_core import core_schema
+
+        return core_schema.no_info_plain_validator_function(
+            cls._pydantic_validate,
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                cls._pydantic_serialize,
+                return_schema=core_schema.dict_schema(),
+            ),
+        )
+
+    @classmethod
+    def __get_pydantic_json_schema__(cls, _core_schema, _handler):
+        return {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "ref_type": {"type": "string"},
+                "read_only": {"type": "boolean"},
+                "type_id": {"type": "string"},
+            },
+            "required": ["path"],
+        }
+
+    @classmethod
+    def _pydantic_validate(cls, value):
+        if isinstance(value, FSRef):
+            return value
+        if isinstance(value, dict):
+            return cls.from_dict(value)
+        if isinstance(value, (str, Path)):
+            return cls(value)
+        raise ValueError(f"Cannot convert {type(value).__name__} to FSRef")
+
+    @staticmethod
+    def _pydantic_serialize(ref: "FSRef") -> dict:
+        return ref.to_dict()

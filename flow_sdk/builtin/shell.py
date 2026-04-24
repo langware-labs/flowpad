@@ -27,7 +27,7 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.cli_workers.base import WorkerCLIOptions, WorkerExecutionInfo
+    from flow_sdk.builtin.agentic_workers.base import WorkerCLIOptions, WorkerExecutionInfo
     from flow_sdk.builtin.faas.compute_node import ComputeNode
     from flow_sdk.builtin.faas.pty_session import Pty
     from flow_sdk.fs_records.shell_record import ShellRecord
@@ -442,7 +442,7 @@ class Shell(Entity):
         Raises:
             RuntimeError: PTY session is not alive.
         """
-        from flow_sdk.builtin.cli_workers.base import WorkerExecutionInfo
+        from flow_sdk.builtin.agentic_workers.base import WorkerExecutionInfo
 
         cn = self.compute_node
         pty_handle = cn.get_pty(self.id)
@@ -478,7 +478,7 @@ class Shell(Entity):
         Used by AgenticProcess when shell_mode=False. The PTY PID is Claude's PID directly,
         so we read it immediately from the provider without any child-process hunting.
         """
-        from flow_sdk.builtin.cli_workers.base import WorkerExecutionInfo
+        from flow_sdk.builtin.agentic_workers.base import WorkerExecutionInfo
 
         cn = self.compute_node
         pty_pid = cn.compute_provider.get_pty_shell_pid(cn.node_provider_id, self.id)

@@ -1,12 +1,17 @@
-"""Agentic workers for clean LLM execution."""
+"""Agentic workers for clean LLM execution.
 
-from .agentic_worker import AgenticWorker
-from .claude_cli_worker import ClaudeCLIWorker
+Internally split into three sub-packages:
+- ``base/``         — vendor-neutral primitives (AgenticWorker, AgenticContext,
+                      WorkerCLIOptions, factory)
+- ``claude_worker/`` — Claude Code CLI flavour
+- ``codex_worker/``  — OpenAI Codex CLI flavour
 
-try:
-    from .claude_code_agentic_worker import ClaudeCodeAgenticWorker
-except ImportError:
-    ClaudeCodeAgenticWorker = None  # type: ignore[assignment,misc]
+This top-level ``__init__`` re-exports the previously-public surface so callers
+that imported from ``flow_sdk.builtin.agentic_workers`` directly keep working.
+"""
+
+from flow_sdk.builtin.agentic_workers.base import AgenticWorker
+from flow_sdk.builtin.agentic_workers.claude_worker import ClaudeCLIWorker, ClaudeCodeAgenticWorker
 
 __all__ = [
     "AgenticWorker",

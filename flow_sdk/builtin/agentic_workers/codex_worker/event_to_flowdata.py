@@ -14,7 +14,7 @@ Confirmed empirically against codex 0.118.0 — the events seen on a run are:
 This converter is intentionally separate from ``claude_event_to_flowdata`` so
 the Codex event taxonomy can evolve independently of Claude's stream-json.
 
-Logger namespace: ``flow_sdk.builtin.agentic_workers.codex_event_to_flowdata``.
+Logger namespace: ``flow_sdk.builtin.agentic_workers.codex_worker.event_to_flowdata``.
 """
 
 from __future__ import annotations

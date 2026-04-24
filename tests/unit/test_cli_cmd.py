@@ -4,7 +4,7 @@ import sys
 import pytest
 from unittest.mock import patch
 
-from flow_sdk.builtin.cli_workers.base import WorkerCLIOptions
+from flow_sdk.builtin.agentic_workers.base import WorkerCLIOptions
 
 
 # Minimal concrete subclass for testing the base

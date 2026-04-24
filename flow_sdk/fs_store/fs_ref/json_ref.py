@@ -20,8 +20,14 @@ class JSONFsRef(FSRef):
     def _ref_type(self) -> str:
         return "json"
 
-    def __init__(self, path: str | Path, read_only: bool = False, parent: "FSRef | None" = None) -> None:
-        super().__init__(path, read_only=read_only, parent=parent)
+    def __init__(
+        self,
+        path: str | Path,
+        read_only: bool = False,
+        parent: "FSRef | None" = None,
+        type_id: str = "compute_node-@local",
+    ) -> None:
+        super().__init__(path, read_only=read_only, parent=parent, type_id=type_id)
         self._json_data: dict | None = None
 
     def _ensure_loaded(self) -> None:

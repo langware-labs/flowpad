@@ -115,7 +115,7 @@ async def test_codex_process_hello_world(local_project, local_compute_node):
 
     # ── get-history action: codex transcript should be readable through the
     #    same server action shape the Claude path uses.
-    from flow_sdk.builtin.agentic_workers.codex_session_history import (
+    from flow_sdk.builtin.agentic_workers.codex_worker import (
         load_session_history as codex_load_session_history,
     )
 
