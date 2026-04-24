@@ -506,6 +506,37 @@ class FsRecordsActionsMixin:
         })
 
 
+    async def _handle_fs_records_activity_status(self, request_info) -> ApiResponse:
+        """Return the currently-running scan/index activity for this compute node, if any.
+
+        Used by the UI to re-seed progress state after a page refresh so the
+        "Rebuild index" progress modal can reopen mid-job.
+        """
+        from flow_sdk.builtin.faas.compute_node import _COMPUTE_ACTIVITIES  # noqa: PLC0415
+
+        prefix = f"{self.typeid}:"
+        for key, activity in _COMPUTE_ACTIVITIES.items():
+            if not key.startswith(prefix):
+                continue
+            if activity is None or activity.is_timed_out or activity.is_complete:
+                continue
+            return ApiSuccessResponse(data={
+                "job_name": activity.job_name,
+                "done": activity.done,
+                "skipped": activity.skipped,
+                "errors": activity.errors,
+                "total": activity.total,
+                "text": activity.text,
+                "sub_activity_name": activity.sub_activity_name,
+                "sub_done": activity.sub_done,
+                "sub_skipped": activity.sub_skipped,
+                "sub_errors": activity.sub_errors,
+                "sub_total": activity.sub_total,
+                "started_at": activity.started_at.isoformat(),
+            })
+        return ApiSuccessResponse(data=None)
+
+
     # -- fs-records CRUD action --------------------------------------------------
 
     async def _fs_records_action(self) -> ApiResponse:
@@ -553,6 +584,10 @@ class FsRecordsActionsMixin:
         # Index status: GET /fs-records/index-status
         if segments and segments[0] == "index-status" and method == "get":
             return await self._handle_fs_records_index_status(request_info)
+
+        # Activity status: GET /fs-records/activity-status
+        if segments and segments[0] == "activity-status" and method == "get":
+            return await self._handle_fs_records_activity_status(request_info)
 
         # Clear index: DELETE /fs-records/index
         if segments and segments[0] == "index" and method == "delete":

@@ -38,3 +38,23 @@ test 5: index-status API endpoint returns expected shape
 - [api] validate data.never_indexed is a boolean
 - [api] validate data.stale is a boolean
 - [api] validate data.per_type is an array
+
+test 6: SearchView rebuild-index button archives, clears, scans, indexes and refreshes "N indexed" badge
+- [browser] navigate to {APP_URL}/dock/search
+- [browser] wait for page to load (networkidle)
+- [browser] validate the element with data-testid="search-view" is visible
+- [browser] if the WelcomeModal ("Make your records searchable") is visible, dismiss it via the "Not Now" button (or "Skip for now" on older builds)
+- [browser] wait up to 8 seconds for the "N indexed" badge to appear
+- [browser] read the leading integer N from the "N indexed" badge and remember it as INDEXED_BEFORE
+- [browser] locate the RotateCcw rebuild-index Button inside [data-testid="search-view"] (the header Button that wraps an svg.lucide-rotate-ccw; tooltip "Archive, clear & rescan index")
+- [browser] validate that button is enabled (not disabled)
+- [browser] start listening for POST {API_URL}/api/v1/graph/compute_node/@local/desktop-db/archive
+- [browser] start listening for POST {API_URL}/api/v1/graph/compute_node/@local/desktop-db/clear-index
+- [browser] start listening for GET  {API_URL}/api/v1/graph/compute_node/@local/fs-records/scan?trigger=manual
+- [browser] start listening for POST {API_URL}/api/v1/graph/compute_node/@local/fs-records/index
+- [browser] click the rebuild-index button
+- [browser] wait up to 60 seconds for all 4 backend calls above to return HTTP 200
+- [browser] wait for the button to become enabled again (busy state cleared)
+- [browser] wait up to 8 seconds for the "N indexed" badge to be visible again
+- [browser] read the leading integer N from the "N indexed" badge and remember it as INDEXED_AFTER
+- [browser] validate INDEXED_AFTER is a non-negative integer (indexing pipeline produced a fresh count)
