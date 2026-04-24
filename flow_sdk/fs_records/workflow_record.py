@@ -87,6 +87,13 @@ class WorkflowRecord(Record):
             return ar.read()
         return None
 
+    def meta_dict(self) -> dict:
+        result = super().meta_dict()
+        ar = self.asset_ref
+        if ar is not None:
+            result["asset_ref"] = str(ar._path)
+        return result
+
     @classmethod
     def from_path(cls, path: Path | str) -> WorkflowRecord:
         """Load a WorkflowRecord from a .md file path."""

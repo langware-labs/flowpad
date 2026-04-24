@@ -1,4 +1,4 @@
-import { AgenticProcess, WorkerStatus, type FlowData } from '@sdk';
+import { AgenticProcess, FlowDataSource, WorkerStatus, type FlowData } from '@sdk';
 import { useEffect, useState } from 'react';
 
 /**
@@ -76,6 +76,11 @@ export function useDerivedWorkerStatus(
     const onData = () => {
       const items = process.flowDataStream.items as FlowData[];
       const last = items[items.length - 1];
+      // History replay fires 'data' for every historical event. Those items
+      // lack live-stream signals (stop_reason on assistant turns) and would
+      // wrongly transition the indicator into THINKING. Skip them — the
+      // entity's own workerStatus already reflects the terminal state.
+      if (last?.source === FlowDataSource.History) return;
       setDerived((prev) => deriveFromItem(last, prev ?? WorkerStatus.IDLE));
     };
     const onClear = () => {

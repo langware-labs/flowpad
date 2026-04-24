@@ -593,6 +593,15 @@ class Record:
 
     @asset_ref.setter
     def asset_ref(self, value: "Any") -> None:
+        # Accept either an FSRef (in-memory handle) or a string path (from
+        # Entity DB round-trip via sync_from_entity) — coerce strings to FSRef
+        # so _save_split_format and callers always see the FSRef contract.
+        if isinstance(value, str):
+            if value:
+                from .fs_ref import FSRef as _FSRef
+                value = _FSRef(value, read_only=self._is_read_only())
+            else:
+                value = None
         object.__setattr__(self, "_asset_ref", value)
 
     @property

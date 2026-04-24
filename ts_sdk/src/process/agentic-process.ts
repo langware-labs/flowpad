@@ -14,7 +14,7 @@ import { ClaudeCliOptions } from '../cli_workers';
 import { dataContext } from '../FlowSync/context';
 import { FlowDataFactory } from '../entities/flow/flow-data-factory';
 import { Shell, ShellStatus } from '../entities/shell';
-import { FlowData } from '../flow_processing';
+import { FlowData, FlowDataSource } from '../flow_processing';
 import { FlowElementTypes } from '../flow_processing/flow-element-types';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
@@ -810,8 +810,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
               continue;
             }
           }
-          // Mark as ready (historical items are complete)
+          // Mark as ready (historical items are complete) and tag as History
+          // so downstream consumers (e.g. useDerivedWorkerStatus) can distinguish
+          // replayed events from live stream deltas and avoid mis-transitioning
+          // the worker indicator back into THINKING on refresh.
           flowData.markReady();
+          flowData.source = FlowDataSource.History;
           historyItems.push(flowData);
         }
 

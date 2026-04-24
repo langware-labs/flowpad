@@ -24,10 +24,17 @@ provided, letting record-less workflow entities persist cleanly.
   handler in `flow_sdk/app/actions/graph_crud_actions.py`, so the create URL is
   `POST /api/v1/graph/workflow/` (note the trailing slash; the router strips it).
 - Retrieval is `GET /api/v1/graph/workflow/<id>`.
-- The VFS path field on a `Workflow` entity is `source_vfs_path` (not `source_path`).
-  With a minimal body, `source_vfs_path` is expected to be `null` — it is only
-  set when the workflow is backed by a markdown file (e.g. created via the
-  asset-scanner flow or `prepare` action).
+- The VFS path field on a `Workflow` entity is `asset_ref` (a VFS-style path to
+  the backing markdown file). With a minimal JSON body, `asset_ref` is expected
+  to be `null` — it is only set when the workflow is backed by a markdown file
+  (e.g. created via the asset-scanner flow). The legacy `source_vfs_path` /
+  `preparedPath` / `pipeline` fields were removed; only `asset_ref` remains.
+- The UI entry points are the `WorkflowAssetEditor` toolbar (single **Run**
+  button — no separate Prepare / Pipeline step) and the mirrored sidebar route
+  at `/dock/workflows/<id>`. Clicking Run spawns a hidden
+  `AgenticProcess` with `visible=false`, `print_mode=true`,
+  `output_format="stream-json"`, and `target_typeid_str` set to the workflow's
+  `typeId`, then calls `process.prompt(instruction)`.
 
 ## Steps
 
@@ -54,16 +61,17 @@ provided, letting record-less workflow entities persist cleanly.
 2. Run `curl -sS --max-time 10 http://localhost:9008/api/v1/graph/workflow/${WID} -o /tmp/workflow_get.json -w "%{http_code}\n"`
 3. **Expected**: HTTP `200`, `status == "SUCCESS"`
 4. **Expected**: `data.id` equals the created id; `data.type == "workflow"`; `data.name` matches
-5. **Expected**: `data.source_vfs_path` is present as a field (value may be `null` for a record-less workflow)
+5. **Expected**: `data.asset_ref` is present as a field (value may be `null` for a record-less workflow)
 
 ## Pass Criteria
 - [ ] `POST /api/v1/graph/workflow/` with a minimal body returns HTTP 200 and `status: SUCCESS`
 - [ ] No 500 / TypeError around `WorkflowRecord.__init__` in the response or logs
 - [ ] `GET /api/v1/graph/workflow/<id>` returns the saved entity with a matching `id`, `type`, and `name`
-- [ ] `source_vfs_path` is exposed on the entity shape (null is acceptable when not file-backed)
+- [ ] `asset_ref` is exposed on the entity shape (null is acceptable when not file-backed)
 
 ## Notes
-- The task brief refers to `source_path`; the actual field name is `source_vfs_path`.
-  The regression being tested is specifically the `WorkflowRecord.__init__(file_path=None)`
-  default that lets `Entity.save()` create a record without crashing — it does NOT
-  guarantee that `source_vfs_path` becomes populated for a bare-JSON create.
+- The VFS path field is `asset_ref` (the legacy `source_vfs_path` / `preparedPath`
+  / `pipeline` fields were removed). The regression being tested is specifically
+  the `WorkflowRecord.__init__(file_path=None)` default that lets `Entity.save()`
+  create a record without crashing — it does NOT guarantee that `asset_ref`
+  becomes populated for a bare-JSON create.

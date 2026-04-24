@@ -87,7 +87,7 @@ test 9: Scan toolbar action on the Markdown root triggers reindex
 - [browser] hover over the Markdown treeitem at aria-level 1
 - [browser] validate the element with data-testid="browseable-toolbar-scan:markdown" is visible
 - [browser] click the element with data-testid="browseable-toolbar-scan:markdown"
-- [browser] validate the network request to POST /api/v1/search/reindex/markdown is made (inspect dev tools Network tab)
+- [browser] validate the network request to POST /api/v1/graph/compute_node/@local/fs-records/index?type=markdown is made (inspect dev tools Network tab)
 - [browser] validate no console errors were logged
 
 test 10: New markdown toolbar action opens the creation dialog
