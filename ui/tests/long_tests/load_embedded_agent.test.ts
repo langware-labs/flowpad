@@ -104,10 +104,14 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
     expect(outputs.length, 'Expected at least one FlowData item').toBeGreaterThan(0);
     expect(content.length, 'Expected non-empty CHAT/TEXT content').toBeGreaterThan(0);
 
-    // ── History restore: fetch a fresh process instance (empty flowDataStream)
-    //    and verify loadHistory rebuilds the turn from the transcript.
+    // ── History restore: fetch a fresh process instance and verify
+    //    loadHistory rebuilds the turn from the transcript on disk.
+    //    ``dataManager`` returns the cached entity, which was populated by
+    //    the live ``flow_data_msg`` stream above; invalidate first so the
+    //    re-fetch yields a clean instance.
     expect(proc.session_id, 'session_id should be set after executeInstruction').toBeTruthy();
 
+    dataManager.removeEntityFromCache(proc.typeId);
     const fresh = await dataManager.getByTypeId<AgenticProcess>(proc.typeId);
     expect(fresh, 'fresh process fetch should resolve').not.toBeNull();
     expect(

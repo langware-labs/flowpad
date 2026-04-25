@@ -220,7 +220,9 @@ class ScanActionsMixin:
             AgenticProcess entity data
         """
         from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.agentic_workers.claude_worker import ClaudeCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions
+        from flow_sdk.flowpad_types.enums import WorkerType
 
         try:
             request_info = get_current_request_info()
@@ -249,17 +251,46 @@ class ScanActionsMixin:
             resume_session_id = context_data.pop("resume_session_id", None)
             additional_dirs: list[str] = list(context_data.pop("additional_dirs", None) or [])
 
-            cli_opts = ClaudeCliOptions(
-                model=context_data.pop("model", None) or None,
-                permission_mode=context_data.pop("permission_mode", "bypassPermissions"),
-                chrome=bool(context_data.pop("chrome", False)),
-                debug=bool(context_data.pop("debug", True)),
-                worktree=bool(context_data.pop("worktree", False)),
-                agents_json=context_data.pop("agents_json", None),
-                output_format=context_data.pop("output_format", None),
-            )
+            # Worker selection — accept ``worker_type`` from the AgenticContext
+            # so the UI can launch a Codex tab from the same opener flow that
+            # spawns Claude. Anything other than ``codex`` falls back to the
+            # historical Claude CLI shape.
+            worker_type_raw = context_data.pop("worker_type", None) or WorkerType.CLAUDE_CODE.value
+            try:
+                worker_type = WorkerType(worker_type_raw)
+            except ValueError:
+                worker_type = WorkerType.CLAUDE_CODE
 
-            if fork_session and resume_session_id:
+            model = context_data.pop("model", None) or None
+            permission_mode = context_data.pop("permission_mode", "bypassPermissions")
+            agents_json = context_data.pop("agents_json", None)
+            output_format = context_data.pop("output_format", None)
+            if worker_type == WorkerType.CODEX:
+                cli_opts = CodexCliOptions(
+                    model=model,
+                    permission_mode=permission_mode,
+                )
+                # Codex reads agent specs at runtime from the process entity
+                # (``CodexDriver.cli_options`` mirrors them onto ``skill_names``),
+                # and doesn't expose ``output_format``/``chrome``/``debug``/
+                # ``worktree`` flags — drop them from the unrecognized-fields
+                # carry-over.
+                context_data.pop("chrome", None)
+                context_data.pop("debug", None)
+                context_data.pop("worktree", None)
+            else:
+                cli_opts = ClaudeCliOptions(
+                    model=model,
+                    permission_mode=permission_mode,
+                    agents_json=agents_json,
+                    output_format=output_format,
+                    chrome=bool(context_data.pop("chrome", False)),
+                    debug=bool(context_data.pop("debug", True)),
+                    worktree=bool(context_data.pop("worktree", False)),
+                )
+
+            if fork_session and resume_session_id and worker_type != WorkerType.CODEX:
+                # Codex has no fork concept — fall through to plain resume below.
                 cli_opts.resume = True
                 cli_opts.fork_session_id = resume_session_id
             elif resume_session_id:
@@ -285,6 +316,7 @@ class ScanActionsMixin:
                     pass
 
             process = AgenticProcess(
+                worker_type=worker_type,
                 instruction_content="",
                 cli_config=cli_opts.to_json(),
                 context_data=context_data,
@@ -440,7 +472,7 @@ class ScanActionsMixin:
             if not process.cli_config.get("resume"):
                 record = ClaudeSessionRecord.get(session_id, project=process.workdir)
                 if record:
-                    from flow_sdk.builtin.agentic_workers.base import factory as _cli_factory
+                    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import factory as _cli_factory
                     _cmd = _cli_factory(process.cli_config, worker_type="claude")
                     _cmd.resume = True
                     process.cli_config = _cmd.to_json()

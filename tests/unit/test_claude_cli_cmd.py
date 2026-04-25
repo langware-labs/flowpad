@@ -4,8 +4,8 @@ import json
 import sys
 import pytest
 
-from flow_sdk.builtin.agentic_workers.base import factory
-from flow_sdk.builtin.agentic_workers.claude_worker import ClaudeCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import factory
+from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
 
 
 @pytest.fixture(autouse=True)

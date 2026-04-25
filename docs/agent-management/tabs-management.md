@@ -1,6 +1,38 @@
 # Tabs Management
 
-This document covers the tab and session management system used across the terminal and live workflow views. It includes the `TabbedTerminal` component, the `ViewType` enum, the `ShellManager` service, the `useShellSessions` hook (and related hooks), and the `SessionViewer` component with its `favorite_index` ordering mechanism. Navigation actions for opening shell and session views are covered at the end.
+This document describes the current terminal tab, routing, PTY, and live session model. The current implementation is entity driven:
+
+- `Shell` is the persisted terminal/PTY entity.
+- `AgenticProcess` is the Claude/agentic worker entity. Interactive workers link to a `Shell` through `shell_id`.
+- `TabbedTerminal` renders tabs from `Shell` and visible `AgenticProcess` entities. It does not own the active tab id directly.
+- Shell and process route loaders open or reattach PTYs and then write active IDs into `dataContext`.
+
+The older `ShellManager`, `ShellSession`, `useShellSessions`, `startClaude`, and `resumeClaude` URL model is no longer the source of truth for these tabs.
+
+---
+
+## Current Routes
+
+Relevant files:
+
+- `ui/src/routes/loaders/main-loader.ts`
+- `ui/src/routes/loaders/load-shell.ts`
+- `ui/src/routes/loaders/load-process.ts`
+- `ui/src/navigation/NavigationActions.ts`
+- `ui/src/navigation/DockPointer.ts`
+- `ts_sdk/src/utils/ui/view-types.ts`
+
+| Surface | Current URL shape | Loader/action behavior |
+|---------|-------------------|------------------------|
+| Default terminal view | `/dock/shell` | `loadShellRoute()` resolves a default visible tab, preferring `dataContext.activeShellId`, then redirects to a concrete shell/process pointer. |
+| New plain terminal | `/dock/shell/new_terminal` | Creates a new `Shell`, then redirects to `/dock/shell/shell-<shellId>`. |
+| Plain shell tab | `/dock/shell/shell-<shellId>` or `/dock/shell/<shellId>` | `loadShell(shellId)` starts or reattaches the `Shell` PTY and clears current process context. |
+| Claude/agentic terminal tab | `/dock/shell/agentic_process-<processId>` | `loadProcess(processId)` calls `process.start({ visible: true })`, resolves the linked `Shell`, and sets process and shell context. |
+| Live session viewer | `/dock/session/<processId>` | `main-loader.ts` sets `CurrentProcessTypeId`, active entity id, project context, and compute node. It does not open a PTY by itself. |
+
+`AgenticProcess.dockPointer` currently returns a `ViewType.SHELL` pointer, so the standard terminal route for an agentic process is `/dock/shell/agentic_process-<processId>`. Do not document `/dock/agentic_process/:processId` as the normal terminal tab route, even though `ViewType.AGENTIC_PROCESS` still exists and `ContentPanel` has a `ProcessTerminal` branch for that view.
+
+There are no `startClaude` or `resumeClaude` route params in the current loader path. Creating or resuming Claude sessions is done by creating/upserting an `AgenticProcess` entity and then navigating to that entity's dock pointer.
 
 ---
 
@@ -8,333 +40,230 @@ This document covers the tab and session management system used across the termi
 
 **File:** `ui/src/components/terminal/TabbedTerminal.tsx`
 
-`TabbedTerminal` is a controlled, multi-tab terminal interface. Each tab corresponds to one `ShellSession` (a PTY session). The parent component owns the active tab identity; `TabbedTerminal` reports changes upward via a callback.
+`TabbedTerminal` is a mostly dumb terminal tab strip. It renders the tab list, creates/renames/closes tab entities, and delegates navigation decisions to callbacks supplied by its consumer.
 
 ### Props
 
-| Prop | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-| `activeSessionId` | `string` | yes | — | ID of the currently visible session. |
-| `onActiveSessionChange` | `(sessionId: string) => void` | yes | — | Called whenever the active tab should change. |
-| `className` | `string` | no | `''` | Extra CSS class applied to the root element. |
-| `addTabButton` | `boolean` | no | `false` | When true, renders a `+` button that creates a plain terminal tab. |
-| `startClaude` | `boolean` | no | — | When true, the component creates a session and injects `claude --session-id <id>` into it on mount. |
-| `resumeClaude` | `boolean` | no | — | When true, injects `claude --resume <id>` instead. |
-| `claudeTargetSession` | `string` | no | — | The specific session ID that Claude should start in (read from URL to avoid race conditions with React state). |
-| `claudeCwd` | `string` | no | — | Working directory passed to `startPty` as `working_dir`. |
-| `startCommand` | `string` | no | — | Custom command to send instead of the default `claude --session-id` string. Takes highest precedence when all three of `startClaude`, `resumeClaude`, and `startCommand` are provided. |
-| `skipPermissions` | `boolean` | no | — | When true, renders a "Full Trust Mode" amber banner above the tab bar. |
-| `process` | `AgenticProcess` | no | — | When provided, the matching `InteractiveTerminal` (by `process.pty_pid`) receives the process entity, enabling `ProcessToolbar` rendering. |
+| Prop | Type | Description |
+|------|------|-------------|
+| `className` | `string` | Extra CSS class for the root element. |
+| `addTabButton` | `boolean` | Shows the opener toolbar for Claude, plain terminal, sandbox, docker, resume-by-id, and history flows. |
+| `collaborationSessionId` | `string \| null` | Limits tabs to shells shared into a collaboration session. |
+| `spawnProjectId` | `string \| null` | Pins newly created shells/processes to a project id instead of relying on current global project context. |
+| `onTabClick` | `(shellId, session) => void` | Called when the user selects a tab. The consumer navigates. |
+| `onTabClose` | `(shellId) => void` | Called after the backend close action is committed. The consumer chooses the next route. |
+| `onTabOpen` | `(session) => void` | Called after a new shell/process entity is created. The consumer navigates. |
 
-### Internal State
+Removed props from older docs: `activeSessionId`, `onActiveSessionChange`, `startClaude`, `resumeClaude`, `claudeTargetSession`, `claudeCwd`, and `startCommand`.
 
-| State | Type | Purpose |
-|-------|------|---------|
-| `editingSessionId` | `string \| null` | ID of the tab whose name is currently being edited inline. |
-| `editingName` | `string` | Controlled input value while renaming a tab. |
-| `canScrollLeft` | `boolean` | Whether the tab bar can scroll further left. |
-| `canScrollRight` | `boolean` | Whether the tab bar can scroll further right. |
-| `claudeCommandSentRef` | `React.MutableRefObject<string \| null>` | Tracks the session ID for which the Claude CLI command was already sent, preventing React StrictMode double-fires. |
+### Tab Data
 
-### Session List
+**File:** `ui/src/hooks/useActiveTerminals.ts`
 
-The component calls `useShellSessions()` to get a reactive, always-up-to-date list of all sessions from `ShellManager`. It applies no additional filtering — every session in the manager is shown as a tab.
+`TabbedTerminal` reads tabs from `useActiveTerminals()`, which queries:
+
+- `Shell` entities where `status != closed`.
+- `AgenticProcess` entities where `visible: true`.
+
+`filterTabs()` builds `TerminalTab[]` by:
+
+- Filtering out `ShellStatus.ERROR` shells for the visible tab strip.
+- Filtering out sidecar shells referenced by `AgenticProcess.sidecar_shell_id`.
+- Optionally filtering by `Shell.collaboration_session_id`.
+- Marking tabs with `ShellStatus.CLOSING` or `ShellStatus.CLOSED` as disabled.
+- Linking currently active processes to tabs through `AgenticProcess.shell_id`.
+- Sorting tabs by `Shell.tab_order`.
+
+Current tab shape:
+
+```ts
+type TerminalTabType = 'plain' | 'claude';
+
+interface TerminalTab {
+  shellId: string;
+  tabOrder: number;
+  name: string | null;
+  type: TerminalTabType;
+  agenticProcess?: AgenticProcess;
+  shell?: Shell;
+  isDisabled: boolean;
+  statusReason: string;
+}
+```
+
+### Active Tab
+
+The active shell comes from `dataContext.activeShellId`, which the route loader sets after a shell or process loads. `TabbedTerminal` falls back to the first visible tab only when context has no active shell yet.
+
+On tab click, `TabbedTerminal` immediately writes `dataContext.setActiveShellId(shellId)` for fast visual switching, then calls `onTabClick`. The standard consumer wiring is `ui/src/components/terminal/useStandardTabNav.ts`, which navigates to either `session.agenticProcess.dockPointer` or `session.shell.dockPointer`.
 
 ### Creating Tabs
 
-**Plain terminal tab (`handleAddTab`):**
-1. Generates a session ID as `shell-${Date.now()}`.
-2. Finds the first unused "Terminal N" number across existing sessions.
-3. Calls `shellManager.createSession(sessionId, name, true)` (the `true` flag marks it as a PTY session).
-4. Calls `onActiveSessionChange(sessionId)` to make the new tab active.
+**Claude/agentic process tab:**
 
-**Claude CLI tab (`startClaude` / `resumeClaude` flow):**
-1. Triggered by a `useEffect` that depends on `startClaude`, `resumeClaude`, `claudeTargetSession`, and related props.
-2. If resuming and the session already has a started PTY, the old session is removed first to avoid injecting into a stale terminal.
-3. `shellManager.createSession(claudeTargetSession, 'Claude CLI', true)` is called if the session does not yet exist.
-4. `session.workingDir` and `session.initialCommand` are set; `InteractiveTerminal` reads these when it starts the PTY so the backend can detect the shell prompt and inject the command reliably.
+1. `handleStartClaude()` calls `navigation.openNewClaudeProcess()`.
+2. `openNewClaudeProcess()` calls `computeNode.createProcess(..., { watchProcess: false, visible: true })`.
+3. `TabbedTerminal` emits `onTabOpen()` with the new process and shell ids.
+4. The consumer navigates to the process dock pointer.
+5. `loadProcess()` calls `process.start({ visible: true })`; the backend builds the Claude command, opens or reopens the Shell-owned PTY, and returns the linked shell.
 
-**"Start Claude" button:**
-Always opens a new shell-process view (`navigation.openShellProcess('new')`), delegating entity creation to the routing layer.
+There is no frontend injection of `claude --session-id ...` or `claude --resume ...`.
+
+**Plain terminal tab:**
+
+1. `startTerminalTab()` calls `navigation.openNewShell({ skipNavigate: true })`.
+2. `openNewShell()` creates a `Shell` with the next `Tab N` name, workdir, compute node id, and optional project id.
+3. `TabbedTerminal` emits `onTabOpen()`.
+4. The consumer navigates to the shell dock pointer.
+5. `loadShell()` calls `shell.start()` to open or reattach the PTY.
+
+**Resume Claude by session id:**
+
+- The resume dialog in `TabbedTerminal` uses `useResumeInTerminal()`.
+- `useResumeInTerminal()` calls `AgenticProcess.fromClaudeSession(sessionId)`.
+- `fromClaudeSession()` calls `computeNode.upsertSessionProcess(sessionId, ...)`, resolving workdir from the Claude session record when possible.
+- Navigation goes to the returned process dock pointer.
 
 ### Closing Tabs
 
-| Action | Behaviour |
-|--------|-----------|
-| `handleCloseTab(sessionId)` | Removes session from `ShellManager`. If the closed tab was active, switches to the nearest remaining tab (by index) or emits `''`. |
-| `handleCloseAll()` | Removes all sessions; emits `''` for active session. |
-| `handleCloseAllButThis(sessionId)` | Removes every session except the given one; sets that one as active. |
-| `handleCloseToTheRight(sessionId)` | Removes all sessions after the given position. If the active session was in the removed range, switches to the boundary tab. |
+`closeTab(shellId)` resolves the current tab from the `useActiveTerminals()` result.
 
-All four actions are available from the right-click context menu on each tab. The context menu also exposes "Rename" which enters inline editing mode.
+- If the tab is the active shell and the current context has an `AgenticProcess`, it calls `AgenticProcess.close()`.
+- Otherwise, if the tab has a `Shell`, it calls `Shell.close()`.
+- After the backend action, `onTabClose(shellId)` is emitted.
+
+The context menu supports Rename, New Claude Session, New Terminal, Close, Close All, Close All But This, and Close to the Right.
 
 ### Renaming Tabs
 
-Double-clicking a tab name enters inline editing mode (`editingSessionId`, `editingName`). Pressing Enter or blurring the input calls `shellManager.updateSessionName(sessionId, name)`, which persists the name to the backend. Pressing Escape cancels without saving.
+Double-clicking a tab name starts inline edit mode. A user rename calls `shell.updateDisplay({ name })`.
 
-### Tab Scrolling
+For the active Claude tab, a user rename also sends `/rename <name>\r` into the PTY only when `isReadyForInput(contextAgenticProcess)` is true. PTY title-change renames are treated separately and do not inject `/rename`; they also do not override backend `user_renamed` shells.
 
-When the tab container overflows horizontally, `ChevronLeft` and `ChevronRight` buttons appear. Each click scrolls the container by 200 px. Scroll state (`canScrollLeft`, `canScrollRight`) is recalculated on scroll events, resize events, and whenever the session list changes.
+### Mounting and Scroll Behavior
 
-### Terminal Panels
+Tabs are horizontally scrollable with left/right controls when the tab strip overflows.
 
-All terminal panels are kept mounted simultaneously. The currently active panel is shown with `display: block`; all others use `display: none`. This preserves xterm.js state across tab switches without unmounting. Each panel renders `<InteractiveTerminal sessionId={...} active={isActive} ... />`.
+Terminal panels are lazy-mounted:
 
-### Usage Example
+- Only the active tab is mounted initially.
+- A tab is added to `mountedShellIds` the first time it becomes active.
+- Mounted terminals stay mounted and inactive ones are hidden with `visibility: hidden`.
+- Unvisited tabs render no `InteractiveTerminal` tree yet.
 
-```tsx
-const [activeSessionId, setActiveSessionId] = useState('');
-
-<TabbedTerminal
-  activeSessionId={activeSessionId}
-  onActiveSessionChange={setActiveSessionId}
-  addTabButton
-  startClaude
-  claudeTargetSession="abc-123"
-  claudeCwd="/home/user/project"
-/>
-```
+This preserves xterm state after a tab has been visited without eagerly creating xterm instances for every open tab.
 
 ---
 
-## ViewType Enum
+## Shell and PTY Lifecycle
 
-**File:** `ts_sdk/src/utils/ui/view-types.ts`
+**File:** `ts_sdk/src/entities/shell.ts`
 
-`ViewType` identifies which content panel view is currently open in the dock. It is used by navigation actions, URL builders, and dock state management.
+`Shell` is the current terminal/PTY entity. It replaces the old frontend `ShellSession` documentation for tab behavior.
 
-### Values
+Important fields:
 
-| Value | String | Description |
-|-------|--------|-------------|
-| `HOME` | `'home'` | Home / landing page with a link to the system profile. |
-| `SYSTEM_PROFILE` | `'system_profile'` | System profile showing Claude Code live status. |
-| `ANALYSIS` | `'analysis'` | Session analysis overview. |
-| `CHAT` | `'chat'` | Chat interface. |
-| `SHELL` | `'shell'` | Interactive PTY terminal view. URL: `/dock/shell/:sessionId`. |
-| `EDITOR` | `'editor'` | Code editor. |
-| `WEB_APP` | `'web-app'` | Embedded web application (port viewer). |
-| `ENVIRONMENT` | `'environment'` | Environment variable viewer. |
-| `CONNECTIONS` | `'connections'` | Connection management. |
-| `ARTIFACTS` | `'artifacts'` | Artifacts / results viewer. |
-| `REASONING` | `'reasoning'` | Reasoning / thought process viewer. |
-| `DIFF` | `'diff'` | Git diff / checkpoint viewer. |
-| `UNSUPPORTED` | `'unsupported'` | Fallback viewer for unrecognised view types. |
-| `MARKDOWN` | `'markdown'` | Markdown renderer. |
-| `DOCS` | `'docs'` | Documentation viewer (`.md` files). |
-| `ASSISTANCE` | `'assistance'` | Expert assistance task view. |
-| `SURVEY` | `'survey'` | Survey view. |
-| `API_KEYS` | `'api-keys'` | API key management. |
-| `HOOKS` | `'hooks'` | Claude Code hooks configuration. |
-| `MACHINE` | `'machine'` | Machine overview (processes, network). |
-| `EXPLORER` | `'explorer'` | File explorer. |
-| `SKILLS` | `'skills'` | Claude Code skills editor. |
-| `AI_CONFIG` | `'ai-config'` | AI configuration (LLM APIs, CLIs). |
-| `EXECUTE_FLOW` | `'execute-flow'` | Execute markdown instruction files. |
-| `SHOW` | `'show'` | MCP UI display dock pointer. |
-| `LENS` | `'lens'` | Lens viewer for specialised content (e.g., transcripts). |
-| `SESSION` | `'session'` | Live session view — `SessionViewer` component. URL: `/dock/session/:processId`. |
-| `TASKS` | `'tasks'` | Task create / edit view. |
-| `SETTINGS` | `'settings'` | Claude Code settings viewer. |
-| `AGENTIC_PROCESS` | `'agentic_process'` | Process terminal view (Layer 3). URL: `/dock/agentic_process/:processId`. |
-
-### Related Enums
-
-`view-types.ts` also exports:
-
-- **`Layout`** (`'dock'` | `'dev'`) — selects the outer layout system.
-- **`WebappSubview`** — sub-navigation within the `WEB_APP` view (`webapp-shell`, `webapp-artifacts`).
-- **`MachineSubview`** — sub-navigation within the `MACHINE` view (`processes`, `network`, `gateway`, `metrics`, `logs`).
-- **`AIConfigSubview`** — sub-navigation within the `AI_CONFIG` view (`llm-apis`, `clis`).
-
----
-
-## ShellManager
-
-**File:** `ts_sdk/src/services/shell/shellManager.ts`
-
-`ShellManager` is the singleton coordinator for all shell sessions. It does not own sessions directly; sessions are owned by the active `ComputeNode`. `ShellManager` delegates every session operation to that node, routes PTY output from the WebSocket layer to the correct session, and emits events so the React UI can re-render.
-
-The singleton is exported as `shellManager` (a pre-constructed instance). It is also exposed as `window.shell` for browser-console debugging.
-
-### Session Ownership Model
-
-```
-WebSocket (ConnectionManager) → ShellManager (routes PTY output)
-                                     ↓
-                              activeNode (ComputeNode)
-                                     ↓
-                            node.sessions (Map<sessionId, ShellSession>)
-```
-
-When the active node changes, the frontend session cache is cleared and re-synced from the backend. Backend PTYs are not closed by a node change.
-
-### ShellManagerEvent
-
-| Event | Emitted When |
+| Field | Description |
 |-------|-------------|
-| `SESSION_CREATED` | A new session is added to the active node. Payload: `ShellSession`. |
-| `SESSION_REMOVED` | A session is removed. Payload: `sessionId: string`. |
-| `SESSION_UPDATED` | A session property changes (name, PTY state, etc.). Payload: `ShellSession` (optional). |
-| `COMMAND_STARTED` | A non-PTY command begins executing. Payload: `{ sessionId, commandId, command }`. |
-| `COMMAND_COMPLETED` | A non-PTY command finishes. Payload: `{ sessionId, commandId, result, error? }`. |
-| `COMMAND_OUTPUT` | A delta of stdout/stderr arrives during command execution. Payload: `{ sessionId, commandId, stream, content }`. |
-| `PTY_STARTED` | A PTY backend session becomes active. Payload: `{ sessionId, computeNodeId, cols, rows }`. |
-| `PTY_CLOSED` | A PTY session is closed. Payload: `{ sessionId }`. |
-| `PTY_OUTPUT` | PTY output was routed to a session. Payload: `{ sessionId, data, seq }`. For logging only; UI subscribes to session-level `onPtyData`. |
-| `PTY_RESIZED` | PTY dimensions changed. Payload: `{ sessionId, cols, rows }`. |
-| `PTY_ERROR` | A PTY operation failed. Payload: `{ sessionId, error }`. |
-| `NODE_CHANGED` | The active `ComputeNode` changed. Payload: `{ previousNode, newNode }`. |
+| `id` | Shell entity id. The URL pointer is usually `shell-<id>`. |
+| `name` | Tab display name. |
+| `status` | `idle`, `running`, `closing`, `closed`, or `error`. |
+| `workdir` | Working directory used when opening the shell. |
+| `pty_pid` | Backend PTY handle returned by `Shell.start()` or `AgenticProcess.start()`. |
+| `compute_node_id` / `compute_node_uname` | Compute node hosting the shell. Sandbox tabs are identified by `compute_node_uname === 'sandbox'`. |
+| `project_id` | Project association used by route/context resolution. |
+| `collaboration_session_id` | Collaboration-session filter key. |
+| `tab_order` | Ordering key used by the terminal tab strip. |
+| `claude_session_id` | Claude session id when known for a shell. |
 
-### Key Methods
+`Shell` owns a `PtyConnection` instance. PTY lifecycle methods are:
 
-#### Node Management
+- `start(opts)`: calls backend `shell/open`, updates shell fields, stores `pty_pid`, then calls `attachPty()`.
+- `attachPty(opts)`: attaches the frontend PTY client to a backend PTY id. It is gated until the shell has been active at least once.
+- `sendInput(data)`: sends raw PTY input.
+- `resize(cols, rows)`: resizes the backend PTY.
+- `close()`: calls backend `shell/close`, disposes the frontend PTY client, and marks the shell closed.
+- `fetchPtySequence()`: fetches persisted PTY chunks for replay.
 
-| Method | Signature | Description |
-|--------|-----------|-------------|
-| `setActiveNode` | `(node: ComputeNode \| null): Promise<void>` | Sets the active compute node. Clears the local session cache, starts a new backend sync, and begins watching machine sessions over WebSocket. Increments `nodeGeneration` to invalidate stale async work. |
-| `getActiveNode` | `(): ComputeNode \| null` | Returns the current active node. |
-| `hasActiveNode` | `(): boolean` | Returns true if a node is set. |
-| `getNodeGeneration` | `(): number` | Returns the current generation counter. |
+### PTY-Mode Tab Behavior
 
-#### Session CRUD
+PTY-mode tabs are all backed by a `Shell`, whether they are plain terminals or visible Claude/agentic process terminals.
 
-| Method | Signature | Description |
-|--------|-----------|-------------|
-| `createSession` | `(sessionId: string, name: string, isPty?: boolean): Promise<ShellSession \| null>` | Delegates to the active node. Flushes any buffered PTY output after creation. Emits `SESSION_CREATED`. |
-| `removeSession` | `(sessionId: string): boolean` | Closes the backend PTY (if started) then removes the session from the node cache. Cleans up the per-session `TextDecoder`. Emits `SESSION_REMOVED`. |
-| `getSession` | `(sessionId: string): ShellSession \| undefined` | Looks up a session by ID on the active node. |
-| `getAllSessions` | `(): ShellSession[]` | Returns all sessions from the active node (in creation order). |
-| `hasSession` | `(sessionId: string): boolean` | Returns true if the session exists on the active node. |
-| `updateSessionName` | `(sessionId: string, name: string): boolean` | Updates the session's name in memory, emits `SESSION_UPDATED`, and persists the new name to the backend via the `terminal-command/rename` action over WebSocket. |
-| `isShellReady` | `(sessionId: string): boolean` | Returns true if the session exists, is a PTY, and `ptyStarted` is true. |
-| `sessionCount` | `number` (getter) | Number of sessions on the active node. |
+Current behavior:
 
-#### PTY Lifecycle
+- Route loaders open or reattach the PTY before the tab is considered active.
+- `InteractiveTerminal` resolves the `Shell` with `useShell(sessionId)`.
+- xterm initializes only after the panel has dimensions.
+- On shell `connected`, `InteractiveTerminal` resets xterm, replays `shell.getPtyChunks()`, then subscribes to live output with `shell.onOutput()`.
+- Incoming output is processed through `PtySyncSession` so trace gutters, annotations, and scroll sync share the same replayed stream.
+- Keyboard input is sent only when `shell.connected` is true.
+- Resize events run only for the active tab and call `shell.resize()`.
+- Page refresh or websocket reconnect reattaches through `Shell.start()` / `Shell.attachPty()` and replays stored chunks.
 
-| Method | Signature | Description |
-|--------|-----------|-------------|
-| `startPty` | `(sessionId, cols, rows, computeNode?, workingDir?): Promise<void>` | Sends the `terminal-command/start` action to the backend. Sets `session.computeNodeId`, marks `ptyStarted = true`, and emits `PTY_STARTED`. Passes `initial_command` if set on the session object. Idempotent if the PTY is already started. |
-| `sendPtyInput` | `(sessionId, data, computeNode?): Promise<void>` | Sends raw input bytes to the backend PTY via `terminal-command/input`. The data string is passed as-is (the `\r` suffix is added by the caller). |
-| `resizePty` | `(sessionId, cols, rows): Promise<void>` | Sends `terminal-command/resize` to the backend. Emits `PTY_RESIZED`. |
-| `closePty` | `(sessionId): Promise<void>` | Sends `terminal-command/close`. Resets `ptyStarted = false` and removes the decoder. Emits `PTY_CLOSED` and `SESSION_UPDATED`. Called automatically by `removeSession` for PTY sessions. |
-| `reattachSessionFromServer` | `(sessionId, since_seq?): Promise<number \| undefined>` | Sends `terminal-command/attach` with a sequence number. Used during backend sync to replay missed PTY output. Returns `latest_seq`. |
-
-#### Command Execution (Non-PTY)
-
-| Method | Signature | Description |
-|--------|-----------|-------------|
-| `executeCommand` | `(command, sessionId, computeNode?): Promise<FlowDataStream>` | For PTY sessions: sends input via `sendPtyInput` and returns an empty stream. For non-PTY sessions: executes via `computeNode.executeCommandStreaming`, populates the command substream with stdout/stderr/exit-code `FlowData` elements, and returns the completed substream. |
-| `addCommandStream` | `(sessionId, cmdId, input): void` | Adds a new `FlowDataStream` substream for a command to the session's top-level stream. |
-| `appendToCommandStream` | `(sessionId, cmdId, flowData): void` | Appends a `FlowData` element to an existing command substream. |
-| `clearStream` / `clearLog` | `(sessionId): void` | Clears all substreams and items from the session's stream. `clearLog` is an alias. |
-
-#### Backend Sync
-
-| Method | Signature | Description |
-|--------|-----------|-------------|
-| `syncSessionsWithBackend` | `(node, generation): Promise<void>` | Lists active PTY sessions from the backend, creates any that are missing locally, and optionally replays history (only for sessions that were already active before the sync). Guarded by `generation` checks to discard stale results from a previous node. |
-| `syncSessionsWithBackendOnce` | `(node, generation): Promise<void>` | Calls `syncSessionsWithBackend` if a sync is not already in progress. |
-| `isInitialSyncCompleted` | `(): boolean` | True once the first backend sync has finished. Used by routing logic to defer default session selection. |
-| `flushPtyBuffer` | `(sessionId): void` | Delivers any PTY output that arrived before the session was available in the local cache. |
-
-#### PTY Output Routing
-
-`ShellManager` registers a single listener on `ConnectionManager` for `on_pty_output_msg` events. For each message:
-
-1. Validates `message_type === 'pty_output_msg'` and a non-empty `session_id`.
-2. Decodes the base64-encoded payload to UTF-8 using a per-session `TextDecoder` with `{ stream: true }`, which preserves incomplete multi-byte sequences (e.g., box-drawing characters) across message boundaries.
-3. Looks up the session on the active node. If the session is not yet available, the output is buffered in `ptyOrphanBuffer`.
-4. If available, calls `session.appendPtyOutput(decoded, seq)` which notifies xterm.js instances.
-
-The orphan buffer is bounded: 200 chunks per session and 5 MB total across all sessions. Entries older than 30 seconds are skipped when flushing.
-
-### ShellSession
-
-**File:** `ts_sdk/src/services/shell/shellSession.ts`
-
-`ShellSession` is the data object that `ShellManager` and `ComputeNode` operate on.
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `sessionId` | `string` | Unique session identifier. |
-| `name` | `string` | Display name (shown in tab). |
-| `stream` | `FlowDataStream` | Top-level command history stream. |
-| `createdAt` | `number` | Unix timestamp (ms) of creation. |
-| `isRunning` | `boolean` | True while a non-PTY command is executing. |
-| `isPty` | `boolean` | True if the session is a PTY session. |
-| `ptyStarted` | `boolean` | True once the backend PTY is active. |
-| `computeNodeId` | `string?` | ID of the `ComputeNode` hosting the PTY. |
-| `terminalId` | `string?` | UUID for the xterm.js instance. |
-| `lastSeqReceived` | `number` | Last PTY output sequence number (for replay deduplication). |
-| `workingDir` | `string?` | Working directory passed to the backend at PTY start. |
-| `initialCommand` | `string?` | Shell command injected after the prompt is detected by the backend. |
-| `processId` | `string?` | `AgenticProcess` ID that owns this PTY session. |
-
-Key methods: `onPtyData(listener)` / `offPtyData(listener)` — subscribe / unsubscribe from decoded PTY output. `appendPtyOutput(data, seq)` — called by `ShellManager`; deduplicates by sequence number and dispatches to all listeners. `setPtyStarted(started, computeNodeId?)` — updates PTY state. `clearHistory()` — clears all substreams. `loadPersistence(sessionId)` / `clearPersistence(sessionId)` — static helpers for localStorage-based PTY state persistence across page refreshes.
+Sidecar shells are also `Shell` entities, but they are not main terminal tabs. `InteractiveTerminal` creates a sidecar shell in `process.sidecar_shell_id` for the optional shell pane, and `useActiveTerminals()` excludes those shell ids from the main tab strip.
 
 ---
 
-## useShellSessions Hook
+## AgenticProcess Startup and Worker Modes
 
-**File:** `ui/src/hooks/use-shell.ts`
+**Files:**
 
-`useShellSessions` is the lightest hook for reading the session list reactively. `TabbedTerminal` uses it exclusively.
+- `ts_sdk/src/process/agentic-process.ts`
+- `ts_sdk/src/process/agentic-context.ts`
+- `ts_sdk/src/process/agentic-types.ts`
+- `ui/src/routes/loaders/load-process.ts`
 
-### Signature
+`AgenticProcess.start()` is the current interactive startup primitive. It calls backend action `agentic_process/open`, which handles fresh starts, reopens, and Claude session resumes server-side. The result includes `shell_id`, `pty_id`, `session_id`, and a serialized shell. The SDK updates the process, materializes the shell, and attaches the shell PTY.
 
-```typescript
-function useShellSessions(): ShellSession[]
-```
+`loadProcess(processId)` is the route primitive for `/dock/shell/agentic_process-<processId>`:
 
-### Behaviour
+1. Load the process cache-first.
+2. Call `process.start({ visible: true })`.
+3. Resolve `process.shell()`.
+4. Set `dataContext.activeShellId`.
+5. Set workdir and current process/project context.
 
-- Subscribes to `SESSION_CREATED`, `SESSION_REMOVED`, and `SESSION_UPDATED` events on `shellManager`.
-- Uses `useSyncExternalStore` for React 18 concurrent-mode safety.
-- Caches the snapshot in a `useRef` and only creates a new array reference when the session list actually changes (by length or identity comparison). This prevents unnecessary re-renders in consumers.
-- Returns `[]` for the server-side rendering snapshot.
+### CLI / Headless Mode
 
-### Usage
+`WorkerMode` is derived from `AgenticProcess.visible`:
 
-```tsx
-const sessions = useShellSessions();
+- `visible === true`: `WorkerMode.Interactive`, represented by a `Shell` PTY and xterm in the terminal tab strip.
+- `visible === false`: `WorkerMode.CLI`, represented as a headless/print-mode `AgenticProcess` without a terminal tab.
 
-sessions.map((session) => (
-  <Tab key={session.sessionId} label={session.name} />
-));
-```
+Headless processes are created with `AgenticProcess.spawn(..., { headless: true })`. In that path, the SDK calls `process.watch()` and optionally `process.executeInstruction()` instead of `process.start()`, so no shell PTY is opened.
 
-### Related Hooks in the Same File
+Headless/CLI work is represented by the `AgenticProcess` entity, FlowData/history, and any surface that explicitly queries that process. It is not represented as a `TabbedTerminal` tab unless the process is later opened interactively and linked to a `Shell`. The terminal tab strip is built from shell rows, so a process with no `shell_id` has no PTY tab.
 
-#### `useShell()`
+For print-mode processes, `AgenticProcess.prompt()` posts to the `prompt` action and streams FlowData over HTTP. PTY-interactive processes use the shell-backed `start()`/`executeInstruction()`/input path instead.
 
-Returns the full shell management interface including all sessions, session queries, session mutation methods, PTY methods, node management, and UI callbacks. Reads `computeNode` from `useAgentContext()` and passes it through to `shellManager` calls so the correct node is used for command execution.
+---
 
-Key return values:
+## InteractiveTerminal
 
-| Property / Method | Type | Description |
-|-------------------|------|-------------|
-| `sessions` | `ShellSession[]` | Reactive list of all sessions. |
-| `sessionCount` | `number` | Session count. |
-| `getSession` | `(id) => ShellSession \| undefined` | Look up a session. |
-| `createSession` | `(id, name, isPty?) => Promise<ShellSession \| null>` | Create a session. |
-| `removeSession` | `(id) => boolean` | Remove a session. |
-| `updateSessionName` | `(id, name) => boolean` | Rename a session. |
-| `executeCommand` | `(command, sessionId) => Promise<FlowDataStream>` | Execute a command, using context `computeNode`. |
-| `startPty` | `(sessionId, cols, rows) => Promise<void>` | Start a PTY. |
-| `closePty` | `(sessionId) => Promise<void>` | Close a PTY. |
-| `sendPtyInput` | `(sessionId, data) => Promise<void>` | Send raw input. |
-| `resizePty` | `(sessionId, cols, rows) => Promise<void>` | Resize the terminal. |
-| `setActiveNode` | `(node) => Promise<void>` | Set the active compute node. |
-| `getActiveNode` | `() => ComputeNode \| null` | Get the active node. |
-| `setOpenShellTab` | `(handler) => void` | Register a UI callback for opening the shell tab. |
-| `openShellTab` | `(shellOffset?) => void` | Invoke the registered shell-tab-open callback. |
+**Files:**
 
-#### `useShellSession(sessionIdOrName)`
+- `ui/src/components/terminal/interactive-terminal/InteractiveTerminal.tsx`
+- `ui/src/hooks/useShell.ts`
 
-Returns reactive state for a single session. Uses `useSyncExternalStore` and subscribes to stream-level events (`render`, `substream-added`, `data`) in addition to `ShellManager` events. Returns `null` if the session does not exist.
+`InteractiveTerminal` is the xterm/PTYSYNC renderer for a single shell id.
 
-Key return properties: `sessionId`, `name`, `stream`, `items` (all FlowData), `delta` (items added since last render), `createdAt`, `isRunning`, `commandCount`, `streamItemCount`, `isPty`, `ptyStarted`, `computeNodeId`, `terminalId`, `executeCommand`, `clearHistory`, `clearLog`.
+Key inputs:
+
+| Prop | Description |
+|------|-------------|
+| `sessionId` | Shell id to render. |
+| `active` | Whether this terminal is currently visible and should resize/focus. |
+| `process` | Optional explicit `AgenticProcess`. If omitted, it uses the context process set by the loader. |
+| `embedded` / `onClose` | Embedded toolbar behavior for non-tab placements. |
+| `onWorkerSessionId` | Emits the process worker session id when known. |
+
+Important behavior:
+
+- Uses `useShell(sessionId)` to resolve the shell entity and reactive connection state.
+- Uses `PtySyncSession`, `XTermHarness`, trace gutters, time gutters, and annotation gutters around the xterm buffer.
+- Reads URL query `t` as an optional timestamp target for annotation/scroll behavior.
+- For active process tabs, displays process-specific UI such as `ProcessToolbar`, side windows, input files, queue, trace, and sidecar shell controls.
+- Falls back to `contextProcess` when `TabbedTerminal` does not pass a process prop; this is why `loadProcess()` must set process context for the active agentic tab.
 
 ---
 
@@ -342,138 +271,76 @@ Key return properties: `sessionId`, `name`, `stream`, `items` (all FlowData), `d
 
 **File:** `ui/src/components/live-workflow/SessionViewer.tsx`
 
-`SessionViewer` is the live execution view rendered at `/dock/session/:processId`. It shows a tab bar of recent `AgenticProcess` sessions and a running conversation/FlowData stream for the currently active process.
+`SessionViewer` is the live conversation/FlowData view rendered at `/dock/session/:processId`. It is separate from the PTY terminal tab strip.
 
-### Layout
+Layout:
 
-```
-SessionTabBar          ← tab bar (session tabs + "+" button)
-RunningArea            ← FlowData conversation stream + status footer
-InterferenceBox        ← compact prompt input
+```text
+SessionTabBar
+RunningArea
+InterferenceBox
 ```
 
 ### Session Tabs
 
-Session tabs are represented by the `SessionTab` interface:
+Session tabs are process tabs:
 
-```typescript
+```ts
 interface SessionTab {
-  id: string;            // AgenticProcess entity ID
-  name: string;          // Display name (see getSessionDisplayName below)
-  favorite_index?: number | null;  // Persistent tab ordering key
+  id: string;                  // AgenticProcess id
+  name: string;
+  favorite_index?: number | null;
 }
 ```
 
-On mount, the component queries the backend for up to 100 `AgenticProcess` entities ordered by `updated_at desc`, maps them to `SessionTab` objects, and stores them in local state. A module-level `sessionTabsCache` (`Map<string, SessionTab[]>`) keyed by project ID preserves tabs across navigation events within the same page session.
+On mount, `SessionViewer` queries up to 100 visible `AgenticProcess` entities scoped to the current project, ordered by `updated_at desc`. A module-level `sessionTabsCache` stores tabs per project id for the current browser session.
 
-### Display Name Resolution
+Display names are resolved in this order:
 
-`getSessionDisplayName(process, fallback)` resolves tab names in priority order:
-
-1. `process.context_data.display_name` (explicit user rename, stored in `context_data`).
-2. First 30 characters of `process.instruction_content` (stripped of HTML comments).
-3. The `fallback` string (e.g., `"Session 3"`).
+1. `process.context_data.display_name`
+2. First 30 characters of `process.instruction_content` after stripping comments
+3. Fallback such as `Session 3`
 
 ### favorite_index
 
-`favorite_index` is a numeric ordering key persisted on the `AgenticProcess` entity via `PUT /api/v1/graph/agentic_process/:id`. It controls the left-to-right order of tabs in the `SessionTabBar`.
+`favorite_index` is persisted on the `AgenticProcess` via `PUT /api/v1/graph/agentic_process/:id` and controls left-to-right tab order.
 
-**How it works:**
+- If no tabs have `favorite_index`, fetched tabs keep `updated_at desc` order.
+- Once any tab has `favorite_index`, tabs sort by that value ascending, with `null` last.
+- New tabs get `favoriteMaxRef.current + 1000`.
+- Drag reorder assigns a midpoint between neighbors when possible.
+- Closing a tab sets `favorite_index: null` and `visible: false`.
 
-- Tabs without any `favorite_index` values are displayed in `updated_at desc` order (most recently modified first).
-- Once any tab acquires a `favorite_index`, the entire tab list is sorted numerically by that field (ascending). Tabs with `null` sort to the end.
-- A gap of 1000 is used between consecutive indexes (the `favoriteGap` constant), providing space for future insertions without renumbering.
+### SessionViewer Actions
 
-**Setting `favorite_index`:**
+| Action | Current behavior |
+|--------|------------------|
+| Select tab | Sets `activeTabId`, persists `visible: true`, then calls `navigation.openShellProcess(processId)`. This navigates to the process terminal route, not just an in-place SessionViewer switch. |
+| Close tab | Removes the process id from local/cache state, persists `favorite_index: null` and `visible: false`. If closing the active process, current code calls `navigation.openSession(remaining[0].id)` for the first remaining id or `navigation.openShellView()` when none remain. |
+| Add tab | Calls `computeNode.createProcess({ projectId, workdir }, { visible: true })`, persists the next `favorite_index`, and opens the process terminal. |
+| Rename tab | Writes `context_data.display_name` on the `AgenticProcess` and saves it. |
+| Inject instruction | Calls `process.executeInstruction(content, { sync: false })` through `useSessionProcess()`. |
 
-| Action | Result |
-|--------|--------|
-| Creating a new session tab | Gets `favoriteMaxRef.current + 1000` (appended to end). |
-| Drag-reordering a tab | Receives the midpoint of its new neighbors' indexes. If the midpoint would collide with the left neighbor, `left + 1` is used instead. If one neighbor is null, a sentinel value (`after - 1000` or `before + 1000`) is used. |
-| Closing a tab | `favorite_index` is set to `null` via `persistFavoriteIndex(tabId, null)`. |
-
-`persistFavoriteIndex(tabId, nextIndex)` sends a `PUT` request to update the field on the backend, so tab order survives page refreshes.
-
-### Tab Lifecycle
-
-| Action | Handler | Description |
-|--------|---------|-------------|
-| Select tab | `handleSelectTab(processId)` | Updates `activeTabId`, calls `navigation.openShell(processId, { resumeClaude: true })`. |
-| Close tab | `handleCloseTab(tabId)` | Adds `tabId` to `closedSessionIdsRef`, sets its `favorite_index` to `null`, removes it from local state. If the closed tab was active, navigates to the first remaining tab or an empty shell. |
-| Add new session | `handleAddSession()` | Creates a new `AgenticProcessor` and `AgenticProcess` via the compute node, assigns the next `favorite_index`, and navigates to the new process. |
-| Rename session | `handleRenameSession(sessionId, newName)` | Updates `context_data.display_name` on the entity and calls `entity.save()`. Updates the local tab name. |
-| Reorder tab (drag) | `handleReorderTab(sourceId, targetId)` | Splices the source tab to the target position and recalculates `favorite_index` using the fractional indexing approach described above. |
-
-### Process Interaction
-
-The component uses `useSessionProcess()` internally to get:
-- `process` — the active `AgenticProcess` entity.
-- `state` — `WorkerStatus` and execution state.
-- `isRunning`, `completed`.
-- `abortProcess()`, `appendInstruction(value)`, `injectInstruction(content)`.
-
-The `RunningArea` sub-component receives `flowData`, `processState`, `elapsedTime`, `statusMessage`, `activityLabel`, and `tokenUsage` for display. The `InterferenceBox` receives `waitingForInput`, `inputId`, and the submit/inject callbacks.
-
-### URL Synchronisation
-
-`SessionViewer` reads `agenticProcessTypeId` from `useContext()` (set by the loader on initial navigation). On subsequent tab switches driven by dock state changes, a `useEffect` watches `currentDock.pointer` and calls `dataContext.setActiveEntityTypeId(new TypeId(...))` to sync the data context with the URL.
+`SessionActionButtons` exposes "Resume in terminal" when `process.session_id` is known. It uses `useResumeInTerminal()`, not a `resumeClaude` URL flag.
 
 ---
 
-## NavigationActions
+## Navigation Helpers
 
 **File:** `ui/src/navigation/NavigationActions.ts`
 
-`NavigationActions` wraps React Router's `navigate` function and provides typed shortcut methods. All navigation is URL-first: methods construct a `DockPointer`, serialise it to URL segments, and call `navigate`. The current URL's dock portion is stripped and replaced so the base path is preserved.
+Terminal-related helpers currently mean:
 
-### Shell and Session Methods
+| Method | Current meaning |
+|--------|-----------------|
+| `openShellView()` | Opens `/dock/shell` and lets `loadShellRoute()` choose the default tab. |
+| `openShell(shellId, options?)` | Loads a `Shell` entity and navigates to `shell.dockPointer`. No Claude start/resume flags are used. |
+| `openShellProcess(processId, options?)` | Loads an `AgenticProcess` and navigates to `process.dockPointer`, which is currently a `ViewType.SHELL` pointer. Supports terminal query hints such as `t`, `windows`, and `activeWindow`. |
+| `openProcessTab(processId, options?)` | Equivalent process-tab navigation through the process dock pointer. |
+| `openShellTab(shellId)` | Opens a plain shell dock pointer. |
+| `openClaudeSession(sessionId)` | Upserts an `AgenticProcess` for a Claude session id and navigates to its dock pointer. |
+| `openNewClaudeProcess(options?)` | Creates a visible process and returns ids; `TabbedTerminal` handles navigation through `onTabOpen`. |
+| `openNewShell(options?)` | Creates a `Shell`; navigates unless `skipNavigate: true`. |
+| `openSession(shellId, options?)` | Despite the name, this is shell-aware terminal navigation: it looks for a process whose `shell_id` matches, otherwise opens the plain shell. It is not the `/dock/session/:processId` SessionViewer helper. |
 
-| Method | Signature | Description |
-|--------|-----------|-------------|
-| `openShell` | `(sessionId?, options?): void` | Opens the `SHELL` view. `sessionId` is placed as the URL pointer. Options: `startClaude`, `resumeClaude`, `cwd`, `startCommand`, `skipPermissions` — passed as URL search parameters and read by the shell route loader. |
-| `openShellProcess` | `(processId, options?): void` | Opens the `AGENTIC_PROCESS` view for a specific process terminal. `processId` can be `'new'` to trigger entity creation in the routing layer. Options: `t` (tab hint). |
-| `openNewTerminal` | `(): void` | Shortcut for `openShell('new_terminal')`. |
-| `openSession` | `(processId): void` | Opens the `SESSION` view (i.e., `SessionViewer`) for the given process. |
-| `openAgenticProcess` | `(processId): void` | Opens the `AGENTIC_PROCESS` terminal view directly. |
-
-### Core Navigation
-
-| Method | Signature | Description |
-|--------|-----------|-------------|
-| `openDock` | `(pointer: DockPointer \| null): void` | Base method used by all shortcuts. Passing `null` strips the dock from the URL (closes the panel). |
-| `closeDock` | `(): void` | Alias for `openDock(null)`. |
-| `openTab` | `(tabType: ViewType, options?): void` | Opens any dock view by `ViewType`. Used for pinned tabs. |
-| `switchToTab` | `(tabType: ViewType): void` | Idempotent — same as `openTab`. |
-
-### Other Useful Methods
-
-| Method | Description |
-|--------|-------------|
-| `openEditor(path?, options?)` | Opens the code editor, optionally at a specific line/column. |
-| `openFile(path, options?)` | Chooses between docs viewer (`.md`) and editor based on extension. |
-| `openExplorer(path?)` | Opens the file explorer at an optional path. |
-| `openDocs(filePath?)` | Opens the docs/markdown viewer. |
-| `openDiff(checkpointHash)` | Opens the diff/checkpoint viewer. |
-| `openSettings(fieldName?, filter?)` | Opens the settings viewer, optionally scrolled to a field. |
-| `openLens(category, type, ref, options?)` | Opens the lens viewer (transcripts, tasks, etc.). |
-| `openTasks(taskId?)` | Opens the tasks view. |
-| `goBack()` / `goForward()` | Browser history navigation. |
-| `getShareableUrl()` / `copyShareableUrl()` | Returns or copies the current URL to the clipboard. |
-
-### Usage Example
-
-```typescript
-const { navigation } = useDockNavigation();
-
-// Open a resumed Claude session in the shell view
-navigation.openShell('abc-123', { resumeClaude: true });
-
-// Open the SessionViewer for an AgenticProcess
-navigation.openSession('proc-456');
-
-// Open the process terminal view
-navigation.openAgenticProcess('proc-456');
-
-// Open a new terminal tab
-navigation.openNewTerminal();
-```
+`DockPointer.forSession(processId)` exists for `ViewType.SESSION`, but `NavigationActions` does not currently expose a dedicated wrapper for it.

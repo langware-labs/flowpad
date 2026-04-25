@@ -2,9 +2,16 @@
 
 Re-exports the in-process HTTPX client fixtures from tests/api/conftest.py
 so tests in this directory can use bootstrapped_client without modification.
+
+Also exposes the worker-parameterisation fixtures (``make_process``,
+``external_session_snapshot``) so test bodies can stay vendor-blind — every
+agentic-process test runs once for each registered driver (claude, codex)
+without referencing ``WorkerType``, ``ClaudeCli*``, ``Codex*`` or any other
+worker-specific symbol.
 """
 
 import sys
+from typing import Awaitable, Callable
 
 import pytest
 
@@ -95,3 +102,72 @@ def allocate_ports(unused_tcp_port_factory):
     def _allocate(n: int = 1) -> tuple:
         return tuple(unused_tcp_port_factory() for _ in range(n))
     return _allocate
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Worker parameterisation
+# ─────────────────────────────────────────────────────────────────────────────
+# Tests touching AgenticProcess parameterise over every registered driver. Test
+# bodies stay vendor-blind: they take ``make_process`` (a factory that builds
+# an AgenticProcess wired to the parameterised worker) and
+# ``external_session_snapshot`` (a probe that returns the driver's vendor-
+# managed session-storage names) instead of mentioning ``WorkerType``,
+# ``ClaudeCli*``, or ``Codex*`` directly.
+#
+# Anything the test body still needs to know about its worker should be
+# expressed as another driver method here, not as an ``if worker_id == ...``
+# branch in the test.
+
+_WORKER_PARAMS = [
+    pytest.param("claude", id="claude"),
+    pytest.param("codex", id="codex"),
+]
+
+
+@pytest.fixture(params=_WORKER_PARAMS)
+def worker_id(request) -> str:
+    """The driver name for this parameterised run.
+
+    Internal — consumed by ``make_process`` and ``external_session_snapshot``.
+    Tests SHOULD NOT import this directly (the rule: no worker references
+    in test bodies).
+    """
+    return request.param
+
+
+@pytest.fixture()
+def make_process(worker_id) -> Callable[..., Awaitable]:
+    """Factory that builds an ``AgenticProcess`` wired to the parameterised worker.
+
+    Tests call ``await make_process(**kwargs)`` instead of constructing
+    AgenticProcess directly so the worker stays invisible. Any extra
+    constructor kwargs the test needs (workdir, additional_dirs, …) are
+    passed through unchanged — they're vendor-neutral.
+
+    Maps the driver short-id (``claude`` / ``codex``) to the corresponding
+    ``WorkerType`` enum value the entity stores on disk (``claude_code`` /
+    ``codex``). The mapping lives in the fixture, not test bodies.
+    """
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.flowpad_types.enums import WorkerType
+
+    _DRIVER_TO_ENUM = {
+        "claude": WorkerType.CLAUDE_CODE,
+        "codex": WorkerType.CODEX,
+    }
+    enum_value = _DRIVER_TO_ENUM[worker_id]
+
+    async def _make(**kwargs):
+        return await AgenticProcess(worker_type=enum_value, **kwargs).save()
+    return _make
+
+
+@pytest.fixture()
+def external_session_snapshot(worker_id) -> Callable[[], set[str]]:
+    """Probe vendor-managed session storage for the parameterised driver.
+
+    Used by the "no session leakage" invariant: a test takes a snapshot
+    before / after the run and asserts the diff is empty.
+    """
+    from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
+    return get_driver(worker_id).external_session_dirs

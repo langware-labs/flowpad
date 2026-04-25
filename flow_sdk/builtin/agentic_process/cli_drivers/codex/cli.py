@@ -14,7 +14,7 @@ Notes on flag mapping:
 - ``--json``                               → emit JSONL events to stdout
 - ``-m <model>``                           → model
 
-Logger namespace: ``flow_sdk.builtin.agentic_workers.codex_worker.cli`` so codex-CLI log
+Logger namespace: ``flow_sdk.builtin.agentic_process.cli_drivers.codex.cli`` so codex-CLI log
 lines are easy to filter independently of the Claude CLI lines.
 """
 
@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from flow_sdk.builtin.agentic_workers.base.cli_options import WorkerCLIOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
 
 logger = logging.getLogger(__name__)
 
@@ -104,17 +104,36 @@ class CodexCliOptions(WorkerCLIOptions):
     def to_spawn_args(self, instruction: str | None = None) -> tuple[list[str], dict[str, str]]:
         """Build argv list + env dict for ``asyncio.create_subprocess_exec()``.
 
-        ``instruction`` is NOT appended to argv — the worker pipes it in via
-        stdin so multi-line prompts and special characters don't need shell
-        escaping.
+        Two shapes:
+          * ``json_stream=True`` (default) → ``codex exec --json -`` — headless,
+            reads the prompt from stdin. Used by ``CodexCLIStreamWorker``.
+          * ``json_stream=False`` → bare ``codex`` — the interactive TUI Codex
+            ships when no subcommand is given. Used when launching codex as
+            the PTY process for a visible AgenticProcess tab.
         """
-        argv: list[str] = ["codex", "exec", "--skip-git-repo-check"]
+        if not self.json_stream:
+            # Interactive TUI (PTY-attached) — flags forward to ``codex`` per
+            # ``codex --help`` ("If no subcommand is specified, options will
+            # be forwarded to the interactive CLI.").
+            argv: list[str] = ["codex"]
+            if self.permission_mode == "bypassPermissions":
+                argv.append("--dangerously-bypass-approvals-and-sandbox")
+            if self.workdir:
+                argv.extend(["-C", self.workdir])
+            if self.model:
+                argv.extend(["-m", self.model])
+            for d in self.add_dirs:
+                argv.extend(["--add-dir", d])
+            if self.resume and self.session_id:
+                argv.extend(["resume", self.session_id])
+            return argv, dict(self.env_vars)
+
+        argv = ["codex", "exec", "--skip-git-repo-check"]
         if self.permission_mode == "bypassPermissions":
             argv.append("--dangerously-bypass-approvals-and-sandbox")
         if self.ephemeral:
             argv.append("--ephemeral")
-        if self.json_stream:
-            argv.append("--json")
+        argv.append("--json")
         argv.extend(["-c", f"model_reasoning_effort={self.DEFAULT_REASONING_EFFORT}"])
         if self.workdir:
             argv.extend(["-C", self.workdir])

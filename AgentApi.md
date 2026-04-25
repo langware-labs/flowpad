@@ -249,7 +249,7 @@ and is redundant — it exists for historical reasons.
 
 ```python
 from flow_sdk.builtin.shell import Shell
-from flow_sdk.builtin.agentic_workers.claude_worker import ClaudeCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
 
 # Simple shell with context manager
 async with Shell(workdir="/project") as shell:

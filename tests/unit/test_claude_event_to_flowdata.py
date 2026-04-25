@@ -8,7 +8,7 @@ Fixture events mirror the shapes emitted by Claude CLI 2.1.116 in
 
 from __future__ import annotations
 
-from flow_sdk.builtin.agentic_workers.claude_worker import (
+from flow_sdk.builtin.agentic_process.cli_drivers.claude import (
     convert_event,
     convert_line,
     final_end_frame,

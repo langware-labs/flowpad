@@ -21,7 +21,7 @@ from flow_sdk.builtin.shell import Shell
 from .worker import BaseWorker, WorkerRequest, WorkerResponse, WorkerStreamEvent
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.agentic_workers.base import WorkerCLIOptions
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
     from flow_sdk.builtin.process import Flow
     from flow_sdk.core.flow.models.process_deps import ComputeSession
 

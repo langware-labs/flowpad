@@ -282,6 +282,7 @@ export class NavigationActions {
   async openNewClaudeProcess(options?: {
     cwd?: string;
     projectId?: string;
+    workerType?: 'claude_code' | 'codex';
   }): Promise<{ processId: string; shellId: string | null; dockPointer: IDockPointer } | null> {
     try {
       const computeNode = dataContext.computeNode;
@@ -293,6 +294,7 @@ export class NavigationActions {
         {
           workdir: options?.cwd || dataContext.project?.fs_storage_mount_path,
           projectId: options?.projectId ?? dataContext.project?.id,
+          ...(options?.workerType ? { workerType: options.workerType } : {}),
         },
         { watchProcess: false, visible: true },
       );

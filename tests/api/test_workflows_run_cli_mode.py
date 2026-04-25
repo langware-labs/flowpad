@@ -24,7 +24,7 @@ from flow_sdk.builtin.agentic_process.status_predicates import (
     get_worker_mode,
     WorkerMode,
 )
-from flow_sdk.builtin.agentic_workers.claude_worker import ClaudeCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
 
 
 @pytest.mark.asyncio
