@@ -118,7 +118,7 @@ export function DocsCategory({ projectId, onOpenTab }: Props) {
               className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <FileText className="h-3.5 w-3.5 flex-shrink-0" />
-              <span className="truncate">{d.name ?? 'Untitled'}</span>
+              <span className="truncate">{typeof d.name === 'string' && d.name ? d.name : 'Untitled'}</span>
             </li>
           ))}
         </ul>

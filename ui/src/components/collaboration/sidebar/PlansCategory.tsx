@@ -67,7 +67,7 @@ export function PlansCategory({ projectId }: Props) {
           className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <ListChecks className="h-3.5 w-3.5 flex-shrink-0" />
-          <span className="truncate">{p.name ?? 'Untitled'}</span>
+          <span className="truncate">{typeof p.name === 'string' && p.name ? p.name : 'Untitled'}</span>
         </li>
       ))}
     </ul>
