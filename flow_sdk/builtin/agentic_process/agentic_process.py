@@ -1571,6 +1571,37 @@ class AgenticProcess(Entity):
             }
         )
 
+    @action.get(action_name="get-history")
+    async def get_history_action(self):
+        """Return the session conversation history as FlowData items for the UI."""
+        from flow_sdk.builtin.agentic_workers.session_history import load_session_history
+
+        session_id = self.session_id
+        logger.info(f"[get-history] process={self.id} session_id={session_id}")
+
+        if not session_id:
+            logger.info("[get-history] no session_id — returning empty history")
+            return ApiSuccessResponse(data={"history": [], "session_id": None, "use_worker_history": False})
+
+        history: list = load_session_history(session_id)
+        logger.info(f"[get-history] loaded {len(history)} items for session {session_id}")
+
+        items = []
+        for fd in history:
+            items.append({
+                "flow_value": fd.flow_value,
+                "attributes": dict(fd.attributes) if fd.attributes else {},
+                "index": fd.index or 0,
+                "created_time": fd.created_time or None,
+            })
+
+        return ApiSuccessResponse(data={
+            "history": items,
+            "count": len(items),
+            "session_id": session_id,
+            "use_worker_history": True,
+        })
+
     # ── Internals ─────────────────────────────────────────────────────────────
 
     def _is_exist_claude_resume_session(self, session_id: str | None) -> bool:

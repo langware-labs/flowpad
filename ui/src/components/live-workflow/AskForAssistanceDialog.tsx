@@ -1,9 +1,7 @@
 /**
- * SendPlanNotificationDialog - Share a plan as a task.
- * Supports two delivery modes:
- *   Share via Email — sends via Flowpad Hub (requires recipient)
- *   Share via Repo  — coming soon (disabled)
- * A download icon in the top-left lets the user save a .flowmsg file locally.
+ * AskForAssistanceDialog - Send the current session to another user to ask for help.
+ * Modelled on SendPlanNotificationDialog; uses spec_type='session' and pre-populates
+ * content from the live session output.
  */
 
 import { useEffect, useState } from 'react';
@@ -38,37 +36,25 @@ import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { cn } from '@src/lib/utils';
 
-/** Extract first # heading from markdown, fall back to filename stem. */
-function extractTitle(markdown: string, filePath: string): string {
-  for (const line of markdown.split('\n')) {
-    const stripped = line.replace(/^#+\s*/, '').trim();
-    if (stripped) return stripped;
-  }
-  const stem = filePath.split('/').pop()?.replace(/\.md$/, '') ?? 'Untitled Plan';
-  return stem;
-}
-
-interface SendPlanNotificationDialogProps {
+interface AskForAssistanceDialogProps {
   open: boolean;
   onClose: () => void;
-  planFilePath: string;
-  planContent: string;
-  workdir?: string | null;
+  sessionTitle: string;
+  sessionContent: string;
 }
 
-export function SendPlanNotificationDialog({
+export function AskForAssistanceDialog({
   open,
   onClose,
-  workdir,
-  planFilePath,
-  planContent,
-}: SendPlanNotificationDialogProps) {
+  sessionTitle,
+  sessionContent,
+}: AskForAssistanceDialogProps) {
   const { cloudLoginAvailable } = useContext();
   const { localUser, updateName } = useLocalUser();
   const [mode, setMode] = useState<DeliveryMode>(DeliveryMode.EMAIL);
   const [recipientId, setRecipientId] = useState('');
-  const [specTitle, setSpecTitle] = useState('');
-  const [specContent, setSpecContent] = useState('');
+  const [title, setTitle] = useState('');
+  const [content, setContent] = useState('');
   const [message, setMessage] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [senderName, setSenderName] = useState('');
@@ -81,10 +67,10 @@ export function SendPlanNotificationDialog({
 
   useEffect(() => {
     if (open) {
-      setSpecTitle(extractTitle(planContent, planFilePath));
-      setSpecContent(planContent);
+      setTitle(sessionTitle);
+      setContent(sessionContent);
       setRecipientId('');
-      setMessage('Hi,\nGot a new task for you.\nLMK if you have any questions.\nGood luck!');
+      setMessage('Hi,\nI need some help with this session.\nPlease take a look and let me know.\nThanks!');
       setFiles([]);
       setError(null);
       setSuccess(false);
@@ -104,20 +90,20 @@ export function SendPlanNotificationDialog({
   };
 
   const handleEmail = async () => {
-    if (!recipientId.trim() || !specTitle.trim() || busy) return;
+    if (!recipientId.trim() || !title.trim() || busy) return;
     setBusy(true);
     setError(null);
     try {
       const result = await sendNotification({
         recipient_id: recipientId.trim(),
-        spec_title: specTitle.trim(),
-        spec_content: specContent.trim(),
-        spec_type: 'plan',
-        task_title: specTitle.trim(),
+        spec_title: title.trim(),
+        spec_content: content.trim(),
+        spec_type: 'session',
+        task_title: title.trim(),
         task_id: null,
         message: message.trim() || null,
         plan_id: null,
-        project_path: workdir ?? null,
+        project_path: null,
         sender_name: senderName.trim() || null,
         files: files.length > 0 ? files : undefined,
       });
@@ -126,15 +112,15 @@ export function SendPlanNotificationDialog({
       } else if (result.email_error) {
         setSuccess(true);
         setEmailError(result.email_error);
-        toast.warning('Task created, but the notification email could not be sent. Check your activity panel.');
+        toast.warning('Request created, but the notification email could not be sent. Check your activity panel.');
         setTimeout(() => onClose(), 5000);
       } else {
         setSuccess(true);
-        toast.success('Task shared successfully!');
+        toast.success('Assistance request sent successfully!');
         setTimeout(() => onClose(), 1200);
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to send notification.';
+      const msg = err instanceof Error ? err.message : 'Failed to send request.';
       setError(msg);
     } finally {
       setBusy(false);
@@ -142,14 +128,14 @@ export function SendPlanNotificationDialog({
   };
 
   const handleDownload = async () => {
-    if (!specTitle.trim() || busy) return;
+    if (!title.trim() || busy) return;
     setBusy(true);
     setError(null);
     try {
       const result = await createTaskBundle({
-        spec_title: specTitle.trim(),
-        spec_content: specContent.trim(),
-        task_title: specTitle.trim(),
+        spec_title: title.trim(),
+        spec_content: content.trim(),
+        task_title: title.trim(),
         message: message.trim() || null,
         team_space_id: null,
       });
@@ -167,7 +153,7 @@ export function SendPlanNotificationDialog({
     }
   };
 
-  const canSubmit = recipientId.trim().length > 0 && specTitle.trim().length > 0 && !busy;
+  const canSubmit = recipientId.trim().length > 0 && title.trim().length > 0 && !busy;
 
   return (
     <>
@@ -177,7 +163,7 @@ export function SendPlanNotificationDialog({
             <AlertDialogTitle>Git Push Failed</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div>
-                <p className="mb-2">The task could not be pushed to the remote repository. Please fix the git issue below and send the task again.</p>
+                <p className="mb-2">The request could not be pushed to the remote repository. Please fix the git issue below and try again.</p>
                 <pre className="max-h-40 overflow-auto rounded bg-muted px-3 py-2 text-xs text-foreground whitespace-pre-wrap">{gitError}</pre>
               </div>
             </AlertDialogDescription>
@@ -191,9 +177,9 @@ export function SendPlanNotificationDialog({
       <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Share Task</DialogTitle>
+            <DialogTitle>Ask for Assistance</DialogTitle>
             <DialogDescription>
-              This plan will be packaged as a spec and shared as a new task.
+              Your current session will be packaged and shared as a task.
             </DialogDescription>
           </DialogHeader>
 
@@ -275,23 +261,23 @@ export function SendPlanNotificationDialog({
               />
             </div>
 
-            {/* Spec title */}
+            {/* Session title */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Spec title</label>
+              <label className="text-xs font-medium text-muted-foreground">Session title</label>
               <Input
-                value={specTitle}
-                onChange={(e) => setSpecTitle(e.target.value)}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
                 placeholder="Title"
                 disabled={busy}
               />
             </div>
 
-            {/* Description */}
+            {/* Session content */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Description</label>
+              <label className="text-xs font-medium text-muted-foreground">Session content</label>
               <textarea
-                value={specContent}
-                onChange={(e) => setSpecContent(e.target.value)}
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
                 rows={6}
                 disabled={busy}
                 className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
@@ -313,10 +299,10 @@ export function SendPlanNotificationDialog({
             </div>
 
             {error && <p className="text-xs text-destructive">{error}</p>}
-            {success && !emailError && <p className="text-xs text-green-600 dark:text-green-400">Task shared successfully.</p>}
+            {success && !emailError && <p className="text-xs text-green-600 dark:text-green-400">Assistance request sent successfully.</p>}
             {success && emailError && (
               <div className="space-y-1">
-                <p className="text-xs text-green-600 dark:text-green-400">Task created successfully.</p>
+                <p className="text-xs text-green-600 dark:text-green-400">Request created successfully.</p>
                 <p className="text-xs text-yellow-600 dark:text-yellow-400">Email could not be sent. A reminder has been added to your activity panel.</p>
               </div>
             )}
@@ -331,7 +317,7 @@ export function SendPlanNotificationDialog({
                     variant="outline"
                     size="icon"
                     onClick={() => void handleDownload()}
-                    disabled={!specTitle.trim() || busy}
+                    disabled={!title.trim() || busy}
                   >
                     <Download className="h-4 w-4" />
                   </Button>
@@ -340,25 +326,25 @@ export function SendPlanNotificationDialog({
               </Tooltip>
             </TooltipProvider>
             <div className="flex gap-2">
-            <Button variant="outline" onClick={handleClose} disabled={busy}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (!cloudLoginAvailable) {
-                  (window as any).__postCloudLoginCallback = async () => {
-                    await handleEmail();
-                    await new Promise(resolve => setTimeout(resolve, 1500));
-                  };
-                  void oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
-                  return;
-                }
-                void handleEmail();
-              }}
-              disabled={!canSubmit}
-            >
-              {busy ? 'Sending...' : 'Share Task'}
-            </Button>
+              <Button variant="outline" onClick={handleClose} disabled={busy}>
+                Cancel
+              </Button>
+              <Button
+                onClick={() => {
+                  if (!cloudLoginAvailable) {
+                    (window as any).__postCloudLoginCallback = async () => {
+                      await handleEmail();
+                      await new Promise(resolve => setTimeout(resolve, 1500));
+                    };
+                    void oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
+                    return;
+                  }
+                  void handleEmail();
+                }}
+                disabled={!canSubmit}
+              >
+                {busy ? 'Sending...' : 'Ask for Assistance'}
+              </Button>
             </div>
           </DialogFooter>
         </DialogContent>
