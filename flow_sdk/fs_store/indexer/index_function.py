@@ -230,12 +230,12 @@ class FSIndexer:
             if not hasattr(info.record_cls, "from_fsref"):
                 continue
 
-            # Emit type_start/type_complete on type boundary transitions.
-            if current_rt is not None and ref.record_type != current_rt:
-                await _emit_type_complete(current_rt)
+            # On type-boundary transitions emit ``type_progress`` (NOT type_complete) —
+            # DFS interleaves types, so the same type can re-appear later. Final
+            # type_complete events fire post-loop, once per unique type.
             if ref.record_type != current_rt:
                 current_rt = ref.record_type
-                if on_progress is not None:
+                if on_progress is not None and current_rt not in seen_progress_at:
                     await on_progress(ProgressEvent(
                         stage="type_start",
                         record_type=current_rt,
@@ -282,9 +282,10 @@ class FSIndexer:
                 seen_progress_at[ref.record_type] = now
                 await _emit_sub_progress(ref.record_type)
 
-        # Close out the last active type.
-        if current_rt is not None:
-            await _emit_type_complete(current_rt)
+        # Emit one type_complete per unique type at the end (DFS interleaves
+        # mean we can't know a type is "done" mid-loop without a second pass).
+        for rt in per_type_counts.keys():
+            await _emit_type_complete(rt)
 
         # Batch FTS commit
         if fts_batch:

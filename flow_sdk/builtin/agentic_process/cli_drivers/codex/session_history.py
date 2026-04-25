@@ -14,7 +14,7 @@ Two transcript locations are searched, in order:
    ``AgenticProcess.session_id``. Used when the worker ran without
    ``--ephemeral``.
 
-Logger namespace: ``flow_sdk.builtin.agentic_workers.codex_worker.session_history``.
+Logger namespace: ``flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history``.
 """
 
 from __future__ import annotations

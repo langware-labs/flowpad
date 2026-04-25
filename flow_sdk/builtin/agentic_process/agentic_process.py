@@ -1,10 +1,19 @@
-"""AgenticProcess entity — represents a single execution run of Claude."""
+"""AgenticProcess entity — vendor-pure orchestration over a ``WorkerDriver``.
+
+The entity holds a ``WorkerDriver`` (resolved via ``get_driver(worker_type)``)
+and never branches on ``worker_type`` itself. Vendor specifics — Claude vs
+Codex CLI shape, transcript layout, prompt composition, status interpretation
+— live in ``cli_drivers/{claude,codex}/driver.py``. New vendors plug in by
+implementing the ``WorkerDriver`` Protocol and registering with ``get_driver``.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import time
+from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 from uuid import uuid4
@@ -14,8 +23,15 @@ from pydantic import SerializationInfo, model_serializer
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.app.actions.listen import set_plan_auto_approve
-from flow_sdk.builtin.agentic_workers.base import AgenticContext as _AgenticContext
-from flow_sdk.builtin.agentic_workers.claude_worker import ClaudeCliOptions, ClaudeCLIStreamWorker
+from flow_sdk.builtin.agentic_process.cli_drivers import (
+    AgenticContext as _AgenticContext,
+    WorkerDriver,
+    get_driver,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.claude import (
+    ClaudeCliOptions,
+    ClaudeCLIStreamWorker,
+)
 from flow_sdk.core import Entity, action
 from flow_sdk.core.flow.streaming.response_handler import StreamingResponseHandler
 from flow_sdk.flowpad_types.enums import WorkerType
@@ -36,8 +52,9 @@ logger = logging.getLogger(__name__)
 
 # ── prompt-action transient state (per-process locks + live workers) ─────────
 # Keyed by agentic_process.id. Lost on hub restart — acceptable, callers retry.
+# Drivers register their in-flight worker here so cancel-prompt can find it.
 _PROMPT_LOCKS: dict[str, asyncio.Lock] = {}
-_PROMPT_WORKERS: dict[str, ClaudeCLIStreamWorker] = {}
+_PROMPT_WORKERS: dict[str, Any] = {}
 
 
 def _get_prompt_lock(process_id: str) -> asyncio.Lock:
@@ -262,7 +279,7 @@ class AgenticProcess(Entity):
             "process's <record_dir>/assets folder. Claude discovers them via --add-dir."
         ),
     )
-    worker_type: WorkerType | None = APIField(default=None, validation_alias="workerType")
+    worker_type: WorkerType | None = APIField(default=None)
 
     # ── Construction ──────────────────────────────────────────────────────────
 
@@ -410,19 +427,22 @@ class AgenticProcess(Entity):
             if not cmd.resume and self.shell_id:
                 cmd.resume = self._is_exist_claude_resume_session(self.session_id)
 
-            # Fork: resolve chain to nearest ancestor with a transcript on disk
-            if cmd.fork_session_id:
-                cmd.fork_session_id = await self._find_resumable_session(cmd.fork_session_id)
-
-            # When resuming or forking, ensure CLAUDE_PROJECT_DIR points to where
-            # the source session's transcript lives. For a fork, self.session_id is
-            # the brand-new UUID with no transcript yet; use fork_session_id instead.
-            if cmd.fork_session_id or (cmd.resume and self.session_id):
-                lookup_id = cmd.fork_session_id or self.session_id
-                session_rec = self._discover_claude_record_session(lookup_id)
-                if session_rec and session_rec.cwd:
-                    cmd.env_vars["CLAUDE_PROJECT_DIR"] = session_rec.cwd
-                    cmd.workdir = session_rec.cwd
+            # Fork & CLAUDE_PROJECT_DIR plumbing are Claude-only — Codex's
+            # ``CodexCliOptions`` has no ``fork_session_id`` and uses
+            # ``-C <cwd>`` instead of ``CLAUDE_PROJECT_DIR``. Skip for any
+            # cli_options shape that doesn't expose ``fork_session_id``.
+            if hasattr(cmd, "fork_session_id"):
+                if cmd.fork_session_id:
+                    cmd.fork_session_id = await self._find_resumable_session(cmd.fork_session_id)
+                # When resuming or forking, ensure CLAUDE_PROJECT_DIR points to where
+                # the source session's transcript lives. For a fork, self.session_id is
+                # the brand-new UUID with no transcript yet; use fork_session_id instead.
+                if cmd.fork_session_id or (cmd.resume and self.session_id):
+                    lookup_id = cmd.fork_session_id or self.session_id
+                    session_rec = self._discover_claude_record_session(lookup_id)
+                    if session_rec and session_rec.cwd:
+                        cmd.env_vars["CLAUDE_PROJECT_DIR"] = session_rec.cwd
+                        cmd.workdir = session_rec.cwd
 
             # Runtime env injection (process identity for hook routing)
             cmd.add_env(
@@ -577,14 +597,14 @@ class AgenticProcess(Entity):
 
         Polling interval: 2s. Raises TimeoutError if timeout elapses first.
         """
-        deadline = (asyncio.get_event_loop().time() + timeout) if timeout else None
+        deadline = (time.monotonic() + timeout) if timeout else None
         while True:
             worker_status = self._discover_status_from_transcript()
             if worker_status and is_worker_terminal(worker_status):
                 return
             if self.status == ProcessStatus.FAILED.value:
                 return
-            if deadline and asyncio.get_event_loop().time() > deadline:
+            if deadline and time.monotonic() > deadline:
                 raise TimeoutError(f"Process did not reach terminal state within {timeout}s")
             await asyncio.sleep(2.0)
 
@@ -593,11 +613,11 @@ class AgenticProcess(Entity):
 
         Polling interval: 2s. Raises TimeoutError if timeout elapses first.
         """
-        deadline = (asyncio.get_event_loop().time() + timeout) if timeout else None
+        deadline = (time.monotonic() + timeout) if timeout else None
         while True:
             if is_ready_for_input(self):
                 return
-            if deadline and asyncio.get_event_loop().time() > deadline:
+            if deadline and time.monotonic() > deadline:
                 raise TimeoutError(f"Process did not reach idle state within {timeout}s")
             await asyncio.sleep(2.0)
 
@@ -607,306 +627,30 @@ class AgenticProcess(Entity):
         """Schedule a worker run with *instruction* and return immediately.
 
         Routing:
-          worker_type == CODEX                           → ``_codex_prompt`` (no PTY)
-          Claude, ``visible=False``, no live PTY shell  → ``_claude_print_prompt``
-                                                          (``claude -p stream-json``,
-                                                          handles multi-step tools)
-          worker alive (PTY)                             → write to PTY stdin
-          else                                           → start(instruction)
+          ``visible=True`` + worker alive (PTY) → write to PTY stdin (continues session)
+          ``visible=True`` + worker dead        → ``start(instruction)`` (PTY relaunch)
+          ``visible=False`` (headless)          → ``self.driver.run_print_turn(...)``
+                                                  — vendor-specific print-mode that
+                                                  handles multi-step tool sequences.
 
         ``visible=True`` keeps the legacy PTY path so the UI's interactive
-        terminal continues to work; the print-mode worker is only used for
-        headless invocations (tests, server-side automations) where we want
-        Claude to drive multi-tool sequences to completion in one turn.
+        terminal continues to work; the print-mode driver is only used for
+        headless invocations (tests, server-side automations).
 
         Args:
             instruction: The prompt text to send.
         """
         if not self.exist_in_db:
             return ApiFailResponse(message=f"AgenticProcess {self.id} not found in database")
-        if self.worker_type == WorkerType.CODEX:
-            return await self._codex_prompt(instruction)
-        if not self.visible and not await self.is_running():
-            return await self._claude_print_prompt(instruction)
+        if not self.visible:
+            # Headless flow — no PTY/Shell. Driver decides how to spawn its
+            # CLI, capture session_id, and manage lifecycle.
+            return await self.driver.run_print_turn(self, instruction)
         if await self.is_running():
             await self.send(instruction)
             return ApiSuccessResponse(data={"status": "sent"})
         return await self.start(instruction=instruction)
 
-    async def _claude_print_prompt(self, instruction: str) -> ApiSuccessResponse | ApiFailResponse:
-        """Headless ``claude -p`` execution for invisible processes.
-
-        Mirrors ``_codex_prompt``: spawns ``ClaudeCLIStreamWorker`` (which runs
-        ``claude -p --output-format stream-json``), captures the session_id
-        emitted in the first ``system:init`` event onto ``self.session_id``,
-        and writes the standard JSONL transcript to
-        ``~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`` so
-        ``stream_transcript`` and ``_discover_status_from_transcript`` keep
-        working unchanged.
-
-        The PTY path (``start()``) launches Claude without ``-p``, which
-        forces single-tool turns — Claude takes the user's prompt, runs ONE
-        tool call, and returns to "ready for next prompt". Multi-step prompts
-        like "list a dir AND write the result as JSON to skills.json" get
-        truncated. ``-p`` mode (used here) keeps Claude iterating until
-        ``end_turn``.
-        """
-        from flow_sdk.builtin.agentic_workers.base import AgenticContext as _Ctx
-        from uuid import uuid4
-
-        try:
-            await self.get_project()
-        except Exception:
-            logger.debug("_claude_print_prompt: get_project failed", exc_info=True)
-        if not self.workdir:
-            return ApiFailResponse(message="claude print prompt: workdir is not set")
-
-        # Eagerly assign a session_id so ``is_ready_for_input`` flips to False
-        # before the worker writes its first JSONL entry — matches the
-        # behaviour the legacy PTY path provides via ``start()``.
-        if not self.session_id:
-            self.session_id = str(uuid4())
-
-        cli_cfg = self.cli_config or {}
-        is_resume = bool(cli_cfg.get("resume"))
-        # Default the headless parent to sonnet + low effort — opus + default
-        # effort blows past the 28-s long-test budget on multi-step flows
-        # (analyze, fix-it). The parent's job here is to write a couple of
-        # files end-to-end with no human-in-the-loop refinement, so a leaner
-        # reasoning budget is the right tradeoff. Callers that need richer
-        # parents can override via cli_config["model"] / ["effort"].
-        parent_model = cli_cfg.get("model") or "sonnet"
-        parent_effort = cli_cfg.get("effort") or "low"
-        context = _Ctx(
-            workdir=self.workdir,
-            env_vars=dict(cli_cfg.get("env_vars") or {}),
-            model=parent_model,
-            effort=parent_effort,
-            permission_mode=cli_cfg.get("permission_mode", "bypassPermissions"),
-            resume_session_id=self.session_id if is_resume else None,
-            session_id=None if is_resume else self.session_id,
-        )
-
-        if self.status != ProcessStatus.RUNNING.value:
-            self.status = ProcessStatus.RUNNING.value
-            try:
-                await self.save()
-            except Exception:
-                logger.debug("_claude_print_prompt: lifecycle save failed", exc_info=True)
-
-        worker = ClaudeCLIStreamWorker()
-        _PROMPT_WORKERS[self.id] = worker
-        self_ref = self
-        process_id = self.id
-
-        # Reinforce embedded-agent intent in the user prompt so Claude's
-        # ``Task`` tool dispatch carries the agent's exact instructions to the
-        # sub-agent. ``--agents`` alone leaves the system-prompt as the only
-        # signal, and the parent often paraphrases the user's request when
-        # invoking the sub-agent — dropping side-effects like "write the
-        # result to clock.txt". Inlining the agent body makes the file-write
-        # intent visible at both layers.
-        composed = self._compose_user_prompt_with_agents(instruction)
-
-        async def _run_claude_print_turn() -> None:
-            try:
-                async for _fd in worker.execute(prompt=composed, context=context):
-                    sid = worker.get_session_id()
-                    if sid and self_ref.session_id != sid:
-                        try:
-                            self_ref.session_id = sid
-                            await self_ref.save()
-                        except Exception:
-                            logger.debug("_claude_print_prompt: session_id save failed", exc_info=True)
-            except Exception:
-                logger.exception("_claude_print_prompt: worker error")
-            finally:
-                _PROMPT_WORKERS.pop(process_id, None)
-                # Intentionally leave ``status == RUNNING`` so callers can
-                # observe ``is_ready_for_input(p) is True`` immediately after
-                # ``stream_transcript`` returns. The worker_status (derived
-                # from the JSONL tail by ``_discover_status_from_transcript``)
-                # already reflects COMPLETE; the lifecycle field stays in
-                # RUNNING the same way the PTY path keeps it across turns,
-                # and a subsequent ``prompt()`` call reuses the process.
-
-        asyncio.create_task(_run_claude_print_turn(), name=f"claude-{self.id[:8]}")
-        return ApiSuccessResponse(data={"status": "started", "worker": "claude_print"})
-
-    async def _codex_prompt(self, instruction: str) -> ApiSuccessResponse | ApiFailResponse:
-        """Codex path for ``prompt()`` — spawns ``codex exec --json`` directly.
-
-        No Shell entity, no PTY: codex events stream from a child process whose
-        stdout is tee'd into ``<process_record_dir>/codex_transcript.jsonl``.
-        ``stream_transcript()`` and ``_discover_status_from_transcript()`` then
-        operate on that file.
-
-        Embedded agents (loaded via ``load_embedded_agent``) have their prompts
-        prepended to the user instruction so codex follows the same intent the
-        Claude path expresses through ``--agents``.
-        """
-        from flow_sdk.builtin.agentic_workers.base import AgenticContext as _Ctx
-        from flow_sdk.builtin.agentic_workers.codex_worker import CodexCLIStreamWorker
-
-        try:
-            await self.get_project()
-        except Exception:
-            logger.debug("_codex_prompt: get_project failed", exc_info=True)
-        if not self.workdir:
-            return ApiFailResponse(message="codex prompt: workdir is not set")
-
-        full_prompt = self._codex_compose_prompt(instruction)
-
-        context = _Ctx(
-            workdir=self.workdir,
-            env_vars=dict(self.cli_options.env_vars) if hasattr(self, "cli_options") else {},
-            model=(self.cli_config or {}).get("model"),
-            permission_mode=(self.cli_config or {}).get("permission_mode", "bypassPermissions"),
-            resume_session_id=self.session_id if self.session_id else None,
-        )
-
-        worker = CodexCLIStreamWorker.for_process(self.id)
-        _PROMPT_WORKERS[self.id] = worker  # type: ignore[assignment]
-
-        # Touch the transcript file so ``_discover_status_from_transcript``
-        # returns INITIALIZING (rather than None) before the worker writes
-        # its first event. Mirrors the Claude path's eager ``session_id``
-        # assignment inside ``start()`` — both make ``is_ready_for_input``
-        # return False immediately after ``prompt()`` returns.
-        try:
-            transcript_path = worker.transcript_path
-            if transcript_path is not None and not transcript_path.exists():
-                transcript_path.parent.mkdir(parents=True, exist_ok=True)
-                transcript_path.touch()
-        except OSError:
-            logger.debug("_codex_prompt: failed to pre-touch transcript", exc_info=True)
-
-        if self.status != ProcessStatus.RUNNING.value:
-            self.status = ProcessStatus.RUNNING.value
-            try:
-                await self.save()
-            except Exception:
-                logger.debug("_codex_prompt: lifecycle save failed", exc_info=True)
-
-        process_id = self.id
-        # Bind ``self`` into the closure so the worker can update
-        # ``session_id`` on the same in-memory object the caller holds —
-        # mirrors how the Claude path mutates ``self`` from inside ``start()``.
-        self_ref = self
-
-        async def _run_codex_turn() -> None:
-            session_id_persisted = False
-            try:
-                async for _fd in worker.execute(prompt=full_prompt, context=context):
-                    if not session_id_persisted and worker.get_session_id():
-                        sid = worker.get_session_id()
-                        try:
-                            self_ref.session_id = sid
-                            await self_ref.save()
-                            session_id_persisted = True
-                        except Exception:
-                            logger.debug("_codex_prompt: session_id save failed", exc_info=True)
-            except Exception:
-                logger.exception("_codex_prompt: worker error")
-            finally:
-                _PROMPT_WORKERS.pop(process_id, None)
-                try:
-                    if self_ref.status == ProcessStatus.RUNNING.value:
-                        self_ref.status = ProcessStatus.STOPPED.value
-                        await self_ref.save()
-                except Exception:
-                    logger.debug("_codex_prompt: terminal save failed", exc_info=True)
-
-        asyncio.create_task(_run_codex_turn(), name=f"codex-{self.id[:8]}")
-        return ApiSuccessResponse(data={"status": "started", "worker": "codex"})
-
-    def _compose_user_prompt_with_agents(self, instruction: str) -> str:
-        """Prepend embedded-agent definitions to the user instruction.
-
-        Used by ``_claude_print_prompt``. The agents are also registered via
-        ``--agents`` so they appear in ``cmd_line`` (some tests assert on
-        this), but in print mode we ask Claude to execute the agent's body
-        in-process rather than dispatching to a Task sub-agent. Reasons:
-        - sub-agent dispatch adds 2-3 round-trips of latency, which pushes
-          analyze / fix-it past the 28-s test budget;
-        - the parent's Task call paraphrases the user request and routinely
-          drops side-effect instructions (file writes), causing tests like
-          ``test_agentic_process_clock_agent`` to fail intermittently.
-        Inlining keeps the full agent body in the parent's context and tells
-        it explicitly to follow those instructions itself.
-        """
-        agents_json = self.get_agents_json() or {}
-        if not agents_json:
-            return instruction
-        sections: list[str] = [
-            "# Embedded agent specs",
-            (
-                "Each ## block below is the canonical instruction body for a "
-                "named agent. When the user instruction names one of these "
-                "agents (\"use the X agent\", \"have the X agent do Y\"), do "
-                "NOT delegate via the Task tool — execute the agent's "
-                "instructions yourself, in this same turn. Follow every "
-                "side-effect literally (file writes, command outputs); do "
-                "not paraphrase or summarise away required artifacts."
-            ),
-        ]
-        for name, entry in agents_json.items():
-            body = (entry or {}).get("prompt") or ""
-            desc = (entry or {}).get("description") or ""
-            sections.append(f"\n## {name}")
-            if desc:
-                sections.append(desc)
-            if body:
-                sections.append(body)
-        sections.append("\n# User instruction")
-        sections.append(instruction)
-        return "\n".join(sections)
-
-    def _codex_compose_prompt(self, instruction: str) -> str:
-        """Inline embedded-agent definitions so codex executes them directly.
-
-        Codex has its own collaboration/delegation system but it can't fork the
-        current ``codex exec --ephemeral`` thread, so attempting to delegate
-        causes "thread can't be forked for a sub-agent" errors. Instead, we
-        flatten each embedded agent's instructions into the user prompt and
-        tell codex explicitly to follow them in-process when the user invokes
-        the agent's name.
-
-        We also instruct codex to end the turn the moment the artifacts are on
-        disk, with no wrap-up prose — the long-test suite has a 28 s budget
-        per turn and codex's default narration after writes routinely costs
-        another 10 s of "thinking" tokens.
-        """
-        agents_json = self.get_agents_json() or {}
-        if not agents_json:
-            return instruction
-        sections: list[str] = [
-            "# Inline sub-agent definitions",
-            (
-                "Each ## block below defines a named sub-agent. Do NOT try to "
-                "delegate, fork, or spawn a separate agent — there is no "
-                "sub-agent runtime here. When the user instruction asks you "
-                "to use one of these agents, follow that agent's instructions "
-                "yourself, in this same turn."
-            ),
-            (
-                "Be fast: as soon as every required artifact (file, command "
-                "output) exists on disk, end the turn immediately with a one-"
-                "line confirmation. Do NOT write recaps, summaries, "
-                "explanations, verification steps, or follow-up suggestions."
-            ),
-        ]
-        for name, entry in agents_json.items():
-            body = (entry or {}).get("prompt") or ""
-            desc = (entry or {}).get("description") or ""
-            sections.append(f"\n## {name}")
-            if desc:
-                sections.append(desc)
-            if body:
-                sections.append(body)
-        sections.append("\n# User instruction")
-        sections.append(instruction)
-        return "\n".join(sections)
 
     async def send(self, data: str | bytes) -> None:
         """Write text or raw bytes to the live PTY stdin.
@@ -925,135 +669,59 @@ class AgenticProcess(Entity):
         else:
             await shell.write(data)
 
-    async def _codex_stream_transcript(self, deadline: float, poll_interval: float):
-        """Codex-specific transcript tailing — yields parsed JSON event lines.
-
-        Stops as soon as ``codex_tail_status`` returns a terminal state
-        (COMPLETE/ERROR/INTERRUPTED/INACTIVE) or the deadline is reached.
-        """
-        from flow_sdk.builtin.agentic_workers.codex_worker import (
-            codex_tail_status,
-            codex_transcript_path_for_process,
-        )
-        from flow_sdk.fs_records.agent_status import WorkerStatus as _WS
-
-        loop = asyncio.get_event_loop()
-        transcript_path = codex_transcript_path_for_process(self.id)
-
-        while not transcript_path.exists():
-            if loop.time() > deadline:
-                raise TimeoutError(
-                    "stream_transcript: codex transcript file did not appear within timeout"
-                )
-            await asyncio.sleep(poll_interval)
-
-        terminal_states = {_WS.COMPLETE, _WS.ERROR, _WS.INTERRUPTED, _WS.INACTIVE}
-        offset = 0
-        while True:
-            try:
-                with open(transcript_path, "rb") as fh:
-                    fh.seek(offset)
-                    new_bytes = fh.read()
-                    offset += len(new_bytes)
-            except OSError:
-                new_bytes = b""
-
-            for raw_line in new_bytes.decode("utf-8", errors="replace").splitlines():
-                raw_line = raw_line.strip()
-                if not raw_line:
-                    continue
-                try:
-                    entry = json.loads(raw_line)
-                except json.JSONDecodeError:
-                    continue
-                yield entry
-
-            tail = codex_tail_status(transcript_path)
-            elapsed = loop.time() - (deadline - (deadline - loop.time()))  # informational only
-            print(
-                f"  [codex stream_transcript] tail_status={tail!r} lifecycle={self.status!r}"
-            )
-            if tail in terminal_states:
-                return
-
-            if loop.time() > deadline:
-                raise TimeoutError(
-                    f"stream_transcript: codex process did not reach idle within deadline"
-                )
-
-            await asyncio.sleep(poll_interval)
-
     async def stream_transcript(self, timeout: float = 300, poll_interval: float = 0.2):
-        """Async-iterate JSONL transcript entries as they are written by the worker.
+        """Async-iterate JSONL transcript entries as the worker writes them.
 
-        Yields parsed dicts, one per transcript line. Stops automatically when
-        ``is_ready_for_input(self)`` becomes True (worker finished its turn).
+        Yields parsed dicts, one per transcript line. Stops when the worker's
+        ``tail_status`` (driver-supplied) reaches a terminal state, with a
+        small settling window to avoid racing late writes.
 
-        For codex processes the transcript is the process-local JSONL written by
-        ``CodexCLIStreamWorker``; for Claude it is the standard
-        ``~/.claude/projects/*/<sid>.jsonl``.
+        Vendor specifics — where the transcript lives, how to interpret its
+        tail — come from ``self.driver``; this method is otherwise vendor-
+        neutral.
 
         Args:
             timeout: Maximum seconds to wait for the process to reach idle.
             poll_interval: How often (seconds) to check for new transcript data.
 
         Raises:
-            TimeoutError: if the process does not reach idle within `timeout` seconds.
+            TimeoutError: if the process does not reach idle within ``timeout``.
         """
-        loop = asyncio.get_event_loop()
-        deadline = loop.time() + timeout
-
-        if self.worker_type == WorkerType.CODEX:
-            async for entry in self._codex_stream_transcript(deadline, poll_interval):
-                yield entry
-            return
-
-        # Wait for session_id to be assigned (set inside start())
-        while not self.session_id:
-            if loop.time() > deadline:
-                raise TimeoutError("stream_transcript: process did not start within timeout")
-            await asyncio.sleep(poll_interval)
-
-        session_id = self.session_id
-
-        # Discover the transcript path via ClaudeSessionRecord (scans ~/.claude/projects/*/
-        # for <session_id>.jsonl — works regardless of whether a Project entity exists).
-        transcript_path = None
-        while transcript_path is None:
-            if loop.time() > deadline:
-                raise TimeoutError("stream_transcript: transcript file did not appear within timeout")
-            record = ClaudeSessionRecord.get(session_id)
-            if record and record.jsonl_path:
-                transcript_path = Path(record.jsonl_path)
-            else:
-                await asyncio.sleep(poll_interval)
-
         from flow_sdk.fs_records.agent_status import (
-            _tail_status as _tail_status_fn,
-            WorkerStatus as _APS,
+            WorkerStatus as _WS,
             _has_pending_tool_use,
             _last_user_is_tool_result,
         )
 
-        # Settling window: claude's ``last-prompt`` event can land before the
-        # turn's final tool side-effects flush to disk (Write tool execution +
-        # file-history-snapshot lag). When tail_status first goes terminal we
-        # require the file size to remain stable for ``_settle_seconds`` before
-        # declaring the stream done — otherwise Claude tests like
-        # ``test_agentic_process_lists_system_skills`` race the final write.
+        deadline = time.monotonic() + timeout
+
+        # Wait until the driver can locate a transcript (worker has been
+        # spawned and produced — or pre-touched — a session JSONL).
+        transcript_path: Path | None = None
+        while transcript_path is None:
+            if time.monotonic() > deadline:
+                raise TimeoutError(
+                    "stream_transcript: transcript file did not appear within timeout"
+                )
+            transcript_path = self.driver.transcript_path(self)
+            if transcript_path is None or not transcript_path.exists():
+                transcript_path = None
+                await asyncio.sleep(poll_interval)
+
+        # Settling windows.
+        # ``_settle_seconds`` (terminal): the worker emitted a terminal marker
+        # (Claude's ``last-prompt`` / Codex's ``turn.completed``) but tool
+        # side-effects can lag the marker by ~1-2 s on disk. Wait for the
+        # transcript to stop growing before exiting.
+        # ``_post_tool_settle_seconds`` (post-tool-idle, Claude only — codex
+        # never enters this state): claude can take 5-10 s after the final
+        # tool_result before emitting ``last-prompt``. Treat the lull as
+        # soft-terminal so heavy multi-tool turns finish within 28 s, but
+        # leave enough room for a follow-up ``tool_use`` to grow the file
+        # and reset the timer.
         _settle_seconds = 2.0
-        # Post-tool-idle settling: when tail is ``user`` carrying a
-        # ``tool_result`` and no tool_use is pending, the turn's side effects
-        # are flushed but Claude can take 5–10 s to emit ``last-prompt``. If
-        # claude is going to continue (another tool_use), the JSONL grows
-        # within this window and we reset. Wider than the terminal-state
-        # window because on heavy multi-tool flows (fix-it: write analysis.json
-        # then SKILL.md) the gap between consecutive Write tool_uses can be
-        # 5–6 s of thinking. With ``--effort low`` for the parent the gap
-        # tightens; 5 s is enough headroom while leaving budget for
-        # ``analyze_with_agent`` (which has only one tool_use to settle on).
-        _post_tool_settle_seconds = 5.0
-        _terminal_states = {_APS.COMPLETE, _APS.INTERRUPTED, _APS.INACTIVE}
+        _post_tool_settle_seconds = 8.0
+        _terminal_states = {_WS.COMPLETE, _WS.INTERRUPTED, _WS.INACTIVE}
         _terminal_since: float | None = None
         _terminal_size: int | None = None
         _post_tool_since: float | None = None
@@ -1061,7 +729,6 @@ class AgenticProcess(Entity):
 
         offset = 0
         while True:
-            # Read any new bytes since last poll
             try:
                 with open(transcript_path, "rb") as fh:
                     fh.seek(offset)
@@ -1078,10 +745,10 @@ class AgenticProcess(Entity):
                     entry = json.loads(raw_line)
                 except json.JSONDecodeError:
                     continue
-                # api_error means Anthropic is overloaded and Claude is retrying.
-                # Extend the deadline so the retry can complete — up to 120s extra.
+                # api_error means the LLM API is overloaded and the worker is
+                # retrying. Extend the deadline so the retry can complete.
                 if entry.get("type") == "system" and entry.get("subtype") == "api_error":
-                    extended = loop.time() + 120
+                    extended = time.monotonic() + 120
                     if extended > deadline:
                         logger.info(
                             "stream_transcript: api_error detected (attempt=%s), extending deadline by %.0fs",
@@ -1091,13 +758,12 @@ class AgenticProcess(Entity):
                         deadline = extended
                 yield entry
 
-            tail_status = _tail_status_fn(transcript_path) if transcript_path else None
-            _dbg_elapsed = loop.time() - (deadline - timeout)
+            tail_status = self.driver.tail_status(transcript_path)
             _terminal = tail_status in _terminal_states
-            # Cheaply peek at the last 4 KB to decide if we're in a post-tool
-            # lull (claude's tool_result received, no pending tool_use).
+            # Post-tool-idle peek: only meaningful for Claude (Codex never
+            # writes WAITING followed by tool_result without further events).
             _post_tool_idle = False
-            if tail_status == _APS.WAITING:
+            if tail_status == _WS.WAITING:
                 try:
                     with open(transcript_path, "rb") as _fh:
                         _sz = transcript_path.stat().st_size
@@ -1110,18 +776,14 @@ class AgenticProcess(Entity):
                     )
                 except OSError:
                     pass
-            print(f"  [stream_transcript] elapsed={_dbg_elapsed:.1f}s tail_status={tail_status!r} waiting={_terminal or _post_tool_idle} lifecycle={self.status!r}")
 
             try:
                 cur_size = transcript_path.stat().st_size
             except OSError:
                 cur_size = offset
-            now = loop.time()
+            now = time.monotonic()
 
             if _terminal:
-                # Confirm the transcript has stopped growing for ``_settle_seconds``
-                # so a late tool-result / file-write doesn't leave the test
-                # observing a half-finished turn.
                 if _terminal_since is None or _terminal_size != cur_size:
                     _terminal_since = now
                     _terminal_size = cur_size
@@ -1130,16 +792,13 @@ class AgenticProcess(Entity):
                 _post_tool_since = None
                 _post_tool_size = None
             elif _post_tool_idle:
-                # Post-tool lull: exit when the transcript has been stable for
-                # ``_post_tool_settle_seconds``. If claude fires another
-                # tool_use (the JSONL grows), we reset and keep waiting.
                 if _post_tool_since is None or _post_tool_size != cur_size:
                     _post_tool_since = now
                     _post_tool_size = cur_size
                 elif now - _post_tool_since >= _post_tool_settle_seconds:
                     # Tell ``_discover_status_from_transcript`` to report
-                    # COMPLETE — the JSONL still says WAITING (no last-prompt
-                    # yet) but all the side effects are flushed.
+                    # COMPLETE — the JSONL still says WAITING (no terminal
+                    # marker yet) but all the side effects are flushed.
                     object.__setattr__(self, "_post_tool_idle_complete", True)
                     return
                 _terminal_since = None
@@ -1150,7 +809,7 @@ class AgenticProcess(Entity):
                 _post_tool_since = None
                 _post_tool_size = None
 
-            if loop.time() > deadline:
+            if time.monotonic() > deadline:
                 raise TimeoutError(f"stream_transcript: process did not reach idle within {timeout}s")
 
             await asyncio.sleep(poll_interval)
@@ -1568,22 +1227,11 @@ class AgenticProcess(Entity):
     async def get_history_action(self) -> "ApiSuccessResponse":
         """Return this process's transcript as a list of FlowData dicts.
 
-        Reads the Claude CLI JSONL (``~/.claude/projects/*/<session_id>.jsonl``)
-        via ``load_session_history`` and serializes each FlowData via Pydantic
-        ``model_dump``. The UI's ``AgenticProcess.loadHistory`` ingests these
-        into its local ``flowDataStream``, deduping against live items.
-
-        Stateless — works for processes that have exited (no live worker
-        required). Empty result is a success with ``history=[]``, not a 404.
+        Driver-supplied. Stateless — works for processes that have exited
+        (no live worker required). Empty result is a success with
+        ``history=[]``, not a 404.
         """
-        if self.worker_type == WorkerType.CODEX:
-            from flow_sdk.builtin.agentic_workers.codex_worker import (
-                load_session_history as _codex_load,
-            )
-            history = _codex_load(self.session_id or "", process_id=self.id)
-        else:
-            from flow_sdk.builtin.agentic_workers.claude_worker import load_session_history
-            history = load_session_history(self.session_id) if self.session_id else []
+        history = self.driver.load_history(self)
         return ApiSuccessResponse(
             data={
                 "session_id": self.session_id,
@@ -1593,51 +1241,28 @@ class AgenticProcess(Entity):
             }
         )
 
+    @cached_property
+    def driver(self) -> WorkerDriver:
+        """The vendor-specific driver for this process's ``worker_type``.
+
+        Resolved via ``get_driver(worker_type)`` — defaults to the value of
+        ``FLOWPAD_DEFAULT_WORKER`` (``claude`` if unset) when ``worker_type``
+        is ``None``. Cached on the entity instance so we don't re-import
+        the driver module on every property access.
+        """
+        return get_driver(self.worker_type)
+
     @property
     def cli_options(self) -> "ClaudeCliOptions":
-        """Deserialize cli_config into a live ClaudeCliOptions.
+        """Deserialize cli_config into a live ``WorkerCLIOptions`` via the driver.
 
-        session_id and workdir are injected from entity fields (not stored in cli_config).
-        Bundled system_assets dir is always prepended; additional_dirs follow.
-        Embedded agents are injected via --agents.
-        Callers add runtime env vars via add_env() before calling to_shell_string().
-
-        For ``worker_type == CODEX`` returns a ``CodexCliOptions`` instead — the
-        return type stays declared as ``ClaudeCliOptions`` for backward compat
-        with the many callers that expect a Claude shape, but at runtime they
-        only access shared fields (workdir/env_vars/add_dirs) plus the
-        ``to_shell_string`` interface defined on the common base.
+        Return type is declared as ``ClaudeCliOptions`` for backward-compat
+        with callers that accept the legacy Claude shape, but at runtime the
+        actual class depends on ``self.worker_type`` and shares the
+        ``WorkerCLIOptions`` base contract (``workdir``, ``env_vars``,
+        ``add_dirs``, ``to_shell_string``).
         """
-        from flow_sdk.config import flowpad_assistant_project_root
-        if self.worker_type == WorkerType.CODEX:
-            from flow_sdk.builtin.agentic_workers.codex_worker import CodexCliOptions
-            cmd_codex = CodexCliOptions.from_json(self.cli_config)
-            cmd_codex.session_id = self.session_id
-            cmd_codex.workdir = self.workdir
-            core_dir = str(flowpad_assistant_project_root())
-            extra = [d for d in (self.additional_dirs or []) if d != core_dir]
-            cmd_codex.add_dirs = [core_dir] + extra
-            agents_json = self.get_agents_json()
-            if agents_json:
-                cmd_codex.skill_names = list(agents_json.keys())
-            return cmd_codex  # type: ignore[return-value]
-        cmd = ClaudeCliOptions.from_json(self.cli_config)
-        cmd.session_id = self.session_id
-        cmd.workdir = self.workdir
-        if cmd.workdir:
-            cmd.env_vars.setdefault("CLAUDE_PROJECT_DIR", cmd.workdir)
-        # Every process gets the Flowpad Assistant system project on --add-dir so
-        # Claude can discover SDK-shipped skills and agents via its standard
-        # `.claude/skills/` and `.claude/agents/` lookup. The previous default
-        # pointed at `system_assets/core` which was removed in the rename sweep
-        # that consolidated assets under `system_projects/flowpad_assistant/`.
-        core_dir = str(flowpad_assistant_project_root())
-        extra = [d for d in (self.additional_dirs or []) if d != core_dir]
-        cmd.add_dirs = [core_dir] + extra
-        agents_json = self.get_agents_json()
-        if agents_json:
-            cmd.agents_json = agents_json
-        return cmd
+        return self.driver.cli_options(self)  # type: ignore[return-value]
 
     @property
     def cmd_line(self) -> str:
@@ -1682,14 +1307,10 @@ class AgenticProcess(Entity):
         return data
 
     def _discover_status_from_transcript(self) -> WorkerStatus | None:
-        """Derive status from the worker's session transcript.
+        """Derive status from the worker's session transcript via the driver.
 
-        For codex processes the transcript is a process-local JSONL that the
-        codex worker tee'd from its ``--json`` stream; for Claude it is the
-        ``~/.claude/projects/*/<sid>.jsonl`` discovered via ClaudeSessionRecord.
-
-        If ``stream_transcript`` exited via the post-tool-idle settle (claude
-        finished its tool work but hasn't emitted ``last-prompt`` yet),
+        If ``stream_transcript`` exited via the post-tool-idle settle (worker
+        finished its tool work but hasn't emitted its terminal marker yet),
         ``self._post_tool_idle_complete`` is set so subsequent status reads
         agree with the early exit — without that flag, ``is_ready_for_input``
         would still see ``WAITING`` and the test's ``assert is_ready_for_input
@@ -1697,17 +1318,10 @@ class AgenticProcess(Entity):
         """
         if getattr(self, "_post_tool_idle_complete", False):
             return WorkerStatus.COMPLETE
-        if self.worker_type == WorkerType.CODEX:
-            from flow_sdk.builtin.agentic_workers.codex_worker import (
-                codex_tail_status,
-                codex_transcript_path_for_process,
-            )
-            path = codex_transcript_path_for_process(self.id)
-            if not path.exists():
-                return None
-            return codex_tail_status(path)
-        session = self._discover_claude_record_session(self.session_id)
-        return session.status if session else None
+        path = self.driver.transcript_path(self)
+        if path is None:
+            return None
+        return self.driver.tail_status(path)
 
     @action.all(action_name="status")
     async def get_status(self):
@@ -1971,9 +1585,15 @@ class AgenticProcess(Entity):
         tab_order = prev if prev is not None else await Shell.next_tab_order()
 
         is_resume = self._is_exist_claude_resume_session(self.session_id) if self.session_id else False
-        is_fork = bool(getattr(self, 'cli_options', None) and self.cli_options.fork_session_id)
+        # Fork is Claude-only; CodexCliOptions doesn't expose ``fork_session_id``.
+        cli_opts_local = getattr(self, 'cli_options', None)
+        is_fork = bool(cli_opts_local and getattr(cli_opts_local, 'fork_session_id', None))
         session_label = 'fork' if is_fork else 'resume' if is_resume else 'new'
-        session_name = f"Claude - {self.session_id[:8]} ({session_label})" if self.session_id else "Claude"
+        worker_label = (self.driver.name.capitalize() if self.driver else 'Claude')
+        session_name = (
+            f"{worker_label} - {self.session_id[:8]} ({session_label})"
+            if self.session_id else worker_label
+        )
 
         workdir = self.workdir
         if not workdir:

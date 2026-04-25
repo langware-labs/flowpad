@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import uuid
 from pathlib import Path
 from typing import Any, ClassVar
 
@@ -10,6 +11,21 @@ from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.record import Scope
 
 from ._frontmatter import _coerce_scalar, _extract_frontmatter, _yaml_load  # noqa: F401
+
+
+def _resolve_skill_name(yaml_fields: dict, folder_name: str) -> str:
+    """Pick the skill's display name: yaml.name first, else folder name (stripping
+    a leading shadow-record `<type>-@` prefix if present)."""
+    yaml_name = yaml_fields.get("name")
+    if isinstance(yaml_name, str) and yaml_name.strip():
+        return yaml_name.strip()
+    return folder_name.split("-@", 1)[-1] if "-@" in folder_name else folder_name
+
+
+def _skill_id_from_name(name: str) -> str:
+    """Stable uuid5 derived from the skill name. Names like 'Byte Stats Skill' contain
+    spaces and other characters that would fail TypeId validation if used as a raw id."""
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{RecordType.SKILL}:{name}"))
 
 
 def _skill_search_dirs() -> list[Path]:
@@ -196,11 +212,9 @@ class SkillRecord(Record):
         if not folder.is_dir():
             return
         yaml_fields = _load_skill_yaml_from_dir(folder)
-        yaml_name = yaml_fields.get("name")
-        skill_name = (yaml_name.strip() if isinstance(yaml_name, str) and yaml_name.strip()
-                      else folder.name.split("-@", 1)[-1] if "-@" in folder.name else folder.name)
+        skill_name = _resolve_skill_name(yaml_fields, folder.name)
         _d = object.__getattribute__(self, "__dict__")
-        _d["id"] = skill_name
+        _d["id"] = _skill_id_from_name(skill_name)
         _d["name"] = skill_name
         _d["type"] = RecordType.SKILL
         _d["status"] = "active"
@@ -227,11 +241,14 @@ class SkillRecord(Record):
 
         # YAML/frontmatter bootstrap for live skill dirs
         yaml_fields = _load_skill_yaml_from_dir(p)
-        yaml_name = yaml_fields.get("name")
-        skill_name = (yaml_name.strip() if isinstance(yaml_name, str) and yaml_name.strip()
-                      else p.name.split("-@", 1)[-1] if "-@" in p.name else p.name)
+        skill_name = _resolve_skill_name(yaml_fields, p.name)
 
-        data: dict[str, Any] = {"id": skill_name, "name": skill_name, "type": RecordType.SKILL, "status": "active"}
+        data: dict[str, Any] = {
+            "id": _skill_id_from_name(skill_name),
+            "name": skill_name,
+            "type": RecordType.SKILL,
+            "status": "active",
+        }
         if isinstance(yaml_fields.get("description"), str):
             data["description"] = yaml_fields["description"]
         if yaml_fields:
@@ -262,8 +279,8 @@ class SkillRecord(Record):
         Two cases inside load_record:
           - Shadow record dir (contains metadata.json / data.json): id comes
             from the metadata blob.
-          - Live skill dir (yaml/SKILL.md only): id = skill_name (yaml.name,
-            else the folder name split on the "-@" convention).
+          - Live skill dir (yaml/SKILL.md only): id is uuid5-derived from the
+            skill name (see ``_skill_id_from_name``).
         Call through load_record so both cases stay consistent with
         `from_fsref(ref)[0].id`."""
         try:

@@ -1,6 +1,7 @@
 import { AgenticProcess, dataContext, getDisplayStatus, isProcessRunning, isReadyForInput, ProcessStatus, Shell, ShellStatus, type ComputeNode } from '@sdk';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
+import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { Button } from '@src/components/ui/button';
 import {
   ContextMenu,
@@ -182,7 +183,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   const [editingShellId, setEditingShellId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [pendingTabCreation, setPendingTabCreation] = useState<{
-    kind: 'claude' | 'terminal';
+    kind: 'claude' | 'codex' | 'terminal';
     targetShellId: string | null;
     targetProcessId: string | null;
   } | null>(null);
@@ -235,39 +236,46 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
 
   // "Start Claude" button — creates AgenticProcess entity, then emits onTabOpen
   // so the consumer can navigate / tag / start.
-  const handleStartClaude = useCallback(async () => {
-    if (tabCreationLockRef.current) return;
-    tabCreationLockRef.current = true;
-    setPendingTabCreation({ kind: 'claude', targetShellId: null, targetProcessId: null });
-    const result = await navigation.openNewClaudeProcess(
-      spawnProjectId ? { projectId: spawnProjectId } : undefined,
-    );
-    if (!result) {
-      clearPendingTabCreation();
-      return;
-    }
-    setPendingTabCreation({
-      kind: 'claude',
-      targetShellId: result.shellId,
-      targetProcessId: result.processId,
-    });
-    const agenticProcess =
-      AgenticProcess.getByIdFromCache<AgenticProcess>(result.processId) ?? undefined;
-    const shell =
-      result.shellId
-        ? Shell.getByIdFromCache<Shell>(result.shellId) ?? undefined
-        : undefined;
-    onTabOpen?.({
-      shellId: result.shellId ?? '',
-      tabOrder: shell?.tab_order ?? 0,
-      name: shell?.name ?? null,
-      type: 'claude',
-      agenticProcess,
-      shell,
-      isDisabled: false,
-      statusReason: '',
-    });
-  }, [clearPendingTabCreation, navigation, onTabOpen]);
+  const startAgenticTab = useCallback(
+    async (kind: 'claude' | 'codex', workerType?: 'claude_code' | 'codex') => {
+      if (tabCreationLockRef.current) return;
+      tabCreationLockRef.current = true;
+      setPendingTabCreation({ kind, targetShellId: null, targetProcessId: null });
+      const result = await navigation.openNewClaudeProcess({
+        ...(spawnProjectId ? { projectId: spawnProjectId } : {}),
+        ...(workerType ? { workerType } : {}),
+      });
+      if (!result) {
+        clearPendingTabCreation();
+        return;
+      }
+      setPendingTabCreation({
+        kind,
+        targetShellId: result.shellId,
+        targetProcessId: result.processId,
+      });
+      const agenticProcess =
+        AgenticProcess.getByIdFromCache<AgenticProcess>(result.processId) ?? undefined;
+      const shell =
+        result.shellId
+          ? Shell.getByIdFromCache<Shell>(result.shellId) ?? undefined
+          : undefined;
+      onTabOpen?.({
+        shellId: result.shellId ?? '',
+        tabOrder: shell?.tab_order ?? 0,
+        name: shell?.name ?? null,
+        type: 'claude',
+        agenticProcess,
+        shell,
+        isDisabled: false,
+        statusReason: '',
+      });
+    },
+    [clearPendingTabCreation, navigation, onTabOpen, spawnProjectId],
+  );
+
+  const handleStartClaude = useCallback(() => startAgenticTab('claude', 'claude_code'), [startAgenticTab]);
+  const handleStartCodex = useCallback(() => startAgenticTab('codex', 'codex'), [startAgenticTab]);
 
   const startTerminalTab = useCallback(
     async (computeNode?: ComputeNode) => {
@@ -572,6 +580,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
 
   const isTabCreationPending = pendingTabCreation !== null;
   const isClaudeCreationPending = pendingTabCreation?.kind === 'claude';
+  const isCodexCreationPending = pendingTabCreation?.kind === 'codex';
   const isTerminalCreationPending = pendingTabCreation?.kind === 'terminal';
   const sandboxAvailable = !!dataContext.bootstrapInfo?.sandbox_available && !!dataContext.sandboxComputeNode;
   const dockerNodes = dataContext.dockerComputeNodes;
@@ -585,6 +594,16 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
         onActivate: handleStartClaude,
         available: true,
         pendingInline: isClaudeCreationPending,
+        disabled: isTabCreationPending,
+      },
+      {
+        id: 'codex',
+        label: 'Start Codex',
+        Icon: CodexIcon,
+        iconClassName: 'text-emerald-500',
+        onActivate: handleStartCodex,
+        available: true,
+        pendingInline: isCodexCreationPending,
         disabled: isTabCreationPending,
       },
       {
@@ -640,12 +659,14 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   }, [
     modLabel,
     handleStartClaude,
+    handleStartCodex,
     handleStartTerminal,
     handleStartSandbox,
     handleStartDocker,
     sandboxAvailable,
     dockerNodes,
     isClaudeCreationPending,
+    isCodexCreationPending,
     isTerminalCreationPending,
     isTabCreationPending,
   ]);
@@ -691,6 +712,11 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
               // Use context process for the active tab (always authoritative);
               // inactive tabs have no reliable process reference.
               const sessionProcess = session.shellId === activeShellId ? contextAgenticProcess : undefined;
+              // The worker_type marker — `session.agenticProcess` is populated
+              // by `useActiveTerminals` for every tab, so we can render the
+              // Codex glyph next to the status dot regardless of which tab is
+              // active.
+              const isCodexShell = session.agenticProcess?.worker_type === 'codex';
 
               const tabContent = (
                 <div
@@ -708,7 +734,10 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                   data-testid={`tab-shell-${session.shellId}`}
                 >
                   {/* Status indicator — Cloud icon for sandbox shells, green
-                      dot for everything else. Sits to the left of the name. */}
+                      dot for everything else. Sits to the left of the name.
+                      For codex tabs we additionally render the Codex glyph
+                      between the dot and the name so worker type is visible
+                      at a glance without needing the tab to be active. */}
                   {isSandboxShell ? (
                     <Cloud
                       className="h-3.5 w-3.5 shrink-0 text-sky-500"
@@ -721,6 +750,13 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                         isClosing ? 'bg-amber-500/70' : isDisabled ? 'bg-red-500/70' : 'bg-green-500/70'
                       }`}
                       data-testid={`shell-status-dot-${session.shellId}`}
+                    />
+                  )}
+                  {isCodexShell && (
+                    <CodexIcon
+                      className="h-3.5 w-3.5 shrink-0 text-emerald-500"
+                      data-testid={`shell-codex-icon-${session.shellId}`}
+                      aria-label="Codex tab"
                     />
                   )}
                   {Boolean(sessionProcess?.cliOptions?.worktree) && (

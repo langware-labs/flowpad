@@ -78,6 +78,11 @@ export interface AgenticContext {
    * "stream-json", the process runs print-mode (no PTY) and `AgenticProcess.prompt`
    * streams per-event FlowData over HTTP. */
   outputFormat?: string;
+
+  /** Backend worker (`'claude_code'` | `'codex'`). Default: backend's
+   * `FLOWPAD_DEFAULT_WORKER` (typically claude). Surfaced so the UI can
+   * launch a Codex tab from the same opener flow. */
+  workerType?: 'claude_code' | 'codex';
 }
 
 /**
@@ -139,5 +144,6 @@ export function serializeAgenticContext(ctx: AgenticContext): Record<string, unk
     additional_dirs: ctx.additionalDirs ?? [],
     target_typeid_str: ctx.targetTypeIdStr,
     output_format: ctx.outputFormat,
+    worker_type: ctx.workerType,
   };
 }

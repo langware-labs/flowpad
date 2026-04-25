@@ -29,10 +29,10 @@ import os
 import shutil
 from typing import AsyncIterator
 
-from flow_sdk.builtin.agentic_workers.base.context import AgenticContext
-from flow_sdk.builtin.agentic_workers.base.worker import AgenticWorker
-from flow_sdk.builtin.agentic_workers.claude_worker.cli import ClaudeCliOptions
-from flow_sdk.builtin.agentic_workers.claude_worker.event_to_flowdata import (
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticWorker
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.event_to_flowdata import (
     convert_line,
     final_end_frame,
 )
@@ -163,16 +163,28 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         # ``--resume <sid>``. Otherwise honour ``context.session_id`` (a
         # pre-allocated UUID the caller wants Claude to use) so transcript
         # discovery doesn't race the first ``system:init`` event.
+        #
+        # Fork (``--resume <source> --fork-session --session-id <new>``):
+        # ``ClaudeCliOptions`` wants ``session_id=<new>`` and
+        # ``fork_session_id=<source>``. Mapping from ``AgenticContext`` puts
+        # the source on ``resume_session_id`` and the new id on ``session_id``.
         resume_sid = context.resume_session_id
         fresh_sid = context.session_id if not resume_sid else None
+        is_fork = bool(context.fork_session and resume_sid and context.session_id)
+        if is_fork:
+            opts_session_id = context.session_id  # new id
+            opts_fork_source = resume_sid  # source id
+        else:
+            opts_session_id = resume_sid or fresh_sid
+            opts_fork_source = None
         opts = ClaudeCliOptions(
             workdir=context.workdir,
             env_vars=dict(context.env_vars) if context.env_vars else None,
             model=context.model,
             permission_mode=context.permission_mode,
-            session_id=resume_sid or fresh_sid,
+            session_id=opts_session_id,
             resume=bool(resume_sid),
-            fork_session_id=None if not context.fork_session else resume_sid,
+            fork_session_id=opts_fork_source,
             output_format="stream-json",
             print_mode=True,
             effort=context.effort,

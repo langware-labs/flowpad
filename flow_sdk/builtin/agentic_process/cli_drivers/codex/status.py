@@ -6,7 +6,7 @@ reads the tail of that file and maps it to the shared ``WorkerStatus`` enum
 so the rest of AgenticProcess (``is_ready_for_input``, ``stream_transcript``)
 can reason about codex sessions without caring which CLI produced them.
 
-Logger namespace: ``flow_sdk.builtin.agentic_workers.codex_worker.status``.
+Logger namespace: ``flow_sdk.builtin.agentic_process.cli_drivers.codex.status``.
 """
 
 from __future__ import annotations

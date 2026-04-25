@@ -12,9 +12,9 @@ from unittest import mock
 
 import pytest
 
-from flow_sdk.builtin.agentic_workers import ClaudeCLIWorker
-from flow_sdk.builtin.agentic_workers.base import AgenticContext, AgenticWorker
-from flow_sdk.builtin.agentic_workers.claude_worker.session_history import (
+from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCLIWorker
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext, AgenticWorker
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
     _extract_text_content,
     _load_jsonl,
     load_session_history,
@@ -373,14 +373,14 @@ async def test_worker_abc_async_defaults():
 
 def test_sdk_worker_import_without_sdk():
     """ClaudeCodeAgenticWorker class can be imported even without claude_agent_sdk."""
-    from flow_sdk.builtin.agentic_workers.claude_worker.code_agentic_worker import ClaudeCodeAgenticWorker
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude.code_agentic_worker import ClaudeCodeAgenticWorker
 
     assert ClaudeCodeAgenticWorker is not None
 
 
 def test_sdk_worker_instantiation_fails_without_sdk():
     """Instantiating ClaudeCodeAgenticWorker raises ImportError without claude_agent_sdk."""
-    from flow_sdk.builtin.agentic_workers.claude_worker.code_agentic_worker import (
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude.code_agentic_worker import (
         ClaudeCodeAgenticWorker,
         _SDK_AVAILABLE,
     )
@@ -394,7 +394,7 @@ def test_sdk_worker_instantiation_fails_without_sdk():
 
 def test_sdk_worker_init_export_graceful():
     """Package __init__ exports ClaudeCodeAgenticWorker (or None if SDK missing)."""
-    from flow_sdk.builtin.agentic_workers import ClaudeCodeAgenticWorker
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCodeAgenticWorker
 
     # Should be either the class or None, never raise
     assert ClaudeCodeAgenticWorker is None or callable(ClaudeCodeAgenticWorker)
@@ -407,7 +407,7 @@ def test_sdk_worker_init_export_graceful():
 
 def _make_mock_sdk_worker():
     """Create a ClaudeCodeAgenticWorker with mocked SDK internals."""
-    from flow_sdk.builtin.agentic_workers.claude_worker import code_agentic_worker as mod
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude import code_agentic_worker as mod
 
     # Temporarily enable SDK
     original = mod._SDK_AVAILABLE
@@ -613,7 +613,7 @@ def test_load_session_history_with_data(tmp_path):
         }) + "\n"
     )
 
-    with mock.patch("flow_sdk.builtin.agentic_workers.claude_worker.session_history.get_session_jsonl_path", return_value=jsonl):
+    with mock.patch("flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history.get_session_jsonl_path", return_value=jsonl):
         history = load_session_history(session_id)
 
     assert len(history) == 2

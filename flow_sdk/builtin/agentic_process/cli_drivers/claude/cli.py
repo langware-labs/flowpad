@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from flow_sdk.builtin.agentic_workers.base.cli_options import WorkerCLIOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
 
 
 class ClaudeCliOptions(WorkerCLIOptions):
