@@ -9,11 +9,12 @@ test.describe('Terminal PTY No Duplicates (Claude CLI)', () => {
   test('claude CLI terminal has no duplicated lines or escape artifacts', async ({ page }) => {
     test.setTimeout(90_000);
 
-    // Navigate to a new shell with startClaude=true (same as clicking >_ icon)
-    await page.goto('/dock/shell/new_terminal?startClaude=true');
+    // Navigate to a new shell, then click the Start Claude button (same as clicking >_ icon)
+    await page.goto('/dock/shell/new_terminal');
+    await page.locator('[data-testid="start-claude-button"]').click({ timeout: 10_000 });
 
-    // Wait for URL to settle (new_terminal redirects to /dock/shell/<sessionId>)
-    await page.waitForURL(/\/dock\/shell\/(?!new_terminal)/, { timeout: 15_000 });
+    // Wait for URL to settle (new_terminal redirects to /dock/shell/agentic_process-<id>)
+    await page.waitForURL(/\/dock\/shell\/agentic_process-/, { timeout: 60_000 });
 
     // Wait for terminal to be visible
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
