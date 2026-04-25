@@ -616,6 +616,71 @@ class Record:
         from flow_sdk.fs_store.fs_ref import JSONFsRef
         return JSONFsRef(rd / _META_JSON)
 
+    # -- Scope-aware upsert (framework hook) --
+    #
+    # Subclasses that map an Entity to a user-facing file on disk declare
+    # ``_main_subdir`` (relative path under scope_root, e.g. ".claude/docs")
+    # and ``_main_layout`` ("file" → <subdir>/<safe_name>.md, "folder" →
+    # <subdir>/<safe_name>/). They override ``default_body(entity)`` to return
+    # the body to write iff ``main_ref`` does not yet exist. Entity.save()
+    # resolves scope_root from request_context once and calls
+    # ``compute_asset_ref(scope_root, entity)`` + ``upsert_main_ref(entity)``
+    # so creation goes through the FSRef contract — no per-type ``store()``.
+
+    _main_subdir: ClassVar[str | None] = None
+    _main_layout: ClassVar[str] = "file"  # "file" | "folder"
+
+    def _safe_name(self, entity) -> str:
+        """Slug from entity.name; subclasses override for custom rules."""
+        raw = (getattr(entity, "name", None) or "").strip().lower()
+        out = "".join(c if (c.isalnum() or c in "_-") else "_" for c in raw)
+        return out or "untitled"
+
+    def compute_asset_ref(self, scope_root, entity) -> "Any":  # FSRef | None
+        """Default location for this Record's primary asset under scope_root.
+
+        Returns an FSRef pointing at the file (``_main_layout == 'file'``) or
+        folder (``_main_layout == 'folder'``). Subclasses with non-trivial
+        layout (e.g. plugin slugs) override this method directly.
+        """
+        if not self._main_subdir:
+            return None
+        from pathlib import Path
+        from flow_sdk.fs_store.fs_ref import FSRef
+        safe = self._safe_name(entity)
+        base = Path(scope_root) / self._main_subdir
+        if self._main_layout == "folder":
+            target = base / safe
+        else:
+            target = base / f"{safe}.md"
+        return FSRef(target)
+
+    def default_body(self, entity) -> "str | None":
+        """Default body to write iff main_ref does not exist. None disables upsert."""
+        return None
+
+    def upsert_main_ref(self, entity) -> None:
+        """Create the main_ref file if missing, writing default_body(entity).
+
+        No-op when main_ref is None, the file already exists, or default_body
+        returns None. Creates parent directories as needed. Honors the FSRef
+        read-only contract.
+        """
+        mr = self.main_ref
+        if mr is None:
+            return
+        path = getattr(mr, "_path", None)
+        if path is None or path.exists():
+            return
+        body = self.default_body(entity)
+        if body is None:
+            return
+        try:
+            mr.write(body)
+        except IOError:
+            # Read-only main_ref — silently skip; framework boundary.
+            return
+
     # -- Relationship refs --
 
     @property

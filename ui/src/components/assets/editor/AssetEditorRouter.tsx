@@ -27,6 +27,10 @@ const EDITABLE_TYPES = new Set<string>([
   RecordType.SKILL, RecordType.MARKDOWN, RecordType.AGENT,
   RecordType.CLAUDE_MD, 'claude_memory', 'claude_rules',
   RecordType.COMMAND, RecordType.PLAN, 'workflow',
+  // Projects don't open in the editor — clicking a project row redirects to
+  // its collaboration space (handled at the click site). Listed here so the
+  // row stays clickable.
+  RecordType.PROJECT,
 ]);
 
 export function hasEditor(assetType: string): boolean {

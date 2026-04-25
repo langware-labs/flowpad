@@ -49,6 +49,7 @@ export function CollaborationSidebar({ projectId, onOpenTab }: Props) {
                 <NewDocButton
                   projectId={projectId}
                   onCreated={() => setDocsRefreshKey((k) => k + 1)}
+                  onOpenTab={onOpenTab}
                 />
               )}
             </div>

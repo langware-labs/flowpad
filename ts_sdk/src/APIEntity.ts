@@ -509,6 +509,21 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return (await dataManager.callAction<undefined, WikiLink[]>(info)) ?? [];
   }
 
+  /**
+   * Re-extract this entity's outgoing wiki edges. Mirrors `Entity.reindex` on
+   * the Python side. Hits `POST /api/v1/graph/{type}/{id}/wiki/reindex`.
+   *
+   * Pass `body` when the caller already has the markdown text in hand
+   * (e.g. the editor toolbar after an out-of-band wikilink insert) so the
+   * server doesn't need to re-read the record from disk.
+   */
+  public async reindex(body?: string): Promise<WikiLink[]> {
+    const info = new ActionInfo('wiki', this.typeId.type, this.typeId.id, 'POST');
+    info.subpath = 'reindex';
+    if (body !== undefined) info.bodyParameters = { body };
+    return (await dataManager.callAction<undefined, WikiLink[]>(info)) ?? [];
+  }
+
   public async get_related_workspace(): Promise<Workspace | undefined> {
     if (!this.saved) return undefined;
     const actionInfo = new ActionInfo('get_related_workspace', this.typeId.type, this.typeId.id, 'GET');

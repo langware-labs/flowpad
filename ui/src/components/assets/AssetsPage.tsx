@@ -322,6 +322,12 @@ export function AssetsPage() {
   }, [newTypeTarget, navigation, toast]);
 
   const handleRowClick = useCallback((result: SearchResult) => {
+    // Projects open in their collaboration space (the "project room"), not
+    // the asset editor — the editor router has no page for project entities.
+    if (result.record_type === RecordType.PROJECT) {
+      navigation.openDock(DockPointer.forProject(result.record_id));
+      return;
+    }
     const path = result.asset_ref;
     if (!path || !path.startsWith('/')) {
       toast({

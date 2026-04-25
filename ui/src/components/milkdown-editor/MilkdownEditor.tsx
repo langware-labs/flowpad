@@ -69,6 +69,19 @@ interface MilkdownEditorProps {
   editorMode?: MilkdownEditorMode;
   plugins?: MilkdownPlugin[];
   onLinkClick?: (href: string) => void;
+  /**
+   * Optional outer ref that mirrors the internal editor instance. Lets host
+   * components (e.g. the wiki toolbar) issue ProseMirror transactions like
+   * `editorRef.current?.action((ctx) => ...)`.
+   */
+  editorRef?: React.MutableRefObject<Editor | null>;
+  /**
+   * Slot rendered at the right end of the static toolbar bar. Used by the
+   * MarkdownEditor to inject wiki actions ("Add entity link") next to the
+   * built-in Bold/Italic/Heading buttons. Inherits the toolbar's edit-mode
+   * gating — hidden in view/review modes.
+   */
+  toolbarRight?: React.ReactNode;
 }
 
 // ── Link popup (hover + toolbar) ──────────────────────────────────────────────
@@ -316,7 +329,7 @@ interface FormatButtonProps {
 }
 
 /** Shared icon button for both static toolbar and selection popup. */
-function FormatButton({ title, icon, active, disabled, testId, onMouseDown }: FormatButtonProps) {
+export function FormatButton({ title, icon, active, disabled, testId, onMouseDown }: FormatButtonProps) {
   return (
     <button
       title={title}
@@ -390,9 +403,11 @@ function TextFormatButtons({
 function MilkdownToolbar({
   activeState,
   onRequestLink,
+  rightSlot,
 }: {
   activeState: ActiveState;
   onRequestLink: () => void;
+  rightSlot?: React.ReactNode;
 }) {
   const [loading, get] = useInstance();
 
@@ -427,6 +442,12 @@ function MilkdownToolbar({
       {headingBtn('Bullet list', <List className="h-3.5 w-3.5" />, callCommand(wrapInBulletListCommand.key), bulletList)}
       {headingBtn('Ordered list', <ListOrdered className="h-3.5 w-3.5" />, callCommand(wrapInOrderedListCommand.key), orderedList)}
       {headingBtn('Code block', <SquareCode className="h-3.5 w-3.5" />, callCommand(createCodeBlockCommand.key), codeBlock)}
+      {rightSlot && (
+        <>
+          <div className="mx-1.5 h-4 w-px bg-border" />
+          {rightSlot}
+        </>
+      )}
     </div>
   );
 }
@@ -626,13 +647,14 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
   );
 }
 
-export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugins, onLinkClick }: MilkdownEditorProps) {
+export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugins, onLinkClick, editorRef: externalEditorRef, toolbarRight }: MilkdownEditorProps) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const [activeState, setActiveState] = useState<ActiveState>(EMPTY_ACTIVE);
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
   const [linkPopup, setLinkPopup] = useState<LinkPopupState | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const editorRef = useRef<Editor | null>(null);
+  const internalEditorRef = useRef<Editor | null>(null);
+  const editorRef = externalEditorRef ?? internalEditorRef;
 
   useEffect(() => () => { if (hideTimerRef.current) clearTimeout(hideTimerRef.current); }, []);
 
@@ -818,7 +840,13 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
   return (
     <MilkdownProvider>
       <div className="flex h-full flex-col overflow-hidden">
-        {!isReadOnly && <MilkdownToolbar activeState={activeState} onRequestLink={handleRequestLink} />}
+        {!isReadOnly && (
+          <MilkdownToolbar
+            activeState={activeState}
+            onRequestLink={handleRequestLink}
+            rightSlot={toolbarRight}
+          />
+        )}
         <div
           className="min-h-0 flex-1 overflow-auto"
           onMouseOver={handleMouseOver}

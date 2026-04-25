@@ -98,13 +98,17 @@ async function fetchAssetsOfType(
  */
 function assetChild(typeName: string, result: SearchResult): Browseable {
   const label = result.name || basename(result.asset_ref) || '(untitled)';
+  // Projects open in their collaboration space rather than the asset editor.
+  const pointer = typeName === 'project'
+    ? DockPointer.forProject(result.record_id)
+    : DockPointer.forAssetEditor(typeName, result.asset_ref);
   return {
     id: `asset:${typeName}:${result.asset_ref}`,
     kind: 'asset',
     label,
     icon: <FileText className="h-3.5 w-3.5 flex-shrink-0" />,
     hasChildren: false,
-    pointer: DockPointer.forAssetEditor(typeName, result.asset_ref),
+    pointer,
   };
 }
 

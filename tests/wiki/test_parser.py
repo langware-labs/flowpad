@@ -61,6 +61,20 @@ class TestMarkdownLinks:
         links = parse_links("See [docs](./image.png).")
         assert links == []
 
+    def test_wiki_dock_url_is_extracted(self):
+        # The toolbar emits this form when "Add entity link" inserts a
+        # real link node. The parser must extract the name segment.
+        links = parse_links("See [my-process](/dock/assets/wiki/my-process).")
+        assert _raws(links) == ["my-process"]
+
+    def test_wiki_dock_url_decodes_percent_encoded_name(self):
+        links = parse_links("See [my proc](/dock/assets/wiki/my%20proc).")
+        assert _raws(links) == ["my proc"]
+
+    def test_wiki_dock_url_with_fragment(self):
+        links = parse_links("See [foo](/dock/assets/wiki/foo#install).")
+        assert _raws(links) == ["foo"]
+
 
 class TestCodeFenceSkipping:
     def test_links_inside_fenced_block_are_skipped(self):

@@ -258,8 +258,18 @@ class Entity(DBEntity):
         record = record_cls.get(entity.id)
         if record is None:
             record = record_cls(id=entity.id)
+        # Propagate any pre-resolved asset_ref string from the entity (set in
+        # _prepare_for_storage) onto the record so main_ref resolves correctly.
+        if record.asset_ref is None:
+            ar_str = getattr(entity, "asset_ref", None)
+            if ar_str:
+                from flow_sdk.fs_store.fs_ref import FSRef
+                record.asset_ref = FSRef(ar_str)
         import asyncio
         try:
+            # upsert_main_ref writes default_body iff main_ref doesn't exist
+            # — write goes through the FSRef contract, never raw Path.write_text.
+            await asyncio.to_thread(record.upsert_main_ref, entity)
             await asyncio.to_thread(record.sync_from_entity, entity)
         except Exception as exc:
             from flow_sdk.fs_records.record_error import RecordError  # lazy (circular-safe)
@@ -270,6 +280,32 @@ class Entity(DBEntity):
         if content is not None:
             await entity._fts_upsert(type_name, content)
         return record
+
+    async def _resolve_scope_root(self) -> "Path | None":
+        """Resolve filesystem scope root from request_context.
+
+        Project context (POST /api/v1/graph/project/<id>/<type>) →
+        ``project.fs_storage_mount_path``. Otherwise → ``Path.home()``.
+
+        Single source of truth for scope, called once per save(); per-type
+        ``store()`` overrides must not duplicate this logic.
+        """
+        from pathlib import Path
+        from flow_sdk.request_context.methods import get_current_request_info
+        request_info = get_current_request_info()
+        if (
+            request_info is not None
+            and getattr(request_info, "target_entity_typeid", None) is not None
+            and request_info.target_entity_typeid.type == "project"
+        ):
+            try:
+                proj = await request_info.get_target_entity()
+            except Exception:
+                proj = None
+            mount = getattr(proj, "fs_storage_mount_path", None) if proj is not None else None
+            if mount:
+                return Path(mount)
+        return Path.home()
 
     async def check_and_refresh_record(self) -> bool:
         """If the asset is newer than the DB row, re-sync. Returns True if refresh happened."""
@@ -302,6 +338,40 @@ class Entity(DBEntity):
         """Inbound wiki links pointing at this entity."""
         from flow_sdk import wiki
         return wiki.backlinks(self.type, self.id)
+
+    async def reindex(self, body: str | None = None) -> list[dict]:
+        """Re-extract wiki edges for this entity.
+
+        ``body=None`` → load the linked record and read its ``wiki_body()``.
+        Provide ``body`` directly for callers that already have it (e.g. the
+        markdown editor toolbar after an out-of-band insert).
+
+        Returns the resulting outgoing edges as plain dicts (same shape as
+        ``GET /api/v1/graph/{type}/{id}/wiki/links``).
+        """
+        from flow_sdk import wiki
+
+        if body is None:
+            rec_cls = SchemaRegistry.get_record_cls(self.type)
+            rec = rec_cls.get(self.id) if rec_cls is not None else None
+            if rec is None:
+                rec = await self.get_record()
+            if rec is not None:
+                body = rec.wiki_body()
+
+        wiki.index(self.type, self.id, body)
+        return [
+            {
+                "id": e.id,
+                "src_type": e.src_type,
+                "src_id": e.src_id,
+                "raw": e.raw,
+                "target_type": e.target_type,
+                "target_id": e.target_id,
+                "line": e.line,
+            }
+            for e in wiki.outgoing(self.type, self.id)
+        ]
 
     @staticmethod
     def api_visible_by_type(entity_type: str):
@@ -515,17 +585,52 @@ class Entity(DBEntity):
         if not owner:
             if self.get_type() == BuiltinEntityType.USER.value:
                 user_id = self.typeid
+        # Framework: resolve scope from request_context once and pre-populate
+        # asset_ref / parent_path on the entity BEFORE the DB write, so the
+        # row carries them on first save. After this call, ``store()`` only
+        # has to upsert main_ref and sync_from_entity.
+        await self._prepare_for_storage()
         await self._save_blobs()
         await super().save(user_id, notify=notify)
-        # Sync entity metadata down to its record on disk.
-        # Call self.store() (not self._store()) so subclass overrides run
-        # — e.g. Skill/Agent set asset_ref by writing their content file.
+        # Sync metadata down to disk + upsert main_ref iff missing (Record
+        # contract: writes go through main_ref FSRef, no per-type store()).
         await self.store()
         # Invalidate authorization cache since entity properties have changed
         from ..auth.auth_cache import get_auth_cache
 
         get_auth_cache().invalidate_entity(self.typeid)
         return self
+
+    async def _prepare_for_storage(self) -> None:
+        """Resolve scope-derived fields on the entity before DB save.
+
+        For Records that declare ``_main_subdir``, this resolves scope_root
+        from request_context and computes the asset_ref FSRef. The path
+        string is mirrored onto ``entity.asset_ref`` (and ``parent_path`` if
+        present) so the DB row persists them on first save without needing
+        a second round-trip.
+        """
+        if getattr(self, "asset_ref", None):
+            return  # Already set (entity update or explicit caller-set path).
+        type_name = self.get_type()
+        record_cls = SchemaRegistry.get_record_cls(type_name)
+        if record_cls is None or not getattr(record_cls, "_main_subdir", None):
+            return
+        scope_root = await self._resolve_scope_root()
+        if scope_root is None:
+            return
+        # Transient record just to compute the asset_ref convention.
+        rec = record_cls(id=self.id)
+        ar = rec.compute_asset_ref(scope_root, self)
+        if ar is None or getattr(ar, "_path", None) is None:
+            return
+        path_str = str(ar._path)
+        if hasattr(self, "asset_ref"):
+            self.asset_ref = path_str
+        # parent_path lets DocsCategory / PlansCategory filter the markdown
+        # entity-query result without waiting for the indexer.
+        if hasattr(self, "parent_path"):
+            self.parent_path = str(ar._path.parent)
 
     async def delete(self):
         """Override delete to invalidate cache when entity is deleted."""

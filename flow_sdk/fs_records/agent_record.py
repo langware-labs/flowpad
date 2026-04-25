@@ -101,6 +101,10 @@ class AgentRecord(Record):
     _icon: ClassVar[str] = "Bot"
     index_fields: ClassVar[list[str]] = ["description"]
 
+    # Framework upsert: <scope_root>/.claude/agents/<safe_name>.md
+    _main_subdir: ClassVar[str] = ".claude/agents"
+    _main_layout: ClassVar[str] = "file"
+
     def __init__(self, **kwargs: Any):
         kwargs.setdefault("type", RecordType.AGENT)
         kwargs.setdefault("status", "active")
@@ -109,6 +113,19 @@ class AgentRecord(Record):
         super().__init__(**kwargs)
         if prompt_val is not None:
             object.__getattribute__(self, "__dict__")["prompt_text"] = prompt_val
+
+    def _safe_name(self, entity) -> str:
+        # Agent file is named after the entity name as-is (used by Claude Code
+        # CLI as the agent identifier). Slugify only what filesystems disallow.
+        raw = (getattr(entity, "name", None) or "").strip()
+        return raw or "untitled"
+
+    def default_body(self, entity) -> "str | None":
+        name = (getattr(entity, "name", None) or "").strip()
+        if not name:
+            return None
+        desc = (getattr(entity, "description", None) or "").strip()
+        return _render_frontmatter({"name": name, "description": desc}) + "\n"
 
     @property
     def agent_doc(self) -> "Any":  # FrontMatterFsRef | None
