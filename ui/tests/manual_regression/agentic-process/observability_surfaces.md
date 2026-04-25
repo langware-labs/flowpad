@@ -1,5 +1,5 @@
 test 1: PTY Viewer opens from the Columns & Trace dropdown (always available, no dev-mode gate)
-- navigate to {APP_URL}/dock/shell/new_terminal?startClaude=true
+- navigate to {APP_URL}/dock/shell/new_terminal then click the Start Claude button (data-testid="start-claude-button")
 - wait for the Claude banner
 - open the Columns & Trace dropdown (BugPlay icon) in the process toolbar
 - validate the dropdown contains an item "PTY Viewer" at the bottom of the menu (below the separator)
@@ -17,7 +17,7 @@ test 2: Open Transcript button navigates to the claude transcript lens for the c
 - navigate back (browser back) and validate the process tab is restored
 
 test 3: Open Transcript is hidden until a session exists
-- navigate to {APP_URL}/dock/shell/new_terminal (no startClaude)
+- navigate to {APP_URL}/dock/shell/new_terminal and DO NOT click the Start Claude button
 - wait for the plain shell
 - validate the ScrollText (Open Transcript) icon is NOT rendered in the process toolbar (gated on hasSession)
 - click Start Claude; wait for banner

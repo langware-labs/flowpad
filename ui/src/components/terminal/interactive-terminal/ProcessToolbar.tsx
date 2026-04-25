@@ -9,7 +9,7 @@
  */
 
 import { AgenticProcess, type Shell } from '@sdk';
-import { hasWorkerStarted, WorkerStatus } from '@sdk/process/agentic-types.js';
+import { hasWorkerStarted, ProcessStatus, WorkerStatus } from '@sdk/process/agentic-types.js';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -55,12 +55,14 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
 
   const hasSession = !!process.session_id;
   const workerStatus = process.workerStatus;
-  // Fork needs at least one real turn to have happened — exclude INITIALIZING
-  // (worker spun up but no transcript yet) and IDLE (no session linked).
-  const canFork = hasSession
+  // started: PTY is alive RIGHT NOW (gates Restart, CLI flag toggles, Apply)
+  const started = process.status === ProcessStatus.RUNNING;
+  // hasTranscript: at least one real assistant turn happened (gates Fork, Open Transcript)
+  const hasTranscript = hasSession
     && hasWorkerStarted(workerStatus)
     && workerStatus !== WorkerStatus.IDLE;
-  const canToggle = hasSession;
+  const canFork = hasTranscript;
+  const canToggle = started;
   const workdir = process.workdir ?? '';
 
   const _cliOpts = process.cliOptions;
@@ -326,6 +328,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
               isForking ? 'Forking…'
               : canFork ? 'Fork session — new tab, same conversation history'
               : !hasSession ? 'Launch a session first'
+              : !started ? 'Session is not running'
               : 'Send a message first — fork requires conversation history'
             }
             disabled={!canFork || isForking}
@@ -340,8 +343,12 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
         <IconToggleButton
           icon={<RotateCcw className="h-3.5 w-3.5" />}
           active={false}
-          tooltip={hasSession ? 'Restart session' : 'Launch a session first'}
-          disabled={!hasSession || isRestarting}
+          tooltip={
+            isRestarting ? 'Restarting…'
+            : started ? 'Restart session'
+            : 'Session is not running'
+          }
+          disabled={!started || isRestarting}
           onClick={() => void handleRestart()}
         />
 
@@ -353,8 +360,12 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
           <IconToggleButton
             icon={<ScrollText className="h-3.5 w-3.5" />}
             active={false}
-            tooltip="Open transcript"
-            disabled={false}
+            tooltip={
+              hasTranscript ? 'Open transcript'
+              : !started ? 'Session is not running'
+              : 'Send a message first — no transcript yet'
+            }
+            disabled={!hasTranscript}
             onClick={() => {
               void (async () => {
                 const sessionId = process.session_id!;

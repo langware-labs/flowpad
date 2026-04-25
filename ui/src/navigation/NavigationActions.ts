@@ -199,7 +199,7 @@ export class NavigationActions {
 
   async openShell(
     shellId: string,
-    options?: { startClaude?: boolean; cwd?: string; startCommand?: string; skipPermissions?: boolean },
+    options?: { cwd?: string; startCommand?: string; skipPermissions?: boolean },
   ): Promise<Shell | null> {
     const extraOptions = toStringRecord(options);
     const shell = Shell.getByIdFromCache(shellId) ?? (await Shell.getById(shellId));

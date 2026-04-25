@@ -331,19 +331,16 @@ export class DockPointer implements IDockPointer {
   /**
    * Create dock pointer for shell/terminal viewer
    * @param sessionId - Optional shell session ID (e.g., 'run', 'flowShell', or custom UUID)
-   * @param options - Optional options object
-   * @param options.startClaude - If true, starts Claude CLI with --session-id using the sessionId
-   * @param options.resumeClaude - If true, resumes Claude CLI with --resume using the sessionId
-   * @param options.cwd - Working directory to cd into before starting Claude CLI
+   * @param options.cwd - Working directory to cd into before starting the shell
+   * @param options.startCommand - Optional command to run on shell startup
+   * @param options.skipPermissions - Pass through `--dangerously-skip-permissions` semantics where applicable
    */
   static forShell(
     sessionId?: string,
-    options?: { startClaude?: boolean; resumeClaude?: boolean; cwd?: string; startCommand?: string; skipPermissions?: boolean },
+    options?: { cwd?: string; startCommand?: string; skipPermissions?: boolean },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     const queryOptions: Record<string, string> = {};
-    if (options?.startClaude) queryOptions.startClaude = 'true';
-    if (options?.resumeClaude) queryOptions.resumeClaude = 'true';
     if (options?.cwd) queryOptions.cwd = options.cwd;
     if (options?.startCommand) queryOptions.startCommand = options.startCommand;
     if (options?.skipPermissions) queryOptions.skipPermissions = 'true';
