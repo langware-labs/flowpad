@@ -31,7 +31,7 @@ export function InboxMessageRow({ message, onArchive, onToggleRead, onClick }: I
       {/* Row header */}
       <div className="flex items-center justify-between gap-2 pr-14">
         <span className={`truncate text-sm ${message.is_read ? 'font-normal text-muted-foreground' : 'font-semibold'}`}>
-          {message.sender_name ?? message.sender_id ?? 'Unknown sender'}
+          {message.sender_name || 'Unknown sender'}
         </span>
         <span className="shrink-0 text-[10px] text-muted-foreground">{formattedDate}</span>
       </div>

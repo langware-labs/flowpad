@@ -74,12 +74,20 @@ def load_session_history(session_id: str) -> list[FlowData]:
     Returns:
         List of FlowData items representing the session history
     """
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+
     jsonl_path = get_session_jsonl_path(session_id)
+    _log.info(f"[load_session_history] session_id={session_id} jsonl_path={jsonl_path}")
     if not jsonl_path:
+        _log.warning(f"[load_session_history] no JSONL file found for session {session_id}")
         return []
 
     entries = _load_jsonl(jsonl_path)
+    _log.info(f"[load_session_history] loaded {len(entries)} raw entries from {jsonl_path}")
     history = []
+
+    import uuid as _uuid
 
     for entry in entries:
         entry_type = entry.get("type")
@@ -101,6 +109,8 @@ def load_session_history(session_id: str) -> list[FlowData]:
                             "element-type": FlowElementType.USER_MESSAGE,
                             "data-type": FlowDataType.TEXT,
                             "role": "user",
+                            "complete": "true",
+                            "group-id": str(_uuid.uuid4()),
                         },
                     )
                 )
@@ -123,6 +133,8 @@ def load_session_history(session_id: str) -> list[FlowData]:
                                         "element-type": FlowElementType.CHAT,
                                         "data-type": FlowDataType.TEXT,
                                         "role": "assistant",
+                                        "complete": "true",
+                                        "group-id": str(_uuid.uuid4()),
                                     },
                                 )
                             )
@@ -137,6 +149,8 @@ def load_session_history(session_id: str) -> list[FlowData]:
                                         "element-type": FlowElementType.REASONING,
                                         "data-type": FlowDataType.TEXT,
                                         "role": "assistant",
+                                        "complete": "true",
+                                        "group-id": str(_uuid.uuid4()),
                                     },
                                 )
                             )
@@ -154,6 +168,8 @@ def load_session_history(session_id: str) -> list[FlowData]:
                                     "data-type": FlowDataType.OBJECT,
                                     "tool-name": block.get("name", ""),
                                     "role": "assistant",
+                                    "complete": "true",
+                                    "group-id": str(_uuid.uuid4()),
                                 },
                             )
                         )
@@ -168,10 +184,13 @@ def load_session_history(session_id: str) -> list[FlowData]:
                                 attributes={
                                     "element-type": FlowElementType.TOOL_RESULT,
                                     "data-type": FlowDataType.OBJECT,
+                                    "complete": "true",
+                                    "group-id": str(_uuid.uuid4()),
                                 },
                             )
                         )
 
+    _log.info(f"[load_session_history] converted {len(history)} FlowData items for session {session_id}")
     return history
 
 
