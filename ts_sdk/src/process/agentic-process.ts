@@ -109,8 +109,8 @@ export interface IAgenticProcess extends IEntity {
   embedded_asset_refs?: TypeId[];
   /** Owning project ID */
   project_id?: string | null;
-  /** CollaborationSession this process was spawned in, if any */
-  collaboration_session_id?: string | null;
+  /** CollaborationRoom this process was spawned in, if any */
+  collaboration_room_id?: string | null;
   /** Serialized TypeId ("type-id") of the entity this process is attached to (trigger, markdown, …). */
   target_typeid_str?: string | null;
   /** Root of the per-process execution folder — `<record_dir>/execution/`. */
@@ -483,8 +483,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Owning project ID */
   project_id?: string | null;
 
-  /** CollaborationSession this process was spawned in, if any */
-  collaboration_session_id: string | null = null;
+  /** CollaborationRoom this process was spawned in, if any */
+  collaboration_room_id: string | null = null;
 
   /** Serialized TypeId ("type-id") of the entity this process is attached to (trigger, markdown, …). */
   target_typeid_str: string | null = null;
@@ -570,7 +570,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;
     this.sidecar_shell_id = entity.sidecar_shell_id;
-    this.collaboration_session_id = entity.collaboration_session_id ?? null;
+    this.collaboration_room_id = entity.collaboration_room_id ?? null;
     this.target_typeid_str = entity.target_typeid_str ?? null;
     this.exe_folder = entity.exe_folder ? FSRef.fromJson(entity.exe_folder) : null;
     this.input_folder = entity.input_folder ? FSRef.fromJson(entity.input_folder) : null;
@@ -1321,31 +1321,29 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Start a CollaborationSession around this process — resolves the project's
-   * default CollaborationSpace (lazy-creating it if needed), creates a fresh
-   * session inside it, and binds this process to that session.
+   * Start a CollaborationRoom around this process — creates a fresh room on
+   * the project and binds this process to it.
    */
-  async createCollaborationSession(
+  async createCollaborationRoom(
     hostName: string,
-    options?: { hostMemberId?: string; spaceId?: string; name?: string | null },
-  ): Promise<import('../entities/collaboration-session').CollaborationSession> {
-    const { CollaborationSession } = await import('../entities/collaboration-session');
-    const session = await CollaborationSession.create({
+    options?: { hostMemberId?: string; name?: string | null },
+  ): Promise<import('../entities/collaboration-room').CollaborationRoom> {
+    const { CollaborationRoom } = await import('../entities/collaboration-room');
+    const room = await CollaborationRoom.create({
       projectId: this.project_id ?? undefined,
-      spaceId: options?.spaceId,
       hostName,
       hostMemberId: options?.hostMemberId,
       name: options?.name ?? null,
     });
-    // Bind this process to the new session on both ends.
-    this.collaboration_session_id = session.id;
+    // Bind this process to the new room on both ends.
+    this.collaboration_room_id = room.id;
     await this.save();
     try {
-      await session.addProcess(this.id);
+      await room.addProcess(this.id);
     } catch (err) {
-      console.warn('[AgenticProcess.createCollaborationSession] addProcess failed', err);
+      console.warn('[AgenticProcess.createCollaborationRoom] addProcess failed', err);
     }
-    return session;
+    return room;
   }
 
   /**

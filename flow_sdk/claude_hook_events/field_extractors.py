@@ -40,6 +40,31 @@ def extract_session_id(hook_data: HookEventData) -> str | None:
     return hook_data.session_id
 
 
+def extract_session_id_from_dict(hook_data: dict) -> str | None:
+    """Extract session_id from a raw webhook hook_data dict.
+
+    Walks the same precedence chain the UI hook uses
+    (`ui/src/hooks/use-hooks-sniffer.ts:82-93`):
+      1. ``hook_data.raw_hook_data.session_id``
+      2. ``hook_data.session_id``
+      3. ``hook_data.event.context.session_id`` (some payload shapes)
+
+    Returns ``None`` when no session_id is present.
+    """
+    if not isinstance(hook_data, dict):
+        return None
+    raw = hook_data.get("raw_hook_data") if isinstance(hook_data.get("raw_hook_data"), dict) else None
+    if raw and raw.get("session_id"):
+        return str(raw["session_id"]) or None
+    if hook_data.get("session_id"):
+        return str(hook_data["session_id"]) or None
+    event = hook_data.get("event") if isinstance(hook_data.get("event"), dict) else None
+    context = event.get("context") if event and isinstance(event.get("context"), dict) else None
+    if context and context.get("session_id"):
+        return str(context["session_id"]) or None
+    return None
+
+
 def get_tool_name(hook_data: HookEventData) -> str | None:
     """Extract the tool name from hook event data."""
     return hook_data.tool_name

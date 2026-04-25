@@ -255,24 +255,24 @@ export class DockPointer implements IDockPointer {
 
   /**
    * Create dock pointer for a project's collaboration view, optionally with
-   * an active collaborative_session and/or an active tab inside that session.
+   * an active collaboration_room and/or an active tab inside that room.
    *
    * URL formats:
    *   /dock/project/<projectId>
-   *   /dock/project/<projectId>/collaborative_session/<sessionId>
-   *   /dock/project/<projectId>/collaborative_session/<sessionId>/tab/<typeid>
+   *   /dock/project/<projectId>/collaboration_room/<roomId>
+   *   /dock/project/<projectId>/collaboration_room/<roomId>/tab/<typeid>
    *
    * `typeid` is the standard TypeId string (e.g. "agentic_process-<uuid>").
    */
   static forProject(
     projectId?: string,
-    sub?: { sessionId?: string | null; tab?: TypeId | null },
+    sub?: { roomId?: string | null; tab?: TypeId | null },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     if (!projectId) return new DockPointer(ViewType.PROJECT, undefined, undefined, layout);
     const segments: string[] = [projectId];
-    if (sub?.sessionId) {
-      segments.push('collaborative_session', sub.sessionId);
+    if (sub?.roomId) {
+      segments.push('collaboration_room', sub.roomId);
       if (sub.tab) {
         segments.push('tab', sub.tab.toString());
       }
@@ -285,21 +285,21 @@ export class DockPointer implements IDockPointer {
    *
    * Accepted shapes:
    *   <projectId>
-   *   <projectId>/collaborative_session/<sessionId>
-   *   <projectId>/collaborative_session/<sessionId>/tab/<type>-<id>
+   *   <projectId>/collaboration_room/<roomId>
+   *   <projectId>/collaboration_room/<roomId>/tab/<type>-<id>
    *
    * Returns nulls for segments that aren't present or the input is malformed.
    */
   static parseProjectPointer(
     pointer: string | undefined | null,
-  ): { projectId: string | null; sessionId: string | null; tabTypeId: TypeId | null } {
-    if (!pointer) return { projectId: null, sessionId: null, tabTypeId: null };
+  ): { projectId: string | null; roomId: string | null; tabTypeId: TypeId | null } {
+    if (!pointer) return { projectId: null, roomId: null, tabTypeId: null };
     const parts = pointer.split('/').filter(Boolean);
     const projectId = parts[0] ?? null;
-    let sessionId: string | null = null;
+    let roomId: string | null = null;
     let tabTypeId: TypeId | null = null;
-    if (parts[1] === 'collaborative_session' && parts[2]) {
-      sessionId = parts[2];
+    if (parts[1] === 'collaboration_room' && parts[2]) {
+      roomId = parts[2];
       if (parts[3] === 'tab' && parts[4]) {
         try {
           tabTypeId = new TypeId(parts[4]);
@@ -308,7 +308,7 @@ export class DockPointer implements IDockPointer {
         }
       }
     }
-    return { projectId, sessionId, tabTypeId };
+    return { projectId, roomId, tabTypeId };
   }
 
   /**
@@ -577,26 +577,25 @@ export class DockPointer implements IDockPointer {
  * the Project (collaboration) view. Prefers the AgenticProcess when the tab
  * is a Claude session; falls back to the plain Shell.
  *
- * The session id is required — tabs inside a collaborative session always
- * belong to one. Keep `process.dockPointer` untouched — this function is the
- * seam.
+ * The room id is required — tabs inside a collaboration room always belong
+ * to one. Keep `process.dockPointer` untouched — this function is the seam.
  */
 export function getProcessProjectDockPointer(
-  session: { shell?: { id?: string } | null; agenticProcess?: { id?: string } | null },
+  tab: { shell?: { id?: string } | null; agenticProcess?: { id?: string } | null },
   projectId: string,
-  sessionId: string,
+  roomId: string,
 ): DockPointer {
-  if (session.agenticProcess?.id) {
+  if (tab.agenticProcess?.id) {
     return DockPointer.forProject(projectId, {
-      sessionId,
-      tab: new TypeId('agentic_process', session.agenticProcess.id),
+      roomId,
+      tab: new TypeId('agentic_process', tab.agenticProcess.id),
     });
   }
-  if (session.shell?.id) {
+  if (tab.shell?.id) {
     return DockPointer.forProject(projectId, {
-      sessionId,
-      tab: new TypeId('shell', session.shell.id),
+      roomId,
+      tab: new TypeId('shell', tab.shell.id),
     });
   }
-  return DockPointer.forProject(projectId, { sessionId });
+  return DockPointer.forProject(projectId, { roomId });
 }

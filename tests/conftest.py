@@ -113,3 +113,17 @@ def app():
     """Get the FastAPI app instance."""
     from flow_sdk.server.app import app as minihub_app
     return minihub_app
+
+
+@pytest.fixture(autouse=True)
+def isolated_records_root(tmp_path):
+    """Redirect the default records root to a temp dir for every test."""
+    from flow_sdk.fs_store.record import (
+        get_default_records_root,
+        set_default_records_root,
+    )
+
+    original = get_default_records_root()
+    set_default_records_root(tmp_path / "records")
+    yield tmp_path / "records"
+    set_default_records_root(original)

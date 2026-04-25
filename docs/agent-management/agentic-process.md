@@ -53,7 +53,7 @@ There are two runtime modes:
 | `shell_mode` | `bool` | `false` by default: direct PTY spawn. `true`: legacy shell intermediary path. |
 | `project_id` | `str \| None` | Owning project. Resolved from context, ancestry, or `@local`. |
 | `project_encoded_name` | `str \| None` | Encoded project name used for transcript navigation. |
-| `collaboration_session_id` | `str \| None` | Collaboration session this process belongs to, if any. |
+| `collaboration_room_id` | `str \| None` | Collaboration room this process belongs to, if any. |
 | `target_typeid_str` | `str \| None` | Serialized TypeId of the entity this process is attached to. |
 | `exe_folder`, `input_folder`, `output_folder`, `assets_folder` | `FSRef \| None` | Per-process execution folders under the process record directory. |
 | `additional_dirs` | `list[str]` | Extra directories exposed to the worker, passed as `--add-dir` where supported. |

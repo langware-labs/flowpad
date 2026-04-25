@@ -242,9 +242,9 @@ class AgenticProcess(Entity):
     shell_mode: bool = APIField(default=False, description="False=direct PTY spawn (default), True=legacy zsh intermediary")
     project_id: str | None = APIField(default=None)
     project_encoded_name: str | None = APIField(default=None)
-    collaboration_session_id: str | None = APIField(
+    collaboration_room_id: str | None = APIField(
         default=None,
-        description="CollaborationSession this process was spawned in, if any",
+        description="CollaborationRoom this process was spawned in, if any",
     )
     target_typeid_str: str | None = APIField(
         default=None,
@@ -396,11 +396,18 @@ class AgenticProcess(Entity):
           without re-spawning.
         """
         try:
+            _bench_t0 = time.perf_counter()
+            _bench_id = self.id[:8]
+            def _bench(label):
+                with open("/tmp/bench_open.log", "a") as _f:
+                    _f.write(f"[BENCH start {_bench_id}] {label}: {(time.perf_counter() - _bench_t0) * 1000:.1f}ms\n")
+            _bench("entry")
             self.session_id = self.session_id or str(uuid4())
             if visible is not None:
                 self.visible = visible
 
             shell = await self.shell() if self.shell_id else None
+            _bench("after self.shell()")
             if shell is not None:
                 if not await shell.ensure_live_compute_node_binding():
                     return ApiFailResponse(message=f"Compute node not found for linked shell {shell.id}")
@@ -419,6 +426,7 @@ class AgenticProcess(Entity):
                     shell = None
 
             await self.get_project()
+            _bench("after get_project")
 
             # Build the CLI command from cli_config + entity fields
             cmd = self.cli_options
@@ -451,23 +459,28 @@ class AgenticProcess(Entity):
             )
 
             is_resume = cmd.resume
+            _bench("after cli_options/cmd build")
 
             # Get existing shell or create a new one
             shell = await self._get_or_create_shell()
+            _bench("after _get_or_create_shell")
             self.shell_id = shell.id
             self.status = ProcessStatus.STARTING.value
             # Save session_id + shell_id before launching Claude so revalidation
             # can observe STARTING and avoid issuing a second open.
             await self.save()
+            _bench("after save#1 (STARTING)")
             on_exit = self._make_pty_exit_callback()
             worker_is_alive = False
 
             if self.shell_mode:
                 # Legacy path — zsh intermediary
                 await shell.start(on_exit=on_exit)
+                _bench("after shell.start (shell_mode)")
                 worker_is_alive = await shell.worker_alive()
                 if not worker_is_alive:
                     execution_info = await shell.launch(cmd, instruction=instruction)
+                    _bench("after shell.launch")
                     logger.info(
                         "AgenticProcess %s worker launched (shell): pid=%s name=%r",
                         self.id, execution_info.pid, execution_info.name,
@@ -475,11 +488,14 @@ class AgenticProcess(Entity):
             else:
                 # Direct path — Claude IS the PTY process (no zsh intermediary)
                 spawn_argv, spawn_env = cmd.to_spawn_args(instruction=instruction)
+                _bench("after to_spawn_args")
                 spawned = await shell.start(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
+                _bench("after shell.start (direct PTY)")
                 if not spawned:
                     worker_is_alive = await shell.worker_alive()
                 if not worker_is_alive:
                     execution_info = await shell.set_worker_pid_direct(cmd)
+                    _bench("after set_worker_pid_direct")
                     logger.info(
                         "AgenticProcess %s worker launched (direct PTY): pid=%s name=%r",
                         self.id, execution_info.pid, execution_info.name,
@@ -494,6 +510,7 @@ class AgenticProcess(Entity):
 
             self.status = ProcessStatus.RUNNING.value
             await self.save()
+            _bench("after save#2 (RUNNING)")
 
             return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=is_resume))
 
@@ -1456,15 +1473,24 @@ class AgenticProcess(Entity):
 
         POST body: {instruction?, visible?, session_id?}
         """
+        _http_t0 = time.perf_counter()
+        _http_id = self.id[:8]
+        def _http_bench(label):
+            with open("/tmp/bench_open.log", "a") as _f:
+                _f.write(f"[BENCH _http_open {_http_id}] {label}: {(time.perf_counter() - _http_t0) * 1000:.1f}ms\n")
+        _http_bench("entry")
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
+        _http_bench("after get_post_data")
         instruction = body.get("instruction")
         visible = body.get("visible")
         # Support legacy worker_session_id in POST body for older clients
         session_id_override = body.get("session_id") or body.get("worker_session_id")
         if session_id_override:
             self.session_id = session_id_override
-        return await self.start(instruction=instruction, visible=visible)
+        result = await self.start(instruction=instruction, visible=visible)
+        _http_bench("after start() return")
+        return result
 
     @action.post(action_name="close")
     async def _http_close(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -1660,3 +1686,5 @@ class AgenticProcess(Entity):
             asyncio.run_coroutine_threadsafe(_update_state(), main_loop)
 
         return _on_pty_exit
+# bench-marker 1777146382
+# bench-trigger-1777146659

@@ -613,7 +613,7 @@ It stores queryable metadata such as:
 - `pty_pid`: PTY session id; currently set to the shell id by `Shell.start()`.
 - `compute_node_id` and `compute_node_uname`.
 - `worker_pid`, `worker_name`, and `last_launch_cmd`.
-- `collaboration_session_id`.
+- `collaboration_room_id`.
 
 The entity does not own the PTY bytes. It locates the live PTY through the
 linked compute node.

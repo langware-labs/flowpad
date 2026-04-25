@@ -25,6 +25,18 @@ def _consume_confirmation(ws):
     assert data["status"] == "ok"
 
 
+def _flush(ws):
+    """Round-trip a ping to ensure prior fire-and-forget messages were applied.
+
+    `presence` doesn't ACK (the client never awaits one); the WS handler is
+    sequential, so a `pong` reply guarantees every earlier message on this
+    socket has been processed.
+    """
+    ws.send_json({"message_type": "ping", "message_id": "barrier", "text": "x"})
+    pong = ws.receive_json()
+    assert pong["message_type"] == "pong"
+
+
 async def _make_project() -> str:
     """Create a Project entity directly in the DB, return its id.
 
@@ -141,7 +153,7 @@ async def test_navigate_success_sends_ui_command_to_active_tab():
                     "focused": True,
                 }
             )
-            ws.receive_json()  # presence ack
+            _flush(ws)
 
             resp = client.post(
                 "/api/v1/agent/navigate/entity",
@@ -180,11 +192,11 @@ async def test_navigate_picks_focused_tab_when_multiple_connected():
                 ws_bg.send_json(
                     {"message_type": "presence", "message_id": "p-bg", "visible": True, "focused": False}
                 )
-                ws_bg.receive_json()
+                _flush(ws_bg)
                 ws_fg.send_json(
                     {"message_type": "presence", "message_id": "p-fg", "visible": True, "focused": True}
                 )
-                ws_fg.receive_json()
+                _flush(ws_fg)
 
                 resp = client.post(
                     "/api/v1/agent/navigate/entity",

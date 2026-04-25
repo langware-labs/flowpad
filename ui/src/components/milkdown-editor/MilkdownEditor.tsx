@@ -306,6 +306,87 @@ function getActiveState(state: EditorState): ActiveState {
 
 // ── Toolbar ───────────────────────────────────────────────────────────────────
 
+interface FormatButtonProps {
+  title: string;
+  icon: React.ReactNode;
+  active?: boolean;
+  disabled?: boolean;
+  testId?: string;
+  onMouseDown: (e: React.MouseEvent) => void;
+}
+
+/** Shared icon button for both static toolbar and selection popup. */
+function FormatButton({ title, icon, active, disabled, testId, onMouseDown }: FormatButtonProps) {
+  return (
+    <button
+      title={title}
+      disabled={disabled}
+      onMouseDown={onMouseDown}
+      data-testid={testId}
+      className={`flex h-7 w-7 items-center justify-center rounded hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground ${
+        active ? 'bg-muted text-foreground' : 'text-muted-foreground'
+      }`}
+    >
+      {icon}
+    </button>
+  );
+}
+
+/**
+ * Bold + Italic + Inline code + Link cluster — reused by both the static
+ * toolbar (along with headings/lists/code-block) and the SelectionToolbar
+ * popup (which contains only this cluster).
+ */
+function TextFormatButtons({
+  activeState,
+  onRequestLink,
+}: {
+  activeState: ActiveState;
+  onRequestLink: () => void;
+}) {
+  const [loading, get] = useInstance();
+  const act = useCallback(
+    (fn: (ctx: Ctx) => void) => {
+      if (loading) return;
+      get().action(fn);
+    },
+    [loading, get],
+  );
+  const { bold, italic, inlineCode, link, canAddLink } = activeState;
+  const linkEnabled = link || canAddLink;
+
+  return (
+    <>
+      <FormatButton
+        title="Bold"
+        icon={<Bold className="h-3.5 w-3.5" />}
+        active={bold}
+        onMouseDown={(e) => { e.preventDefault(); act(callCommand(toggleStrongCommand.key)); }}
+      />
+      <FormatButton
+        title="Italic"
+        icon={<Italic className="h-3.5 w-3.5" />}
+        active={italic}
+        onMouseDown={(e) => { e.preventDefault(); act(callCommand(toggleEmphasisCommand.key)); }}
+      />
+      <FormatButton
+        title="Inline code"
+        icon={<Code className="h-3.5 w-3.5" />}
+        active={inlineCode}
+        onMouseDown={(e) => { e.preventDefault(); act(callCommand(toggleInlineCodeCommand.key)); }}
+      />
+      <FormatButton
+        title={link ? 'Edit link' : canAddLink ? 'Add link' : 'Select text to add a link'}
+        icon={<LinkIcon className="h-3.5 w-3.5" />}
+        active={link}
+        disabled={!linkEnabled}
+        testId="milkdown-toolbar-link"
+        onMouseDown={(e) => { e.preventDefault(); if (linkEnabled) onRequestLink(); }}
+      />
+    </>
+  );
+}
+
 function MilkdownToolbar({
   activeState,
   onRequestLink,
@@ -323,55 +404,100 @@ function MilkdownToolbar({
     [loading, get],
   );
 
-  const btn = (title: string, icon: React.ReactNode, fn: (ctx: Ctx) => void, active = false) => (
-    <button
+  const headingBtn = (title: string, icon: React.ReactNode, fn: (ctx: Ctx) => void, active = false) => (
+    <FormatButton
       title={title}
+      icon={icon}
+      active={active}
       onMouseDown={(e) => { e.preventDefault(); act(fn); }}
-      className={`flex h-7 w-7 items-center justify-center rounded hover:bg-muted hover:text-foreground ${
-        active
-          ? 'bg-muted text-foreground'
-          : 'text-muted-foreground'
-      }`}
-    >
-      {icon}
-    </button>
+    />
   );
 
-  const { bold, italic, inlineCode, headingLevel, bulletList, orderedList, codeBlock, link, canAddLink } = activeState;
-  const linkEnabled = link || canAddLink;
+  const { headingLevel, bulletList, orderedList, codeBlock } = activeState;
 
   return (
     <div className="flex flex-shrink-0 items-center gap-0.5 border-b bg-muted/20 px-2 py-1">
-      {btn('Bold', <Bold className="h-3.5 w-3.5" />, callCommand(toggleStrongCommand.key), bold)}
-      {btn('Italic', <Italic className="h-3.5 w-3.5" />, callCommand(toggleEmphasisCommand.key), italic)}
-      {btn('Inline code', <Code className="h-3.5 w-3.5" />, callCommand(toggleInlineCodeCommand.key), inlineCode)}
-      <button
-        title={link ? 'Edit link' : canAddLink ? 'Add link' : 'Select text to add a link'}
-        disabled={!linkEnabled}
-        onMouseDown={(e) => { e.preventDefault(); if (linkEnabled) onRequestLink(); }}
-        data-testid="milkdown-toolbar-link"
-        className={`flex h-7 w-7 items-center justify-center rounded hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground ${
-          link ? 'bg-muted text-foreground' : 'text-muted-foreground'
-        }`}
-      >
-        <LinkIcon className="h-3.5 w-3.5" />
-      </button>
+      <TextFormatButtons activeState={activeState} onRequestLink={onRequestLink} />
       <div className="mx-1.5 h-4 w-px bg-border" />
-      {btn('Normal text', <Pilcrow className="h-3.5 w-3.5" />, callCommand(turnIntoTextCommand.key), headingLevel === 0 && !codeBlock)}
-      {btn('Heading 1', <Heading1 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 1), headingLevel === 1)}
-      {btn('Heading 2', <Heading2 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 2), headingLevel === 2)}
-      {btn('Heading 3', <Heading3 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 3), headingLevel === 3)}
+      {headingBtn('Normal text', <Pilcrow className="h-3.5 w-3.5" />, callCommand(turnIntoTextCommand.key), headingLevel === 0 && !codeBlock)}
+      {headingBtn('Heading 1', <Heading1 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 1), headingLevel === 1)}
+      {headingBtn('Heading 2', <Heading2 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 2), headingLevel === 2)}
+      {headingBtn('Heading 3', <Heading3 className="h-3.5 w-3.5" />, callCommand(wrapInHeadingCommand.key, 3), headingLevel === 3)}
       <div className="mx-1.5 h-4 w-px bg-border" />
-      {btn('Bullet list', <List className="h-3.5 w-3.5" />, callCommand(wrapInBulletListCommand.key), bulletList)}
-      {btn('Ordered list', <ListOrdered className="h-3.5 w-3.5" />, callCommand(wrapInOrderedListCommand.key), orderedList)}
-      {btn('Code block', <SquareCode className="h-3.5 w-3.5" />, callCommand(createCodeBlockCommand.key), codeBlock)}
+      {headingBtn('Bullet list', <List className="h-3.5 w-3.5" />, callCommand(wrapInBulletListCommand.key), bulletList)}
+      {headingBtn('Ordered list', <ListOrdered className="h-3.5 w-3.5" />, callCommand(wrapInOrderedListCommand.key), orderedList)}
+      {headingBtn('Code block', <SquareCode className="h-3.5 w-3.5" />, callCommand(createCodeBlockCommand.key), codeBlock)}
+    </div>
+  );
+}
+
+// ── Selection toolbar popup ──────────────────────────────────────────────────
+
+interface SelectionRect {
+  top: number;
+  left: number;
+  width: number;
+}
+
+function computeSelectionRect(view: EditorView): SelectionRect | null {
+  const { from, to, empty } = view.state.selection;
+  if (empty) return null;
+  try {
+    const start = view.coordsAtPos(from);
+    const end = view.coordsAtPos(to);
+    const top = Math.min(start.top, end.top);
+    const left = Math.min(start.left, end.left);
+    const right = Math.max(start.right, end.right);
+    return { top, left, width: right - left };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Floating toolbar that appears above the current text selection.
+ * Reuses TextFormatButtons (Bold/Italic/Code/Link) — same buttons as the
+ * static toolbar's first cluster, same active state, same commands.
+ */
+function SelectionToolbar({
+  rect,
+  activeState,
+  onRequestLink,
+}: {
+  rect: SelectionRect | null;
+  activeState: ActiveState;
+  onRequestLink: () => void;
+}) {
+  if (!rect) return null;
+  // Position the popup ~36px above the selection, flipping below if too close to top.
+  const POPUP_HEIGHT = 36;
+  const GAP = 8;
+  const flipBelow = rect.top - POPUP_HEIGHT - GAP < 8;
+  const top = flipBelow ? rect.top + 24 : rect.top - POPUP_HEIGHT - GAP;
+  const left = rect.left + rect.width / 2;
+  return (
+    <div
+      role="toolbar"
+      aria-label="Selection toolbar"
+      data-testid="selection-toolbar"
+      style={{
+        position: 'fixed',
+        top,
+        left,
+        transform: 'translateX(-50%)',
+        zIndex: 50,
+      }}
+      className="flex items-center gap-0.5 rounded-md border border-border bg-popover p-1 shadow-md"
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      <TextFormatButtons activeState={activeState} onRequestLink={onRequestLink} />
     </div>
   );
 }
 
 // ── Editor inner ──────────────────────────────────────────────────────────────
 
-function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveStateChange, editorRef }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
+function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveStateChange, onSelectionRectChange, editorRef }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const localRef = useRef<Editor | null>(null);
   const setEditor = (e: Editor | null) => {
@@ -413,10 +539,12 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
               onChange(markdown);
             });
           }
-          if (onActiveStateChange) {
+          if (onActiveStateChange || onSelectionRectChange) {
             const notify = (ctx: Ctx) => {
               try {
-                onActiveStateChange(getActiveState(ctx.get(editorViewCtx).state));
+                const view = ctx.get(editorViewCtx);
+                onActiveStateChange?.(getActiveState(view.state));
+                onSelectionRectChange?.(computeSelectionRect(view));
               } catch {
                 // view not ready during initialization
               }
@@ -445,7 +573,7 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
 
       return editor;
     },
-    [onChange, onActiveStateChange, plugins],
+    [onChange, onActiveStateChange, onSelectionRectChange, plugins],
   );
 
   useEffect(() => {
@@ -501,6 +629,7 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
 export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugins, onLinkClick }: MilkdownEditorProps) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const [activeState, setActiveState] = useState<ActiveState>(EMPTY_ACTIVE);
+  const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
   const [linkPopup, setLinkPopup] = useState<LinkPopupState | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorRef = useRef<Editor | null>(null);
@@ -696,9 +825,16 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
           onMouseLeave={scheduleHide}
           onClickCapture={handleContainerClick}
         >
-          <MilkdownEditorInner content={content} onChange={onChange} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} editorRef={editorRef} />
+          <MilkdownEditorInner content={content} onChange={onChange} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} />
         </div>
       </div>
+      {!isReadOnly && !linkPopup && (
+        <SelectionToolbar
+          rect={selectionRect}
+          activeState={activeState}
+          onRequestLink={handleRequestLink}
+        />
+      )}
       {linkPopup && (
         <LinkPopup
           state={linkPopup}

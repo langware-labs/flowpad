@@ -1,8 +1,8 @@
-"""CollaborationSession entity — a single meeting inside a CollaborationSpace.
+"""CollaborationRoom entity — a collaboration room on a project.
 
-A space is the persistent team room; a session is one meeting event. Sessions
-own the AgenticProcesses spawned during the meeting and hold the participants
-who joined it.
+A collaboration room is a persistent space where collaborators meet around a
+project. The room owns the AgenticProcesses spawned in it and holds the
+participants who joined.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from typing import Any, ClassVar
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity, action
-from flow_sdk.fs_records.collaboration_session_record import CollaborationSessionStatus
+from flow_sdk.fs_records.collaboration_room_record import CollaborationRoomStatus
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -24,23 +24,23 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class CollaborationSession(Entity):
-    """Entity representing one meeting inside a CollaborationSpace."""
+class CollaborationRoom(Entity):
+    """Entity representing a collaboration room on a project."""
 
-    type: str = APIField(default="collaboration_session")
+    type: str = APIField(default="collaboration_room")
     project_id: str | None = APIField(default=None, description="Owning project id")
     host_name: str | None = APIField(default=None, description="Display name of the host")
     host_member_id: str | None = APIField(default=None, description="Stable member_id of the host")
-    name: str | None = APIField(default=None, description="Optional human title for this meeting")
+    name: str | None = APIField(default=None, description="Optional human title for this room")
     members: list[dict] = APIField(
         default_factory=list,
         description="Participants: [{member_id, name, joined_at, last_seen_at}]",
     )
     agentic_process_ids: list[str] = APIField(
         default_factory=list,
-        description="AgenticProcess ids spawned during this session",
+        description="AgenticProcess ids spawned in this room",
     )
-    status: str = APIField(default=CollaborationSessionStatus.ACTIVE)
+    status: str = APIField(default=CollaborationRoomStatus.ACTIVE)
     started_at: str | None = APIField(default=None)
     updated_at: str | None = APIField(default=None)
     ended_at: str | None = APIField(default=None)
@@ -149,7 +149,7 @@ class CollaborationSession(Entity):
 
     @action.post(action_name="end")
     async def _http_end(self) -> ApiResponse:
-        self.status = CollaborationSessionStatus.ENDED
+        self.status = CollaborationRoomStatus.ENDED
         self.ended_at = _now_iso()
         self._touch()
         await self.save()

@@ -1,8 +1,8 @@
-# CollaborationSession: add_process flow
+# CollaborationRoom: add_process flow
 
 Verifies the end-to-end HTTP contract for creating a collaboration code on a
 Project, joining it, spawning an AgenticProcess on a ComputeNode, and linking
-that process to a CollaborationSession via `add_process`. Also exercises a
+that process to a CollaborationRoom via `add_process`. Also exercises a
 negative (missing/bogus) `agentic_process_id` payload.
 
 ## Prereqs
@@ -57,27 +57,27 @@ PASS when:
 - Missing `member_id` or `name` → `status=FAIL` with message
   `"member_id and name are required"`.
 
-### 3. Create a CollaborationSession entity
+### 3. Create a CollaborationRoom entity
 
-There is no higher-level endpoint that creates a CollaborationSession from the
+There is no higher-level endpoint that creates a CollaborationRoom from the
 project code — create the entity via the generic graph create route:
 
 ```bash
-curl -sS -X POST "$HUB/api/v1/graph/collaboration_session" \
+curl -sS -X POST "$HUB/api/v1/graph/collaboration_room" \
   -H 'Content-Type: application/json' \
-  -d "{\"project_id\":\"$PROJ_ID\",\"host_name\":\"QA Tester\",\"host_member_id\":\"qa-member-001\",\"name\":\"QA Regression Session\"}"
+  -d "{\"project_id\":\"$PROJ_ID\",\"host_name\":\"QA Tester\",\"host_member_id\":\"qa-member-001\",\"name\":\"QA Regression Room\"}"
 ```
 
 PASS when:
 - HTTP 200, `status=SUCCESS`.
-- `data.id` is a UUID — record as `SID`.
+- `data.id` is a UUID — record as `RID`.
 - `data.status == "active"`, `members == []`, `agentic_process_ids == []`,
   `started_at` and `updated_at` populated.
 
-### 4. Join the CollaborationSession entity itself (action `join`)
+### 4. Join the CollaborationRoom entity itself (action `join`)
 
 ```bash
-curl -sS -X POST "$HUB/api/v1/graph/collaboration_session/$SID/join" \
+curl -sS -X POST "$HUB/api/v1/graph/collaboration_room/$RID/join" \
   -H 'Content-Type: application/json' \
   -d '{"member_id":"qa-member-002","name":"QA Joiner"}'
 ```
@@ -100,10 +100,10 @@ PASS when:
 - HTTP 200, `status=SUCCESS`.
 - `data.type == "agentic_process"` and `data.id` is a UUID — record as `PID`.
 
-### 6. Link the process to the session (action `add_process`)
+### 6. Link the process to the room (action `add_process`)
 
 ```bash
-curl -sS -X POST "$HUB/api/v1/graph/collaboration_session/$SID/add_process" \
+curl -sS -X POST "$HUB/api/v1/graph/collaboration_room/$RID/add_process" \
   -H 'Content-Type: application/json' \
   -d "{\"agentic_process_id\":\"$PID\"}"
 ```
@@ -113,10 +113,10 @@ PASS when:
 - `data.ok == true` on first add, `false` on a repeated call with the same PID.
 - `data.agentic_process_ids` includes `PID`.
 
-### 7. GET the session and verify the process list is populated
+### 7. GET the room and verify the process list is populated
 
 ```bash
-curl -sS "$HUB/api/v1/graph/collaboration_session/$SID"
+curl -sS "$HUB/api/v1/graph/collaboration_room/$RID"
 ```
 
 PASS when:
@@ -128,7 +128,7 @@ PASS when:
 ### 8. Negative: missing agentic_process_id
 
 ```bash
-curl -sS -X POST "$HUB/api/v1/graph/collaboration_session/$SID/add_process" \
+curl -sS -X POST "$HUB/api/v1/graph/collaboration_room/$RID/add_process" \
   -H 'Content-Type: application/json' -d '{}'
 ```
 
@@ -139,7 +139,7 @@ rather than 500.
 ### 9. Negative: bogus agentic_process_id
 
 ```bash
-curl -sS -X POST "$HUB/api/v1/graph/collaboration_session/$SID/add_process" \
+curl -sS -X POST "$HUB/api/v1/graph/collaboration_room/$RID/add_process" \
   -H 'Content-Type: application/json' \
   -d '{"agentic_process_id":"00000000-dead-beef-0000-000000000000"}'
 ```
@@ -151,5 +151,5 @@ process does not exist. If the server happily appends the unknown id with
 ## Teardown
 
 Leave created entities in place (regression scratch data). If a cleanup pass is
-needed, `DELETE /api/v1/graph/collaboration_session/$SID` and
+needed, `DELETE /api/v1/graph/collaboration_room/$RID` and
 `DELETE /api/v1/graph/agentic_process/$PID`.

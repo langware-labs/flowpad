@@ -1,4 +1,4 @@
-import { CollaborationSession, dataContext, getOrCreateLocalMemberId, Project } from '@sdk';
+import { CollaborationRoom, dataContext, getOrCreateLocalMemberId, Project } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
@@ -7,7 +7,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { LogIn, Plus, Users } from 'lucide-react';
 import { useState } from 'react';
 
-interface StartCollaborationDialogProps {
+interface StartRoomDialogProps {
   open: boolean;
   onClose: () => void;
   defaultName?: string;
@@ -15,7 +15,7 @@ interface StartCollaborationDialogProps {
 
 type Tab = 'create' | 'join';
 
-export function StartCollaborationDialog({ open, onClose, defaultName }: StartCollaborationDialogProps) {
+export function StartRoomDialog({ open, onClose, defaultName }: StartRoomDialogProps) {
   const [tab, setTab] = useState<Tab>('create');
   const [hostName, setHostName] = useState(defaultName ?? '');
   const [joinCode, setJoinCode] = useState('');
@@ -40,21 +40,21 @@ export function StartCollaborationDialog({ open, onClose, defaultName }: StartCo
         });
         return;
       }
-      const session = await CollaborationSession.create({
+      const room = await CollaborationRoom.create({
         projectId: currentProject.id,
         hostName: hostName.trim(),
       });
       toast({
-        title: 'Session started',
+        title: 'Room started',
         description: currentProject.session_code
           ? `Share code ${currentProject.session_code} to invite.`
           : undefined,
       });
-      navigation.openProject(currentProject.id, { sessionId: session.id });
+      navigation.openProject(currentProject.id, { roomId: room.id });
       onClose();
     } catch (err) {
-      console.error('[StartCollaborationDialog] create failed', err);
-      toast({ title: 'Could not start session', description: String((err as Error).message ?? err) });
+      console.error('[StartRoomDialog] create failed', err);
+      toast({ title: 'Could not start room', description: String((err as Error).message ?? err) });
     } finally {
       setBusy(false);
     }
@@ -76,7 +76,7 @@ export function StartCollaborationDialog({ open, onClose, defaultName }: StartCo
           (await Project.getById<Project>(resolved.project_id));
         await proj?.joinCollaboration(memberId, joinName.trim());
       } catch (err) {
-        console.warn('[StartCollaborationDialog] join call failed (continuing)', err);
+        console.warn('[StartRoomDialog] join call failed (continuing)', err);
       }
       navigation.openProject(resolved.project_id);
       onClose();
@@ -129,10 +129,10 @@ export function StartCollaborationDialog({ open, onClose, defaultName }: StartCo
               />
             </div>
             <Button className="w-full" onClick={() => void handleCreate()} disabled={!canCreate}>
-              {busy ? 'Creating…' : 'Start session'}
+              {busy ? 'Creating…' : 'Start room'}
             </Button>
             <p className="text-center text-[11px] text-muted-foreground">
-              You become the host — you decide what gets shared into the session.
+              You become the host — you decide what gets shared into the room.
             </p>
           </div>
         ) : (

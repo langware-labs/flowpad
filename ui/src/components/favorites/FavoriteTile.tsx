@@ -48,7 +48,7 @@ const ICON_BY_ENTITY_TYPE: Record<string, LucideIcon> = {
   workflow: Workflow,
   agentic_process: Terminal,
   claude_session: Terminal,
-  collaboration_session: MessageSquare,
+  collaboration_room: MessageSquare,
   trigger: Zap,
   bookmark: BookmarkIcon,
   plan: FileText,

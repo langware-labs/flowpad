@@ -438,8 +438,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     liveCount,
     sessionStartTime,
     allEvents: allTraceEvents,
-  } = useTraceGutter(process?.session_id, terminalReady, ptySyncRef.current, shellReady, ptySyncSnapshot.version);
+  } = useTraceGutter(process ?? null, terminalReady, ptySyncRef.current, shellReady, ptySyncSnapshot.version);
   const lastMessageTime = useMemo(() => {
+    // Latest history event timestamp — used to anchor the "time since last
+    // message" indicator. Source name is 'transcript' for legacy compat with
+    // mapTranscriptToTraceEvents; mapFlowDataToTraceEvent maps
+    // FlowDataSource.History → 'transcript' too.
     const last = allTraceEvents
       .filter((e) => e.source === 'transcript')
       .reduce<string | null>((max, e) => (max === null || e.timestamp > max ? e.timestamp : max), null);
@@ -659,8 +663,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // Shell entity is resolved reactively by useShell(sessionId) above.
 
   // Recalibrate Phase-1 segment when the real session start time becomes known.
-  // sessionStartTime comes from ClaudeSessionRecord.discover() via useTraceGutter
-  // and reflects the original Claude session start — not the shell/replay creation time.
+  // sessionStartTime now comes from the earliest FlowData timestamp on
+  // process.flowDataStream (vendor-agnostic), not a Claude-specific record.
   useEffect(() => {
     if (!sessionStartTime || !ptySyncSnapshot.adapter) return;
     const startMs = new Date(sessionStartTime).getTime();

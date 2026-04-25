@@ -105,16 +105,14 @@ export function SearchView() {
   const { currentActivity, activityProgress, busy, resetAndRescan } = useSystemTools();
   const [progressOpen, setProgressOpen] = useState(false);
 
-  // Re-seed progress state from backend after page refresh so the modal reopens
-  // mid-job. Fires once on mount; the WS listener takes over for subsequent updates.
+  // Re-seed progress state from backend after page refresh so the footer
+  // indicator reappears mid-job. The modal stays closed until the user opens
+  // it explicitly via the footer indicator.
   useEffect(() => {
-    void systemTools.refreshActivityStatus().then((active) => {
-      if (active) setProgressOpen(true);
-    });
+    void systemTools.refreshActivityStatus();
   }, []);
 
   const handleRebuildIndex = useCallback(() => {
-    setProgressOpen(true);
     void resetAndRescan();
   }, [resetAndRescan]);
 

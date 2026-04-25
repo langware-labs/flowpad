@@ -14,6 +14,7 @@ export enum FlowDataType {
 export enum FlowDataSource {
   Stream = 'stream',
   History = 'history',
+  Sniffer = 'sniffer',
   WebSocket = 'websocket', // Future
   Inject = 'inject', // Future
   Unknown = 'unknown',

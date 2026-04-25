@@ -1,10 +1,9 @@
-"""CollaborationSessionRecord -- filesystem record for a single meeting
-inside a CollaborationSpace.
+"""CollaborationRoomRecord -- filesystem record for a collaboration room
+on a project.
 
-A CollaborationSpace is the persistent team room. A CollaborationSession is
-one specific meeting that happens inside the space — Zoom-call shaped: starts,
-has participants, ends. Sessions own the AgenticProcesses spawned during the
-meeting.
+A collaboration room is the persistent space where collaborators meet around
+a project — it owns the AgenticProcesses spawned in the room and tracks the
+participants who are currently or were ever present.
 """
 
 from __future__ import annotations
@@ -20,20 +19,20 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class CollaborationSessionStatus:
+class CollaborationRoomStatus:
     ACTIVE = "active"
     ENDED = "ended"
 
 
-class CollaborationSessionRecord(Record):
-    _record_type: ClassVar[str] = RecordType.COLLABORATION_SESSION
+class CollaborationRoomRecord(Record):
+    _record_type: ClassVar[str] = RecordType.COLLABORATION_ROOM
     _indexed_by_default: ClassVar[bool] = False
     index_fields: ClassVar[list[str]] = ["project_id", "updated_at"]
 
     def __init__(self, **kwargs: Any) -> None:
         if "id" not in kwargs:
             kwargs["id"] = str(_uuid.uuid4())
-        kwargs.setdefault("type", RecordType.COLLABORATION_SESSION)
+        kwargs.setdefault("type", RecordType.COLLABORATION_ROOM)
         now = _now_iso()
         # space_id is no longer part of the schema — drop it if a legacy record
         # still carries it so the entity doesn't refuse to load.
@@ -44,7 +43,7 @@ class CollaborationSessionRecord(Record):
         kwargs.setdefault("name", None)
         kwargs.setdefault("members", [])
         kwargs.setdefault("agentic_process_ids", [])
-        kwargs.setdefault("status", CollaborationSessionStatus.ACTIVE)
+        kwargs.setdefault("status", CollaborationRoomStatus.ACTIVE)
         kwargs.setdefault("started_at", now)
         kwargs.setdefault("updated_at", now)
         kwargs.setdefault("ended_at", None)
@@ -59,7 +58,7 @@ class CollaborationSessionRecord(Record):
         self._mark_dirty("updated_at")
 
     def add_process(self, process_id: str) -> bool:
-        """Append an agentic_process_id to the session's list. Returns True if added."""
+        """Append an agentic_process_id to the room's list. Returns True if added."""
         procs = list(object.__getattribute__(self, "__dict__").get("agentic_process_ids") or [])
         if process_id in procs:
             return False
@@ -96,7 +95,7 @@ class CollaborationSessionRecord(Record):
         return entry
 
     def end(self) -> None:
-        object.__setattr__(self, "status", CollaborationSessionStatus.ENDED)
+        object.__setattr__(self, "status", CollaborationRoomStatus.ENDED)
         object.__setattr__(self, "ended_at", _now_iso())
         self._mark_dirty("status")
         self._mark_dirty("ended_at")

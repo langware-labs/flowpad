@@ -5,7 +5,7 @@ import os
 # Configuration from environment
 from pathlib import Path
 
-from sqlalchemy import Boolean, Column, DateTime, String, Text, event
+from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text, event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -72,6 +72,34 @@ class RelationshipSchema(Base):
     is_final = Column(Boolean, default=False)
     # Store additional dynamic fields as JSON text
     data = Column(Text)
+
+    def to_dict(self) -> dict:
+        """Convert schema to dictionary."""
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
+
+class LinksSchema(Base):
+    """Wiki links — one row per [[...]] occurrence in a source record's body."""
+
+    __tablename__ = "links"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    src_type = Column(String(50), nullable=False)
+    src_id = Column(String(36), nullable=False)
+    target_raw = Column(Text, nullable=False)
+    target_resolved_type = Column(String(50), nullable=True)
+    target_resolved_id = Column(String(36), nullable=True)
+    line = Column(Integer, nullable=False)
+
+    __table_args__ = (
+        Index("idx_links_src", "src_type", "src_id"),
+        Index("idx_links_target", "target_resolved_type", "target_resolved_id"),
+        Index(
+            "idx_links_unresolved_raw",
+            "target_raw",
+            sqlite_where=text("target_resolved_id IS NULL"),
+        ),
+    )
 
     def to_dict(self) -> dict:
         """Convert schema to dictionary."""

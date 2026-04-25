@@ -137,34 +137,28 @@ class Entity(DBEntity):
         entity_uuid = entity_cls.allocate_id(data)
         entity = await entity_cls.get_one(QueryFilter.parse({"id": entity_uuid}))
 
-        # Collect domain fields from the record that the entity understands but
-        # that meta_dict() omits (e.g. Skill.description, Bookmark.title).
-        # This prevents sync_from_entity() from overwriting record values with
-        # empty entity defaults on the next sync cycle.
-        # Only do this for specialized entity subclasses — base Entity has no
-        # domain fields worth syncing, and record.to_dict() can be expensive
-        # (e.g. ClaudeSessionRecord triggers a full JSONL parse).
+        # Collect domain fields the entity understands but meta_dict() omits.
+        # Only fetch the SPECIFIC missing fields — never call to_dict(), which on
+        # ClaudeSessionRecord materialises 27 PropertyRecord descriptors and
+        # triggers a full JSONL parse just to populate fields no caller asked for.
+        # Pulling fields one-by-one with getattr still triggers the same descriptor
+        # cache (e.g. _get_session_batch_stats) on first access — but only when an
+        # entity field actually requires it, and only once per record.
         record_domain: dict = {}
         if entity_cls is not cls and hasattr(entity_cls, "model_fields"):
             entity_field_names = set(entity_cls.model_fields.keys())
             missing = entity_field_names - set(data.keys()) - {"id", "type"}
             if missing:
-                # Only call the (potentially expensive) to_dict() if the record
-                # actually carries any of the missing fields — i.e. when missing
-                # intersects with the record's own property_types or __dict__.
-                # This avoids triggering a full JSONL parse (ClaudeSessionRecord)
-                # when the missing fields are all base Entity infrastructure
-                # fields (created_date, tags, env_vars, …) that the record never
-                # populates anyway.
                 record_fields = set(
                     getattr(record, '_property_types', None) or {}
                 ) | set(
                     object.__getattribute__(record, "__dict__").keys()
                 )
-                if missing & record_fields:
-                    for k, v in record.to_dict().items():
-                        if k in missing:
-                            record_domain[k] = v
+                for k in missing & record_fields:
+                    try:
+                        record_domain[k] = getattr(record, k, None)
+                    except Exception:
+                        record_domain[k] = None
 
         if entity is None:
             create_kwargs = {"id": entity_uuid, "type": record_type}
@@ -293,6 +287,21 @@ class Entity(DBEntity):
         except Exception:
             pass
         return True
+
+    # ==================== Wiki link capability ====================
+    # Mirrors Record.get_links / Record.get_backlinks. Both call into the
+    # same flow_sdk.wiki module — the wiki layer takes only (type, id) and
+    # is agnostic to who called.
+
+    def get_links(self) -> list:
+        """Outgoing wiki links from this entity."""
+        from flow_sdk import wiki
+        return wiki.outgoing(self.type, self.id)
+
+    def get_backlinks(self) -> list:
+        """Inbound wiki links pointing at this entity."""
+        from flow_sdk import wiki
+        return wiki.backlinks(self.type, self.id)
 
     @staticmethod
     def api_visible_by_type(entity_type: str):

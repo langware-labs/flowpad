@@ -1,15 +1,15 @@
 /**
  * Project dock loader for
- *   /dock/project/<projectId>[/collaborative_session/<sessionId>[/tab/<typeid>]]
+ *   /dock/project/<projectId>[/collaboration_room/<roomId>[/tab/<typeid>]]
  *
  * Reuses the pure `loadProcess` / `loadShell` primitives from the shell
  * loaders so PTY attach + context setup is identical to the standard route.
- * Owns its own redirect URL policy — failures bounce to the collaborative
- * session (or project root) inside the same view, not out to /dock/shell.
+ * Owns its own redirect URL policy — failures bounce to the collaboration
+ * room (or project root) inside the same view, not out to /dock/shell.
  */
 
 import {
-  CollaborationSession,
+  CollaborationRoom,
   dataManager,
   Project,
   type Shell,
@@ -23,25 +23,25 @@ import { describeProcessStartError, loadProcess, ProcessLoadError } from './load
 import { fetchShellsAndProcesses, loadShell, resolveDefaultTab, ShellLoadError } from './load-shell';
 import { emptyRecoverySkips, type ShellRecoverySkips } from './shell-recovery';
 
-function recoveryUrl(projectId: string, sessionId: string | null): string {
-  return sessionId
-    ? `/dock/project/${projectId}/collaborative_session/${sessionId}`
+function recoveryUrl(projectId: string, roomId: string | null): string {
+  return roomId
+    ? `/dock/project/${projectId}/collaboration_room/${roomId}`
     : `/dock/project/${projectId}`;
 }
 
 /**
- * After the shell is loaded, stamp it with the owning session id so the
- * session-scoped `useActiveTerminals` filter picks it up. `loadProcess`
+ * After the shell is loaded, stamp it with the owning room id so the
+ * room-scoped `useActiveTerminals` filter picks it up. `loadProcess`
  * creates a fresh Shell on reload (old PTY gone), so we can't rely on the
  * tag being persisted at tab-creation time.
  */
-async function tagShellWithSession(shell: Shell, sessionId: string): Promise<void> {
-  if (shell.collaboration_session_id === sessionId) return;
+async function tagShellWithRoom(shell: Shell, roomId: string): Promise<void> {
+  if (shell.collaboration_room_id === roomId) return;
   try {
-    shell.collaboration_session_id = sessionId;
+    shell.collaboration_room_id = roomId;
     await shell.save();
   } catch (err) {
-    console.warn('[load-project] failed to tag shell with session id', err);
+    console.warn('[load-project] failed to tag shell with room id', err);
   }
 }
 
@@ -49,13 +49,13 @@ export async function loadProjectRoute(
   pointer: string | undefined,
   _recoverySkips: ShellRecoverySkips = emptyRecoverySkips(),
 ): Promise<void> {
-  const { projectId, sessionId, tabTypeId } = DockPointer.parseProjectPointer(pointer);
+  const { projectId, roomId, tabTypeId } = DockPointer.parseProjectPointer(pointer);
   if (!projectId) {
     // No project id in URL — page renders its empty state; nothing to load.
     return;
   }
 
-  // Prefetch project + session into the entity cache so the page's `useEntity`
+  // Prefetch project + room into the entity cache so the page's `useEntity`
   // calls hit immediately (no render blank → re-render).
   try {
     await dataManager.getByTypeId(new TypeId(Project.type, projectId));
@@ -64,27 +64,27 @@ export async function loadProjectRoute(
     return;
   }
 
-  if (sessionId) {
+  if (roomId) {
     try {
-      await dataManager.getByTypeId(new TypeId(CollaborationSession.type, sessionId));
+      await dataManager.getByTypeId(new TypeId(CollaborationRoom.type, roomId));
     } catch {
-      // Missing session — bounce to the project's collaboration root.
+      // Missing room — bounce to the project's collaboration root.
       // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw redirect(recoveryUrl(projectId, null));
     }
   }
 
   if (!tabTypeId) {
-    // No tab in the URL. If the session already has visible tabs, redirect
+    // No tab in the URL. If the room already has visible tabs, redirect
     // into the previously-active / first one so the xterm pane isn't blank.
-    if (sessionId) {
+    if (roomId) {
       const [shells, processes] = await fetchShellsAndProcesses();
-      const tabs = filterTabs(shells, processes, { visible: true, collaborationSessionId: sessionId });
+      const tabs = filterTabs(shells, processes, { visible: true, collaborationRoomId: roomId });
       const tab = resolveDefaultTab(tabs);
       if (tab) {
         const pointer = (tab.agenticProcess ?? tab.shell!).dockPointer.pointer;
         // eslint-disable-next-line @typescript-eslint/only-throw-error
-        throw redirect(`/dock/project/${projectId}/collaborative_session/${sessionId}/tab/${pointer}`);
+        throw redirect(`/dock/project/${projectId}/collaboration_room/${roomId}/tab/${pointer}`);
       }
     }
     return;
@@ -93,7 +93,7 @@ export async function loadProjectRoute(
   if (tabTypeId.type === 'agentic_process') {
     try {
       const { shell } = await loadProcess(tabTypeId.id);
-      if (sessionId) await tagShellWithSession(shell, sessionId);
+      if (roomId) await tagShellWithRoom(shell, roomId);
     } catch (e) {
       if (!(e instanceof ProcessLoadError)) throw e;
       if (e.kind === 'not_found') {
@@ -112,7 +112,7 @@ export async function loadProjectRoute(
         });
       }
       // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw redirect(recoveryUrl(projectId, sessionId));
+      throw redirect(recoveryUrl(projectId, roomId));
     }
     return;
   }
@@ -120,7 +120,7 @@ export async function loadProjectRoute(
   if (tabTypeId.type === 'shell') {
     try {
       const shell = await loadShell(tabTypeId.id);
-      if (sessionId) await tagShellWithSession(shell, sessionId);
+      if (roomId) await tagShellWithRoom(shell, roomId);
     } catch (e) {
       if (!(e instanceof ShellLoadError)) throw e;
       if (e.kind === 'not_found') {
@@ -139,12 +139,12 @@ export async function loadProjectRoute(
         toast({ ...describeProcessStartError(e.cause ?? e), variant: 'destructive' });
       }
       // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw redirect(recoveryUrl(projectId, sessionId));
+      throw redirect(recoveryUrl(projectId, roomId));
     }
     return;
   }
 
-  // Unknown tab type: fall back to the session root — tolerant parsing.
+  // Unknown tab type: fall back to the room root — tolerant parsing.
   // eslint-disable-next-line @typescript-eslint/only-throw-error
-  throw redirect(recoveryUrl(projectId, sessionId));
+  throw redirect(recoveryUrl(projectId, roomId));
 }

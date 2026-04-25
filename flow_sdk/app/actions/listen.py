@@ -390,6 +390,40 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
     except Exception as e:
         logger.debug(f"AgentHook emit_flow_data failed (non-critical): {e}")
 
+    # Per-process sniffer fan-out: translate this hook event into a generic
+    # FlowData (source=sniffer, element-type=status) and ingest it into the
+    # matching AgenticProcess.flowDataStream so the InteractiveTerminal trace
+    # gutter can render it alongside live completion + history. The global
+    # ``agent_hook.emit_flow_data`` above stays untouched — the project-wide
+    # sniffer view continues to consume it.
+    try:
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude.hook_to_flowdata import (
+            convert_hook_event,
+        )
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
+
+        target_process = None
+        if agentic_process_id:
+            target_process = await AgenticProcess.get_by_id(agentic_process_id)
+        if target_process is None and hook_session_id:
+            processes = await AgenticProcess.get_all(
+                entities_filter=QueryFilter(match=ExpressionNode(session_id=hook_session_id))
+            )
+            if processes:
+                target_process = processes[0]
+
+        if target_process is not None:
+            for fd in convert_hook_event(payload_data):
+                try:
+                    await target_process.emit_flow_data(
+                        {"flow_value": fd.flow_value, "attributes": fd.attributes}
+                    )
+                except Exception as exc:
+                    logger.debug("AgenticProcess sniffer emit_flow_data failed (non-critical): %s", exc)
+    except Exception as exc:
+        logger.debug("Sniffer fan-out skipped (non-critical): %s", exc)
+
     return ApiSuccessResponse(data=result.model_dump())
 
 

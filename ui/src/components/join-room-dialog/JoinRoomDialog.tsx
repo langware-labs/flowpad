@@ -1,38 +1,38 @@
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
-import { CollaborationSession } from '@sdk';
+import { CollaborationRoom } from '@sdk';
 import { Users } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-interface JoinSessionDialogProps {
+interface JoinRoomDialogProps {
   open: boolean;
   onClose: () => void;
   hostName?: string;
   draftPrompt: string;
-  onStart: (hostName: string, prompt: string, sessionName: string) => Promise<void> | void;
+  onStart: (hostName: string, prompt: string, roomName: string) => Promise<void> | void;
 }
 
-export function JoinSessionDialog({ open, onClose, hostName, draftPrompt, onStart }: JoinSessionDialogProps) {
+export function JoinRoomDialog({ open, onClose, hostName, draftPrompt, onStart }: JoinRoomDialogProps) {
   const [name, setName] = useState(hostName ?? '');
-  const [sessionName, setSessionName] = useState('');
-  const [sessionNameEdited, setSessionNameEdited] = useState(false);
+  const [roomName, setRoomName] = useState('');
+  const [roomNameEdited, setRoomNameEdited] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Reset + prefill when the dialog reopens.
   useEffect(() => {
     if (!open) return;
     setName(hostName ?? '');
-    setSessionName(CollaborationSession.defaultName(hostName?.trim() || 'Anonymous'));
-    setSessionNameEdited(false);
+    setRoomName(CollaborationRoom.defaultName(hostName?.trim() || 'Anonymous'));
+    setRoomNameEdited(false);
   }, [open, hostName]);
 
   // When the display name changes and the user hasn't manually edited the
-  // session name, keep the session-name prefill in sync.
+  // room name, keep the room-name prefill in sync.
   useEffect(() => {
-    if (sessionNameEdited) return;
-    setSessionName(CollaborationSession.defaultName(name.trim() || 'Anonymous'));
-  }, [name, sessionNameEdited]);
+    if (roomNameEdited) return;
+    setRoomName(CollaborationRoom.defaultName(name.trim() || 'Anonymous'));
+  }, [name, roomNameEdited]);
 
   const promptTrimmed = draftPrompt.trim();
   const canStart = !!name.trim() && !busy;
@@ -42,7 +42,7 @@ export function JoinSessionDialog({ open, onClose, hostName, draftPrompt, onStar
     setBusy(true);
     try {
       const finalName =
-        sessionName.trim() || CollaborationSession.defaultName(name.trim());
+        roomName.trim() || CollaborationRoom.defaultName(name.trim());
       await onStart(name.trim(), promptTrimmed, finalName);
       onClose();
     } finally {
@@ -56,14 +56,14 @@ export function JoinSessionDialog({ open, onClose, hostName, draftPrompt, onStar
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="h-5 w-5 text-green-600" />
-            Start collaborative session
+            Start collaboration room
           </DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-4 text-sm">
           <p className="text-muted-foreground">
-            You're about to open a meeting on this project. You can invite others with the share
-            code that'll appear in the header once the session starts.
+            You're about to open a room on this project. You can invite others with the share
+            code that'll appear in the header once the room starts.
           </p>
 
           {/* Host name */}
@@ -79,15 +79,15 @@ export function JoinSessionDialog({ open, onClose, hostName, draftPrompt, onStar
             />
           </div>
 
-          {/* Session name — prefilled, user can override */}
+          {/* Room name — prefilled, user can override */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">Session name</label>
+            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">Room name</label>
             <Input
               placeholder="e.g. Retry logic review"
-              value={sessionName}
+              value={roomName}
               onChange={(e) => {
-                setSessionName(e.target.value);
-                setSessionNameEdited(true);
+                setRoomName(e.target.value);
+                setRoomNameEdited(true);
               }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void handleStart();

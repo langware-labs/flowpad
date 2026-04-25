@@ -44,7 +44,7 @@ const RESOURCE_META: Record<ProjectResourceType, ResourceMeta> = {
   command: { label: 'Command', icon: Command },
   agent: { label: 'Agent', icon: Bot },
   session: { label: 'Session', icon: FolderOpen },
-  collaboration_session: { label: 'Collaboration Session', icon: FolderOpen },
+  collaboration_room: { label: 'Collaboration Room', icon: FolderOpen },
   todo: { label: 'Todo', icon: CheckSquare },
   claude_md: { label: 'CLAUDE.md', icon: FileText },
 };

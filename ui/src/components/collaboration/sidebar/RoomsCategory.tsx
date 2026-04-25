@@ -1,6 +1,6 @@
 import { Video } from 'lucide-react';
 import { useMemo } from 'react';
-import { useCollaborationSessions } from '@src/hooks/useCollaborationSessions';
+import { useCollaborationRooms } from '@src/hooks/useCollaborationRooms';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 
@@ -23,12 +23,12 @@ function formatWhen(iso: string | null): string {
   return new Date(t).toLocaleDateString();
 }
 
-export function SessionsCategory({ projectId }: Props) {
+export function RoomsCategory({ projectId }: Props) {
   const { navigation, currentDock } = useDockNavigation();
-  const { items, isLoading } = useCollaborationSessions({ projectId: projectId ?? undefined, limit: 20 });
+  const { items, isLoading } = useCollaborationRooms({ projectId: projectId ?? undefined, limit: 20 });
 
-  const activeSessionId = useMemo(
-    () => DockPointer.parseProjectPointer(currentDock?.pointer).sessionId,
+  const activeRoomId = useMemo(
+    () => DockPointer.parseProjectPointer(currentDock?.pointer).roomId,
     [currentDock?.pointer],
   );
 
@@ -41,20 +41,20 @@ export function SessionsCategory({ projectId }: Props) {
   }
 
   if (items.length === 0) {
-    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground">No sessions yet</div>;
+    return <div className="px-2 py-1.5 text-xs italic text-muted-foreground">No rooms yet</div>;
   }
 
   return (
     <ul className="flex flex-col gap-0.5">
       {items.map((s) => {
-        const isActive = s.id === activeSessionId;
+        const isActive = s.id === activeRoomId;
         const isLive = s.status === 'active';
         return (
           <li
             key={s.id}
             onClick={() => {
               if (!s.projectId) return;
-              navigation.openDock(DockPointer.forProject(s.projectId, { sessionId: s.id }));
+              navigation.openDock(DockPointer.forProject(s.projectId, { roomId: s.id }));
             }}
             className={`flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
               isActive

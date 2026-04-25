@@ -6,13 +6,16 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Project, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
+import type { RoomTab } from '../RoomTabs';
 
 interface Props {
   projectId: string | null;
   refreshKey?: number;
+  /** When provided, doc clicks open a tab in the room rather than navigating away. */
+  onOpenTab?: (tab: RoomTab) => void;
 }
 
-export function DocsCategory({ projectId, refreshKey = 0 }: Props) {
+export function DocsCategory({ projectId, refreshKey = 0, onOpenTab }: Props) {
   const { navigation } = useDockNavigation();
 
   // Resolve the project entity so we can read `system` for auto-opt-in.
@@ -94,7 +97,18 @@ export function DocsCategory({ projectId, refreshKey = 0 }: Props) {
           {results.map((d) => (
             <li
               key={d.record_id}
-              onClick={() => navigation.openDock(DockPointer.forAssetEditor('markdown', d.asset_ref))}
+              onClick={() => {
+                if (onOpenTab && d.asset_ref) {
+                  onOpenTab({
+                    key: `markdown:${d.record_id}`,
+                    type: 'markdown',
+                    title: d.name || 'Untitled',
+                    asset_ref: d.asset_ref,
+                  });
+                } else {
+                  navigation.openDock(DockPointer.forAssetEditor('markdown', d.asset_ref));
+                }
+              }}
               className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <FileText className="h-3.5 w-3.5 flex-shrink-0" />

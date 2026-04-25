@@ -144,6 +144,16 @@ class SkillRecord(Record):
             parts.append(doc.read())
         return "\n".join(parts) if parts else None
 
+    def wiki_body(self) -> str | None:
+        """Read the SKILL.md body for wiki link extraction."""
+        doc = self.skill_doc
+        if doc is None or not doc.exists():
+            return None
+        try:
+            return doc.read_body()
+        except Exception:
+            return None
+
     def _asset_paths(self):
         """Skill assets are the inner content files — dir mtime won't catch edits to these."""
         ar = self.asset_ref
