@@ -7,7 +7,7 @@ import type { ProjectMember } from './project';
 import { Project, getOrCreateLocalMemberId } from './project';
 
 
-export interface ICollaborationSession extends IEntity {
+export interface ICollaborationRoom extends IEntity {
   project_id?: string | null;
   host_name?: string | null;
   host_member_id?: string | null;
@@ -21,11 +21,11 @@ export interface ICollaborationSession extends IEntity {
 }
 
 @registerEntity
-export class CollaborationSession
-  extends APIEntity<CollaborationSession>
-  implements ICollaborationSession
+export class CollaborationRoom
+  extends APIEntity<CollaborationRoom>
+  implements ICollaborationRoom
 {
-  static type: string = 'collaboration_session';
+  static type: string = 'collaboration_room';
 
   project_id: string | null = null;
   host_name: string | null = null;
@@ -38,7 +38,7 @@ export class CollaborationSession
   updated_at: string | null = null;
   ended_at: string | null = null;
 
-  constructor(entity: Partial<ICollaborationSession> = {}) {
+  constructor(entity: Partial<ICollaborationRoom> = {}) {
     super(entity as IEntity);
     Object.assign(this, entity);
     this.members = entity.members ?? [];
@@ -48,23 +48,23 @@ export class CollaborationSession
   get displayName(): string {
     if (this.name && this.name.trim()) return this.name;
     // Backfill display for legacy records that were created before auto-naming
-    // landed. Uses the same "<Host>'s session (Day, HH:MM)" shape as create().
+    // landed. Uses the same "<Host>'s room (Day, HH:MM)" shape as create().
     const host = this.host_name?.trim() || 'Anonymous';
     const when = this.started_at ? new Date(this.started_at) : new Date();
     if (!Number.isNaN(when.getTime())) {
-      return CollaborationSession.defaultName(host, when);
+      return CollaborationRoom.defaultName(host, when);
     }
-    return `${host}'s session`;
+    return `${host}'s room`;
   }
 
   /**
-   * DockPointer back to the session, nested under its project:
-   *   /dock/project/<project_id>/collaborative_session/<session_id>
+   * DockPointer back to the room, nested under its project:
+   *   /dock/project/<project_id>/collaboration_room/<room_id>
    */
   override get dockPointer(): DockPointerData {
     const pointer =
       this.project_id && this.id
-        ? `${this.project_id}/collaborative_session/${this.id}`
+        ? `${this.project_id}/collaboration_room/${this.id}`
         : undefined;
     return new DockPointerData(ViewType.PROJECT, pointer);
   }
@@ -115,30 +115,30 @@ export class CollaborationSession
     return !!this.host_member_id && local === this.host_member_id;
   }
 
-  /**
-   * Start a new meeting bound to a project. Ensures the project has a
-   * collaboration `session_code` (lazy-generated), seeds the host as the
-   * first member of both project and session, then saves and returns the
-   * session record.
-   */
-  /** Default session name: e.g. "Alex's session (Mon, 19:45)". */
+  /** Default room name: e.g. "Alex's room (Mon, 19:45)". */
   static defaultName(hostName: string, when: Date = new Date()): string {
     const day = when.toLocaleDateString(undefined, { weekday: 'short' });
     const hh = String(when.getHours()).padStart(2, '0');
     const mm = String(when.getMinutes()).padStart(2, '0');
-    return `${hostName}'s session (${day}, ${hh}:${mm})`;
+    return `${hostName}'s room (${day}, ${hh}:${mm})`;
   }
 
+  /**
+   * Start a new collaboration room bound to a project. Ensures the project has
+   * a collaboration `session_code` (lazy-generated), seeds the host as the
+   * first member of both project and room, then saves and returns the room
+   * record.
+   */
   public static async create(options: {
     projectId: string;
     hostName: string;
     hostMemberId?: string;
     name?: string | null;
-  }): Promise<CollaborationSession> {
+  }): Promise<CollaborationRoom> {
     const { projectId, hostName, name } = options;
     if (!projectId) throw new Error('projectId is required');
     const effectiveName =
-      name != null && name.trim() ? name.trim() : CollaborationSession.defaultName(hostName);
+      name != null && name.trim() ? name.trim() : CollaborationRoom.defaultName(hostName);
 
     // Ensure the project has a collaboration code (and a host).
     const project =
@@ -151,7 +151,7 @@ export class CollaborationSession
     }
 
     const now = new Date().toISOString();
-    const session = new CollaborationSession({
+    const room = new CollaborationRoom({
       project_id: projectId,
       host_name: hostName,
       host_member_id: memberId,
@@ -166,7 +166,7 @@ export class CollaborationSession
       ],
       status: 'active',
     });
-    await session.save();
-    return session;
+    await room.save();
+    return room;
   }
 }

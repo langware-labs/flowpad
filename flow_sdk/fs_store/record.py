@@ -1997,6 +1997,20 @@ class Record:
                 driver = get_db_driver()
                 if hasattr(driver, "fts_upsert"):
                     await driver.fts_upsert(entry)
+
+            # Step 3: Wiki link extraction. Records whose wiki_body() returns
+            # None (the default) are silently skipped. Errors here are logged
+            # but do not fail the sync_to_db — entity/FTS state is already
+            # consistent at this point.
+            try:
+                from flow_sdk import wiki
+                wiki.index(self.type, self.id, self.wiki_body())
+            except Exception as wiki_exc:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "wiki.index failed for %s:%s — %s",
+                    self.type, self.id, wiki_exc,
+                )
         except Exception as exc:
             from flow_sdk.fs_records.record_error import RecordError  # lazy (circular-safe)
             RecordError.from_exception(self, exc, trigger="sync_to_db").save()
@@ -2030,6 +2044,30 @@ class Record:
             subprocess.Popen(["explorer", str(folder)])
         else:
             subprocess.Popen(["xdg-open", str(folder)])
+
+    # ==================== Wiki link capability ====================
+
+    def wiki_body(self) -> str | None:
+        """Return the markdown body to extract wiki links from.
+
+        Default: ``None`` — the record is not a wiki source. Subclasses with
+        markdown content (MarkdownRecord, SkillRecord, AgentRecord,
+        WorkflowRecord, …) override this to return their body text.
+
+        Records returning ``None`` are still wiki *targets* — they can be
+        linked TO via ``[[name]]`` from any wiki source.
+        """
+        return None
+
+    def get_links(self) -> list:
+        """Outgoing wiki links from this record (delegates to flow_sdk.wiki)."""
+        from flow_sdk import wiki
+        return wiki.outgoing(self.type, self.id)
+
+    def get_backlinks(self) -> list:
+        """Inbound wiki links pointing at this record (delegates to flow_sdk.wiki)."""
+        from flow_sdk import wiki
+        return wiki.backlinks(self.type, self.id)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(id={self.id!r}, type={self.type!r}, name={self.name!r})"

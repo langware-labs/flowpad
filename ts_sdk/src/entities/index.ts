@@ -26,7 +26,7 @@ export * from './process-result';
 export * from './project';
 export * from './question';
 export * from './shell';
-export * from './collaboration-session';
+export * from './collaboration-room';
 export * from './siteconfig';
 export * from './conversation';
 export * from './flow-message';

@@ -20,9 +20,22 @@ def _consume_confirmation(ws):
     assert data["status"] == "ok"
 
 
+def _flush(ws):
+    """Round-trip a ping to ensure prior fire-and-forget messages were applied.
+
+    `presence` no longer ACKs (the client doesn't await it), so tests that
+    introspect server state after sending presence need their own barrier.
+    The WS handler processes messages sequentially, so a `pong` reply
+    guarantees every earlier message on this socket has been handled.
+    """
+    ws.send_json({"message_type": "ping", "message_id": "barrier", "text": "x"})
+    pong = ws.receive_json()
+    assert pong["message_type"] == "pong"
+
+
 @pytest.mark.asyncio
-async def test_presence_update_is_acked_and_recorded():
-    """Sending `presence` returns an ack and mutates the ConnectionInfo."""
+async def test_presence_update_is_recorded():
+    """Sending `presence` mutates the ConnectionInfo (no ACK is emitted)."""
     from flow_sdk.server.app import app
     from flow_sdk.server.routes.websocket import get_connection_infos
     from starlette.testclient import TestClient
@@ -41,12 +54,7 @@ async def test_presence_update_is_acked_and_recorded():
                     "focused": False,
                 }
             )
-            response = ws.receive_json()
-
-            assert response["message_type"] == "response_msg"
-            assert response["status"] == "ok"
-            assert response["response_message_id"] == "p1"
-            assert response["data"] == {"visible": False, "focused": False}
+            _flush(ws)
 
             infos = get_connection_infos()
             assert connection_id in infos
@@ -76,11 +84,8 @@ async def test_presence_partial_update_preserves_missing_fields():
                     "focused": True,
                 }
             )
-            ws.receive_json()
-
             ws.send_json({"message_type": "presence", "message_id": "p-partial", "visible": False})
-            response = ws.receive_json()
-            assert response["data"] == {"visible": False, "focused": True}
+            _flush(ws)
 
             info = get_connection_infos()[connection_id]
             assert info.visible is False
@@ -108,12 +113,12 @@ async def test_get_active_connection_prefers_visible_and_focused():
                 ws_a.send_json(
                     {"message_type": "presence", "message_id": "pa", "visible": True, "focused": True}
                 )
-                ws_a.receive_json()
+                _flush(ws_a)
 
                 ws_b.send_json(
                     {"message_type": "presence", "message_id": "pb", "visible": True, "focused": False}
                 )
-                ws_b.receive_json()
+                _flush(ws_b)
 
                 active = get_active_connection()
                 assert active is not None
@@ -139,13 +144,13 @@ async def test_get_active_connection_tiebreaks_by_recency():
                 ws_a.send_json(
                     {"message_type": "presence", "message_id": "pa", "visible": True, "focused": True}
                 )
-                ws_a.receive_json()
+                _flush(ws_a)
 
                 # B matches A's priority but reports later → should win.
                 ws_b.send_json(
                     {"message_type": "presence", "message_id": "pb", "visible": True, "focused": True}
                 )
-                ws_b.receive_json()
+                _flush(ws_b)
 
                 active = get_active_connection()
                 assert active is not None
@@ -171,11 +176,11 @@ async def test_get_active_connection_falls_through_when_all_hidden():
                 ws_a.send_json(
                     {"message_type": "presence", "message_id": "pa", "visible": False, "focused": False}
                 )
-                ws_a.receive_json()
+                _flush(ws_a)
                 ws_b.send_json(
                     {"message_type": "presence", "message_id": "pb", "visible": False, "focused": False}
                 )
-                ws_b.receive_json()
+                _flush(ws_b)
 
                 active = get_active_connection()
                 assert active is not None
@@ -222,7 +227,7 @@ async def test_debug_connections_endpoint():
                     "focused": True,
                 }
             )
-            ws.receive_json()
+            _flush(ws)
 
             resp = test_client.get("/api/v1/debug/connections")
             assert resp.status_code == 200

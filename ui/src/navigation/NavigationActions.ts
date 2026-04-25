@@ -160,7 +160,7 @@ export class NavigationActions {
 
   openProject(
     projectId?: string,
-    sub?: { sessionId?: string | null; tab?: import('@sdk').TypeId | null },
+    sub?: { roomId?: string | null; tab?: import('@sdk').TypeId | null },
   ): void {
     this.openDock(DockPointer.forProject(projectId, sub));
   }

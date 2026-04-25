@@ -1,25 +1,27 @@
 import { ChevronDown, ChevronRight, FileText, ListChecks, Video } from 'lucide-react';
 import { useState } from 'react';
-import { SessionsCategory } from './sidebar/SessionsCategory';
+import { RoomsCategory } from './sidebar/RoomsCategory';
 import { DocsCategory } from './sidebar/DocsCategory';
 import { NewDocButton } from './sidebar/NewDocButton';
 import { PlansCategory } from './sidebar/PlansCategory';
+import type { RoomTab } from './RoomTabs';
 
-type CategoryKey = 'sessions' | 'docs' | 'plans';
+type CategoryKey = 'rooms' | 'docs' | 'plans';
 
 const CATEGORIES: Array<{ key: CategoryKey; label: string; icon: typeof Video }> = [
-  { key: 'sessions', label: 'Sessions', icon: Video },
+  { key: 'rooms', label: 'Rooms', icon: Video },
   { key: 'docs', label: 'Docs', icon: FileText },
   { key: 'plans', label: 'Plans', icon: ListChecks },
 ];
 
 interface Props {
   projectId: string | null;
+  onOpenTab?: (tab: RoomTab) => void;
 }
 
-export function CollaborationSidebar({ projectId }: Props) {
+export function CollaborationSidebar({ projectId, onOpenTab }: Props) {
   const [expanded, setExpanded] = useState<Record<CategoryKey, boolean>>({
-    sessions: true,
+    rooms: true,
     docs: true,
     plans: false,
   });
@@ -52,8 +54,10 @@ export function CollaborationSidebar({ projectId }: Props) {
             </div>
             {open && (
               <div className="ml-2">
-                {key === 'sessions' && <SessionsCategory projectId={projectId} />}
-                {key === 'docs' && <DocsCategory projectId={projectId} refreshKey={docsRefreshKey} />}
+                {key === 'rooms' && <RoomsCategory projectId={projectId} />}
+                {key === 'docs' && (
+                  <DocsCategory projectId={projectId} refreshKey={docsRefreshKey} onOpenTab={onOpenTab} />
+                )}
                 {key === 'plans' && <PlansCategory projectId={projectId} />}
               </div>
             )}

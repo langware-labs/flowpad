@@ -19,7 +19,7 @@ import { useProjectTasks } from '@src/hooks/use-project-tasks';
 import { useTaskMutations } from '@src/hooks/use-task-mutations';
 import { useClaudeProjectList } from '@src/hooks/use-claude-projects';
 import { useSnifferContext } from '@src/contexts/SnifferContext';
-import { useCollaborationSessions } from '@src/hooks/useCollaborationSessions';
+import { useCollaborationRooms } from '@src/hooks/useCollaborationRooms';
 import { useProjects } from '@src/hooks/use-projects';
 import { useActAccordingToClassification } from '@src/hooks/use-act-according-to-classification';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
@@ -32,8 +32,8 @@ import { useToast } from '@src/hooks/use-toast';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityProgressModal } from '@src/components/search-index/ActivityProgressModal';
 import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
-import { JoinSessionDialog } from '@src/components/join-session-dialog/JoinSessionDialog';
-import { JoinExistingSessionDialog } from '@src/components/join-session-dialog/JoinExistingSessionDialog';
+import { JoinRoomDialog } from '@src/components/join-room-dialog/JoinRoomDialog';
+import { JoinExistingRoomDialog } from '@src/components/join-room-dialog/JoinExistingRoomDialog';
 import { useLoginRequired } from '@src/hooks/use-login-required';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { Button } from '@src/components/ui/button';
@@ -191,14 +191,14 @@ export function HomeLanding() {
   const firstName = user?.name?.split(' ')[0] || 'there';
 
   const { checkLoginAndProceed, requiresLogin, showLoginDialog, closeLoginDialog } = useLoginRequired();
-  const [showJoinSession, setShowJoinSession] = useState(false);
+  const [showJoinRoom, setShowJoinRoom] = useState(false);
   const [showJoinExisting, setShowJoinExisting] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState('');
-  const handleStartCollaborativeSession = () => {
+  const handleStartCollaborationRoom = () => {
     if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
-    setShowJoinSession(true);
+    setShowJoinRoom(true);
   };
-  const handleJoinSession = () => {
+  const handleJoinRoom = () => {
     if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
     setShowJoinExisting(true);
   };
@@ -254,7 +254,7 @@ export function HomeLanding() {
   const paths = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths, []);
 
   const handleStartCollaboration = useCallback(
-    async (hostName: string, prompt: string, sessionName?: string) => {
+    async (hostName: string, prompt: string, roomName?: string) => {
       if (!currentProject?.typeId) {
         toast({
           title: 'Project Required',
@@ -264,9 +264,9 @@ export function HomeLanding() {
         return;
       }
       const trimmedPrompt = prompt.trim();
-      const finalName = sessionName?.trim() ? sessionName.trim() : undefined;
+      const finalName = roomName?.trim() ? roomName.trim() : undefined;
       try {
-        const { CollaborationSession, TypeId } = await import('@sdk');
+        const { CollaborationRoom, TypeId } = await import('@sdk');
         const projectIdStr = currentProject.typeId.id;
         if (trimmedPrompt) {
           const workdir =
@@ -275,30 +275,30 @@ export function HomeLanding() {
             { workdir },
             { instruction: trimmedPrompt },
           );
-          const session = await agenticProcess.createCollaborationSession(hostName, {
+          const room = await agenticProcess.createCollaborationRoom(hostName, {
             name: finalName ?? null,
           });
           setDraftPrompt('');
           navigation.openDock(
             DockPointer.forProject(projectIdStr, {
-              sessionId: session.id,
+              roomId: room.id,
               tab: new TypeId('agentic_process', agenticProcess.id),
             }),
           );
         } else {
-          const session = await CollaborationSession.create({
+          const room = await CollaborationRoom.create({
             projectId: projectIdStr,
             hostName,
             name: finalName ?? null,
           });
           navigation.openDock(
-            DockPointer.forProject(projectIdStr, { sessionId: session.id }),
+            DockPointer.forProject(projectIdStr, { roomId: room.id }),
           );
         }
       } catch (error) {
-        console.error('[HomeLanding] Failed to start collaborative session:', error);
+        console.error('[HomeLanding] Failed to start collaboration room:', error);
         toast({
-          title: 'Could not start session',
+          title: 'Could not start room',
           description: String((error as Error).message ?? error),
           variant: 'destructive',
         });
@@ -372,16 +372,16 @@ export function HomeLanding() {
     [selectedClaudeProjectEncodedName],
   );
 
-  const { items: collaborationSessionRows } = useCollaborationSessions({
+  const { items: collaborationRoomRows } = useCollaborationRooms({
     projectId: currentProject?.typeId.id,
     limit: 20,
   });
   const activityItems = useMemo(
     () =>
-      collaborationSessionRows.map((row) => ({
+      collaborationRoomRows.map((row) => ({
         id: row.id,
         name: row.name,
-        type: 'collaboration_session' as const,
+        type: 'collaboration_room' as const,
         // Subtitle = host. ProjectActivityStrip already renders the timestamp
         // (from modifiedAt) on the row, so the subtitle line reads:
         //   `<name>`  (big)
@@ -391,7 +391,7 @@ export function HomeLanding() {
         path: row.projectName,
         modifiedAt: row.updatedAt,
       })),
-    [collaborationSessionRows],
+    [collaborationRoomRows],
   );
 
   const selectedClaudeProjectCwd = useMemo(() => {
@@ -473,11 +473,11 @@ export function HomeLanding() {
           handleSessionResume(resource);
           break;
         }
-        case 'collaboration_session': {
-          const row = collaborationSessionRows.find((r) => r.id === resource.id);
+        case 'collaboration_room': {
+          const row = collaborationRoomRows.find((r) => r.id === resource.id);
           if (row && row.projectId) {
             navigation.openDock(
-              DockPointer.forProject(row.projectId, { sessionId: row.id }),
+              DockPointer.forProject(row.projectId, { roomId: row.id }),
             );
           }
           break;
@@ -514,7 +514,7 @@ export function HomeLanding() {
       resourceNavigationOptions,
       selectedClaudeProjectEncodedName,
       handleSessionResume,
-      collaborationSessionRows,
+      collaborationRoomRows,
     ],
   );
 
@@ -653,16 +653,16 @@ export function HomeLanding() {
                   type="button"
                   variant="outline"
                   className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white transition-colors shadow-sm"
-                  onClick={handleJoinSession}
+                  onClick={handleJoinRoom}
                 >
-                  Join session
+                  Join room
                 </Button>
                 <Button
                   type="button"
                   className="bg-green-600 text-white hover:bg-green-700 transition-colors shadow-sm"
-                  onClick={handleStartCollaborativeSession}
+                  onClick={handleStartCollaborationRoom}
                 >
-                  Start collaborative session
+                  Start collaboration room
                 </Button>
               </div>
             </div>
@@ -805,16 +805,16 @@ export function HomeLanding() {
         }}
       />
 
-      <JoinSessionDialog
-        open={showJoinSession}
-        onClose={() => setShowJoinSession(false)}
+      <JoinRoomDialog
+        open={showJoinRoom}
+        onClose={() => setShowJoinRoom(false)}
         hostName={user?.name ?? undefined}
         draftPrompt={draftPrompt}
-        onStart={(hostName, prompt, sessionName) =>
-          handleStartCollaboration(hostName, prompt, sessionName)
+        onStart={(hostName, prompt, roomName) =>
+          handleStartCollaboration(hostName, prompt, roomName)
         }
       />
-      <JoinExistingSessionDialog
+      <JoinExistingRoomDialog
         open={showJoinExisting}
         onClose={() => setShowJoinExisting(false)}
         defaultName={user?.name ?? undefined}

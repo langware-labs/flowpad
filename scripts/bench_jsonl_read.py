@@ -151,6 +151,108 @@ def current_parse_fts(path: Path) -> int:
     return len(lines)
 
 
+def user_prompts_only(path: Path) -> int:
+    """All user prompts (no assistant turns), full-file scan."""
+    lines: list[str] = []
+    with open(path, "rb") as fh:
+        for raw in fh:
+            if not raw.strip():
+                continue
+            try:
+                e = orjson.loads(raw) if HAS_ORJSON else json.loads(raw)
+            except (ValueError, json.JSONDecodeError):
+                continue
+            if e.get("type") != "user":
+                continue
+            msg = e.get("message") or {}
+            t = _extract_text_current(msg.get("content") if isinstance(msg, dict) else None)
+            if t:
+                lines.append(t)
+    return len(lines)
+
+
+def first_user_only_full_scan(path: Path) -> int:
+    """First user prompt only, but with full-file parse (worst-case for early-exit)."""
+    found = None
+    with open(path, "rb") as fh:
+        for raw in fh:
+            if not raw.strip():
+                continue
+            try:
+                e = orjson.loads(raw) if HAS_ORJSON else json.loads(raw)
+            except (ValueError, json.JSONDecodeError):
+                continue
+            if e.get("type") == "user" and found is None:
+                msg = e.get("message") or {}
+                t = _extract_text_current(msg.get("content") if isinstance(msg, dict) else None)
+                if t:
+                    found = t
+    return 1 if found else 0
+
+
+def first_user_only_early_exit(path: Path) -> int:
+    """First user prompt only, stop reading after found."""
+    with open(path, "rb") as fh:
+        for raw in fh:
+            if not raw.strip():
+                continue
+            try:
+                e = orjson.loads(raw) if HAS_ORJSON else json.loads(raw)
+            except (ValueError, json.JSONDecodeError):
+                continue
+            if e.get("type") == "user":
+                msg = e.get("message") or {}
+                t = _extract_text_current(msg.get("content") if isinstance(msg, dict) else None)
+                if t:
+                    return 1
+    return 0
+
+
+def head_tail_only(path: Path) -> int:
+    """Read HEAD 4KB for first user prompt + TAIL 16KB for custom-title.
+
+    Mirrors the cheap path used by from_jsonl() today.
+    """
+    HEAD = 4096
+    TAIL = 16384
+    found_user = 0
+    custom_title = None
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(HEAD)
+        for line in head.split(b"\n"):
+            if not line.strip():
+                continue
+            try:
+                e = orjson.loads(line) if HAS_ORJSON else json.loads(line)
+            except (ValueError, json.JSONDecodeError):
+                break  # partial line at boundary
+            if e.get("type") == "user":
+                msg = e.get("message") or {}
+                t = _extract_text_current(msg.get("content") if isinstance(msg, dict) else None)
+                if t:
+                    found_user = 1
+                    break
+        sz = path.stat().st_size
+        with open(path, "rb") as fh:
+            if sz > TAIL:
+                fh.seek(sz - TAIL)
+            tail = fh.read()
+        for line in reversed(tail.split(b"\n")):
+            if not line.strip():
+                continue
+            try:
+                e = orjson.loads(line) if HAS_ORJSON else json.loads(line)
+            except (ValueError, json.JSONDecodeError):
+                continue
+            if e.get("type") == "custom-title" and e.get("customTitle"):
+                custom_title = e["customTitle"]
+                break
+    except OSError:
+        pass
+    return found_user + (1 if custom_title else 0)
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit("usage: bench_jsonl_read.py <path-to-jsonl>")
@@ -171,6 +273,10 @@ def main() -> None:
         runs.append(("'rb'  + orjson.loads               (parsed)", parse_orjson_binary))
         runs.append(("mmap  + orjson.loads               (parsed)", parse_orjson_mmap))
     runs.append(("CURRENT _parse_fts() (text+json+extract)", current_parse_fts))
+    runs.append(("user prompts only (full scan, orjson)", user_prompts_only))
+    runs.append(("first user only (full scan, orjson)", first_user_only_full_scan))
+    runs.append(("first user only (early exit, orjson)", first_user_only_early_exit))
+    runs.append(("head 4KB + tail 16KB (orjson)", head_tail_only))
 
     print(f"  {'approach':<48} {'best ms':>10} {'lines':>8} {'MB/s':>10}")
     print(f"  {'-' * 48} {'-' * 10} {'-' * 8} {'-' * 10}")

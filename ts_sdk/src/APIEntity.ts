@@ -11,6 +11,7 @@ import { TypeId } from './models/TypeId';
 import { ViewType } from './utils/ui/view-types';
 import { Callable } from './types';
 import { defineGlobal } from './utils/globals';
+import { WikiLink } from './types/wiki';
 
 export function getProxy<T extends Manageable & { [key: string | symbol]: any }>(target: T) {
   return new Proxy(target, {
@@ -486,6 +487,26 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
 
   public async watch(): Promise<() => Promise<void>> {
     return await dataManager.watch(new TypeId(this.getType(), this.id));
+  }
+
+  /**
+   * Outgoing wiki links from this entity. Hits
+   * `GET /api/v1/graph/{type}/{id}/wiki/links`.
+   */
+  public async getLinks(): Promise<WikiLink[]> {
+    const info = new ActionInfo('wiki', this.typeId.type, this.typeId.id, 'GET');
+    info.subpath = 'links';
+    return (await dataManager.callAction<undefined, WikiLink[]>(info)) ?? [];
+  }
+
+  /**
+   * Inbound wiki links pointing at this entity. Hits
+   * `GET /api/v1/graph/{type}/{id}/wiki/backlinks`.
+   */
+  public async getBacklinks(): Promise<WikiLink[]> {
+    const info = new ActionInfo('wiki', this.typeId.type, this.typeId.id, 'GET');
+    info.subpath = 'backlinks';
+    return (await dataManager.callAction<undefined, WikiLink[]>(info)) ?? [];
   }
 
   public async get_related_workspace(): Promise<Workspace | undefined> {

@@ -1,22 +1,29 @@
-import type { ClaudeTraceEvent } from '@src/types/trace-event';
-import { useClaudeSessionTrace } from '@src/hooks/use-claude-session-trace';
+import type { AgenticProcess } from '@sdk';
+import type { TraceEvent } from '@src/types/trace-event';
+import { useFlowDataTrace } from '@src/hooks/use-flow-data-trace';
 import type { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 
 export interface TraceGutterEntry {
   absRow: number | null;
-  event: ClaudeTraceEvent;
+  event: TraceEvent;
 }
 
 /**
- * Bridges sniffer events + historical transcript entries -> gutter entries.
+ * Bridges the unified `AgenticProcess.flowDataStream` -> gutter entries.
  *
- * Sniffer events are bucketed immediately as they arrive.
- * Transcript events are bucketed after replayComplete, and re-bucketed
- * whenever snapshotVersion changes (i.e. segments were rebuilt from anchors).
+ * Replaces the old `useClaudeSessionTrace` (Claude-only) plus a
+ * transcript-vs-sniffer anchor split. Now the source of truth is a single
+ * stream of `FlowData` (history + live + sniffer, merged + de-duplicated by
+ * `flowDataStream.ingest`); we bucket every entry uniformly by timestamp.
+ *
+ * No setState here — bucketing is a pure function of (event, ptySyncSession),
+ * computed inline in the `entries` memo. The previous version kept an
+ * `anchorMap` + `anchorVersion` setState cycle, which caused a render loop
+ * when combined with the new FlowData-based event source.
  */
 export function useTraceGutter(
-  workerSessionId: string | undefined | null,
+  process: AgenticProcess | null,
   terminalReady: boolean,
   ptySyncSession: PtySyncSession,
   replayComplete: boolean,
@@ -27,78 +34,26 @@ export function useTraceGutter(
   historicalCount: number;
   liveCount: number;
   sessionStartTime: string | null;
-  allEvents: ClaudeTraceEvent[];
+  allEvents: TraceEvent[];
 } {
-  const { events: allTraceEvents, historicalCount, liveCount, sessionStartTime } = useClaudeSessionTrace(workerSessionId ?? null);
+  const { events: allTraceEvents, historicalCount, liveCount, sessionStartTime } = useFlowDataTrace(process);
 
-  const anchorMapRef = useRef<Map<string, number>>(new Map());
-  const lastSnapshotVersionRef = useRef(-1);
-  const [anchorVersion, setAnchorVersion] = useState(0);
-
-  // Sniffer events are computed fresh on every render (not cached) so their
-  // position always reflects the current segment endTime — never stale.
-
-  // Bucket transcript events after replay completes, re-bucket when segments change
-  const transcriptEvents = useMemo(
-    () => allTraceEvents.filter((e) => e.source === 'transcript'),
-    [allTraceEvents],
-  );
-
-  useEffect(() => {
-    if (!terminalReady || !workerSessionId || !replayComplete) return;
-
-    const segmentsChanged = snapshotVersion !== lastSnapshotVersionRef.current;
-    lastSnapshotVersionRef.current = snapshotVersion;
-
-    // When segments are rebuilt, clear transcript buckets so they re-resolve
-    if (segmentsChanged) {
-      for (const event of transcriptEvents) {
-        anchorMapRef.current.delete(event.id);
-      }
-    }
-
-    let added = false;
-    for (const event of transcriptEvents) {
-      if (anchorMapRef.current.has(event.id)) continue;
-      const ts = new Date(event.timestamp).getTime();
-      if (isNaN(ts)) continue;
-      anchorMapRef.current.set(event.id, ptySyncSession.bucketTimestamp(ts));
-      added = true;
-    }
-    if (added || segmentsChanged) setAnchorVersion((v) => v + 1);
-  }, [terminalReady, workerSessionId, replayComplete, snapshotVersion, transcriptEvents, ptySyncSession]);
-
-  // Clean up when session changes
-  useEffect(() => {
-    const anchorMap = anchorMapRef.current;
-    return () => {
-      anchorMap.clear();
-      lastSnapshotVersionRef.current = -1;
-    };
-  }, [workerSessionId]);
-
-  // Build gutter entries with absRow
   const entries: TraceGutterEntry[] = useMemo(() => {
+    if (!terminalReady || !process || !replayComplete) return [];
     const seen = new Set<string>();
-    return allTraceEvents
-      .filter((e) => {
-        if (seen.has(e.id)) return false;
-        seen.add(e.id);
-        return true;
-      })
-      .map((e) => {
-        let absRow: number | null;
-        if (e.source === 'sniffer') {
-          // Compute fresh each render so position reflects current segment endTime
-          const ts = new Date(e.timestamp).getTime();
-          absRow = isNaN(ts) ? null : ptySyncSession.bucketTimestamp(ts);
-        } else {
-          absRow = anchorMapRef.current.get(e.id) ?? null;
-        }
-        return { absRow, event: e };
-      });
+    const out: TraceGutterEntry[] = [];
+    for (const event of allTraceEvents) {
+      if (seen.has(event.id)) continue;
+      seen.add(event.id);
+      const ts = new Date(event.timestamp).getTime();
+      const absRow = isNaN(ts) ? null : ptySyncSession.bucketTimestamp(ts);
+      out.push({ absRow, event });
+    }
+    return out;
+    // snapshotVersion is included so consumers re-render when segments
+    // change (the underlying ptySyncSession.bucketTimestamp answers shift).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allTraceEvents, anchorVersion, ptySyncSession]);
+  }, [terminalReady, process?.id, replayComplete, snapshotVersion, allTraceEvents, ptySyncSession]);
 
   return { entries, totalTraceEvents: entries.length, historicalCount, liveCount, sessionStartTime, allEvents: allTraceEvents };
 }

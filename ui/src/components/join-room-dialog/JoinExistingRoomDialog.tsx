@@ -7,13 +7,13 @@ import { useToast } from '@src/hooks/use-toast';
 import { LogIn } from 'lucide-react';
 import { useState } from 'react';
 
-interface JoinExistingSessionDialogProps {
+interface JoinExistingRoomDialogProps {
   open: boolean;
   onClose: () => void;
   defaultName?: string;
 }
 
-export function JoinExistingSessionDialog({ open, onClose, defaultName }: JoinExistingSessionDialogProps) {
+export function JoinExistingRoomDialog({ open, onClose, defaultName }: JoinExistingRoomDialogProps) {
   const [code, setCode] = useState('');
   const [displayName, setDisplayName] = useState(defaultName ?? '');
   const [busy, setBusy] = useState(false);
@@ -42,7 +42,7 @@ export function JoinExistingSessionDialog({ open, onClose, defaultName }: JoinEx
           (await Project.getById<Project>(resolved.project_id));
         await proj?.joinCollaboration(memberId, displayName.trim());
       } catch (err) {
-        console.warn('[JoinExistingSessionDialog] join call failed (continuing)', err);
+        console.warn('[JoinExistingRoomDialog] join call failed (continuing)', err);
       }
       navigation.openProject(resolved.project_id);
       onClose();
@@ -57,13 +57,13 @@ export function JoinExistingSessionDialog({ open, onClose, defaultName }: JoinEx
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <LogIn className="h-5 w-5 text-green-600" />
-            Join a session
+            Join a room
           </DialogTitle>
         </DialogHeader>
 
         <div className="flex flex-col gap-3 py-2">
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">Session code</label>
+            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">Room code</label>
             <Input
               placeholder="XKCD-J3F2"
               value={code}
@@ -91,7 +91,7 @@ export function JoinExistingSessionDialog({ open, onClose, defaultName }: JoinEx
             onClick={() => void handleJoin()}
             disabled={!canJoin}
           >
-            {busy ? 'Joining…' : 'Join session'}
+            {busy ? 'Joining…' : 'Join room'}
           </Button>
         </div>
       </DialogContent>

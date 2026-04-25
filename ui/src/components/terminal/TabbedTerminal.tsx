@@ -47,8 +47,8 @@ interface TabbedTerminalProps {
   className?: string;
   /** Whether to show the "Add Tab" button (default: false) */
   addTabButton?: boolean;
-  /** When set, only shells shared into this collaboration space are shown. */
-  collaborationSessionId?: string | null;
+  /** When set, only shells shared into this collaboration room are shown. */
+  collaborationRoomId?: string | null;
   /**
    * When set, new shells/processes created from this tab strip are pinned to
    * this project_id (not `dataContext.project?.id` at click time). Used by the
@@ -160,13 +160,13 @@ const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) =
 const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   className = '',
   addTabButton,
-  collaborationSessionId,
+  collaborationRoomId,
   spawnProjectId,
   onTabClick,
   onTabClose,
   onTabOpen,
 }) => {
-  const { tabs: sessions } = useActiveTerminals({ collaborationSessionId });
+  const { tabs: sessions } = useActiveTerminals({ collaborationRoomId });
   const { flow } = useAgentContext();
   const { activeShellId: contextShellId, agenticProcess: contextAgenticProcess } = useContext();
   const _perfLoggedRef = useRef(false);

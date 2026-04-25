@@ -1,6 +1,6 @@
 import {
   AgenticProcess,
-  CollaborationSession,
+  CollaborationRoom,
   dataContext,
   getOrCreateLocalMemberId,
   Project,
@@ -21,8 +21,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CollaborationHeader } from './CollaborationHeader';
 import { CollaborationSidebar } from './CollaborationSidebar';
 import { CollaborationChat } from './CollaborationChat';
-import { SessionHeader } from './SessionHeader';
-import { StartCollaborationDialog } from './StartCollaborationDialog';
+import { RoomTabs, type RoomTab } from './RoomTabs';
+import { RoomHeader } from './RoomHeader';
+import { StartRoomDialog } from './StartRoomDialog';
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 
@@ -38,7 +39,7 @@ function EmptyState() {
         </div>
       </div>
       <Button onClick={() => setDialogOpen(true)}>Start a collaboration</Button>
-      <StartCollaborationDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
+      <StartRoomDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
     </div>
   );
 }
@@ -46,15 +47,15 @@ function EmptyState() {
 export function CollaborationPage() {
   const { currentDock, navigation } = useDockNavigation();
   const { toast } = useToast();
-  // MRU stack of shell ids within the current session — most-recent first.
+  // MRU stack of shell ids within the current room — most-recent first.
   const mruRef = useRef<string[]>([]);
 
   const isActiveView = currentDock?.viewType === ViewType.PROJECT;
-  const { projectId, sessionId, tabTypeId } = useMemo(
+  const { projectId, roomId, tabTypeId } = useMemo(
     () =>
       isActiveView
         ? DockPointer.parseProjectPointer(currentDock?.pointer)
-        : { projectId: null, sessionId: null, tabTypeId: null },
+        : { projectId: null, roomId: null, tabTypeId: null },
     [isActiveView, currentDock?.pointer],
   );
 
@@ -67,27 +68,27 @@ export function CollaborationPage() {
     }
   }, [projectId]);
 
-  const sessionTypeId = useMemo(() => {
-    if (!sessionId) return null;
+  const roomTypeId = useMemo(() => {
+    if (!roomId) return null;
     try {
-      return new TypeId(CollaborationSession.type, sessionId);
+      return new TypeId(CollaborationRoom.type, roomId);
     } catch {
       return null;
     }
-  }, [sessionId]);
+  }, [roomId]);
 
   const { data: project } = useEntity<Project>(projectTypeId, { watch: true });
-  const { data: session } = useEntity<CollaborationSession>(sessionTypeId, { watch: true });
+  const { data: room } = useEntity<CollaborationRoom>(roomTypeId, { watch: true });
   const localMemberId = useMemo(() => (typeof window !== 'undefined' ? getOrCreateLocalMemberId() : null), []);
 
-  // Heartbeat into the session — sessions are the meetings.
+  // Heartbeat into the room.
   useEffect(() => {
-    if (!session || !localMemberId) return;
+    if (!room || !localMemberId) return;
     let stopped = false;
     const beat = async () => {
       if (stopped) return;
       try {
-        await session.heartbeat(localMemberId);
+        await room.heartbeat(localMemberId);
       } catch {
         // ignore transient failures
       }
@@ -98,24 +99,24 @@ export function CollaborationPage() {
       stopped = true;
       clearInterval(hb);
     };
-  }, [session, localMemberId]);
+  }, [room, localMemberId]);
 
-  // ── Session bootstrap (auto-create when first tab opens without one) ─────
-  const ensureSessionForTabOpen = useCallback(async (): Promise<CollaborationSession | null> => {
-    if (session) return session;
+  // ── Room bootstrap (auto-create when first tab opens without one) ────────
+  const ensureRoomForTabOpen = useCallback(async (): Promise<CollaborationRoom | null> => {
+    if (room) return room;
     if (!project) return null;
     try {
-      const fresh = await CollaborationSession.create({
+      const fresh = await CollaborationRoom.create({
         projectId: project.id,
         hostName: project.displayName || 'Host',
         hostMemberId: localMemberId ?? undefined,
       });
       return fresh;
     } catch (err) {
-      console.warn('[CollaborationPage] failed to auto-create session', err);
+      console.warn('[CollaborationPage] failed to auto-create room', err);
       return null;
     }
-  }, [session, project, localMemberId]);
+  }, [room, project, localMemberId]);
 
   // ── Tab event handlers ──────────────────────────────────────────────────
   const touchMru = useCallback((shellId: string) => {
@@ -124,11 +125,11 @@ export function CollaborationPage() {
 
   const handleTabClick = useCallback(
     (shellId: string, tab: TerminalTab) => {
-      if (!projectId || !sessionId) return;
+      if (!projectId || !roomId) return;
       touchMru(shellId);
-      navigation.openDock(getProcessProjectDockPointer(tab, projectId, sessionId));
+      navigation.openDock(getProcessProjectDockPointer(tab, projectId, roomId));
     },
-    [navigation, projectId, sessionId, touchMru],
+    [navigation, projectId, roomId, touchMru],
   );
 
   const handleTabClose = useCallback(
@@ -137,23 +138,23 @@ export function CollaborationPage() {
       mruRef.current = mruRef.current.filter((id) => id !== shellId);
       if (!mruRef.current[0]) {
         navigation.openDock(
-          sessionId
-            ? DockPointer.forProject(projectId, { sessionId })
+          roomId
+            ? DockPointer.forProject(projectId, { roomId })
             : DockPointer.forProject(projectId),
         );
       }
     },
-    [navigation, projectId, sessionId],
+    [navigation, projectId, roomId],
   );
 
   const handleTabOpen = useCallback(
     async (tab: TerminalTab) => {
       if (!project) return;
-      // If a tab is opened before any session exists, start one on the fly.
-      let activeSession = session;
-      if (!activeSession) {
-        activeSession = await ensureSessionForTabOpen();
-        if (!activeSession) return;
+      // If a tab is opened before any room exists, start one on the fly.
+      let activeRoom = room;
+      if (!activeRoom) {
+        activeRoom = await ensureRoomForTabOpen();
+        if (!activeRoom) return;
       }
 
       // For Claude tabs: kick the backend `open` action explicitly so the
@@ -181,37 +182,58 @@ export function CollaborationPage() {
           console.warn('[CollaborationPage] failed to start claude process', err);
         }
       }
-      if (shell && shell.collaboration_session_id !== activeSession.id) {
+      if (shell && shell.collaboration_room_id !== activeRoom.id) {
         try {
-          shell.collaboration_session_id = activeSession.id;
+          shell.collaboration_room_id = activeRoom.id;
           await shell.save();
         } catch (err) {
-          console.warn('[CollaborationPage] failed to tag shell with session id', err);
+          console.warn('[CollaborationPage] failed to tag shell with room id', err);
         }
       }
 
-      // Bind process ↔ session so membership is queryable from either side.
+      // Bind process ↔ room so membership is queryable from either side.
       if (proc?.id) {
         try {
           const live =
             AgenticProcess.getByIdFromCache<AgenticProcess>(proc.id) ??
             (await AgenticProcess.getById<AgenticProcess>(proc.id).catch(() => null));
-          if (live && live.collaboration_session_id !== activeSession.id) {
-            live.collaboration_session_id = activeSession.id;
+          if (live && live.collaboration_room_id !== activeRoom.id) {
+            live.collaboration_room_id = activeRoom.id;
             await live.save();
           }
-          await activeSession.addProcess(proc.id);
+          await activeRoom.addProcess(proc.id);
         } catch (err) {
-          console.warn('[CollaborationPage] failed to bind process to session', err);
+          console.warn('[CollaborationPage] failed to bind process to room', err);
         }
       }
 
       const enriched: TerminalTab = { ...tab, shell: shell ?? tab.shell };
       touchMru(enriched.shellId);
-      navigation.openDock(getProcessProjectDockPointer(enriched, project.id, activeSession.id));
+      navigation.openDock(getProcessProjectDockPointer(enriched, project.id, activeRoom.id));
     },
-    [navigation, project, session, ensureSessionForTabOpen, touchMru],
+    [navigation, project, room, ensureRoomForTabOpen, touchMru],
   );
+
+  // RoomTabs — non-terminal tabs (markdown docs, future: skills/agents/plans).
+  // Hooks MUST come before any early returns to keep render order stable.
+  const [roomTabs, setRoomTabs] = useState<RoomTab[]>([]);
+  const [activeRoomTabKey, setActiveRoomTabKey] = useState<string | null>(null);
+
+  const handleOpenRoomTab = useCallback((tab: RoomTab) => {
+    setRoomTabs((prev) => (prev.some((t) => t.key === tab.key) ? prev : [...prev, tab]));
+    setActiveRoomTabKey(tab.key);
+  }, []);
+
+  const handleCloseRoomTab = useCallback((key: string) => {
+    setRoomTabs((prev) => {
+      const next = prev.filter((t) => t.key !== key);
+      setActiveRoomTabKey((cur) => {
+        if (cur !== key) return cur;
+        return next.length > 0 ? next[next.length - 1].key : null;
+      });
+      return next;
+    });
+  }, []);
 
   if (!projectId) return <EmptyState />;
   if (!project) {
@@ -226,16 +248,16 @@ export function CollaborationPage() {
       toast({ title: 'No active tab', description: 'Open a terminal tab first.' });
       return;
     }
-    if (!session) {
-      toast({ title: 'No active session', description: 'Start a session first.' });
+    if (!room) {
+      toast({ title: 'No active room', description: 'Start a room first.' });
       return;
     }
     try {
       const shell = Shell.getByIdFromCache(activeShellId) ?? (await Shell.getById(activeShellId));
       if (!shell) return;
-      shell.collaboration_session_id = session.id;
+      shell.collaboration_room_id = room.id;
       await shell.save();
-      toast({ title: 'Shared to session', description: shell.name ?? 'Tab shared.' });
+      toast({ title: 'Shared to room', description: shell.name ?? 'Tab shared.' });
     } catch (err) {
       console.error('[CollaborationPage] share failed', err);
       toast({ title: 'Share failed', description: String((err as Error).message ?? err) });
@@ -249,13 +271,13 @@ export function CollaborationPage() {
       <CollaborationHeader project={project} localMemberId={localMemberId} />
       <div className="flex min-h-0 flex-1">
         <div className="w-64 flex-shrink-0 overflow-y-auto border-r">
-          <CollaborationSidebar projectId={project.id} />
+          <CollaborationSidebar projectId={project.id} onOpenTab={handleOpenRoomTab} />
         </div>
         <div className="flex min-w-0 flex-1 flex-col">
-          {session && (
-            <SessionHeader
-              session={session}
-              isHost={session.isHost(localMemberId ?? undefined)}
+          {room && (
+            <RoomHeader
+              room={room}
+              isHost={room.isHost(localMemberId ?? undefined)}
               isSupport={!!project?.system}
             />
           )}
@@ -263,16 +285,30 @@ export function CollaborationPage() {
             <div className="flex h-9 flex-shrink-0 items-center justify-end gap-2 border-b bg-muted/30 px-3 text-xs">
               <span className="text-muted-foreground">Host controls:</span>
               <Button size="sm" variant="outline" className="h-6 text-[11px]" onClick={() => void handleShareActiveTab()}>
-                Share active tab into session
+                Share active tab into room
               </Button>
             </div>
           )}
           <div className="min-h-0 flex-1">
             <ResizablePanelGroup direction="vertical">
-              <ResizablePanel defaultSize={60} minSize={20}>
+              {roomTabs.length > 0 && (
+                <>
+                  <ResizablePanel defaultSize={35} minSize={15}>
+                    <RoomTabs
+                      tabs={roomTabs}
+                      activeKey={activeRoomTabKey}
+                      onActivate={setActiveRoomTabKey}
+                      onClose={handleCloseRoomTab}
+                      className="h-full"
+                    />
+                  </ResizablePanel>
+                  <ResizableHandle />
+                </>
+              )}
+              <ResizablePanel defaultSize={roomTabs.length > 0 ? 35 : 60} minSize={20}>
                 <TabbedTerminal
                   className="h-full"
-                  collaborationSessionId={session?.id ?? null}
+                  collaborationRoomId={room?.id ?? null}
                   spawnProjectId={project.id}
                   addTabButton
                   onTabClick={handleTabClick}
@@ -281,7 +317,7 @@ export function CollaborationPage() {
                 />
               </ResizablePanel>
               <ResizableHandle />
-              <ResizablePanel defaultSize={40} minSize={20}>
+              <ResizablePanel defaultSize={roomTabs.length > 0 ? 30 : 40} minSize={20}>
                 <CollaborationChat />
               </ResizablePanel>
             </ResizablePanelGroup>

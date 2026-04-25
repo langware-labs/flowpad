@@ -26,8 +26,8 @@ const DISABLED_SHELL_STATUSES = new Set([ShellStatus.CLOSED, ShellStatus.CLOSING
 export interface TabFilter {
   /** When true, hide ERROR shells and sidecar shells (the "visible tab strip" set). */
   visible?: boolean;
-  /** When set, only include shells tagged with this collaboration session id. */
-  collaborationSessionId?: string | null;
+  /** When set, only include shells tagged with this collaboration room id. */
+  collaborationRoomId?: string | null;
 }
 
 /**
@@ -40,7 +40,7 @@ export function filterTabs(
   processes: AgenticProcess[],
   filter: TabFilter = {},
 ): TerminalTab[] {
-  const { visible = false, collaborationSessionId = null } = filter;
+  const { visible = false, collaborationRoomId = null } = filter;
   const activeProcesses = processes.filter((p) => isProcessActive(p.status));
 
   const sidecarShellIds = new Set<string>();
@@ -53,7 +53,7 @@ export function filterTabs(
       if (HIDDEN_SHELL_STATUSES.has(shell.status as ShellStatus)) return false;
       if (sidecarShellIds.has(shell.id)) return false;
     }
-    if (collaborationSessionId != null && shell.collaboration_session_id !== collaborationSessionId) {
+    if (collaborationRoomId != null && shell.collaboration_room_id !== collaborationRoomId) {
       return false;
     }
     return true;
@@ -107,20 +107,20 @@ const processQuery = new QueryRequest({
  * Hook that queries Shell and AgenticProcess entities, merges them into an
  * ordered tab list.
  *
- * Pass `collaborationSessionId` to scope tabs to a specific collaboration space
- * (only shells that have been explicitly shared into that space appear).
+ * Pass `collaborationRoomId` to scope tabs to a specific collaboration room
+ * (only shells that have been explicitly shared into that room appear).
  */
 export interface UseActiveTerminalsOptions {
-  collaborationSessionId?: string | null;
+  collaborationRoomId?: string | null;
 }
 
 export function useActiveTerminals(options: UseActiveTerminalsOptions = {}) {
-  const { collaborationSessionId = null } = options;
+  const { collaborationRoomId = null } = options;
   const { data: shells = [], isLoading: shellsLoading } = useEntitiesQuery<Shell>(shellQuery);
   const { data: processes = [], isLoading: processesLoading } =
     useEntitiesQuery<AgenticProcess>(processQuery);
   const shellProjectionKey = shells
-    .map((shell) => `${shell.id}:${shell.status ?? ''}:${shell.error_message ?? ''}:${shell.name ?? ''}:${shell.tab_order ?? 0}:${shell.collaboration_session_id ?? ''}`)
+    .map((shell) => `${shell.id}:${shell.status ?? ''}:${shell.error_message ?? ''}:${shell.name ?? ''}:${shell.tab_order ?? 0}:${shell.collaboration_room_id ?? ''}`)
     .join('|');
   const processProjectionKey = processes
     .map((process) => `${process.id}:${process.status ?? ''}:${process.shell_id ?? ''}:${process.sidecar_shell_id ?? ''}`)
@@ -139,10 +139,10 @@ export function useActiveTerminals(options: UseActiveTerminalsOptions = {}) {
   const tabs = useMemo(() => {
     return filterTabs(shellsRef.current, processesRef.current, {
       visible: true,
-      collaborationSessionId,
+      collaborationRoomId,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shellProjectionKey, processProjectionKey, collaborationSessionId]);
+  }, [shellProjectionKey, processProjectionKey, collaborationRoomId]);
 
   const isLoading = shellsLoading || processesLoading;
 

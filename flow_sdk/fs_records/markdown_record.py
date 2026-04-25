@@ -274,6 +274,16 @@ class MarkdownRecord(Record):
             parts.append(" ".join(str(l) for l in links))
         return " ".join(parts) if parts else None
 
+    def wiki_body(self) -> str | None:
+        """Read the markdown body from the asset file for wiki link extraction."""
+        ar = self.asset_ref
+        if ar is None or not ar.exists():
+            return None
+        try:
+            return _extract_body(Path(ar.path).read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
     def meta_dict(self) -> dict:
         # Base Record.meta_dict injects asset_ref; we only set the display name.
         result = super().meta_dict()

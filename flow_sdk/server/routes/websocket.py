@@ -290,8 +290,11 @@ async def handle_json_message(connection_id: str, websocket: WebSocket, message_
             await broadcast(json.dumps(broadcast_msg))
 
         elif message_type == "presence":
-            # Per-tab visibility/focus update from the UI.
-            # Missing fields keep their prior value — partial updates are fine.
+            # Per-tab visibility/focus update from the UI. Fire-and-forget:
+            # the client sends via raw WebSocket.send and never awaits a reply,
+            # so emitting a response_msg here would only produce "unknown
+            # request" warnings on the client. Tests that need a sync barrier
+            # use a follow-up `ping` (which echoes a `pong`).
             info = _active_connections.get(connection_id)
             if info is not None:
                 visible = message_data.get("visible")
@@ -301,18 +304,6 @@ async def handle_json_message(connection_id: str, websocket: WebSocket, message_
                 if isinstance(focused, bool):
                     info.focused = focused
                 info.last_presence_at = time.monotonic()
-            ack_data = {
-                "visible": info.visible if info is not None else None,
-                "focused": info.focused if info is not None else None,
-            }
-            ack = {
-                "message_type": "response_msg",
-                "message_id": str(uuid4()),
-                "response_message_id": message_data.get("message_id"),
-                "status": "ok",
-                "data": ack_data,
-            }
-            await send_personal_message(json.dumps(ack), websocket)
 
         elif message_type == "hangup":
             # Client requests disconnect

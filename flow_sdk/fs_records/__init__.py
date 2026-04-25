@@ -53,8 +53,8 @@ from .session_analysis import SessionAnalysis as SessionAnalysis
 from .session_classification import SessionClassification as SessionClassification
 from .shell_record import ShellRecord as ShellRecord
 from .shell_record import ShellStatus as ShellStatus
-from .collaboration_session_record import CollaborationSessionRecord as CollaborationSessionRecord
-from .collaboration_session_record import CollaborationSessionStatus as CollaborationSessionStatus
+from .collaboration_room_record import CollaborationRoomRecord as CollaborationRoomRecord
+from .collaboration_room_record import CollaborationRoomStatus as CollaborationRoomStatus
 from .skill_record import SkillRecord as SkillRecord
 from .spec_record import SpecRecord as SpecRecord
 from .task import TaskResource as TaskResource

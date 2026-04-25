@@ -48,7 +48,7 @@ There are no `startClaude` or `resumeClaude` route params in the current loader 
 |------|------|-------------|
 | `className` | `string` | Extra CSS class for the root element. |
 | `addTabButton` | `boolean` | Shows the opener toolbar for Claude, plain terminal, sandbox, docker, resume-by-id, and history flows. |
-| `collaborationSessionId` | `string \| null` | Limits tabs to shells shared into a collaboration session. |
+| `collaborationRoomId` | `string \| null` | Limits tabs to shells shared into a collaboration room. |
 | `spawnProjectId` | `string \| null` | Pins newly created shells/processes to a project id instead of relying on current global project context. |
 | `onTabClick` | `(shellId, session) => void` | Called when the user selects a tab. The consumer navigates. |
 | `onTabClose` | `(shellId) => void` | Called after the backend close action is committed. The consumer chooses the next route. |
@@ -69,7 +69,7 @@ Removed props from older docs: `activeSessionId`, `onActiveSessionChange`, `star
 
 - Filtering out `ShellStatus.ERROR` shells for the visible tab strip.
 - Filtering out sidecar shells referenced by `AgenticProcess.sidecar_shell_id`.
-- Optionally filtering by `Shell.collaboration_session_id`.
+- Optionally filtering by `Shell.collaboration_room_id`.
 - Marking tabs with `ShellStatus.CLOSING` or `ShellStatus.CLOSED` as disabled.
 - Linking currently active processes to tabs through `AgenticProcess.shell_id`.
 - Sorting tabs by `Shell.tab_order`.
@@ -172,7 +172,7 @@ Important fields:
 | `pty_pid` | Backend PTY handle returned by `Shell.start()` or `AgenticProcess.start()`. |
 | `compute_node_id` / `compute_node_uname` | Compute node hosting the shell. Sandbox tabs are identified by `compute_node_uname === 'sandbox'`. |
 | `project_id` | Project association used by route/context resolution. |
-| `collaboration_session_id` | Collaboration-session filter key. |
+| `collaboration_room_id` | Collaboration-room filter key. |
 | `tab_order` | Ordering key used by the terminal tab strip. |
 | `claude_session_id` | Claude session id when known for a shell. |
 

@@ -9,7 +9,7 @@ function makeShell(id: string, status: string = ShellStatus.RUNNING) {
     status,
     tab_order: 0,
     name: null,
-    collaboration_session_id: null,
+    collaboration_room_id: null,
     dockPointer: { pointer: `shell-${id}` },
   } as any;
 }

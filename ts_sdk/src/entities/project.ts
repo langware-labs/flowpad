@@ -216,7 +216,7 @@ export class Project extends APIEntity<Project> {
   }
 
   /**
-   * Ensure this project has a collaboration session_code + host. Idempotent.
+   * Ensure this project has a collaboration code + host. Idempotent.
    * If there's no code yet, generates one, marks the caller as host, seeds
    * them as the first member. Returns the (updated) project.
    */

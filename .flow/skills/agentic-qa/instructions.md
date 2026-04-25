@@ -13,8 +13,8 @@
 
 ### 2026-04-21 — PTY-less AgenticProcess.prompt streaming regression cycle
 
-**`add_process` on CollaborationSession accepts bogus agentic_process_id (real bug)**
-`POST /api/v1/graph/collaboration_session/<sid>/add_process` with a nonexistent UUID returns HTTP 200 — no existence validation on the agentic_process_id before appending to the session's list. Also missing-field validation returns 500 (not 4xx). Surfaced by the CollaborationSession sub-domain tester this cycle. Not caused by this session's PTY-less work; pre-existing.
+**`add_process` on CollaborationRoom accepts bogus agentic_process_id (real bug)**
+`POST /api/v1/graph/collaboration_room/<rid>/add_process` with a nonexistent UUID returns HTTP 200 — no existence validation on the agentic_process_id before appending to the room's list. Also missing-field validation returns 500 (not 4xx). Surfaced by the CollaborationRoom sub-domain tester this cycle. Not caused by this session's PTY-less work; pre-existing.
 
 **FlowMessage.context retyping regression in test fixture**
 `tests/unit/test_flow_message_roundtrip.py::TestPackBundle::test_pack_creates_zip_with_message_json` fails because `FlowMessage.context` was retyped to `list[TypeId]` in commit `f02259a` but the test fixture `_make_flow_message` (line 31) still passes plaintext IDs like `"task-id-001"` that don't satisfy `is_valid_identifier` (requires UUID4, `KEY-<int>`, `prop.id`, or `@named`). Fixture-side fix only — no production code change needed. RCA in `.flow/skills/agentic-qa/debug_log.md`.

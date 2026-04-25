@@ -1,13 +1,13 @@
-import type { CollaborationSession } from '@sdk';
+import type { CollaborationRoom } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { useToast } from '@src/hooks/use-toast';
 import { Radio, Sparkles, Square } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 interface Props {
-  session: CollaborationSession;
+  room: CollaborationRoom;
   isHost: boolean;
-  /** True when the session belongs to an SDK-shipped system project. */
+  /** True when the room belongs to an SDK-shipped system project. */
   isSupport?: boolean;
   onEnded?: () => void;
 }
@@ -21,11 +21,11 @@ function formatStarted(iso: string | null | undefined): string {
   }
 }
 
-export function SessionHeader({ session, isHost, isSupport = false, onEnded }: Props) {
+export function RoomHeader({ room, isHost, isSupport = false, onEnded }: Props) {
   const { toast } = useToast();
-  const live = session.status === 'active';
+  const live = room.status === 'active';
   const [editing, setEditing] = useState(false);
-  const [draftName, setDraftName] = useState(session.displayName);
+  const [draftName, setDraftName] = useState(room.displayName);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -37,17 +37,17 @@ export function SessionHeader({ session, isHost, isSupport = false, onEnded }: P
 
   const handleEnd = async () => {
     try {
-      await session.end();
-      toast({ title: 'Session ended' });
+      await room.end();
+      toast({ title: 'Room ended' });
       onEnded?.();
     } catch (err) {
-      console.error('[SessionHeader] end failed', err);
-      toast({ title: 'Could not end session', description: String((err as Error).message ?? err) });
+      console.error('[RoomHeader] end failed', err);
+      toast({ title: 'Could not end room', description: String((err as Error).message ?? err) });
     }
   };
 
   const startEdit = () => {
-    setDraftName(session.name ?? session.displayName);
+    setDraftName(room.name ?? room.displayName);
     setEditing(true);
   };
 
@@ -55,13 +55,13 @@ export function SessionHeader({ session, isHost, isSupport = false, onEnded }: P
     const trimmed = draftName.trim();
     setEditing(false);
     const next = trimmed || null;
-    if ((session.name ?? null) === next) return;
+    if ((room.name ?? null) === next) return;
     try {
-      session.name = next;
-      await session.save();
-      toast({ title: 'Session renamed', description: trimmed || '(cleared)' });
+      room.name = next;
+      await room.save();
+      toast({ title: 'Room renamed', description: trimmed || '(cleared)' });
     } catch (err) {
-      console.error('[SessionHeader] rename failed', err);
+      console.error('[RoomHeader] rename failed', err);
       toast({ title: 'Rename failed', description: String((err as Error).message ?? err) });
     }
   };
@@ -73,7 +73,7 @@ export function SessionHeader({ session, isHost, isSupport = false, onEnded }: P
     } else if (e.key === 'Escape') {
       e.preventDefault();
       setEditing(false);
-      setDraftName(session.displayName);
+      setDraftName(room.displayName);
     }
   };
 
@@ -98,27 +98,27 @@ export function SessionHeader({ session, isHost, isSupport = false, onEnded }: P
           type="button"
           onClick={startEdit}
           className="rounded px-1 font-medium text-foreground hover:bg-muted"
-          title="Click to rename session"
+          title="Click to rename room"
         >
-          {session.displayName}
+          {room.displayName}
         </button>
       )}
-      <span className="text-muted-foreground">· started {formatStarted(session.started_at)}</span>
+      <span className="text-muted-foreground">· started {formatStarted(room.started_at)}</span>
       {isSupport && (
         <span
           className="flex items-center gap-1 rounded-full border border-border bg-muted px-1.5 py-px text-[10px] uppercase tracking-wide text-muted-foreground"
-          title="Session hosted by the Flowpad team"
+          title="Room hosted by the Flowpad team"
         >
           <Sparkles className="h-2.5 w-2.5" />
-          Support session
+          Support room
         </span>
       )}
       <span className="ml-auto text-muted-foreground">
-        {(session.members?.length ?? 0)} {session.members?.length === 1 ? 'member' : 'members'}
+        {(room.members?.length ?? 0)} {room.members?.length === 1 ? 'member' : 'members'}
       </span>
       {isHost && live && (
         <Button size="sm" variant="outline" className="h-6 text-[11px]" onClick={() => void handleEnd()}>
-          End session
+          End room
         </Button>
       )}
     </div>
