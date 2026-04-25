@@ -1,4 +1,4 @@
-import { Agent, MarkdownAsset, Project, Skill, Task, Workflow } from '@sdk';
+import { Agent, Markdown, Project, Skill, Task, Workflow } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Bot, CheckSquare, FileText, Sparkles, Workflow as WorkflowIcon, type LucideIcon } from 'lucide-react';
 
@@ -95,10 +95,10 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     Icon: FileText,
     allowFolderSelection: true,
     defaultFolder: '.claude/docs',
-    create: async ({ project, name, folderVfsPath }) => {
-      const md = await MarkdownAsset.createInProject(project, name, folderVfsPath);
+    create: async ({ project, name }) => {
+      const md = await Markdown.createInProject(project, name);
       return {
-        pointer: DockPointer.forAssetEditor('markdown', md.asset_ref),
+        pointer: md.asset_ref ? DockPointer.forAssetEditor('markdown', md.asset_ref) : undefined,
         toastTitle: 'Markdown created',
       };
     },

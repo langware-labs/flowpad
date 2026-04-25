@@ -1,12 +1,13 @@
+import type { Editor as MilkdownEditorInstance } from '@milkdown/core';
 import { MilkdownEditorWithSidePanel, type ExtraSideTab } from '@src/components/milkdown-editor/MilkdownEditorWithSidePanel';
 import { Button } from '@src/components/ui/button';
+import { WikiToolbar } from '@src/components/wiki-toolbar';
 import { useMarkdownContent } from '@src/hooks/use-markdown-content';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { ViewType } from '@src/types/ViewType';
 import { FSRef } from '@sdk';
 import Editor from '@monaco-editor/react';
-import { ArrowLeft, ChevronDown, ChevronRight, Eye, ExternalLink, FileCode, MessageSquareDiff, Pencil, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, Eye, ExternalLink, FileCode, MessageSquareDiff, Pencil, RefreshCw } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -108,6 +109,9 @@ function MarkdownEditorContent({
 }) {
   const { navigation, currentDock } = useDockNavigation();
   const [viewMode, setViewMode] = useState<ViewMode>(readStoredMode);
+  // Imperative handle to the underlying Milkdown editor — driven by the
+  // wiki toolbar to insert wikilinks at the cursor.
+  const milkdownRef = useRef<MilkdownEditorInstance | null>(null);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -160,7 +164,6 @@ function MarkdownEditorContent({
           dirty={false}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
-          onBack={() => navigation.openTab(ViewType.ASSETS)}
           onOpenExternal={handleOpenExternal}
           actions={toolbar}
         />
@@ -181,7 +184,6 @@ function MarkdownEditorContent({
           dirty={false}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
-          onBack={() => navigation.openTab(ViewType.ASSETS)}
           onOpenExternal={handleOpenExternal}
           actions={toolbar}
         />
@@ -205,7 +207,6 @@ function MarkdownEditorContent({
         dirty={dirty}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        onBack={() => navigation.openTab(ViewType.ASSETS)}
         onOpenExternal={handleOpenExternal}
         actions={toolbar}
       />
@@ -257,6 +258,12 @@ function MarkdownEditorContent({
             activeTab={activeSideTab}
             onActiveTabChange={onActiveSideTabChange}
             chatOnProcessCreated={chatOnProcessCreated}
+            editorRef={milkdownRef}
+            toolbarRight={
+              viewMode === 'editor' ? (
+                <WikiToolbar editorRef={milkdownRef} sourceTypeId={chatTarget} />
+              ) : undefined
+            }
           />
         </div>
       )}
@@ -296,19 +303,13 @@ interface EditorHeaderProps {
   dirty: boolean;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
-  onBack: () => void;
   onOpenExternal: () => void;
   actions?: React.ReactNode;
 }
 
-function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, onBack, onOpenExternal, actions }: EditorHeaderProps) {
+function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, onOpenExternal, actions }: EditorHeaderProps) {
   return (
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
-      <Button variant="ghost" size="sm" onClick={onBack} className="-ml-1 flex-shrink-0">
-        <ArrowLeft className="mr-1 h-4 w-4" />
-        Wiki
-      </Button>
-
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-0.5 truncate">
           <span className="text-sm font-medium">{fileName}</span>

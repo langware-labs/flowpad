@@ -15,6 +15,22 @@ from typing import Any, ClassVar
 
 from flow_sdk.fs_store import Record, RecordType
 
+from ._frontmatter import _extract_frontmatter, _render_frontmatter, _yaml_load
+
+
+def _read_workflow_asset_id(path: Path) -> str | None:
+    """Return ``asset_id`` from frontmatter, or None if absent / unreadable."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    fm = _extract_frontmatter(text)
+    if not fm:
+        return None
+    fields = _yaml_load(fm) or {}
+    raw = fields.get("asset_id") or fields.get("id")
+    return str(raw).strip() if isinstance(raw, str) and raw.strip() else None
+
 
 def _workflow_search_dirs() -> list[Path]:
     """Return directories to scan for workflow .md files.
@@ -61,6 +77,27 @@ class WorkflowRecord(Record):
     _icon: ClassVar[str] = "Workflow"
     index_fields: ClassVar[list[str]] = ["name", "description"]
 
+    # Framework upsert: <scope_root>/.claude/workflows/<safe_name>.md
+    _main_subdir: ClassVar[str] = ".claude/workflows"
+    _main_layout: ClassVar[str] = "file"
+
+    @property
+    def main_ref(self) -> "Any":  # FrontMatterFsRef | None
+        """Primary content ref points at the workflow .md via asset_ref."""
+        from flow_sdk.fs_store.fs_ref import FrontMatterFsRef
+        ar = self.asset_ref
+        if ar is not None:
+            return FrontMatterFsRef(ar._path)
+        return None
+
+    def default_body(self, entity) -> "str | None":
+        name = (getattr(entity, "name", None) or "").strip() or "Untitled"
+        desc = (getattr(entity, "description", None) or "").strip()
+        fm: dict = {"asset_id": entity.id, "name": name}
+        if desc:
+            fm["description"] = desc
+        return _render_frontmatter(fm) + f"\n# {name}\n"
+
     def __init__(self, file_path: Path | str | None = None, **kwargs: Any):
         kwargs.setdefault("type", RecordType.WORKFLOW)
         if file_path is not None:
@@ -101,5 +138,13 @@ class WorkflowRecord(Record):
 
     @classmethod
     async def from_fsref(cls, ref) -> list["WorkflowRecord"]:
-        """Indexer entry point — construct from an FSRef emitted by workflow_fn."""
-        return [cls(file_path=ref._path, id=_workflow_id(ref._path))]
+        """Indexer entry point — construct from an FSRef emitted by workflow_fn.
+
+        Honors ``asset_id`` from frontmatter when present so that workflows
+        created via ``Entity.save()`` keep the same id on subsequent rescans
+        (avoiding duplicate Records). Falls back to ``uuid5(path)`` for
+        legacy files written without an asset_id stamp.
+        """
+        existing = _read_workflow_asset_id(ref._path)
+        rec_id = existing if existing else _workflow_id(ref._path)
+        return [cls(file_path=ref._path, id=rec_id)]

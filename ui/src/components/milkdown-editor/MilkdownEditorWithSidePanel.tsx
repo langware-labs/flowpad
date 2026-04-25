@@ -1,6 +1,7 @@
+import type { Editor } from '@milkdown/core';
 import type { MilkdownPlugin } from '@milkdown/ctx';
 import type { AgenticProcess } from '@sdk';
-import type { ReactNode } from 'react';
+import type { MutableRefObject, ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-drawer';
 import { MilkdownEditor, type MilkdownEditorMode } from './MilkdownEditor';
@@ -46,6 +47,10 @@ interface MilkdownEditorWithSidePanelProps {
   onActiveTabChange?: (id: string) => void;
   /** Forwarded to the Chat tab — runs once after its backing process is created. */
   chatOnProcessCreated?: (process: AgenticProcess) => Promise<void> | void;
+  /** Outer ref to the underlying Milkdown Editor for imperative actions (e.g. toolbar inserts). */
+  editorRef?: MutableRefObject<Editor | null>;
+  /** Right-aligned slot rendered inside Milkdown's static toolbar. Hidden in view/review modes. */
+  toolbarRight?: ReactNode;
 }
 
 /**
@@ -65,6 +70,8 @@ export function MilkdownEditorWithSidePanel({
   activeTab: activeTabProp,
   onActiveTabChange,
   chatOnProcessCreated,
+  editorRef,
+  toolbarRight,
 }: MilkdownEditorWithSidePanelProps) {
   const [internalTab, setInternalTab] = useState<string>(MD_SIDE_TABS_DEFAULT);
   const activeTab = activeTabProp ?? internalTab;
@@ -106,6 +113,8 @@ export function MilkdownEditorWithSidePanel({
           editorMode={editorMode}
           plugins={plugins}
           onLinkClick={onLinkClick}
+          editorRef={editorRef}
+          toolbarRight={toolbarRight}
         />
       </div>
       <TabbedSideDrawer<string>

@@ -1,4 +1,4 @@
-import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { APIEntity, registerEntity } from '../APIEntity';
 import { DockPointerData } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { fsManager } from '../services/fsService';
@@ -52,42 +52,22 @@ export class Workflow extends APIEntity<Workflow> {
   }
 
   /**
-   * Create a new workflow in the given project. Writes the initial .md file
-   * first and then persists the entity with `asset_ref` set — atomic,
-   * so a failed file write never leaves an orphan entity behind. Falls back
-   * to `@local` project when `project` is null.
+   * Create a new workflow scoped to the given project. The backend
+   * Entity.save() resolves scope from request_context, calls
+   * ``WorkflowRecord.upsert_main_ref(self)`` which writes
+   * ``<project>/.claude/workflows/<name>.md`` iff missing, and returns the
+   * entity with ``asset_ref`` set. No fsManager.writeFile shortcut.
    */
   static async createInProject(
-    project: { fs_storage_mount_path?: string } | null,
+    project: { typeId?: TypeId } | null,
     name: string,
-    folderVfsPath?: string,
   ): Promise<Workflow> {
-    const { ComputeNode } = await import('./compute-node/compute-node');
-    const { Project } = await import('./project');
-
-    const computeNode = await ComputeNode.getById('@local');
-    if (!computeNode) throw new Error('No local compute node');
-
-    let resolvedProject = project;
-    if (!resolvedProject) {
-      resolvedProject = await dataManager.getByTypeId<Project>(new TypeId(Project.type, '@local'));
-    }
-
-    const mountPath = resolvedProject?.fs_storage_mount_path ?? '';
-    const vfsBase = mountPath.startsWith('/') ? mountPath.slice(1) : mountPath;
-    const folder = folderVfsPath ?? 'workflows';
-    const safeName = name.trim().toLowerCase().replace(/[^a-z0-9_-]/g, '_');
-    const vfsPath = vfsBase ? `${vfsBase}/${folder}/${safeName}.md` : `${folder}/${safeName}.md`;
-
-    // Atomic create: write the file first, then persist the entity with its
-    // asset_ref already set. If the file write fails, no orphan entity
-    // is left behind (Record rule R10 — the file is the source of truth).
-    await fsManager.writeFile(computeNode.typeId, vfsPath, `# ${name.trim()}\n`);
-    const workflow = new Workflow({ name: name.trim(), asset_ref: vfsPath });
-    return workflow.save();
+    const scopeIds = project?.typeId ? [project.typeId] : [];
+    const workflow = new Workflow({ name: name.trim() });
+    return workflow.save(scopeIds);
   }
 
-  /** Backward-compat alias: create a workflow in the default (@local) project. */
+  /** Backward-compat alias: create a workflow under the user-home scope. */
   static async create(name: string): Promise<Workflow> {
     return Workflow.createInProject(null, name);
   }

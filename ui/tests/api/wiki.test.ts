@@ -81,6 +81,31 @@ describe('wiki: skill body links to agentic process', () => {
     expect(outgoing[0].target_id).toBeNull();
   }, 20000);
 
+  it('entity.reindex(body) returns the resolved edges', async () => {
+    const procName = `wiki-reproc-${stamp()}`;
+    const cliConfig = new ClaudeCliOptions({ permission_mode: 'bypassPermissions' });
+    const process = await new AgenticProcess({
+      name: procName,
+      cli_config: cliConfig.toJson(),
+      context_data: {},
+    }).save();
+
+    const skill = await Skill.create(`wiki-resrc-${stamp()}`);
+    expect(skill.doc).not.toBeNull();
+    await skill.doc!.write(`See [[${procName}]] for details.`);
+
+    // Direct SDK call — no toolbar, no UI. Mirrors Python Entity.reindex(body).
+    const edges = await skill.reindex(`See [[${procName}]] for details.`);
+
+    expect(edges).toHaveLength(1);
+    expect(edges[0].target_type).toBe('agentic_process');
+    expect(edges[0].target_id).toBe(process.id);
+
+    // The same edges show up via getLinks().
+    const outgoing = await skill.getLinks();
+    expect(outgoing).toEqual(edges);
+  }, 20000);
+
   it('record without a body returns empty link lists', async () => {
     const cliConfig = new ClaudeCliOptions({ permission_mode: 'bypassPermissions' });
     const process = await new AgenticProcess({

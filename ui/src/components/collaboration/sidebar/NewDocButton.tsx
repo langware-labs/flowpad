@@ -1,20 +1,23 @@
-import { MarkdownAsset, Project, TypeId } from '@sdk';
+import { Markdown, Project, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { useToast } from '@src/hooks/use-toast';
 import { Plus } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
+import type { RoomTab } from '../RoomTabs';
 
 interface Props {
   projectId: string | null;
   onCreated?: () => void;
+  /** When provided, the freshly created doc is opened as a room tab. */
+  onOpenTab?: (tab: RoomTab) => void;
 }
 
 /**
  * Compact "+ New doc" button meant to live in the DOCS category header row of
  * the collaboration sidebar. Self-contained dialog state + toast.
  */
-export function NewDocButton({ projectId, onCreated }: Props) {
+export function NewDocButton({ projectId, onCreated, onOpenTab }: Props) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
 
@@ -26,17 +29,29 @@ export function NewDocButton({ projectId, onCreated }: Props) {
 
   const handleCreate = useCallback(
     async (name: string) => {
-      if (!name.trim() || !project) return;
+      const trimmed = name.trim();
+      if (!trimmed || !project) return;
       try {
-        await MarkdownAsset.createInProject(project, name, '.claude/docs');
+        // Single round-trip: backend Entity.save → MarkdownRecord.upsert_main_ref
+        // writes the file iff missing and returns the entity (asset_ref set,
+        // entity row in cache). DocsCategory's useEntitiesQuery sees it instantly.
+        const md = await Markdown.createInProject(project, trimmed);
         toast({ title: 'Doc created' });
         onCreated?.();
+        if (md.asset_ref) {
+          onOpenTab?.({
+            key: `markdown:${md.asset_ref}`,
+            type: 'markdown',
+            title: trimmed,
+            asset_ref: md.asset_ref,
+          });
+        }
       } catch (err) {
         console.error('[NewDocButton] create failed:', err);
         toast({ title: 'Failed to create doc', variant: 'destructive' });
       }
     },
-    [project, toast, onCreated],
+    [project, toast, onCreated, onOpenTab],
   );
 
   if (!projectId) return null;

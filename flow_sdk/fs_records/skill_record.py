@@ -93,10 +93,21 @@ class SkillRecord(Record):
     _icon: ClassVar[str] = "Sparkles"
     index_fields: ClassVar[list[str]] = ["description"]
 
+    # Framework upsert: <scope_root>/.claude/skills/<safe_name>/SKILL.md
+    _main_subdir: ClassVar[str] = ".claude/skills"
+    _main_layout: ClassVar[str] = "folder"
+
     def __init__(self, **kwargs: Any):
         kwargs.setdefault("type", RecordType.SKILL)
         kwargs.setdefault("status", "active")
         super().__init__(**kwargs)
+
+    def default_body(self, entity) -> str:
+        name = (getattr(entity, "name", None) or "").strip()
+        if not name:
+            return None  # type: ignore[return-value]
+        desc = (getattr(entity, "description", None) or "").strip()
+        return f'---\nname: {name}\ndescription: "{desc}"\n---\n\n# {name}\n\n'
 
     # -- FSRef accessors --
 

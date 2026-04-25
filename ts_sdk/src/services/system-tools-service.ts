@@ -124,6 +124,12 @@ export interface ActivityProgress {
 export class SystemToolsService extends EventEmitter {
   private readonly base: string;
   private _progressEmitPending = false;
+  /** ms since epoch of the most recent WS progress event (any stage). */
+  private _lastProgressAt = 0;
+  /** Active idle-watchdog handle. */
+  private _idleWatchdog: ReturnType<typeof setTimeout> | null = null;
+  /** Idle threshold: how long without a WS event before we ask the backend. */
+  private static readonly _IDLE_TIMEOUT_MS = 5000;
 
   currentActivity: SystemActivity | null = null;
   activityProgress: ActivityProgress | null = null;
@@ -149,6 +155,11 @@ export class SystemToolsService extends EventEmitter {
 
       const jobName = attrs.job_name as SystemActivity | undefined;
       if (!jobName) return;
+
+      // Note arrival time so the idle watchdog can detect a missing
+      // completion event (WS dropped the final batch).
+      this._lastProgressAt = Date.now();
+      this._armIdleWatchdog();
 
       // Auto-initialize if state was lost (e.g. page refresh while job was running).
       // Seed `total` only from a job-level event (sub_activity_name=null) — otherwise
@@ -210,6 +221,40 @@ export class SystemToolsService extends EventEmitter {
     });
   }
 
+  /**
+   * Idle watchdog: if a job is supposedly running but no WS progress event
+   * has arrived in `_IDLE_TIMEOUT_MS`, query the backend's `/activity-status`
+   * to settle. This is the safety net for the case where the WS dropped the
+   * final completion event and we'd otherwise stay stuck mid-progress.
+   */
+  private _armIdleWatchdog(): void {
+    if (this._idleWatchdog != null) return;
+    const tick = (): void => {
+      this._idleWatchdog = null;
+      if (this.currentActivity == null) return;
+      const elapsed = Date.now() - this._lastProgressAt;
+      if (elapsed < SystemToolsService._IDLE_TIMEOUT_MS) {
+        // Activity arrived since the timer was set — re-arm.
+        this._armIdleWatchdog();
+        return;
+      }
+      // No events for a while; ask the backend whether the job is really done.
+      void this.refreshActivityStatus().catch(() => {/* keep going */}).then(() => {
+        // If the backend said "still running", refreshActivityStatus() will
+        // have re-seeded state (which counts as a synthetic progress arrival).
+        if (this.currentActivity != null) this._armIdleWatchdog();
+      });
+    };
+    this._idleWatchdog = setTimeout(tick, SystemToolsService._IDLE_TIMEOUT_MS);
+  }
+
+  private _clearIdleWatchdog(): void {
+    if (this._idleWatchdog != null) {
+      clearTimeout(this._idleWatchdog);
+      this._idleWatchdog = null;
+    }
+  }
+
   /** Batch rapid WS progress events to ~60fps so React renders smoothly. */
   private _emitProgressThrottled(): void {
     if (this._progressEmitPending) return;
@@ -223,6 +268,14 @@ export class SystemToolsService extends EventEmitter {
   private _setActivity(activity: SystemActivity | null, progress?: ActivityProgress | null): void {
     this.currentActivity = activity;
     this.activityProgress = progress ?? null;
+    if (activity == null) {
+      this._clearIdleWatchdog();
+    } else {
+      // Treat the explicit phase change as a recent "event" so the watchdog
+      // doesn't misfire just because no WS message has arrived yet.
+      this._lastProgressAt = Date.now();
+      this._armIdleWatchdog();
+    }
     this.emit('state_changed');
   }
 

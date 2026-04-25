@@ -55,10 +55,9 @@ async def wiki_action():
         return ApiSuccessResponse(data=[_link_to_dict(e) for e in edges])
 
     if method == "POST" and sub == "reindex":
-        # Body source priority:
-        #   1. POST body `{"body": "..."}` if provided — for callers that
-        #      already have the body in hand (out-of-band fs writes via FsRef).
-        #   2. Otherwise, load the record and read its wiki_body().
+        # Optional `{"body": "..."}` payload — callers that already have the
+        # body skip the record load (e.g. the editor toolbar after an
+        # out-of-band insert). Otherwise Entity.reindex loads it from disk.
         body: str | None = None
         try:
             data = await info.get_post_data()
@@ -66,16 +65,22 @@ async def wiki_action():
             data = None
         if isinstance(data, dict) and "body" in data:
             body = data["body"]
-        else:
-            record_cls = SchemaRegistry.get_record_cls(typeid.type)
-            if record_cls is not None:
-                record = record_cls.get(str(typeid.id))
-                if record is not None:
-                    body = record.wiki_body()
 
-        wiki.index(typeid.type, str(typeid.id), body)
-        edges = wiki.outgoing(typeid.type, str(typeid.id))
-        return ApiSuccessResponse(data=[_link_to_dict(e) for e in edges])
+        # Delegate to Entity.reindex so all reindex paths share one impl.
+        from flow_sdk.core.entity.entity_model import Entity
+        from flow_sdk.db.drivers.query import QueryFilter
+
+        entity_cls = SchemaRegistry.get_entity_cls(typeid.type) or Entity
+        entity = await entity_cls.get_one(QueryFilter.parse({"id": str(typeid.id)}))
+        if entity is None:
+            # Entity row hasn't been created yet — index from body directly.
+            wiki.index(typeid.type, str(typeid.id), body)
+            return ApiSuccessResponse(
+                data=[_link_to_dict(e) for e in wiki.outgoing(typeid.type, str(typeid.id))]
+            )
+
+        edges = await entity.reindex(body)
+        return ApiSuccessResponse(data=edges)
 
     return ApiFailResponse(
         message=f"Unknown wiki action: {method} sub-path={sub!r}",

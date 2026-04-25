@@ -224,6 +224,17 @@ class FsRecordsActionsMixin:
                     to_entity=str(self.typeid),
                     flow_data=activity.make_flow_data(None),
                 )
+            elif ev.stage == "scan_end":
+                # Authoritative scan-completion event; mirrors index_end.
+                activity.done = activity.total
+                activity.sub_activity_name = None
+                activity.sub_done = 0
+                activity.sub_total = 0
+                activity.text = "complete"
+                await broadcast_progress(
+                    to_entity=str(self.typeid),
+                    flow_data=activity.make_flow_data(None),
+                )
 
         try:
             t0 = time.perf_counter()
@@ -483,6 +494,19 @@ class FsRecordsActionsMixin:
                     flow_data=activity.make_flow_data(str(ev.record_type)),
                 )
                 activity.done = min(activity.done + 1, activity.total)
+                await broadcast_progress(
+                    to_entity=str(self.typeid),
+                    flow_data=activity.make_flow_data(None),
+                )
+            elif ev.stage == "index_end":
+                # Authoritative job-completion: settles UI state regardless of
+                # how the per-type events landed. Frontend's done>=total path
+                # treats this as the definitive "I'm done" signal.
+                activity.done = activity.total
+                activity.sub_activity_name = None
+                activity.sub_done = 0
+                activity.sub_total = 0
+                activity.text = "complete"
                 await broadcast_progress(
                     to_entity=str(self.typeid),
                     flow_data=activity.make_flow_data(None),
