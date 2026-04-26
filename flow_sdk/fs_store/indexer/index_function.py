@@ -47,6 +47,12 @@ class IndexerOptions:
     # FSIndexer._roots. Used by project-scoped fastScan to limit traversal
     # to a single project subtree without mutating the shared indexer state.
     roots: tuple[FSRef, ...] | None = None
+    # When True, skip-fresh is bypassed: every ref gets re-parsed and re-upserted
+    # regardless of mtime. Used by "hard refresh" within a project scope.
+    force: bool = False
+    # Honor .gitignore + _WALK_IGNORED in project-scope walkers (FOLDER fan-out).
+    # No-op outside REAL_PROJECT_CWD / CWD_ROOT scopes.
+    gitignore: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,6 +170,7 @@ class FSIndexer:
             types=opts.types,
             on_progress=None,
             roots=opts.roots,
+            gitignore=opts.gitignore,
         )
         refs = await self.scan(scan_opts)
 
@@ -258,9 +265,10 @@ class FSIndexer:
                 continue
 
             # Skip-fresh: in-memory dict lookup, one stat(), no parse.
+            # Bypassed when `opts.force` is set (hard refresh).
             rt_name = str(ref.record_type)
             last_ts = valid_map.get(rt_name, {}).get(info.record_cls.getId(ref))
-            if last_ts is not None:
+            if not opts.force and last_ts is not None:
                 asset_ts = info.record_cls.asset_hash_for_ref(ref)
                 if asset_ts and asset_ts <= last_ts:
                     acc["skipped"] += 1

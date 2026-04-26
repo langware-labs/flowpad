@@ -52,7 +52,10 @@ def build_default_indexer(state_dir: Path | None = None) -> FSIndexer:
     from flow_sdk.fs_store.indexer.functions.claude_command import command_fn
     from flow_sdk.fs_store.indexer.functions.claude_memory import claude_memory_fn
     from flow_sdk.fs_store.indexer.functions.markdown import (
-        markdown_flat_fn, markdown_with_docs_subdirs_fn,
+        markdown_flat_fn, markdown_in_folder_fn,
+    )
+    from flow_sdk.fs_store.indexer.functions.project_folder_walker import (
+        project_folder_walker_fn,
     )
     from flow_sdk.fs_store.indexer.functions.task import task_fn
     from flow_sdk.fs_store.indexer.functions.claude_hook import (
@@ -90,7 +93,7 @@ def build_default_indexer(state_dir: Path | None = None) -> FSIndexer:
     idx.add_function(RecordType.REAL_PROJECT_CWD, skill_fn)
     idx.add_function(RecordType.REAL_PROJECT_CWD, agent_fn)
     idx.add_function(RecordType.REAL_PROJECT_CWD, workflow_fn)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, markdown_with_docs_subdirs_fn)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, project_folder_walker_fn)
     idx.add_function(RecordType.REAL_PROJECT_CWD, task_fn)
     idx.add_function(RecordType.REAL_PROJECT_CWD, claude_hook_fn)
 
@@ -106,7 +109,10 @@ def build_default_indexer(state_dir: Path | None = None) -> FSIndexer:
     idx.add_function(RecordType.CWD_ROOT, agent_fn)
     idx.add_function(RecordType.CWD_ROOT, workflow_fn)
     idx.add_function(RecordType.CWD_ROOT, command_fn)
-    idx.add_function(RecordType.CWD_ROOT, markdown_with_docs_subdirs_fn)
+    idx.add_function(RecordType.CWD_ROOT, project_folder_walker_fn)
+
+    # FOLDER (transient scaffold emitted by project_folder_walker_fn) expanders
+    idx.add_function(RecordType.FOLDER, markdown_in_folder_fn)
     idx.add_function(RecordType.CWD_ROOT, claude_hook_fn)
 
     return idx

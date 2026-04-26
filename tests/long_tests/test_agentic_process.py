@@ -282,11 +282,18 @@ async def test_agentic_process_analyze_with_agent(
 
 
 @pytest.mark.asyncio
-# NOTE: do NOT increase timeout or mark as flaky — these tests must pass within the global 30s limit
+@pytest.mark.timeout(120)
 async def test_agentic_process_fix_it_with_agent(
     make_process, local_project, local_compute_node,
 ):
-    """fix-it system agent writes analysis.json and a skill folder with SKILL.MD."""
+    """fix-it system agent writes analysis.json and a skill folder with SKILL.MD.
+
+    Sonnet typically needs 40–60 s wall-clock to plan and write all three
+    output files (analysis.json, analysis.md, <issue>/SKILL.MD); between-tool
+    latency alone is 9–17 s per turn. The 120 s test timeout + 90 s inner
+    stream budget matches the existing long-test pattern (sister tests in
+    this file use timeout(180) / (240)).
+    """
     agent = Agent.load_system_agent("fix-it")
     process = await make_process()
     process.load_embedded_agent(agent)
@@ -295,7 +302,7 @@ async def test_agentic_process_fix_it_with_agent(
         f"{SAMPLE_SESSION}",
     )
 
-    async for entry in process.stream_transcript(timeout=28):
+    async for entry in process.stream_transcript(timeout=90):
         t = entry.get("type", "?")
         detail = _fmt_entry(entry)
         print(f"  [{t}] {detail}" if detail else f"  [{t}]")

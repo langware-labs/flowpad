@@ -5,9 +5,17 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useQuery } from '@tanstack/react-query';
 import { Sparkles } from 'lucide-react';
 import { useMemo } from 'react';
+import type { RoomTab } from '../RoomTabs';
 
 interface Props {
   projectId: string | null;
+  /**
+   * When provided (the standard case in CollaborationPage), skill clicks
+   * open the editor in the project's RoomTabs strip — same in-place
+   * experience as docs. Without it, fall back to dock navigation so the
+   * sidebar still works if mounted outside CollaborationPage.
+   */
+  onOpenTab?: (tab: RoomTab) => void;
 }
 
 interface SkillRow {
@@ -27,7 +35,7 @@ interface SkillRow {
  * Fetches via the graph router directly because `useEntitiesQuery` doesn't
  * expose the `include_system` flag the server respects for system records.
  */
-export function SkillsCategory({ projectId }: Props) {
+export function SkillsCategory({ projectId, onOpenTab }: Props) {
   const { navigation } = useDockNavigation();
 
   const projectTypeId = useMemo(
@@ -74,7 +82,16 @@ export function SkillsCategory({ projectId }: Props) {
           key={s.id}
           onClick={() => {
             if (!s.asset_ref) return;
-            navigation.openDock(DockPointer.forAssetEditor('skill', s.asset_ref));
+            if (onOpenTab) {
+              onOpenTab({
+                key: `skill:${s.id}`,
+                type: 'skill',
+                title: typeof s.name === 'string' && s.name.trim() ? s.name : 'Untitled',
+                asset_ref: s.asset_ref,
+              });
+            } else {
+              navigation.openDock(DockPointer.forAssetEditor('skill', s.asset_ref));
+            }
           }}
           title={s.description || s.asset_ref}
           className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"

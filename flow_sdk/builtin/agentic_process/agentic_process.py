@@ -707,6 +707,7 @@ class AgenticProcess(Entity):
         from flow_sdk.fs_records.agent_status import (
             WorkerStatus as _WS,
             _has_pending_tool_use,
+            _last_assistant_stop_reason,
             _last_user_is_tool_result,
         )
 
@@ -779,6 +780,12 @@ class AgenticProcess(Entity):
             _terminal = tail_status in _terminal_states
             # Post-tool-idle peek: only meaningful for Claude (Codex never
             # writes WAITING followed by tool_result without further events).
+            # Only treat as soft-terminal when the last assistant turn ended with
+            # ``stop_reason=end_turn``. ``stop_reason=tool_use`` means the model
+            # is still planning the next call; sonnet routinely takes 9–17 s
+            # between tool calls on multi-step flows, which exceeds the 8-s
+            # post-tool settle window. Exiting then would drop the rest of the
+            # work — the bug surfaced in test_agentic_process_fix_it_with_agent.
             _post_tool_idle = False
             if tail_status == _WS.WAITING:
                 try:
@@ -790,6 +797,7 @@ class AgenticProcess(Entity):
                     _post_tool_idle = (
                         _last_user_is_tool_result(_tail_chunk)
                         and not _has_pending_tool_use(_tail_chunk)
+                        and _last_assistant_stop_reason(_tail_chunk) == "end_turn"
                     )
                 except OSError:
                     pass

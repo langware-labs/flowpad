@@ -155,7 +155,7 @@ export function ProjectViewHeader({ project, localMemberId }: Props) {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem
-              onClick={() => void systemTools.resetAndRescan()}
+              onClick={() => void systemTools.hardRefreshProject(project.id)}
               disabled={busy}
               data-testid="project-actions-hard-refresh"
             >
