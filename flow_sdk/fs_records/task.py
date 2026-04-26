@@ -21,6 +21,16 @@ class TaskType(StrEnum):
     SKILL_CREATION = "skill_creation"
 
 
+def _unwrap_task_envelope(data: Any) -> dict:
+    """Some manifest.json files wrap the task fields under a ``data`` key
+    (legacy/external format). Unwrap when present so callers see flat fields."""
+    if isinstance(data, dict) and isinstance(data.get("data"), dict) and (
+        "id" in data["data"] or "task_id" in data["data"]
+    ):
+        return data["data"]
+    return data if isinstance(data, dict) else {}
+
+
 class TaskResource(Record):
     """A task record backed by Record."""
 
@@ -50,6 +60,7 @@ class TaskResource(Record):
             data = json.loads(manifest.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return []
+        data = _unwrap_task_envelope(data)
         task_id = data.get("task_id") or data.get("id")
         if not task_id:
             return []
@@ -72,6 +83,7 @@ class TaskResource(Record):
         import json
         try:
             data = json.loads(ref._path.read_text(encoding="utf-8"))
+            data = _unwrap_task_envelope(data)
             return str(data.get("task_id") or data.get("id") or ref._path.parent.name)
         except (json.JSONDecodeError, OSError):
             return ref._path.parent.name

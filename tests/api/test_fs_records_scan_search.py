@@ -104,12 +104,15 @@ async def test_scan_unknown_type_returns_400(bootstrapped_client):
 # Index
 # ===========================================================================
 
+@pytest.mark.timeout(180)
 @pytest.mark.asyncio
 async def test_index_per_type_no_records(bootstrapped_client):
     """Index with no test-created records returns a valid response.
 
     Note: real skills from ~/.claude/skills/ may be discovered and indexed,
     so we only assert the response structure, not indexed == 0.
+    Timeout extended because the discovery scan honors real ~/.claude/skills/
+    which can hold hundreds of dirs on dev machines.
     """
     boot = await _bootstrap(bootstrapped_client)
     resp = await bootstrapped_client.post(_cn_url(boot, "index") + "?type=skill")
@@ -119,6 +122,7 @@ async def test_index_per_type_no_records(bootstrapped_client):
     assert isinstance(data["indexed"], int)
 
 
+@pytest.mark.timeout(180)
 @pytest.mark.asyncio
 async def test_index_per_type_with_records(bootstrapped_client):
     """Index indexes the records that exist on disk."""

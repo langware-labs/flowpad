@@ -145,6 +145,10 @@ class WorkflowRecord(Record):
         (avoiding duplicate Records). Falls back to ``uuid5(path)`` for
         legacy files written without an asset_id stamp.
         """
+        return [cls(file_path=ref._path, id=cls.getId(ref))]
+
+    @classmethod
+    def getId(cls, ref) -> str:
+        """Mirror ``from_fsref``: prefer frontmatter ``asset_id``, else uuid5(path)."""
         existing = _read_workflow_asset_id(ref._path)
-        rec_id = existing if existing else _workflow_id(ref._path)
-        return [cls(file_path=ref._path, id=rec_id)]
+        return existing if existing else _workflow_id(ref._path)
