@@ -1,4 +1,4 @@
-import { Video } from 'lucide-react';
+import { Users } from 'lucide-react';
 import { useMemo } from 'react';
 import { useCollaborationRooms } from '@src/hooks/useCollaborationRooms';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -62,7 +62,7 @@ export function RoomsCategory({ projectId }: Props) {
                 : 'text-muted-foreground hover:bg-muted hover:text-foreground'
             }`}
           >
-            <Video className="h-3.5 w-3.5 flex-shrink-0" />
+            <Users className="h-3.5 w-3.5 flex-shrink-0" />
             <div className="flex min-w-0 flex-col">
               <span className="truncate font-medium text-foreground">{s.name}</span>
               <span className="truncate text-[10px] text-muted-foreground">

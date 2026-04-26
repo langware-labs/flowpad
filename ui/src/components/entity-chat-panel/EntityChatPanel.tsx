@@ -22,52 +22,12 @@ import {
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
 import { History, MessageSquarePlus, Settings } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChatSettingsPopover } from './ChatSettingsPopover';
 import { CompactChatInput } from './CompactChatInput';
 import { useDerivedWorkerStatus } from './hooks/useDerivedWorkerStatus';
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
-
-/**
- * Subscribe to the `flowDataStream.items` on an AgenticProcess.
- *
- * The SDK's generic `useProcessStream` hook is Flow-specific — it reads
- * `flow.stream.items`, which doesn't exist on AgenticProcess. AgenticProcess
- * exposes `.flowDataStream` (an EventEmitter emitting `'data'`). This local
- * hook bridges that gap so this panel can stay off the Flow abstraction.
- */
-function useAgenticProcessStream(process: AgenticProcess | null): FlowData[] {
-  const snapshotRef = useRef<FlowData[]>([]);
-
-  const subscribe = useCallback((cb: () => void) => {
-    if (!process) return () => {};
-    const onData = () => cb();
-    const onClear = () => cb();
-    process.flowDataStream.on('data', onData);
-    process.flowDataStream.on('clear', onClear);
-    return () => {
-      process.flowDataStream.off('data', onData);
-      process.flowDataStream.off('clear', onClear);
-    };
-  }, [process]);
-
-  const getSnapshot = useCallback(() => {
-    if (!process) {
-      if (snapshotRef.current.length !== 0) snapshotRef.current = [];
-      return snapshotRef.current;
-    }
-    const items = process.flowDataStream.items as FlowData[];
-    if (
-      items.length !== snapshotRef.current.length ||
-      items.some((v, i) => v !== snapshotRef.current[i])
-    ) {
-      snapshotRef.current = [...items];
-    }
-    return snapshotRef.current;
-  }, [process]);
-
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-}
+import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 
 interface EntityChatPanelProps {
   /**

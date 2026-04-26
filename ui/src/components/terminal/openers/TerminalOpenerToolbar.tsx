@@ -57,7 +57,7 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
         <DropdownMenu key={opener.id}>
           <DropdownMenuTrigger asChild>
             <Button
-              variant="ghost"
+              variant="secondary"
               size="icon"
               className="h-7 w-7 rounded"
               disabled={disabled}
@@ -103,7 +103,7 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
     return (
       <Button
         key={opener.id}
-        variant="ghost"
+        variant="secondary"
         size="icon"
         className="h-7 w-7 rounded"
         onClick={onClick}
