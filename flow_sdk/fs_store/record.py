@@ -2023,7 +2023,7 @@ class Record:
         # row by id-only filter (a pre-existing quirk of the base lookup).
         try:
             from flow_sdk import wiki
-            wiki.delete_for_id(self.type, str(self.id))
+            await wiki.delete_for_id(self.type, str(self.id))
         except Exception as wiki_exc:
             import logging
             logging.getLogger(__name__).warning(
@@ -2083,7 +2083,7 @@ class Record:
             # consistent at this point.
             try:
                 from flow_sdk import wiki
-                wiki.index(self.type, self.id, self.wiki_body())
+                await wiki.index(self.type, self.id, self.wiki_body())
             except Exception as wiki_exc:
                 import logging
                 logging.getLogger(__name__).warning(
@@ -2138,15 +2138,15 @@ class Record:
         """
         return None
 
-    def get_links(self) -> list:
+    async def get_links(self) -> list:
         """Outgoing wiki links from this record (delegates to flow_sdk.wiki)."""
         from flow_sdk import wiki
-        return wiki.outgoing(self.type, self.id)
+        return await wiki.outgoing(self.type, self.id)
 
-    def get_backlinks(self) -> list:
+    async def get_backlinks(self) -> list:
         """Inbound wiki links pointing at this record (delegates to flow_sdk.wiki)."""
         from flow_sdk import wiki
-        return wiki.backlinks(self.type, self.id)
+        return await wiki.backlinks(self.type, self.id)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(id={self.id!r}, type={self.type!r}, name={self.name!r})"

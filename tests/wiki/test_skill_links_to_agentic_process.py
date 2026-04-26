@@ -51,7 +51,7 @@ async def test_markdown_source_wikilinks_to_agentic_process(tmp_path):
     await source.sync_to_db()
 
     # When: outgoing links of the source are queried
-    outgoing = source.get_links()
+    outgoing = await source.get_links()
 
     # Then: one resolved edge to the agentic process
     assert len(outgoing) == 1
@@ -64,7 +64,7 @@ async def test_markdown_source_wikilinks_to_agentic_process(tmp_path):
     assert edge.line == 1
 
     # And: backlinks of the agentic process see the same edge in reverse
-    backlinks = process.get_backlinks()
+    backlinks = await process.get_backlinks()
     assert len(backlinks) == 1
     back = backlinks[0]
     assert back.src_type == source.type
@@ -94,8 +94,8 @@ async def test_entity_surface_matches_record_surface(tmp_path):
     process_entity = await Entity.from_record(process)
 
     # Surface parity
-    assert source_entity.get_links() == source.get_links()
-    assert process_entity.get_backlinks() == process.get_backlinks()
+    assert await source_entity.get_links() == await source.get_links()
+    assert await process_entity.get_backlinks() == await process.get_backlinks()
 
 
 async def test_record_with_none_wiki_body_is_skipped():
@@ -105,8 +105,8 @@ async def test_record_with_none_wiki_body_is_skipped():
     await task.sync_to_db()
 
     # No body → no outgoing edges, no inbound edges
-    assert task.get_links() == []
-    assert task.get_backlinks() == []
+    assert await task.get_links() == []
+    assert await task.get_backlinks() == []
 
 
 async def test_unresolved_link_stays_in_table(tmp_path):
@@ -119,7 +119,7 @@ async def test_unresolved_link_stays_in_table(tmp_path):
     source.save()
     await source.sync_to_db()
 
-    outgoing = source.get_links()
+    outgoing = await source.get_links()
     assert len(outgoing) == 1
     assert outgoing[0].raw == "ghost-target"
     assert outgoing[0].target_type is None

@@ -51,11 +51,11 @@ async def test_backlink_count_through_lifecycle(tmp_path):
         sources.append(rec)
 
     # ── 2. Initial state: 3 backlinks ────────────────────────────────────
-    assert len(target.get_backlinks()) == 3, "expected 3 backlinks after creating 3 sources"
+    assert len(await target.get_backlinks()) == 3, "expected 3 backlinks after creating 3 sources"
 
     # ── 3. Delete one source: count drops to 2 ───────────────────────────
     await sources[0].unindex()
-    assert len(target.get_backlinks()) == 2, (
+    assert len(await target.get_backlinks()) == 2, (
         "expected 2 backlinks after deleting one source — "
         "wiki.delete_for_id must drop rows where src_id matches the deleted entity"
     )
@@ -70,7 +70,7 @@ async def test_backlink_count_through_lifecycle(tmp_path):
     rec_reloaded = MarkdownRecord.from_file(sources[1].asset_ref._path)
     rec_reloaded.save()
     await rec_reloaded.sync_to_db()
-    assert len(target.get_backlinks()) == 1, (
+    assert len(await target.get_backlinks()) == 1, (
         "expected 1 backlink after editing another source's body — "
         "replace_for_source should clean rows whose link text is gone"
     )
@@ -78,13 +78,13 @@ async def test_backlink_count_through_lifecycle(tmp_path):
     # ── 5. Delete the target: surviving source's outgoing edge cleaned ──
     surviving_source = sources[2]
     # Sanity: before deleting target, the surviving source has one outgoing edge.
-    assert len(surviving_source.get_links()) == 1
+    assert len(await surviving_source.get_links()) == 1
     await target.unindex()
     # After target delete, the surviving source's outgoing edge to the
     # now-dead target must be hard-deleted from the links table.
     # (The wikilink TEXT in src-2.md still says [[bl-target]]; we don't
     # rewrite source files. But the row in `links` is gone.)
-    assert surviving_source.get_links() == [], (
+    assert await surviving_source.get_links() == [], (
         "expected the last surviving source's outgoing edge to be cleaned — "
         "wiki.delete_for_id must drop rows where target_resolved_id matches the deleted entity"
     )

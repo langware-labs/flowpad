@@ -47,11 +47,11 @@ async def wiki_action():
     typeid = info.target_entity_typeid
 
     if method == "GET" and sub == "links":
-        edges = wiki.outgoing(typeid.type, str(typeid.id))
+        edges = await wiki.outgoing(typeid.type, str(typeid.id))
         return ApiSuccessResponse(data=[_link_to_dict(e) for e in edges])
 
     if method == "GET" and sub == "backlinks":
-        edges = wiki.backlinks(typeid.type, str(typeid.id))
+        edges = await wiki.backlinks(typeid.type, str(typeid.id))
         return ApiSuccessResponse(data=[_link_to_dict(e) for e in edges])
 
     if method == "POST" and sub == "reindex":
@@ -74,9 +74,9 @@ async def wiki_action():
         entity = await entity_cls.get_one(QueryFilter.parse({"id": str(typeid.id)}))
         if entity is None:
             # Entity row hasn't been created yet — index from body directly.
-            wiki.index(typeid.type, str(typeid.id), body)
+            await wiki.index(typeid.type, str(typeid.id), body)
             return ApiSuccessResponse(
-                data=[_link_to_dict(e) for e in wiki.outgoing(typeid.type, str(typeid.id))]
+                data=[_link_to_dict(e) for e in await wiki.outgoing(typeid.type, str(typeid.id))]
             )
 
         edges = await entity.reindex(body)

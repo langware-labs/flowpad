@@ -329,15 +329,15 @@ class Entity(DBEntity):
     # same flow_sdk.wiki module — the wiki layer takes only (type, id) and
     # is agnostic to who called.
 
-    def get_links(self) -> list:
+    async def get_links(self) -> list:
         """Outgoing wiki links from this entity."""
         from flow_sdk import wiki
-        return wiki.outgoing(self.type, self.id)
+        return await wiki.outgoing(self.type, self.id)
 
-    def get_backlinks(self) -> list:
+    async def get_backlinks(self) -> list:
         """Inbound wiki links pointing at this entity."""
         from flow_sdk import wiki
-        return wiki.backlinks(self.type, self.id)
+        return await wiki.backlinks(self.type, self.id)
 
     async def reindex(self, body: str | None = None) -> list[dict]:
         """Re-extract wiki edges for this entity.
@@ -359,7 +359,7 @@ class Entity(DBEntity):
             if rec is not None:
                 body = rec.wiki_body()
 
-        wiki.index(self.type, self.id, body)
+        await wiki.index(self.type, self.id, body)
         return [
             {
                 "id": e.id,
@@ -370,7 +370,7 @@ class Entity(DBEntity):
                 "target_id": e.target_id,
                 "line": e.line,
             }
-            for e in wiki.outgoing(self.type, self.id)
+            for e in await wiki.outgoing(self.type, self.id)
         ]
 
     @staticmethod
@@ -457,7 +457,7 @@ class Entity(DBEntity):
         # Best-effort — log on failure so a wiki hiccup never blocks deletes.
         try:
             from flow_sdk import wiki
-            wiki.delete_for_id(cls.get_type(), str(eid))
+            await wiki.delete_for_id(cls.get_type(), str(eid))
         except Exception as wiki_exc:
             import logging
             logging.getLogger(__name__).warning(
@@ -663,7 +663,7 @@ class Entity(DBEntity):
         # Best-effort — log on failure so a wiki hiccup never blocks deletes.
         try:
             from flow_sdk import wiki
-            wiki.delete_for_id(self.type, str(self.id))
+            await wiki.delete_for_id(self.type, str(self.id))
         except Exception as wiki_exc:
             import logging
             logging.getLogger(__name__).warning(
