@@ -12,7 +12,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@src/compo
 import { Button } from '@src/components/ui/button';
 import { Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CollaborationHeader } from './CollaborationHeader';
+import { ProjectViewHeader } from './ProjectViewHeader';
 import { CollaborationSidebar } from './CollaborationSidebar';
 import { CollaborationChat } from './CollaborationChat';
 import { RoomTabs, type RoomTab } from './RoomTabs';
@@ -182,7 +182,7 @@ export function CollaborationPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <CollaborationHeader project={project} localMemberId={localMemberId} />
+      <ProjectViewHeader project={project} localMemberId={localMemberId} />
       <div className="flex min-h-0 flex-1">
         <div className="w-64 flex-shrink-0 overflow-y-auto border-r">
           <CollaborationSidebar projectId={project.id} onOpenTab={handleOpenRoomTab} />

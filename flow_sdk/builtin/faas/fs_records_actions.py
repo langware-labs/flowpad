@@ -382,6 +382,9 @@ class FsRecordsActionsMixin:
         POST /fs-records/index                       → index all registered types
         POST /fs-records/index?type=X                → index one type
         POST /fs-records/index?rebuild=true          → clear + re-index
+        POST /fs-records/index?project_id=<id>       → scope to a single project's
+                                                       fs_storage_mount_path subtree
+                                                       (one REAL_PROJECT_CWD root).
 
         Backed by ``FSIndexer.index()``. Emits ``progress_report`` FlowData
         events per type via the shared indexer's ``on_progress`` callback.
@@ -396,6 +399,7 @@ class FsRecordsActionsMixin:
             ProgressEvent,
             get_shared_indexer,
         )
+        from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
         qp = request_info.request.query_params
@@ -406,6 +410,36 @@ class FsRecordsActionsMixin:
         limit_types = int(limit_types_raw) if limit_types_raw.isdigit() else None
         limit_per_type_raw = qp.get("limit_per_type", "").strip()
         limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
+        project_id = qp.get("project_id", "").strip() or None
+
+        # Resolve project_id → single REAL_PROJECT_CWD root via the project's
+        # fs_storage_mount_path. This restricts the walker to that subtree only.
+        custom_roots: tuple[FSRef, ...] | None = None
+        if project_id:
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+            from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+            from pathlib import Path as _Path  # noqa: PLC0415
+            proj = await Project.get_one(QueryFilter.parse({"id": project_id}))
+            if proj is None:
+                return ApiFailResponse(
+                    message=f"Project '{project_id}' not found",
+                    status_code=404,
+                )
+            mount = getattr(proj, "fs_storage_mount_path", None)
+            if not mount:
+                return ApiFailResponse(
+                    message=f"Project '{project_id}' has no fs_storage_mount_path",
+                    status_code=400,
+                )
+            mount_path = _Path(str(mount))
+            if not mount_path.is_dir():
+                return ApiFailResponse(
+                    message=f"Project mount path '{mount}' is not a directory",
+                    status_code=400,
+                )
+            custom_roots = (
+                FSRef(mount_path, record_type=RecordType.REAL_PROJECT_CWD, scope="project"),
+            )
 
         # Type filter + validation
         types_filter: list[RecordType] | None = None
@@ -518,6 +552,7 @@ class FsRecordsActionsMixin:
                 limit_per_type=limit_per_type,
                 on_progress=emit,
                 verbose=False,
+                roots=custom_roots,
             ))
         finally:
             self._complete_activity("index")
