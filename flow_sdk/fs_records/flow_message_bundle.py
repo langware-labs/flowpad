@@ -12,10 +12,13 @@ Bundle format (.flowmsg — a zip file):
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import tempfile
 import zipfile
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -394,11 +397,15 @@ async def unpack_bundle(
                         fm_id = fm_data.get("id") or entry_id
                         existing_fm = await FlowMessage.get_one({"id": fm_id})
                         if existing_fm is not None and not overwrite:
+                            logger.info(f"[unpack_bundle] inner FM {fm_id} already exists — skipping")
                             continue  # already exists — skip without aborting the whole unpack
                         _rewrite_file_attachments(fm_data, tmp_root, fm_id)
                         inner_fm = FlowMessage.model_validate(fm_data)
                         inner_fm.id = fm_id
+                        logger.info(f"[unpack_bundle] saving inner FM id={fm_id}")
                         await inner_fm.save(owner_typeid)
+                        check_fm = await FlowMessage.get_one({"id": fm_id})
+                        logger.info(f"[unpack_bundle] inner FM after save: found={check_fm is not None} id={fm_id}")
 
         # 5. Resolve FILE attachment paths and save the top-level FlowMessage record
         # Bundle stores zip-relative paths; rewrite to absolute paths on this machine.
@@ -411,7 +418,10 @@ async def unpack_bundle(
         _rewrite_file_attachments(msg_data, tmp_root, top_fm_id)
         top_fm = FlowMessage.model_validate(msg_data)
         top_fm.id = top_fm_id
+        logger.info(f"[unpack_bundle] saving top-level FM id={top_fm_id}")
         top_fm = await top_fm.save(owner_typeid)
+        check_top = await FlowMessage.get_one({"id": top_fm_id})
+        logger.info(f"[unpack_bundle] top-level FM after save: found={check_top is not None} id={top_fm_id}")
 
         # 6. Append pointer to target conversation (only if not already present)
         target_conv_id = conversation_id or next(
