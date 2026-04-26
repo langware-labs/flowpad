@@ -405,17 +405,14 @@ async def _process_single_hub_message(raw: dict) -> str | None:
     return fm_id if success else None
 
 
-async def _pull_new_messages_from_hub(log_tag: str) -> list[str] | None:
-    """Pull new FlowMessages from hub since last fetch and materialize them locally.
-
-    Returns the list of newly materialized fm_ids, or None if the hub is unavailable.
-    Updates the last-fetch cursor on success.
-    """
+async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
+    """Pull new FlowMessages from hub, materialize bundles locally."""
     since = _load_last_fetch()
     fetch_started = datetime.now(UTC).isoformat()
+
     raw_messages = await _fetch_raw_messages_from_hub(since)
     if raw_messages is None:
-        return None
+        return ApiFailResponse(message="Hub unavailable or not configured")
 
     created_ids: list[str] = []
     for raw in raw_messages:
@@ -424,27 +421,14 @@ async def _pull_new_messages_from_hub(log_tag: str) -> list[str] | None:
             if processed_id:
                 created_ids.append(processed_id)
         except Exception as e:
-            logger.warning("[%s] failed to process fm=%s: %s", log_tag, (raw.get("id") or "?"), e)
+            logger.warning("[inbox-fetch] failed to process fm=%s: %s", (raw.get("id") or "?"), e)
 
     _save_last_fetch(fetch_started)
-    return created_ids
-
-
-async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
-    """Pull new FlowMessages from hub, materialize bundles locally."""
-    created_ids = await _pull_new_messages_from_hub("inbox-fetch")
-    if created_ids is None:
-        return ApiFailResponse(message="Hub unavailable or not configured")
     return ApiSuccessResponse(data={"created": len(created_ids), "ids": created_ids})
 
 
 async def handle_inbox_open(fm_id: str) -> ApiResponse:
-    """Materialise the task for a FlowMessage and return {task_id, conversation_id}.
-
-    Also pulls any new messages from the hub (e.g. replies to this conversation),
-    so the conversation view shows up-to-date messages without a manual inbox refresh.
-    """
-    await _pull_new_messages_from_hub("inbox-open")
+    """Materialise the task for a FlowMessage and return {task_id, conversation_id}."""
 
     # Prefer local FM (reply messages are local-only); hub is fallback for inbox messages.
     local_fm = await FlowMessage.get_one({"id": fm_id})
@@ -468,7 +452,10 @@ async def handle_inbox_open(fm_id: str) -> ApiResponse:
         except Exception:
             pass
 
-    if task_id and attachment_filename and not await Task.get_one({"id": task_id}):
+    # Always download/unpack — the bundle may contain new conversation pointers
+    # (e.g. a reply) that need to be merged into the local conversation.jsonl,
+    # even when the task itself already exists locally.
+    if task_id and attachment_filename:
         await _download_and_unpack_bundle(fm_id, attachment_filename)
 
     return ApiSuccessResponse(data={"task_id": task_id, "conversation_id": conv_id})
