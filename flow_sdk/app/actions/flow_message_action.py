@@ -256,12 +256,15 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
     task_id = (meta.get("task_id") or (data or {}).get("task_id") or "").strip()
     attachment_filename = ((data or {}).get("attachment_filename") or "").strip()
 
+    # Always download/unpack the specific message's bundle — even if the task exists
+    # locally. The bundle may carry new conversation pointers (e.g. a reply) that
+    # need to be merged into the local conversation; skipping it would leave the
+    # UI showing only previous messages.
     if not repo_url and task_id and attachment_filename:
         try:
-            if not await Task.get_one({"id": task_id}):
-                await _download_and_unpack_bundle(fm_id, attachment_filename)
+            await _download_and_unpack_bundle(fm_id, attachment_filename)
         except Exception as e:
-            logger.warning("[open_flow_message] failed to materialize task (non-fatal): %s", e)
+            logger.warning("[open_flow_message] failed to materialize bundle (non-fatal): %s", e)
 
     return await handle_notification_deep_link(
         task_id=task_id,
@@ -378,17 +381,12 @@ async def _fetch_raw_messages_from_hub(since: str | None) -> list[dict] | None:
     """Call hub for FlowMessages newer than `since`.
 
     Returns the list of raw message dicts, or None if the hub is unavailable.
-    Normalises the various response shapes the hub may return.
     """
     params: dict = {"since": since} if since else {}
     result = await hub_get(BuiltinEntityType.FLOW_MESSAGE, params=params)
     if result is None:
         return None
-    if isinstance(result, list):
-        return result
-    if isinstance(result, dict):
-        return result.get("items") or result.get("data") or result.get("results") or []
-    return []
+    return result if isinstance(result, list) else []
 
 
 async def _process_single_hub_message(raw: dict) -> str | None:
@@ -434,6 +432,7 @@ async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
 
 async def handle_inbox_open(fm_id: str) -> ApiResponse:
     """Materialise the task for a FlowMessage and return {task_id, conversation_id}."""
+
     # Prefer local FM (reply messages are local-only); hub is fallback for inbox messages.
     local_fm = await FlowMessage.get_one({"id": fm_id})
     if local_fm:

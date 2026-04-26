@@ -343,7 +343,7 @@ export function AskForAssistanceDialog({
                 }}
                 disabled={!canSubmit}
               >
-                {busy ? 'Sending...' : 'Ask for Assistance'}
+                {busy ? 'Sending...' : 'Send'}
               </Button>
             </div>
           </DialogFooter>
