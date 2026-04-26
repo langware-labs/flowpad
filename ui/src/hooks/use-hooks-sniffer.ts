@@ -402,7 +402,7 @@ export function useHooksSniffer() {
     // Assign globally-increasing index (survives trimming) and derive a stable id from it.
     // Using idx (not positional index) for the id ensures the id is stable when items
     // are trimmed from the front of the stream — deduplication in consumers (useProcessSniffer,
-    // useClaudeSessionTrace) relies on this stability.
+    // useFlowDataTrace) relies on this stability.
     const offset = globalIndexOffsetRef.current;
     for (let i = 0; i < parsed.length; i++) {
       parsed[i].idx = offset + i + 1;

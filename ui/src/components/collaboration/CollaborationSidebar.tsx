@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, FileText, ListChecks, Video } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileText, ListChecks, Users } from 'lucide-react';
 import { useState } from 'react';
 import { RoomsCategory } from './sidebar/RoomsCategory';
 import { DocsCategory } from './sidebar/DocsCategory';
@@ -8,14 +8,19 @@ import type { RoomTab } from './RoomTabs';
 
 type CategoryKey = 'rooms' | 'docs' | 'plans';
 
-const CATEGORIES: Array<{ key: CategoryKey; label: string; icon: typeof Video }> = [
-  { key: 'rooms', label: 'Rooms', icon: Video },
+const CATEGORIES: Array<{ key: CategoryKey; label: string; icon: typeof Users }> = [
+  { key: 'rooms', label: 'Rooms', icon: Users },
   { key: 'docs', label: 'Docs', icon: FileText },
   { key: 'plans', label: 'Plans', icon: ListChecks },
 ];
 
 interface Props {
   projectId: string | null;
+  /**
+   * In the collaboration room view, callers pass this so doc clicks add a
+   * tab to the room's RoomTabs strip. Without it, doc clicks fall through
+   * to standalone navigation.
+   */
   onOpenTab?: (tab: RoomTab) => void;
 }
 
@@ -25,7 +30,6 @@ export function CollaborationSidebar({ projectId, onOpenTab }: Props) {
     docs: true,
     plans: false,
   });
-  const [docsRefreshKey, setDocsRefreshKey] = useState(0);
 
   const toggle = (key: CategoryKey) => setExpanded((p) => ({ ...p, [key]: !p[key] }));
 
@@ -46,18 +50,14 @@ export function CollaborationSidebar({ projectId, onOpenTab }: Props) {
                 <span>{label}</span>
               </button>
               {key === 'docs' && (
-                <NewDocButton
-                  projectId={projectId}
-                  onCreated={() => setDocsRefreshKey((k) => k + 1)}
-                  onOpenTab={onOpenTab}
-                />
+                <NewDocButton projectId={projectId} onOpenTab={onOpenTab} />
               )}
             </div>
             {open && (
               <div className="ml-2">
                 {key === 'rooms' && <RoomsCategory projectId={projectId} />}
                 {key === 'docs' && (
-                  <DocsCategory projectId={projectId} refreshKey={docsRefreshKey} onOpenTab={onOpenTab} />
+                  <DocsCategory projectId={projectId} onOpenTab={onOpenTab} />
                 )}
                 {key === 'plans' && <PlansCategory projectId={projectId} />}
               </div>

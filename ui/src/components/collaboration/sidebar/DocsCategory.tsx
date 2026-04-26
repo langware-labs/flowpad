@@ -8,9 +8,7 @@ import type { RoomTab } from '../RoomTabs';
 
 interface Props {
   projectId: string | null;
-  /** Backwards-compat: ignored — entity cache updates synchronously on save(). */
-  refreshKey?: number;
-  /** When provided, doc clicks open a tab in the room rather than navigating away. */
+  /** When provided, doc clicks add a tab to RoomTabs in the room view. */
   onOpenTab?: (tab: RoomTab) => void;
 }
 
@@ -108,7 +106,7 @@ export function DocsCategory({ projectId, onOpenTab }: Props) {
                   onOpenTab({
                     key: `markdown:${d.id}`,
                     type: 'markdown',
-                    title: d.name || 'Untitled',
+                    title: typeof d.name === 'string' && d.name ? d.name : 'Untitled',
                     asset_ref: d.asset_ref,
                   });
                 } else {
