@@ -112,6 +112,7 @@ function saveTraceFilters(f: TraceFilters): void {
 }
 
 import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
+import { FONT_FAMILY, FONT_SIZE_PX } from './terminalConfig';
 
 // ── Side-window state (tabs + active) managed atomically via reducer ─────────
 
@@ -666,8 +667,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         scrollOnUserInput: true,
         disableStdin: false,
         cursorStyle: 'block',
-        fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, Monaco, "Courier New", monospace',
-        fontSize: 14,
+        fontFamily: FONT_FAMILY,
+        fontSize: FONT_SIZE_PX,
         fontWeight: '400',
         fontWeightBold: '700',
         allowTransparency: true,

@@ -16,6 +16,7 @@ import {
   systemTools,
   TypeId,
 } from '@sdk';
+import { estimateCols, estimateRows } from '@src/components/terminal/interactive-terminal/terminalConfig';
 
 /**
  * Route wrappers pattern-match on `kind` to decide recovery behavior.
@@ -69,7 +70,15 @@ export async function loadProcess(
 
   let shell: Shell | null = null;
   try {
-    await process.start({ visible: true });
+    // Seed the PTY with viewport-derived dimensions instead of the 80x24
+    // VT100 default. The InteractiveTerminal issues an authoritative resize
+    // after fit.fit(); this seed only needs to be in the right ballpark to
+    // avoid the worker's first paint being wrapped at 80 cols on a wide
+    // viewport. SSR-safe: window is always defined here (loader runs in the
+    // browser via React Router).
+    const cols = estimateCols(window.innerWidth);
+    const rows = estimateRows(window.innerHeight);
+    await process.start({ visible: true, cols, rows });
     shell = await process.shell();
   } catch (cause) {
     throw new ProcessLoadError('start_failed', processId, process.shell_id ?? null, cause);

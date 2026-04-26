@@ -852,15 +852,22 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
           }),
         );
 
+        // Filter out duplicates (already-ingested items by element/role/content
+        // signature) BEFORE ingesting so the batch only carries new items.
+        const newItems: FlowData[] = [];
         for (const item of historyItems) {
           const role = item.attributes.role ?? '';
           const key = `${item.elementType}|${role}|${item.content ?? ''}`;
-          if (existingKeys.has(key)) {
-            continue;
-          }
-          this.flowDataStream.ingest(item);
+          if (existingKeys.has(key)) continue;
           existingKeys.add(key);
+          newItems.push(item);
         }
+        // Coalesce per-item `'data'` emissions into a single one so React
+        // consumers (`useSyncExternalStore` via `useAgenticProcessStream` /
+        // `useDerivedWorkerStatus` / `useEntityData`) re-render once per
+        // loadHistory call instead of once per item — prevents 700+
+        // notifications from blowing past React's nested-update budget.
+        this.flowDataStream.ingestBatch(newItems);
         // Close any open groups after loading history
         this.flowDataStream.closeOpenGroups();
 
@@ -1248,7 +1255,16 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @param options - Optional instruction to execute
    * @returns Shell session ID and session ID
    */
-  async start(options?: { instruction?: string; visible?: boolean; ptyTimeout?: number }): Promise<boolean> {
+  async start(options?: {
+    instruction?: string;
+    visible?: boolean;
+    ptyTimeout?: number;
+    /** Initial PTY dimensions. Authoritative resize is issued by the
+     * InteractiveTerminal once xterm has fitted; this seed exists so the
+     * worker's first paint isn't wrapped at 80 cols on a wide viewport. */
+    cols?: number;
+    rows?: number;
+  }): Promise<boolean> {
     const { Shell } = await import('../entities/shell');
     if (this.status === ProcessStatus.STOPPING) {
       throw new Error('Process is stopping');
@@ -1293,7 +1309,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       shell.ptyConnection.shellId = shell.id;
       if (shell.compute_node_id) shell.ptyConnection.computeNodeId = shell.compute_node_id;
     }
-    await shell.attachPty({ cols: 80, rows: 24, timeout: options?.ptyTimeout, ptyId: result.pty_id });
+    await shell.attachPty({
+      cols: options?.cols ?? Shell.DEFAULT_COLS,
+      rows: options?.rows ?? Shell.DEFAULT_ROWS,
+      timeout: options?.ptyTimeout,
+      ptyId: result.pty_id,
+    });
     return true;
   }
 

@@ -193,7 +193,10 @@ describe('useHooksSniffer stream lifecycle', () => {
     // the next incoming event — this is a known trim-staleness characteristic.
   });
 
-  it('clear() resets globalIndexOffset', async () => {
+  it('clear() preserves monotonic idx (does not reset offset)', async () => {
+    // Per use-hooks-sniffer.ts:215-220, clear() intentionally bumps the offset by
+    // cleared count rather than resetting to 0. Resetting would let stale idxs
+    // collide with post-clear events and useProcessSniffer would silently dedup-drop them.
     const { result } = renderHook(() => useHooksSniffer(), { wrapper: makeWrapper() });
 
     for (let i = 0; i < 5; i++) pushAgentHook(mockHook, `Event${i}`);
@@ -202,9 +205,9 @@ describe('useHooksSniffer stream lifecycle', () => {
     result.current.clear();
     await waitFor(() => expect(result.current.events.length).toBe(0));
 
-    // After clear, new events should start from idx 1 again
+    // After clear, the next event must have idx > 5 (continuation, not reset).
     pushAgentHook(mockHook, 'AfterClear');
     await waitFor(() => expect(result.current.events.length).toBe(1));
-    expect(result.current.events[0].idx).toBe(1);
+    expect(result.current.events[0].idx).toBeGreaterThan(5);
   });
 });
