@@ -84,6 +84,34 @@ class LinkStore:
 
     # ---------------- writes ----------------
 
+    def delete_for_id(self, type: str, id: str) -> None:
+        """Drop every edge in `links` that mentions `(type, id)` on either side.
+
+        Called when an entity is deleted so the wiki edge table doesn't keep
+        dangling rows. Cleans BOTH sides in one transaction:
+          - rows where this entity is the source  (src_type / src_id)
+          - rows where this entity is the target  (target_resolved_type / id)
+
+        The wikilink TEXT in any source markdown body is NOT modified — the
+        body is filesystem-owned content; we only clean the index.
+        """
+        c = self._connection()
+        c.execute("BEGIN")
+        try:
+            c.execute(
+                "DELETE FROM links WHERE src_type = ? AND src_id = ?",
+                (type, id),
+            )
+            c.execute(
+                "DELETE FROM links "
+                "WHERE target_resolved_type = ? AND target_resolved_id = ?",
+                (type, id),
+            )
+            c.execute("COMMIT")
+        except Exception:
+            c.execute("ROLLBACK")
+            raise
+
     def replace_for_source(
         self, src_type: str, src_id: str, links: Iterable[WikiLink]
     ) -> None:

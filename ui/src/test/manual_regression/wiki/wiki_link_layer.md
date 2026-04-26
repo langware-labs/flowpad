@@ -162,6 +162,62 @@ wiki feature (backend `links` table + `Entity.reindex` + frontend toolbar
 
 ---
 
+## Lifecycle (cleanup on delete)
+
+These scenarios cover Phase 4: target-delete and source-delete drop edge rows
+from the `links` table, and the editor's Backlinks side panel reflects the
+result live. Hard-delete on target is the locked semantic — wikilink TEXT in
+source bodies is left untouched.
+
+### test 18: count = 3 after creating 3 sources linking to one target
+
+- create one target entity (skill or agentic_process) named `bl-target-<stamp>`.
+- create three source markdown entities named `bl-src-0-<stamp>`, `bl-src-1-<stamp>`, `bl-src-2-<stamp>`.
+- reindex each source body to `See [[bl-target-<stamp>]] from <i>.` (use `entity.reindex(body)`).
+- expected: `await target.getBacklinks()` returns 3 rows; `(await GET /api/v1/graph/<target-type>/<target-id>/wiki/backlinks).data.length === 3`.
+
+### test 19: deleting one source drops its row from `links`
+
+- continuing from test 18, call `await sources[0].delete()`.
+- expected: `await target.getBacklinks()` returns 2 rows; the row whose `src_id === sources[0].id` is gone.
+- expected: `await sources[0].getLinks()` returns `[]` (the source's outgoing rows are also cleaned).
+
+### test 20: editing a source's body to remove the wikilink drops its edge
+
+- continuing from test 19, call `await sources[1].reindex('No more wiki link here.')`.
+- expected: `await target.getBacklinks()` returns 1 row; only `sources[2]` remains as a backlink source.
+- expected: `await sources[1].getLinks()` returns `[]`.
+
+### test 21: deleting the target cleans surviving sources' outgoing edges
+
+- continuing from test 20, confirm `await sources[2].getLinks().length === 1` first.
+- call `await target.delete()`.
+- expected: `await sources[2].getLinks()` returns `[]` — the target-side delete swept the surviving source's outgoing edge.
+- expected: any further `getBacklinks()` against the deleted target's id returns `[]` (or 404 if entity-by-id is enforced).
+
+### test 22: Backlinks side panel reflects all four mutations live
+
+- replay tests 18–21 with the target's editor open and the Backlinks tab visible.
+- between each step, click the refresh button (`[data-testid="md-backlinks-refresh"]`) or remount the tab.
+- expected at each step:
+  - test 18 step: panel header reads `3 backlinks`; 3 cards rendered with `[data-testid="md-backlinks-item"]`, each showing the source's `src_type`, `src_id`, `[[<raw>]]`, and `line N`.
+  - test 19 step: header reads `2 backlinks`; the card whose `src_id === sources[0].id` is gone.
+  - test 20 step: header reads `1 backlink`; only `sources[2]`'s card remains.
+  - test 21 step: navigating to either of the surviving source editors and opening their Backlinks tab shows the empty state (`No backlinks yet.`); the deleted target's editor view is no longer reachable.
+- inspector check:
+  ```js
+  const items = document.querySelectorAll('[data-testid="md-backlinks-item"]');
+  console.log('backlink items:', items.length);
+  ```
+
+### test 23: wikilink TEXT in source bodies is preserved after target delete
+
+- after test 21 (target deleted), open `sources[2]` in the markdown editor.
+- expected: the body still contains the literal `[[bl-target-<stamp>]]` text — the wiki layer dropped the edge row, but the source markdown file was not rewritten.
+- regression alarm: if the source body has been mutated (text removed or rewritten), the cleanup-on-delete hook is overreaching its scope.
+
+---
+
 ## Regression alarms
 
 If any of the following appear in the editor after using the toolbar, it's
@@ -170,9 +226,11 @@ the original bug returning:
 - A markdown link with extension `.md` (`[name](/dock/assets/wiki/name.md)`) — the URL must NOT have `.md`.
 - `target_type=null` for a name that *does* exist as an entity (resolver miss).
 - Wiki toolbar button missing or always-disabled in editor mode.
+- BacklinksTab still showing the legacy `No backlinks yet.` stub when the entity has known incoming wikilinks (verify via `GET .../wiki/backlinks` first).
+- Source markdown body modified after deleting a target — cleanup-on-delete must touch only the `links` table, never the source files.
 
 ## How to run the python + vitest counterparts
 
-- `cd flowpad-oss && uv run pytest tests/wiki/ -q` — 53 tests pass.
-- `cd ui && npm run test:vitest:api -- tests/api/wiki.test.ts` — 4 tests pass.
+- `cd flowpad-oss && uv run pytest tests/wiki/ -q` — full wiki suite passes (parser, store, resolver, indexer, north-star, lifecycle).
+- `cd ui && npm run test:vitest:api -- tests/api/wiki.test.ts` — north-star + lifecycle tests pass.
 - `cd ui && npm run test:vitest:unit` — 916 tests pass (no wiki regressions).
