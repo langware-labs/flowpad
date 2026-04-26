@@ -47,3 +47,13 @@ def index(type: str, id: str, body: str | None) -> None:
         resolve_link(link, src_type=type, src_id=id) for link in parsed
     ]
     _store().replace_for_source(type, id, resolved)
+
+
+def delete_for_id(type: str, id: str) -> None:
+    """Drop every edge mentioning ``(type, id)`` on either side.
+
+    Called from ``Entity.delete()`` / ``Entity.delete_by_id()`` so the wiki
+    edge table is kept consistent when records go away. See
+    :meth:`flow_sdk.wiki.store.LinkStore.delete_for_id` for the contract.
+    """
+    _store().delete_for_id(type, id)

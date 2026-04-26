@@ -2017,6 +2017,20 @@ class Record:
         from flow_sdk.core.entity.entity_model import Entity  # lazy import (circular)
         from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
 
+        # Cleanup wiki edges that mention this record on either side.
+        # We do this at the Record level (not just inside Entity.delete) so
+        # unindex still cleans even when Entity.get_one fails to find the
+        # row by id-only filter (a pre-existing quirk of the base lookup).
+        try:
+            from flow_sdk import wiki
+            wiki.delete_for_id(self.type, str(self.id))
+        except Exception as wiki_exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "wiki.delete_for_id failed for %s:%s — %s",
+                self.type, self.id, wiki_exc,
+            )
+
         entity = await Entity.get_one(QueryFilter.parse({"id": self.id}))
         if entity is not None:
             from flow_sdk.db import get_db_driver

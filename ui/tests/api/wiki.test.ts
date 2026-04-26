@@ -10,6 +10,7 @@
  */
 
 import { AgenticProcess, ActionInfo, ClaudeCliOptions, dataManager } from '@sdk';
+import { Markdown } from '@sdk/entities/markdown';
 import { Skill } from '@sdk/entities/skill';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
@@ -117,4 +118,51 @@ describe('wiki: skill body links to agentic process', () => {
     expect(await process.getLinks()).toEqual([]);
     expect(await process.getBacklinks()).toEqual([]);
   }, 20000);
+
+  /**
+   * Lifecycle test — mirrors tests/wiki/test_backlink_count_lifecycle.py.
+   * Walks the 8 steps that drive cleanup-on-delete:
+   *   1-2. Create target + 3 markdown sources linking to it    → 3 backlinks
+   *   3-4. Delete one source                                    → 2 backlinks
+   *   5-6. Edit another source's body to remove the wikilink    → 1 backlink
+   *   7-8. Delete the target                                    → surviving
+   *                                                              source's
+   *                                                              outgoing edge
+   *                                                              cleaned
+   */
+  it('backlink count tracks source delete, body edit, and target delete', async () => {
+    const targetName = `bl-target-${stamp()}`;
+    const cliConfig = new ClaudeCliOptions({ permission_mode: 'bypassPermissions' });
+    const target = await new AgenticProcess({
+      name: targetName,
+      cli_config: cliConfig.toJson(),
+      context_data: {},
+    }).save();
+
+    const sources: Markdown[] = [];
+    for (let i = 0; i < 3; i++) {
+      const md = await new Markdown({ name: `bl-src-${i}-${stamp()}` }).save();
+      // Body lives in the wiki layer only — reindex with explicit body avoids
+      // the fs round-trip and writes the edges directly. The source's `name`
+      // is what the wiki resolver matches; the body is what the parser reads.
+      await md.reindex(`See [[${targetName}]] from ${i}.`);
+      sources.push(md);
+    }
+
+    // 1-2. Initial: 3 backlinks
+    expect((await target.getBacklinks()).length).toBe(3);
+
+    // 3-4. Delete one source
+    await sources[0].delete();
+    expect((await target.getBacklinks()).length).toBe(2);
+
+    // 5-6. Strip wikilink from another source's body
+    await sources[1].reindex('No more wiki link here.');
+    expect((await target.getBacklinks()).length).toBe(1);
+
+    // 7-8. Delete the target — surviving source's outgoing edge cleaned
+    expect((await sources[2].getLinks()).length).toBe(1);
+    await target.delete();
+    expect(await sources[2].getLinks()).toEqual([]);
+  }, 30000);
 });

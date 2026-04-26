@@ -453,6 +453,18 @@ class Entity(DBEntity):
         entity_typeid = TypeId(type=cls.get_type(), id=eid)
         entity_cache.invalidate_entity_cache(entity_typeid)
 
+        # Cleanup wiki edges that reference this entity on either side.
+        # Best-effort — log on failure so a wiki hiccup never blocks deletes.
+        try:
+            from flow_sdk import wiki
+            wiki.delete_for_id(cls.get_type(), str(eid))
+        except Exception as wiki_exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "wiki.delete_for_id failed for %s:%s — %s",
+                cls.get_type(), eid, wiki_exc,
+            )
+
         # Call parent delete_by_id
         return await super().delete_by_id(eid)
 
@@ -646,6 +658,18 @@ class Entity(DBEntity):
 
         # Invalidate authorization cache since entity is being deleted
         get_auth_cache().invalidate_entity(self.typeid)
+
+        # Cleanup wiki edges that reference this entity on either side.
+        # Best-effort — log on failure so a wiki hiccup never blocks deletes.
+        try:
+            from flow_sdk import wiki
+            wiki.delete_for_id(self.type, str(self.id))
+        except Exception as wiki_exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "wiki.delete_for_id failed for %s:%s — %s",
+                self.type, self.id, wiki_exc,
+            )
 
         # Call parent delete
         return await super().delete()
