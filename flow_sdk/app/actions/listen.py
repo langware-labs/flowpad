@@ -78,20 +78,15 @@ async def _route_to_source_process(
     except Exception:
         return
 
-    # Build a real FlowData so the wire shape matches every other producer
-    # (canonical attribute keys with hyphens, FlowDataType/FlowElementType
-    # enum values, ISO timestamp). The legacy code emitted an ad-hoc dict
-    # with snake-case keys that the renderer then had to special-case.
-    fd = FlowData(
-        flow_value=payload_data,
-        attributes={
-            "element-type": FlowElementType.STATUS,
-            "data-type": FlowDataType.OBJECT,
-            "source": FlowDataSource.SNIFFER,
-            "webhook-type": str(payload_data.get("webhook_type") or "") if isinstance(payload_data, dict) else "",
-        },
-    )
-    flow_msg = fd.model_dump(mode="python")
+    # Translate the webhook payload to a canonical FlowData via the shared
+    # dispatcher (agent_hook → convert_hook_event, hook_op → convert_hook_op_event).
+    # The renderer reads attributes (`hook-op-event-name`, `workflow-label`,
+    # `hook-message`, …) instead of digging into payload_data itself.
+    from flow_sdk.app.actions._webhook_to_flowdata import convert_webhook_event
+    fds = convert_webhook_event(payload_data)
+    if not fds:
+        return
+    flow_msg = fds[0].model_dump(mode="python")
 
     # Route via execution_scope (hook_op events)
     if execution_scope:
@@ -167,18 +162,19 @@ async def _broadcast_to_sniffer(
     if skip_hook_id and sniffer_hook.id == skip_hook_id:
         return
 
-    # Construct a real FlowData so the global sniffer view receives the same
-    # canonical shape as every other consumer of the per-process stream.
-    attributes: dict[str, str] = {
-        "element-type": element_type or FlowElementType.STATUS,
-        "data-type": data_type or FlowDataType.OBJECT,
-        "source": FlowDataSource.SNIFFER,
-        "webhook-type": webhook_type,
-    }
+    # Translate via the shared dispatcher so the global sniffer view receives
+    # the same canonical FlowData shape as the per-process trace gutter.
+    from flow_sdk.app.actions._webhook_to_flowdata import convert_webhook_event
+    fds = convert_webhook_event(payload_data)
+    if not fds:
+        return
+    fd = fds[0]
+    if element_type:
+        fd.attributes["element-type"] = element_type
+    if data_type:
+        fd.attributes["data-type"] = data_type
     if warning:
-        attributes["warning"] = warning
-
-    fd = FlowData(flow_value=payload_data, attributes=attributes)
+        fd.attributes["warning"] = warning
 
     try:
         await sniffer_hook.emit_flow_data(
