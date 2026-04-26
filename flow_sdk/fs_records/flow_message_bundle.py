@@ -12,13 +12,10 @@ Bundle format (.flowmsg — a zip file):
 from __future__ import annotations
 
 import json
-import logging
 import shutil
 import tempfile
 import zipfile
 from datetime import datetime
-
-logger = logging.getLogger(__name__)
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -377,11 +374,16 @@ async def unpack_bundle(
                         perm_task_dir.mkdir(parents=True, exist_ok=True)
                         perm_jsonl = perm_task_dir / "conversation.jsonl"
                         _merge_conversation_jsonl(jsonl_file, perm_jsonl)
+                        # notify=False — the conversation save would otherwise fire a
+                        # sync notification before the referenced FlowMessage is saved
+                        # (step 5), causing the UI to fetch a not-yet-saved FM (404).
+                        # We send the conversation sync explicitly in step 7 instead.
                         conv = await _create_conversation_from_disk(
                             task_dir=perm_task_dir,
                             task_id=task_id_for_conv or "",
                             conversation_id=entry_id,
                             owner_typeid=owner_typeid,
+                            notify=False,
                         )
                         if conv:
                             conversation_id = conv.id
@@ -397,15 +399,11 @@ async def unpack_bundle(
                         fm_id = fm_data.get("id") or entry_id
                         existing_fm = await FlowMessage.get_one({"id": fm_id})
                         if existing_fm is not None and not overwrite:
-                            logger.info(f"[unpack_bundle] inner FM {fm_id} already exists — skipping")
                             continue  # already exists — skip without aborting the whole unpack
                         _rewrite_file_attachments(fm_data, tmp_root, fm_id)
                         inner_fm = FlowMessage.model_validate(fm_data)
                         inner_fm.id = fm_id
-                        logger.info(f"[unpack_bundle] saving inner FM id={fm_id}")
                         await inner_fm.save(owner_typeid)
-                        check_fm = await FlowMessage.get_one({"id": fm_id})
-                        logger.info(f"[unpack_bundle] inner FM after save: found={check_fm is not None} id={fm_id}")
 
         # 5. Resolve FILE attachment paths and save the top-level FlowMessage record
         # Bundle stores zip-relative paths; rewrite to absolute paths on this machine.
@@ -418,10 +416,7 @@ async def unpack_bundle(
         _rewrite_file_attachments(msg_data, tmp_root, top_fm_id)
         top_fm = FlowMessage.model_validate(msg_data)
         top_fm.id = top_fm_id
-        logger.info(f"[unpack_bundle] saving top-level FM id={top_fm_id}")
         top_fm = await top_fm.save(owner_typeid)
-        check_top = await FlowMessage.get_one({"id": top_fm_id})
-        logger.info(f"[unpack_bundle] top-level FM after save: found={check_top is not None} id={top_fm_id}")
 
         # 6. Append pointer to target conversation (only if not already present)
         target_conv_id = conversation_id or next(
@@ -456,7 +451,14 @@ async def unpack_bundle(
                 operation=SyncOperation.CREATE,
                 data={"event_data": {"flow_message_id": top_fm.id, "task_id": task_id_for_sync}},
             )
+            # Notify the UI that the conversation has changed via the entity-event
+            # channel (notify_updated), not just send_resource_sync — useEntity hooks
+            # in the UI listen on the entity event channel, so this is what makes
+            # the conversation/task view re-render with the new message pointer.
             if conversation_id:
+                conv_to_notify = await Conversation.get_one({"id": conversation_id})
+                if conv_to_notify:
+                    await conv_to_notify.notify_updated()
                 send_resource_sync(
                     type="conversation",
                     id=conversation_id,
