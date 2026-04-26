@@ -1,8 +1,8 @@
 """resolve_link — map a parsed WikiLink to a concrete (target_type, target_id).
 
-Queries the `entities` table by `uname` (the record's name as written to disk).
-On multiple candidates, applies a deterministic precedence (same-type-as-source
-first, alphabetical within tier).
+Queries the `entities` table by `uname` (the record's name as written to disk)
+via the shared SQLAlchemy engine. On multiple candidates, applies a
+deterministic precedence (same-type-as-source first, alphabetical within tier).
 
 v1 deliberately ignores: folder-as-doc fallthrough, sub-paths beyond the first
 segment, headings/blocks/aliases beyond the basename match. All those are
@@ -14,11 +14,11 @@ from __future__ import annotations
 
 import dataclasses
 
-from .store import get_default_store
+from .store import get_async_default_store
 from .types import WikiLink
 
 
-def resolve_link(link: WikiLink, *, src_type: str, src_id: str) -> WikiLink:
+async def resolve_link(link: WikiLink, *, src_type: str, src_id: str) -> WikiLink:
     """Return a new WikiLink with src_*/target_* filled.
 
     Unresolved targets keep target_type/target_id at None.
@@ -27,7 +27,7 @@ def resolve_link(link: WikiLink, *, src_type: str, src_id: str) -> WikiLink:
     if not name:
         return dataclasses.replace(link, src_type=src_type, src_id=src_id)
 
-    candidates = _query_candidates(name)
+    candidates = await _query_candidates(name)
     if not candidates:
         return dataclasses.replace(link, src_type=src_type, src_id=src_id)
 
@@ -55,30 +55,13 @@ def _record_name_from_raw(raw: str) -> str:
     return parts[0] if parts else s.strip()
 
 
-def _query_candidates(name: str) -> list[tuple[str, str]]:
+async def _query_candidates(name: str) -> list[tuple[str, str]]:
     """Return [(type, id), ...] of all entities whose name matches.
 
-    Tries the indexed `uname` column first (set by entities that have a
-    canonical unique name), then falls back to the `name` field stored
-    inside the `data` JSON column (most fs_store records land here today).
+    Tries the indexed `uname` column first, then falls back to the JSON
+    `data.name` field. Both queries run on the shared SQLAlchemy engine.
     """
-    conn = get_default_store()._connection()
-
-    # 1. Indexed uname match (fast path — used by entities that set it).
-    rows = conn.execute(
-        "SELECT type, id FROM entities WHERE uname = ?",
-        (name,),
-    ).fetchall()
-    if rows:
-        return [(row["type"], row["id"]) for row in rows]
-
-    # 2. Fallback: query the JSON `data` column for name field.
-    #    SQLite JSON1 extension is built into modern sqlite3.
-    rows = conn.execute(
-        "SELECT type, id FROM entities WHERE json_extract(data, '$.name') = ?",
-        (name,),
-    ).fetchall()
-    return [(row["type"], row["id"]) for row in rows]
+    return await get_async_default_store().find_entities_by_uname_or_name(name)
 
 
 def _pick_candidate(

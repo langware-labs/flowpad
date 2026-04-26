@@ -71,11 +71,21 @@ class RequestTransactionMiddleware:
         request = Request(scope, receive, send)
         logging.debug(f"[Middleware] Received request: {request.method} {request.url.path}")
 
-        # Create execution context
-        execution_context = ExecutionContext(False, None)
+        # Resolve the per-request transaction factory lazily from the active
+        # DB driver. Lazy lookup (vs caching at startup) keeps reinit_db
+        # hot-swap correct and avoids any startup-ordering coupling.
+        from flow_sdk.db import get_db_driver  # noqa: PLC0415
+        try:
+            transaction_factory = get_db_driver().get_transaction_factory()
+        except Exception as e:  # driver not opened yet (e.g. health route in cold start)
+            logging.debug(f"[Middleware] No transaction factory available: {e}")
+            transaction_factory = None
+
+        # Create execution context — middleware drives the session lifecycle.
+        execution_context = ExecutionContext(False, transaction_factory)
         set_execution_context(execution_context)
 
-        # Setup request info from the request
+        # Setup request info from the request (also opens the per-request session).
         try:
             await execution_context.setup(request=request, context_name="Request")
         except Exception as e:
@@ -100,8 +110,13 @@ class RequestTransactionMiddleware:
         except Exception as ex:
             await execution_context.rollback_transaction()
             raise ex
+        else:
+            # Success path: commit the per-request transaction so writes
+            # durably persist. cleanup() then closes the session.
+            await execution_context.commit_transaction()
         finally:
-            # Cleanup
+            # Cleanup (close session) — runs on both success and exception
+            # paths; idempotent and safe after commit/rollback.
             execution_context = get_execution_context()
             if execution_context:
                 await execution_context.cleanup()
