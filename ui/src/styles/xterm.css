@@ -267,10 +267,9 @@
  * wins without !important.
  * ──────────────────────────────────────────────────────────────────────── */
 
-/* Grayscale 240..255: too light on white. Skip cells with bg color. */
-html.light .xterm .xterm-fg-240:not([class*="xterm-bg-"]) { color: #767676; }
-html.light .xterm .xterm-fg-241:not([class*="xterm-bg-"]) { color: #6c6c6c; }
-html.light .xterm .xterm-fg-242:not([class*="xterm-bg-"]) { color: #626262; }
+/* Grayscale 243..255: too light on white. Skip cells with bg color.
+ * Indices 232..242 (#080808..#6c6c6c) are already dark enough on white;
+ * remapping them would lower contrast, so we leave them alone. */
 html.light .xterm .xterm-fg-243:not([class*="xterm-bg-"]) { color: #585858; }
 html.light .xterm .xterm-fg-244:not([class*="xterm-bg-"]) { color: #4e4e4e; }
 html.light .xterm .xterm-fg-245:not([class*="xterm-bg-"]) { color: #444444; }

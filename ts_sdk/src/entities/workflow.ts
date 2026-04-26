@@ -110,7 +110,12 @@ export class Workflow extends APIEntity<Workflow> {
     const workdir = dataContext.project?.fs_storage_mount_path;
 
     const { process, shell } = await AgenticProcess.spawn(
-      { permissionMode: 'bypassPermissions', workdir, scope: [this.typeId] },
+      {
+        permissionMode: 'bypassPermissions',
+        workdir,
+        scope: [this.typeId],
+        targetTypeIdStr: this.typeId.toString(),
+      },
       { instruction },
     );
     return { process, shell: shell! };

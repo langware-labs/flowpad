@@ -102,15 +102,15 @@ export function EntityChatPanel({ target, className, onProcessCreated }: EntityC
   // 4. Creation guard — a locally-spawned process survives until the query picks it up.
   //    Rather than setState'ing selectedProcessId/forceNew from an effect once the
   //    query catches up (which cascades into a re-render chain), derive both
-  //    effective values and only drop the local ref via a terminal effect.
+  //    effective values directly. localProcess is reset only by the user-driven
+  //    callbacks below (startNewChat / selectChat) — no effect-driven cleanup,
+  //    which previously fired a setState during another EntityChatPanel render
+  //    and tripped React's "cannot update while rendering" warning.
   const createInFlightRef = useRef(false);
   const [localProcess, setLocalProcess] = useState<AgenticProcess | null>(null);
   const resolvedMatchesLocal = !!(
     localProcess && resolvedProcess?.id === localProcess.id
   );
-  useEffect(() => {
-    if (resolvedMatchesLocal) setLocalProcess(null);
-  }, [resolvedMatchesLocal]);
 
   const activeProcess: AgenticProcess | null = forceNew && !resolvedMatchesLocal
     ? localProcess
