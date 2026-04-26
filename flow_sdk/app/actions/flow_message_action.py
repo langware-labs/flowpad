@@ -256,12 +256,15 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
     task_id = (meta.get("task_id") or (data or {}).get("task_id") or "").strip()
     attachment_filename = ((data or {}).get("attachment_filename") or "").strip()
 
+    # Always download/unpack the specific message's bundle — even if the task exists
+    # locally. The bundle may carry new conversation pointers (e.g. a reply) that
+    # need to be merged into the local conversation; skipping it would leave the
+    # UI showing only previous messages.
     if not repo_url and task_id and attachment_filename:
         try:
-            if not await Task.get_one({"id": task_id}):
-                await _download_and_unpack_bundle(fm_id, attachment_filename)
+            await _download_and_unpack_bundle(fm_id, attachment_filename)
         except Exception as e:
-            logger.warning("[open_flow_message] failed to materialize task (non-fatal): %s", e)
+            logger.warning("[open_flow_message] failed to materialize bundle (non-fatal): %s", e)
 
     return await handle_notification_deep_link(
         task_id=task_id,
