@@ -1,14 +1,14 @@
-import { Archive, CheckSquare } from 'lucide-react';
+import { Trash2, CheckSquare } from 'lucide-react';
 import type { InboxMessage } from './inbox-api';
 
 interface InboxMessageRowProps {
   message: InboxMessage;
-  onArchive: (id: string) => void;
+  onDelete: (id: string) => void;
   onToggleRead: (id: string, isRead: boolean) => void;
   onClick: (message: InboxMessage) => void;
 }
 
-export function InboxMessageRow({ message, onArchive, onToggleRead, onClick }: InboxMessageRowProps) {
+export function InboxMessageRow({ message, onDelete, onToggleRead, onClick }: InboxMessageRowProps) {
   const typeIdAttachments = message.attachment.filter((a) => a.attachment_type === 'type_id');
   const fileAttachments = message.attachment.filter((a) => a.attachment_type === 'file');
 
@@ -72,10 +72,10 @@ export function InboxMessageRow({ message, onArchive, onToggleRead, onClick }: I
         </button>
         <button
           className="rounded p-1 hover:bg-destructive/10"
-          title="Archive"
-          onClick={() => onArchive(message.id)}
+          title="Delete"
+          onClick={() => onDelete(message.id)}
         >
-          <Archive className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+          <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
         </button>
       </div>
     </div>

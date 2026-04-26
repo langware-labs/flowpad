@@ -48,7 +48,6 @@ class FlowMessage(Entity):
     receiver_address_type: Optional[str] = APIField(None)  # "email"|"id"|"slack"|...
     attachment_filename: Optional[str] = APIField(None)  # original .flowmsg filename stored on hub
     is_read: bool = APIField(default=False)
-    is_archived: bool = APIField(default=False)
     _api_visible: ClassVar[bool] = True
 
     @model_serializer(mode="wrap")
