@@ -251,7 +251,8 @@ def extract_claude_section(full_pty: str) -> bytes:
 # ── Test ──────────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(300)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_clean_claude_pty_stress(bootstrapped_client):
     """Launch Claude 50 times; each PTY must structurally match a clean reference."""
     cn = await ComputeNode.get_one({"uname": "local"})

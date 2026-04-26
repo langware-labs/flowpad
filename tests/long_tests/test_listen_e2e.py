@@ -109,7 +109,8 @@ async def live_server(allocate_ports):
 # Test
 # ---------------------------------------------------------------------------
 
-@pytest.mark.timeout(60)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_listen_e2e_real_server_cli_subprocess(live_server):
     """Full E2E: real server, real CLI subprocess, real WebSocket."""
     port, base_url = live_server

@@ -104,7 +104,8 @@ async def test_scan_unknown_type_returns_400(bootstrapped_client):
 # Index
 # ===========================================================================
 
-@pytest.mark.timeout(180)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 @pytest.mark.asyncio
 async def test_index_per_type_no_records(bootstrapped_client):
     """Index with no test-created records returns a valid response.
@@ -122,7 +123,8 @@ async def test_index_per_type_no_records(bootstrapped_client):
     assert isinstance(data["indexed"], int)
 
 
-@pytest.mark.timeout(180)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 @pytest.mark.asyncio
 async def test_index_per_type_with_records(bootstrapped_client):
     """Index indexes the records that exist on disk."""

@@ -170,7 +170,8 @@ async def _poll_output(shell, keyword: bytes, timeout: float = 30.0) -> bytes:
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(120)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_proc_pty_lifecycle(recovery_server):
     """Create process, open(), verify Claude starts, echo test via object calls.
 
@@ -227,7 +228,8 @@ async def test_proc_pty_lifecycle(recovery_server):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(120)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_proc_recovery_after_destruct(recovery_server):
     """destruct() kills PTY; sync_status() corrects to idle; re-open resumes.
 
@@ -310,7 +312,8 @@ async def test_proc_recovery_after_destruct(recovery_server):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(240)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_proc_recovery_after_server_restart(recovery_server):
     """Full kill-restart recovery cycle.
 
@@ -411,7 +414,8 @@ async def test_proc_recovery_after_server_restart(recovery_server):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(120)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_agentic_process_recovery_no_http(tmp_path):
     """AgenticProcess: open → prompt → kill PTY → re-open recalls prior context.
 

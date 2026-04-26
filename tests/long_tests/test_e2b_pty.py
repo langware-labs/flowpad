@@ -117,7 +117,8 @@ async def _make_shell(sandbox_cn, name_suffix: str):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.timeout(90)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_shell_on_sandbox_boots_linux_pty_via_shell_start(sandbox_compute_node):
     """`Shell.start()` on @sandbox must spawn a real E2B Linux PTY.
 
@@ -157,7 +158,8 @@ async def test_shell_on_sandbox_boots_linux_pty_via_shell_start(sandbox_compute_
         await _close_shell(shell)
 
 
-@pytest.mark.timeout(90)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_shell_on_sandbox_pwd_is_home_user(sandbox_compute_node):
     """`pwd` in a sandbox shell must return /home/user (the E2B default cwd)."""
     shell = await _make_shell(sandbox_compute_node, "pwd")
@@ -175,7 +177,8 @@ async def test_shell_on_sandbox_pwd_is_home_user(sandbox_compute_node):
         await _close_shell(shell)
 
 
-@pytest.mark.timeout(120)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_two_sandbox_shells_share_one_e2b_sandbox(sandbox_compute_node):
     """Two Shells bound to the same @sandbox CN must share one E2B sandbox.
 
@@ -213,7 +216,8 @@ async def test_two_sandbox_shells_share_one_e2b_sandbox(sandbox_compute_node):
         await _close_shell(s2)
 
 
-@pytest.mark.timeout(90)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_shell_close_kills_sandbox_when_last_pty_leaves(sandbox_compute_node):
     """Closing the only sandbox Shell must reap the underlying E2B sandbox."""
     from e2b import AsyncSandbox
@@ -246,7 +250,8 @@ async def test_shell_close_kills_sandbox_when_last_pty_leaves(sandbox_compute_no
         )
 
 
-@pytest.mark.timeout(60)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_shell_start_on_sandbox_uses_e2b_provider_not_local(sandbox_compute_node):
     """Guard: `shell.compute_node.compute_provider` must be the E2B singleton.
 

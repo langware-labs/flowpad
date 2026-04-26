@@ -91,7 +91,8 @@ async def clean_target_types():
     await driver.fts_clear()
 
 
-@pytest.mark.timeout(300)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 @pytest.mark.asyncio
 async def test_index_handler_single_type_writes_to_db(
     captured_progress, clean_target_types,
@@ -121,7 +122,8 @@ async def test_index_handler_single_type_writes_to_db(
     )
 
 
-@pytest.mark.timeout(60)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 @pytest.mark.asyncio
 async def test_index_handler_unknown_type_400(captured_progress):
     h = _Handler()
@@ -131,7 +133,8 @@ async def test_index_handler_unknown_type_400(captured_progress):
     assert resp.status_code == 400
 
 
-@pytest.mark.timeout(60)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 @pytest.mark.asyncio
 async def test_index_handler_rebuild_clears_first(
     captured_progress, clean_target_types,
@@ -160,7 +163,8 @@ async def test_index_handler_rebuild_clears_first(
     assert after == before
 
 
-@pytest.mark.timeout(300)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 @pytest.mark.asyncio
 async def test_index_handler_emits_progress_events(
     captured_progress, clean_target_types,

@@ -204,7 +204,8 @@ async def _make_shell(docker_cn, name_suffix: str):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.timeout(120)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_shell_on_docker_boots_linux_pty_via_shell_start(docker_compute_node):
     """`Shell.start()` on @docker-<name> must spawn a Linux PTY in the container.
 
@@ -237,7 +238,8 @@ async def test_shell_on_docker_boots_linux_pty_via_shell_start(docker_compute_no
         await _close_shell(shell)
 
 
-@pytest.mark.timeout(90)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_shell_on_docker_pwd_is_expected_home(docker_compute_node):
     """`pwd` in a docker shell returns the container's current dir.
 
@@ -262,7 +264,8 @@ async def test_shell_on_docker_pwd_is_expected_home(docker_compute_node):
         await _close_shell(shell)
 
 
-@pytest.mark.timeout(120)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_two_docker_shells_share_one_container(docker_compute_node):
     """Two Shells bound to the same @docker-<name> CN must share one container.
 
@@ -299,7 +302,8 @@ async def test_two_docker_shells_share_one_container(docker_compute_node):
         await _close_shell(s2)
 
 
-@pytest.mark.timeout(90)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_shell_close_stops_pty_but_keeps_container(docker_compute_node):
     """Closing a docker Shell must stop its PTY but NOT kill the container.
 
@@ -339,7 +343,8 @@ async def test_shell_close_stops_pty_but_keeps_container(docker_compute_node):
     assert session_manager.sessions.get(key) is None
 
 
-@pytest.mark.timeout(60)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_shell_start_on_docker_uses_docker_provider_not_local(docker_compute_node):
     """Guard: the real Shell → real ComputeNode → real provider must resolve to
     DockerComputeProvider, not LocalComputeProvider. Fast structural check.
@@ -363,7 +368,8 @@ async def test_shell_start_on_docker_uses_docker_provider_not_local(docker_compu
         await _close_shell(shell)
 
 
-@pytest.mark.timeout(45)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_duplicate_worker_rejected(docker_compute_node):
     """A second worker dialling the same machine_id must be rejected.
 
