@@ -355,16 +355,11 @@ async def handle_inbox_list() -> ApiResponse:
     from flow_sdk.db.drivers.query import QueryFilter
     current_user = await User.get_one({"uname": "local"})
     current_user_id = current_user.id if current_user else None
-    current_user_email = (current_user.email or "").strip().lower() if current_user else ""
     flt = QueryFilter(type=BuiltinEntityType.FLOW_MESSAGE.value)
     all_messages = await FlowMessage.get_all(flt)
     messages = [
         m for m in all_messages
-        if not m.is_archived and (
-            m.sender_id != current_user_id
-            # For debugging: show self-sent messages when the recipient address is the local user's email
-            or (m.sender_id == current_user_id and (m.receiver_address or "").strip().lower() == current_user_email)
-        )
+        if not m.is_archived and m.sender_id != current_user_id
     ]
     messages.sort(key=lambda m: m.created_date or "", reverse=True)
     return ApiSuccessResponse(data=[m.model_dump(mode="json") for m in messages])
