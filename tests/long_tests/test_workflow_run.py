@@ -31,7 +31,8 @@ from flow_sdk.builtin.workflow import Workflow
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(180)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_workflow_run_creates_hello_world():
     """workflow.run() executes workflow content; output_folder contains hello_world.txt."""
 
@@ -55,7 +56,8 @@ async def test_workflow_run_creates_hello_world():
         process = await workflow.run()
 
         # 4. Wait for the process to complete
-        await process.waitForIdle(timeout=120)
+        # do not increase timeout without approval
+        await process.waitForIdle(timeout=28)
 
         # 5. output_folder is record.output_dir — granted by the Record system
         output_folder = process.output_folder

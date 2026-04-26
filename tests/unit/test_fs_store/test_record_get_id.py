@@ -84,7 +84,8 @@ async def type_to_ref() -> dict[RecordType, FSRef]:
     return out
 
 
-@pytest.mark.timeout(120)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 @pytest.mark.parametrize(
     "record_type",
     list(TYPE_TO_CLASS.keys()),

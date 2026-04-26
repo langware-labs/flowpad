@@ -35,7 +35,8 @@ def _cn_url(bootstrap_payload: dict, sub: str) -> str:
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(120)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_search_with_query_returns_list(bootstrapped_client):
     """Search with a query string returns a results list (FSIndexer scans all types — slow)."""
     boot = await _bootstrap(bootstrapped_client)
@@ -51,7 +52,8 @@ async def test_search_with_query_returns_list(bootstrapped_client):
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(120)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_search_response_has_indexer_ready_flag(bootstrapped_client):
     """indexer_ready is always present in search response."""
     boot = await _bootstrap(bootstrapped_client)

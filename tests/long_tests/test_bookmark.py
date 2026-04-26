@@ -63,7 +63,8 @@ def _receive_bookmark_op(ws, *, op: str, title: str | None = None) -> dict:
     )
 
 
-@pytest.mark.timeout(15)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 def test_hook_op_ws_and_graph_update():
     """Create/update/delete via hook_op and graph PUT, verify all WS data_op_msg events."""
     from starlette.testclient import TestClient
@@ -176,7 +177,8 @@ def test_hook_op_ws_and_graph_update():
         assert resp.json()["data"]["title"] == "Records Bookmark"
 
 
-@pytest.mark.timeout(120)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 def test_sdk_notify_creates_bookmark():
     """Simulate the SDK notify path: POST webhook envelope to /listen, verify DB + WS."""
     from starlette.testclient import TestClient

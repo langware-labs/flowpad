@@ -59,7 +59,8 @@ def _query_annotations(session_id: str) -> list[dict]:
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(300)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_prompt_annotation_created_and_visible(bootstrapped_client, local_project, local_compute_node):
     """
     Full flow:
@@ -91,7 +92,8 @@ async def test_prompt_annotation_created_and_visible(bootstrapped_client, local_
     print(f"[e2e] Process URL       = {server}/dock/shell/agentic_process-{process_id}")
 
     # ── 4. Wait for Claude to finish ─────────────────────────────────────────
-    await process.wait(timeout=120)
+    # do not increase timeout without approval
+    await process.wait(timeout=28)
     from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
     assert is_ready_for_input(process) is True, "Process should be ready for input after completion"
 

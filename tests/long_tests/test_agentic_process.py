@@ -82,7 +82,8 @@ def _fmt_entry(entry: dict) -> str:
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(180)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 @pytest.mark.flaky(reruns=2, reruns_delay=5)
 async def test_agentic_process_hello_world(
     make_process, external_session_snapshot, local_project, local_compute_node,
@@ -99,7 +100,8 @@ async def test_agentic_process_hello_world(
     assert isinstance(result, ApiSuccessResponse)
     assert is_ready_for_input(process) is False
 
-    async for entry in process.stream_transcript(timeout=120):
+    # do not increase timeout without approval
+    async for entry in process.stream_transcript(timeout=28):
         t = entry.get("type", "?")
         detail = _fmt_entry(entry)
         print(f"  [{t}] {detail}" if detail else f"  [{t}]")
@@ -140,7 +142,8 @@ async def test_agentic_process_hello_world(
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(180)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 @pytest.mark.flaky(reruns=2, reruns_delay=5)
 async def test_agentic_process_classify(
     make_process, local_project, local_compute_node,
@@ -156,7 +159,8 @@ async def test_agentic_process_classify(
         "Then verify the file exists with: cat classification.json"
     )
 
-    async for entry in process.stream_transcript(timeout=120):
+    # do not increase timeout without approval
+    async for entry in process.stream_transcript(timeout=28):
         t = entry.get("type", "?")
         detail = _fmt_entry(entry)
         print(f"  [{t}] {detail}" if detail else f"  [{t}]")
@@ -282,18 +286,12 @@ async def test_agentic_process_analyze_with_agent(
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(120)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_agentic_process_fix_it_with_agent(
     make_process, local_project, local_compute_node,
 ):
-    """fix-it system agent writes analysis.json and a skill folder with SKILL.MD.
-
-    Sonnet typically needs 40–60 s wall-clock to plan and write all three
-    output files (analysis.json, analysis.md, <issue>/SKILL.MD); between-tool
-    latency alone is 9–17 s per turn. The 120 s test timeout + 90 s inner
-    stream budget matches the existing long-test pattern (sister tests in
-    this file use timeout(180) / (240)).
-    """
+    """fix-it system agent writes analysis.json and a skill folder with SKILL.MD."""
     agent = Agent.load_system_agent("fix-it")
     process = await make_process()
     process.load_embedded_agent(agent)
@@ -302,7 +300,8 @@ async def test_agentic_process_fix_it_with_agent(
         f"{SAMPLE_SESSION}",
     )
 
-    async for entry in process.stream_transcript(timeout=90):
+    # do not increase timeout without approval
+    async for entry in process.stream_transcript(timeout=28):
         t = entry.get("type", "?")
         detail = _fmt_entry(entry)
         print(f"  [{t}] {detail}" if detail else f"  [{t}]")
@@ -326,7 +325,8 @@ async def test_agentic_process_fix_it_with_agent(
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(240)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 @pytest.mark.flaky(reruns=2, reruns_delay=5)
 async def test_agentic_process_lists_system_skills(
     make_process, local_project, local_compute_node,
@@ -341,7 +341,8 @@ async def test_agentic_process_lists_system_skills(
         "Output the names as a JSON array to skills.json — one entry per subdirectory name."
     )
 
-    async for entry in process.stream_transcript(timeout=180):
+    # do not increase timeout without approval
+    async for entry in process.stream_transcript(timeout=28):
         t = entry.get("type", "?")
         detail = _fmt_entry(entry)
         print(f"  [{t}] {detail}" if detail else f"  [{t}]")
@@ -363,7 +364,8 @@ async def test_agentic_process_lists_system_skills(
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(240)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 @pytest.mark.flaky(reruns=2, reruns_delay=5)
 async def test_agentic_process_local_assets_skill(
     tmp_path, make_process, local_project, local_compute_node,
@@ -386,7 +388,8 @@ async def test_agentic_process_local_assets_skill(
         "Output the names as a JSON array to skills.json — one entry per subdirectory name."
     )
 
-    async for entry in process.stream_transcript(timeout=180):
+    # do not increase timeout without approval
+    async for entry in process.stream_transcript(timeout=28):
         t = entry.get("type", "?")
         detail = _fmt_entry(entry)
         print(f"  [{t}] {detail}" if detail else f"  [{t}]")

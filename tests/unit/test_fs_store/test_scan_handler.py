@@ -76,7 +76,8 @@ def captured_progress(monkeypatch):
     return events
 
 
-@pytest.mark.timeout(180)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 @pytest.mark.asyncio
 async def test_scan_handler_aggregate_shape(captured_progress):
     """No type param → response has `types`, `grand_total`, `scan_ms`."""
@@ -99,7 +100,8 @@ async def test_scan_handler_aggregate_shape(captured_progress):
         assert "avg_bytes" in t
 
 
-@pytest.mark.timeout(60)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 @pytest.mark.asyncio
 async def test_scan_handler_single_type_shape(captured_progress):
     """?type=claude_session → flat response with type/count/total_bytes/records."""
@@ -122,7 +124,8 @@ async def test_scan_handler_single_type_shape(captured_progress):
     assert "last_scan_at" in data
 
 
-@pytest.mark.timeout(60)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 @pytest.mark.asyncio
 async def test_scan_handler_unknown_type_400(captured_progress):
     h = _Handler()
@@ -132,7 +135,8 @@ async def test_scan_handler_unknown_type_400(captured_progress):
     assert resp.status_code == 400
 
 
-@pytest.mark.timeout(60)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 @pytest.mark.asyncio
 async def test_scan_handler_emits_progress_events(captured_progress):
     """At least one type_complete + one job-level event per type processed."""

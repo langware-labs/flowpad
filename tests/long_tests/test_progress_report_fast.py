@@ -149,6 +149,7 @@ def _assert_ts(attrs: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
+# do not increase timeout without approval
 @pytest.mark.timeout(30)
 def test_scan_progress_report_events():
     """Aggregate scan emits progress_report events.
@@ -196,6 +197,7 @@ def test_scan_progress_report_events():
 # ---------------------------------------------------------------------------
 
 
+# do not increase timeout without approval
 @pytest.mark.timeout(30)
 def test_index_progress_report_events():
     """Aggregate index emits progress_report events.
@@ -243,6 +245,7 @@ def test_index_progress_report_events():
 # ---------------------------------------------------------------------------
 
 
+# do not increase timeout without approval
 @pytest.mark.timeout(30)
 def test_progress_report_events_monotonic():
     """During aggregate scan, progress_report done values are non-decreasing.
@@ -282,6 +285,7 @@ def test_progress_report_events_monotonic():
 # ---------------------------------------------------------------------------
 
 
+# do not increase timeout without approval
 @pytest.mark.timeout(30)
 def test_per_type_scan_emits_progress_report():
     """Per-type scan (?type=X) also emits progress_report events."""
@@ -315,6 +319,7 @@ def test_per_type_scan_emits_progress_report():
 # ---------------------------------------------------------------------------
 
 
+# do not increase timeout without approval
 @pytest.mark.timeout(30)
 def test_per_type_index_emits_progress_report():
     """Per-type index (?type=X) also emits progress_report events."""
