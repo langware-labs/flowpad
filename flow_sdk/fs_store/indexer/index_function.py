@@ -53,6 +53,10 @@ class IndexerOptions:
     # Honor .gitignore + _WALK_IGNORED in project-scope walkers (FOLDER fan-out).
     # No-op outside REAL_PROJECT_CWD / CWD_ROOT scopes.
     gitignore: bool = True
+    # When set, every record produced by this indexer run carries this
+    # project_id. Stamped onto the root FSRef by the handler; reflected onto
+    # records via `from_fsref` reading `ref.project_id`.
+    project_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +175,7 @@ class FSIndexer:
             on_progress=None,
             roots=opts.roots,
             gitignore=opts.gitignore,
+            project_id=opts.project_id,
         )
         refs = await self.scan(scan_opts)
 

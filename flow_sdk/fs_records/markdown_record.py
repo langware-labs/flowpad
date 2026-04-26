@@ -154,6 +154,7 @@ class MarkdownRecord(Record):
     def __init__(self, **kwargs: Any):
         kwargs.setdefault("type", RecordType.MARKDOWN)
         kwargs.setdefault("status", "active")
+        kwargs.setdefault("project_id", None)
         super().__init__(**kwargs)
 
     @property
@@ -311,8 +312,20 @@ class MarkdownRecord(Record):
 
     @classmethod
     async def from_fsref(cls, ref) -> list["MarkdownRecord"]:
-        """Indexer entry point — construct from an FSRef emitted by markdown_fn."""
-        return [cls.from_file(ref._path)]
+        """Indexer entry point — construct from an FSRef emitted by markdown_fn.
+
+        When the FSRef carries `project_id` (stamped on the project root by
+        the index handler, inherited via the parent chain), tag the record
+        so the UI's project-scoped Docs query finds it.
+        """
+        rec = cls.from_file(ref._path)
+        pid = getattr(ref, "project_id", None)
+        if pid:
+            try:
+                object.__setattr__(rec, "project_id", pid)
+            except Exception:
+                pass
+        return [rec]
 
     # ── Portable identity (Phase 7c) ─────────────────────────────────────────
     # MarkdownRecord opts into `asset_id` minting: genId writes a stable uuid
