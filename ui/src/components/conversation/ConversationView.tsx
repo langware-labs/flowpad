@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FolderOpen, Sparkles } from 'lucide-react';
 import { AgenticProcess, Conversation, dataContext, dataManager, FlowMessage, ProcessStatus, Spec, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -6,6 +6,7 @@ import { ExpansionRequest } from '@sdk/FlowSync/query';
 import { AttachmentType } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { fetchInboxFromHub } from '@src/components/inbox-view/inbox-api';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { MessageComposer } from './MessageComposer';
 
@@ -32,6 +33,12 @@ export function ConversationView({ conversationId, task, senderName, onChoosePro
     task.spec_id ? new TypeId(Spec.type, task.spec_id) : null,
     { query: new ExpansionRequest({ expand: ['blobs'] }) },
   );
+
+  // Pull any new messages (e.g. replies) from the hub when the conversation opens,
+  // so we don't show a stale conversation that's missing the other party's reply.
+  useEffect(() => {
+    void fetchInboxFromHub().then(() => refetch());
+  }, [conversationId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pointers = conversation?.conversationMessageIds ?? [];
   const taskMeta = (task.metadata as Record<string, unknown> | undefined) ?? {};

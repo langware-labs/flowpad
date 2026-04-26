@@ -452,10 +452,7 @@ async def handle_inbox_open(fm_id: str) -> ApiResponse:
         except Exception:
             pass
 
-    # Always download/unpack — the bundle may contain new conversation pointers
-    # (e.g. a reply) that need to be merged into the local conversation.jsonl,
-    # even when the task itself already exists locally.
-    if task_id and attachment_filename:
+    if task_id and attachment_filename and not await Task.get_one({"id": task_id}):
         await _download_and_unpack_bundle(fm_id, attachment_filename)
 
     return ApiSuccessResponse(data={"task_id": task_id, "conversation_id": conv_id})
