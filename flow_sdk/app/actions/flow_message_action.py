@@ -354,16 +354,13 @@ async def _download_and_unpack_bundle(fm_id: str, attachment_filename: str) -> b
 
 
 async def handle_inbox_list() -> ApiResponse:
-    """Return all non-archived received FlowMessages (excluding sent), newest first."""
+    """Return all received FlowMessages (excluding sent), newest first."""
     from flow_sdk.db.drivers.query import QueryFilter
     current_user = await User.get_one({"uname": "local"})
     current_user_id = current_user.id if current_user else None
     flt = QueryFilter(type=BuiltinEntityType.FLOW_MESSAGE.value)
     all_messages = await FlowMessage.get_all(flt)
-    messages = [
-        m for m in all_messages
-        if not m.is_archived and m.sender_id != current_user_id
-    ]
+    messages = [m for m in all_messages if m.sender_id != current_user_id]
     messages.sort(key=lambda m: m.created_date or "", reverse=True)
     return ApiSuccessResponse(data=[m.model_dump(mode="json") for m in messages])
 
@@ -488,21 +485,44 @@ async def inbox_fetch() -> ApiResponse:
 
 
 async def handle_inbox_update(fm_id: str, patch: dict, someone_typeid: str) -> ApiResponse:
-    """Apply is_read / is_archived patch to a single FlowMessage."""
+    """Apply is_read patch to a single FlowMessage."""
     fm = await FlowMessage.get_one({"id": fm_id})
     if not fm:
         return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
     if "is_read" in patch:
         fm.is_read = bool(patch["is_read"])
-    if "is_archived" in patch:
-        fm.is_archived = bool(patch["is_archived"])
     await fm.save(someone_typeid)
-    return ApiSuccessResponse(data={"id": fm_id, "is_read": fm.is_read, "is_archived": fm.is_archived})
+    return ApiSuccessResponse(data={"id": fm_id, "is_read": fm.is_read})
+
+
+async def handle_inbox_delete(fm_id: str) -> ApiResponse:
+    """Permanently delete a single FlowMessage."""
+    fm = await FlowMessage.get_one({"id": fm_id})
+    if not fm:
+        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
+    await fm.delete()
+    return ApiSuccessResponse(data={"id": fm_id, "deleted": True})
+
+
+@action.post(action_name="inbox-delete", types=[BuiltinEntityType.FLOW_MESSAGE.value])
+async def inbox_delete() -> ApiResponse:
+    """Delete a single FlowMessage."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No target entity")
+        if not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        fm_id = str(request_info.target_entity_typeid.id)
+        return await handle_inbox_delete(fm_id)
+    except Exception as e:
+        logger.error("[flow_message_action] inbox-delete error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Delete failed: {str(e)}")
 
 
 @action.post(action_name="inbox-update", types=[BuiltinEntityType.FLOW_MESSAGE.value])
 async def inbox_update() -> ApiResponse:
-    """Update is_read / is_archived on a single FlowMessage."""
+    """Update is_read on a single FlowMessage."""
     try:
         request_info = get_current_request_info()
         if not request_info or not request_info.target_entity_typeid:
@@ -518,20 +538,14 @@ async def inbox_update() -> ApiResponse:
 
 
 async def handle_inbox_bulk_update(patch: dict, someone_typeid: str) -> ApiResponse:
-    """Apply is_read / is_archived patch to all FlowMessages."""
+    """Apply is_read patch to all FlowMessages."""
     from flow_sdk.db.drivers.query import QueryFilter
     flt = QueryFilter(type=BuiltinEntityType.FLOW_MESSAGE.value)
     messages = await FlowMessage.get_all(flt)
     count = 0
     for fm in messages:
-        changed = False
         if "is_read" in patch:
             fm.is_read = bool(patch["is_read"])
-            changed = True
-        if "is_archived" in patch:
-            fm.is_archived = bool(patch["is_archived"])
-            changed = True
-        if changed:
             await fm.save(someone_typeid)
             count += 1
     return ApiSuccessResponse(data={"updated": count})
@@ -539,7 +553,7 @@ async def handle_inbox_bulk_update(patch: dict, someone_typeid: str) -> ApiRespo
 
 @action.post(action_name="inbox-bulk-update", types=None)
 async def inbox_bulk_update() -> ApiResponse:
-    """Bulk update is_read / is_archived across all FlowMessages."""
+    """Bulk update is_read across all FlowMessages."""
     try:
         request_info = get_current_request_info()
         if not request_info or not request_info.someone_typeid:
@@ -549,3 +563,31 @@ async def inbox_bulk_update() -> ApiResponse:
     except Exception as e:
         logger.error("[flow_message_action] inbox-bulk-update error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Bulk update failed: {str(e)}")
+
+
+async def handle_inbox_delete_all() -> ApiResponse:
+    """Delete every FlowMessage owned by the local user."""
+    from flow_sdk.db.drivers.query import QueryFilter
+    flt = QueryFilter(type=BuiltinEntityType.FLOW_MESSAGE.value)
+    messages = await FlowMessage.get_all(flt)
+    count = 0
+    for fm in messages:
+        try:
+            await fm.delete()
+            count += 1
+        except Exception as e:
+            logger.warning("[inbox-delete-all] failed to delete fm=%s: %s", fm.id, e)
+    return ApiSuccessResponse(data={"deleted": count})
+
+
+@action.post(action_name="inbox-delete-all", types=None)
+async def inbox_delete_all() -> ApiResponse:
+    """Delete all FlowMessages."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        return await handle_inbox_delete_all()
+    except Exception as e:
+        logger.error("[flow_message_action] inbox-delete-all error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Delete all failed: {str(e)}")
