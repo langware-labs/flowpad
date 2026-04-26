@@ -508,6 +508,43 @@ export class SystemToolsService extends EventEmitter {
     }
   }
 
+  /**
+   * Incremental "fast scan": POST /fs-records/index with no archive/clear.
+   *
+   * Skip-fresh in the indexer means only files whose mtime > entity.updated_date
+   * get re-parsed. Footer indicator + ActivityProgressModal react automatically
+   * via the existing WS progress_report path. The backend `index_end` event
+   * settles state on completion; the idle watchdog covers WS-loss.
+   */
+  async fastScan(): Promise<void> {
+    this._setActivity('index');
+    try {
+      await apiClient.post(`${FS_RECORDS_BASE}/index`);
+      void dataManager.refreshScanInfo();
+    } finally {
+      // The WS `index_end` event normally clears state; this is a safety net
+      // for the request-failed case where no terminal event will fire.
+      if (this.currentActivity === 'index') this._setActivity(null);
+    }
+  }
+
+  /**
+   * Project-scoped fast scan: indexer walks only the project's
+   * `fs_storage_mount_path` subtree (one REAL_PROJECT_CWD root). Same
+   * skip-fresh + WS progress + index_end settle path as `fastScan()`.
+   */
+  async fastScanProject(projectId: string): Promise<void> {
+    this._setActivity('index');
+    try {
+      await apiClient.post(
+        `${FS_RECORDS_BASE}/index?project_id=${encodeURIComponent(projectId)}`,
+      );
+      void dataManager.refreshScanInfo();
+    } finally {
+      if (this.currentActivity === 'index') this._setActivity(null);
+    }
+  }
+
   // ---- DB path setting -----------------------------------------------------
 
   async setDbPath(dbPath: string): Promise<DbSettings> {

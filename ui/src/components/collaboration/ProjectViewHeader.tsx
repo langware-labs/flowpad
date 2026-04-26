@@ -1,6 +1,16 @@
-import { Copy, Users } from 'lucide-react';
+import { Copy, Menu, PackageSearch, RotateCcw, Users } from 'lucide-react';
 import { useToast } from '@src/hooks/use-toast';
+import { useSystemTools } from '@src/hooks/use-system-tools';
+import { Button } from '@src/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@src/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import type { Project, ProjectMember } from '@sdk';
+import { systemTools } from '@sdk';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 interface Props {
@@ -15,8 +25,9 @@ function onlineWithin(member: ProjectMember, windowMs: number): boolean {
   return Date.now() - t < windowMs;
 }
 
-export function CollaborationHeader({ project, localMemberId }: Props) {
+export function ProjectViewHeader({ project, localMemberId }: Props) {
   const { toast } = useToast();
+  const { busy } = useSystemTools();
   const members = project.members ?? [];
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(project.displayName);
@@ -50,7 +61,7 @@ export function CollaborationHeader({ project, localMemberId }: Props) {
       await project.save();
       toast({ title: 'Project renamed', description: trimmed || '(cleared)' });
     } catch (err) {
-      console.error('[CollaborationHeader] rename failed', err);
+      console.error('[ProjectViewHeader] rename failed', err);
       toast({ title: 'Rename failed', description: String((err as Error).message ?? err) });
     }
   };
@@ -115,6 +126,44 @@ export function CollaborationHeader({ project, localMemberId }: Props) {
             </div>
           );
         })}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9"
+              onClick={() => void systemTools.fastScanProject(project.id)}
+              disabled={busy}
+              data-testid="project-fast-scan"
+            >
+              <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Refresh project index</TooltipContent>
+        </Tooltip>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9"
+              data-testid="project-actions-menu"
+              aria-label="Project actions"
+            >
+              <Menu className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={() => void systemTools.resetAndRescan()}
+              disabled={busy}
+              data-testid="project-actions-hard-refresh"
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Hard refresh
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );

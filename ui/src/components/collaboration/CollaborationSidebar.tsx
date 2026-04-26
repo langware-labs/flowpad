@@ -1,17 +1,19 @@
-import { ChevronDown, ChevronRight, FileText, ListChecks, Users } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileText, ListChecks, Sparkles, Users } from 'lucide-react';
 import { useState } from 'react';
 import { RoomsCategory } from './sidebar/RoomsCategory';
 import { DocsCategory } from './sidebar/DocsCategory';
 import { NewDocButton } from './sidebar/NewDocButton';
 import { PlansCategory } from './sidebar/PlansCategory';
+import { SkillsCategory } from './sidebar/SkillsCategory';
 import type { RoomTab } from './RoomTabs';
 
-type CategoryKey = 'rooms' | 'docs' | 'plans';
+type CategoryKey = 'rooms' | 'docs' | 'plans' | 'skills';
 
 const CATEGORIES: Array<{ key: CategoryKey; label: string; icon: typeof Users }> = [
   { key: 'rooms', label: 'Rooms', icon: Users },
   { key: 'docs', label: 'Docs', icon: FileText },
   { key: 'plans', label: 'Plans', icon: ListChecks },
+  { key: 'skills', label: 'Skills', icon: Sparkles },
 ];
 
 interface Props {
@@ -29,6 +31,7 @@ export function CollaborationSidebar({ projectId, onOpenTab }: Props) {
     rooms: true,
     docs: true,
     plans: false,
+    skills: true,
   });
 
   const toggle = (key: CategoryKey) => setExpanded((p) => ({ ...p, [key]: !p[key] }));
@@ -60,6 +63,7 @@ export function CollaborationSidebar({ projectId, onOpenTab }: Props) {
                   <DocsCategory projectId={projectId} onOpenTab={onOpenTab} />
                 )}
                 {key === 'plans' && <PlansCategory projectId={projectId} />}
+                {key === 'skills' && <SkillsCategory projectId={projectId} />}
               </div>
             )}
           </div>

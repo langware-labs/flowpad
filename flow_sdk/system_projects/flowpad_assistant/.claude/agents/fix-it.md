@@ -23,9 +23,13 @@ Read the session transcript or description provided in the instruction. It may b
 
 ## Task
 
-1. Analyze the session to identify the primary issue or improvement opportunity.
-2. Write `analysis.json` and `analysis.md` summarizing the issue.
-3. Create a skill folder in the current working directory named after the issue (kebab-case), containing a `SKILL.MD` file.
+You MUST produce **all three** output files in the same turn before ending. The task is incomplete if any of them is missing — do not stop after writing the analysis. The three required artifacts are:
+
+1. `analysis.json` — structured issue summary (see schema below).
+2. `analysis.md` — human-readable companion to the JSON.
+3. `<issue-name>/SKILL.MD` — the skill folder + file that prevents recurrence.
+
+Sequence: identify the issue → write `analysis.json` → write `analysis.md` → create the skill folder and write its `SKILL.MD`. Only end your turn after the third Write succeeds.
 
 ## Output Files
 

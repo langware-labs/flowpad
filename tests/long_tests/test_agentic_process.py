@@ -282,11 +282,7 @@ async def test_agentic_process_analyze_with_agent(
 
 
 @pytest.mark.asyncio
-@pytest.mark.flaky(reruns=2, reruns_delay=3)
-# Live-Claude latency varies. The 28s stream_transcript budget passes when the
-# model is fast, but on slow runs the agent only finishes 1–2 of 3 files before
-# the test asserts. Match the existing precedent for live-Claude tests in this
-# file (test_agentic_process_lists_system_skills below also uses flaky reruns).
+# NOTE: do NOT increase timeout or mark as flaky — these tests must pass within the global 30s limit
 async def test_agentic_process_fix_it_with_agent(
     make_process, local_project, local_compute_node,
 ):

@@ -43,6 +43,10 @@ class IndexerOptions:
     include_temp: bool = False  # walk temp-path projects (/tmp, /var/folders, …)
     types: list[RecordType] | None = None  # index() filter; None = all types
     on_progress: ProgressCallback | None = None
+    # Per-call root override; when set, scan() walks only these instead of
+    # FSIndexer._roots. Used by project-scoped fastScan to limit traversal
+    # to a single project subtree without mutating the shared indexer state.
+    roots: tuple[FSRef, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +163,7 @@ class FSIndexer:
             include_temp=opts.include_temp,
             types=opts.types,
             on_progress=None,
+            roots=opts.roots,
         )
         refs = await self.scan(scan_opts)
 
@@ -330,7 +335,8 @@ class FSIndexer:
         if opts.on_progress is not None:
             await opts.on_progress(ProgressEvent(stage="scan_start"))
 
-        stack: list[FSRef] = list(reversed(self._roots))
+        roots_for_walk = list(opts.roots) if opts.roots is not None else self._roots
+        stack: list[FSRef] = list(reversed(roots_for_walk))
         visited: list[FSRef] = []
         seen: set[tuple[str, RecordType | None]] = set()
         while stack:
