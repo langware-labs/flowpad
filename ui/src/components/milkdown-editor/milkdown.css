@@ -231,3 +231,59 @@
 .milkdown-editor-wrapper .token.italic {
   font-style: italic;
 }
+
+/* Prism Syntax Highlighting — Light theme override
+ * The base palette above is VS Code Dark+ (e.g. punctuation #d4d4d4, keyword
+ * #569cd6). On a white code-block background the near-white tokens are
+ * invisible and the soft blue keyword is too pale. Remap to VS Code Light+
+ * values when the app is in light mode. */
+html.light .milkdown-editor-wrapper .token.comment,
+html.light .milkdown-editor-wrapper .token.prolog,
+html.light .milkdown-editor-wrapper .token.doctype,
+html.light .milkdown-editor-wrapper .token.cdata {
+  color: #008000;
+}
+
+html.light .milkdown-editor-wrapper .token.punctuation {
+  color: #1e1e1e;
+}
+
+html.light .milkdown-editor-wrapper .token.property,
+html.light .milkdown-editor-wrapper .token.tag,
+html.light .milkdown-editor-wrapper .token.boolean,
+html.light .milkdown-editor-wrapper .token.number,
+html.light .milkdown-editor-wrapper .token.constant,
+html.light .milkdown-editor-wrapper .token.symbol {
+  color: #098658;
+}
+
+html.light .milkdown-editor-wrapper .token.selector,
+html.light .milkdown-editor-wrapper .token.attr-name,
+html.light .milkdown-editor-wrapper .token.string,
+html.light .milkdown-editor-wrapper .token.char,
+html.light .milkdown-editor-wrapper .token.builtin {
+  color: #a31515;
+}
+
+html.light .milkdown-editor-wrapper .token.operator,
+html.light .milkdown-editor-wrapper .token.entity,
+html.light .milkdown-editor-wrapper .token.url,
+html.light .milkdown-editor-wrapper .token.variable {
+  color: #1e1e1e;
+}
+
+html.light .milkdown-editor-wrapper .token.atrule,
+html.light .milkdown-editor-wrapper .token.attr-value,
+html.light .milkdown-editor-wrapper .token.function,
+html.light .milkdown-editor-wrapper .token.class-name {
+  color: #795e26;
+}
+
+html.light .milkdown-editor-wrapper .token.keyword {
+  color: #0451a5;
+}
+
+html.light .milkdown-editor-wrapper .token.regex,
+html.light .milkdown-editor-wrapper .token.important {
+  color: #af00db;
+}

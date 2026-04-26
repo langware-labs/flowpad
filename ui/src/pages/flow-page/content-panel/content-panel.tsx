@@ -21,7 +21,6 @@ import { PlanEditor } from '@src/components/plan-editor/PlanEditor';
 import { ShowView } from '@src/components/show-view/ShowView';
 import { HomeLanding } from '@src/pages/home-landing';
 import { LiveStatus } from '@src/pages/live-status';
-import { SessionAnalysisPage } from '@src/pages/session-analysis';
 import { SearchView } from '@src/pages/search-view/SearchView';
 import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
 
@@ -255,8 +254,6 @@ export function ContentPanel() {
                 <HomeLanding />
               ) : currentOverviewTab === ViewType.SYSTEM_PROFILE ? (
                 <LiveStatus />
-              ) : currentOverviewTab === ViewType.ANALYSIS ? (
-                <SessionAnalysisPage />
               ) : (
                 <HomeLanding />
               )}
@@ -288,13 +285,6 @@ export function ContentPanel() {
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in overflow-auto shadow-lg data-[state=inactive]:hidden"
           >
             <WebappViewer onWebappErrorRetry={onWebappErrorRetry} />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.ANALYSIS}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in overflow-auto shadow-lg data-[state=inactive]:hidden"
-          >
-            <SessionAnalysisPage />
           </TabsContent>
 
           <TabsContent

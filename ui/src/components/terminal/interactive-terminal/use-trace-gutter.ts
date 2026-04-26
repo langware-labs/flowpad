@@ -12,15 +12,14 @@ export interface TraceGutterEntry {
 /**
  * Bridges the unified `AgenticProcess.flowDataStream` -> gutter entries.
  *
- * Replaces the old `useClaudeSessionTrace` (Claude-only) plus a
- * transcript-vs-sniffer anchor split. Now the source of truth is a single
- * stream of `FlowData` (history + live + sniffer, merged + de-duplicated by
- * `flowDataStream.ingest`); we bucket every entry uniformly by timestamp.
+ * The source of truth is a single stream of `FlowData` (history + live +
+ * sniffer, merged + de-duplicated by `flowDataStream.ingest`); we bucket
+ * every entry uniformly by timestamp.
  *
  * No setState here — bucketing is a pure function of (event, ptySyncSession),
- * computed inline in the `entries` memo. The previous version kept an
+ * computed inline in the `entries` memo. Earlier iterations kept an
  * `anchorMap` + `anchorVersion` setState cycle, which caused a render loop
- * when combined with the new FlowData-based event source.
+ * when combined with the FlowData-based event source.
  */
 export function useTraceGutter(
   process: AgenticProcess | null,

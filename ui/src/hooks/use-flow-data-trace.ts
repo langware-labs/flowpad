@@ -4,11 +4,7 @@
  * Vendor-agnostic source of truth for the InteractiveTerminal trace gutter.
  * Subscribes to a single `AgenticProcess.flowDataStream` (history + live +
  * sniffer, merged + deduplicated by the worker drivers and listen.py
- * fan-out) and surfaces it as `TraceEvent[]`.
- *
- * Replaces `useClaudeSessionTrace`, which had two disjoint Claude-only data
- * paths (`ClaudeSessionRecord.fetchTranscript` for history, `useProcessSniffer`
- * for live hooks). With this hook the gutter renders for both Claude and
+ * fan-out) and surfaces it as `TraceEvent[]`. Renders for both Claude and
  * Codex tabs without any vendor branch.
  *
  * Stability contract: the returned `events` array reference is stable across

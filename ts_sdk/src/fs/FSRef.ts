@@ -65,6 +65,23 @@ export class FSRef {
     }
   }
 
+  /**
+   * Recovery primitive — write `content` (default empty) at this path,
+   * creating parent directories server-side. Pair with ``exists()`` for the
+   * editor's "read-or-recover" branch:
+   *
+   *     if (!(await fsRef.exists())) await fsRef.create();
+   *
+   * This is **not** the normal create path — Entity.save() →
+   * Record.upsert_main_ref handles routine creation with the correct default
+   * body. ``create()`` exists so a stale entity row pointing at a missing
+   * file never produces a hard 404 in the editor.
+   */
+  async create(content: string = ''): Promise<void> {
+    const { fsManager } = await import('../services/fsService');
+    await fsManager.writeFile(this.typeId, this.path, content);
+  }
+
   get vpath(): string {
     // Format: "{type}-{id}/{path_without_leading_slash}"
     const typeId = this.typeId;
