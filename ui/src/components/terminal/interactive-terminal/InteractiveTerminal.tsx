@@ -2,7 +2,7 @@
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
 
-import { dataContext, fsStore, ProcessStatus, Shell, type AgenticProcess } from '@sdk';
+import { dataContext, FlowDataSource, fsStore, ProcessStatus, Shell, type AgenticProcess } from '@sdk';
 import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
 import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
@@ -394,11 +394,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   } = useTraceGutter(process ?? null, terminalReady, ptySyncRef.current, shellReady, ptySyncSnapshot.version);
   const lastMessageTime = useMemo(() => {
     // Latest history event timestamp — used to anchor the "time since last
-    // message" indicator. Source name is 'transcript' for legacy compat with
-    // mapTranscriptToTraceEvents; mapFlowDataToTraceEvent maps
-    // FlowDataSource.History → 'transcript' too.
+    // message" indicator.
     const last = allTraceEvents
-      .filter((e) => e.source === 'transcript')
+      .filter((e) => e.source === FlowDataSource.History)
       .reduce<string | null>((max, e) => (max === null || e.timestamp > max ? e.timestamp : max), null);
     return last;
   }, [allTraceEvents]);
@@ -533,7 +531,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       anchorsResolvedRef.current = ptySyncRef.current.hasAnchorSegments();
     } else if (sessionStartTime) {
       const lastEventMs = allTraceEvents
-        .filter((e) => e.source === 'transcript')
+        .filter((e) => e.source === FlowDataSource.History)
         .reduce((max, e) => Math.max(max, new Date(e.timestamp).getTime()), 0);
       if (lastEventMs > 0) {
         ptySyncRef.current.finalizeDefaultSegment(lastEventMs);

@@ -14,6 +14,17 @@ test 2: Notification / SessionActionButtons entry point reuses the same resume f
 - validate the dock navigates to /dock/shell/agentic_process-<id> for the same session
 - validate no duplicate AgenticProcess is created on the backend
 
+test 3: Session-card click derives session UUID from asset_ref (post source_path -> asset_ref rename)
+- prerequisite: at least one indexed claude_session record
+- via the global search dock, query for a known claude_session and click its primary card
+- inspect the network request payload: GET .../claude_session result rows include `asset_ref` shaped as
+  `/<absolute>/.claude/projects/<encoded>/<uuid>.jsonl` (the legacy `source_path` field MUST NOT be
+  read by the frontend — record-type-nav.ts:28 sessionIdFromResult parses asset_ref's filename)
+- validate the dock navigates to /dock/shell/agentic_process-<uuid> where <uuid> matches the jsonl
+  filename (without extension)
+- validate Transcript sub-action also resolves: clicking it opens
+  /dock/lens/claude/transcript/<encoded>/<uuid> using projectEncodedNameFromResult(asset_ref)
+
 COVERAGE NOTE: a single assertion that no duplicate process is created covers the upsertSessionProcess
 contract across record-type-nav, HistoryModal, use-resume-in-terminal, and NavigationActions.openClaudeSession
 — all converge on AgenticProcess.fromClaudeSession.

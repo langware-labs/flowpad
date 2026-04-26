@@ -1,5 +1,6 @@
 import { LAYER_COLORS } from '@src/hooks/sniffer-layers';
-import type { ClaudeTraceEvent } from '@src/types/trace-event';
+import type { TraceEvent } from '@src/types/trace-event';
+import { FlowDataSource } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { LucideIcon } from 'lucide-react';
@@ -68,7 +69,7 @@ export const HOOK_OP_ICONS: Record<string, LucideIcon> = {
   workflow_trace: ListChecks,
 };
 
-export function getEventIcon(eventType: string, event?: ClaudeTraceEvent): LucideIcon {
+export function getEventIcon(eventType: string, event?: TraceEvent): LucideIcon {
   if (event?.warning) return AlertTriangle;
   if (event?.webhook_type === 'hook_op') {
     const eventName = event.hook_data?.event_name;
@@ -127,7 +128,7 @@ export function getWebhookColor(webhookType?: string): string {
   return WEBHOOK_TYPE_COLORS[webhookType ?? ''] ?? 'text-primary';
 }
 
-export function getEventColor(event: ClaudeTraceEvent): string {
+export function getEventColor(event: TraceEvent): string {
   if (event.warning) return 'text-yellow-500';
   if (event.event_type.startsWith('SkillUsed:')) return 'text-purple-600';
   // hook_op: per-operation color first, then webhook fallback
@@ -139,7 +140,7 @@ export function getEventColor(event: ClaudeTraceEvent): string {
   // per-type color takes priority over generic source/layer colors
   const typeColor = EVENT_TYPE_COLORS[event.event_type];
   if (typeColor) return typeColor;
-  if (event.source === 'transcript') return 'text-emerald-500';
+  if (event.source === FlowDataSource.History) return 'text-emerald-500';
   if (event.layer && event.layer !== 'debug') return LAYER_COLORS[event.layer];
   return getWebhookColor(event.webhook_type);
 }
@@ -148,7 +149,7 @@ export function getEventColor(event: ClaudeTraceEvent): string {
 // isPlanWrite – detect tool writes into plans/*.md (cross-platform)
 // ---------------------------------------------------------------------------
 
-export function isPlanWrite(event: ClaudeTraceEvent): boolean {
+export function isPlanWrite(event: TraceEvent): boolean {
   const toolName = event.hook_data?.tool_name;
   if (toolName !== 'Write') return false;
   const filePath: string = event.hook_data?.tool_input?.file_path || '';
@@ -168,7 +169,7 @@ export function cropText(text: string, maxWords = 5): string {
   return words.slice(0, maxWords).join(' ') + '...';
 }
 
-export function getOneLiner(event: ClaudeTraceEvent): string {
+export function getOneLiner(event: TraceEvent): string {
   // Transcript events: check top-level tool_name/tool_input first
   if (event.tool_name) {
     return cropText(event.tool_name);
@@ -221,7 +222,7 @@ export function getOneLiner(event: ClaudeTraceEvent): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Compute the transcript lens pointer for a ClaudeTraceEvent.
+ * Compute the transcript lens pointer for a TraceEvent.
  *
  * - Sniffer events: returns the pre-computed transcriptDockPointer (includes SessionStart guard).
  * - Transcript-source events: computes on-the-fly using the projectEncodedName from context,
@@ -230,14 +231,14 @@ export function getOneLiner(event: ClaudeTraceEvent): string {
  * Returns null when not enough information is available.
  */
 export function getTranscriptLensPointer(
-  event: ClaudeTraceEvent,
+  event: TraceEvent,
   projectEncodedName?: string,
 ): { ref: string; options: Record<string, string> } | null {
   // Sniffer events: pre-computed at parse time (SessionStart already filtered out)
-  if (event.source === 'sniffer') return event.transcriptDockPointer;
+  if (event.source === FlowDataSource.Sniffer) return event.transcriptDockPointer;
 
   // Transcript-source events need projectEncodedName from the viewer's context
-  if (event.source === 'transcript' && projectEncodedName && event.session_id) {
+  if (event.source === FlowDataSource.History && projectEncodedName && event.session_id) {
     const options: Record<string, string> = {};
     const match = event.id.match(/^transcript-([0-9a-f-]{36})(?:-tool-\d+)?$/);
     if (match) options.transcript_entry_id = match[1];
@@ -265,7 +266,7 @@ export function navigateToTranscript(
 // EventTooltipContent – shared tooltip body for trace events
 // ---------------------------------------------------------------------------
 
-export function EventTooltipContent({ event }: { event: ClaudeTraceEvent }) {
+export function EventTooltipContent({ event }: { event: TraceEvent }) {
   const Icon = getEventIcon(event.event_type, event);
   const [copied, setCopied] = useState(false);
 
@@ -284,10 +285,10 @@ export function EventTooltipContent({ event }: { event: ClaudeTraceEvent }) {
       </div>
       {event.warning && <div className="text-xs font-medium text-yellow-500">Warning: {event.warning}</div>}
       <div className="text-xs text-popover-foreground/60">{new Date(event.timestamp).toLocaleString()}</div>
-      {event.source === 'sniffer' && (event.hook_data as any)?.hook_entry_id && (
+      {event.source === FlowDataSource.Sniffer && (event.hook_data as any)?.hook_entry_id && (
         <div className="truncate text-xs text-popover-foreground/60">Entry: {(event.hook_data as any).hook_entry_id}</div>
       )}
-      {event.source === 'sniffer' && (event.hook_data as any)?.hook_file_path && (
+      {event.source === FlowDataSource.Sniffer && (event.hook_data as any)?.hook_file_path && (
         <div className="truncate text-xs text-popover-foreground/60">Source: {(event.hook_data as any).hook_file_path}</div>
       )}
       {event.session_id && <div className="truncate text-xs text-popover-foreground/60">Session: {event.session_id}</div>}

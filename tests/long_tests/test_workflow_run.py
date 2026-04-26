@@ -25,9 +25,6 @@ pytestmark = [
         not test_service_config.deep_testing,
         reason="Skipping long tests when DEEP_TESTING is disabled",
     ),
-    pytest.mark.skip(
-        reason="AgenticProcess.output_folder removed in refactor"
-    ),
 ]
 
 from flow_sdk.builtin.workflow import Workflow
