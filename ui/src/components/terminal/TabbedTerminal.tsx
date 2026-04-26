@@ -680,7 +680,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       {/* Main terminal area */}
       <div className="flex h-full w-full flex-col">
         {/* Tab Bar */}
-        <div className="flex items-center border-b bg-muted/30" data-testid="terminal-tab-bar">
+        <div className="flex items-center border-b bg-muted" data-testid="terminal-tab-bar">
           {/* Left Scroll Button */}
           {canScrollLeft && (
             <Button
@@ -859,7 +859,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                 when tabs overflow. Placement is unconditional, so it does not
                 oscillate with hasTabOverflow. */}
             {tabEndToolbar && (
-              <div className="sticky right-0 z-10 flex items-center self-stretch bg-muted/30 backdrop-blur-sm">
+              <div className="sticky right-0 z-10 flex items-center self-stretch bg-muted">
                 {tabEndToolbar}
               </div>
             )}
