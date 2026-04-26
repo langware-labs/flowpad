@@ -348,7 +348,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
 
     const flowData = new FlowData(elementType, content, attributes);
-    flowData.source = FlowDataSource.WebSocket;
+    // The FlowData constructor already reads `attributes['source']` and sets
+    // `flowData.source` to the matching FlowDataSource enum value (or
+    // FlowDataSource.Unknown when absent). For backend-translated events
+    // (sniffer hooks via convert_hook_event, history replay, etc.) the
+    // source is set authoritatively upstream, so we respect it here. Only
+    // events that don't carry a source attribute (legacy WS-only paths) get
+    // tagged as WebSocket.
+    if (flowData.source === FlowDataSource.Unknown) {
+      flowData.source = FlowDataSource.WebSocket;
+    }
 
     // Route to entity's handleFlowData method if it exists
     if (typeof (entity as any).handleFlowData === 'function') {

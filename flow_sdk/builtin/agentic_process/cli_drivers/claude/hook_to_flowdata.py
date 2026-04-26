@@ -45,12 +45,27 @@ def convert_hook_event(payload: dict[str, Any]) -> list[FlowData]:
 
     Returns a single-item list (one FlowData per hook event). Returns an
     empty list when ``payload`` is structurally invalid — never raises.
+
+    Surfaces hook-payload fields as canonical FlowData attributes so the UI
+    renderers can read them without digging into ``hook_data.raw_hook_data.*``:
+
+    * ``hook-message`` — first message-shaped string from the raw payload
+      (``raw_hook_data.message`` / ``prompt`` / ``last_assistant_message``).
+    * ``hook-error``, ``hook-stop-reason``, ``hook-task-subject``,
+      ``hook-agent-type``, ``hook-teammate-name``, ``hook-source``,
+      ``hook-name``, ``hook-worktree-path`` — common Claude-hook detail
+      fields surfaced 1:1 from ``raw_hook_data``.
+    * ``hook-file-path`` — the source ``hook_file_path`` from the webhook.
+    * ``tool-input-summary`` — short string from ``hook_data.tool_input``
+      (``command`` / ``file_path`` / ``pattern`` / ``query`` / ``url`` /
+      ``code`` / ``prompt``) for one-line gutter summaries.
     """
     if not isinstance(payload, dict):
         return []
 
     hook_data = payload.get("hook_data") if isinstance(payload.get("hook_data"), dict) else {}
     raw = hook_data.get("raw_hook_data") if isinstance(hook_data.get("raw_hook_data"), dict) else {}
+    tool_input = hook_data.get("tool_input") if isinstance(hook_data.get("tool_input"), dict) else {}
 
     hook_event_name = str(hook_data.get("hook_event_name") or raw.get("hook_event_name") or "")
     tool_name = str(hook_data.get("tool_name") or raw.get("tool_name") or "")
@@ -79,5 +94,48 @@ def convert_hook_event(payload: dict[str, Any]) -> list[FlowData]:
     hook_entry_id = payload.get("hook_entry_id")
     if hook_entry_id:
         attributes["hook-entry-id"] = str(hook_entry_id)
+    hook_file_path = payload.get("hook_file_path")
+    if hook_file_path:
+        attributes["hook-file-path"] = str(hook_file_path)
+
+    # Extract a one-line message preview from the raw Claude hook payload.
+    # Mirrors the precedence the legacy ``getOneLiner`` walked in
+    # event-utils.tsx: any *message-shaped* key (message, prompt, *_message)
+    # wins, then specific named fields.
+    message = ""
+    for k in ("message", "prompt", "last_assistant_message"):
+        v = raw.get(k)
+        if isinstance(v, str) and v:
+            message = v
+            break
+    if not message:
+        for k in raw.keys():
+            if "message" in k and isinstance(raw.get(k), str) and raw.get(k):
+                message = str(raw[k])
+                break
+    if message:
+        attributes["hook-message"] = message
+
+    for raw_key, attr_key in (
+        ("error", "hook-error"),
+        ("stop_reason", "hook-stop-reason"),
+        ("task_subject", "hook-task-subject"),
+        ("agent_type", "hook-agent-type"),
+        ("teammate_name", "hook-teammate-name"),
+        ("source", "hook-source"),
+        ("name", "hook-name"),
+        ("worktree_path", "hook-worktree-path"),
+    ):
+        v = raw.get(raw_key)
+        if isinstance(v, str) and v:
+            attributes[attr_key] = v
+
+    # Tool-input one-liner: precedence mirrors the legacy fallback chain.
+    if isinstance(tool_input, dict):
+        for k in ("command", "file_path", "pattern", "query", "url", "code", "prompt"):
+            v = tool_input.get(k)
+            if isinstance(v, str) and v:
+                attributes["tool-input-summary"] = v
+                break
 
     return [FlowData(flow_value=payload, attributes=attributes)]

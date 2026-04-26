@@ -72,9 +72,13 @@ export const HOOK_OP_ICONS: Record<string, LucideIcon> = {
 export function getEventIcon(eventType: string, event?: TraceEvent): LucideIcon {
   if (event?.warning) return AlertTriangle;
   if (event?.webhook_type === 'hook_op') {
-    const eventName = event.hook_data?.event_name;
+    // Read the hook-op discriminator from canonical attributes (set by
+    // convert_hook_op_event); fall back to the legacy hook_data shape only
+    // for events that haven't been routed through the dispatcher yet.
+    const eventName = event.attributes?.['hook-op-event-name'] ?? event.hook_data?.event_name;
     if (eventName && HOOK_OP_ICONS[eventName]) return HOOK_OP_ICONS[eventName];
-    if (event.hook_data?.operation === 'event') return Zap;
+    const operation = event.attributes?.['hook-op-operation'] ?? event.hook_data?.operation;
+    if (operation === 'event') return Zap;
     return DatabaseZap;
   }
   if (eventType === 'UserMessage') return MessageSquare;
@@ -131,9 +135,10 @@ export function getWebhookColor(webhookType?: string): string {
 export function getEventColor(event: TraceEvent): string {
   if (event.warning) return 'text-yellow-500';
   if (event.event_type.startsWith('SkillUsed:')) return 'text-purple-600';
-  // hook_op: per-operation color first, then webhook fallback
+  // hook_op: per-operation color first, then webhook fallback. Read the
+  // discriminator from canonical attributes; legacy hook_data is fallback.
   if (event.webhook_type === 'hook_op') {
-    const eventName = event.hook_data?.event_name;
+    const eventName = event.attributes?.['hook-op-event-name'] ?? event.hook_data?.event_name;
     if (eventName && HOOK_OP_COLORS[eventName]) return HOOK_OP_COLORS[eventName];
     return WEBHOOK_TYPE_COLORS['hook_op'];
   }
@@ -170,7 +175,9 @@ export function cropText(text: string, maxWords = 5): string {
 }
 
 export function getOneLiner(event: TraceEvent): string {
-  // Transcript events: check top-level tool_name/tool_input first
+  // 1. Top-level tool name (set by mapFlowDataToTraceEvent for tool-call /
+  //    tool-result events, by the legacy mapTranscriptToTraceEvents for
+  //    transcript-source events).
   if (event.tool_name) {
     return cropText(event.tool_name);
   }
@@ -180,11 +187,31 @@ export function getOneLiner(event: TraceEvent): string {
   }
   if (event.summary) return cropText(event.summary);
 
-  // Fall back to hook_data path (sniffer events)
+  // 2. Canonical FlowData attributes set by hook_to_flowdata.convert_hook_event:
+  //    these flatten Claude raw_hook_data fields onto the wire so the renderer
+  //    doesn't need to dig through hook_data.raw_hook_data.* itself.
+  const attrs = event.attributes;
+  if (attrs) {
+    const fromAttrs =
+      attrs['hook-message'] ||
+      attrs['tool-input-summary'] ||
+      attrs['hook-error'] ||
+      attrs['hook-stop-reason'] ||
+      attrs['hook-task-subject'] ||
+      attrs['hook-agent-type'] ||
+      attrs['hook-teammate-name'] ||
+      attrs['hook-source'] ||
+      attrs['hook-name'] ||
+      attrs['hook-worktree-path'] ||
+      '';
+    if (fromAttrs) return cropText(fromAttrs);
+  }
+
+  // 3. Legacy fallback for events that haven't been routed through the
+  //    dispatcher yet (e.g., direct sniffer-hook subscribers that still
+  //    receive `mapSnifferToTraceEvent`-shape via hook_data).
   const hookData = event.hook_data;
   if (!hookData) return '';
-
-  // Prefer message/prompt fields from raw_hook_data (e.g. message, prompt, last_assistant_message)
   const raw = hookData.raw_hook_data as Record<string, unknown> | undefined;
   if (raw) {
     for (const key of Object.keys(raw)) {
@@ -193,7 +220,6 @@ export function getOneLiner(event: TraceEvent): string {
       }
     }
   }
-
   const candidate =
     hookData.tool_name ||
     hookData.tool_input?.command ||
@@ -212,7 +238,6 @@ export function getOneLiner(event: TraceEvent): string {
     raw?.name ||
     raw?.worktree_path ||
     '';
-
   const text = typeof candidate === 'string' ? candidate : JSON.stringify(candidate);
   return cropText(text);
 }
@@ -277,6 +302,14 @@ export function EventTooltipContent({ event }: { event: TraceEvent }) {
     });
   }, [event.raw]);
 
+  // Read sniffer-only details from canonical FlowData attributes; fall back
+  // to the legacy hook_data path for events that haven't been dispatched
+  // through `convert_hook_event` yet.
+  const entryId =
+    event.attributes?.['hook-entry-id'] ?? (event.hook_data as any)?.hook_entry_id;
+  const filePath =
+    event.attributes?.['hook-file-path'] ?? (event.hook_data as any)?.hook_file_path;
+
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2">
@@ -285,11 +318,11 @@ export function EventTooltipContent({ event }: { event: TraceEvent }) {
       </div>
       {event.warning && <div className="text-xs font-medium text-yellow-500">Warning: {event.warning}</div>}
       <div className="text-xs text-popover-foreground/60">{new Date(event.timestamp).toLocaleString()}</div>
-      {event.source === FlowDataSource.Sniffer && (event.hook_data as any)?.hook_entry_id && (
-        <div className="truncate text-xs text-popover-foreground/60">Entry: {(event.hook_data as any).hook_entry_id}</div>
+      {event.source === FlowDataSource.Sniffer && entryId && (
+        <div className="truncate text-xs text-popover-foreground/60">Entry: {entryId}</div>
       )}
-      {event.source === FlowDataSource.Sniffer && (event.hook_data as any)?.hook_file_path && (
-        <div className="truncate text-xs text-popover-foreground/60">Source: {(event.hook_data as any).hook_file_path}</div>
+      {event.source === FlowDataSource.Sniffer && filePath && (
+        <div className="truncate text-xs text-popover-foreground/60">Source: {filePath}</div>
       )}
       {event.session_id && <div className="truncate text-xs text-popover-foreground/60">Session: {event.session_id}</div>}
       <div className="relative mt-1">
