@@ -382,16 +382,9 @@ async def unpack_bundle(
                         )
                         if conv:
                             conversation_id = conv.id
-                            # Notify frontend that conversation was updated (e.g. new reply arrived)
-                            try:
-                                send_resource_sync(
-                                    type="conversation",
-                                    id=conv.id,
-                                    operation=SyncOperation.UPDATE,
-                                    data={"event_data": {"task_id": task_id_for_conv or "", "conversation_id": conv.id}},
-                                )
-                            except Exception:
-                                pass
+                            # Frontend notification is deferred to step 7 — firing it here
+                            # would tell the UI to refetch the conversation before the
+                            # referenced FlowMessage is saved (step 5), causing 404s.
 
                 elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
                     fm_file = entry_dir / "message.json"
@@ -439,7 +432,9 @@ async def unpack_bundle(
                     )
                     rec.append_message_pointer(top_fm.id, datetime.now(UTC).isoformat())
 
-        # 7. Fire resource sync
+        # 7. Fire resource sync — both flow_message (CREATE) and conversation (UPDATE)
+        # are sent here, AFTER the FM is saved, so the UI doesn't refetch the
+        # conversation and try to load an FM that hasn't been persisted yet.
         try:
             task_id_for_sync = next(
                 (c.id for c in top_fm.context if c.type == BuiltinEntityType.TASK.value),
@@ -451,6 +446,13 @@ async def unpack_bundle(
                 operation=SyncOperation.CREATE,
                 data={"event_data": {"flow_message_id": top_fm.id, "task_id": task_id_for_sync}},
             )
+            if conversation_id:
+                send_resource_sync(
+                    type="conversation",
+                    id=conversation_id,
+                    operation=SyncOperation.UPDATE,
+                    data={"event_data": {"task_id": task_id_for_sync, "conversation_id": conversation_id}},
+                )
         except Exception:
             pass
 
