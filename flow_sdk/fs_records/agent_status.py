@@ -173,6 +173,29 @@ def _has_completed_assistant(chunk: str) -> bool:
     return False
 
 
+def _last_assistant_stop_reason(chunk: str) -> str | None:
+    """Return the ``stop_reason`` of the most recent ``assistant`` entry, or None.
+
+    Used by ``stream_transcript`` to distinguish "model just used a tool and is
+    planning the next call" (``stop_reason=tool_use``, more work expected) from
+    "model finished its turn" (``stop_reason=end_turn``). Treating both as
+    soft-terminal exits before the next tool call lands.
+    """
+    for line in reversed(chunk.splitlines()):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except Exception:
+            continue
+        if entry.get("type") != "assistant":
+            continue
+        msg = entry.get("message", {}) if isinstance(entry.get("message"), dict) else {}
+        return msg.get("stop_reason")
+    return None
+
+
 def _last_user_is_tool_result(chunk: str) -> bool:
     """True when the most recent ``user`` entry carries a ``tool_result`` block.
 

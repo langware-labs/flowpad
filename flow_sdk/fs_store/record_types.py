@@ -113,6 +113,10 @@ class RecordType(StrEnum):
     SYSTEM_ROOT = "system_root"
     CWD_ROOT = "cwd_root"
 
+    # Transient scaffold emitted by project_folder_walker_fn — fan-out only,
+    # never persisted as a terminal record (no record_cls registered).
+    FOLDER = "folder"
+
 
 class SkillitRecordType(StrEnum):
     SKILLIT_SESSION = "skillit_session"

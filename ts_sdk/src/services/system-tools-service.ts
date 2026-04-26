@@ -545,6 +545,24 @@ export class SystemToolsService extends EventEmitter {
     }
   }
 
+  /**
+   * Project-scoped hard refresh: same single-root walk as fastScanProject,
+   * but with `force=true` so skip-fresh is bypassed and every file under the
+   * project's mount path is re-parsed and re-upserted. Other projects' data
+   * is untouched (no global archive, no global delete).
+   */
+  async hardRefreshProject(projectId: string): Promise<void> {
+    this._setActivity('index');
+    try {
+      await apiClient.post(
+        `${FS_RECORDS_BASE}/index?project_id=${encodeURIComponent(projectId)}&force=true`,
+      );
+      void dataManager.refreshScanInfo();
+    } finally {
+      if (this.currentActivity === 'index') this._setActivity(null);
+    }
+  }
+
   // ---- DB path setting -----------------------------------------------------
 
   async setDbPath(dbPath: string): Promise<DbSettings> {

@@ -52,6 +52,7 @@ dependencies = [
     "appdirs",
     "colorama",
     "apscheduler~=3.10",
+    "pathspec",
 ]
 
 [project.urls]

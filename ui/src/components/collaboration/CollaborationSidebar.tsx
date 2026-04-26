@@ -63,7 +63,7 @@ export function CollaborationSidebar({ projectId, onOpenTab }: Props) {
                   <DocsCategory projectId={projectId} onOpenTab={onOpenTab} />
                 )}
                 {key === 'plans' && <PlansCategory projectId={projectId} />}
-                {key === 'skills' && <SkillsCategory projectId={projectId} />}
+                {key === 'skills' && <SkillsCategory projectId={projectId} onOpenTab={onOpenTab} />}
               </div>
             )}
           </div>

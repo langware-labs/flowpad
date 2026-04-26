@@ -202,6 +202,7 @@ class FsRecordsActionsMixin:
             RecordType.REAL_PROJECT_CWD,
             RecordType.CWD_ROOT,
             RecordType.PROJECT,
+            RecordType.FOLDER,
         }
 
         async def emit(ev: ProgressEvent) -> None:
@@ -406,6 +407,7 @@ class FsRecordsActionsMixin:
         filter_type = qp.get("type", "").strip()
         trigger = qp.get("trigger", "manual").strip() or "manual"
         rebuild = qp.get("rebuild", "").strip().lower() in ("true", "1")
+        force = qp.get("force", "").strip().lower() in ("true", "1")
         limit_types_raw = qp.get("limit_types", "").strip()
         limit_types = int(limit_types_raw) if limit_types_raw.isdigit() else None
         limit_per_type_raw = qp.get("limit_per_type", "").strip()
@@ -482,6 +484,7 @@ class FsRecordsActionsMixin:
             RecordType.REAL_PROJECT_CWD,
             RecordType.CWD_ROOT,
             RecordType.PROJECT,
+            RecordType.FOLDER,
         }
 
         def _skip(ev: ProgressEvent) -> bool:
@@ -553,6 +556,7 @@ class FsRecordsActionsMixin:
                 on_progress=emit,
                 verbose=False,
                 roots=custom_roots,
+                force=force,
             ))
         finally:
             self._complete_activity("index")
