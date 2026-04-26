@@ -440,7 +440,12 @@ class FsRecordsActionsMixin:
                     status_code=400,
                 )
             custom_roots = (
-                FSRef(mount_path, record_type=RecordType.REAL_PROJECT_CWD, scope="project"),
+                FSRef(
+                    mount_path,
+                    record_type=RecordType.REAL_PROJECT_CWD,
+                    scope="project",
+                    project_id=project_id,
+                ),
             )
 
         # Type filter + validation
@@ -557,6 +562,7 @@ class FsRecordsActionsMixin:
                 verbose=False,
                 roots=custom_roots,
                 force=force,
+                project_id=project_id,
             ))
         finally:
             self._complete_activity("index")

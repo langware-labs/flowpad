@@ -22,12 +22,28 @@ import pytest
 E2B_KEY = os.getenv("E2B_KEY")
 
 
-def _e2b_reachable() -> bool:
-    """True iff E2B_KEY is set AND the API is reachable — else skip.
+def _e2b_sdk_installed() -> bool:
+    """True iff the ``e2b`` Python SDK can actually be imported. The provider
+    stubs out its symbols on ImportError so the rest of the codebase loads
+    fine, but the real Sandbox APIs only exist when the package is installed."""
+    try:
+        import e2b  # noqa: F401
+        return True
+    except ImportError:
+        return False
 
-    Avoids flaky failures when network egress to api.e2b.dev is blocked even
-    though a key is configured (CI sandboxes, offline dev, etc).
+
+def _e2b_reachable() -> bool:
+    """True iff the SDK is installed, E2B_KEY is set, AND the API is reachable.
+
+    Three independent skip conditions because E2B_KEY can be set in .env.local
+    without the package being installed (the provider has a try/except import
+    that stubs symbols, so import-of-flow-sdk doesn't fail). Without the SDK
+    check the tests run and crash inside the provider with a noisy stack trace
+    instead of skipping cleanly.
     """
+    if not _e2b_sdk_installed():
+        return False
     if not E2B_KEY:
         return False
     try:
@@ -42,7 +58,7 @@ def _e2b_reachable() -> bool:
 
 pytestmark = pytest.mark.skipif(
     not _e2b_reachable(),
-    reason="E2B_KEY not set or api.e2b.dev unreachable",
+    reason="e2b SDK not installed, E2B_KEY not set, or api.e2b.dev unreachable",
 )
 
 

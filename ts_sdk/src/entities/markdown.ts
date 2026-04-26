@@ -11,6 +11,7 @@ export interface IMarkdown extends IEntity {
   tags?: string[];
   links?: string[];
   scope?: string;
+  project_id?: string;
 }
 
 /**
@@ -35,6 +36,7 @@ export class Markdown extends APIEntity<Markdown> implements IMarkdown {
   tags?: string[];
   links?: string[];
   scope?: string;
+  project_id?: string;
 
   constructor(entity: Partial<IMarkdown> = {}) {
     super(entity);
@@ -47,6 +49,7 @@ export class Markdown extends APIEntity<Markdown> implements IMarkdown {
     this.tags = entity.tags;
     this.links = entity.links;
     this.scope = entity.scope;
+    this.project_id = entity.project_id;
   }
 
   /**

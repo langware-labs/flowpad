@@ -1,4 +1,4 @@
-import { FileText } from 'lucide-react';
+import { ChevronRight, FileText, Folder } from 'lucide-react';
 import { useMemo, useEffect, useState } from 'react';
 import { Markdown, Project, QueryRequest, TypeId } from '@sdk';
 import { useEntity, useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -18,6 +18,17 @@ interface DocRow {
   asset_ref?: string;
   parent_path?: string;
   scope?: string;
+  project_id?: string;
+}
+
+/** Tree node derived from the flat doc rows. Folders are synthesized from
+ *  segments of `parent_path` relative to the project mount. */
+interface DocTreeNode {
+  name: string;
+  /** Children folders, keyed by name. */
+  folders: Map<string, DocTreeNode>;
+  /** Files directly in this folder. */
+  files: DocRow[];
 }
 
 const docsQuery = new QueryRequest({
@@ -27,16 +38,109 @@ const docsQuery = new QueryRequest({
   query: null,
 });
 
+function newNode(name: string): DocTreeNode {
+  return { name, folders: new Map(), files: [] };
+}
+
 /**
- * Docs category — lists Markdown entities scoped to the current project's
- * ``.claude/docs/``. Reads from the entity DB (``useEntitiesQuery``); rows
- * created via ``Markdown.createInProject`` (which calls Entity.save()) land
- * in the cache synchronously. No indexer lag.
+ * Group flat rows into a folder hierarchy. Each row's `parent_path` is made
+ * relative to `mountAbsPrefix` (e.g. `<mount>`); the resulting path segments
+ * become folder nodes ("/.claude/docs", ".claude/docs/sub", etc.).
+ */
+function buildTree(rows: DocRow[], mountAbsPrefix: string): DocTreeNode {
+  const root = newNode('');
+  for (const r of rows) {
+    const parent = (r.parent_path ?? '').replace(/\/+$/, '');
+    if (!parent.startsWith(mountAbsPrefix)) continue;
+    const rel = parent.slice(mountAbsPrefix.length).replace(/^\/+/, '');
+    const segs = rel ? rel.split('/') : [];
+    let node = root;
+    for (const seg of segs) {
+      let child = node.folders.get(seg);
+      if (!child) {
+        child = newNode(seg);
+        node.folders.set(seg, child);
+      }
+      node = child;
+    }
+    node.files.push(r);
+  }
+  return root;
+}
+
+function FolderRow({
+  node,
+  depth,
+  onOpen,
+}: {
+  node: DocTreeNode;
+  depth: number;
+  onOpen: (d: DocRow) => void;
+}) {
+  // Auto-expand at the root and the first level (`.claude/docs`); deeper
+  // folders start collapsed so the menu doesn't explode on big trees.
+  const [open, setOpen] = useState<boolean>(depth < 2);
+  const hasChildren = node.folders.size > 0 || node.files.length > 0;
+  const indent = { paddingLeft: `${depth * 12}px` };
+
+  return (
+    <>
+      {node.name !== '' && (
+        <div
+          style={indent}
+          onClick={() => setOpen((v) => !v)}
+          className="flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+        >
+          <ChevronRight
+            className={`h-3 w-3 flex-shrink-0 transition-transform ${open ? 'rotate-90' : ''}`}
+          />
+          <Folder className="h-3.5 w-3.5 flex-shrink-0" />
+          <span className="truncate">{node.name}</span>
+        </div>
+      )}
+      {open && hasChildren && (
+        <>
+          {[...node.folders.values()]
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((child) => (
+              <FolderRow
+                key={child.name}
+                node={child}
+                depth={depth + 1}
+                onOpen={onOpen}
+              />
+            ))}
+          {[...node.files]
+            .sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''))
+            .map((d) => (
+              <div
+                key={d.id}
+                style={{ paddingLeft: `${(depth + 1) * 12}px` }}
+                onClick={() => onOpen(d)}
+                className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <FileText className="h-3.5 w-3.5 flex-shrink-0" />
+                <span className="truncate">
+                  {typeof d.name === 'string' && d.name ? d.name : 'Untitled'}
+                </span>
+              </div>
+            ))}
+        </>
+      )}
+    </>
+  );
+}
+
+/**
+ * Docs category — lists Markdown entities scoped to the current project,
+ * filtered by `project_id` (stamped onto the record by the indexer when the
+ * scan was triggered via `POST /fs-records/index?project_id=...`). Rendered
+ * as a folder hierarchy derived from each row's `parent_path` relative to
+ * the project's `fs_storage_mount_path`.
  */
 export function DocsCategory({ projectId, onOpenTab }: Props) {
   const { navigation } = useDockNavigation();
 
-  // Resolve project so we can filter docs to its `.claude/docs/`.
   const projectTypeId = useMemo(
     () => (projectId ? new TypeId(Project.type, projectId) : null),
     [projectId],
@@ -44,8 +148,6 @@ export function DocsCategory({ projectId, onOpenTab }: Props) {
   const { data: project } = useEntity<Project>(projectTypeId);
   const isSystemProject = !!project?.system;
 
-  // Include-system toggle: auto-checked when browsing a system project's own
-  // collab space (otherwise every doc there is invisible), otherwise off.
   const [includeSystem, setIncludeSystem] = useState<boolean>(isSystemProject);
   useEffect(() => {
     setIncludeSystem(isSystemProject);
@@ -53,26 +155,41 @@ export function DocsCategory({ projectId, onOpenTab }: Props) {
 
   const { data: rows = [], isLoading } = useEntitiesQuery<DocRow>(docsQuery);
 
-  const items = useMemo(() => {
-    const mount = project?.fs_storage_mount_path?.replace(/\/+$/, '') ?? '';
-    if (!mount) return [];
-    const folder = `${mount}/.claude/docs`;
+  const filtered = useMemo(() => {
+    if (!projectId) return [];
     return rows.filter((r) => {
-      if (r.parent_path !== folder) return false;
-      // Match the original includeSystem behavior — exclude scope='system' rows
-      // unless the toggle is on.
+      if (r.project_id !== projectId) return false;
       if (!includeSystem && r.scope === 'system') return false;
       return true;
     });
-  }, [rows, project?.fs_storage_mount_path, includeSystem]);
+  }, [rows, projectId, includeSystem]);
+
+  const tree = useMemo(() => {
+    const mount = project?.fs_storage_mount_path?.replace(/\/+$/, '') ?? '';
+    if (!mount) return newNode('');
+    return buildTree(filtered, mount);
+  }, [filtered, project?.fs_storage_mount_path]);
+
+  const openDoc = (d: DocRow) => {
+    if (!d.asset_ref) return;
+    if (onOpenTab) {
+      onOpenTab({
+        key: `markdown:${d.id}`,
+        type: 'markdown',
+        title: typeof d.name === 'string' && d.name ? d.name : 'Untitled',
+        asset_ref: d.asset_ref,
+      });
+    } else {
+      navigation.openDock(DockPointer.forAssetEditor('markdown', d.asset_ref));
+    }
+  };
 
   if (!projectId) {
     return <div className="px-2 py-1.5 text-xs italic text-muted-foreground">No project linked</div>;
   }
 
-  // Only show the Show-system toggle for non-system projects (system projects
-  // are auto-opted-in; toggling it off would leave the panel empty pointlessly).
   const showToggleRow = !isSystemProject;
+  const isEmpty = filtered.length === 0;
 
   return (
     <div className="flex flex-col gap-0.5">
@@ -91,35 +208,12 @@ export function DocsCategory({ projectId, onOpenTab }: Props) {
         </label>
       )}
 
-      {isLoading && items.length === 0 ? (
+      {isLoading && isEmpty ? (
         <div className="px-2 py-1.5 text-xs text-muted-foreground">Loading…</div>
-      ) : items.length === 0 ? (
+      ) : isEmpty ? (
         <div className="px-2 py-1.5 text-xs italic text-muted-foreground">No docs yet</div>
       ) : (
-        <ul className="flex flex-col gap-0.5">
-          {items.map((d) => (
-            <li
-              key={d.id}
-              onClick={() => {
-                if (!d.asset_ref) return;
-                if (onOpenTab) {
-                  onOpenTab({
-                    key: `markdown:${d.id}`,
-                    type: 'markdown',
-                    title: typeof d.name === 'string' && d.name ? d.name : 'Untitled',
-                    asset_ref: d.asset_ref,
-                  });
-                } else {
-                  navigation.openDock(DockPointer.forAssetEditor('markdown', d.asset_ref));
-                }
-              }}
-              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <FileText className="h-3.5 w-3.5 flex-shrink-0" />
-              <span className="truncate">{typeof d.name === 'string' && d.name ? d.name : 'Untitled'}</span>
-            </li>
-          ))}
-        </ul>
+        <FolderRow node={tree} depth={0} onOpen={openDoc} />
       )}
     </div>
   );

@@ -38,6 +38,7 @@ class FSRef:
         record_type: "RecordType | None" = None,
         scope: str | None = None,
         type_id: str = "compute_node-@local",
+        project_id: str | None = None,
     ) -> None:
         self._path = Path(path).resolve()
         self._read_only_flag: bool = read_only
@@ -45,6 +46,7 @@ class FSRef:
         self._record_type: "RecordType | None" = record_type
         self._scope: str | None = scope
         self._type_id: str = type_id
+        self._project_id: str | None = project_id
 
     @property
     def record_type(self) -> "RecordType | None":
@@ -61,6 +63,18 @@ class FSRef:
         if self._scope is not None:
             return self._scope
         return self._parent.scope if self._parent is not None else None
+
+    @property
+    def project_id(self) -> str | None:
+        """Project id stamped at the root, inherited via the parent chain.
+
+        Mirrors `scope` semantics: walk up until an ancestor has an explicit
+        `project_id`, or None if none does. Set at the project-scoped root
+        FSRef by the index handler so descendants pick it up implicitly.
+        """
+        if self._project_id is not None:
+            return self._project_id
+        return self._parent.project_id if self._parent is not None else None
 
     @property
     def read_only(self) -> bool:
