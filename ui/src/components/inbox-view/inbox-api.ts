@@ -14,6 +14,7 @@ export interface InboxMessage {
   sender_name?: string | null;
   receiver_address?: string | null;
   is_read: boolean;
+  is_archived: boolean;
   created_date?: string | null;
 }
 
@@ -25,6 +26,7 @@ export interface FetchResult {
 export interface UpdateResult {
   id: string;
   is_read: boolean;
+  is_archived: boolean;
 }
 
 export interface BulkUpdateResult {
@@ -46,21 +48,14 @@ export async function fetchInboxFromHub(): Promise<FetchResult> {
   return result ?? { created: 0, ids: [] };
 }
 
-/** Mark a single message read or unread. */
+/** Mark a single message read/unread or archived/unarchived */
 export async function updateMessage(
   messageId: string,
-  patch: { is_read?: boolean },
+  patch: { is_read?: boolean; is_archived?: boolean },
 ): Promise<UpdateResult | null> {
   const action = new ActionInfo('inbox-update', 'flow_message', messageId, 'POST');
   action.bodyParameters = patch;
   return dataManager.callAction<typeof patch, UpdateResult>(action);
-}
-
-/** Permanently delete a single FlowMessage. */
-export async function deleteMessage(messageId: string): Promise<{ id: string; deleted: boolean } | null> {
-  const action = new ActionInfo('inbox-delete', 'flow_message', messageId, 'POST');
-  action.bodyParameters = {};
-  return dataManager.callAction<Record<string, unknown>, { id: string; deleted: boolean }>(action);
 }
 
 export interface OpenResult {
@@ -74,20 +69,12 @@ export async function openInboxMessage(messageId: string): Promise<OpenResult | 
   return dataManager.callAction<null, OpenResult>(action);
 }
 
-/** Bulk mark all read / unread. */
+/** Bulk mark all read / unread / archive all */
 export async function bulkUpdateMessages(
-  patch: { is_read?: boolean },
+  patch: { is_read?: boolean; is_archived?: boolean },
 ): Promise<BulkUpdateResult> {
   const action = new ActionInfo('inbox-bulk-update', null, null, 'POST');
   action.bodyParameters = patch;
   const result = await dataManager.callAction<typeof patch, BulkUpdateResult>(action);
   return result ?? { updated: 0 };
-}
-
-/** Permanently delete every FlowMessage on this machine (not just the displayed ones). */
-export async function deleteAllMessages(): Promise<{ deleted: number }> {
-  const action = new ActionInfo('inbox-delete-all', null, null, 'POST');
-  action.bodyParameters = {};
-  const result = await dataManager.callAction<Record<string, unknown>, { deleted: number }>(action);
-  return result ?? { deleted: 0 };
 }

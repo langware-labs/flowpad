@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { RefreshCw, Trash2 } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -8,9 +8,7 @@ import {
   listInboxMessages,
   fetchInboxFromHub,
   updateMessage,
-  deleteMessage,
   bulkUpdateMessages,
-  deleteAllMessages,
   openInboxMessage,
   type InboxMessage,
 } from './inbox-api';
@@ -48,8 +46,8 @@ export function InboxView() {
     }
   }, [loadMessages]);
 
-  const handleDelete = useCallback(async (id: string) => {
-    await deleteMessage(id);
+  const handleArchive = useCallback(async (id: string) => {
+    await updateMessage(id, { is_archived: true });
     setMessages((prev) => {
       const next = prev.filter((m) => m.id !== id);
       setUnreadCount(next.filter((m) => !m.is_read).length);
@@ -80,9 +78,8 @@ export function InboxView() {
     });
   }, [setUnreadCount]);
 
-  const handleDeleteAll = useCallback(async () => {
-    if (!window.confirm('Permanently delete every message on this machine? This cannot be undone.')) return;
-    await deleteAllMessages();
+  const handleArchiveAll = useCallback(async () => {
+    await bulkUpdateMessages({ is_archived: true });
     setMessages([]);
     setUnreadCount(0);
   }, [setUnreadCount]);
@@ -145,13 +142,12 @@ export function InboxView() {
           </Button>
           <Button
             variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={() => void handleDeleteAll()}
-            disabled={loading}
-            title="Delete all messages on this machine"
+            size="sm"
+            className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => void handleArchiveAll()}
+            disabled={loading || messages.length === 0}
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            Archive all
           </Button>
           <Button
             variant="ghost"
@@ -187,7 +183,7 @@ export function InboxView() {
             <InboxMessageRow
               key={msg.id}
               message={msg}
-              onDelete={(id) => void handleDelete(id)}
+              onArchive={(id) => void handleArchive(id)}
               onToggleRead={(id, isRead) => void handleToggleRead(id, isRead)}
               onClick={handleMessageClick}
             />

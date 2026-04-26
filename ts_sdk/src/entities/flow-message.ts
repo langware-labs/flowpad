@@ -35,6 +35,7 @@ export interface IFlowMessage extends IEntity {
   /** User-given filename of the uploaded .flowmsg zip stored via fs/upload, e.g. "my-share.flowmsg". Null when no file was uploaded. */
   attachment_filename?: string | null;
   is_read?: boolean;
+  is_archived?: boolean;
 }
 
 @registerEntity
@@ -49,6 +50,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   receiver_address_type?: string | null;
   attachment_filename?: string | null;
   is_read?: boolean;
+  is_archived?: boolean;
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -63,6 +65,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.receiver_address_type = entity.receiver_address_type;
     this.attachment_filename = entity.attachment_filename;
     this.is_read = entity.is_read ?? false;
+    this.is_archived = entity.is_archived ?? false;
   }
 }
 
