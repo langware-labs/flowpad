@@ -6,8 +6,6 @@ Provides:
 """
 
 import logging
-import os
-import tempfile
 from typing import Any, Optional
 
 from flow_sdk.api.type_id import TypeId
@@ -35,22 +33,18 @@ def get_entity_embedded_storage(typeid: TypeId) -> LocalStorageDriver:
     Embedded storage is used for large blobs and is stored in a temp folder.
     Each entity gets its own subfolder under the embedded storage root.
 
-    The driver is mounted directly at the entity's folder (no driver_mount_subfolder)
-    so that abs_vfspath values like "type-uuid/subpath" are parsed correctly by
-    app2storage_path_format — it strips the type-uuid prefix via VFSPath and returns
-    just the subpath relative to the entity's mount root.
-
     Args:
         typeid: The entity's TypeId (type:id)
 
     Returns:
         StorageDriver for the entity's embedded storage
     """
-    entity_dir = os.path.join(tempfile.gettempdir(), "flow-embedded-storage", typeid.type, typeid.id)
-    os.makedirs(entity_dir, exist_ok=True)
-    driver = LocalStorageDriver(mount_path=entity_dir)
-    driver.root_entity_typeid = typeid
-    return driver
+    parent_storage = get_default_embedded_storage()
+    # Create entity-specific subfolder: {entity_type}/{entity_id}
+    entity_subfolder = f"{typeid.type}/{typeid.id}"
+    entity_storage = parent_storage.subfolder_storage(entity_subfolder)
+    entity_storage.root_entity_typeid = typeid
+    return entity_storage
 
 
 def get_entity_storage(

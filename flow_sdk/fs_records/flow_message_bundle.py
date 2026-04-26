@@ -86,14 +86,9 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
         # 2. Process each attachment entry
         for entry in flow_message.attachment:
             if entry.attachment_type == AttachmentType.FILE:
-                # entry.data may be an absolute path (legacy) or a VFS subpath (new).
-                # Resolve to a real filesystem path so we can copy it into the zip.
-                if Path(entry.data).is_absolute():
-                    file_path = Path(entry.data)
-                else:
-                    from flow_sdk.storage import get_entity_embedded_storage
-                    storage = get_entity_embedded_storage(flow_message.typeid)
-                    file_path = Path(storage.get_storage_path(entry.data))
+                from flow_sdk.storage import get_entity_embedded_storage
+                storage = get_entity_embedded_storage(flow_message.typeid)
+                file_path = Path(storage.get_storage_path(entry.data))
                 if file_path.exists():
                     files_dir = attachment_dir / "files"
                     files_dir.mkdir(exist_ok=True)

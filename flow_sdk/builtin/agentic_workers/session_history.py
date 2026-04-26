@@ -6,6 +6,7 @@ Reuses load_jsonl from system_profile utils.
 """
 
 import json
+import logging
 from pathlib import Path
 
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData, FlowDataType, FlowElementType
@@ -74,17 +75,12 @@ def load_session_history(session_id: str) -> list[FlowData]:
     Returns:
         List of FlowData items representing the session history
     """
-    import logging as _logging
-    _log = _logging.getLogger(__name__)
-
     jsonl_path = get_session_jsonl_path(session_id)
-    _log.info(f"[load_session_history] session_id={session_id} jsonl_path={jsonl_path}")
     if not jsonl_path:
-        _log.warning(f"[load_session_history] no JSONL file found for session {session_id}")
+        logging.warning(f"[load_session_history] no JSONL file found for session {session_id}")
         return []
 
     entries = _load_jsonl(jsonl_path)
-    _log.info(f"[load_session_history] loaded {len(entries)} raw entries from {jsonl_path}")
     history = []
 
     import uuid as _uuid
@@ -183,7 +179,6 @@ def load_session_history(session_id: str) -> list[FlowData]:
                             )
                         )
 
-    _log.info(f"[load_session_history] converted {len(history)} FlowData items for session {session_id}")
     return history
 
 

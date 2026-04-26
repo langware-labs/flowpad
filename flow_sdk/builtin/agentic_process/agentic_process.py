@@ -1000,14 +1000,11 @@ class AgenticProcess(Entity):
         from flow_sdk.builtin.agentic_workers.session_history import load_session_history
 
         session_id = self.session_id
-        logger.info(f"[get-history] process={self.id} session_id={session_id}")
 
         if not session_id:
-            logger.info("[get-history] no session_id — returning empty history")
             return ApiSuccessResponse(data={"history": [], "session_id": None, "use_worker_history": False})
 
         history: list = load_session_history(session_id)
-        logger.info(f"[get-history] loaded {len(history)} items for session {session_id}")
 
         items = []
         for fd in history:
