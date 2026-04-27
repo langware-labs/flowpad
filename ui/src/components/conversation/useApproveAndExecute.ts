@@ -101,7 +101,7 @@ export function useApproveAndExecute({ task }: UseApproveAndExecuteOptions): Use
     const cached = taskApprovalCache.get(taskId);
     if (cached) {
       await cached.executeInstruction(promptText, { sync: false });
-      navigation.openDock(cached.dockPointer);
+      navigation.openInBrowserTab(cached.dockPointer);
       return;
     }
 
@@ -135,7 +135,7 @@ export function useApproveAndExecute({ task }: UseApproveAndExecuteOptions): Use
       { instruction: promptText, visible: true },
     );
     taskApprovalCache.set(taskId, forked);
-    navigation.openDock(forked.dockPointer);
+    navigation.openInBrowserTab(forked.dockPointer);
   };
 
   return { approveAndExecute };

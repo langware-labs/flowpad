@@ -82,19 +82,26 @@ export function useExecuteConversation({
             query: new ExpansionRequest({ expand: ['blobs'] }),
           }).catch(() => null)
         : null;
+      // Prefer spec_type from task metadata (stamped at send/receive time) over the
+      // loaded Spec entity, since the Spec may not yet be materialized on this side.
+      const effectiveSpecType = (taskMeta.spec_type as string | undefined) ?? spec?.spec_type ?? 'plan';
       if (isFirstRun) {
         const specTitle = spec?.title ?? task.title ?? 'Untitled';
         const specContent = spec?.content ?? '';
         const senderLabel = senderName ?? 'Sender';
         const msgLines = messages.map(formatMsg).filter(Boolean).join('\n');
-        const parts = [
-          `You received a task from ${senderLabel}: "${specTitle}"`,
-          '',
-          specContent ? `Here is the plan:\n\n${specContent}` : `Task: ${task.title || 'Untitled'}`,
-        ];
+        const intro = effectiveSpecType === 'session'
+          ? `Below is a session and conversation that ${senderLabel} sent for assistance: "${specTitle}"`
+          : `You received a task from ${senderLabel}: "${specTitle}"`;
+        const parts = [intro, ''];
+        if (specContent) {
+          parts.push(effectiveSpecType === 'session' ? `Session content:\n\n${specContent}` : `Here is the plan:\n\n${specContent}`);
+        } else {
+          parts.push(`Task: ${task.title || 'Untitled'}`);
+        }
         if (msgLines) parts.push('', 'Conversation so far:', msgLines);
         if (fileLines.length > 0) parts.push('', 'File attachments:', ...fileLines);
-        const closingInstruction = spec?.spec_type === 'session'
+        const closingInstruction = effectiveSpecType === 'session'
           ? 'We are about to assist a user who encountered the following issue. Please read through the above session and conversation carefully and acknowledge you have everything you need. Then specify the conversation.json path that we attached, the conversation between the 2 users (like we have now), and a list of the rest of the attachments.'
           : 'Please read through the plan and conversation carefully and implement the required changes. If anything is unclear, ask before proceeding.';
         parts.push('', closingInstruction);
@@ -113,7 +120,7 @@ export function useExecuteConversation({
       const cached = taskSessionCache.get(taskId);
       if (cached) {
         await cached.executeInstruction(prompt, { sync: false });
-        navigation.openDock(cached.dockPointer);
+        navigation.openInBrowserTab(cached.dockPointer);
       } else if (storedProcessId) {
         const existingProcess = await dataManager.getByTypeId<AgenticProcess>(
           new TypeId(AgenticProcess.type, storedProcessId),
@@ -127,7 +134,7 @@ export function useExecuteConversation({
         if (isAlive) {
           await existingProcess!.start({ instruction: prompt });
           taskSessionCache.set(taskId, existingProcess!);
-          navigation.openDock(existingProcess!.dockPointer);
+          navigation.openInBrowserTab(existingProcess!.dockPointer);
         } else {
           if (existingProcess) await existingProcess.close().catch(() => {});
           const { process: resumed } = await AgenticProcess.spawn(
@@ -135,7 +142,7 @@ export function useExecuteConversation({
             { instruction: prompt, visible: true },
           );
           taskSessionCache.set(taskId, resumed);
-          navigation.openDock(resumed.dockPointer);
+          navigation.openInBrowserTab(resumed.dockPointer);
           const tResume = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId));
           if (tResume) {
             tResume.metadata = { ...(tResume.metadata ?? {}), agentic_process_id: resumed.id };
@@ -148,7 +155,7 @@ export function useExecuteConversation({
           { instruction: prompt, visible: true },
         );
         taskSessionCache.set(taskId, resumed);
-        navigation.openDock(resumed.dockPointer);
+        navigation.openInBrowserTab(resumed.dockPointer);
         const tLegacy = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId));
         if (tLegacy) {
           tLegacy.metadata = { ...(tLegacy.metadata ?? {}), agentic_process_id: resumed.id };
@@ -160,7 +167,7 @@ export function useExecuteConversation({
           { instruction: prompt, visible: true },
         );
         taskSessionCache.set(taskId, agenticProcess);
-        navigation.openDock(agenticProcess.dockPointer);
+        navigation.openInBrowserTab(agenticProcess.dockPointer);
         if (agenticProcess.session_id) {
           const t = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId));
           if (t) {
