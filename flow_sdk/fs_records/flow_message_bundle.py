@@ -341,6 +341,13 @@ async def unpack_bundle(
                             # Merge metadata: keep agentic_* keys from existing task so
                             # session resume still works after re-upload.
                             bundle_meta: dict = task_data.get("metadata") or {}
+                            # Rename sender-side identity so it doesn't collide with the
+                            # receiver's own local project_id / project_root once mapping is set.
+                            if "project_id" in bundle_meta:
+                                bundle_meta["remote_project_id"] = bundle_meta.pop("project_id")
+                            if "project_name" in bundle_meta:
+                                bundle_meta["remote_project_name"] = bundle_meta.pop("project_name")
+                            bundle_meta.pop("project_root", None)
                             if existing_task and existing_task.metadata:
                                 existing_meta = dict(existing_task.metadata)
                                 agentic_keys = {k: v for k, v in existing_meta.items() if k.startswith("agentic_")}
