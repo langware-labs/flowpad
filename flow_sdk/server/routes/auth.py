@@ -110,7 +110,6 @@ async def post_login(
     populates the keyring also lands the user on the target page. Only same-
     origin paths are honoured to prevent open-redirect abuse.
     """
-    print(f"[post_login] called with key={'***' if flowpad_api_key else None} next={next!r}", flush=True)
     try:
         # Import here to avoid circular dependency
         from flow_sdk.cli.app_config import set_user
@@ -145,11 +144,8 @@ async def post_login(
             pass
 
         # Same-origin redirect after successful login (deep-link flows).
-        print(f"[post_login] checking redirect: next={next!r}", flush=True)
         if next and next.startswith("/"):
-            print(f"[post_login] redirecting to {next}", flush=True)
             return RedirectResponse(url=next, status_code=302)
-        print("[post_login] no redirect — falling through to success page", flush=True)
 
         user_id = user_info.get("id", "Unknown")
         detail_html = f'<div class="detail-box"><strong>Account Details:</strong><br>User ID: {user_id}</div>'
