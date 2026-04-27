@@ -7,6 +7,28 @@ export interface SessionTab {
 }
 
 /**
+ * Module-level cache of rendered session tabs, keyed by project cacheKey.
+ * SessionViewer keeps this in sync with its live state; other components
+ * (e.g. the Ask-for-Assistance dialog) can read the current tab name from
+ * here instead of recomputing.
+ */
+export const sessionTabsCache = new Map<string, SessionTab[]>();
+
+/**
+ * Look up the name currently shown on the tab bar for *processId*, scanning
+ * across all cached projects. Returns null if no tab has been rendered for
+ * this process yet (e.g. dialog opened before SessionViewer mounted).
+ */
+export const getCachedTabName = (processId: string): string | null => {
+  if (!processId) return null;
+  for (const tabs of sessionTabsCache.values()) {
+    const match = tabs.find((t) => t.id === processId);
+    if (match && match.name) return match.name;
+  }
+  return null;
+};
+
+/**
  * Compute the name shown on a session tab. Reused by anything else that
  * needs to label a session (e.g. the Ask-for-Assistance dialog) so the
  * tab and the rest of the UI never disagree.

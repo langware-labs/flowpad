@@ -906,7 +906,13 @@ async def refresh_notifications() -> ApiResponse:
 
 @action.post(action_name="update-local-user-name", types=None)
 async def update_local_user_name() -> ApiResponse:
-    """Update the local user's display name."""
+    """Update the local user's display name and mark it as manually overridden.
+
+    The override label tells bootstrap not to clobber this name from
+    `git config user.name` on future server starts.
+    """
+    from flow_sdk.server.routes.bootstrap import NAME_OVERRIDE_LABEL
+
     request_info = get_current_request_info()
     if not request_info:
         return ApiFailResponse(message="No request info found")
@@ -918,6 +924,8 @@ async def update_local_user_name() -> ApiResponse:
     if not local_user:
         return ApiFailResponse(message="Local user not found")
     local_user.name = new_name
+    if NAME_OVERRIDE_LABEL not in (local_user.labels or []):
+        local_user.add_label(NAME_OVERRIDE_LABEL)
     await local_user.save()
     return ApiSuccessResponse(data={"name": new_name})
 
