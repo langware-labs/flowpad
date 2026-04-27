@@ -1,8 +1,36 @@
+import type { AgenticProcess } from '@sdk';
+
 export interface SessionTab {
   id: string;
   name: string;
   favorite_index?: number | null;
 }
+
+/**
+ * Compute the name shown on a session tab. Reused by anything else that
+ * needs to label a session (e.g. the Ask-for-Assistance dialog) so the
+ * tab and the rest of the UI never disagree.
+ */
+export const getSessionDisplayName = (
+  process: AgenticProcess | null | undefined,
+  fallback: string,
+) => {
+  if (process?.context_data && typeof process.context_data === 'object') {
+    const displayName = (process.context_data as Record<string, unknown>).display_name;
+    if (typeof displayName === 'string' && displayName.trim().length > 0) {
+      return displayName.trim();
+    }
+  }
+
+  if (process?.instruction_content) {
+    const trimmed = process.instruction_content.replace(/<!--.*?-->/g, '').trim();
+    if (trimmed.length > 0) {
+      return trimmed.substring(0, 30);
+    }
+  }
+
+  return fallback;
+};
 
 export const getNextSessionNumber = (tabs: SessionTab[]) => {
   let max = 0;

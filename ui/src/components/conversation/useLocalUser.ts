@@ -13,12 +13,14 @@ let _localUserPromise: Promise<LocalUser | null> | null = null;
 function fetchLocalUser(): Promise<LocalUser | null> {
   if (_localUserPromise) return _localUserPromise;
   _localUserPromise = (async () => {
-    if (dataContext.user?.isLocal) {
+    // Match the backend: local user has uname === 'local'.
+    // (User.isLocal checks the email domain, which doesn't match when git config sets a real email.)
+    if (dataContext.user?.uname === 'local') {
       return { id: dataContext.user.id ?? '', name: (dataContext.user as any).name ?? '' };
     }
     try {
       const users = await dataManager.query(new QueryRequest({ type: User.type }));
-      const local = (users as User[]).find((u) => u.isLocal);
+      const local = (users as User[]).find((u) => u.uname === 'local');
       if (local) return { id: local.id ?? '', name: local.name ?? '' };
     } catch {
       // ignore
