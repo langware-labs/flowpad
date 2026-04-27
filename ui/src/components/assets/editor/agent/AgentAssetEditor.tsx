@@ -1,36 +1,45 @@
-import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { MarkdownAssetEditor } from '@src/components/assets/editor/markdown/MarkdownAssetEditor';
-import { AssetExecutionPanel } from '@src/components/assets/execution-panel/AssetExecutionPanel';
-import { AgentToolbar, useAgentExecution } from './AgentToolbar';
+import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownEditor';
+import { EntityChatPanel } from '@src/components/entity-chat-panel';
+import { useEntityByPath } from '@src/hooks/use-entity-by-path';
+import { Agent, AgenticProcess, FSRef } from '@sdk';
+import { useCallback } from 'react';
 
 interface AgentAssetEditorProps {
-  /** Absolute machine path to the agent .md file */
-  sourcePath: string;
+  /** FSRef to the agent .md file. */
+  fsRef: FSRef;
 }
 
 /**
- * Agent asset editor with a Run toolbar button and streaming execution panel.
- *
- * - toolbar slot: AgentToolbar (Run/Stop button)
- * - execution panel: slides in when Run is clicked, shows streamed agent output
+ * Agent files use a vertical layout: the markdown body on top and an
+ * `EntityChatPanel` pinned to the bottom for talking to the agent. The doc's
+ * side drawer drops its Chat tab (`disableChat`) so we don't mount two
+ * chats against the same target — a race on lazy `AgenticProcess` creation.
+ * On first send, `loadEmbeddedAgent` registers this .md as the embedded
+ * agent so the CLI worker gets the `--agents` flag.
  */
-export function AgentAssetEditor({ sourcePath }: AgentAssetEditorProps) {
-  const { computeNode } = useAgentContext();
-  const execution = useAgentExecution(sourcePath);
-
-  if (!computeNode?.typeId) return null;
-
+export function AgentAssetEditor({ fsRef }: AgentAssetEditorProps) {
+  const { entity: agent } = useEntityByPath<Agent>(Agent.type, fsRef);
+  const sourcePath = fsRef.path;
+  const embedAgent = useCallback(
+    async (proc: AgenticProcess) => {
+      await proc.loadEmbeddedAgent(sourcePath);
+    },
+    [sourcePath],
+  );
+  const target = agent ? agent.typeId.toString() : null;
   return (
-    <div className="flex h-full flex-col overflow-hidden">
-      <MarkdownAssetEditor
-        sourcePath={sourcePath}
-        toolbar={<AgentToolbar execution={execution} />}
-      />
-      {execution.panelOpen && (
-        <AssetExecutionPanel
-          execution={execution}
-          onClose={() => execution.setPanelOpen(false)}
-        />
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1">
+        <MarkdownEditor fsRef={fsRef} chatTarget={target} disableChat />
+      </div>
+      {target && (
+        <div className="h-[300px] flex-shrink-0 border-t" data-testid="agent-bottom-chat">
+          <EntityChatPanel
+            target={target}
+            onProcessCreated={embedAgent}
+            className="h-full"
+          />
+        </div>
       )}
     </div>
   );

@@ -8,7 +8,8 @@ import { type ProjectResourceListItem } from '@src/components/project-resource-l
 import { ProjectActivityStrip, BookmarkColumn } from '@src/components/project-activity-strip';
 import { WorkflowStrip } from '@src/components/workflows-view/WorkflowStrip';
 import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
-import { TerminalLineSessionInput } from '@src/components/session-input';
+import { MiniDesktop } from '@src/components/quick-create';
+import { SessionInput } from '@src/components/session-input/session-input';
 import { isSkillCreationTask, TaskStatus } from '@src/components/task-bar/task-utils';
 import { useBookmarkMutations } from '@src/hooks/use-bookmark-mutations';
 import { useClaudeErrorRecords } from '@src/hooks/useClaudeErrorRecords';
@@ -18,7 +19,7 @@ import { useProjectTasks } from '@src/hooks/use-project-tasks';
 import { useTaskMutations } from '@src/hooks/use-task-mutations';
 import { useClaudeProjectList } from '@src/hooks/use-claude-projects';
 import { useSnifferContext } from '@src/contexts/SnifferContext';
-import { useEventDrivenSessions } from '@src/hooks/use-event-driven-sessions';
+import { useCollaborationRooms } from '@src/hooks/useCollaborationRooms';
 import { useProjects } from '@src/hooks/use-projects';
 import { useActAccordingToClassification } from '@src/hooks/use-act-according-to-classification';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
@@ -31,6 +32,10 @@ import { useToast } from '@src/hooks/use-toast';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityProgressModal } from '@src/components/search-index/ActivityProgressModal';
 import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
+import { JoinRoomDialog } from '@src/components/join-room-dialog/JoinRoomDialog';
+import { JoinExistingRoomDialog } from '@src/components/join-room-dialog/JoinExistingRoomDialog';
+import { useLoginRequired } from '@src/hooks/use-login-required';
+import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -185,6 +190,19 @@ export function HomeLanding() {
   }, [scanInfo]);
   const firstName = user?.name?.split(' ')[0] || 'there';
 
+  const { checkLoginAndProceed, requiresLogin, showLoginDialog, closeLoginDialog } = useLoginRequired();
+  const [showJoinRoom, setShowJoinRoom] = useState(false);
+  const [showJoinExisting, setShowJoinExisting] = useState(false);
+  const [draftPrompt, setDraftPrompt] = useState('');
+  const handleStartCollaborationRoom = () => {
+    if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
+    setShowJoinRoom(true);
+  };
+  const handleJoinRoom = () => {
+    if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
+    setShowJoinExisting(true);
+  };
+
   // Inbox state
   const { unreadCount, setUnreadCount } = useInboxStore();
   const [inboxRefreshing, setInboxRefreshing] = useState(false);
@@ -211,21 +229,6 @@ export function HomeLanding() {
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
   // Clear post-scan panel when user starts a real search
   useEffect(() => { if (searchQuery.trim().length >= 2) setPostScanResult(null); }, [searchQuery]);
-  const [showSessionInput, setShowSessionInput] = useState(false);
-  const sessionInputRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!showSessionInput) return;
-    const handler = (e: MouseEvent) => {
-      if (sessionInputRef.current && !sessionInputRef.current.contains(e.target as Node)) {
-        setShowSessionInput(false);
-      }
-    };
-    const id = setTimeout(() => document.addEventListener('mousedown', handler), 0);
-    return () => {
-      clearTimeout(id);
-      document.removeEventListener('mousedown', handler);
-    };
-  }, [showSessionInput]);
 
   const handleSearchSubmit = useCallback(() => {
     if (searchQuery.trim()) {
@@ -249,6 +252,60 @@ export function HomeLanding() {
 
   // Get paths from desktop_info
   const paths = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths, []);
+
+  const handleStartCollaboration = useCallback(
+    async (hostName: string, prompt: string, roomName?: string) => {
+      if (!currentProject?.typeId) {
+        toast({
+          title: 'Project Required',
+          description: 'Please select or create a project first.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      const trimmedPrompt = prompt.trim();
+      const finalName = roomName?.trim() ? roomName.trim() : undefined;
+      try {
+        const { CollaborationRoom, TypeId } = await import('@sdk');
+        const projectIdStr = currentProject.typeId.id;
+        if (trimmedPrompt) {
+          const workdir =
+            currentProject.fs_storage_mount_path || currentProject.name || paths?.workspace || undefined;
+          const agenticProcess = await claudeSessionManager.createAndStartSession(
+            { workdir },
+            { instruction: trimmedPrompt },
+          );
+          const room = await agenticProcess.createCollaborationRoom(hostName, {
+            name: finalName ?? null,
+          });
+          setDraftPrompt('');
+          navigation.openDock(
+            DockPointer.forProject(projectIdStr, {
+              roomId: room.id,
+              tab: new TypeId('agentic_process', agenticProcess.id),
+            }),
+          );
+        } else {
+          const room = await CollaborationRoom.create({
+            projectId: projectIdStr,
+            hostName,
+            name: finalName ?? null,
+          });
+          navigation.openDock(
+            DockPointer.forProject(projectIdStr, { roomId: room.id }),
+          );
+        }
+      } catch (error) {
+        console.error('[HomeLanding] Failed to start collaboration room:', error);
+        toast({
+          title: 'Could not start room',
+          description: String((error as Error).message ?? error),
+          variant: 'destructive',
+        });
+      }
+    },
+    [currentProject, navigation, paths?.workspace, toast],
+  );
   const apiUrl = useMemo(() => {
     // Derive API URL from the current window location or use default
     const port = '9007';
@@ -315,11 +372,27 @@ export function HomeLanding() {
     [selectedClaudeProjectEncodedName],
   );
 
-  const { items: activityItems } = useEventDrivenSessions({
-    snifferEvents,
-    seedItems: [],
-    fetchProject: async () => null,
+  const { items: collaborationRoomRows } = useCollaborationRooms({
+    projectId: currentProject?.typeId.id,
+    limit: 20,
   });
+  const activityItems = useMemo(
+    () =>
+      collaborationRoomRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        type: 'collaboration_room' as const,
+        // Subtitle = host. ProjectActivityStrip already renders the timestamp
+        // (from modifiedAt) on the row, so the subtitle line reads:
+        //   `<name>`  (big)
+        //   `by <host> · <time-ago>`  (rendered across subtitle + timestamp slots)
+        subtitle: row.hostName ? `by ${row.hostName}` : '',
+        // `path`'s last segment is rendered as the chip — use the project name.
+        path: row.projectName,
+        modifiedAt: row.updatedAt,
+      })),
+    [collaborationRoomRows],
+  );
 
   const selectedClaudeProjectCwd = useMemo(() => {
     if (!selectedClaudeProjectEncodedName) return undefined;
@@ -400,6 +473,15 @@ export function HomeLanding() {
           handleSessionResume(resource);
           break;
         }
+        case 'collaboration_room': {
+          const row = collaborationRoomRows.find((r) => r.id === resource.id);
+          if (row && row.projectId) {
+            navigation.openDock(
+              DockPointer.forProject(row.projectId, { roomId: row.id }),
+            );
+          }
+          break;
+        }
         case 'hook':
           navigation.openSystemProfile('hooks', resource.itemId, resourceNavigationOptions);
           break;
@@ -427,7 +509,13 @@ export function HomeLanding() {
           navigation.openSystemProfile();
       }
     },
-    [navigation, resourceNavigationOptions, selectedClaudeProjectEncodedName, handleSessionResume],
+    [
+      navigation,
+      resourceNavigationOptions,
+      selectedClaudeProjectEncodedName,
+      handleSessionResume,
+      collaborationRoomRows,
+    ],
   );
 
   const handleSessionTasks = useCallback(
@@ -458,10 +546,34 @@ export function HomeLanding() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Top row: UsageBar */}
+      {/* Top row: UsageBar + Search */}
       <div className="flex shrink-0 items-center gap-2 p-4">
         <div className="w-72 shrink-0">
           <UsageBar />
+        </div>
+        <div className="flex-1" />
+        <div className="relative w-72 shrink-0">
+          <RecordSearchBar
+            query={searchQuery}
+            filters={searchFilters}
+            onQueryChange={setSearchQuery}
+            onFiltersChange={setSearchFilters}
+            onSubmit={handleSearchSubmit}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Search..."
+          />
+          {searchQuery.trim().length >= 2 && (
+            <div className="absolute right-0 top-full z-50 w-[600px] pt-1">
+              <InlineSearchResults
+                query={searchQuery}
+                filters={searchFilters}
+                selectedIndex={selectedResultIndex}
+                onSelectedIndexChange={setSelectedResultIndex}
+                onOpenFullSearch={handleSearchSubmit}
+                onNavigateResult={handleNavigateResult}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -529,64 +641,34 @@ export function HomeLanding() {
               <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
             </h1>
 
-            {showSessionInput ? (
-              <div className="w-full max-w-3xl" ref={sessionInputRef}>
-                <TerminalLineSessionInput
-                  placeholder="Start new Claude Code session..."
-                  onSubmit={(msg) => void handleSessionSubmit(msg)}
-                />
+            <div className="w-full max-w-3xl flex flex-col items-end gap-2">
+              <SessionInput
+                placeholder="What would you like to work on?"
+                value={draftPrompt}
+                onChange={setDraftPrompt}
+                onSubmit={(msg) => void handleSessionSubmit(msg)}
+              />
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white transition-colors shadow-sm"
+                  onClick={handleJoinRoom}
+                >
+                  Join room
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-green-600 text-white hover:bg-green-700 transition-colors shadow-sm"
+                  onClick={handleStartCollaborationRoom}
+                >
+                  Start collaboration room
+                </Button>
               </div>
-            ) : (
-              <button
-                className="cursor-pointer text-lg text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => setShowSessionInput(true)}
-              >
-                What would you like to work on today?
-              </button>
-            )}
+            </div>
 
-            <div className="w-full max-w-3xl flex items-start gap-2">
-              <div className="flex-1">
-                <RecordSearchBar
-                  query={searchQuery}
-                  filters={searchFilters}
-                  onQueryChange={setSearchQuery}
-                  onFiltersChange={setSearchFilters}
-                  onSubmit={handleSearchSubmit}
-                  onKeyDown={handleSearchKeyDown}
-                  placeholder="Search anything across your Claude Code projects"
-                />
-              </div>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9 shrink-0"
-                    onClick={() => void resetAndRescan()}
-                    disabled={busy}
-                  >
-                    <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Refresh search data</TooltipContent>
-              </Tooltip>
-              {devMode && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 text-orange-500 ring-1 ring-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] animate-pulse"
-                      onClick={() => void clearIndex()}
-                      disabled={busy}
-                    >
-                      <Hammer className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Clear index (dev)</TooltipContent>
-                </Tooltip>
-              )}
+            <div className="w-full max-w-3xl">
+              <MiniDesktop />
             </div>
 
             {/* Activity strip — shown while any system activity is running */}
@@ -679,18 +761,6 @@ export function HomeLanding() {
             </div>
           )}
 
-          {/* Inline search results */}
-          <div className="w-full max-w-3xl self-center min-h-0 flex-1 relative z-10">
-            <InlineSearchResults
-              query={searchQuery}
-              filters={searchFilters}
-              selectedIndex={selectedResultIndex}
-              onSelectedIndexChange={setSelectedResultIndex}
-              onOpenFullSearch={handleSearchSubmit}
-              onNavigateResult={handleNavigateResult}
-            />
-          </div>
-
           {/* Notifications section */}
           <div className="w-full max-w-3xl shrink-0 self-center">
             <NotificationFeed />
@@ -735,6 +805,22 @@ export function HomeLanding() {
         }}
       />
 
+      <JoinRoomDialog
+        open={showJoinRoom}
+        onClose={() => setShowJoinRoom(false)}
+        hostName={user?.name ?? undefined}
+        draftPrompt={draftPrompt}
+        onStart={(hostName, prompt, roomName) =>
+          handleStartCollaboration(hostName, prompt, roomName)
+        }
+      />
+      <JoinExistingRoomDialog
+        open={showJoinExisting}
+        onClose={() => setShowJoinExisting(false)}
+        defaultName={user?.name ?? undefined}
+      />
+      <LoginDialog open={showLoginDialog} onOpenChange={closeLoginDialog} />
+
       {/* Activity progress detail modal */}
       <ActivityProgressModal
         open={progressOpen}
@@ -744,8 +830,8 @@ export function HomeLanding() {
           currentActivity === 'archive' ? 'Archiving…'
           : currentActivity === 'clear' ? 'Clearing index…'
           : currentActivity === 'load_from_archive' ? 'Restoring…'
-          : currentActivity === 'scan' ? `Scanning… ${activityProgress?.done.length ?? 0}/${activityProgress?.total ?? 0}`
-          : `Indexing… ${activityProgress?.done.length ?? 0}/${activityProgress?.total ?? 0}`
+          : currentActivity === 'scan' ? `Scanning… ${activityProgress?.jobDone ?? activityProgress?.done.length ?? 0}/${activityProgress?.jobTotal ?? activityProgress?.total ?? 0}`
+          : `Indexing… ${activityProgress?.jobDone ?? activityProgress?.done.length ?? 0}/${activityProgress?.jobTotal ?? activityProgress?.total ?? 0}`
         ) : 'Activity'}
       />
 

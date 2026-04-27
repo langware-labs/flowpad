@@ -1,6 +1,7 @@
 import { DiffEditor, Monaco } from '@monaco-editor/react';
 import { shikiToMonaco } from '@shikijs/monaco';
 import gitDiffParser, { Change, File as DiffFile, Hunk } from 'gitdiff-parser';
+import { GitBranch, HardDrive } from 'lucide-react';
 import { editor } from 'monaco-editor';
 import { useTheme } from 'next-themes';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
@@ -119,6 +120,18 @@ export const DiffContent: React.FC<DiffContentProps> = ({ diffString }) => {
       return (
         <div key={fileIndex} className="overflow-hidden rounded-lg border">
           <div className="border-b bg-muted px-4 py-2 text-sm font-medium">{getFilePath()}</div>
+          <div className="grid grid-cols-2 border-b bg-muted/40">
+            <div className="flex items-center gap-1.5 border-r px-4 py-1.5">
+              <GitBranch className="h-3 w-3 text-muted-foreground" />
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">HEAD</span>
+              <span className="ml-1 text-xs text-muted-foreground/60">— before</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-4 py-1.5">
+              <HardDrive className="h-3 w-3 text-muted-foreground" />
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Working Tree</span>
+              <span className="ml-1 text-xs text-muted-foreground/60">— current</span>
+            </div>
+          </div>
           <div className="space-y-2">
             {fileDiff.hunks.map((hunk: Hunk, hunkIndex: number) => renderHunk(hunk, hunkIndex, fileIndex))}
           </div>

@@ -1,10 +1,19 @@
-"""AgenticProcess entity — represents a single execution run of Claude."""
+"""AgenticProcess entity — vendor-pure orchestration over a ``WorkerDriver``.
+
+The entity holds a ``WorkerDriver`` (resolved via ``get_driver(worker_type)``)
+and never branches on ``worker_type`` itself. Vendor specifics — Claude vs
+Codex CLI shape, transcript layout, prompt composition, status interpretation
+— live in ``cli_drivers/{claude,codex}/driver.py``. New vendors plug in by
+implementing the ``WorkerDriver`` Protocol and registering with ``get_driver``.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import time
+from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 from uuid import uuid4
@@ -12,12 +21,24 @@ from uuid import uuid4
 from pydantic import SerializationInfo, model_serializer
 
 from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.app.actions.listen import set_plan_auto_approve
-from flow_sdk.builtin.cli_workers import ClaudeCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers import (
+    AgenticContext as _AgenticContext,
+    WorkerDriver,
+    get_driver,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.claude import (
+    ClaudeCliOptions,
+    ClaudeCLIStreamWorker,
+)
 from flow_sdk.core import Entity, action
+from flow_sdk.core.flow.streaming.response_handler import StreamingResponseHandler
 from flow_sdk.flowpad_types.enums import WorkerType
-from flow_sdk.fs_records.agent_status import AgenticProcessStatus, is_terminal as is_worker_terminal
-from flow_sdk.fs_records.agentic_process_lifecycle import AgenticProcessLifecycleStatus
+from flow_sdk.fs_records.agent_status import WorkerStatus, is_terminal as is_worker_terminal
+from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
 from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
@@ -29,6 +50,49 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+# ── prompt-action transient state (per-process locks + live workers) ─────────
+# Keyed by agentic_process.id. Lost on hub restart — acceptable, callers retry.
+# Drivers register their in-flight worker here so cancel-prompt can find it.
+_PROMPT_LOCKS: dict[str, asyncio.Lock] = {}
+_PROMPT_WORKERS: dict[str, Any] = {}
+
+
+def _get_prompt_lock(process_id: str) -> asyncio.Lock:
+    lock = _PROMPT_LOCKS.get(process_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _PROMPT_LOCKS[process_id] = lock
+    return lock
+
+
+def _write_plan_frontmatter(file_path: str, fields: dict) -> None:
+    """Upsert YAML frontmatter key/values in a plan .md file."""
+    import re
+    p = Path(file_path)
+    if not p.exists():
+        return
+    content = p.read_text(encoding="utf-8")
+    fm_re = re.compile(r"^---\n(.*?)\n---\n?", re.DOTALL)
+    m = fm_re.match(content)
+    if m:
+        existing = m.group(1)
+        for k, v in fields.items():
+            val_str = "true" if v is True else ("false" if v is False else str(v))
+            line_re = re.compile(rf"^{re.escape(k)}:.*$", re.MULTILINE)
+            if line_re.search(existing):
+                existing = line_re.sub(f"{k}: {val_str}", existing)
+            else:
+                existing += f"\n{k}: {val_str}"
+        new_content = f"---\n{existing}\n---\n" + content[m.end():]
+    else:
+        lines = "\n".join(
+            f"{k}: {'true' if v is True else ('false' if v is False else str(v))}"
+            for k, v in fields.items()
+        )
+        new_content = f"---\n{lines}\n---\n{content}"
+    p.write_text(new_content, encoding="utf-8")
+
+
 async def _index_session_on_close(session_id: str, pty_title: str | None = None) -> None:
     """Index the ClaudeSessionRecord after an AgenticProcess closes (fire-and-forget).
 
@@ -38,7 +102,7 @@ async def _index_session_on_close(session_id: str, pty_title: str | None = None)
     """
     try:
         from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
-        record = ClaudeSessionRecord.discover_one(session_id)
+        record = ClaudeSessionRecord.get(session_id)
         if record:
             if pty_title:
                 inst = object.__getattribute__(record, "__dict__")
@@ -66,25 +130,25 @@ async def _poll_for_completion(agentic_process_id: str, session_id: str | None) 
     """
     from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 
-    TERMINAL = {AgenticProcessStatus.COMPLETE, AgenticProcessStatus.ERROR, AgenticProcessStatus.INTERRUPTED}
+    TERMINAL = {WorkerStatus.COMPLETE, WorkerStatus.ERROR, WorkerStatus.INTERRUPTED}
 
-    await asyncio.sleep(5)  # give Claude time to start and write the first JSONL entry
-    for _ in range(360):  # poll up to 30 min (360 * 5 s)
-        await asyncio.sleep(5)
+    await asyncio.sleep(1)  # give Claude time to start and write the first JSONL entry
+    for _ in range(1800):  # poll up to 30 min (1800 * 1 s)
+        await asyncio.sleep(1)
         try:
             if not session_id:
                 break
-            record = ClaudeSessionRecord.discover_one(session_id)
+            record = ClaudeSessionRecord.get(session_id)
             if record is None:
                 continue  # transcript not written yet
 
             new_status = record.status
             try:
-                status_enum = AgenticProcessStatus(str(new_status))
+                status_enum = WorkerStatus(str(new_status))
             except ValueError:
                 continue
 
-            if status_enum == AgenticProcessStatus.API_TIMEOUT:
+            if status_enum == WorkerStatus.API_TIMEOUT:
                 _AgenticProcess = globals().get("AgenticProcess")
                 if _AgenticProcess:
                     proc = await _AgenticProcess.get_by_id(agentic_process_id)
@@ -105,13 +169,13 @@ async def _poll_for_completion(agentic_process_id: str, session_id: str | None) 
                 return  # entity deleted
 
             if proc.status in {
-                AgenticProcessLifecycleStatus.STOPPING.value,
-                AgenticProcessLifecycleStatus.STOPPED.value,
-                AgenticProcessLifecycleStatus.FAILED.value,
+                ProcessStatus.STOPPING.value,
+                ProcessStatus.STOPPED.value,
+                ProcessStatus.FAILED.value,
             }:
                 return  # already up to date — WS was already sent
 
-            proc.status = AgenticProcessLifecycleStatus.STOPPED.value
+            proc.status = ProcessStatus.STOPPED.value
             await proc.save()
             logger.info(
                 "AgenticProcess %s: completion monitor set lifecycle=%s worker_status=%s",
@@ -133,7 +197,7 @@ def _build_run_result(proc: "AgenticProcess") -> "RunResult":
     token_usage: dict | None = None
     if proc.session_id:
         try:
-            record = ClaudeSessionRecord.discover_one(proc.session_id)
+            record = ClaudeSessionRecord.get(proc.session_id)
             if record:
                 text = record.last_assistant_text or ""
                 models_used = list(record.models_used) if hasattr(record, "models_used") else []
@@ -144,12 +208,12 @@ def _build_run_result(proc: "AgenticProcess") -> "RunResult":
     status_enum = proc._discover_status_from_transcript()
     if status_enum is None:
         try:
-            lifecycle = AgenticProcessLifecycleStatus(proc.status)
+            lifecycle = ProcessStatus(proc.status)
         except ValueError:
-            lifecycle = AgenticProcessLifecycleStatus.STOPPED
-        status_enum = AgenticProcessStatus.ERROR if lifecycle == AgenticProcessLifecycleStatus.FAILED else AgenticProcessStatus.IDLE
+            lifecycle = ProcessStatus.STOPPED
+        status_enum = WorkerStatus.ERROR if lifecycle == ProcessStatus.FAILED else WorkerStatus.IDLE
 
-    ok = status_enum not in (AgenticProcessStatus.ERROR, AgenticProcessStatus.INTERRUPTED)
+    ok = status_enum not in (WorkerStatus.ERROR, WorkerStatus.INTERRUPTED)
     return RunResult(
         text=text,
         session_id=proc.session_id or "",
@@ -166,27 +230,56 @@ class AgenticProcess(Entity):
     type: str = APIField(default="agentic_process")
 
     instruction_content: str | None = APIField(default=None)
-    source_vfs_path: str | None = APIField(default=None)
+    asset_ref: str | None = APIField(default=None)
     context: dict[str, Any] = APIField(default_factory=dict)
     context_data: dict[str, Any] = APIField(default_factory=dict)
     cli_config: dict[str, Any] = APIField(default_factory=dict)
     workdir: str | None = APIField(default=None)
     favorite_index: int | None = APIField(default=None)
-    status: str = APIField(default=AgenticProcessLifecycleStatus.NEW.value)
+    status: str = APIField(default=ProcessStatus.NEW.value)
     session_id: str | None = APIField(default=None)
     use_worker_history: bool = APIField(default=False)
     shell_mode: bool = APIField(default=False, description="False=direct PTY spawn (default), True=legacy zsh intermediary")
     project_id: str | None = APIField(default=None)
     project_encoded_name: str | None = APIField(default=None)
-    compute_node_id: str | None = APIField(default=None)
+    collaboration_room_id: str | None = APIField(
+        default=None,
+        description="CollaborationRoom this process was spawned in, if any",
+    )
+    target_typeid_str: str | None = APIField(
+        default=None,
+        description='Serialized TypeId ("type-id") of the entity this process is attached to (trigger, markdown, …).',
+    )
+    exe_folder: FSRef | None = APIField(
+        default=None,
+        description="FSRef pointing at `<record_dir>/execution/`.",
+    )
+    input_folder: FSRef | None = APIField(
+        default=None,
+        description="FSRef for `<exe_folder>/input/` — instruction / queue inputs.",
+    )
+    output_folder: FSRef | None = APIField(
+        default=None,
+        description="FSRef for `<exe_folder>/output/` — artifacts the agent writes back.",
+    )
+    assets_folder: FSRef | None = APIField(
+        default=None,
+        description="FSRef for `<exe_folder>/assets/` — materialised embedded agents / skills.",
+    )
     shell_id: str | None = APIField(default=None)
     sidecar_shell_id: str | None = APIField(default=None)
     visible: bool = APIField(default=False, description="Whether this process is visible in the tabs view")
-    is_active: bool = APIField(default=False)
     queue: dict | None = APIField(default=None)
     additional_dirs: list[str] = APIField(default_factory=list, description="Extra directories passed to Claude via --add-dir")
     embedded_agent_ids: list[str] = APIField(default_factory=list, description="Agent ids injected via --agents at session launch")
-    worker_type: WorkerType | None = APIField(default=None, validation_alias="workerType")
+    embedded_asset_refs: list[TypeId] = APIField(
+        default_factory=list,
+        description=(
+            "TypeIds of entities whose files have been materialized into the "
+            "process's <record_dir>/assets folder. Claude discovers them via --add-dir."
+        ),
+    )
+    worker_type: WorkerType | None = APIField(default=None)
 
     # ── Construction ──────────────────────────────────────────────────────────
 
@@ -259,11 +352,34 @@ class AgenticProcess(Entity):
             "shell_id": self.shell_id,
             "pty_id": shell.pty_pid or shell.id,
             "session_id": self.session_id,
-            "compute_node_id": self.compute_node_id,
             "shell": shell.model_dump(mode="json"),
             "is_resume": is_resume,
             "worker_pid": shell.worker_pid,
         }
+
+    async def _get_local_compute_node(self):
+        """Return the local compute node used for shell creation and recovery."""
+        from flow_sdk.builtin.faas.compute_node import ComputeNode
+
+        return await ComputeNode.get_by_uname("local")
+
+    async def _drop_stale_shell(self, shell: "Shell | None", *, reason: str) -> None:
+        """Discard a linked shell that can no longer be reattached."""
+        if shell is not None:
+            logger.warning("AgenticProcess %s: discarding stale shell %s (%s)", self.id, shell.id, reason)
+            context = dict(self.context_data or {})
+            context["_prev_tab_order"] = shell.tab_order
+            self.context_data = context
+            try:
+                await shell.terminate_worker()
+            except Exception as exc:
+                logger.warning("AgenticProcess %s: failed terminating stale worker for shell %s: %s", self.id, shell.id, exc)
+            try:
+                await shell.close()
+            except Exception as exc:
+                logger.warning("AgenticProcess %s: failed closing stale shell %s: %s", self.id, shell.id, exc)
+        self.shell_id = None
+        self.sidecar_shell_id = None
 
     async def start(
         self,
@@ -280,27 +396,37 @@ class AgenticProcess(Entity):
           without re-spawning.
         """
         try:
+            _bench_t0 = time.perf_counter()
+            _bench_id = self.id[:8]
+            def _bench(label):
+                with open("/tmp/bench_open.log", "a") as _f:
+                    _f.write(f"[BENCH start {_bench_id}] {label}: {(time.perf_counter() - _bench_t0) * 1000:.1f}ms\n")
+            _bench("entry")
             self.session_id = self.session_id or str(uuid4())
             if visible is not None:
                 self.visible = visible
 
-            if self.status == AgenticProcessLifecycleStatus.STARTING.value and self.shell_id:
-                shell = await self.shell()
-                if shell is not None and shell.is_alive:
-                    return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=False))
+            shell = await self.shell() if self.shell_id else None
+            _bench("after self.shell()")
+            if shell is not None:
+                if not await shell.ensure_live_compute_node_binding():
+                    return ApiFailResponse(message=f"Compute node not found for linked shell {shell.id}")
 
-            # Resolve compute node: if not yet assigned, look up the @local node (desktop only).
-            if not self.compute_node_id:
-                from flow_sdk.builtin.faas.compute_node import ComputeNode
-                local_node = await ComputeNode.get_one({"uname": "local"})
-                if not local_node:
-                    return ApiFailResponse(
-                        message="No compute node assigned and no @local compute node found. "
-                        "This environment does not support local process execution."
-                    )
-                self.compute_node_id = str(local_node.typeid)
+            if self.status in (
+                ProcessStatus.STARTING.value,
+                ProcessStatus.RUNNING.value,
+            ) and self.shell_id:
+                if shell is not None and await shell.has_attachable_pty():
+                    if self.status != ProcessStatus.RUNNING.value:
+                        self.status = ProcessStatus.RUNNING.value
+                        await self.save()
+                    return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=False))
+                if self.status == ProcessStatus.STARTING.value:
+                    await self._drop_stale_shell(shell, reason="starting process is missing an attachable PTY")
+                    shell = None
 
             await self.get_project()
+            _bench("after get_project")
 
             # Build the CLI command from cli_config + entity fields
             cmd = self.cli_options
@@ -309,16 +435,22 @@ class AgenticProcess(Entity):
             if not cmd.resume and self.shell_id:
                 cmd.resume = self._is_exist_claude_resume_session(self.session_id)
 
-            # Fork: resolve chain to nearest ancestor with a transcript on disk
-            if cmd.fork_session_id:
-                cmd.fork_session_id = await self._find_resumable_session(cmd.fork_session_id)
-
-            # When resuming, ensure CLAUDE_PROJECT_DIR points to where the session lives.
-            if cmd.resume and self.session_id:
-                session_rec = self._discover_claude_record_session(self.session_id)
-                if session_rec and session_rec.cwd:
-                    cmd.env_vars["CLAUDE_PROJECT_DIR"] = session_rec.cwd
-                    cmd.workdir = session_rec.cwd
+            # Fork & CLAUDE_PROJECT_DIR plumbing are Claude-only — Codex's
+            # ``CodexCliOptions`` has no ``fork_session_id`` and uses
+            # ``-C <cwd>`` instead of ``CLAUDE_PROJECT_DIR``. Skip for any
+            # cli_options shape that doesn't expose ``fork_session_id``.
+            if hasattr(cmd, "fork_session_id"):
+                if cmd.fork_session_id:
+                    cmd.fork_session_id = await self._find_resumable_session(cmd.fork_session_id)
+                # When resuming or forking, ensure CLAUDE_PROJECT_DIR points to where
+                # the source session's transcript lives. For a fork, self.session_id is
+                # the brand-new UUID with no transcript yet; use fork_session_id instead.
+                if cmd.fork_session_id or (cmd.resume and self.session_id):
+                    lookup_id = cmd.fork_session_id or self.session_id
+                    session_rec = self._discover_claude_record_session(lookup_id)
+                    if session_rec and session_rec.cwd:
+                        cmd.env_vars["CLAUDE_PROJECT_DIR"] = session_rec.cwd
+                        cmd.workdir = session_rec.cwd
 
             # Runtime env injection (process identity for hook routing)
             cmd.add_env(
@@ -327,23 +459,28 @@ class AgenticProcess(Entity):
             )
 
             is_resume = cmd.resume
+            _bench("after cli_options/cmd build")
 
             # Get existing shell or create a new one
             shell = await self._get_or_create_shell()
+            _bench("after _get_or_create_shell")
             self.shell_id = shell.id
-            self.status = AgenticProcessLifecycleStatus.STARTING.value
+            self.status = ProcessStatus.STARTING.value
             # Save session_id + shell_id before launching Claude so revalidation
             # can observe STARTING and avoid issuing a second open.
             await self.save()
+            _bench("after save#1 (STARTING)")
             on_exit = self._make_pty_exit_callback()
             worker_is_alive = False
 
             if self.shell_mode:
                 # Legacy path — zsh intermediary
                 await shell.start(on_exit=on_exit)
+                _bench("after shell.start (shell_mode)")
                 worker_is_alive = await shell.worker_alive()
                 if not worker_is_alive:
                     execution_info = await shell.launch(cmd, instruction=instruction)
+                    _bench("after shell.launch")
                     logger.info(
                         "AgenticProcess %s worker launched (shell): pid=%s name=%r",
                         self.id, execution_info.pid, execution_info.name,
@@ -351,11 +488,14 @@ class AgenticProcess(Entity):
             else:
                 # Direct path — Claude IS the PTY process (no zsh intermediary)
                 spawn_argv, spawn_env = cmd.to_spawn_args(instruction=instruction)
+                _bench("after to_spawn_args")
                 spawned = await shell.start(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
+                _bench("after shell.start (direct PTY)")
                 if not spawned:
                     worker_is_alive = await shell.worker_alive()
                 if not worker_is_alive:
                     execution_info = await shell.set_worker_pid_direct(cmd)
+                    _bench("after set_worker_pid_direct")
                     logger.info(
                         "AgenticProcess %s worker launched (direct PTY): pid=%s name=%r",
                         self.id, execution_info.pid, execution_info.name,
@@ -368,15 +508,21 @@ class AgenticProcess(Entity):
                     name=f"completion-monitor-{self.id[:8]}",
                 )
 
-            self.status = AgenticProcessLifecycleStatus.LIVE.value
+            self.status = ProcessStatus.RUNNING.value
             await self.save()
+            _bench("after save#2 (RUNNING)")
 
             return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=is_resume))
 
+        except asyncio.CancelledError:
+            logger.warning("AgenticProcess %s start cancelled (status=%s shell_id=%s)", self.id, self.status, self.shell_id)
+            self.status = ProcessStatus.FAILED.value
+            await self.save()
+            raise
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} start error: {e}")
             self.shell_id = None
-            self.status = AgenticProcessLifecycleStatus.FAILED.value
+            self.status = ProcessStatus.FAILED.value
             await self.save()
             return ApiFailResponse(message=str(e))
 
@@ -397,7 +543,7 @@ class AgenticProcess(Entity):
             # Clear sidecar but NOT shell_id — shell entity stays alive for restart.
             self.context_data = {**self.context_data, "_shell_exit_pending": True}
             self.sidecar_shell_id = None
-            self.status = AgenticProcessLifecycleStatus.STOPPING.value
+            self.status = ProcessStatus.STOPPING.value
             await self.save()
 
             if shell:
@@ -407,7 +553,7 @@ class AgenticProcess(Entity):
             else:
                 logger.warning("AgenticProcess %s: Shell entity %s not found on exit", self.id, self.shell_id)
 
-            self.status = AgenticProcessLifecycleStatus.STOPPED.value
+            self.status = ProcessStatus.STOPPED.value
             await self.save()
             logger.info(
                 "AgenticProcess %s: exited (session_id preserved: %s)",
@@ -426,7 +572,7 @@ class AgenticProcess(Entity):
 
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} exit error: {e}")
-            self.status = AgenticProcessLifecycleStatus.FAILED.value
+            self.status = ProcessStatus.FAILED.value
             await self.save()
             return ApiFailResponse(message=str(e))
 
@@ -438,53 +584,90 @@ class AgenticProcess(Entity):
             return exit_result
         return await self.start()
 
+    @action.post(action_name="fork")
+    async def fork_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Create a sibling process that shares this session's conversation history.
+
+        Equivalent to: claude --resume <this.session_id> --fork-session
+        Returns the new AgenticProcess entity data so the caller can open it.
+        `visible` (bool, default False) controls whether the new process appears in the tabs view.
+        """
+        try:
+            request_info = get_current_request_info()
+            body = await request_info.get_post_data() if request_info else {}
+            visible = bool((body or {}).get("visible", False))
+            owner = request_info.someone_typeid if request_info else None
+
+            new_proc = AgenticProcess.fork(
+                session_id=self.session_id,
+                workdir=self.workdir,
+                visible=visible,
+            )
+            await new_proc.save(owner)
+            return ApiSuccessResponse(data={"id": new_proc.id, "type": new_proc.type})
+        except Exception as e:
+            logger.exception("AgenticProcess %s fork_action error: %s", self.id, e)
+            return ApiFailResponse(message=str(e))
+
     async def wait(self, timeout: float | None = None) -> None:
         """Block until worker_status reaches a terminal state (complete / error / interrupted).
 
         Polling interval: 2s. Raises TimeoutError if timeout elapses first.
         """
-        deadline = (asyncio.get_event_loop().time() + timeout) if timeout else None
+        deadline = (time.monotonic() + timeout) if timeout else None
         while True:
             worker_status = self._discover_status_from_transcript()
             if worker_status and is_worker_terminal(worker_status):
                 return
-            if self.status == AgenticProcessLifecycleStatus.FAILED.value:
+            if self.status == ProcessStatus.FAILED.value:
                 return
-            if deadline and asyncio.get_event_loop().time() > deadline:
+            if deadline and time.monotonic() > deadline:
                 raise TimeoutError(f"Process did not reach terminal state within {timeout}s")
             await asyncio.sleep(2.0)
 
     async def waitForIdle(self, timeout: float | None = None) -> None:
-        """Block until waiting_for_prompt is True.
+        """Block until the worker is ready for input (``is_ready_for_input(self)``).
 
         Polling interval: 2s. Raises TimeoutError if timeout elapses first.
         """
-        deadline = (asyncio.get_event_loop().time() + timeout) if timeout else None
+        deadline = (time.monotonic() + timeout) if timeout else None
         while True:
-            if self.waiting_for_prompt:
+            if is_ready_for_input(self):
                 return
-            if deadline and asyncio.get_event_loop().time() > deadline:
+            if deadline and time.monotonic() > deadline:
                 raise TimeoutError(f"Process did not reach idle state within {timeout}s")
             await asyncio.sleep(2.0)
 
     # ── Execution ─────────────────────────────────────────────────────────────
 
     async def prompt(self, instruction: str) -> ApiSuccessResponse | ApiFailResponse:
-        """Schedule a Claude run with *instruction* and return immediately.
+        """Schedule a worker run with *instruction* and return immediately.
 
         Routing:
-          worker alive → write instruction to PTY stdin (continues session)
-          worker dead  → call start(instruction) (fresh or auto-resume)
+          ``visible=True`` + worker alive (PTY) → write to PTY stdin (continues session)
+          ``visible=True`` + worker dead        → ``start(instruction)`` (PTY relaunch)
+          ``visible=False`` (headless)          → ``self.driver.run_print_turn(...)``
+                                                  — vendor-specific print-mode that
+                                                  handles multi-step tool sequences.
+
+        ``visible=True`` keeps the legacy PTY path so the UI's interactive
+        terminal continues to work; the print-mode driver is only used for
+        headless invocations (tests, server-side automations).
 
         Args:
             instruction: The prompt text to send.
         """
         if not self.exist_in_db:
             return ApiFailResponse(message=f"AgenticProcess {self.id} not found in database")
+        if not self.visible:
+            # Headless flow — no PTY/Shell. Driver decides how to spawn its
+            # CLI, capture session_id, and manage lifecycle.
+            return await self.driver.run_print_turn(self, instruction)
         if await self.is_running():
             await self.send(instruction)
             return ApiSuccessResponse(data={"status": "sent"})
         return await self.start(instruction=instruction)
+
 
     async def send(self, data: str | bytes) -> None:
         """Write text or raw bytes to the live PTY stdin.
@@ -504,46 +687,66 @@ class AgenticProcess(Entity):
             await shell.write(data)
 
     async def stream_transcript(self, timeout: float = 300, poll_interval: float = 0.2):
-        """Async-iterate JSONL transcript entries as they are written by Claude.
+        """Async-iterate JSONL transcript entries as the worker writes them.
 
-        Yields parsed dicts, one per transcript line. Stops automatically when
-        waiting_for_prompt becomes True (Claude finished its turn).
+        Yields parsed dicts, one per transcript line. Stops when the worker's
+        ``tail_status`` (driver-supplied) reaches a terminal state, with a
+        small settling window to avoid racing late writes.
+
+        Vendor specifics — where the transcript lives, how to interpret its
+        tail — come from ``self.driver``; this method is otherwise vendor-
+        neutral.
 
         Args:
             timeout: Maximum seconds to wait for the process to reach idle.
             poll_interval: How often (seconds) to check for new transcript data.
 
         Raises:
-            TimeoutError: if the process does not reach idle within `timeout` seconds.
+            TimeoutError: if the process does not reach idle within ``timeout``.
         """
-        loop = asyncio.get_event_loop()
-        deadline = loop.time() + timeout
+        from flow_sdk.fs_records.agent_status import (
+            WorkerStatus as _WS,
+            _has_pending_tool_use,
+            _last_assistant_stop_reason,
+            _last_user_is_tool_result,
+        )
 
-        # Wait for session_id to be assigned (set inside start())
-        while not self.session_id:
-            if loop.time() > deadline:
-                raise TimeoutError("stream_transcript: process did not start within timeout")
-            await asyncio.sleep(poll_interval)
+        deadline = time.monotonic() + timeout
 
-        session_id = self.session_id
-
-        # Discover the transcript path via ClaudeSessionRecord (scans ~/.claude/projects/*/
-        # for <session_id>.jsonl — works regardless of whether a Project entity exists).
-        transcript_path = None
+        # Wait until the driver can locate a transcript (worker has been
+        # spawned and produced — or pre-touched — a session JSONL).
+        transcript_path: Path | None = None
         while transcript_path is None:
-            if loop.time() > deadline:
-                raise TimeoutError("stream_transcript: transcript file did not appear within timeout")
-            record = ClaudeSessionRecord.discover_one(session_id)
-            if record and record.jsonl_path:
-                transcript_path = Path(record.jsonl_path)
-            else:
+            if time.monotonic() > deadline:
+                raise TimeoutError(
+                    "stream_transcript: transcript file did not appear within timeout"
+                )
+            transcript_path = self.driver.transcript_path(self)
+            if transcript_path is None or not transcript_path.exists():
+                transcript_path = None
                 await asyncio.sleep(poll_interval)
 
-        from flow_sdk.fs_records.agent_status import _tail_status as _tail_status_fn, AgenticProcessStatus as _APS
+        # Settling windows.
+        # ``_settle_seconds`` (terminal): the worker emitted a terminal marker
+        # (Claude's ``last-prompt`` / Codex's ``turn.completed``) but tool
+        # side-effects can lag the marker by ~1-2 s on disk. Wait for the
+        # transcript to stop growing before exiting.
+        # ``_post_tool_settle_seconds`` (post-tool-idle, Claude only — codex
+        # never enters this state): claude can take 5-10 s after the final
+        # tool_result before emitting ``last-prompt``. Treat the lull as
+        # soft-terminal so heavy multi-tool turns finish within 28 s, but
+        # leave enough room for a follow-up ``tool_use`` to grow the file
+        # and reset the timer.
+        _settle_seconds = 2.0
+        _post_tool_settle_seconds = 8.0
+        _terminal_states = {_WS.COMPLETE, _WS.INTERRUPTED, _WS.INACTIVE}
+        _terminal_since: float | None = None
+        _terminal_size: int | None = None
+        _post_tool_since: float | None = None
+        _post_tool_size: int | None = None
 
         offset = 0
         while True:
-            # Read any new bytes since last poll
             try:
                 with open(transcript_path, "rb") as fh:
                     fh.seek(offset)
@@ -560,10 +763,10 @@ class AgenticProcess(Entity):
                     entry = json.loads(raw_line)
                 except json.JSONDecodeError:
                     continue
-                # api_error means Anthropic is overloaded and Claude is retrying.
-                # Extend the deadline so the retry can complete — up to 120s extra.
+                # api_error means the LLM API is overloaded and the worker is
+                # retrying. Extend the deadline so the retry can complete.
                 if entry.get("type") == "system" and entry.get("subtype") == "api_error":
-                    extended = loop.time() + 120
+                    extended = time.monotonic() + 120
                     if extended > deadline:
                         logger.info(
                             "stream_transcript: api_error detected (attempt=%s), extending deadline by %.0fs",
@@ -573,15 +776,65 @@ class AgenticProcess(Entity):
                         deadline = extended
                 yield entry
 
-            tail_status = _tail_status_fn(transcript_path) if transcript_path else None
-            _dbg_elapsed = loop.time() - (deadline - timeout)
-            _terminal = tail_status in {_APS.COMPLETE, _APS.INTERRUPTED, _APS.INACTIVE}
-            print(f"  [stream_transcript] elapsed={_dbg_elapsed:.1f}s tail_status={tail_status!r} waiting={_terminal} lifecycle={self.status!r}")
+            tail_status = self.driver.tail_status(transcript_path)
+            _terminal = tail_status in _terminal_states
+            # Post-tool-idle peek: only meaningful for Claude (Codex never
+            # writes WAITING followed by tool_result without further events).
+            # Only treat as soft-terminal when the last assistant turn ended with
+            # ``stop_reason=end_turn``. ``stop_reason=tool_use`` means the model
+            # is still planning the next call; sonnet routinely takes 9–17 s
+            # between tool calls on multi-step flows, which exceeds the 8-s
+            # post-tool settle window. Exiting then would drop the rest of the
+            # work — the bug surfaced in test_agentic_process_fix_it_with_agent.
+            _post_tool_idle = False
+            if tail_status == _WS.WAITING:
+                try:
+                    with open(transcript_path, "rb") as _fh:
+                        _sz = transcript_path.stat().st_size
+                        if _sz > 4096:
+                            _fh.seek(_sz - 4096)
+                        _tail_chunk = _fh.read().decode("utf-8", errors="replace")
+                    _post_tool_idle = (
+                        _last_user_is_tool_result(_tail_chunk)
+                        and not _has_pending_tool_use(_tail_chunk)
+                        and _last_assistant_stop_reason(_tail_chunk) == "end_turn"
+                    )
+                except OSError:
+                    pass
+
+            try:
+                cur_size = transcript_path.stat().st_size
+            except OSError:
+                cur_size = offset
+            now = time.monotonic()
 
             if _terminal:
-                return
+                if _terminal_since is None or _terminal_size != cur_size:
+                    _terminal_since = now
+                    _terminal_size = cur_size
+                elif now - _terminal_since >= _settle_seconds:
+                    return
+                _post_tool_since = None
+                _post_tool_size = None
+            elif _post_tool_idle:
+                if _post_tool_since is None or _post_tool_size != cur_size:
+                    _post_tool_since = now
+                    _post_tool_size = cur_size
+                elif now - _post_tool_since >= _post_tool_settle_seconds:
+                    # Tell ``_discover_status_from_transcript`` to report
+                    # COMPLETE — the JSONL still says WAITING (no terminal
+                    # marker yet) but all the side effects are flushed.
+                    object.__setattr__(self, "_post_tool_idle_complete", True)
+                    return
+                _terminal_since = None
+                _terminal_size = None
+            else:
+                _terminal_since = None
+                _terminal_size = None
+                _post_tool_since = None
+                _post_tool_size = None
 
-            if loop.time() > deadline:
+            if time.monotonic() > deadline:
                 raise TimeoutError(f"stream_transcript: process did not reach idle within {timeout}s")
 
             await asyncio.sleep(poll_interval)
@@ -617,6 +870,142 @@ class AgenticProcess(Entity):
             return result
         return result if isinstance(result, ApiSuccessResponse) else ApiSuccessResponse(data={"status": "ok"})
 
+    # ── Print-mode streaming prompt ──────────────────────────────────────────
+    #
+    # POST /agentic_process/<id>/prompt
+    #   body: { "message": "<text>" }
+    # Response: chunked XML stream of FlowData elements (same wire format as
+    # the legacy /completion). Admitted only for print-mode (visible=False)
+    # processes that are ready-for-input. PTY/interactive processes reject
+    # with 409 — they use the terminal tab UX.
+    #
+    # The worker (ClaudeCLIStreamWorker) runs ``claude -p --output-format
+    # stream-json`` per turn; its events map to FlowData via
+    # ``claude_event_to_flowdata.convert_event`` and land on the shared
+    # StreamingResponseHandler queue for streaming back to the caller.
+
+    @action.post(action_name="prompt")
+    async def _http_prompt(self) -> Any:
+        from starlette.responses import StreamingResponse  # local import — starlette is an app-layer dep
+
+        request_info = get_current_request_info()
+        if not request_info:
+            return ApiFailResponse(message="No request info")
+        body = await request_info.get_post_data()
+        if not isinstance(body, dict):
+            return ApiFailResponse(message="Expected JSON object body")
+        message = (body.get("message") or "").strip()
+        if not message:
+            return ApiFailResponse(message="message is required")
+
+        # Admission gate — print mode only.
+        # PTY processes are rejected (visible=true means the interactive terminal
+        # owns the session). For print-mode we don't use ``is_ready_for_input``:
+        # it requires ProcessStatus.RUNNING + an IDLE worker, which makes sense
+        # for PTY but not here — print-mode processes have no persistent worker
+        # between turns, so the only contention is whether a turn is already in
+        # flight (enforced by the per-process lock below).
+        if self.visible:
+            return ApiFailResponse(
+                message="process is PTY-interactive; prompt action requires visible=false (print mode)",
+                status_code=409,
+            )
+        if self.status in (ProcessStatus.STOPPING.value, ProcessStatus.FAILED.value):
+            return ApiFailResponse(
+                message=f"process not sendable (status={self.status})",
+                status_code=409,
+            )
+
+        lock = _get_prompt_lock(self.id)
+        if lock.locked():
+            return ApiFailResponse(
+                message="another prompt turn is already in flight for this process",
+                status_code=409,
+            )
+
+        # Context for the worker, reconstructed from the AgenticProcess entity.
+        context = _AgenticContext(
+            workdir=self.workdir,
+            env_vars=dict(self.cli_options.env_vars) if hasattr(self, "cli_options") else {},
+            model=(self.cli_config or {}).get("model"),
+            permission_mode=(self.cli_config or {}).get("permission_mode", "bypassPermissions"),
+            resume_session_id=self.session_id,
+        )
+
+        # Inline embedded-agent definitions (and persona directive when a single
+        # agent is loaded) into the prompt — same path the SDK ``prompt()`` API
+        # uses via ``driver.run_print_turn``. Without this, HTTP chat would
+        # see the agent only as a delegable Task sub-agent and never adopt
+        # the persona for free-form questions.
+        composed_prompt = self.driver.compose_prompt(message, self.get_agents_json())
+
+        handler = StreamingResponseHandler()
+
+        async def _run_turn() -> None:
+            """Drive the worker → handler pipeline. Runs as a background task."""
+            worker = ClaudeCLIStreamWorker()
+            _PROMPT_WORKERS[self.id] = worker
+            try:
+                async with lock:
+                    # Kick off lifecycle transition so observers see RUNNING.
+                    if self.status != ProcessStatus.RUNNING.value:
+                        self.status = ProcessStatus.RUNNING.value
+                        try:
+                            await self.save()
+                        except Exception:
+                            logger.debug("prompt: lifecycle save failed", exc_info=True)
+
+                    async for fd in worker.execute(prompt=composed_prompt, context=context):
+                        await handler.on_flow_data(fd)
+                        # Persist session_id on first capture so subsequent turns resume.
+                        if worker.get_session_id() and not self.session_id:
+                            self.session_id = worker.get_session_id()
+                            try:
+                                await self.save()
+                            except Exception:
+                                logger.debug("prompt: session_id save failed", exc_info=True)
+            except Exception as e:
+                logger.exception("prompt: worker error")
+                await handler.add_str_to_queue(Exception(f"prompt error: {e}"))
+            finally:
+                # Signal end-of-stream to downstream consumers.
+                await handler.on_flow_data(None)
+                _PROMPT_WORKERS.pop(self.id, None)
+
+        turn_task = asyncio.create_task(_run_turn())
+
+        async def _stream_body():
+            try:
+                async for xml_chunk in handler:
+                    yield xml_chunk
+            finally:
+                if not turn_task.done():
+                    # Client disconnected; let the turn finish to keep JSONL coherent,
+                    # but don't block the HTTP handler beyond a short grace.
+                    try:
+                        await asyncio.wait_for(turn_task, timeout=1.0)
+                    except (asyncio.TimeoutError, Exception):
+                        pass
+
+        return StreamingResponse(
+            _stream_body(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @action.post(action_name="cancel-prompt")
+    async def _http_cancel_prompt(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Cancel the in-flight prompt turn. Immediate: SIGTERM → 5s → SIGKILL."""
+        worker = _PROMPT_WORKERS.get(self.id)
+        if worker is None:
+            return ApiFailResponse(message="no in-flight prompt turn")
+        await worker.close_session()
+        return ApiSuccessResponse(data={"cancelled": True})
+
     # ── Plan mode ─────────────────────────────────────────────────────────────
 
     @action.post(action_name="execute-plan")
@@ -644,6 +1033,7 @@ class AgenticProcess(Entity):
             await asyncio.sleep(1.5)
 
             set_plan_auto_approve(self.id)
+            _write_plan_frontmatter(file_path, {"executed": True})
 
             return ApiSuccessResponse(data={"injected": True})
         except Exception as e:
@@ -670,6 +1060,28 @@ class AgenticProcess(Entity):
 
     # ── State ─────────────────────────────────────────────────────────────────
 
+    @action.post(action_name="load-embedded-agent")
+    async def load_embedded_agent_action(self, asset_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
+        """Load an agent from a VFS path and embed it into this process.
+
+        Merges the agent spec into cli_config.agents_json so it survives across
+        HTTP requests without relying on in-memory state.
+        """
+        from flow_sdk.fs_records.agent_record import AgentRecord
+        if not asset_ref:
+            return ApiFailResponse(message="asset_ref is required")
+        abs_path = Path("/" + asset_ref.lstrip("/"))
+        if not abs_path.exists():
+            return ApiFailResponse(message=f"Agent file not found: {abs_path}")
+        agent = AgentRecord.from_file(abs_path)
+        agent_entry = agent.to_agents_cli_json()
+        # Merge into cli_config so the agent is durably stored on the entity.
+        cli_opts = ClaudeCliOptions.from_json(self.cli_config or {})
+        cli_opts.agents_json = {**(cli_opts.agents_json or {}), **agent_entry}
+        self.cli_config = cli_opts.to_json()
+        await self.save()
+        return ApiSuccessResponse(data={"ok": True, "name": agent.name})
+
     def load_embedded_agent(self, agent: "Any") -> None:
         """Embed an agent into this process so it is registered via --agents at launch.
 
@@ -692,37 +1104,207 @@ class AgenticProcess(Entity):
             self.embedded_agent_ids = list(self.embedded_agent_ids or []) + [name]
 
     def get_agents_json(self) -> "dict | None":
-        """Return merged --agents JSON from all embedded agents, or None if none loaded."""
+        """Return merged --agents JSON from all embedded agents, or None if none loaded.
+
+        Falls back to the persisted ``cli_config.agents_json`` when no in-memory
+        agents are loaded — required for HTTP-driven chat flows where
+        ``load_embedded_agent_action`` persists the agent spec on ``cli_config``
+        without rebuilding the in-memory list. Without this fallback,
+        ``compose_prompt`` sees ``None`` and skips the persona directive, so
+        the embedded agent only ever runs as a delegable Task sub-agent.
+        """
         _agents: list = object.__getattribute__(self, "__dict__").get("_embedded_agents", [])
-        if not _agents:
-            return None
-        result: dict = {}
-        for rec in _agents:
-            result.update(rec.to_agents_cli_json())
-        return result or None
+        if _agents:
+            result: dict = {}
+            for rec in _agents:
+                result.update(rec.to_agents_cli_json())
+            if result:
+                return result
+        persisted = (self.cli_config or {}).get("agents_json") or None
+        return persisted or None
+
+    # ── Embedded assets ────────────────────────────────────────────────────────
+    # Unified attach/detach for agents, skills, and any future file-backed entity.
+    # Materializes the entity's files under <record_dir>/assets/.claude/<type>/… so
+    # Claude discovers them via `--add-dir <record_dir>/assets`.
+
+    async def _assets_dir_path(self) -> "Path":
+        """The filesystem directory where embedded assets are materialized."""
+        from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
+        from flow_sdk.fs_store.record import get_default_records_root, record_stem
+
+        record = None
+        try:
+            record = await self.get_record()
+        except Exception:
+            pass
+
+        if record and record.record_dir:
+            return record.assets_dir
+
+        # Fallback: synthesize the path from the process id if the record can't
+        # be resolved (e.g. the process was saved moments ago and the store
+        # hasn't reindexed). Must match ``AgenticProcessRecord.assets_dir``
+        # (``<record_dir>/execution/assets``) or attach + read paths diverge.
+        root = get_default_records_root()
+        d = root / AgenticProcessRecord._record_type / record_stem(
+            AgenticProcessRecord._record_type, self.id
+        )
+        a = d / "execution" / "assets"
+        a.mkdir(parents=True, exist_ok=True)
+        return a
+
+    def _ensure_assets_dir_in_add_dirs(self, assets_dir: "Path") -> None:
+        """Idempotently append the assets dir to additional_dirs."""
+        target = str(assets_dir)
+        current = list(self.additional_dirs or [])
+        if target not in current:
+            current.append(target)
+            self.additional_dirs = current
+
+    async def _materialize_entity(self, ref: TypeId, assets_dir: "Path") -> str | None:
+        """Copy the referenced entity's files under ``assets_dir/.claude/<type>/…``.
+
+        Returns the entity's display name on success, ``None`` if the entity
+        type is unsupported for embedding. Raises for resolution / IO failures.
+        """
+        import shutil
+        from flow_sdk.fs_records.agent_record import AgentRecord
+        from flow_sdk.fs_records.skill_record import SkillRecord
+
+        if ref.type == "agent":
+            # Resolve by id (uuid5-derived from the .md path) first, then fall back
+            # to name-based lookup for agents the UI knows by name only.
+            agent = AgentRecord.get(ref.id) or AgentRecord.load_agent(ref.id)
+            if agent is None:
+                raise FileNotFoundError(f"Agent not found: {ref.id}")
+            target_dir = assets_dir / ".claude" / "agents"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            src = agent.asset_ref._path if agent.asset_ref else None
+            if src is None or not src.exists():
+                raise FileNotFoundError(f"Agent source missing: {ref.id}")
+            target = target_dir / f"{agent.name or ref.id}.md"
+            shutil.copyfile(src, target)
+            return agent.name or ref.id
+
+        if ref.type == "skill":
+            skill = SkillRecord.get(ref.id)
+            if skill is None:
+                raise FileNotFoundError(f"Skill not found: {ref.id}")
+            target_root = assets_dir / ".claude" / "skills"
+            skill.copy_to(target_root)
+            return skill.name or ref.id
+
+        return None  # Unsupported type — caller decides to fail loudly.
+
+    async def _unmaterialize_entity(self, ref: TypeId, assets_dir: "Path") -> None:
+        """Best-effort removal of the files laid down by _materialize_entity."""
+        import shutil
+        from flow_sdk.fs_records.agent_record import AgentRecord
+        from flow_sdk.fs_records.skill_record import SkillRecord
+
+        if ref.type == "agent":
+            agent = AgentRecord.get(ref.id) or AgentRecord.load_agent(ref.id)
+            name = agent.name if agent else ref.id
+            target = assets_dir / ".claude" / "agents" / f"{name}.md"
+            if target.exists():
+                target.unlink()
+        elif ref.type == "skill":
+            skill = SkillRecord.get(ref.id)
+            name = skill.name if skill else ref.id
+            target = assets_dir / ".claude" / "skills" / name
+            if target.exists():
+                shutil.rmtree(target)
+
+    @action.post(action_name="attach-embedded-asset")
+    async def attach_embedded_asset(self, entity_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
+        """Materialize ``entity_ref`` under the process's assets dir + add to --add-dir.
+
+        Wire param is the serialized TypeId string (``agent-<id>`` / ``skill-<id>``);
+        it's parsed into a ``TypeId`` at this boundary.
+        """
+        if not entity_ref:
+            return ApiFailResponse(message="entity_ref is required")
+        try:
+            ref = TypeId(entity_ref)
+            assets_dir = await self._assets_dir_path()
+            name = await self._materialize_entity(ref, assets_dir)
+            if name is None:
+                return ApiFailResponse(message=f"Unsupported entity type for embed: {entity_ref}")
+            self._ensure_assets_dir_in_add_dirs(assets_dir)
+            refs = list(self.embedded_asset_refs or [])
+            if not any(r.type == ref.type and r.id == ref.id for r in refs):
+                refs.append(ref)
+                self.embedded_asset_refs = refs
+            await self.save()
+            return ApiSuccessResponse(data={"ok": True, "name": name, "ref": entity_ref})
+        except Exception as exc:
+            logger.exception("attach_embedded_asset failed for %s", entity_ref)
+            return ApiFailResponse(message=str(exc))
+
+    @action.post(action_name="detach-embedded-asset")
+    async def detach_embedded_asset(self, entity_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
+        """Remove materialized files + drop the ref from embedded_asset_refs."""
+        if not entity_ref:
+            return ApiFailResponse(message="entity_ref is required")
+        try:
+            ref = TypeId(entity_ref)
+            assets_dir = await self._assets_dir_path()
+            await self._unmaterialize_entity(ref, assets_dir)
+            refs = [r for r in (self.embedded_asset_refs or []) if not (r.type == ref.type and r.id == ref.id)]
+            self.embedded_asset_refs = refs
+            await self.save()
+            return ApiSuccessResponse(data={"ok": True, "ref": entity_ref})
+        except Exception as exc:
+            logger.exception("detach_embedded_asset failed for %s", entity_ref)
+            return ApiFailResponse(message=str(exc))
+
+    @action.get(action_name="list-embedded-assets")
+    async def list_embedded_assets(self) -> "ApiSuccessResponse":
+        """Return the current embedded_asset_refs as serialized TypeId strings."""
+        refs = [str(r) for r in (self.embedded_asset_refs or [])]
+        return ApiSuccessResponse(data={"refs": refs})
+
+    @action.get(action_name="get-history")
+    async def get_history_action(self) -> "ApiSuccessResponse":
+        """Return this process's transcript as a list of FlowData dicts.
+
+        Driver-supplied. Stateless — works for processes that have exited
+        (no live worker required). Empty result is a success with
+        ``history=[]``, not a 404.
+        """
+        history = self.driver.load_history(self)
+        return ApiSuccessResponse(
+            data={
+                "session_id": self.session_id,
+                "use_worker_history": True,
+                "count": len(history),
+                "history": [fd.model_dump(mode="python") for fd in history],
+            }
+        )
+
+    @cached_property
+    def driver(self) -> WorkerDriver:
+        """The vendor-specific driver for this process's ``worker_type``.
+
+        Resolved via ``get_driver(worker_type)`` — defaults to the value of
+        ``FLOWPAD_DEFAULT_WORKER`` (``claude`` if unset) when ``worker_type``
+        is ``None``. Cached on the entity instance so we don't re-import
+        the driver module on every property access.
+        """
+        return get_driver(self.worker_type)
 
     @property
     def cli_options(self) -> "ClaudeCliOptions":
-        """Deserialize cli_config into a live ClaudeCliOptions.
+        """Deserialize cli_config into a live ``WorkerCLIOptions`` via the driver.
 
-        session_id and workdir are injected from entity fields (not stored in cli_config).
-        Bundled system_assets dir is always prepended; additional_dirs follow.
-        Embedded agents are injected via --agents.
-        Callers add runtime env vars via add_env() before calling to_shell_string().
+        Return type is declared as ``ClaudeCliOptions`` for backward-compat
+        with callers that accept the legacy Claude shape, but at runtime the
+        actual class depends on ``self.worker_type`` and shares the
+        ``WorkerCLIOptions`` base contract (``workdir``, ``env_vars``,
+        ``add_dirs``, ``to_shell_string``).
         """
-        import flow_sdk
-        cmd = ClaudeCliOptions.from_json(self.cli_config)
-        cmd.session_id = self.session_id
-        cmd.workdir = self.workdir
-        if cmd.workdir:
-            cmd.env_vars.setdefault("CLAUDE_PROJECT_DIR", cmd.workdir)
-        core_dir = str(Path(flow_sdk.__file__).parent / "system_assets" / "core")
-        extra = [d for d in (self.additional_dirs or []) if d != core_dir]
-        cmd.add_dirs = [core_dir] + extra
-        agents_json = self.get_agents_json()
-        if agents_json:
-            cmd.agents_json = agents_json
-        return cmd
+        return self.driver.cli_options(self)  # type: ignore[return-value]
 
     @property
     def cmd_line(self) -> str:
@@ -732,8 +1314,8 @@ class AgenticProcess(Entity):
     def to_dict(self) -> dict:
         d = super().to_dict()
         computed = self._discover_status_from_transcript()
-        d["worker_status"] = str(computed) if computed else AgenticProcessStatus.IDLE.value
-        d["waiting_for_prompt"] = self._waiting_for_prompt_from_status(computed)
+        d["worker_status"] = str(computed) if computed else WorkerStatus.IDLE.value
+        d["ready_for_input"] = is_ready_for_input(self, computed)
         return d
 
     @model_serializer(mode="wrap")
@@ -744,26 +1326,44 @@ class AgenticProcess(Entity):
         if data is None:
             return None
         computed = self._discover_status_from_transcript()
-        data["worker_status"] = str(computed) if computed else AgenticProcessStatus.IDLE.value
-        data["waiting_for_prompt"] = self._waiting_for_prompt_from_status(computed)
+        data["worker_status"] = str(computed) if computed else WorkerStatus.IDLE.value
+        data["ready_for_input"] = is_ready_for_input(self, computed)
+        # Derive per-process execution folders when absent from the row.
+        # Rows synced before this field existed have no folder dicts; the
+        # record's on-disk layout is deterministic from (type, id), so we
+        # resolve folders via a bare record + its default_path.
+        missing = [a for a in ("exe_folder", "input_folder", "output_folder", "assets_folder") if not data.get(a)]
+        if missing and self.id:
+            try:
+                from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
+                rec = AgenticProcessRecord(id=self.id)
+                default = rec.default_path
+                if default is not None:
+                    rec.path = str(default)
+                    for attr in missing:
+                        ref = getattr(rec, attr, None)
+                        if ref is not None:
+                            data[attr] = ref.to_dict()
+            except Exception:
+                pass
         return data
 
-    def _waiting_for_prompt_from_status(self, computed: "AgenticProcessStatus | None") -> bool:
-        """Compute waiting_for_prompt from an already-resolved transcript status."""
-        if self.status != AgenticProcessLifecycleStatus.LIVE.value:
-            return False
-        if computed is None:
-            return not bool(self.session_id)
-        return computed in {
-            AgenticProcessStatus.COMPLETE,
-            AgenticProcessStatus.INTERRUPTED,
-            AgenticProcessStatus.IDLE,
-        }
+    def _discover_status_from_transcript(self) -> WorkerStatus | None:
+        """Derive status from the worker's session transcript via the driver.
 
-    def _discover_status_from_transcript(self) -> AgenticProcessStatus | None:
-        """Derive status from the Claude session transcript record."""
-        session = self._discover_claude_record_session(self.session_id)
-        return session.status if session else None
+        If ``stream_transcript`` exited via the post-tool-idle settle (worker
+        finished its tool work but hasn't emitted its terminal marker yet),
+        ``self._post_tool_idle_complete`` is set so subsequent status reads
+        agree with the early exit — without that flag, ``is_ready_for_input``
+        would still see ``WAITING`` and the test's ``assert is_ready_for_input
+        is True`` would fail despite all artifacts being on disk.
+        """
+        if getattr(self, "_post_tool_idle_complete", False):
+            return WorkerStatus.COMPLETE
+        path = self.driver.transcript_path(self)
+        if path is None:
+            return None
+        return self.driver.tail_status(path)
 
     @action.all(action_name="status")
     async def get_status(self):
@@ -771,39 +1371,17 @@ class AgenticProcess(Entity):
         worker_status = self._discover_status_from_transcript()
         return ApiSuccessResponse(data={
             "status": self.status,
-            "worker_status": str(worker_status) if worker_status else AgenticProcessStatus.IDLE.value,
+            "worker_status": str(worker_status) if worker_status else WorkerStatus.IDLE.value,
+            "ready_for_input": is_ready_for_input(self, worker_status),
         })
 
     @property
-    def waiting_for_prompt(self) -> bool:
-        """True when the process is live and ready for the user's next prompt.
-
-        Covers:
-        - complete: Claude finished its turn cleanly (end_turn)
-        - interrupted: user hit Escape, Claude stopped mid-run, back at prompt
-        - idle (no session linked): process is live but never been given a prompt
-        """
-        if self.status != AgenticProcessLifecycleStatus.LIVE.value:
-            return False
-        worker_status = self._discover_status_from_transcript()
-        if worker_status is None:
-            # No transcript found. If session_id is unset the process was never
-            # prompted — it is waiting. If session_id is set, Claude was just
-            # launched and the transcript hasn't been written yet — still busy.
-            return not bool(self.session_id)
-        return worker_status in {
-            AgenticProcessStatus.COMPLETE,
-            AgenticProcessStatus.INTERRUPTED,
-            AgenticProcessStatus.IDLE,
-        }
-
-    @property
     def is_idle(self) -> bool:
-        """True when not actively running."""
+        """True when not in a running lifecycle state (NEW/STOPPED/FAILED)."""
         return self.status in {
-            AgenticProcessLifecycleStatus.NEW.value,
-            AgenticProcessLifecycleStatus.STOPPED.value,
-            AgenticProcessLifecycleStatus.FAILED.value,
+            ProcessStatus.NEW.value,
+            ProcessStatus.STOPPED.value,
+            ProcessStatus.FAILED.value,
         }
 
     async def is_running(self) -> bool:
@@ -825,6 +1403,11 @@ class AgenticProcess(Entity):
             return None
         from flow_sdk.builtin.shell import Shell
         return await Shell.get_by_id(self.shell_id)
+
+    async def get_compute_node(self):
+        """Return the linked shell's compute node, or None when no shell exists."""
+        shell = await self.shell()
+        return shell.compute_node if shell else None
 
     async def set_session_id(self, session_id: str) -> None:
         """Bind this process to an existing Claude session before start()."""
@@ -885,7 +1468,7 @@ class AgenticProcess(Entity):
 
         try:
             shell_id = self.shell_id
-            self.status = AgenticProcessLifecycleStatus.STOPPING.value
+            self.status = ProcessStatus.STOPPING.value
             self.visible = False
             await self.save()
 
@@ -897,13 +1480,13 @@ class AgenticProcess(Entity):
 
             self.shell_id = None
             self.sidecar_shell_id = None
-            self.status = AgenticProcessLifecycleStatus.STOPPED.value
+            self.status = ProcessStatus.STOPPED.value
             await self.save()
             return True
 
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} close error: {e}")
-            self.status = AgenticProcessLifecycleStatus.FAILED.value
+            self.status = ProcessStatus.FAILED.value
             await self.save()
             return False
 
@@ -911,19 +1494,28 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="open")
     async def _http_open(self) -> ApiSuccessResponse | ApiFailResponse:
-        """HTTP: Start PTY and move lifecycle status to starting/live.
+        """HTTP: Start PTY and move lifecycle status to starting/running.
 
         POST body: {instruction?, visible?, session_id?}
         """
+        _http_t0 = time.perf_counter()
+        _http_id = self.id[:8]
+        def _http_bench(label):
+            with open("/tmp/bench_open.log", "a") as _f:
+                _f.write(f"[BENCH _http_open {_http_id}] {label}: {(time.perf_counter() - _http_t0) * 1000:.1f}ms\n")
+        _http_bench("entry")
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
+        _http_bench("after get_post_data")
         instruction = body.get("instruction")
         visible = body.get("visible")
         # Support legacy worker_session_id in POST body for older clients
         session_id_override = body.get("session_id") or body.get("worker_session_id")
         if session_id_override:
             self.session_id = session_id_override
-        return await self.start(instruction=instruction, visible=visible)
+        result = await self.start(instruction=instruction, visible=visible)
+        _http_bench("after start() return")
+        return result
 
     @action.post(action_name="close")
     async def _http_close(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -937,7 +1529,7 @@ class AgenticProcess(Entity):
         return ApiSuccessResponse(
             data={
                 "id": self.id,
-                "status": AgenticProcessLifecycleStatus.STOPPED.value,
+                "status": ProcessStatus.STOPPED.value,
                 "terminated": True,
             }
         )
@@ -955,6 +1547,15 @@ class AgenticProcess(Entity):
                 ancestor = await Project.get_ancestor(self.typeid)
                 if ancestor:
                     self.project_id = ancestor.id
+
+        # Fall back to @local project when no ancestor project is found
+        if not self.project_id:
+            local_project = await Project.get_by_uname("local")
+            if not local_project:
+                raise RuntimeError(
+                    "No project found for agentic process and no @local project available"
+                )
+            self.project_id = local_project.id
 
         if self.project_id and (not self.workdir or not self.project_encoded_name):
             project = await Project.get_by_id(self.project_id)
@@ -985,7 +1586,8 @@ class AgenticProcess(Entity):
             input_dir = record_dir / "input"
             input_dir.mkdir(parents=True, exist_ok=True)
 
-        compute_node_id = self.compute_node_id or "compute_node-@local"
+        shell = await self.shell()
+        compute_node_id = await shell.resolve_compute_node_typeid_str() if shell else "compute_node-@local"
 
         return ApiSuccessResponse(
             data={
@@ -993,35 +1595,6 @@ class AgenticProcess(Entity):
                 "compute_node_id": compute_node_id,
             }
         )
-
-    @action.get(action_name="get-history")
-    async def get_history_action(self):
-        """Return the session conversation history as FlowData items for the UI."""
-        from flow_sdk.builtin.agentic_workers.session_history import load_session_history
-
-        session_id = self.session_id
-
-        if not session_id:
-            return ApiSuccessResponse(data={"history": [], "session_id": None, "use_worker_history": False})
-
-        history: list = load_session_history(session_id)
-
-        items = []
-        for fd in history:
-            items.append({
-                "flow_value": fd.flow_value,
-                "attributes": dict(fd.attributes) if fd.attributes else {},
-                "index": fd.index or 0,
-                "created_time": fd.created_time or None,
-            })
-
-        return ApiSuccessResponse(data={
-            "history": items,
-            "count": len(items),
-            "session_id": session_id,
-            "use_worker_history": True,
-        })
-
     # ── Internals ─────────────────────────────────────────────────────────────
 
     def _is_exist_claude_resume_session(self, session_id: str | None) -> bool:
@@ -1032,7 +1605,7 @@ class AgenticProcess(Entity):
         """Discover the ClaudeSessionRecord associated with this agentic process's session_id."""
         if not session_id:
             return None
-        return ClaudeSessionRecord.discover_one(session_id)
+        return ClaudeSessionRecord.get(session_id)
 
     async def _find_resumable_session(self, session_id: str) -> str | None:
         """Walk up the fork chain to find a session ID with a transcript on disk."""
@@ -1040,7 +1613,7 @@ class AgenticProcess(Entity):
         seen: set[str] = set()
         while candidate and candidate not in seen:
             seen.add(candidate)
-            if ClaudeSessionRecord.discover_one(candidate) is not None:
+            if ClaudeSessionRecord.get(candidate) is not None:
                 return candidate
             procs = await AgenticProcess.get_all()
             parent = next((p for p in procs if p.session_id == candidate), None)
@@ -1054,27 +1627,35 @@ class AgenticProcess(Entity):
         if self.shell_id:
             shell = await Shell.get_by_id(self.shell_id)
             if shell:
+                if not await shell.ensure_live_compute_node_binding():
+                    raise RuntimeError(f"Compute node not found for linked shell {shell.id}")
                 return shell
 
         prev = self.context_data.pop("_prev_tab_order", None)
         tab_order = prev if prev is not None else await Shell.next_tab_order()
 
         is_resume = self._is_exist_claude_resume_session(self.session_id) if self.session_id else False
-        is_fork = bool(getattr(self, 'cli_options', None) and self.cli_options.fork_session_id)
+        # Fork is Claude-only; CodexCliOptions doesn't expose ``fork_session_id``.
+        cli_opts_local = getattr(self, 'cli_options', None)
+        is_fork = bool(cli_opts_local and getattr(cli_opts_local, 'fork_session_id', None))
         session_label = 'fork' if is_fork else 'resume' if is_resume else 'new'
-        session_name = f"Claude - {self.session_id[:8]} ({session_label})" if self.session_id else "Claude"
+        worker_label = (self.driver.name.capitalize() if self.driver else 'Claude')
+        session_name = (
+            f"{worker_label} - {self.session_id[:8]} ({session_label})"
+            if self.session_id else worker_label
+        )
 
-        cn_id = self.compute_node_id
-        if cn_id and "-" in cn_id:
-            cn_id = cn_id.split("-", 1)[1]
         workdir = self.workdir
-        if not self.workdir:
-            rec = await self.get_record()
-            if not rec:
-                raise NotADirectoryError("No workdir on for process and no record, can not open shell")
-            workdir = str(rec.output_dir)
+        if not workdir:
+            raise NotADirectoryError(
+                f"AgenticProcess {self.id} has no workdir after project resolution"
+            )
+        cn = await self._get_local_compute_node()
+        if cn is None:
+            raise RuntimeError("Compute node not found for local shell session (@local)")
         shell = Shell(
-            compute_node_id=cn_id,
+            compute_node_id=str(cn.id),
+            compute_node_uname=getattr(cn, "uname", None),
             name=session_name,
             workdir=workdir,
             tab_order=tab_order,
@@ -1105,14 +1686,14 @@ class AgenticProcess(Entity):
                         await proc.save()
                         return
                     proc.sidecar_shell_id = None
-                    if proc.status == AgenticProcessLifecycleStatus.STARTING.value:
-                        proc.status = AgenticProcessLifecycleStatus.FAILED.value
+                    if proc.status == ProcessStatus.STARTING.value:
+                        proc.status = ProcessStatus.FAILED.value
                     elif proc.status not in {
-                        AgenticProcessLifecycleStatus.STOPPING.value,
-                        AgenticProcessLifecycleStatus.STOPPED.value,
-                        AgenticProcessLifecycleStatus.FAILED.value,
+                        ProcessStatus.STOPPING.value,
+                        ProcessStatus.STOPPED.value,
+                        ProcessStatus.FAILED.value,
                     }:
-                        proc.status = AgenticProcessLifecycleStatus.STOPPED.value
+                        proc.status = ProcessStatus.STOPPED.value
                     await proc.save()
 
                     if session_id:
@@ -1129,3 +1710,5 @@ class AgenticProcess(Entity):
             asyncio.run_coroutine_threadsafe(_update_state(), main_loop)
 
         return _on_pty_exit
+# bench-marker 1777146382
+# bench-trigger-1777146659

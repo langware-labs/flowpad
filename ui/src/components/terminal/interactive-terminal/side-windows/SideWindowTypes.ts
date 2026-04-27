@@ -24,3 +24,21 @@ export const SIDE_TABS: Record<SideTabId, SideTabDescriptor> = {
   queue:   { id: 'queue',   label: 'Queue',   icon: ListOrdered,    description: 'Queued prompts to send when the session becomes idle' },
   files:   { id: 'files',   label: 'Files',   icon: Paperclip,      description: 'Input files attached to this session' },
 };
+
+/** Narrow any string to a valid SideTabId, returning null if it's not one. */
+export function parseSideTabId(value: string | null | undefined): SideTabId | null {
+  if (!value) return null;
+  const trimmed = value.trim().toLowerCase();
+  return (Object.values(SideTabId) as string[]).includes(trimmed) ? (trimmed as SideTabId) : null;
+}
+
+/** Parse a csv string of side tab ids (e.g. "team,git") into a deduped list. */
+export function parseSideTabIdList(csv: string | null | undefined): SideTabId[] {
+  if (!csv) return [];
+  const seen = new Set<SideTabId>();
+  for (const piece of csv.split(',')) {
+    const id = parseSideTabId(piece);
+    if (id) seen.add(id);
+  }
+  return [...seen];
+}

@@ -262,7 +262,7 @@ class ClaudeSessionDebugLogRecord(Record):
         return list(rl)
 
     @classmethod
-    def discover_one(cls, uid: str, scope=None, **kwargs) -> ClaudeSessionDebugLogRecord | None:
+    def get(cls, uid: str, scope=None, **kwargs) -> ClaudeSessionDebugLogRecord | None:
         """Load a specific debug log session by ID."""
         rl = ClaudeSessionDebugLogRecordList()
         return rl.get(uid)
@@ -318,7 +318,7 @@ class ClaudeSessionDebugLogRecord(Record):
         for he in hook_errors:
             fp = _fingerprint_hook(he.hook, he.event, he.root_cause)
             all_fps.append(fp)
-            existing = ClaudeErrorRecord.discover_one(fp)
+            existing = ClaudeErrorRecord.get(fp)
             if existing and not force:
                 continue
             rec = ClaudeErrorRecord(
@@ -355,7 +355,7 @@ class ClaudeSessionDebugLogRecord(Record):
         for le in log_errors:
             fp = _fingerprint_log(le.message)
             all_fps.append(fp)
-            existing = ClaudeErrorRecord.discover_one(fp)
+            existing = ClaudeErrorRecord.get(fp)
             if existing and not force:
                 continue
             rec = ClaudeErrorRecord(

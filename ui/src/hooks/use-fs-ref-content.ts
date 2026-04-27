@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useToast } from '@src/hooks/use-toast';
 
 /**
  * Minimal file I/O abstraction — passed to useFSRefContent.
@@ -11,6 +12,10 @@ export interface FsRef {
   read(): Promise<string>;
   /** Write string content to disk */
   write(content: string): Promise<void>;
+  /** True when a file currently exists at this path. Optional — used by the editor's missing-file recovery branch. */
+  exists?(): Promise<boolean>;
+  /** Recovery primitive — create an empty file at this path. Optional — used when ``exists()`` returns false on initial load. */
+  create?(content?: string): Promise<void>;
 }
 
 export interface FsRefContentState {
@@ -56,6 +61,7 @@ interface Options {
 export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefContentState {
   const autoSave = options?.autoSave ?? true;
   const autoSaveMs = options?.autoSaveMs ?? 3000;
+  const { toast } = useToast();
 
   const [content, setContentState] = useState('');
   const [remoteContent, setRemoteContent] = useState('');
@@ -82,18 +88,55 @@ export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefCo
     setLoaded(false);
     setLoadError(null);
 
-    fsRef.read().then((text) => {
-      if (cancelled) return;
-      setRemoteContent(text);
-      setContentState(text);
-      setLoaded(true);
-    }).catch((err: unknown) => {
-      if (cancelled) return;
-      setLoadError(err instanceof Error ? err : new Error(String(err)));
-    });
+    const load = async () => {
+      try {
+        const text = await fsRef.read();
+        if (cancelled) return;
+        setRemoteContent(text);
+        setContentState(text);
+        setLoaded(true);
+      } catch (err) {
+        if (cancelled) return;
+        // Recovery branch: orphan entity row pointing at a missing file, or
+        // file deleted out-of-band. The editor must never surface a hard
+        // "Not Found" — verify exists, and if not, create an empty file,
+        // toast a warning, and continue with empty content. The next save
+        // (autosave on first edit) writes real content.
+        const canRecover = typeof fsRef.exists === 'function' && typeof fsRef.create === 'function';
+        if (!canRecover) {
+          setLoadError(err instanceof Error ? err : new Error(String(err)));
+          return;
+        }
+        try {
+          const exists = await fsRef.exists!();
+          if (cancelled) return;
+          if (exists) {
+            // Different failure (perms, network) — surface to the existing
+            // error path so the editor can show Retry.
+            setLoadError(err instanceof Error ? err : new Error(String(err)));
+            return;
+          }
+          await fsRef.create!();
+          if (cancelled) return;
+          console.warn('[useFSRefContent] recovered missing file:', fsRef.path);
+          toast({
+            title: 'Missing file was created',
+            description: fsRef.path,
+            variant: 'default',
+          });
+          setRemoteContent('');
+          setContentState('');
+          setLoaded(true);
+        } catch (recoveryErr) {
+          if (cancelled) return;
+          setLoadError(recoveryErr instanceof Error ? recoveryErr : new Error(String(recoveryErr)));
+        }
+      }
+    };
 
+    void load();
     return () => { cancelled = true; };
-  }, [fsRef, reloadTrigger]);
+  }, [fsRef, reloadTrigger, toast]);
 
   // ── Save ──────────────────────────────────────────────────────────────────
   const save = useCallback(async () => {

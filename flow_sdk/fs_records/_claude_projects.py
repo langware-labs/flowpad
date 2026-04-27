@@ -20,6 +20,15 @@ from typing import Iterator
 _CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
 _IS_WINDOWS = sys.platform == "win32"
 
+# Paths that MUST never be yielded as a "project" — walking them triggers
+# full-filesystem traversal. A stale session JSONL with cwd="/" or cwd=$HOME
+# would otherwise leak here and cause `.claude/docs` / `.claude/plans` walks
+# to enumerate the entire machine.
+_INVALID_PROJECT_ROOTS: set[Path] = {
+    Path("/").resolve(),
+    Path.home().resolve(),
+}
+
 # Match Windows encoded project names: starts with drive letter, e.g. "C-Users-<user-name>-project"
 _WIN_ENCODED_RE = re.compile(r"^([A-Za-z])-(.*)")
 
@@ -101,6 +110,9 @@ def iter_claude_project_paths(include_temp: bool = False) -> Iterator[Path]:
         try:
             rp = real.resolve()
         except OSError:
+            continue
+        if rp in _INVALID_PROJECT_ROOTS:
+            # Stale cwd pointing at / or $HOME — ignore, not a real project.
             continue
         if rp in seen:
             continue

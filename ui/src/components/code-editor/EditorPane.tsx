@@ -482,7 +482,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
               <MilkdownEditor
                 content={fileContent}
                 onChange={readOnly ? undefined : handleContentChange}
-                readOnly={readOnly}
+                editorMode={readOnly ? 'view' : 'editor'}
               />
             </div>
           ) : CUSTOM_VIEW[file.language as keyof typeof CUSTOM_VIEW] === 'html' ? (

@@ -22,15 +22,11 @@ test 3: Navigating to /dock/search?q=hello pre-populates the search input
 - [browser] validate the search input is visible
 - [browser] validate the search input has value "hello"
 
-test 4: Tools button on home bar toggles the filter panel
+test 4: Compact home search bar has no Tools button and no filter panel by default
 - [browser] navigate to {APP_URL}/
 - [browser] wait for page to load
-- [browser] locate the button with data-testid="search-tools-btn" (first match)
-- [browser] validate the Tools button is visible
-- [browser] validate the element with data-testid="search-filter-panel" is not visible
-- [browser] click the Tools button
-- [browser] validate the element with data-testid="search-filter-panel" is visible
-- [browser] click the Tools button
+- [browser] validate the element with data-testid="record-search-bar" is visible
+- [browser] validate the element with data-testid="search-tools-btn" is not visible (home bar is compact, showTools=false)
 - [browser] validate the element with data-testid="search-filter-panel" is not visible
 
 test 5: Search view shows a results area

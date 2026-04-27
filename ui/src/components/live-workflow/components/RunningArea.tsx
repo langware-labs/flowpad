@@ -4,7 +4,7 @@ import { ArrowDown, Clock, Square, Zap } from 'lucide-react';
 import { FusionSpinner } from '@src/components/icons/FusionSpinner';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import ChatMessage from '@src/pages/flow-page/chat-panel/chat-message/chat-message';
+import ChatMessage from '@src/components/entity-chat-panel/chat-message/chat-message';
 import ErrorSection from '@src/components/ErrorSection';
 import ReasoningSection from '@src/components/ReasoningSection';
 import ShellSection from '@src/components/ShellSection';

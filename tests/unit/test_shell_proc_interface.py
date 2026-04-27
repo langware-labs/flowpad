@@ -123,7 +123,7 @@ async def test_shell_read_returns_file_bytes(tmp_path):
 async def test_proc_get_shell_returns_none_when_no_shell_id():
     from flow_sdk.builtin.agentic_process import AgenticProcess
 
-    proc = AgenticProcess(id=str(uuid.uuid4()), compute_node_id=str(uuid.uuid4()))
+    proc = AgenticProcess(id=str(uuid.uuid4()))
     assert await proc.shell() is None
 
 
@@ -131,7 +131,7 @@ async def test_proc_get_shell_returns_none_when_no_shell_id():
 async def test_proc_send_raises_when_no_shell():
     from flow_sdk.builtin.agentic_process import AgenticProcess
 
-    proc = AgenticProcess(id=str(uuid.uuid4()), compute_node_id=str(uuid.uuid4()))
+    proc = AgenticProcess(id=str(uuid.uuid4()))
     with pytest.raises(ValueError, match="No shell linked"):
         await proc.send("hello")
 

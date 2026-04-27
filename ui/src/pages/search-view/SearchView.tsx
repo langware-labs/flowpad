@@ -8,14 +8,14 @@ import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@src/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import { dataManager } from '@sdk';
+import { dataManager, systemTools } from '@sdk';
 import { SearchCalibration, SearchFilters, loadStoredCalibration, saveCalibration, useRecordSearch } from '@src/hooks/use-record-search';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SystemActivity, ActivityProgress } from '@sdk';
-import { AlertCircle, FileSearch, Loader2, Menu, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { AlertCircle, FileSearch, Loader2, Menu, PackageSearch, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 const LS_KEY = 'flowpad-search-filters';
@@ -33,14 +33,16 @@ function activityPhaseLabel(activity: SystemActivity): string {
 }
 
 function activityLabel(activity: SystemActivity, progress: ActivityProgress | null): string {
+  const typesDone = progress?.jobDone ?? progress?.done.length ?? 0;
+  const typesTotal = progress?.jobTotal ?? progress?.total ?? 0;
   switch (activity) {
     case 'archive': return 'Archiving…';
     case 'clear': return 'Clearing index…';
     case 'load_from_archive': return 'Restoring…';
     case 'scan':
-      return progress ? `Scanning… ${progress.done.length}/${progress.total}` : 'Scanning…';
+      return progress ? `Scanning… ${typesDone}/${typesTotal}` : 'Scanning…';
     case 'index':
-      return progress ? `Indexing… ${progress.done.length}/${progress.total}` : 'Indexing…';
+      return progress ? `Indexing… ${typesDone}/${typesTotal}` : 'Indexing…';
   }
 }
 
@@ -102,6 +104,17 @@ export function SearchView() {
 
   const { currentActivity, activityProgress, busy, resetAndRescan } = useSystemTools();
   const [progressOpen, setProgressOpen] = useState(false);
+
+  // Re-seed progress state from backend after page refresh so the footer
+  // indicator reappears mid-job. The modal stays closed until the user opens
+  // it explicitly via the footer indicator.
+  useEffect(() => {
+    void systemTools.refreshActivityStatus();
+  }, []);
+
+  const handleRebuildIndex = useCallback(() => {
+    void resetAndRescan();
+  }, [resetAndRescan]);
 
   const [scanInfo, setScanInfo] = useState(() => dataManager.scanInfo);
   useEffect(() => dataManager.onScanInfoChange(setScanInfo), []);
@@ -250,13 +263,14 @@ export function SearchView() {
               variant="ghost"
               size="icon"
               className="h-9 w-9 shrink-0 mt-0.5"
-              onClick={() => void resetAndRescan()}
+              onClick={handleRebuildIndex}
               disabled={busy}
+              data-testid="rebuild-index"
             >
-              <RotateCcw className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
+              <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Archive, clear &amp; rescan index</TooltipContent>
+          <TooltipContent>Refresh search data</TooltipContent>
         </Tooltip>
       </div>
 

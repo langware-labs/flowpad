@@ -9,13 +9,16 @@ import os
 logger = logging.getLogger(__name__)
 import re
 from collections import defaultdict
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Set, Tuple
 
 from flow_sdk._compat import UTC
 
 from fastapi import HTTPException
 from sqlalchemy import and_, asc, delete, desc, func, or_, select, text, update
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from flow_sdk.api.api_types.type_id import TypeId
@@ -44,6 +47,12 @@ from .connection import (
     EntitySchema,
     RelationshipSchema,
     get_database_url,
+    install_pragmas_and_immediate,
+)
+
+
+_standalone_session_var: "ContextVar[Optional[AsyncSession]]" = ContextVar(
+    "_sqlite_driver_standalone_session", default=None
 )
 
 
@@ -281,14 +290,25 @@ class SQLiteDBDriver(DBDriver):
 
     async def open(self):
         """Initialize database connection."""
+        if self.engine is not None:
+            return
         from sqlalchemy.ext.asyncio import create_async_engine
-        from sqlalchemy.pool import NullPool
 
         db_path = self.config.database or ":memory:"
         url = get_database_url(db_path)
-        # Use NullPool to avoid connection pooling issues with aiosqlite
-        # This ensures connections are properly closed and worker threads stop
-        self.engine = create_async_engine(url, echo=False, poolclass=NullPool)
+        # Default AsyncAdaptedQueuePool (since SQLAlchemy 2.0.38) — keeps a
+        # small bounded set of warm aiosqlite connections so per-operation
+        # connection setup (~10ms each with NullPool) doesn't dominate
+        # batch indexer paths that touch hundreds of records.
+        self.engine = create_async_engine(
+            url,
+            echo=False,
+            pool_size=5,
+            max_overflow=10,
+            pool_pre_ping=True,
+            pool_recycle=1800,
+        )
+        install_pragmas_and_immediate(self.engine)
 
         # Create tables
         async with self.engine.begin() as conn:
@@ -361,7 +381,7 @@ class SQLiteDBDriver(DBDriver):
         if self.engine:
             # Clear session factory first to prevent new sessions
             self.session_factory = None
-            # Dispose the engine - with NullPool this properly closes all connections
+            # Dispose the engine — closes all pooled connections + worker threads.
             await self.engine.dispose()
             self.engine = None
 
@@ -425,7 +445,7 @@ class SQLiteDBDriver(DBDriver):
         if not entries:
             return
 
-        async with self.session_factory() as session:
+        async with self._session_ctx() as session:
             await session.execute(text("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
                     entity_id, type, name, title, description, content,
@@ -434,7 +454,6 @@ class SQLiteDBDriver(DBDriver):
             """))
             await self._fts_delete_batch(session, [e.entity_id for e in entries], batch_size)
             await self._fts_insert_batch(session, entries, batch_size)
-            await session.commit()
 
     async def fts_search(
         self,
@@ -463,7 +482,7 @@ class SQLiteDBDriver(DBDriver):
             return t if already_prefix else t + "*"
 
         fts_query = " ".join(_fts_term(t) for t in query.split())
-        async with self.session_factory() as session:
+        async with self._session_ctx() as session:
             await session.execute(text("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
                     entity_id, type, name, title, description, content,
@@ -522,6 +541,7 @@ class SQLiteDBDriver(DBDriver):
             rows = result.fetchall()
             columns = result.keys()
 
+            entity_cols = {col.name for col in EntitySchema.__table__.columns}
             entities_with_score: list[tuple[float, Any]] = []
             for row in rows:
                 row_dict = dict(zip(columns, row))
@@ -532,7 +552,9 @@ class SQLiteDBDriver(DBDriver):
                 bm25_score = row_dict.pop("_bm25_score", 0.0) or 0.0
                 # Use title snippet if the match is in title; fall back to content snippet
                 snippet_val = snippet_title if snippet_title and "<mark>" in (snippet_title or "") else snippet_content
-                schema = EntitySchema(**row_dict)
+                # Filter to columns EntitySchema knows — stale DBs can have extra
+                # leftover columns (e.g. old ``content_hash``) that would crash kwargs.
+                schema = EntitySchema(**{k: v for k, v in row_dict.items() if k in entity_cols})
                 try:
                     entity = self._schema_to_entity(schema)
                     entity._fts_snippet = snippet_val  # type: ignore[attr-defined]
@@ -581,29 +603,39 @@ class SQLiteDBDriver(DBDriver):
         """
         if not self.session_factory:
             return []
-        async with self.session_factory() as session:
-            sql = """
-                SELECT e.*,
-                       fts.title AS _fts_title,
-                       fts.description AS _fts_description
-                FROM entities e
-                LEFT JOIN entities_fts fts ON e.id = fts.entity_id
-                WHERE e.type = :entity_type
+        async with self._session_ctx() as session:
+            # Apply LIMIT *before* joining entities_fts. FTS5 has no usable
+            # B-tree index on plain columns like entity_id, so joining the
+            # full type-filtered set against the virtual table degrades to
+            # O(matched_rows × fts_rows) — a 1346-row type took ~12s with a
+            # 3812-row FTS table. Hoisting the LIMIT into a subquery caps
+            # the join at LIMIT rows.
+            inner_sql = """
+                SELECT * FROM entities
+                WHERE type = :entity_type
             """
             params: dict[str, Any] = {"entity_type": entity_type, "limit": limit}
             if status:
-                sql += " AND json_extract(e.data, '$.status') = :status"
+                inner_sql += " AND json_extract(data, '$.status') = :status"
                 params["status"] = status
-            sql += " ORDER BY e.updated_date DESC LIMIT :limit"
+            inner_sql += " ORDER BY updated_date DESC LIMIT :limit"
+            sql = f"""
+                SELECT e.*,
+                       fts.title AS _fts_title,
+                       fts.description AS _fts_description
+                FROM ({inner_sql}) e
+                LEFT JOIN entities_fts fts ON e.id = fts.entity_id
+            """
             result = await session.execute(text(sql), params)
             rows = result.fetchall()
             columns = result.keys()
+            entity_cols = {col.name for col in EntitySchema.__table__.columns}
             entities: list[Any] = []
             for row in rows:
                 row_dict = dict(zip(columns, row))
                 fts_title = row_dict.pop("_fts_title", None) or None
                 fts_description = row_dict.pop("_fts_description", None) or None
-                schema = EntitySchema(**row_dict)
+                schema = EntitySchema(**{k: v for k, v in row_dict.items() if k in entity_cols})
                 try:
                     entity = self._schema_to_entity(schema)
                     entity._fts_title = fts_title  # type: ignore[attr-defined]
@@ -617,22 +649,20 @@ class SQLiteDBDriver(DBDriver):
         """Remove a row from ``entities_fts``."""
         if not self.session_factory:
             return
-        async with self.session_factory() as session:
+        async with self._session_ctx() as session:
             await session.execute(
                 text("DELETE FROM entities_fts WHERE entity_id = :entity_id"), {"entity_id": entity_id}
             )
-            await session.commit()
 
     async def fts_clear(self) -> int:
         """Delete all rows from ``entities_fts``. Returns the number of rows deleted."""
         if not self.session_factory:
             return 0
         try:
-            async with self.session_factory() as session:
+            async with self._session_ctx() as session:
                 result = await session.execute(text("SELECT COUNT(*) FROM entities_fts"))
                 count = result.scalar() or 0
                 await session.execute(text("DELETE FROM entities_fts"))
-                await session.commit()
                 return int(count)
         except Exception as e:
             logger.warning("fts_clear() failed: %s", e)
@@ -642,7 +672,7 @@ class SQLiteDBDriver(DBDriver):
         """Count entities, optionally filtered by type."""
         if not self.session_factory:
             return 0
-        async with self.session_factory() as session:
+        async with self._session_ctx() as session:
             if type_name:
                 result = await session.execute(
                     text("SELECT COUNT(*) FROM entities WHERE type = :type"), {"type": type_name}
@@ -655,7 +685,7 @@ class SQLiteDBDriver(DBDriver):
         """Delete entities (and their FTS rows) by type. None = all entities."""
         if not self.session_factory:
             return 0
-        async with self.session_factory() as session:
+        async with self._session_ctx() as session:
             if type_name:
                 await session.execute(
                     text(
@@ -674,7 +704,6 @@ class SQLiteDBDriver(DBDriver):
                     "(SELECT id FROM entities WHERE uname IS NULL)"
                 ))
                 result = await session.execute(text("DELETE FROM entities WHERE uname IS NULL"))
-            await session.commit()
             return result.rowcount or 0
 
     async def create_db(self):
@@ -763,11 +792,58 @@ class SQLiteDBDriver(DBDriver):
             await self.open()
         return self.session_factory()
 
+    @asynccontextmanager
+    async def _session_ctx(self) -> "AsyncIterator[AsyncSession]":
+        """Single canonical session context for driver methods.
+
+        Resolution order:
+
+        1. Request-bound session (set by RequestTransactionMiddleware via
+           SQLiteTransactionHandler.db_transaction): yield it. Do NOT commit
+           or close — the middleware owns the lifecycle.
+
+        2. Standalone-task-bound session (set by an outer call to
+           _session_ctx() in the same task): yield it. The outer caller
+           commits/closes when its block exits.
+
+        3. No bound session: open a fresh one, register it as the standalone
+           task-bound session, commit on success, rollback on exception,
+           close on exit.
+
+        The contextvar handoff in (2) prevents nested driver calls in the
+        same task from racing for the SQLite writer lock against themselves.
+        """
+        bound = None
+        try:
+            from flow_sdk.request_context.methods import get_current_transaction  # noqa: PLC0415
+            bound = get_current_transaction()
+        except Exception:
+            bound = None
+        if bound is not None and isinstance(bound, AsyncSession):
+            yield bound
+            return
+        standalone = _standalone_session_var.get()
+        if standalone is not None:
+            yield standalone
+            return
+        if not self.session_factory:
+            await self.open()
+        async with self.session_factory() as session:
+            token = _standalone_session_var.set(session)
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+            finally:
+                _standalone_session_var.reset(token)
+
     # ==================== Entity CRUD ====================
 
     async def save(self, entity: DBBaseRecord, owner: TypeId | None = None) -> DBBaseRecord:
         """Save entity (create or update)."""
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             # Check if entity exists by ID
             result = await session.execute(select(EntitySchema).where(EntitySchema.id == entity.id))
             existing = result.scalar_one_or_none()
@@ -785,7 +861,12 @@ class SQLiteDBDriver(DBDriver):
             return await self._create_entity(entity, owner, session)
 
     async def _create_entity(self, entity: DBBaseRecord, owner: TypeId | None, session: AsyncSession) -> DBBaseRecord:
-        """Create a new entity."""
+        """Create a new entity.
+
+        Uses session.flush() to surface IntegrityError early so the
+        type_uname → HTTPException(409) mapping stays local. The outer
+        _session_ctx (or request middleware) drives the commit.
+        """
         # Check unique constraints (app-level for fields not covered by DB constraints)
         await self._check_unique_constraints(entity, session)
 
@@ -801,7 +882,7 @@ class SQLiteDBDriver(DBDriver):
         schema = self._entity_to_schema(entity)
         session.add(schema)
         try:
-            await session.commit()
+            await session.flush()
         except Exception as e:
             if "UNIQUE constraint failed" in str(e) and "type_uname" in str(e):
                 label = entity.get_type().capitalize()
@@ -821,7 +902,7 @@ class SQLiteDBDriver(DBDriver):
         return entity
 
     async def _update_entity(self, entity: DBBaseRecord, session: AsyncSession) -> DBBaseRecord:
-        """Update an existing entity."""
+        """Update an existing entity. Outer _session_ctx drives commit."""
         # Check if this is a create attempt on existing entity (matching NetworkX behavior)
         if not hasattr(entity, "created_by") or entity.created_by is None:
             raise HTTPException(status_code=400, detail=f"Entity with ID {entity.id} already exists")
@@ -851,7 +932,6 @@ class SQLiteDBDriver(DBDriver):
                     data=json.dumps(data_dict, cls=SafeJSONEncoder) if data_dict else None,
                 )
             )
-            await session.commit()
             return entity
         except Exception as e:
             logger.error(f"sqllite Error updating entity {entity.id}: {e}")
@@ -915,7 +995,7 @@ class SQLiteDBDriver(DBDriver):
             by_id[e.id] = e
         entities = list(by_id.values())
 
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             existing_ids = await self._bulk_fetch_existing_ids(
                 session, list(by_id.keys()), batch_size
             )
@@ -924,13 +1004,30 @@ class SQLiteDBDriver(DBDriver):
                     await self._bulk_update_entity(session, entity)
                 else:
                     self.apply_create_fields(entity)
-                    schema = self._entity_to_schema(entity)
-                    session.add(schema)
-            await session.commit()
+                    data_dict = self._get_entity_data_dict(entity)
+                    entity_type = (entity.type or entity.get_type()).lower()
+                    stmt = sqlite_insert(EntitySchema).values(
+                        id=entity.id,
+                        type=entity_type,
+                        namespace=entity.namespace,
+                        key=entity.key,
+                        uname=entity.uname,
+                        type_uname=self._compute_type_uname(entity_type, entity.uname),
+                        created_by=entity.created_by,
+                        created_date=entity.created_date,
+                        updated_by=entity.updated_by,
+                        updated_date=entity.updated_date,
+                        created_through=entity.created_through,
+                        updated_through=entity.updated_through,
+                        schema_version=entity.schema_version if hasattr(entity, 'schema_version') else None,
+                        data=json.dumps(data_dict, cls=SafeJSONEncoder) if data_dict else None,
+                        record_data_ref=entity.record_data_ref if hasattr(entity, 'record_data_ref') else None,
+                    ).on_conflict_do_nothing(index_elements=['type_uname'])
+                    await session.execute(stmt)
 
     async def create(self, entity: DBBaseRecord, owner: TypeId | None = None) -> DBBaseRecord:
         """Create new entity (explicit create)."""
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             result = await session.execute(select(EntitySchema).where(EntitySchema.id == entity.id))
             if result.scalar_one_or_none():
                 raise HTTPException(status_code=400, detail=f"Entity with ID {entity.id} already exists")
@@ -952,7 +1049,7 @@ class SQLiteDBDriver(DBDriver):
     async def delete(self, root_typeid: TypeId) -> List[str]:
         """Delete entity and its descendants."""
         deleted_ids = []
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             # Get all descendants
             descendants = await self.get_children_sub_tree(root_typeid, None)
             entity_ids = [desc.id for desc in descendants]
@@ -971,12 +1068,11 @@ class SQLiteDBDriver(DBDriver):
                 await session.execute(delete(EntitySchema).where(EntitySchema.id == entity_id))
                 deleted_ids.append(entity_id)
 
-            await session.commit()
         return deleted_ids
 
     async def delete_by_id(self, eid: str, entity_type: str) -> bool:
         """Delete entity by ID."""
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             result = await session.execute(
                 select(EntitySchema).where(EntitySchema.id == eid, EntitySchema.type == entity_type)
             )
@@ -991,14 +1087,13 @@ class SQLiteDBDriver(DBDriver):
             )
             # Delete entity
             await session.execute(delete(EntitySchema).where(EntitySchema.id == eid))
-            await session.commit()
             return True
 
     # ==================== Entity Queries ====================
 
     async def get_by_prop(self, property_key: str, property_value: str, entity_type: str) -> Optional[DBBaseRecord]:
         """Get entity by property value."""
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             # Check if property is a direct column (excluding 'data' which is the JSON column)
             if property_key in EntitySchema.__table__.columns and property_key != "data":
                 column = getattr(EntitySchema, property_key)
@@ -1029,7 +1124,7 @@ class SQLiteDBDriver(DBDriver):
 
     async def get_by_key(self, key: str, entity_type: str) -> Optional[DBBaseRecord]:
         """Get entity by key (case-insensitive)."""
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             result = await session.execute(
                 select(EntitySchema).where(
                     EntitySchema.type == entity_type,
@@ -1082,7 +1177,7 @@ class SQLiteDBDriver(DBDriver):
             if entities_filter.limit:
                 query = query.limit(entities_filter.limit)
 
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             result = await session.execute(query)
             entities = [self._schema_to_entity(s) for s in result.scalars().all()]
 
@@ -1282,7 +1377,7 @@ class SQLiteDBDriver(DBDriver):
 
     async def _count_role_relationships(self, entity_id: str) -> int:
         """Count incoming role relationships to an entity."""
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             result = await session.execute(
                 select(func.count())
                 .select_from(RelationshipSchema)
@@ -1309,7 +1404,7 @@ class SQLiteDBDriver(DBDriver):
         else:
             self.apply_update_fields(relationship)
 
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             schema = self._relationship_to_schema(relationship)
 
             # Check if relationship exists
@@ -1321,7 +1416,6 @@ class SQLiteDBDriver(DBDriver):
             else:
                 # Insert new relationship
                 session.add(schema)
-            await session.commit()
         return relationship
 
     async def update_relationship(self, relationship: DBBaseRelationship) -> DBBaseRelationship:
@@ -1331,7 +1425,7 @@ class SQLiteDBDriver(DBDriver):
 
     async def delete_relationship(self, relationship: DBBaseRelationship):
         """Delete a relationship by matching from_id, to_id, and type."""
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             from_id = relationship.from_typeid.id if relationship.from_typeid else None
             to_id = relationship.to_typeid.id if relationship.to_typeid else None
 
@@ -1346,7 +1440,6 @@ class SQLiteDBDriver(DBDriver):
                     RelationshipSchema.type == relationship.get_type(),
                 )
                 await session.execute(query)
-            await session.commit()
 
     async def create_relationship(self, from_e: TypeId, to_e: TypeId, rel_type: str) -> DBBaseRecord:
         """Create a new relationship."""
@@ -1360,7 +1453,7 @@ class SQLiteDBDriver(DBDriver):
 
     async def get_relationship_by_id(self, rid: str) -> Optional[DBBaseRelationship]:
         """Get relationship by ID."""
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             result = await session.execute(select(RelationshipSchema).where(RelationshipSchema.id == rid))
             schema = result.scalar_one_or_none()
             if not schema:
@@ -1369,7 +1462,7 @@ class SQLiteDBDriver(DBDriver):
 
     async def get_all_relationships(self, relationships_filter: QueryFilter) -> List[DBBaseRelationship]:
         """Get all relationships matching filter."""
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             query = select(RelationshipSchema)
             if relationships_filter.type:
                 query = query.where(RelationshipSchema.type == relationships_filter.type)
@@ -1405,7 +1498,7 @@ class SQLiteDBDriver(DBDriver):
         self, to_typeid: TypeId, relationships_filter: QueryFilter, from_filter: QueryFilter
     ) -> List[DBBaseRelationship]:
         """Get incoming relationships to an entity."""
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             query = select(RelationshipSchema).where(RelationshipSchema.to_id == to_typeid.id)
             if relationships_filter.type:
                 query = query.where(RelationshipSchema.type == relationships_filter.type)
@@ -1424,7 +1517,7 @@ class SQLiteDBDriver(DBDriver):
         self, from_typeid: TypeId, relationships_filter: QueryFilter, to_filter: QueryFilter
     ) -> List[DBBaseRelationship]:
         """Get outgoing relationships from an entity."""
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             query = select(RelationshipSchema).where(RelationshipSchema.from_id == from_typeid.id)
             if relationships_filter.type:
                 query = query.where(RelationshipSchema.type == relationships_filter.type)
@@ -1590,7 +1683,7 @@ class SQLiteDBDriver(DBDriver):
     async def _load_relationship_graph_with_filter(self, rel_filter: QueryFilter) -> Dict[str, List[dict]]:
         """Load relationships into adjacency list with filter applied."""
         graph = defaultdict(list)
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             query = select(RelationshipSchema)
             if rel_filter.type:
                 query = query.where(RelationshipSchema.type == rel_filter.type)
@@ -1621,7 +1714,7 @@ class SQLiteDBDriver(DBDriver):
         self, root: TypeId, relationship_filter: QueryFilter | None = None, child_filter: QueryFilter | None = None
     ) -> List[EntityChild]:
         """Get direct children of an entity."""
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             query = select(RelationshipSchema).where(
                 RelationshipSchema.from_id == root.id,
                 RelationshipSchema.type == "role",
@@ -1663,7 +1756,7 @@ class SQLiteDBDriver(DBDriver):
             visited.add(current_id)
 
             # Get children
-            async with await self._get_session() as session:
+            async with self._session_ctx() as session:
                 query = select(RelationshipSchema).where(
                     RelationshipSchema.from_id == current_id,
                     RelationshipSchema.type == "role",
@@ -1702,7 +1795,7 @@ class SQLiteDBDriver(DBDriver):
             visited.add(current_id)
 
             # Get parent relationships (incoming role relationships with is_child=True)
-            async with await self._get_session() as session:
+            async with self._session_ctx() as session:
                 query = select(RelationshipSchema).where(
                     RelationshipSchema.to_id == current_id,
                     RelationshipSchema.type == "role",
@@ -1738,7 +1831,7 @@ class SQLiteDBDriver(DBDriver):
         peers = []
         peer_ids = set()
 
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             # Outgoing
             if direction in [None, "outgoing", "both"]:
                 query = select(RelationshipSchema).where(RelationshipSchema.from_id == e.id)
@@ -1777,7 +1870,7 @@ class SQLiteDBDriver(DBDriver):
         common = nodes1.intersection(nodes2)
         for node_id in common:
             # Get entity and check filter
-            async with await self._get_session() as session:
+            async with self._session_ctx() as session:
                 result = await session.execute(select(EntitySchema).where(EntitySchema.id == node_id))
                 schema = result.scalar_one_or_none()
                 if schema:
@@ -1788,7 +1881,7 @@ class SQLiteDBDriver(DBDriver):
 
     async def clean_all_db(self, reset_profile: DBResetProfile | None = None):
         """Clean database with optional selective reset."""
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             if reset_profile is None:
                 # Full reset
                 await session.execute(delete(RelationshipSchema))
@@ -1813,7 +1906,6 @@ class SQLiteDBDriver(DBDriver):
                     # Delete entity
                     await session.execute(delete(EntitySchema).where(EntitySchema.id == schema.id))
 
-            await session.commit()
             self.initialized_types.clear()
 
             # Handle post-reset operations
@@ -1895,7 +1987,7 @@ class SQLiteDBDriver(DBDriver):
                 return True
 
             # Get children
-            async with await self._get_session() as session:
+            async with self._session_ctx() as session:
                 query = select(RelationshipSchema).where(
                     RelationshipSchema.from_id == current,
                     RelationshipSchema.type == "role",
@@ -2024,7 +2116,7 @@ class SQLiteDBDriver(DBDriver):
     async def _load_relationship_graph(self, rel_type: str) -> Dict[str, List[dict]]:
         """Load relationships into adjacency list."""
         graph = defaultdict(list)
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             result = await session.execute(select(RelationshipSchema).where(RelationshipSchema.type == rel_type))
             for rel in result.scalars():
                 graph[rel.from_id].append(
@@ -2101,7 +2193,7 @@ class SQLiteDBDriver(DBDriver):
 
         # Batch load ALL relationships in one query
         rels_by_id = {}
-        async with await self._get_session() as session:
+        async with self._session_ctx() as session:
             result = await session.execute(select(RelationshipSchema).where(RelationshipSchema.id.in_(all_rel_ids)))
             for schema in result.scalars():
                 rel = self._schema_to_relationship(schema)
@@ -2118,7 +2210,7 @@ class SQLiteDBDriver(DBDriver):
         # Batch load ALL entities in one query
         entities_by_id = {}
         if all_entity_ids:
-            async with await self._get_session() as session:
+            async with self._session_ctx() as session:
                 result = await session.execute(select(EntitySchema).where(EntitySchema.id.in_(all_entity_ids)))
                 for schema in result.scalars():
                     entity = self._schema_to_entity(schema)
@@ -2162,7 +2254,7 @@ class SQLiteDBDriver(DBDriver):
                 continue
             visited.add(current_id)
 
-            async with await self._get_session() as session:
+            async with self._session_ctx() as session:
                 result = await session.execute(
                     select(RelationshipSchema).where(
                         RelationshipSchema.from_id == current_id, RelationshipSchema.type == "role"
@@ -2210,18 +2302,20 @@ class SQLiteDBDriver(DBDriver):
         )
 
     def _get_entity_data_dict(self, entity: DBBaseRecord) -> dict:
-        """Get dynamic fields as dict, excluding blob fields and db-excluded fields.
+        """Get dynamic fields as dict, excluding blob fields and db_excluded fields.
 
         Blob fields are stored separately in blob storage, not in the entity's
         data column. This ensures blob fields are only loaded when explicitly
         expanded via expand_blobs().
 
-        Fields declared with db_exclude=True (e.g. NoDBAPIField) are also skipped:
-        they hold transient runtime state (e.g. `expand`) that must not be
-        persisted, otherwise stale flags can resurrect across DB roundtrips.
+        Fields marked with ``db_exclude=True`` (via `NoDBAPIField` / `NoDbBField`)
+        are runtime-only state (e.g. ``expand``) and must not be persisted —
+        otherwise two identical writes can produce different stored JSON if one
+        path happens to have triggered an expansion helper. Uses the
+        ``DBBaseRecord.is_db_excluded`` classmethod so inherited
+        ``db_exclude=True`` flags are honored across the MRO.
         """
         base_fields = set(DBBaseRecord.model_fields.keys())
-        # Get blob field names to exclude them from entity data storage
         blob_fields = set(entity.__class__.get_blob_fields_names())
         data = {}
         for field_name in entity.__class__.model_fields:

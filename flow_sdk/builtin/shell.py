@@ -27,7 +27,7 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 if TYPE_CHECKING:
-    from flow_sdk.builtin.cli_workers.base import WorkerCLIOptions, WorkerExecutionInfo
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions, WorkerExecutionInfo
     from flow_sdk.builtin.faas.compute_node import ComputeNode
     from flow_sdk.builtin.faas.pty_session import Pty
     from flow_sdk.fs_records.shell_record import ShellRecord
@@ -50,7 +50,11 @@ class Shell(Entity):
     env: dict | None = APIField(default=None, description="Custom environment variables")
     pty_pid: str | None = APIField(default=None, description="PTY session ID")
     compute_node_id: str | None = APIField(default=None, description="Owning compute node")
+    compute_node_uname: str | None = APIField(default=None, description="Owning compute node uname")
     project_id: str | None = APIField(default=None, description="Owning project")
+    collaboration_room_id: str | None = APIField(
+        default=None, description="CollaborationRoom this shell is shared into (null = not shared)"
+    )
     tab_order: int = APIField(default=0)
     created_at: str | None = APIField(default=None, description="ISO creation timestamp")
     last_active_at: str | None = APIField(default=None, description="ISO last activity timestamp")
@@ -64,9 +68,24 @@ class Shell(Entity):
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
+    # Cached result of the last ensure_live_compute_node_binding() — lets the
+    # sync `compute_node` property return the real ComputeNode (with its real
+    # provider type) instead of a synthetic local stub. Not persisted.
+    _bound_compute_node: "ComputeNode | None" = None
+
     @property
     def compute_node(self) -> "ComputeNode":
-        """The local ComputeNode backing this shell's PTY sessions."""
+        """Real ComputeNode this shell is bound to (e.g. @local, @sandbox).
+
+        Returns the node resolved by `ensure_live_compute_node_binding()` when
+        available. Falls back to a synthetic local-provider CN only when the
+        binding hasn't been resolved yet AND we have no uname hint — purely to
+        avoid breaking ephemeral sessions that still use a raw local id. For
+        every other path (including sandbox shells) the real CN + provider are
+        used, so `Shell.start()` routes to the correct provider.
+        """
+        if self._bound_compute_node is not None:
+            return self._bound_compute_node
         from flow_sdk.builtin.faas.compute_node import ComputeNode
         return ComputeNode(
             id=self.compute_node_id or "",
@@ -74,11 +93,73 @@ class Shell(Entity):
             node_provider_type="local_machine",
         )
 
+    def _compute_node_lookup_hint(self) -> str:
+        if self.compute_node_uname:
+            return f"uname={self.compute_node_uname}"
+        if self.compute_node_id:
+            return f"id={self.compute_node_id}"
+        return "no stored compute node"
+
+    @property
+    def compute_node_typeid_str(self) -> str:
+        """VFS TypeId string for this shell's compute node (reads current state, no I/O)."""
+        if self.compute_node_uname:
+            return f"compute_node-@{self.compute_node_uname}"
+        if self.compute_node_id:
+            return f"compute_node-{self.compute_node_id}"
+        return "compute_node-@local"
+
+    async def resolve_compute_node_typeid_str(self) -> str:
+        """Repair stale binding then return the VFS TypeId string, falling back to @local."""
+        if await self.ensure_live_compute_node_binding():
+            return self.compute_node_typeid_str
+        return "compute_node-@local"
+
+    async def ensure_live_compute_node_binding(self) -> bool:
+        """Repair stale shell bindings using compute_node_uname first, then id."""
+        from flow_sdk.builtin.faas.compute_node import ComputeNode
+
+        candidate_id = self.compute_node_id
+        bound_node = await ComputeNode.get_by_uname(self.compute_node_uname) if self.compute_node_uname else None
+        if bound_node is None:
+            bound_node = await ComputeNode.get_by_id(candidate_id) if candidate_id else None
+        if bound_node is None:
+            bound_node = await ComputeNode.get_by_uname("local") if not self.compute_node_uname else None
+        if bound_node is None and candidate_id and not self.compute_node_uname:
+            # Preserve the historical local-shell behavior for ephemeral sessions
+            # that were created with only a raw local compute-node id.
+            return True
+        if bound_node is None:
+            return False
+
+        canonical_id = str(bound_node.id)
+        canonical_uname = getattr(bound_node, "uname", None)
+        if self.compute_node_id != canonical_id or self.compute_node_uname != canonical_uname:
+            self.compute_node_id = canonical_id
+            self.compute_node_uname = canonical_uname
+            await self.save()
+        # Cache the real CN so the sync `compute_node` property can return it
+        # with its actual provider type (previously it always fabricated a
+        # local stub, which mis-routed sandbox shells to LocalComputeProvider).
+        self._bound_compute_node = bound_node
+        return True
+
+    async def has_attachable_pty(self) -> bool:
+        """True when this shell is still backed by a live PTY session."""
+        if not await self.ensure_live_compute_node_binding():
+            return False
+        pty = self.compute_node.get_pty(self.id)
+        return pty is not None and pty.is_alive
+
     async def _cleanup_stale_session(self) -> None:
         """Evict any dead PTY session state so a fresh one can be spawned."""
+        await self.ensure_live_compute_node_binding()
         pty = self.compute_node.get_pty(self.id)
         if pty:
             await pty.kill()
+            return
+        if self.worker_pid:
+            await self.terminate_worker()
 
     @staticmethod
     def _argv_flag_value(argv: list[str], flag: str) -> str | None:
@@ -193,6 +274,8 @@ class Shell(Entity):
         """
         if self.status not in (None, "idle", "closed", "running"):
             raise RuntimeError(f"Cannot open session in status: {self.status}")
+        if not await self.ensure_live_compute_node_binding():
+            raise RuntimeError(f"Compute node not found for shell session ({self._compute_node_lookup_hint()})")
 
         cn = self.compute_node
         existing = cn.get_pty(self.id)
@@ -325,7 +408,7 @@ class Shell(Entity):
         """
         from flow_sdk.fs_records.shell_record import ShellRecord  # noqa: PLC0415
 
-        record = ShellRecord.discover_one(self.pty_pid or self.id)
+        record = ShellRecord.get(self.pty_pid or self.id)
         if record and record.pty_stream_ref.exists():
             return record.pty_stream_ref.read_bytes()
         return b""
@@ -359,7 +442,7 @@ class Shell(Entity):
         Raises:
             RuntimeError: PTY session is not alive.
         """
-        from flow_sdk.builtin.cli_workers.base import WorkerExecutionInfo
+        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerExecutionInfo
 
         cn = self.compute_node
         pty_handle = cn.get_pty(self.id)
@@ -395,7 +478,7 @@ class Shell(Entity):
         Used by AgenticProcess when shell_mode=False. The PTY PID is Claude's PID directly,
         so we read it immediately from the provider without any child-process hunting.
         """
-        from flow_sdk.builtin.cli_workers.base import WorkerExecutionInfo
+        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerExecutionInfo
 
         cn = self.compute_node
         pty_pid = cn.compute_provider.get_pty_shell_pid(cn.node_provider_id, self.id)
@@ -422,6 +505,7 @@ class Shell(Entity):
         """
         if not self.worker_pid:
             return False
+        await self.ensure_live_compute_node_binding()
 
         if self.compute_node_id:
             pty_handle = self.compute_node.get_pty(self.id)
@@ -568,6 +652,7 @@ class Shell(Entity):
             last_active_at=record.data.get("last_active_at"),
             status=(record.status.value if hasattr(record.status, "value") else record.status) or ShellStatus.IDLE.value,
             compute_node_id=cn_id,
+            compute_node_uname=record.data.get("compute_node_uname"),
         )
         await entity.save()
 
@@ -592,6 +677,7 @@ class Shell(Entity):
         self.pty_pid = record.data.get("pty_pid")
         self.created_at = record.data.get("created_at")
         self.last_active_at = record.data.get("last_active_at")
+        self.compute_node_uname = record.data.get("compute_node_uname")
         status = record.status
         self.status = status.value if hasattr(status, "value") else (status or ShellStatus.IDLE.value)
 
@@ -742,8 +828,8 @@ class Shell(Entity):
         """HTTP: Return replay buffer chunk metadata for PTY debugging."""
         import base64
 
-        if not self.compute_node_id:
-            return ApiFailResponse(message="Shell has no compute_node_id")
+        if not await self.ensure_live_compute_node_binding():
+            return ApiFailResponse(message=f"Compute node not found for shell session ({self._compute_node_lookup_hint()})")
 
         pty_handle = self.compute_node.get_pty(self.id)
         if pty_handle is None:

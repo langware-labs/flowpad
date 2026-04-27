@@ -376,7 +376,7 @@ class TestDiscoverOne:
         all_records = ClaudeHookRecord.discover(search_paths=[tmp_path])
         target_uid = all_records[2].id  # PreToolUse (Edit)
 
-        found = ClaudeHookRecord.discover_one(target_uid, search_paths=[tmp_path])
+        found = ClaudeHookRecord.get(target_uid, search_paths=[tmp_path])
         assert found is not None
         assert found.id == target_uid
         assert found.event_type == "PreToolUse"
@@ -386,7 +386,7 @@ class TestDiscoverOne:
         f = tmp_path / "settings.json"
         f.write_text(json.dumps(SAMPLE_HOOKS_SETTINGS))
 
-        found = ClaudeHookRecord.discover_one("nonexistent-id", search_paths=[tmp_path])
+        found = ClaudeHookRecord.get("nonexistent-id", search_paths=[tmp_path])
         assert found is None
 
 

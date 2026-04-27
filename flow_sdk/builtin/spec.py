@@ -20,6 +20,6 @@ class Spec(Entity):
     spec_type: str = APIField(SpecType.PLAN)
     plan_id: Optional[str] = APIField(None)
     author_id: Optional[str] = APIField(None)
-    source_path: Optional[str] = APIField(None)
+    asset_ref: Optional[str] = APIField(None)
     metadata: Optional[Dict[str, Any]] = APIField(None)
     _api_visible: ClassVar[bool] = True

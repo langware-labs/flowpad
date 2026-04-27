@@ -17,7 +17,7 @@ def evaluate(hooks_data: dict, transcript: list) -> Action | None:
     if not session_id:
         return None
 
-    # Try to create session via skillit records if available
+    # Try to create session via skillit records if available #2
     flow_output_directory = ""
     try:
         from plugin_records.skillit_records import skillit_records

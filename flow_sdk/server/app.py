@@ -41,15 +41,19 @@ from .routes import (
     auth_api_router,
     auth_router,
     chat_router,
+    debug_router,
     detection_router,
+    navigate_router,
     directory_router,
     hooks_router,
     search_router,
+    project_router,
     testing_router,
     ui_router,
     watch_router,
     webhook_api_router,
     websocket_router,
+    compute_register_router,
 )
 
 
@@ -79,8 +83,8 @@ async def _on_server_startup():
 
     threading.Thread(target=run_old_record_cleanup, daemon=True, name="old-record-cleanup").start()
 
-    # Search uses FTS5 (built into SQLite) — no external indexer needed.
-    print("  Search indexer: FTS5 (SQLite built-in)")
+    # Search uses FTS5 (built into SQLite) — no external index needed.
+    print("  Search index: FTS5 (SQLite built-in)")
 
     # Start cron job scheduler
     try:
@@ -160,6 +164,10 @@ server.add_router(watch_router)
 server.add_router(websocket_router)
 server.add_router(webhook_api_router)
 server.add_router(assets_router)
+server.add_router(project_router, prefix="/api/v1")
+server.add_router(compute_register_router)
+server.add_router(debug_router)
+server.add_router(navigate_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)

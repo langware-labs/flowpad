@@ -1,4 +1,5 @@
 import { APIEntity, registerEntity } from '../APIEntity';
+import { dataContext } from '../FlowSync/context';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
 import { ViewType } from '../utils/ui/view-types';
@@ -16,14 +17,14 @@ export class Skill extends APIEntity<Skill> {
 
   name: string = '';
   description: string = '';
-  source_path?: string;
+  asset_ref?: string;
   scope?: string;
 
   constructor(entity: Partial<Skill> = {}) {
     super(entity);
     this.name = entity.name ?? '';
     this.description = entity.description ?? '';
-    this.source_path = entity.source_path;
+    this.asset_ref = entity.asset_ref;
     this.scope = entity.scope;
   }
 
@@ -32,25 +33,42 @@ export class Skill extends APIEntity<Skill> {
   }
 
   override get editorDockPointer(): DockPointerData {
-    const path = this.source_path ?? this.id;
+    const path = this.asset_ref ?? this.id;
     return new DockPointerData(ViewType.ASSETS, `editor/skill/${path}`);
   }
 
   override get searchDockPointer(): DockPointerData {
-    if (this.source_path) {
-      return new DockPointerData(ViewType.ASSETS, `editor/skill/${this.source_path.replace(/^\//, '')}`);
+    if (this.asset_ref) {
+      return new DockPointerData(ViewType.ASSETS, `editor/skill/${this.asset_ref.replace(/^\//, '')}`);
     }
     return this.dockPointer;
   }
 
   /** FrontMatterFsRef for SKILL.md. Resolves compute node from dataContext. */
-  get doc(): FrontMatterFsRef {
-    const mdPath = (this.source_path ?? '').replace(/\/$/, '') + '/SKILL.md';
-    return new FrontMatterFsRef(mdPath);
+  get doc(): FrontMatterFsRef | null {
+    const typeId = dataContext.computeNodeTypeId;
+    if (!typeId || !this.asset_ref) return null;
+    const mdPath = this.asset_ref.replace(/\/$/, '') + '/SKILL.md';
+    return new FrontMatterFsRef(mdPath, typeId);
   }
 
   static async create(name: string, description?: string): Promise<Skill> {
     const skill = new Skill({ name: name.trim(), description: description?.trim() ?? '' });
     return skill.save();
+  }
+
+  /**
+   * Create a skill scoped to the given project. If `project` is null, creates in the user's
+   * home (~/.claude/skills/<name>/). `folderVfsPath` is reserved for future fine-grained
+   * placement; the server derives the path from project scope today.
+   */
+  static async createInProject(
+    project: { typeId?: import('../models/TypeId').TypeId } | null,
+    name: string,
+    _folderVfsPath?: string,
+  ): Promise<Skill> {
+    const scopeIds = project?.typeId ? [project.typeId] : [];
+    const skill = new Skill({ name: name.trim() });
+    return skill.save(scopeIds);
   }
 }

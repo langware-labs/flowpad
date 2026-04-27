@@ -1,5 +1,5 @@
 test 1: Annotation gutter is visible in a Claude process terminal
-- navigate to {APP_URL}/dock/shell/new_terminal?startClaude=true
+- navigate to {APP_URL}/dock/shell/new_terminal then click the Start Claude button (data-testid="start-claude-button")
 - wait for the Claude CLI banner to appear in the terminal (up to 45 seconds)
 - validate the terminal is visible (aria-label="Terminal Input" is present)
 - wait 3 seconds for the annotation gutter to initialize

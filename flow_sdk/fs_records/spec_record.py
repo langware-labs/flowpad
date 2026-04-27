@@ -93,40 +93,9 @@ class SpecRecord(Record):
         return "0" * 16
 
     @classmethod
-    def _external_source_iter(cls, limit: int | None = None) -> Iterator["SpecRecord"]:
-        seen: set[str] = set()
-        count = 0
-        for specs_dir in _spec_search_dirs():
-            for spec_dir in sorted(specs_dir.iterdir()):
-                md_file = spec_dir / "spec.md"
-                if not md_file.is_file():
-                    continue
-                key = str(md_file.resolve())
-                if key in seen:
-                    continue
-                seen.add(key)
-                yield cls._from_md_file(md_file)
-                count += 1
-                if limit is not None and count >= limit:
-                    return
-
-    @classmethod
-    def _external_source_count(cls, limit: int | None = None) -> int:
-        seen: set[str] = set()
-        for specs_dir in _spec_search_dirs():
-            for spec_dir in specs_dir.iterdir():
-                md_file = spec_dir / "spec.md"
-                if md_file.is_file():
-                    seen.add(str(md_file.resolve()))
-        count = len(seen)
-        return min(count, limit) if limit is not None else count
-
-    @classmethod
-    def _external_source_find_one(cls, uid: str) -> "SpecRecord | None":
-        for rec in cls._external_source_iter():
-            if rec.id == uid:
-                return rec
-        return None
+    async def from_fsref(cls, ref) -> list["SpecRecord"]:
+        """Indexer entry point — construct from an FSRef emitted by spec_project_fn."""
+        return [cls._from_md_file(ref._path)]
 
     def save(self) -> None:
         ar = object.__getattribute__(self, "_asset_ref")

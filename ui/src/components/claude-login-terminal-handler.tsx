@@ -13,7 +13,7 @@ export function ClaudeLoginTerminalHandler() {
     const handleOpenTerminal = (event: CustomEvent<{ sessionId: string }>) => {
       const { sessionId } = event.detail;
       if (sessionId) {
-        navigation.openDock(DockPointer.forShell(sessionId, { startClaude: false }));
+        navigation.openDock(DockPointer.forShell(sessionId));
       }
     };
 

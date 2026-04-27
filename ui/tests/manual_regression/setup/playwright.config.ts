@@ -10,7 +10,7 @@ export default defineConfig({
   workers: 1,
   reporter: 'list',
   use: {
-    baseURL: `http://localhost:${process.env.VITE_PORT || '8193'}`,
+    baseURL: `http://localhost:${process.env.VITE_PORT || '4097'}`,
     headless: true,
     trace: 'retain-on-first-failure',
     launchOptions: { slowMo: 50 },

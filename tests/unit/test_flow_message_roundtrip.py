@@ -178,45 +178,30 @@ class TestUnpackBundle:
 
     @pytest.mark.asyncio
     async def test_unpack_raises_on_conflict(self, tmp_path):
-        """unpack_bundle raises FlowMessageExistsError when entity exists and overwrite=False."""
-        from flow_sdk.builtin.conversation import Conversation
-        from flow_sdk.builtin.spec import Spec
-        from flow_sdk.builtin.task import Task
+        """unpack_bundle raises FlowMessageExistsError when the top-level FM exists and overwrite=False."""
         from flow_sdk.builtin.user import User
 
-        inner_id = "dddd4444-0000-0000-0000-000000000004"
+        fm_id = "eeee5555-0000-0000-0000-000000000005"
         fm_data = {
-            "id": "eeee5555-0000-0000-0000-000000000005",
+            "id": fm_id,
             "type": "flow_message",
             "text": "msg",
             "context": [],
-            "attachment": [{"type": "flow_message", "id": inner_id}],
+            "attachment": [],
         }
-        inner_fm_data = {"id": inner_id, "type": "flow_message", "text": "inner"}
-        attachments = {
-            f"attachment/flow_message-@{inner_id}/message.json": json.dumps(inner_fm_data).encode(),
-        }
-        zip_path = _write_flowmsg_zip(tmp_path, fm_data, attachments)
+        zip_path = _write_flowmsg_zip(tmp_path, fm_data)
 
-        existing_fm = FlowMessage(text="inner")
-        existing_fm.id = inner_id
-
-        async def fm_get_one(filter_dict=None, source_entity=None):
-            if isinstance(filter_dict, dict) and filter_dict.get("id") == inner_id:
-                return existing_fm
-            return None
+        existing_fm = FlowMessage(text="existing")
+        existing_fm.id = fm_id
 
         with (
             patch.object(User, "get_one", new=AsyncMock(return_value=None)),
-            patch.object(FlowMessage, "get_one", new=AsyncMock(side_effect=fm_get_one)),
-            patch.object(Spec, "get_one", new=AsyncMock(return_value=None)),
-            patch.object(Task, "get_one", new=AsyncMock(return_value=None)),
-            patch.object(Conversation, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=existing_fm)),
         ):
             with pytest.raises(FlowMessageExistsError) as exc_info:
                 await unpack_bundle(zip_path, "local-user-id", overwrite=False)
 
-        assert exc_info.value.conflicts == [{"type": "flow_message", "id": inner_id}]
+        assert exc_info.value.conflicts == [{"type": "flow_message", "id": fm_id}]
 
     @pytest.mark.asyncio
     async def test_unpack_with_overwrite_succeeds(self, tmp_path):
@@ -227,13 +212,13 @@ class TestUnpackBundle:
         from flow_sdk.builtin.user import User
 
         inner_id = "ffff6666-0000-0000-0000-000000000006"
-        fm_id = "gggg7777-0000-0000-0000-000000000007"
+        fm_id = "aaaa7777-0000-0000-0000-000000000007"
         fm_data = {
             "id": fm_id,
             "type": "flow_message",
             "text": "overwrite me",
             "context": [],
-            "attachment": [{"type": "flow_message", "id": inner_id}],
+            "attachment": [],
         }
         inner_fm_data = {"id": inner_id, "type": "flow_message", "text": "inner"}
         attachments = {
@@ -265,7 +250,7 @@ class TestUnpackBundle:
 
         conv_id = "cccc9999-0000-0000-0000-000000000009"
         task_id = "eeee1010-0000-0000-0000-000000000010"
-        fm_id = "hhhh8888-0000-0000-0000-000000000008"
+        fm_id = "bbbb8888-0000-0000-0000-000000000008"
         fm_data = {
             "id": fm_id,
             "type": "flow_message",

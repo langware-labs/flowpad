@@ -1,14 +1,53 @@
-import { v4 as uuidv4 } from 'uuid';
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { QueryRequest } from '../FlowSync/query';
 import { ActionInfo, TypeId } from '../models';
 import { DockPointerData } from '../models/DockPointer';
+import config from '../config';
 import { ViewType } from '../utils/ui/view-types';
 import { Agent } from './agent';
 import { Artifact, IArtifact } from './artifact';
 import { ComputeNode } from './compute_node';
-import { Flow } from './flow/flow';
 import { Workspace } from './workspace';
+
+export interface ProjectMember {
+  member_id: string;
+  name: string;
+  joined_at: string | null;
+  last_seen_at: string | null;
+}
+
+export interface ResolveProjectResult {
+  project_id: string;
+  session_code: string;
+  name: string | null;
+  host_name: string | null;
+  members_count: number;
+}
+
+const LOCAL_MEMBER_ID_KEY = 'flowpad.collaboration.member_id';
+
+function uuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+export function getOrCreateLocalMemberId(): string {
+  try {
+    const existing = localStorage.getItem(LOCAL_MEMBER_ID_KEY);
+    if (existing) return existing;
+    const fresh = uuid();
+    localStorage.setItem(LOCAL_MEMBER_ID_KEY, fresh);
+    return fresh;
+  } catch {
+    return uuid();
+  }
+}
 
 @registerEntity
 export class Project extends APIEntity<Project> {
@@ -16,11 +55,18 @@ export class Project extends APIEntity<Project> {
   name?: string;
   fs_storage_mount_path?: string;
   computeNode?: ComputeNode | null = null;
+  // ── Collaboration overlay (merged from the former CollaborationSpace) ──
+  session_code: string | null = null;
+  host_member_id: string | null = null;
+  members: ProjectMember[] = [];
 
   constructor(entity: Partial<Project> = {}) {
     super(entity);
     this.name = entity.name;
     this.fs_storage_mount_path = entity.fs_storage_mount_path;
+    this.session_code = (entity.session_code as string | null | undefined) ?? null;
+    this.host_member_id = (entity.host_member_id as string | null | undefined) ?? null;
+    this.members = (entity.members as ProjectMember[] | undefined) ?? [];
   }
 
   get searchDockPointer(): DockPointerData {
@@ -123,76 +169,6 @@ export class Project extends APIEntity<Project> {
   }
 
   /**
-   * Create a new flow in this project
-   * @param agentId - The ID of the agent to use for the flow
-   * @param sourceVfsPath - Optional VFS path of the source file (e.g., for skills)
-   * @returns TypeId of the created flow
-   */
-  async createFlow(agentId: string, sourceVfsPath?: string): Promise<TypeId> {
-    const processId = uuidv4();
-    const flowTypeId = new TypeId(Flow.type, processId);
-    const createFlowAction = new ActionInfo('create-flow', this.typeId.type, this.typeId.id, 'POST');
-    createFlowAction.bodyParameters = {
-      flow_id: processId,
-      agent_id: agentId,
-      ...(sourceVfsPath && { source_vfs_path: sourceVfsPath }),
-    };
-    createFlowAction.castResponse = true;
-
-    await dataManager.callAction(createFlowAction);
-
-    return flowTypeId;
-  }
-
-  /**
-   * Find an existing flow by its source VFS path
-   * @param sourceVfsPath - The VFS path to search for
-   * @returns The Flow instance if found, or null
-   */
-  async getFlowBySource(sourceVfsPath: string): Promise<Flow | null> {
-    const actionInfo = new ActionInfo('get-flow-by-source', Project.type, this.typeId.id, 'GET');
-    actionInfo.queryParameters = { source_vfs_path: sourceVfsPath };
-
-    const response = await dataManager.callAction<void, Flow | null>(actionInfo);
-
-    if (!response) {
-      return null;
-    }
-
-    // If response contains flow data, convert to Flow instance
-    return dataManager.updateEntityFromJson<Flow>(response);
-  }
-
-  /**
-   * Get or create a flow associated with an FSItem
-   * If a flow exists for the item's VFS path, returns it
-   * Otherwise creates a new flow and returns it
-   * @param item - The FSItem to get/create flow for
-   * @param agentId - The agent ID to use when creating a new flow
-   * @returns The existing or newly created Flow instance
-   */
-  async getOrCreateFlowForItem(item: { vfs_abs_path: string }, agentId: string): Promise<Flow> {
-    const sourceVfsPath = item.vfs_abs_path;
-
-    // First try to find existing flow
-    const existingFlow = await this.getFlowBySource(sourceVfsPath);
-    if (existingFlow) {
-      return existingFlow;
-    }
-
-    // Create new flow with source path
-    const flowTypeId = await this.createFlow(agentId, sourceVfsPath);
-
-    // Fetch and return the created flow
-    const flow = await dataManager.getByTypeId<Flow>(flowTypeId);
-    if (!flow) {
-      throw new Error('Failed to create flow');
-    }
-
-    return flow;
-  }
-
-  /**
    * Setup desktop environment connections for this project.
    * Links the project to @local workspace, @local agent, and @local compute node.
    * Should be called after creating/opening a project in desktop mode.
@@ -214,5 +190,95 @@ export class Project extends APIEntity<Project> {
     >(actionInfo);
 
     return response || { workspace: null, agent: null, compute_node: null };
+  }
+
+  // ── Collaboration overlay (merged from CollaborationSpace) ───────────────
+
+  /** True when the given member is the host on this project's collaboration. */
+  isHost(memberId?: string): boolean {
+    const local = memberId ?? (typeof window !== 'undefined' ? getOrCreateLocalMemberId() : '');
+    return !!this.host_member_id && local === this.host_member_id;
+  }
+
+  /** True when the member's last_seen_at is within `windowMs` of now. */
+  isMemberOnline(memberId: string, windowMs: number = 30_000): boolean {
+    const m = this.members.find((x) => x.member_id === memberId);
+    if (!m || !m.last_seen_at) return false;
+    const t = Date.parse(m.last_seen_at);
+    if (Number.isNaN(t)) return false;
+    return Date.now() - t < windowMs;
+  }
+
+  /** Shareable URL — `<origin>/join/<CODE>`. Empty if no code yet. */
+  get joinUrl(): string {
+    if (typeof window === 'undefined' || !this.session_code) return '';
+    return `${window.location.origin}/join/${this.session_code}`;
+  }
+
+  /**
+   * Ensure this project has a collaboration code + host. Idempotent.
+   * If there's no code yet, generates one, marks the caller as host, seeds
+   * them as the first member. Returns the (updated) project.
+   */
+  async ensureCollaborationCode(hostName: string, hostMemberId?: string): Promise<Project> {
+    const memberId = hostMemberId ?? getOrCreateLocalMemberId();
+    const info = new ActionInfo('ensure-collaboration-code', Project.type, this.typeId.id, 'POST');
+    info.bodyParameters = { host_name: hostName, host_member_id: memberId };
+    const result = await dataManager.callAction<
+      { host_name: string; host_member_id: string },
+      Partial<Project>
+    >(info);
+    if (result) {
+      if (result.session_code !== undefined) this.session_code = result.session_code ?? null;
+      if (result.host_member_id !== undefined) this.host_member_id = result.host_member_id ?? null;
+      if (Array.isArray(result.members)) this.members = result.members as ProjectMember[];
+    }
+    return this;
+  }
+
+  /** Register/refresh the caller as a project collaboration member. */
+  async joinCollaboration(memberId: string, name: string): Promise<ProjectMember | null> {
+    const info = new ActionInfo('join-collaboration', Project.type, this.typeId.id, 'POST');
+    info.bodyParameters = { member_id: memberId, name };
+    const result = await dataManager.callAction<
+      { member_id: string; name: string },
+      Partial<Project>
+    >(info);
+    if (result && Array.isArray(result.members)) {
+      this.members = result.members as ProjectMember[];
+    }
+    return this.members.find((m) => m.member_id === memberId) ?? null;
+  }
+
+  /** Presence ping — bumps last_seen_at on the backend. */
+  async heartbeatCollaboration(memberId: string): Promise<ProjectMember[] | null> {
+    const info = new ActionInfo('heartbeat-collaboration', Project.type, this.typeId.id, 'POST');
+    info.bodyParameters = { member_id: memberId };
+    const result = await dataManager.callAction<
+      { member_id: string },
+      { ok: boolean; members: ProjectMember[] }
+    >(info);
+    if (result && Array.isArray(result.members)) {
+      this.members = result.members;
+      return result.members;
+    }
+    return null;
+  }
+
+  /**
+   * Resolve a shareable session_code → project. Used by the join flow.
+   * Uses a dedicated FastAPI route at /api/v1/project/resolve/{code}.
+   */
+  static async resolveByCode(code: string): Promise<ResolveProjectResult | null> {
+    const normalized = (code ?? '').toUpperCase().trim();
+    if (!normalized) return null;
+    const url = `${config.SERVER_URL}/api/v1/project/resolve/${encodeURIComponent(normalized)}`;
+    try {
+      const resp = await fetch(url, { method: 'GET', credentials: 'include' });
+      if (!resp.ok) return null;
+      return (await resp.json()) as ResolveProjectResult;
+    } catch {
+      return null;
+    }
   }
 }

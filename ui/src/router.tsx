@@ -9,7 +9,7 @@ import AgentRedirect from '@src/pages/agent-redirect';
 import FlowPage from '@src/pages/flow-page/flow-page';
 import LandingPage from '@src/pages/landing-page/landing-page';
 import NotFound from '@src/pages/NotFound';
-import { createBrowserRouter, createRoutesFromElements, Route, type ShouldRevalidateFunctionArgs } from 'react-router';
+import { createBrowserRouter, createRoutesFromElements, Navigate, Route, type ShouldRevalidateFunctionArgs } from 'react-router';
 
 // Import loaders
 import { loadHomePage } from './routes/loaders/home-loader';
@@ -47,6 +47,7 @@ export const router = createBrowserRouter(
       <Route path="agent" element={<AgentRedirect />} loader={loadAgentApp} />
       {/* Root dock routes - use default agent from bootstrap */}
       <Route path="dock" element={<AgentLayout />} loader={loadAgentApp} shouldRevalidate={shouldRevalidateDockShell}>
+        <Route index element={<Navigate to="/" replace />} />
         <Route path=":viewType" element={<FlowPage />} />
         <Route path=":viewType/*" element={<FlowPage />} />
       </Route>

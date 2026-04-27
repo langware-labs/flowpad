@@ -108,6 +108,9 @@ def test_falls_back_to_decode_when_no_jsonl(tmp_path: Path, monkeypatch: pytest.
     Uses Path.home() as the target because it has no hyphens in the path and
     is guaranteed to exist — tmp_path contains pytest-generated hyphens that
     would make the naive decode produce the wrong path.
+
+    `_INVALID_PROJECT_ROOTS` is emptied for this test so the fallback path is
+    what we actually exercise, not the safety filter that drops `/` / `$HOME`.
     """
     projects_root = tmp_path / ".claude" / "projects"
     real_dir = Path.home().resolve()
@@ -121,6 +124,12 @@ def test_falls_back_to_decode_when_no_jsonl(tmp_path: Path, monkeypatch: pytest.
     monkeypatch.setattr(
         "flow_sdk.fs_records._claude_projects._real_path_from_jsonl",
         lambda _: None,
+    )
+    # Neutralize the `/` / `$HOME` safety filter so the decode fallback is
+    # what the assertion measures.
+    monkeypatch.setattr(
+        "flow_sdk.fs_records._claude_projects._INVALID_PROJECT_ROOTS",
+        set(),
     )
     result = list(iter_claude_project_paths())
     assert result == [real_dir]

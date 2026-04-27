@@ -10,7 +10,7 @@
  *   no commits yet.
  */
 
-import { AgenticProcess } from '@sdk';
+import { AgenticProcess, isWorkerRunning, WorkerStatus } from '@sdk';
 import type { ComputeNode } from '@sdk';
 import { useContext } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -33,18 +33,20 @@ export function CommitMergeButton({ process, onInjectPrompt }: CommitMergeButton
   const [awaitingCompletion, setAwaitingCompletion] = useState(false);
   const wasActiveRef = useRef(false);
 
-  // Auto-close the tab once Claude finishes the commit-merge task
+  // Auto-close the tab once Claude finishes the commit-merge task.
+  // "Active" here means "worker is actively running a turn" — so we watch the
+  // worker status transition out of a running state (WAITING/THINKING/TOOL_*).
   useEffect(() => {
     if (!awaitingCompletion) return;
-    const isActive = process.is_active ?? false;
-    if (isActive) {
+    const workerBusy = isWorkerRunning(process.workerStatus ?? WorkerStatus.IDLE);
+    if (workerBusy) {
       wasActiveRef.current = true;
     } else if (wasActiveRef.current) {
       wasActiveRef.current = false;
       setAwaitingCompletion(false);
       navigation.openShellView();
     }
-  }, [awaitingCompletion, process.is_active, navigation]);
+  }, [awaitingCompletion, process.workerStatus, navigation]);
 
   const handleCommitMergeClick = useCallback(() => {
     onInjectPrompt(COMMIT_MERGE_PROMPT);

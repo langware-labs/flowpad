@@ -1,0 +1,340 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - list [ref=e9]:
+        - listitem [ref=e10]:
+          - button [ref=e11] [cursor=pointer]:
+            - img [ref=e12]
+          - button [ref=e14] [cursor=pointer]:
+            - img [ref=e15]
+        - listitem [ref=e20]:
+          - button [ref=e21] [cursor=pointer]:
+            - img [ref=e22]
+        - listitem [ref=e25]:
+          - button [ref=e26] [cursor=pointer]:
+            - img [ref=e27]
+        - listitem [ref=e29]:
+          - button [ref=e30] [cursor=pointer]:
+            - img [ref=e31]
+        - listitem [ref=e33]:
+          - button [ref=e34] [cursor=pointer]:
+            - img [ref=e35]
+        - generic [ref=e37]:
+          - img [ref=e40]
+          - listitem [ref=e42]:
+            - button [ref=e43] [cursor=pointer]:
+              - img [ref=e44]
+          - listitem [ref=e48]:
+            - button [ref=e49] [cursor=pointer]:
+              - img [ref=e50]
+      - generic [ref=e52]:
+        - button "Toggle theme" [ref=e53] [cursor=pointer]:
+          - img
+          - generic [ref=e54]: Toggle theme
+        - generic [ref=e56]:
+          - generic [ref=e57]:
+            - heading "Chat Settings" [level=2] [ref=e58]
+            - button [ref=e59] [cursor=pointer]:
+              - img
+          - generic [ref=e62]:
+            - generic [ref=e63]: Rules
+            - textbox "Rules" [ref=e64]:
+              - /placeholder: Enter chat rules...
+          - button "Save Changes" [ref=e66] [cursor=pointer]
+        - generic [ref=e70] [cursor=pointer]: ES
+    - generic [ref=e72]:
+      - tabpanel [ref=e77]:
+        - generic [ref=e78]:
+          - generic [ref=e79]:
+            - img [ref=e80]
+            - generic [ref=e82]: Wiki
+            - generic [ref=e84]:
+              - button "All" [ref=e85] [cursor=pointer]
+              - button "User" [ref=e86] [cursor=pointer]
+              - button "Project" [ref=e87] [cursor=pointer]
+          - generic [ref=e88]:
+            - tree [ref=e90]:
+              - generic [ref=e91]:
+                - treeitem "Expand Projects 132 Scan for changes" [level=1] [ref=e93] [cursor=pointer]:
+                  - generic [ref=e94]:
+                    - button "Expand" [ref=e95]:
+                      - img [ref=e96]
+                    - generic [ref=e98]:
+                      - img [ref=e99]
+                      - generic "Projects" [ref=e102]
+                      - generic [ref=e103]: "132"
+                  - button "Scan for changes" [ref=e105]:
+                    - generic [ref=e106]:
+                      - img
+                - treeitem "Expand Agent 11 Scan for changes New Agent" [level=1] [ref=e108] [cursor=pointer]:
+                  - generic [ref=e109]:
+                    - button "Expand" [ref=e110]:
+                      - img [ref=e111]
+                    - generic [ref=e113]:
+                      - img [ref=e114]
+                      - generic "Agent" [ref=e117]
+                      - generic [ref=e118]: "11"
+                  - generic [ref=e119]:
+                    - button "Scan for changes" [ref=e120]:
+                      - generic [ref=e121]:
+                        - img
+                    - button "New Agent" [ref=e122]:
+                      - generic [ref=e123]:
+                        - img
+                - treeitem "Expand Markdown 144 Scan for changes New Markdown" [level=1] [selected] [ref=e417] [cursor=pointer]:
+                  - generic [ref=e126]:
+                    - button "Expand" [ref=e127]:
+                      - img [ref=e128]
+                    - generic [ref=e130]:
+                      - img [ref=e131]
+                      - generic "Markdown" [ref=e133]
+                      - generic [ref=e418]: "144"
+                  - generic [ref=e134]:
+                    - button "Scan for changes" [ref=e135]:
+                      - generic [ref=e136]:
+                        - img
+                    - button "New Markdown" [ref=e137]:
+                      - generic [ref=e138]:
+                        - img
+                - treeitem "Expand Bookmark 31 Scan for changes" [level=1] [ref=e140] [cursor=pointer]:
+                  - generic [ref=e141]:
+                    - button "Expand" [ref=e142]:
+                      - img [ref=e143]
+                    - generic [ref=e145]:
+                      - img [ref=e146]
+                      - generic "Bookmark" [ref=e148]
+                      - generic [ref=e149]: "31"
+                  - button "Scan for changes" [ref=e151]:
+                    - generic [ref=e152]:
+                      - img
+                - treeitem "Expand Comment Scan for changes" [level=1] [ref=e154] [cursor=pointer]:
+                  - generic [ref=e155]:
+                    - button "Expand" [ref=e156]:
+                      - img [ref=e157]
+                    - generic [ref=e159]:
+                      - img [ref=e160]
+                      - generic "Comment" [ref=e163]
+                  - button "Scan for changes" [ref=e165]:
+                    - generic [ref=e166]:
+                      - img
+                - treeitem "Expand Claude Md 6 Scan for changes" [level=1] [ref=e168] [cursor=pointer]:
+                  - generic [ref=e169]:
+                    - button "Expand" [ref=e170]:
+                      - img [ref=e171]
+                    - generic [ref=e173]:
+                      - img [ref=e174]
+                      - generic "Claude Md" [ref=e176]
+                      - generic [ref=e177]: "6"
+                  - button "Scan for changes" [ref=e179]:
+                    - generic [ref=e180]:
+                      - img
+                - treeitem "Expand Claude Memory 12 Scan for changes" [level=1] [ref=e419] [cursor=pointer]:
+                  - generic [ref=e183]:
+                    - button "Expand" [ref=e184]:
+                      - img [ref=e185]
+                    - generic [ref=e187]:
+                      - img [ref=e188]
+                      - generic "Claude Memory" [ref=e198]
+                      - generic [ref=e420]: "12"
+                  - button "Scan for changes" [ref=e200]:
+                    - generic [ref=e201]:
+                      - img
+                - treeitem "Expand Plan 88 Scan for changes" [level=1] [ref=e421] [cursor=pointer]:
+                  - generic [ref=e204]:
+                    - button "Expand" [ref=e205]:
+                      - img [ref=e206]
+                    - generic [ref=e208]:
+                      - img [ref=e209]
+                      - generic "Plan" [ref=e212]
+                      - generic [ref=e422]: "88"
+                  - button "Scan for changes" [ref=e214]:
+                    - generic [ref=e215]:
+                      - img
+                - treeitem "Expand Claude Rules Scan for changes" [level=1] [ref=e217] [cursor=pointer]:
+                  - generic [ref=e218]:
+                    - button "Expand" [ref=e219]:
+                      - img [ref=e220]
+                    - generic [ref=e222]:
+                      - img [ref=e223]
+                      - generic "Claude Rules" [ref=e225]
+                  - button "Scan for changes" [ref=e227]:
+                    - generic [ref=e228]:
+                      - img
+                - treeitem "Expand Skill 171 Scan for changes New Skill" [level=1] [ref=e423] [cursor=pointer]:
+                  - generic [ref=e231]:
+                    - button "Expand" [ref=e232]:
+                      - img [ref=e233]
+                    - generic [ref=e235]:
+                      - img [ref=e236]
+                      - generic "Skill" [ref=e238]
+                      - generic [ref=e424]: "171"
+                  - generic [ref=e239]:
+                    - button "Scan for changes" [ref=e240]:
+                      - generic [ref=e241]:
+                        - img
+                    - button "New Skill" [ref=e242]:
+                      - generic [ref=e243]:
+                        - img
+                - treeitem "Expand Task 27 Scan for changes New Task" [level=1] [ref=e425] [cursor=pointer]:
+                  - generic [ref=e246]:
+                    - button "Expand" [ref=e247]:
+                      - img [ref=e248]
+                    - generic [ref=e250]:
+                      - img [ref=e251]
+                      - generic "Task" [ref=e254]
+                      - generic [ref=e426]: "27"
+                  - generic [ref=e255]:
+                    - button "Scan for changes" [ref=e256]:
+                      - generic [ref=e257]:
+                        - img
+                    - button "New Task" [ref=e258]:
+                      - generic [ref=e259]:
+                        - img
+                - treeitem "Expand Workflow Scan for changes New Workflow" [level=1] [ref=e261] [cursor=pointer]:
+                  - generic [ref=e262]:
+                    - button "Expand" [ref=e263]:
+                      - img [ref=e264]
+                    - generic [ref=e266]:
+                      - img [ref=e267]
+                      - generic "Workflow" [ref=e270]
+                  - generic [ref=e271]:
+                    - button "Scan for changes" [ref=e272]:
+                      - generic [ref=e273]:
+                        - img
+                    - button "New Workflow" [ref=e274]:
+                      - generic [ref=e275]:
+                        - img
+            - generic [ref=e277]:
+              - generic [ref=e278]:
+                - generic [ref=e279]:
+                  - generic [ref=e280]:
+                    - img [ref=e281]
+                    - textbox "Search…" [ref=e284]
+                  - button "New" [ref=e285] [cursor=pointer]:
+                    - img [ref=e286]
+                - textbox "Add tag…" [ref=e291]
+              - generic [ref=e293]:
+                - generic [ref=e294]: Showing 1–20 of 144
+                - table [ref=e296]:
+                  - rowgroup [ref=e297]:
+                    - row "Name Status Modified" [ref=e298]:
+                      - columnheader "Name" [ref=e299]
+                      - columnheader "Status" [ref=e300]
+                      - columnheader "Modified" [ref=e301]
+                  - rowgroup [ref=e302]:
+                    - row "vfs active Apr 17, 2026" [ref=e303] [cursor=pointer]:
+                      - cell "vfs" [ref=e304]
+                      - cell "active" [ref=e305]
+                      - cell "Apr 17, 2026" [ref=e306]
+                    - row "typeid active Apr 17, 2026" [ref=e307] [cursor=pointer]:
+                      - cell "typeid" [ref=e308]
+                      - cell "active" [ref=e309]
+                      - cell "Apr 17, 2026" [ref=e310]
+                    - row "trace-gutter active Apr 17, 2026" [ref=e311] [cursor=pointer]:
+                      - cell "trace-gutter" [ref=e312]
+                      - cell "active" [ref=e313]
+                      - cell "Apr 17, 2026" [ref=e314]
+                    - row "system_agents active Apr 17, 2026" [ref=e315] [cursor=pointer]:
+                      - cell "system_agents" [ref=e316]
+                      - cell "active" [ref=e317]
+                      - cell "Apr 17, 2026" [ref=e318]
+                    - row "shell-claude-session-api active Apr 17, 2026" [ref=e319] [cursor=pointer]:
+                      - cell "shell-claude-session-api" [ref=e320]
+                      - cell "active" [ref=e321]
+                      - cell "Apr 17, 2026" [ref=e322]
+                    - row "session_share_spec active Apr 17, 2026" [ref=e323] [cursor=pointer]:
+                      - cell "session_share_spec" [ref=e324]
+                      - cell "active" [ref=e325]
+                      - cell "Apr 17, 2026" [ref=e326]
+                    - row "record-entity-sync active Apr 17, 2026" [ref=e327] [cursor=pointer]:
+                      - cell "record-entity-sync" [ref=e328]
+                      - cell "active" [ref=e329]
+                      - cell "Apr 17, 2026" [ref=e330]
+                    - row "pypi-deploy active Apr 17, 2026" [ref=e331] [cursor=pointer]:
+                      - cell "pypi-deploy" [ref=e332]
+                      - cell "active" [ref=e333]
+                      - cell "Apr 17, 2026" [ref=e334]
+                    - row "pty-terminal-spec active Apr 17, 2026" [ref=e335] [cursor=pointer]:
+                      - cell "pty-terminal-spec" [ref=e336]
+                      - cell "active" [ref=e337]
+                      - cell "Apr 17, 2026" [ref=e338]
+                    - row "pty-sync active Apr 17, 2026" [ref=e339] [cursor=pointer]:
+                      - cell "pty-sync" [ref=e340]
+                      - cell "active" [ref=e341]
+                      - cell "Apr 17, 2026" [ref=e342]
+                    - row "playwright-usage active Apr 17, 2026" [ref=e343] [cursor=pointer]:
+                      - cell "playwright-usage" [ref=e344]
+                      - cell "active" [ref=e345]
+                      - cell "Apr 17, 2026" [ref=e346]
+                    - row "panel-creation active Apr 17, 2026" [ref=e347] [cursor=pointer]:
+                      - cell "panel-creation" [ref=e348]
+                      - cell "active" [ref=e349]
+                      - cell "Apr 17, 2026" [ref=e350]
+                    - row "listen_webhook active Apr 17, 2026" [ref=e351] [cursor=pointer]:
+                      - cell "listen_webhook" [ref=e352]
+                      - cell "active" [ref=e353]
+                      - cell "Apr 17, 2026" [ref=e354]
+                    - row "fs_store active Apr 17, 2026" [ref=e355] [cursor=pointer]:
+                      - cell "fs_store" [ref=e356]
+                      - cell "active" [ref=e357]
+                      - cell "Apr 17, 2026" [ref=e358]
+                    - row "fs-ref active Apr 17, 2026" [ref=e359] [cursor=pointer]:
+                      - cell "fs-ref" [ref=e360]
+                      - cell "active" [ref=e361]
+                      - cell "Apr 17, 2026" [ref=e362]
+                    - row "frontend-debug-cheatsheet active Apr 17, 2026" [ref=e363] [cursor=pointer]:
+                      - cell "frontend-debug-cheatsheet" [ref=e364]
+                      - cell "active" [ref=e365]
+                      - cell "Apr 17, 2026" [ref=e366]
+                    - row "electron active Apr 17, 2026" [ref=e367] [cursor=pointer]:
+                      - cell "electron" [ref=e368]
+                      - cell "active" [ref=e369]
+                      - cell "Apr 17, 2026" [ref=e370]
+                    - row "discovery active Apr 17, 2026" [ref=e371] [cursor=pointer]:
+                      - cell "discovery" [ref=e372]
+                      - cell "active" [ref=e373]
+                      - cell "Apr 17, 2026" [ref=e374]
+                    - row "dev_setup active Apr 17, 2026" [ref=e375] [cursor=pointer]:
+                      - cell "dev_setup" [ref=e376]
+                      - cell "active" [ref=e377]
+                      - cell "Apr 17, 2026" [ref=e378]
+                    - row "debugMCP-setup active Apr 17, 2026" [ref=e379] [cursor=pointer]:
+                      - cell "debugMCP-setup" [ref=e380]
+                      - cell "active" [ref=e381]
+                      - cell "Apr 17, 2026" [ref=e382]
+                - navigation "pagination" [ref=e383]:
+                  - list [ref=e384]:
+                    - listitem [ref=e385]:
+                      - generic "Go to previous page":
+                        - img
+                        - generic: Previous
+                    - listitem [ref=e386]:
+                      - generic [ref=e387]: Page 1 of 8
+                    - listitem [ref=e388]:
+                      - generic "Go to next page" [ref=e389] [cursor=pointer]:
+                        - generic [ref=e390]: Next
+                        - img
+      - contentinfo [ref=e391]:
+        - generic [ref=e392]:
+          - button "Settings" [ref=e394] [cursor=pointer]:
+            - img [ref=e395]
+          - generic [ref=e398]:
+            - button "Switch Project" [ref=e399] [cursor=pointer]:
+              - img [ref=e400]
+              - generic [ref=e403]: Switch Project
+            - button "flowpad-oss" [ref=e404] [cursor=pointer]
+            - button "/Users/shlom/Documents/dev/flowpad-oss" [ref=e405] [cursor=pointer]:
+              - generic [ref=e406]: /Users/shlom/Documents/dev/flowpad-oss
+              - img [ref=e407]
+          - generic [ref=e411]:
+            - button "5h 1900% · 7d 2800% · $29.60" [ref=e427] [cursor=pointer]:
+              - generic [ref=e413]: 5h 1900% · 7d 2800% · $29.60
+            - generic [ref=e414]: v0.2.13
+            - generic [ref=e415]:
+              - generic [ref=e416]: Powered by
+              - link "Flowpad.ai Logo":
+                - /url: https://flowpad.ai
+                - img "Flowpad.ai Logo"
