@@ -11,7 +11,7 @@ import {
 import { useContext, useEntityData, useProject } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Plus } from 'lucide-react';
-import { filterClosedTabs, getNextSessionNumber, getSessionDisplayName, mergeSessionTabs } from './sessionTabUtils';
+import { filterClosedTabs, getNextSessionNumber, getSessionDisplayName, mergeSessionTabs, sessionTabsCache } from './sessionTabUtils';
 import { SessionActionButtons } from './SessionActionButtons';
 import { SessionTabBar } from './SessionTabBar';
 import { InterferenceBox, RunningArea } from './components';
@@ -24,7 +24,6 @@ interface SessionTab {
   favorite_index?: number | null;
 }
 
-const sessionTabsCache = new Map<string, SessionTab[]>();
 
 /**
  * SessionViewer - Live execution view with session tabs

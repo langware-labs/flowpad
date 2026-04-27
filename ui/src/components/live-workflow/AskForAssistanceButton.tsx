@@ -3,7 +3,7 @@ import { AgenticProcess, FlowElementTypes } from '@sdk';
 import type { FlowData } from '@sdk';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { AskForAssistanceDialog } from './AskForAssistanceDialog';
-import { getSessionDisplayName } from './sessionTabUtils';
+import { getCachedTabName, getSessionDisplayName } from './sessionTabUtils';
 
 // Bootstrap person-raised-hand icon (same as SendToExpertButton)
 const PersonRaisedHandIcon: React.FC<{ className?: string; size?: number }> = ({ className, size = 14 }) => (
@@ -83,7 +83,8 @@ export function AskForAssistanceButton({ process }: AskForAssistanceButtonProps)
         await entity.loadHistory({ force: true });
       }
       const items: readonly FlowData[] = (entity?.flowDataStream?.items as readonly FlowData[]) ?? [];
-      setSessionTitle(getSessionDisplayName(process, 'Session'));
+      const tabName = getCachedTabName(process.id ?? '');
+      setSessionTitle(tabName ?? getSessionDisplayName(process, 'Session'));
       setSessionContent(extractSessionText(items, process));
       setDialogOpen(true);
     } finally {
