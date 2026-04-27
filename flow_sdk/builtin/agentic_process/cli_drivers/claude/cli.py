@@ -12,6 +12,7 @@ import json
 from typing import Any
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
+from flow_sdk.config import PLATFORM_WIN32
 
 
 class ClaudeCliOptions(WorkerCLIOptions):
@@ -184,7 +185,19 @@ class ClaudeCliOptions(WorkerCLIOptions):
         Builds argv directly (each flag and value as separate elements) rather than
         going through shell-string quoting.
         """
-        argv: list[str] = ["claude"]
+        import os
+        import shutil
+        import sys
+
+        resolved: str | None = shutil.which("claude")
+        if sys.platform == PLATFORM_WIN32:
+            if resolved and resolved.lower().endswith((".cmd", ".bat")):
+                comspec = os.environ.get("COMSPEC") or "cmd.exe"
+                argv: list[str] = [comspec, "/c", resolved]
+            else:
+                argv = [resolved or "claude"]
+        else:
+            argv = [resolved or "claude"]
 
         if self.permission_mode == "bypassPermissions":
             argv.append("--dangerously-skip-permissions")

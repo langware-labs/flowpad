@@ -665,6 +665,8 @@ async def _attach_uploaded_files(reply_fm: "FlowMessage", uploaded_files: list) 
 
     fm_typeid = reply_fm.typeid
     storage = get_entity_embedded_storage(fm_typeid)
+    new_attachments: list = list(reply_fm.attachment or [])
+    added_any = False
     for uf in uploaded_files:
         if not hasattr(uf, "read"):
             continue
@@ -674,7 +676,13 @@ async def _attach_uploaded_files(reply_fm: "FlowMessage", uploaded_files: list) 
         local_path.parent.mkdir(parents=True, exist_ok=True)
         content = await uf.read()
         local_path.write_bytes(content)
-        reply_fm.attachment.append(Attachment(attachment_type=AttachmentType.FILE, data=vfs_subpath))
+        new_attachments.append(Attachment(attachment_type=AttachmentType.FILE, data=vfs_subpath))
+        added_any = True
+    if added_any:
+        # Assign (not append) so __setattr__ runs and _dirty is set — required because
+        # for the original-send path the entity has already been saved once and
+        # in-place list mutation doesn't reach the entity's dirty flag.
+        reply_fm.attachment = new_attachments
 
 
 async def _append_message_to_conversation(

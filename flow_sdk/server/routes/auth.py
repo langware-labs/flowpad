@@ -5,7 +5,7 @@ Authentication routes for the local server.
 from pathlib import Path
 
 from fastapi import APIRouter, Query
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from flow_sdk.api.messages import OAuthMessage, OAuthMessageStatus
 from flow_sdk.api.oauth_api import OAuthProvider
@@ -97,10 +97,18 @@ def _render_result_page(
 
 
 @router.get("/post_login", response_class=HTMLResponse)
-async def post_login(flowpad_api_key: str = Query(None, alias="flowpad-api-key")):
+async def post_login(
+    flowpad_api_key: str = Query(None, alias="flowpad-api-key"),
+    next: str = Query(None),
+):
     """
     POST login endpoint that receives an API key.
     Validates the API key and stores it in the system keyring.
+
+    If `next` is provided, redirect there after success — used by deep-link
+    flows (e.g. email "Open in FlowPad") so the same browser navigation that
+    populates the keyring also lands the user on the target page. Only same-
+    origin paths are honoured to prevent open-redirect abuse.
     """
     try:
         # Import here to avoid circular dependency
@@ -134,6 +142,10 @@ async def post_login(flowpad_api_key: str = Query(None, alias="flowpad-api-key")
             asyncio.ensure_future(broadcast(msg.model_dump_json()))
         except Exception:
             pass
+
+        # Same-origin redirect after successful login (deep-link flows).
+        if next and next.startswith("/"):
+            return RedirectResponse(url=next, status_code=302)
 
         user_id = user_info.get("id", "Unknown")
         detail_html = f'<div class="detail-box"><strong>Account Details:</strong><br>User ID: {user_id}</div>'

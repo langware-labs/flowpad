@@ -220,8 +220,13 @@ async def _create_conversation_from_disk(
     task_id: str,
     conversation_id: str | None,
     owner_typeid,
+    notify: bool = True,
 ) -> Conversation | None:
-    """Create a Conversation entity from conversation.jsonl on disk (recipient side)."""
+    """Create a Conversation entity from conversation.jsonl on disk (recipient side).
+
+    Set notify=False when called from unpack_bundle so the UI doesn't refetch the
+    conversation (and try to load referenced FMs) before the FMs themselves are saved.
+    """
     from flow_sdk.fs_records.conversation_record import ConversationRecord
 
     jsonl_path = task_dir / "conversation.jsonl"
@@ -253,7 +258,7 @@ async def _create_conversation_from_disk(
     else:
         conv.id = Conversation.allocate_id(conv.model_dump())
 
-    conv = await conv.save(owner_typeid)
+    conv = await conv.save(owner_typeid, notify=notify)
 
     # Record-level parent-child composition (conversation → task via parent_ref)
     rec = ConversationRecord.from_jsonl(jsonl_path, task_id, conv.id)

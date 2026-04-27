@@ -2311,18 +2311,17 @@ class SQLiteDBDriver(DBDriver):
         Fields marked with ``db_exclude=True`` (via `NoDBAPIField` / `NoDbBField`)
         are runtime-only state (e.g. ``expand``) and must not be persisted —
         otherwise two identical writes can produce different stored JSON if one
-        path happens to have triggered an expansion helper.
+        path happens to have triggered an expansion helper. Uses the
+        ``DBBaseRecord.is_db_excluded`` classmethod so inherited
+        ``db_exclude=True`` flags are honored across the MRO.
         """
-        from flow_sdk.api.api_types.api_field import is_db_excluded
         base_fields = set(DBBaseRecord.model_fields.keys())
         blob_fields = set(entity.__class__.get_blob_fields_names())
         data = {}
-        for field_name, field_info in entity.__class__.model_fields.items():
-            if field_name in base_fields:
+        for field_name in entity.__class__.model_fields:
+            if field_name in base_fields or field_name in blob_fields:
                 continue
-            if field_name in blob_fields:
-                continue
-            if is_db_excluded(field_info):
+            if entity.__class__.is_db_excluded(field_name):
                 continue
             value = getattr(entity, field_name, None)
             if value is not None:
