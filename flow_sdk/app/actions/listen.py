@@ -266,7 +266,9 @@ async def _create_plan_annotation(tool_input: dict, session_id: str) -> None:
         plan_file_path = ""
         last_file_op = _last_file_op_path_by_session.pop(session_id, None)
         last_file_op_str = str(last_file_op) if last_file_op else ""
-        if last_file_op_str and ".claude/plans/" in last_file_op_str and last_file_op_str.endswith(".md"):
+        # Normalise to forward slashes so the check works on Windows too
+        normalised = last_file_op_str.replace("\\", "/")
+        if normalised and ".claude/plans/" in normalised and normalised.endswith(".md"):
             plan_file_path = last_file_op_str
 
         now_iso = datetime.now(timezone.utc).isoformat()

@@ -7,6 +7,8 @@ from flow_sdk.cli.cli_command import CLICommand
 from flow_sdk.cli.cli_context import CLIContext, ClaudeScope
 from flow_sdk.cli.commands.setup_cmd.claude_code_setup.hook_parser import HookParser
 from flow_sdk.cli.commands.setup_cmd.claude_code_setup.claude_hooks import setHook, removeHook
+from flow_sdk.cli.commands.setup_cmd.claude_code_setup.hook_events import EVENTS_NO_MATCHER, EVENTS_WITH_MATCHER
+from flow_sdk.cli.commands.setup_cmd.claude_code_setup.flow_metadata import FlowHookMetadata
 
 
 def setup_claude_code(cmd: CLICommand):
@@ -30,31 +32,48 @@ def setup_claude_code(cmd: CLICommand):
 
     print("Configuring Claude Code hooks...")
 
-    # Get the absolute path to the flow_prompt_hook.py script
-    # This script should be installed with the flow-cli package
-    hook_script_path = _get_hook_script_path()
+    from flow_sdk.builtin.flowpad_runner_wrapper import wrap_command
 
-    if not hook_script_path.exists():
-        print(f"⚠ Warning: Hook script not found at {hook_script_path}")
-        print("  Creating hook script...")
-        _ensure_hook_script_exists(hook_script_path)
+    success_count = 0
+    total_count = len(EVENTS_NO_MATCHER) + len(EVENTS_WITH_MATCHER)
 
-    # Make the hook script executable
-    os.chmod(hook_script_path, 0o755)
+    # Set hooks for events without matchers
+    for event_name in EVENTS_NO_MATCHER:
+        flow_metadata = FlowHookMetadata.create(name=event_name.lower())
+        hook_cmd = wrap_command(f"hooks report --name={event_name.lower()}")
+        success = setHook(
+            scope=scope,
+            event_name=event_name,
+            matcher=None,
+            cmd=hook_cmd,
+            context=context,
+            flow_metadata=flow_metadata,
+        )
+        if success:
+            print(f"  ✓ {event_name}")
+            success_count += 1
+        else:
+            print(f"  ✗ {event_name} (failed)")
 
-    # Add UserPromptSubmit hook using the new setHook function
-    success = setHook(
-        scope=scope,
-        event_name="UserPromptSubmit",
-        matcher=None,  # UserPromptSubmit doesn't use matchers
-        cmd=str(hook_script_path),
-        context=context
-    )
+    # Set hooks for events with matchers (match all tools)
+    for event_name in EVENTS_WITH_MATCHER:
+        flow_metadata = FlowHookMetadata.create(name=event_name.lower())
+        hook_cmd = wrap_command(f"hooks report --name={event_name.lower()}")
+        success = setHook(
+            scope=scope,
+            event_name=event_name,
+            matcher="*",
+            cmd=hook_cmd,
+            context=context,
+            flow_metadata=flow_metadata,
+        )
+        if success:
+            print(f"  ✓ {event_name} (matcher: *)")
+            success_count += 1
+        else:
+            print(f"  ✗ {event_name} (failed)")
 
-    if success:
-        print(f"✓ Hook configured: UserPromptSubmit -> {hook_script_path}")
-    else:
-        print(f"⚠ Failed to configure hook")
+    print(f"Hooks configured: {success_count}/{total_count}")
     print("✓ Claude Code setup complete!")
     print("\n" + "="*50)
     print("🎉 Restart Claude and type 'hello' to start :)")
