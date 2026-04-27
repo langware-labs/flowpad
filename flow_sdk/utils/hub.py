@@ -77,37 +77,13 @@ def hub_graph_url(
     return f"{base}{full_path}"
 
 
-def _get_api_key() -> str | None:
-    """Resolve the current hub API key (env var, then keyring)."""
+def _auth_headers() -> dict[str, str]:
     import os
     api_key = os.environ.get("FLOWPAD_CLOUD_API_KEY") or None
     if not api_key:
         from flow_sdk.cli.auth import get_api_key
         api_key = get_api_key()
-    return api_key
-
-
-def _auth_headers() -> dict[str, str]:
-    api_key = _get_api_key()
     return {"Authorization": f"Bearer {api_key}"} if api_key else {}
-
-
-async def wait_for_api_key(timeout: float = 10.0, interval: float = 0.2) -> str | None:
-    """Block until a hub API key is available or the timeout elapses.
-
-    Used by deep-link handlers that run immediately after OAuth: the local app
-    may not have written the API key to the keyring yet, so we wait briefly
-    rather than letting the hub call 401 and silently swallowing it.
-    """
-    import asyncio
-    deadline = asyncio.get_event_loop().time() + timeout
-    while True:
-        api_key = _get_api_key()
-        if api_key:
-            return api_key
-        if asyncio.get_event_loop().time() >= deadline:
-            return None
-        await asyncio.sleep(interval)
 
 
 async def hub_get(

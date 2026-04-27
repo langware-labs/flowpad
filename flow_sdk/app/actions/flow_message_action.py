@@ -238,17 +238,10 @@ async def create_task_bundle() -> ApiResponse:
 
 
 async def handle_open_flow_message(fm_id: str) -> ApiResponse:
-    """Fetch FlowMessage from hub, materialise bundle if needed, delegate to deep-link handler.
-
-    The deep-link can run before OAuth has finished writing the API key to the
-    keyring (e.g. user 2 just logged in via the email link). Wait for the key
-    to be available before calling the hub so we don't silently 401.
-    """
+    """Fetch FlowMessage from hub, materialise bundle if needed, delegate to deep-link handler."""
     from flow_sdk.builtin.flow_message import AttachmentType
     from flow_sdk.server.routes.notify import handle_notification_deep_link
-    from flow_sdk.utils.hub import wait_for_api_key
 
-    await wait_for_api_key(timeout=10.0)
     data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
     meta = (data or {}).get("metadata") or {}
 
