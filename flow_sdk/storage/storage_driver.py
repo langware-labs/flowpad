@@ -110,9 +110,9 @@ class StorageDriver(ABC):
         resource_full_storage_path = self.app2storage_path_format(resource_full_vfs_path).strip(self.storage_path_sep)
         # Add mount storage path if it exists
         if self.mount_path:
-            # logger.debug(f"get_storage_path mount_path: {self.mount_path}")
-            resource_storage_path = self.mount_path.rstrip(self.storage_path_sep)
-            resource_full_storage_path = self.storage_path_sep.join([resource_storage_path, resource_full_storage_path])
+            if resource_full_storage_path and not resource_full_storage_path.startswith(self.mount_path):
+                resource_storage_path = self.mount_path.rstrip(self.storage_path_sep)
+                resource_full_storage_path = self.storage_path_sep.join([resource_storage_path, resource_full_storage_path])
 
         # Handle root path case: if result is empty but mount path was set, use mount path
         if not resource_full_storage_path and self.mount_path:
