@@ -47,6 +47,13 @@ interface MilkdownEditorWithSidePanelProps {
   onActiveTabChange?: (id: string) => void;
   /** Forwarded to the Chat tab — runs once after its backing process is created. */
   chatOnProcessCreated?: (process: AgenticProcess) => Promise<void> | void;
+  /**
+   * Drop the Chat tab from the side drawer entirely. Use when the host renders
+   * its own chat surface elsewhere (e.g. the agent editor's bottom-of-doc chat),
+   * to avoid two `EntityChatPanel`s racing on the same `target` for lazy
+   * process creation.
+   */
+  disableChat?: boolean;
   /** Outer ref to the underlying Milkdown Editor for imperative actions (e.g. toolbar inserts). */
   editorRef?: MutableRefObject<Editor | null>;
   /** Right-aligned slot rendered inside Milkdown's static toolbar. Hidden in view/review modes. */
@@ -70,11 +77,16 @@ export function MilkdownEditorWithSidePanel({
   activeTab: activeTabProp,
   onActiveTabChange,
   chatOnProcessCreated,
+  disableChat,
   editorRef,
   toolbarRight,
 }: MilkdownEditorWithSidePanelProps) {
-  const [internalTab, setInternalTab] = useState<string>(MD_SIDE_TABS_DEFAULT);
-  const activeTab = activeTabProp ?? internalTab;
+  const defaultTab: string = disableChat ? 'backlinks' : MD_SIDE_TABS_DEFAULT;
+  const [internalTab, setInternalTab] = useState<string>(defaultTab);
+  // When chat is disabled, force activeTab off 'chat' even if a stale prop or
+  // stored state pointed there.
+  const rawActiveTab = activeTabProp ?? internalTab;
+  const activeTab = disableChat && rawActiveTab === 'chat' ? defaultTab : rawActiveTab;
 
   const setActiveTab = useCallback(
     (id: string) => {
@@ -85,7 +97,10 @@ export function MilkdownEditorWithSidePanel({
   );
 
   const tabs = useMemo<TabDescriptor[]>(() => {
-    const base = MD_SIDE_TABS_ORDER.map((id) => MD_SIDE_TABS[id] as TabDescriptor);
+    const order = disableChat
+      ? MD_SIDE_TABS_ORDER.filter((id) => id !== 'chat')
+      : MD_SIDE_TABS_ORDER;
+    const base = order.map((id) => MD_SIDE_TABS[id] as TabDescriptor);
     const extras: TabDescriptor[] = (extraTabs ?? []).map(({ id, label, icon, description }) => ({
       id,
       label,
@@ -93,16 +108,18 @@ export function MilkdownEditorWithSidePanel({
       description,
     }));
     return [...base, ...extras];
-  }, [extraTabs]);
+  }, [extraTabs, disableChat]);
 
   const panels = useMemo<Record<string, ReactNode>>(() => {
     const base: Record<string, ReactNode> = {
-      chat: <ChatTab target={chatTarget} onProcessCreated={chatOnProcessCreated} />,
       backlinks: <BacklinksTab target={chatTarget} />,
     };
+    if (!disableChat) {
+      base.chat = <ChatTab target={chatTarget} onProcessCreated={chatOnProcessCreated} />;
+    }
     for (const t of extraTabs ?? []) base[t.id] = t.panel;
     return base;
-  }, [chatTarget, extraTabs, chatOnProcessCreated]);
+  }, [chatTarget, extraTabs, chatOnProcessCreated, disableChat]);
 
   return (
     <div className="flex h-full w-full" data-testid="md-editor-with-side-panel">

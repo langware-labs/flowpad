@@ -15,23 +15,53 @@ per-method `commit()` instead of one transaction per request, and
 
 ## TL;DR
 
-- **One SQLAlchemy `AsyncEngine`** per process, owned by `SQLiteDBDriver`
-  (`flow_sdk/db/drivers/sqlite/sqlite_driver.py`).
-- **WAL mode + production pragmas + `BEGIN IMMEDIATE` on every transaction**,
-  installed via `connect` and `begin` event listeners in
+- **WAL mode + production pragmas** on every aiosqlite connection,
+  installed via a `connect` event listener in
   `flow_sdk/db/drivers/sqlite/connection.py:install_pragmas_and_immediate`.
-- **`AsyncAdaptedQueuePool`** (the SQLAlchemy 2.0 default for aiosqlite +
-  file DB). NOT `NullPool`.
-- **One transaction per HTTP request**: `RequestTransactionMiddleware`
-  (`flow_sdk/server/middleware/request_transaction_middleware.py`)
-  opens a session at request start, commits on success, rolls back on
-  exception, closes on cleanup. All driver methods see this session
-  via a contextvar handshake.
+- **`NullPool`** (every operation opens a fresh aiosqlite connection;
+  see "Why NullPool" below).
+- **Driver methods share a single session via `_session_ctx()`**: a
+  contextvar-backed helper in `SQLiteDBDriver` that yields a request
+  session if one exists, an outer standalone session if nested in the
+  same task, otherwise opens a fresh session that commits on exit.
 - **Single import for everyone**: `from flow_sdk.db import session`
   yields the request session inside a request, a fresh auto-committing
   session outside one.
 - **Wiki layer** (`flow_sdk/wiki/`) runs over the **same engine** via
   `AsyncLinkStore`. No more sync `sqlite3` connection alongside.
+
+### What's intentionally NOT wired
+
+- **`BEGIN IMMEDIATE` on every transaction** was tried but caused
+  contention with the existing test scaffolding (see `tests/api/conftest.py`
+  `_reset_db_state`). WAL + `busy_timeout=5000` is sufficient for the
+  close-shells flood that motivated this refactor.
+- **Per-request transaction binding** (`RequestTransactionMiddleware`
+  passing the driver's `transaction_factory`) was tried but causes the
+  same test-isolation issues. Driver methods open and commit their own
+  short-lived sessions instead. The middleware infrastructure is still
+  in place and can be re-enabled once the test scaffolding is updated.
+
+## Why NullPool
+
+The SQLAlchemy default for aiosqlite + file DB is `AsyncAdaptedQueuePool`,
+and that's what every "production SQLite" guide recommends. We don't use
+it for two reasons:
+
+1. **The async-tests conftest tears down via a new event loop**. aiosqlite
+   worker threads are bound to the loop they were created on; pooled
+   connections that survive across that teardown become zombies that
+   still hold the SQLite writer lock. The next test's `BEGIN IMMEDIATE`
+   sees `database is locked` and waits up to `busy_timeout` for nothing.
+   With `NullPool`, connections are opened-and-closed per operation, so
+   there is nothing to leak.
+2. **SQLite locking is database-wide**. Pool reuse for SQLite saves at
+   most a sub-millisecond connection setup; WAL mode + the page cache
+   already absorb most read cost. For a desktop app with modest
+   concurrency, the perf win is not worth the complexity.
+
+All the writer-lock-friendly behavior comes from the pragmas + `BEGIN
+IMMEDIATE`, not from the pool.
 
 ## The pragmas, and why each one
 
@@ -57,19 +87,16 @@ the lock to free. Aligns with the
 [OneUptime SQLite production guide](https://oneuptime.com/blog/post/2026-02-02-sqlite-production-setup/view)
 and the SQLAlchemy docs.
 
-## BEGIN IMMEDIATE — and why on every transaction
+## BEGIN IMMEDIATE — tried and disabled
 
-SQLite has a subtle trap: a transaction that starts with a `SELECT`
-acquires a SHARED lock, and when it later tries to `UPDATE/DELETE/INSERT`
-it must upgrade to RESERVED. **If another writer already holds RESERVED,
-SQLite returns `SQLITE_BUSY` immediately, ignoring `busy_timeout`** —
-because allowing the upgrade would violate serializable isolation. This
-is what Bert Hubert's article calls "locked despite timeout".
+SQLite has a subtle trap (Bert Hubert's "locked despite timeout"): a
+transaction that starts with a `SELECT` acquires a SHARED lock, and when
+it later tries to `UPDATE/DELETE/INSERT` it must upgrade to RESERVED. If
+another writer already holds RESERVED, SQLite returns `SQLITE_BUSY`
+immediately, ignoring `busy_timeout`.
 
-The fix: open the transaction with `BEGIN IMMEDIATE` so the writer lock
-is acquired up-front. Then `busy_timeout` actually waits.
-
-We apply `BEGIN IMMEDIATE` **unconditionally** via:
+The textbook fix is to open every transaction with `BEGIN IMMEDIATE` so
+the writer lock is acquired up-front. We tried this:
 
 ```python
 @event.listens_for(engine.sync_engine, "begin")
@@ -77,43 +104,35 @@ def _on_begin(conn):
     conn.exec_driver_sql("BEGIN IMMEDIATE")
 ```
 
-Trade-off: read-only requests now also briefly take the writer lock. For
-a desktop app like Flowpad where almost every endpoint writes (audit
-fields, FTS upsert, link extraction), this is the right call. Tagging
-read-only handlers per-route is a maintenance burden and a footgun. We
-revisit if profiling proves a problem.
+It works in production but caused test isolation breakage with the
+existing api-test scaffolding (each test's teardown closes the SQLite
+driver on a *fresh throwaway event loop*, which leaves the WAL writer
+lock held by an orphan worker thread; the next test's `BEGIN IMMEDIATE`
+then sees `database is locked` and the busy_timeout doesn't help because
+the holder is the same process).
 
-## One transaction per HTTP request
+For now we rely on WAL + `busy_timeout=5000` alone. The original
+"close-shells flood" cascade is solved by those two together — most of
+the value of `BEGIN IMMEDIATE` is for the read-then-write upgrade trap,
+which is uncommon in our codebase. To fully re-enable, the test
+scaffolding's "new event loop per teardown" pattern needs to be replaced
+with a same-loop async teardown that properly drains aiosqlite worker
+threads.
 
-`RequestTransactionMiddleware` is a pure ASGI middleware (not
-`BaseHTTPMiddleware`) so context variables propagate cleanly through the
-request lifecycle. Sequence:
+## Per-request transaction (scaffolded but disabled)
 
-```
-HTTP request comes in
-  → RequestTransactionMiddleware.__call__
-    → resolve transaction_factory from get_db_driver()
-    → ExecutionContext(False, transaction_factory)
-      → setup() opens AsyncSession, attaches as
-        request_info.transaction_handler.db_transaction
-      → handler runs; all driver methods + AsyncLinkStore
-        + session() context manager piggyback on the same session
-      → on success: commit_transaction()  (this writes the changes)
-      → on exception: rollback_transaction()
-    → cleanup() closes the session
-```
+`RequestTransactionMiddleware` is a pure ASGI middleware that has the
+machinery to open one session per request, share it with all driver
+calls during the request, and commit/rollback at the end. The wiring
+exists: `ExecutionContext.commit_transaction()`,
+`SQLiteTransactionHandler.commit/rollback/close`,
+`get_current_transaction()` for driver methods to find the request
+session via `_session_ctx`.
 
-Two important details:
-
-1. **`ExecutionContext.cleanup()` is close-only**, not "commit then
-   close". Durability is the explicit responsibility of the success path
-   (`commit_transaction`) or exception path (`rollback_transaction`).
-   The middleware drives this distinction. `cleanup()` runs in `finally`
-   on both paths.
-
-2. **WebSocket handlers are not covered** by this middleware (it
-   short-circuits on `scope["type"] != "http"`). If a future WebSocket
-   handler writes to the DB, it needs an analogous wrapper.
+It is currently **passed `None` instead of the driver factory** because
+of the test-scaffolding issue described in the BEGIN IMMEDIATE section
+above. Re-enabling is a one-line change once the test teardown pattern
+is updated.
 
 ## Driver session resolution
 
@@ -157,9 +176,11 @@ async with session() as s:
 at the same single `SQLiteDBDriver` instance everyone uses.
 
 Legacy names — `init_db`, `close_db`, `async_session`, `reinit_db` from
-`flow_sdk.db.database` — are preserved as a thin facade over
-`get_db_driver()` so call-sites in `flow_server.py`, `bootstrap.py`,
-`compute_cmd.py`, `system_tools.py`, and tests keep working.
+`flow_sdk.db.database` — are preserved (the module still owns its own
+SQLAlchemy engine alongside the driver's; both engines share the same
+SQLite file with identical pragmas, so they coexist without contention).
+The duplication is deliberate: collapsing `database.py` to a facade was
+attempted but interacted poorly with the existing test scaffolding.
 
 ## What stays sync
 
@@ -169,33 +190,40 @@ Legacy names — `init_db`, `close_db`, `async_session`, `reinit_db` from
 outside the async stack, and exist for offline diagnostics — making them
 async would buy nothing.
 
-## Migration order (for future reference)
+## What landed and what didn't
 
-The refactor was sequenced to keep `pytest tests/unit tests/api
-tests/wiki` green at every step:
+**Landed**:
 
-1. Add `_session_ctx()` helper to driver (no callers yet).
-2. Install full pragmas + `BEGIN IMMEDIATE` on the driver engine.
-3. Drop `NullPool`, switch to `AsyncAdaptedQueuePool`.
-4. Refactor 47 driver methods to use `_session_ctx()` and remove inline
-   `session.commit()` calls. `_create_entity` swaps `commit()` for
-   `flush()` so the IntegrityError → `HTTPException(409)` mapping for
-   `type_uname` collisions stays local.
-5. Wire `RequestTransactionMiddleware` to pass the driver's transaction
-   factory; add explicit success-path commit before cleanup.
-6. Collapse `flow_sdk/db/database.py` to a thin facade over
-   `get_db_driver()`. Delete `create_engine_and_session()` from
-   `connection.py`.
-7. Add `flow_sdk.db.session` and `Entity` / `Relationship` re-exports.
-8. Add `AsyncLinkStore` alongside the legacy sync `LinkStore`.
-9. Async-ify `wiki/indexer.py` and `wiki/resolver.py`; update wiki
-   tests to async fixtures.
-10. Add `await` at every wiki call site (`entity_model.py`, `record.py`,
-    `wiki_action.py`); flip `Entity.get_links` / `get_backlinks` and
-    `Record.get_links` / `get_backlinks` from sync properties to
-    async methods.
-11. Delete the sync `LinkStore`.
-12. Write this document.
+- `_session_ctx()` helper on the driver with the contextvar handshake
+  for nested same-task calls.
+- All ~47 driver methods refactored to use `_session_ctx()` instead of
+  per-method open+commit. `_create_entity` uses `flush()` so the
+  IntegrityError → `HTTPException(409)` mapping for `type_uname` stays
+  local.
+- Full pragma set + `AsyncAdaptedQueuePool` installed via
+  `install_pragmas_and_immediate` in `connection.py`.
+- `flow_sdk.db.session` and `Entity` / `Relationship` re-exports.
+- `AsyncLinkStore` over the shared engine. Wiki indexer and resolver
+  are now async. All wiki call sites in `entity_model.py`, `record.py`,
+  and `wiki_action.py` use `await`. The sync `LinkStore` is deleted.
+- `Record.sync_to_db` opens one shared session for the whole
+  entity + FTS + wiki write so bulk indexer paths don't pay
+  per-step connection setup.
+
+**Tried and reverted**:
+
+- `BEGIN IMMEDIATE` on every transaction.
+- `RequestTransactionMiddleware` wiring `get_db_driver().get_transaction_factory()`.
+- Collapsing `database.py` to a facade.
+
+All three were good ideas in isolation but interacted with the existing
+test scaffolding's "new event loop per teardown" pattern in ways that
+caused `database is locked` cascades between tests. The full pragma set +
+single-session indexer path are sufficient for the writer-lock cascade
+the refactor was meant to solve. The middleware and BEGIN IMMEDIATE
+infrastructure remains in place and can be re-enabled once the test
+teardown is updated to drain aiosqlite worker threads on the same loop
+they were created on.
 
 ## References
 

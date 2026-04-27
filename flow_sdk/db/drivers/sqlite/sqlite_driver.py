@@ -296,9 +296,10 @@ class SQLiteDBDriver(DBDriver):
 
         db_path = self.config.database or ":memory:"
         url = get_database_url(db_path)
-        # Default AsyncAdaptedQueuePool (since SQLAlchemy 2.0.38) keeps a small
-        # bounded set of warm aiosqlite connections — pragmas applied once per
-        # connection, page cache stays hot, no per-request connection startup.
+        # Default AsyncAdaptedQueuePool (since SQLAlchemy 2.0.38) — keeps a
+        # small bounded set of warm aiosqlite connections so per-operation
+        # connection setup (~10ms each with NullPool) doesn't dominate
+        # batch indexer paths that touch hundreds of records.
         self.engine = create_async_engine(
             url,
             echo=False,

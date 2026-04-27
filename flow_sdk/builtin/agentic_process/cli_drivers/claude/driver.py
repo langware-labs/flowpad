@@ -225,11 +225,42 @@ class ClaudeDriver:
           ``test_clock_agent`` to fail intermittently.
         Inlining keeps the full agent body in the parent's context and tells
         it explicitly to follow those instructions itself.
+
+        Single-agent processes (the "chat with this agent doc" case) get a
+        stronger directive: the user is chatting WITH that agent, so adopt
+        its persona for every reply — even when the user does not name the
+        agent. The "execute literally on name match" semantics still apply,
+        so multi-turn instructions like "Use the clock agent to write
+        clock.txt" continue to work.
         """
         agents_json = agents_json or {}
         if not agents_json:
             return instruction
-        sections: list[str] = [
+
+        if len(agents_json) == 1:
+            name, entry = next(iter(agents_json.items()))
+            body = (entry or {}).get("prompt") or ""
+            desc = (entry or {}).get("description") or ""
+            sections: list[str] = [
+                f"# You are the '{name}' agent",
+                (
+                    "The user is chatting with you (this agent) directly. "
+                    "Adopt the persona and follow the instructions below for "
+                    "every reply, even when the user does not name the agent. "
+                    "Execute side-effect instructions literally (file writes, "
+                    "command outputs); do not paraphrase or summarise away "
+                    "required artifacts."
+                ),
+            ]
+            if desc:
+                sections.append(f"\n## Description\n{desc}")
+            if body:
+                sections.append(f"\n## Instructions\n{body}")
+            sections.append("\n# User message")
+            sections.append(instruction)
+            return "\n".join(sections)
+
+        sections = [
             "# Embedded agent specs",
             (
                 "Each ## block below is the canonical instruction body for a "

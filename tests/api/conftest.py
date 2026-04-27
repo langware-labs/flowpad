@@ -20,6 +20,7 @@ def _reset_db_state():
     """Clear all cached DB state so the next access creates a fresh event-loop-bound session."""
     import asyncio
 
+    import flow_sdk.db.database as db_mod
     import flow_sdk.db.drivers.db_driver as db_driver_mod
     from flow_sdk.db.db_entity import DBEntity
     from flow_sdk.db.drivers.db_driver import LazyDBDriver
@@ -36,6 +37,8 @@ def _reset_db_state():
         except Exception:
             pass
 
+    db_mod._session_factory = None
+    db_mod._engine = None
     db_driver_mod._driver_instances.clear()
     # LazyDBDriver caches the resolved driver on DBEntity (not Entity).
     # Reset it back to a fresh descriptor so the next access calls get_db_driver().
@@ -57,18 +60,18 @@ def clean_db():
         if os.path.exists(path):
             os.remove(path)
     yield
-    # Dispose the active driver's engine so aiosqlite threads terminate and the process exits cleanly.
+    # Dispose the DB engine so aiosqlite threads terminate and the process exits cleanly.
     import asyncio
-    import flow_sdk.db.drivers.db_driver as db_driver_mod
-    driver = db_driver_mod._driver_instances.get("sqlite")
-    if driver is not None:
+    import flow_sdk.db.database as db_mod
+    if db_mod._engine is not None:
         try:
             loop = asyncio.new_event_loop()
-            loop.run_until_complete(driver.close())
+            loop.run_until_complete(db_mod._engine.dispose())
             loop.close()
         except Exception:
             pass
-        db_driver_mod._driver_instances.pop("sqlite", None)
+        db_mod._engine = None
+        db_mod._session_factory = None
     # Clear stale WS connections.
     from flow_sdk.core.network.connections import _registry
     _registry.clear()

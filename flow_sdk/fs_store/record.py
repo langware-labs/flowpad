@@ -2047,49 +2047,58 @@ class Record:
         connection via ``driver.fts_upsert(fts_batch)``.
 
         On failure, saves a RecordError to disk and re-raises so callers can count/log.
+
+        Performance note: opens a single session via `flow_sdk.db.session()`
+        and the driver's contextvar handshake makes every nested call
+        (Entity.from_record, fts_upsert, wiki.index) reuse it. Without this,
+        each step would open and close its own aiosqlite connection — fine
+        for one-off use, but at ~10ms per connection setup this multiplies
+        on bulk indexer paths that touch hundreds of records.
         """
         from flow_sdk.core.entity.entity_model import Entity  # already lazy-imported
+        from flow_sdk.db import session as _db_session  # noqa: PLC0415
 
         try:
-            # Step 1: Entity row (delegates to Entity.from_record)
-            entity = await Entity.from_record(self, notify=notify)
+            async with _db_session():
+                # Step 1: Entity row (delegates to Entity.from_record)
+                entity = await Entity.from_record(self, notify=notify)
 
-            # Write entity's db_json() back to metadata.json so disk reflects entity state,
-            # then write the hash sentinel (sync_from_entity handles both).
-            import asyncio as _asyncio
-            await _asyncio.to_thread(self.sync_from_entity, entity)
+                # Write entity's db_json() back to metadata.json so disk reflects entity state,
+                # then write the hash sentinel (sync_from_entity handles both).
+                import asyncio as _asyncio
+                await _asyncio.to_thread(self.sync_from_entity, entity)
 
-            # Step 2: FTS upsert — use record's search fields directly (already in memory)
-            from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry
-            entry = FtsEntry(
-                entity_id=entity.id,
-                entity_type=entity.type,
-                name=self.name or None,
-                title=self.search_title,
-                description=self.search_description,
-                content=self.search_content,
-            )
-            if fts_batch is not None:
-                fts_batch.append(entry)
-            else:
-                from flow_sdk.db import get_db_driver
-                driver = get_db_driver()
-                if hasattr(driver, "fts_upsert"):
-                    await driver.fts_upsert(entry)
-
-            # Step 3: Wiki link extraction. Records whose wiki_body() returns
-            # None (the default) are silently skipped. Errors here are logged
-            # but do not fail the sync_to_db — entity/FTS state is already
-            # consistent at this point.
-            try:
-                from flow_sdk import wiki
-                await wiki.index(self.type, self.id, self.wiki_body())
-            except Exception as wiki_exc:
-                import logging
-                logging.getLogger(__name__).warning(
-                    "wiki.index failed for %s:%s — %s",
-                    self.type, self.id, wiki_exc,
+                # Step 2: FTS upsert — use record's search fields directly (already in memory)
+                from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry
+                entry = FtsEntry(
+                    entity_id=entity.id,
+                    entity_type=entity.type,
+                    name=self.name or None,
+                    title=self.search_title,
+                    description=self.search_description,
+                    content=self.search_content,
                 )
+                if fts_batch is not None:
+                    fts_batch.append(entry)
+                else:
+                    from flow_sdk.db import get_db_driver
+                    driver = get_db_driver()
+                    if hasattr(driver, "fts_upsert"):
+                        await driver.fts_upsert(entry)
+
+                # Step 3: Wiki link extraction. Records whose wiki_body() returns
+                # None (the default) are silently skipped. Errors here are logged
+                # but do not fail the sync_to_db — entity/FTS state is already
+                # consistent at this point.
+                try:
+                    from flow_sdk import wiki
+                    await wiki.index(self.type, self.id, self.wiki_body())
+                except Exception as wiki_exc:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "wiki.index failed for %s:%s — %s",
+                        self.type, self.id, wiki_exc,
+                    )
         except Exception as exc:
             from flow_sdk.fs_records.record_error import RecordError  # lazy (circular-safe)
             RecordError.from_exception(self, exc, trigger="sync_to_db").save()
