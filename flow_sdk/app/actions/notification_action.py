@@ -170,6 +170,7 @@ async def _create_spec_and_task(
         "sender_name": sender_name,
         "sender_email": sender_email,
         "recipient_email": recipient_email or "",
+        "spec_type": spec_type,
     }
     if team_space_id:
         task_meta["team_space_id"] = team_space_id
@@ -329,6 +330,7 @@ async def _write_task_to_git(
             "branch": branch_at_write,
             "project_id": task_meta.get("project_id") or "",
             "project_name": task_meta.get("project_name") or "",
+            "spec_type": task_meta.get("spec_type") or "",
         }, indent=2, default=str),
         encoding="utf-8",
     )

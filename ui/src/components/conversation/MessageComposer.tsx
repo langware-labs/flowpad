@@ -56,7 +56,8 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
 
   const handleSend = async () => {
     const trimmed = text.trim();
-    if (!trimmed || sending) return;
+    if (sending) return;
+    if (!trimmed && !activePrompt && files.length === 0) return;
     setSending(true);
     setError(null);
     try {
@@ -96,7 +97,8 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
     if (!isDisabled) addFiles(e.dataTransfer.files);
   };
 
-  const canSend = !!text.trim() && !isDisabled;
+  const canSend = (!!text.trim() || !!activePrompt || files.length > 0) && !isDisabled;
+  const sendNeedsAttention = canSend && !text.trim() && !!activePrompt;
 
   return (
     <div className="space-y-1.5">
@@ -118,20 +120,6 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
         >
           <Paperclip className="h-3.5 w-3.5" />
         </button>
-        <button
-          type="button"
-          onClick={() => setShowPromptDialog(true)}
-          disabled={isDisabled}
-          title={activePrompt ? 'Edit attached prompt' : 'Add prompt'}
-          className={cn(
-            'flex h-7 w-7 shrink-0 items-center justify-center rounded transition-colors disabled:opacity-40',
-            activePrompt
-              ? 'text-emerald-600 hover:bg-emerald-500/10'
-              : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-          )}
-        >
-          <MessageSquarePlus className="h-3.5 w-3.5" />
-        </button>
         <input
           ref={fileInputRef}
           type="file"
@@ -152,10 +140,30 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
         />
         <button
           type="button"
+          onClick={() => setShowPromptDialog(true)}
+          disabled={isDisabled}
+          title={activePrompt ? 'Edit attached prompt' : 'Add a prompt to your reply'}
+          className={cn(
+            'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors disabled:opacity-40',
+            activePrompt
+              ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-300'
+              : 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300',
+          )}
+        >
+          <MessageSquarePlus className="h-3 w-3" />
+          {activePrompt ? 'Edit prompt' : 'Add prompt'}
+        </button>
+        <button
+          type="button"
           onClick={() => void handleSend()}
           disabled={!canSend}
-          title="Send"
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+          title={sendNeedsAttention ? 'Send prompt' : 'Send'}
+          className={cn(
+            'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-primary-foreground transition-colors disabled:opacity-40',
+            sendNeedsAttention
+              ? 'animate-pulse bg-emerald-600 ring-2 ring-emerald-400/60 hover:bg-emerald-700'
+              : 'bg-primary hover:bg-primary/90',
+          )}
         >
           <Send className="h-3.5 w-3.5" />
         </button>
