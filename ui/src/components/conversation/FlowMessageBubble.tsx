@@ -24,9 +24,19 @@ interface FlowMessageBubbleProps {
   messageId: string;
   timestamp: string;
   task: ITask;
+  onShowTask?: () => void;
+  onExecute?: (messageId: string) => void;
+  onApproveAndExecute?: (messageId: string, attachmentIndex: number) => void;
 }
 
-export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBubbleProps) {
+export function FlowMessageBubble({
+  messageId,
+  timestamp,
+  task,
+  onShowTask,
+  onExecute,
+  onApproveAndExecute,
+}: FlowMessageBubbleProps) {
   const { data: fm } = useEntity<FlowMessage>(
     new TypeId(FlowMessage.type, messageId),
   );
@@ -92,11 +102,16 @@ export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBub
     <MessageBubble
       message={message}
       flowMessageId={messageId}
+      flowMessage={fm}
+      task={task}
       senderName={displayName}
       onEditName={isCurrentUser ? async (newName) => {
         setOverrideName(newName);
         await updateName(newName);
       } : undefined}
+      onShowTask={onShowTask}
+      onExecute={onExecute ? () => onExecute(messageId) : undefined}
+      onApproveAndExecute={onApproveAndExecute ? (idx) => onApproveAndExecute(messageId, idx) : undefined}
       footer={footer}
     />
   );

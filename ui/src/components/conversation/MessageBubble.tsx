@@ -1,13 +1,20 @@
 import { useState, type ReactNode } from 'react';
 import { Pencil } from 'lucide-react';
 import type { ConversationMessage } from '@sdk/entities/conversation';
+import type { FlowMessage } from '@sdk';
+import type { ITask } from '@sdk/entities/task';
 import { MessageActions } from './MessageActions';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
   flowMessageId?: string;
+  flowMessage?: FlowMessage | null;
+  task?: ITask;
   senderName: string;
   onEditName?: (newName: string) => void;
+  onShowTask?: () => void;
+  onExecute?: () => void;
+  onApproveAndExecute?: (attachmentIndex: number) => void;
   /** Optional content rendered below the message body (e.g. attachment chips). */
   footer?: ReactNode;
 }
@@ -30,7 +37,18 @@ function formatTime(timestamp: string | undefined): string {
   return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
-export function MessageBubble({ message, flowMessageId, senderName, onEditName, footer }: MessageBubbleProps) {
+export function MessageBubble({
+  message,
+  flowMessageId,
+  flowMessage,
+  task,
+  senderName,
+  onEditName,
+  onShowTask,
+  onExecute,
+  onApproveAndExecute,
+  footer,
+}: MessageBubbleProps) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
 
@@ -86,7 +104,14 @@ export function MessageBubble({ message, flowMessageId, senderName, onEditName, 
             </button>
           )}
           {time && <span className="text-[10px] text-muted-foreground">{time}</span>}
-          <MessageActions flowMessageId={flowMessageId} />
+          <MessageActions
+            flowMessageId={flowMessageId}
+            flowMessage={flowMessage}
+            task={task}
+            onShowTask={onShowTask}
+            onExecute={onExecute}
+            onApproveAndExecute={onApproveAndExecute}
+          />
         </div>
         <div className={`text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
           {message.content}

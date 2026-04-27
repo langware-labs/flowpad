@@ -113,6 +113,8 @@ export function AskForAssistanceButton({ process }: AskForAssistanceButtonProps)
         onClose={() => setDialogOpen(false)}
         sessionTitle={sessionTitle}
         sessionContent={sessionContent}
+        sessionId={process.session_id ?? undefined}
+        projectPath={(process as any).workdir as string | undefined}
       />
     </>
   );
