@@ -21,6 +21,7 @@ Routes:
 import asyncio
 import json as _json
 import logging
+import os
 import re
 import uuid
 from datetime import datetime
@@ -66,6 +67,27 @@ def _meaningful_name(title: str) -> str:
     """Convert a title to a filesystem-safe directory name (no random IDs)."""
     name = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
     return name[:60] or "untitled"
+
+
+async def _resolve_local_project_identity(
+    project_root: Optional[Path],
+) -> tuple[Optional[str], Optional[str]]:
+    """Look up the local Project entity matching `project_root` and return (id, name).
+
+    Returns (None, None) when there is no project_root or no matching Project.
+    The project's uuid `id` becomes the cross-user `project_id` carried in
+    manifest.json and the hub payload, so the recipient can map it locally.
+    """
+    if not project_root:
+        return None, None
+    try:
+        from flow_sdk.builtin.project import Project
+        proj = await Project.get_one({"fs_storage_mount_path": str(project_root)})
+        if proj:
+            return (proj.id or None), (proj.name or Path(project_root).name)
+    except Exception as e:
+        logger.warning("[notification_action] _resolve_local_project_identity failed: %s", e)
+    return None, Path(project_root).name
 
 
 async def _create_conversation_entity(
@@ -129,6 +151,9 @@ async def _create_spec_and_task(
     recipient_email: Optional[str],
     team_space_id: Optional[str],
     someone_typeid: str,
+    project_id: Optional[str] = None,
+    project_name: Optional[str] = None,
+    project_root: Optional[str] = None,
 ) -> tuple[Spec, Task]:
     """Create Spec + Task entities locally and register the task on the hub."""
     spec = Spec.model_validate({
@@ -148,6 +173,12 @@ async def _create_spec_and_task(
     }
     if team_space_id:
         task_meta["team_space_id"] = team_space_id
+    if project_id:
+        task_meta["project_id"] = project_id
+    if project_name:
+        task_meta["project_name"] = project_name
+    if project_root:
+        task_meta["project_root"] = project_root
     task = Task.model_validate({
         "title": task_title,
         "spec_id": spec.id,
@@ -283,6 +314,7 @@ async def _write_task_to_git(
     )
 
     branch_at_write = git_current_branch(project_root)
+    task_meta = task.metadata or {}
     (task_dir / "manifest.json").write_text(
         _json.dumps({
             "task_id": task.id,
@@ -295,6 +327,8 @@ async def _write_task_to_git(
             "created_at": datetime.now(UTC).isoformat(),
             "repo_id": repo_id_val,
             "branch": branch_at_write,
+            "project_id": task_meta.get("project_id") or "",
+            "project_name": task_meta.get("project_name") or "",
         }, indent=2, default=str),
         encoding="utf-8",
     )
@@ -366,6 +400,7 @@ async def _send_hub_notification(
     """
     hub_configured = bool(hub_base_url())
     flow_message_id = str(uuid.uuid4())
+    task_meta = task.metadata or {}
     hub_data = await hub_post(BuiltinEntityType.FLOW_MESSAGE, {
         "flow_message_id": flow_message_id,
         "recipient_email": recipient_email,
@@ -382,6 +417,8 @@ async def _send_hub_notification(
         "repo_id": repo_id_val,
         "branch": branch,
         "spec_file_path": spec_file_path,
+        "project_id": task_meta.get("project_id") or None,
+        "project_name": task_meta.get("project_name") or None,
     }, action="send")
     hub_flow_message_id: Optional[str] = (hub_data or {}).get("flow_message_id")
     email_error: Optional[str] = None
@@ -499,6 +536,8 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     repo_full_name = git_repo_full_name(project_root) if project_root else ""
     repo_id_val = repo_id(repo_full_name) if repo_full_name else ""
 
+    project_id_val, project_name_val = await _resolve_local_project_identity(project_root)
+
     spec, task = await _create_spec_and_task(
         spec_title=spec_title,
         spec_content=spec_content,
@@ -511,6 +550,9 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         recipient_email=recipient_email,
         team_space_id=team_space_id,
         someone_typeid=someone_typeid,
+        project_id=project_id_val,
+        project_name=project_name_val,
+        project_root=str(project_root) if project_root else None,
     )
 
     uploaded_files = body.get("files") or []
@@ -654,6 +696,46 @@ def _build_reply_flow_message(
     return reply_fm
 
 
+async def _attach_prompt(
+    reply_fm: "FlowMessage",
+    proposer_id: Optional[str],
+    prompt_text: str,
+    prompt_files: list,
+) -> None:
+    """Append a PROMPT attachment to the FlowMessage.
+
+    `prompt_text` (if non-empty) is stored inline in `data`. Each file in
+    `prompt_files` is written to the entity VFS at `prompt/{filename}` and
+    appended as a separate PROMPT attachment whose `data` is that VFS subpath.
+    """
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType
+    from flow_sdk.storage import get_entity_embedded_storage
+
+    new_atts: list = list(reply_fm.attachment or [])
+    if prompt_text:
+        new_atts.append(Attachment(
+            attachment_type=AttachmentType.PROMPT,
+            data=prompt_text,
+            proposer_id=proposer_id,
+        ))
+    if prompt_files:
+        storage = get_entity_embedded_storage(reply_fm.typeid)
+        for uf in prompt_files:
+            if not hasattr(uf, "read"):
+                continue
+            filename = getattr(uf, "filename", None) or "prompt.txt"
+            vfs_subpath = f"prompt/{filename}"
+            local_path = Path(storage.get_storage_path(vfs_subpath))
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            local_path.write_bytes(await uf.read())
+            new_atts.append(Attachment(
+                attachment_type=AttachmentType.PROMPT,
+                data=vfs_subpath,
+                proposer_id=proposer_id,
+            ))
+    reply_fm.attachment = new_atts
+
+
 async def _attach_uploaded_files(reply_fm: "FlowMessage", uploaded_files: list) -> None:
     """Save uploaded files into the FlowMessage entity's VFS storage and append FILE attachments.
 
@@ -772,11 +854,19 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     """Append a reply to an existing task's Conversation entity and conversation.jsonl."""
     task_id = (body.get("task_id") or "").strip()
     message = (body.get("message") or "").strip()
+    prompt_text_preview = (body.get("prompt_text") or "").strip()
+    prompt_files_preview = body.get("prompt_files") or []
+    if not isinstance(prompt_files_preview, list):
+        prompt_files_preview = [prompt_files_preview]
 
     if not task_id:
         return ApiFailResponse(message="task_id is required")
+    if not message and not prompt_text_preview and not prompt_files_preview:
+        return ApiFailResponse(message="message or prompt is required")
     if not message:
-        return ApiFailResponse(message="message is required")
+        # Synthesize a placeholder so the rest of the pipeline (which assumes a
+        # non-empty text body) keeps working for prompt-only sends.
+        message = "(proposed prompt)"
 
     task = await Task.get_one({"id": task_id})
     if not task:
@@ -804,6 +894,15 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         uploaded_files = [uploaded_files]
     if uploaded_files:
         await _attach_uploaded_files(reply_fm, uploaded_files)
+
+    # Optional PROMPT attachment: inline text and/or uploaded file(s).
+    prompt_text = (body.get("prompt_text") or "").strip()
+    prompt_files = body.get("prompt_files") or []
+    if not isinstance(prompt_files, list):
+        prompt_files = [prompt_files]
+    if prompt_text or prompt_files:
+        await _attach_prompt(reply_fm, sender_id, prompt_text, prompt_files)
+
     reply_fm = await reply_fm.save(someone_typeid)
 
     # Append pointer BEFORE packing the bundle so conversation.jsonl is up-to-date in the zip
@@ -928,6 +1027,167 @@ async def update_local_user_name() -> ApiResponse:
         local_user.add_label(NAME_OVERRIDE_LABEL)
     await local_user.save()
     return ApiSuccessResponse(data={"name": new_name})
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Project mapping (per-machine: remote_project_id → local_project_id)
+# Stored as a JSON file under FLOW_HOME so the mapping survives restarts and
+# is independent of the User entity (which has no settings field today).
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _project_mapping_path() -> Path:
+    from flow_sdk.config import FLOW_HOME
+    return Path(FLOW_HOME) / "project_mapping.json"
+
+
+def _load_project_mapping() -> dict:
+    p = _project_mapping_path()
+    if not p.exists():
+        return {}
+    try:
+        return _json.loads(p.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+
+
+def _save_project_mapping(mapping: dict) -> None:
+    p = _project_mapping_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(_json.dumps(mapping, indent=2), encoding="utf-8")
+
+
+@action.get(action_name="get-project-mapping", types=None)
+async def get_project_mapping() -> ApiResponse:
+    """Return the per-machine remote→local project mapping dict."""
+    return ApiSuccessResponse(data={"mapping": _load_project_mapping()})
+
+
+@action.post(action_name="set-project-mapping", types=None)
+async def set_project_mapping() -> ApiResponse:
+    """Set the local project that a remote project_id maps to.
+
+    Body: { remote_project_id: str, local_project_id: str }
+    The mapping is keyed by remote_project_id; subsequent messages bound to
+    the same remote project route silently to the chosen local project.
+    """
+    request_info = get_current_request_info()
+    if not request_info:
+        return ApiFailResponse(message="No request info found")
+    body = await request_info.get_post_data() or {}
+    remote_id = (body.get("remote_project_id") or "").strip()
+    local_id = (body.get("local_project_id") or "").strip()
+    if not remote_id or not local_id:
+        return ApiFailResponse(message="remote_project_id and local_project_id are required")
+    mapping = _load_project_mapping()
+    mapping[remote_id] = local_id
+    _save_project_mapping(mapping)
+    return ApiSuccessResponse(data={"mapping": mapping})
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# PROMPT attachment lifecycle
+# ────────────────────────────────────────────────────────────────────────────
+
+
+@action.post(action_name="approve-prompt", types=["flow_message"])
+async def approve_prompt() -> ApiResponse:
+    """Mark a PROMPT attachment on a FlowMessage as approved by the current user.
+
+    The frontend then runs the prompt in a forked Claude session.
+    Body: { attachment_index?: number }  — defaults to the first PROMPT attachment.
+    """
+    from flow_sdk.builtin.flow_message import AttachmentType, FlowMessage as FM
+
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        return ApiFailResponse(message="No request info found")
+    fm_id = str(request_info.target_entity_typeid.id)
+    fm = await FM.get_one({"id": fm_id})
+    if not fm:
+        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}")
+
+    body = await request_info.get_post_data() or {}
+    idx = body.get("attachment_index")
+    local_user = await User.get_one({"uname": "local"})
+    approver_id = local_user.id if local_user else None
+
+    new_atts = list(fm.attachment or [])
+    target_idx: Optional[int] = None
+    if isinstance(idx, int) and 0 <= idx < len(new_atts):
+        if new_atts[idx].attachment_type == AttachmentType.PROMPT:
+            target_idx = idx
+    if target_idx is None:
+        for i, a in enumerate(new_atts):
+            if a.attachment_type == AttachmentType.PROMPT and not a.approved_by:
+                target_idx = i
+                break
+    if target_idx is None:
+        return ApiFailResponse(message="No unapproved PROMPT attachment found on this message")
+
+    new_atts[target_idx] = new_atts[target_idx].model_copy(update={"approved_by": approver_id})
+    fm.attachment = new_atts
+    await fm.save(request_info.someone_typeid or "")
+    return ApiSuccessResponse(data={"attachment_index": target_idx, "approved_by": approver_id})
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Rehydrate a Claude Code session from an attached conversation.jsonl
+# Used on the receiver side: copies the jsonl into Claude's session dir so
+# it can be resumed (and forked) locally.
+# ────────────────────────────────────────────────────────────────────────────
+
+
+@action.post(action_name="rehydrate-claude-session", types=None)
+async def rehydrate_claude_session() -> ApiResponse:
+    """Copy a FlowMessage's attached conversation.jsonl into ~/.claude/projects/...
+    so it can be resumed locally. Returns the new local session_id.
+
+    Body: { flow_message_id: str, attachment_data: str (VFS subpath, e.g. "data/conversation.jsonl"),
+            project_root?: str (used to derive the Claude project dir name) }
+    """
+    request_info = get_current_request_info()
+    if not request_info:
+        return ApiFailResponse(message="No request info found")
+    body = await request_info.get_post_data() or {}
+    fm_id = (body.get("flow_message_id") or "").strip()
+    att_data = (body.get("attachment_data") or "").strip()
+    project_root = (body.get("project_root") or "").strip()
+    if not fm_id or not att_data:
+        return ApiFailResponse(message="flow_message_id and attachment_data are required")
+
+    from flow_sdk.builtin.flow_message import FlowMessage as FM
+    from flow_sdk.storage import get_entity_embedded_storage
+    from flow_sdk.fs_store.type_id import TypeId as _TID
+
+    fm = await FM.get_one({"id": fm_id})
+    if not fm:
+        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}")
+
+    storage = get_entity_embedded_storage(_TID(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm_id))
+    src_path = Path(storage.get_storage_path(att_data))
+    if not src_path.exists():
+        return ApiFailResponse(message=f"Attached jsonl not found at {src_path}")
+
+    # Claude Code stores transcripts at ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl
+    # The encoded-cwd is the absolute project path with separators rewritten.
+    home = Path.home()
+    claude_root = home / ".claude" / "projects"
+    if project_root:
+        encoded = str(Path(project_root).resolve()).replace(os.sep, "-").lstrip("-")
+    else:
+        encoded = "rehydrated"
+    target_dir = claude_root / encoded
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    new_session_id = str(uuid.uuid4())
+    target_path = target_dir / f"{new_session_id}.jsonl"
+    target_path.write_bytes(src_path.read_bytes())
+
+    return ApiSuccessResponse(data={
+        "session_id": new_session_id,
+        "jsonl_path": str(target_path),
+    })
 
 
 @action.get(action_name="open", types=["notification"])
