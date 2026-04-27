@@ -44,6 +44,14 @@ export const getSessionDisplayName = (
     }
   }
 
+  // process.name mirrors Shell.name (via shell.py propagation) — this is the
+  // Claude-generated PTY tab title shown in TabbedTerminal. Without this
+  // fallback the dialog would say "Session" while the tab shows the real title.
+  const procName = (process as { name?: string | null } | null | undefined)?.name;
+  if (typeof procName === 'string' && procName.trim().length > 0) {
+    return procName.trim();
+  }
+
   if (process?.instruction_content) {
     const trimmed = process.instruction_content.replace(/<!--.*?-->/g, '').trim();
     if (trimmed.length > 0) {
