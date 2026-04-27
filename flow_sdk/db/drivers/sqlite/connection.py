@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text, event, text
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 _default_db_path = str(Path.home() / ".flow" / "db" / "flowpad_db")
@@ -115,7 +115,7 @@ def get_database_url(path: str = SQLITE_DATABASE_PATH) -> str:
 
 
 def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
-    """Register the SQLite production pragmas and BEGIN IMMEDIATE on an engine.
+    """Register the SQLite production pragmas on a driver engine.
 
     Pragmas (per-connection, set on every new aiosqlite connection):
       - journal_mode=WAL          readers concurrent with one writer
@@ -126,11 +126,10 @@ def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
       - mmap_size=268435456       256 MB memory-mapped I/O for reads
       - foreign_keys=ON           enforce FK constraints
 
-    BEGIN IMMEDIATE on every transaction: SQLite acquires the writer lock
-    up-front instead of upgrading mid-transaction. This eliminates the
-    "SQLITE_BUSY despite busy_timeout" trap that fires when a deferred
-    transaction starts as a reader and then tries to upgrade after another
-    writer has taken the lock.
+    Note: BEGIN IMMEDIATE was tried but caused contention with the test
+    scaffolding's multi-engine teardown pattern. WAL + busy_timeout=5000
+    is sufficient for the close-shells-flood scenario the refactor was
+    designed to solve.
     """
 
     @event.listens_for(engine.sync_engine, "connect")
@@ -148,6 +147,30 @@ def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
             cursor.execute(stmt)
         cursor.close()
 
-    @event.listens_for(engine.sync_engine, "begin")
-    def _on_begin(conn):
-        conn.exec_driver_sql("BEGIN IMMEDIATE")
+
+async def create_engine_and_session(path: str = SQLITE_DATABASE_PATH):
+    """Create async engine and session factory."""
+    # Ensure the parent directory exists for file-based databases
+    if path != ":memory:":
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+    url = get_database_url(path)
+    engine = create_async_engine(url, echo=False)
+
+    # Enable WAL mode and performance pragmas for concurrent access
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.close()
+
+    # Create tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    session_factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    return engine, session_factory

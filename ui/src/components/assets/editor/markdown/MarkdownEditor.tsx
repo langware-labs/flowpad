@@ -52,6 +52,8 @@ interface MarkdownEditorProps {
   onActiveSideTabChange?: (id: string) => void;
   /** Forwarded to the Chat tab — runs once after its backing process is created. */
   chatOnProcessCreated?: (process: import('@sdk').AgenticProcess) => Promise<void> | void;
+  /** Drop the Chat tab from the side drawer. For hosts that render their own chat surface. */
+  disableChat?: boolean;
 }
 
 /**
@@ -71,6 +73,7 @@ export function MarkdownEditor({
   activeSideTab,
   onActiveSideTabChange,
   chatOnProcessCreated,
+  disableChat,
 }: MarkdownEditorProps) {
   return (
     <MarkdownEditorContent
@@ -82,6 +85,7 @@ export function MarkdownEditor({
       activeSideTab={activeSideTab}
       onActiveSideTabChange={onActiveSideTabChange}
       chatOnProcessCreated={chatOnProcessCreated}
+      disableChat={disableChat}
     />
   );
 }
@@ -97,6 +101,7 @@ function MarkdownEditorContent({
   activeSideTab,
   onActiveSideTabChange,
   chatOnProcessCreated,
+  disableChat,
 }: {
   fsRef: FSRef;
   sourcePath: string;
@@ -106,6 +111,7 @@ function MarkdownEditorContent({
   activeSideTab?: string;
   onActiveSideTabChange?: (id: string) => void;
   chatOnProcessCreated?: MarkdownEditorProps['chatOnProcessCreated'];
+  disableChat?: boolean;
 }) {
   const { navigation, currentDock } = useDockNavigation();
   const [viewMode, setViewMode] = useState<ViewMode>(readStoredMode);
@@ -258,6 +264,7 @@ function MarkdownEditorContent({
             activeTab={activeSideTab}
             onActiveTabChange={onActiveSideTabChange}
             chatOnProcessCreated={chatOnProcessCreated}
+            disableChat={disableChat}
             editorRef={milkdownRef}
             toolbarRight={
               viewMode === 'editor' ? (

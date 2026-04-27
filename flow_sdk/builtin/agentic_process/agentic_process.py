@@ -932,6 +932,13 @@ class AgenticProcess(Entity):
             resume_session_id=self.session_id,
         )
 
+        # Inline embedded-agent definitions (and persona directive when a single
+        # agent is loaded) into the prompt — same path the SDK ``prompt()`` API
+        # uses via ``driver.run_print_turn``. Without this, HTTP chat would
+        # see the agent only as a delegable Task sub-agent and never adopt
+        # the persona for free-form questions.
+        composed_prompt = self.driver.compose_prompt(message, self.get_agents_json())
+
         handler = StreamingResponseHandler()
 
         async def _run_turn() -> None:
@@ -948,7 +955,7 @@ class AgenticProcess(Entity):
                         except Exception:
                             logger.debug("prompt: lifecycle save failed", exc_info=True)
 
-                    async for fd in worker.execute(prompt=message, context=context):
+                    async for fd in worker.execute(prompt=composed_prompt, context=context):
                         await handler.on_flow_data(fd)
                         # Persist session_id on first capture so subsequent turns resume.
                         if worker.get_session_id() and not self.session_id:
@@ -1097,14 +1104,24 @@ class AgenticProcess(Entity):
             self.embedded_agent_ids = list(self.embedded_agent_ids or []) + [name]
 
     def get_agents_json(self) -> "dict | None":
-        """Return merged --agents JSON from all embedded agents, or None if none loaded."""
+        """Return merged --agents JSON from all embedded agents, or None if none loaded.
+
+        Falls back to the persisted ``cli_config.agents_json`` when no in-memory
+        agents are loaded — required for HTTP-driven chat flows where
+        ``load_embedded_agent_action`` persists the agent spec on ``cli_config``
+        without rebuilding the in-memory list. Without this fallback,
+        ``compose_prompt`` sees ``None`` and skips the persona directive, so
+        the embedded agent only ever runs as a delegable Task sub-agent.
+        """
         _agents: list = object.__getattribute__(self, "__dict__").get("_embedded_agents", [])
-        if not _agents:
-            return None
-        result: dict = {}
-        for rec in _agents:
-            result.update(rec.to_agents_cli_json())
-        return result or None
+        if _agents:
+            result: dict = {}
+            for rec in _agents:
+                result.update(rec.to_agents_cli_json())
+            if result:
+                return result
+        persisted = (self.cli_config or {}).get("agents_json") or None
+        return persisted or None
 
     # ── Embedded assets ────────────────────────────────────────────────────────
     # Unified attach/detach for agents, skills, and any future file-backed entity.

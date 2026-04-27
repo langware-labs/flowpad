@@ -1,4 +1,5 @@
 import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownEditor';
+import { EntityChatPanel } from '@src/components/entity-chat-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { Agent, AgenticProcess, FSRef } from '@sdk';
 import { useCallback } from 'react';
@@ -9,10 +10,12 @@ interface AgentAssetEditorProps {
 }
 
 /**
- * Agent files are edited and chatted with through the standard `MarkdownEditor`.
- * The Chat tab owns the conversation; we also hook into first-process creation
- * to embed this agent into the backing AgenticProcess so the CLI worker gets
- * the `--agents` flag.
+ * Agent files use a vertical layout: the markdown body on top and an
+ * `EntityChatPanel` pinned to the bottom for talking to the agent. The doc's
+ * side drawer drops its Chat tab (`disableChat`) so we don't mount two
+ * chats against the same target — a race on lazy `AgenticProcess` creation.
+ * On first send, `loadEmbeddedAgent` registers this .md as the embedded
+ * agent so the CLI worker gets the `--agents` flag.
  */
 export function AgentAssetEditor({ fsRef }: AgentAssetEditorProps) {
   const { entity: agent } = useEntityByPath<Agent>(Agent.type, fsRef);
@@ -23,11 +26,21 @@ export function AgentAssetEditor({ fsRef }: AgentAssetEditorProps) {
     },
     [sourcePath],
   );
+  const target = agent ? agent.typeId.toString() : null;
   return (
-    <MarkdownEditor
-      fsRef={fsRef}
-      chatTarget={agent ? agent.typeId.toString() : null}
-      chatOnProcessCreated={embedAgent}
-    />
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1">
+        <MarkdownEditor fsRef={fsRef} chatTarget={target} disableChat />
+      </div>
+      {target && (
+        <div className="h-[300px] flex-shrink-0 border-t" data-testid="agent-bottom-chat">
+          <EntityChatPanel
+            target={target}
+            onProcessCreated={embedAgent}
+            className="h-full"
+          />
+        </div>
+      )}
+    </div>
   );
 }

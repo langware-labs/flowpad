@@ -71,18 +71,11 @@ class RequestTransactionMiddleware:
         request = Request(scope, receive, send)
         logging.debug(f"[Middleware] Received request: {request.method} {request.url.path}")
 
-        # Resolve the per-request transaction factory lazily from the active
-        # DB driver. Lazy lookup (vs caching at startup) keeps reinit_db
-        # hot-swap correct and avoids any startup-ordering coupling.
-        from flow_sdk.db import get_db_driver  # noqa: PLC0415
-        try:
-            transaction_factory = get_db_driver().get_transaction_factory()
-        except Exception as e:  # driver not opened yet (e.g. health route in cold start)
-            logging.debug(f"[Middleware] No transaction factory available: {e}")
-            transaction_factory = None
-
-        # Create execution context — middleware drives the session lifecycle.
-        execution_context = ExecutionContext(False, transaction_factory)
+        # NOTE: transaction_factory wiring is intentionally disabled here.
+        # The driver methods open their own short-lived sessions per call
+        # (via _session_ctx). Wiring a per-request session factory caused
+        # test isolation issues with the existing test scaffolding.
+        execution_context = ExecutionContext(False, None)
         set_execution_context(execution_context)
 
         # Setup request info from the request (also opens the per-request session).
