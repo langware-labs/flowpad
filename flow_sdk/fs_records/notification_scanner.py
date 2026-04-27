@@ -121,6 +121,8 @@ async def _process_manifest(
     conversation_id = data.get("conversation_id")
     manifest_branch = data.get("branch") or ""
     manifest_repo_id = data.get("repo_id") or ""
+    remote_project_id = data.get("project_id") or ""
+    remote_project_name = data.get("project_name") or ""
 
     # Don't import tasks that were created by the local user (sender)
     if sender_id == local_user_id:
@@ -164,6 +166,8 @@ async def _process_manifest(
             "branch": manifest_branch,
             "sender_name": sender_name,
             "sender_email": data.get("sender_email") or "",
+            "remote_project_id": remote_project_id,
+            "remote_project_name": remote_project_name,
         },
     })
     task = await task.save(owner_typeid)
