@@ -2210,23 +2210,30 @@ class SQLiteDBDriver(DBDriver):
         )
 
     def _get_entity_data_dict(self, entity: DBBaseRecord) -> dict:
-        """Get dynamic fields as dict, excluding blob fields.
+        """Get dynamic fields as dict, excluding blob fields and db-excluded fields.
 
         Blob fields are stored separately in blob storage, not in the entity's
         data column. This ensures blob fields are only loaded when explicitly
         expanded via expand_blobs().
+
+        Fields declared with db_exclude=True (e.g. NoDBAPIField) are also skipped:
+        they hold transient runtime state (e.g. `expand`) that must not be
+        persisted, otherwise stale flags can resurrect across DB roundtrips.
         """
         base_fields = set(DBBaseRecord.model_fields.keys())
         # Get blob field names to exclude them from entity data storage
         blob_fields = set(entity.__class__.get_blob_fields_names())
         data = {}
         for field_name in entity.__class__.model_fields:
-            if field_name not in base_fields and field_name not in blob_fields:
-                value = getattr(entity, field_name, None)
-                if value is not None:
-                    serialized = self._serialize_value(value)
-                    if serialized is not None:
-                        data[field_name] = serialized
+            if field_name in base_fields or field_name in blob_fields:
+                continue
+            if entity.__class__.is_db_excluded(field_name):
+                continue
+            value = getattr(entity, field_name, None)
+            if value is not None:
+                serialized = self._serialize_value(value)
+                if serialized is not None:
+                    data[field_name] = serialized
         return data
 
     def _serialize_value(self, value: Any) -> Any:
