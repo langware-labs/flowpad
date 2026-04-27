@@ -206,7 +206,7 @@ export function ConversationView({ conversationId, task, senderName, onChoosePro
       {pointers.length === 0 ? (
         <p className="text-xs italic text-muted-foreground/60">No messages yet.</p>
       ) : (
-        <div className="space-y-2">
+        <div className="flex flex-col gap-3">
           {pointers.map((ptr) => (
             <FlowMessageBubble
               key={ptr.message_id}

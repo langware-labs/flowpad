@@ -6,7 +6,7 @@
  */
 
 import { useState } from 'react';
-import { ArrowLeft, MessageSquare } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { Spec, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ExpansionRequest } from '@sdk/FlowSync/query';
@@ -74,21 +74,22 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
         </section>
 
         {/* Conversation */}
-        <section>
-          <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            <MessageSquare className="h-3.5 w-3.5" />
+        <section className="-mx-4 flex flex-col">
+          <div className="flex h-9 flex-shrink-0 items-center border-y border-border px-4 text-xs font-medium text-muted-foreground">
             Conversation
-          </h3>
-          {task.conversation_id ? (
-            <ConversationView
-              conversationId={task.conversation_id}
-              task={task}
-              senderName={senderName}
-              onChooseProject={() => setProjectPickerOpen(true)}
-            />
-          ) : (
-            <p className="text-xs italic text-muted-foreground/60">No conversation yet.</p>
-          )}
+          </div>
+          <div className="px-4 pt-3">
+            {task.conversation_id ? (
+              <ConversationView
+                conversationId={task.conversation_id}
+                task={task}
+                senderName={senderName}
+                onChooseProject={() => setProjectPickerOpen(true)}
+              />
+            ) : (
+              <p className="text-xs italic text-muted-foreground/60">No conversation yet.</p>
+            )}
+          </div>
         </section>
       </div>
 
