@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { FolderOpen } from 'lucide-react';
 import { Conversation, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
@@ -15,10 +14,9 @@ interface ConversationViewProps {
   conversationId: string;
   task: ITask;
   senderName?: string;
-  onChooseProject?: () => void;
 }
 
-export function ConversationView({ conversationId, task, senderName, onChooseProject }: ConversationViewProps) {
+export function ConversationView({ conversationId, task, senderName }: ConversationViewProps) {
   const taskId = task.id ?? '';
 
   const { mapping, loaded: mappingLoaded } = useProjectMapping();
@@ -80,19 +78,6 @@ export function ConversationView({ conversationId, task, senderName, onChoosePro
               }}
             />
           ))}
-        </div>
-      )}
-
-      {onChooseProject && (
-        <div className="flex">
-          <button
-            onClick={onChooseProject}
-            title="Choose project folder"
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <FolderOpen className="h-4 w-4 shrink-0" />
-            Choose Project
-          </button>
         </div>
       )}
 
