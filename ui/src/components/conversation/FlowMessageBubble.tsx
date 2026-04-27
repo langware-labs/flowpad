@@ -27,6 +27,7 @@ interface FlowMessageBubbleProps {
   onShowTask?: () => void;
   onExecute?: (messageId: string) => void;
   onApproveAndExecute?: (messageId: string, attachmentIndex: number) => void;
+  onQueuePrompt?: (prompt: import('./PromptComposerDialog').QueuedPrompt) => void;
 }
 
 export function FlowMessageBubble({
@@ -36,6 +37,7 @@ export function FlowMessageBubble({
   onShowTask,
   onExecute,
   onApproveAndExecute,
+  onQueuePrompt,
 }: FlowMessageBubbleProps) {
   const { data: fm } = useEntity<FlowMessage>(
     new TypeId(FlowMessage.type, messageId),
@@ -112,6 +114,7 @@ export function FlowMessageBubble({
       onShowTask={onShowTask}
       onExecute={onExecute ? () => onExecute(messageId) : undefined}
       onApproveAndExecute={onApproveAndExecute ? (idx) => onApproveAndExecute(messageId, idx) : undefined}
+      onQueuePrompt={onQueuePrompt}
       footer={footer}
     />
   );
