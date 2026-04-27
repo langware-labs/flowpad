@@ -11,6 +11,7 @@ import { TypeId } from './models/TypeId';
 import { ViewType } from './utils/ui/view-types';
 import { Callable } from './types';
 import { defineGlobal } from './utils/globals';
+import { WikiLink } from './types/wiki';
 
 export function getProxy<T extends Manageable & { [key: string | symbol]: any }>(target: T) {
   return new Proxy(target, {
@@ -42,6 +43,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   static icon: string | null = null;
   id: string;
   uname?: string;
+  system?: boolean;
   created_by?: string;
   created_date?: Date;
   updated_by?: string;
@@ -485,6 +487,41 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
 
   public async watch(): Promise<() => Promise<void>> {
     return await dataManager.watch(new TypeId(this.getType(), this.id));
+  }
+
+  /**
+   * Outgoing wiki links from this entity. Hits
+   * `GET /api/v1/graph/{type}/{id}/wiki/links`.
+   */
+  public async getLinks(): Promise<WikiLink[]> {
+    const info = new ActionInfo('wiki', this.typeId.type, this.typeId.id, 'GET');
+    info.subpath = 'links';
+    return (await dataManager.callAction<undefined, WikiLink[]>(info)) ?? [];
+  }
+
+  /**
+   * Inbound wiki links pointing at this entity. Hits
+   * `GET /api/v1/graph/{type}/{id}/wiki/backlinks`.
+   */
+  public async getBacklinks(): Promise<WikiLink[]> {
+    const info = new ActionInfo('wiki', this.typeId.type, this.typeId.id, 'GET');
+    info.subpath = 'backlinks';
+    return (await dataManager.callAction<undefined, WikiLink[]>(info)) ?? [];
+  }
+
+  /**
+   * Re-extract this entity's outgoing wiki edges. Mirrors `Entity.reindex` on
+   * the Python side. Hits `POST /api/v1/graph/{type}/{id}/wiki/reindex`.
+   *
+   * Pass `body` when the caller already has the markdown text in hand
+   * (e.g. the editor toolbar after an out-of-band wikilink insert) so the
+   * server doesn't need to re-read the record from disk.
+   */
+  public async reindex(body?: string): Promise<WikiLink[]> {
+    const info = new ActionInfo('wiki', this.typeId.type, this.typeId.id, 'POST');
+    info.subpath = 'reindex';
+    if (body !== undefined) info.bodyParameters = { body };
+    return (await dataManager.callAction<undefined, WikiLink[]>(info)) ?? [];
   }
 
   public async get_related_workspace(): Promise<Workspace | undefined> {

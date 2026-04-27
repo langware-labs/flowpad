@@ -84,11 +84,27 @@ function HeartbeatChart({
   }, []);
 
   // Advance clock every second → icons flow smoothly via CSS transition
-  // Pause when user hovers so icons freeze in place
+  // Pause when user hovers or tab is hidden
   useEffect(() => {
     if (hovered) return;
-    const id = setInterval(() => setNow(Date.now()), 1_000);
-    return () => clearInterval(id);
+
+    const tick = () => setNow(Date.now());
+    let id = setInterval(tick, 1_000);
+
+    const onVisibility = () => {
+      if (document.hidden) {
+        clearInterval(id);
+      } else {
+        tick();
+        id = setInterval(tick, 1_000);
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [hovered]);
 
   const visible = useMemo(() => {

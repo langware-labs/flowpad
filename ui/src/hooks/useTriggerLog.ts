@@ -10,6 +10,7 @@ export interface TriggerLogEntry {
   is_test: boolean;
   rule_name: string;
   actions: string[];
+  agentic_process_id?: string | null;
 }
 
 const POLL_INTERVAL_MS = 5000;

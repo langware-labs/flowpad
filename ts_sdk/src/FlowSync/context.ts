@@ -609,6 +609,33 @@ class DataContext extends EventEmitter {
     return this.getContextEntity(ContextEntitiesEnum.CurrentComputeNodeTypeId) as ComputeNode | null;
   }
 
+  /** Lazily-hydrated @sandbox compute node from bootstrap (E2B-backed). Null when E2B is not configured. */
+  private _sandboxComputeNode: ComputeNode | null = null;
+  get sandboxComputeNode(): ComputeNode | null {
+    if (!this.bootstrapInfo?.sandbox_available || !this.bootstrapInfo?.sandbox_compute_node) {
+      return null;
+    }
+    if (this._sandboxComputeNode === null) {
+      this._sandboxComputeNode = new ComputeNode(this.bootstrapInfo.sandbox_compute_node as any);
+      this._sandboxComputeNode.markAsExpanded();
+    }
+    return this._sandboxComputeNode;
+  }
+
+  /** Lazily-hydrated @docker-<name> compute nodes from bootstrap. One entry per live worker. */
+  private _dockerComputeNodes: ComputeNode[] | null = null;
+  get dockerComputeNodes(): ComputeNode[] {
+    const raws = this.bootstrapInfo?.docker_compute_nodes ?? [];
+    if (this._dockerComputeNodes === null || this._dockerComputeNodes.length !== raws.length) {
+      this._dockerComputeNodes = raws.map((r) => {
+        const cn = new ComputeNode(r as any);
+        cn.markAsExpanded();
+        return cn;
+      });
+    }
+    return this._dockerComputeNodes;
+  }
+
   get domainTypeId(): TypeId | null {
     return this.getContextEntityTypeId(ContextEntitiesEnum.CurrentDomainTypeId) ?? null;
   }

@@ -675,6 +675,10 @@ class LocalComputeProvider(ComputeProvider):
             # Ensure working directory exists (required on Windows for winpty)
             os.makedirs(pty_working_dir, exist_ok=True)
 
+            logger.info(
+                f"Spawning PTY (session={session_id}, cwd={pty_working_dir!r}, "
+                f"argv={final_spawn_args!r})"
+            )
             try:
                 pty_process = PtyProcess.spawn(  # type: ignore[union-attr]
                     final_spawn_args,
@@ -711,13 +715,21 @@ class LocalComputeProvider(ComputeProvider):
                                         exit_code = pty_process.exitstatus
                                     except Exception:
                                         pass
+                                    logger.info(
+                                        f"PTY process exited (session={session_id}, "
+                                        f"argv={final_spawn_args!r}, exit_code={exit_code})"
+                                    )
                                     break
                             except EOFError:
                                 # PTY closed
                                 break
-                            except Exception:
+                            except Exception as read_exc:
                                 if not pty_session_running["value"]:
                                     break
+                                logger.warning(
+                                    f"PTY read error (session={session_id}, "
+                                    f"argv={final_spawn_args!r}): {read_exc!r}"
+                                )
                                 break
                     except Exception:
                         pass
@@ -918,9 +930,27 @@ class LocalComputeProvider(ComputeProvider):
 
         Args:
             provider_node_id: The local compute node provider ID.
-            initial_dir: Optional path to open the dialog at initially.
+            initial_dir: Optional path to open the dialog at initially. The frontend
+                sends VFS-relative paths (no leading slash) — we rewrite those to
+                absolute OS paths here so the native dialogs can consume them.
         """
         import subprocess
+        from flow_sdk.config import get_os_root_path
+
+        # Normalize VFS-relative → absolute OS path. Drop the hint if it doesn't
+        # resolve to an existing directory, so a stale/bogus suggestion never
+        # fails the whole dialog.
+        if initial_dir:
+            if sys.platform == PLATFORM_WIN32:
+                has_drive = len(initial_dir) >= 2 and initial_dir[1] == ":"
+                if not has_drive:
+                    initial_dir = os.path.join(
+                        get_os_root_path(), initial_dir.replace("/", os.sep).lstrip(os.sep)
+                    )
+            elif not initial_dir.startswith("/"):
+                initial_dir = "/" + initial_dir
+            if not os.path.isdir(initial_dir):
+                initial_dir = None
 
         if sys.platform == PLATFORM_DARWIN:
             # Activate Finder to bring the dialog in front, close any Finder

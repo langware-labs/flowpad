@@ -10,6 +10,7 @@ import { Sidebar, SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuButton, 
 import { useInboxStore } from '@src/store/use-inbox-store';
 import {
   ArrowLeft,
+  RefreshCw,
   BookOpen,
   Bug,
   ChevronDown,
@@ -40,7 +41,7 @@ const mainNavItems = [
   { title: 'Inbox', icon: Inbox, viewType: ViewType.INBOX },
   { title: 'Shell', icon: Terminal, viewType: ViewType.SHELL },
   // { title: 'Execute Flow', icon: PlaySquare, viewType: ViewType.EXECUTE_FLOW },
-  { title: 'Assets', icon: BookOpen, viewType: ViewType.ASSETS },
+  { title: 'Wiki', icon: BookOpen, viewType: ViewType.ASSETS },
   { title: 'Triggers', icon: Zap, viewType: ViewType.TRIGGERS },
 ] as const;
 
@@ -118,14 +119,21 @@ export function CollapsedSidebar() {
       <SidebarContent className="flex-1">
         <SidebarGroup className="px-0 py-2">
           <SidebarMenu>
-            <SidebarMenuItem>
+            <SidebarMenuItem className="flex flex-row">
               <SidebarMenuButton
                 tooltip="Back"
                 onClick={goBack}
                 disabled={!canGoBack}
-                className="h-6 w-full justify-start px-2"
+                className="h-6 w-1/2 justify-center px-0"
               >
                 <ArrowLeft className="h-3 w-3" />
+              </SidebarMenuButton>
+              <SidebarMenuButton
+                tooltip="Refresh"
+                onClick={() => window.location.reload()}
+                className="h-6 w-1/2 justify-center px-0"
+              >
+                <RefreshCw className="h-3 w-3" />
               </SidebarMenuButton>
             </SidebarMenuItem>
 

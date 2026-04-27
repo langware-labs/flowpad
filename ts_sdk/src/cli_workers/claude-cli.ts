@@ -21,6 +21,11 @@ export interface ClaudeCliOptionsOptions {
   workdir?: string
   env_vars?: Record<string, string>
   add_dirs?: string[]
+  print_mode?: boolean
+  /** One of "text" | "json" | "stream-json"; omit for CLI default. */
+  output_format?: string | null
+  /** Required when output_format === "stream-json"; auto-enabled in that case. */
+  verbose?: boolean
 }
 
 export class ClaudeCliOptions extends WorkerCliOptions {
@@ -34,6 +39,9 @@ export class ClaudeCliOptions extends WorkerCliOptions {
   worktree: boolean
   agents_json?: Record<string, any> | null
   addDirs: string[]
+  print_mode: boolean
+  output_format?: string | null
+  verbose: boolean
 
   constructor(opts: ClaudeCliOptionsOptions = {}) {
     super(opts.workdir ?? undefined, opts.env_vars)
@@ -47,6 +55,9 @@ export class ClaudeCliOptions extends WorkerCliOptions {
     this.worktree = opts.worktree ?? false
     this.agents_json = opts.agents_json ?? undefined
     this.addDirs = opts.add_dirs ?? []
+    this.print_mode = opts.print_mode ?? false
+    this.output_format = opts.output_format ?? undefined
+    this.verbose = (opts.verbose ?? false) || opts.output_format === 'stream-json'
 
     // Auto-inject CLAUDE_PROJECT_DIR from workdir (same as Python setdefault)
     if (opts.workdir) {
@@ -63,6 +74,8 @@ export class ClaudeCliOptions extends WorkerCliOptions {
     if (this.chrome) args.push('--chrome')
     if (this.debug) args.push('--debug')
     if (this.worktree) args.push('--worktree')
+    if (this.verbose) args.push('--verbose')
+    if (this.output_format) args.push(`--output-format ${shellQuote(this.output_format)}`)
 
     if (this.resume && this.session_id) {
       args.push(`--resume ${shellQuote(this.session_id)}`)
@@ -79,6 +92,7 @@ export class ClaudeCliOptions extends WorkerCliOptions {
     for (const d of this.addDirs) {
       args.push(`--add-dir ${shellQuote(d)}`)
     }
+    if (this.print_mode) args.push('-p')
 
     return args
   }
@@ -97,6 +111,9 @@ export class ClaudeCliOptions extends WorkerCliOptions {
       worktree: this.worktree,
       agents_json: this.agents_json,
       add_dirs: this.addDirs,
+      print_mode: this.print_mode,
+      output_format: this.output_format,
+      verbose: this.verbose,
     }
   }
 
@@ -114,6 +131,9 @@ export class ClaudeCliOptions extends WorkerCliOptions {
       workdir: data['workdir'] ?? undefined,
       env_vars: data['env_vars'] ?? {},
       add_dirs: data['add_dirs'] ?? [],
+      print_mode: Boolean(data['print_mode'] ?? false),
+      output_format: data['output_format'] ?? undefined,
+      verbose: Boolean(data['verbose'] ?? false),
     })
   }
 }

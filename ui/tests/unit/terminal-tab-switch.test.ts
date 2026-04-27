@@ -16,16 +16,25 @@ const tabbedTerminalPath = resolve(
 );
 const tabbedTerminalSource = readFileSync(tabbedTerminalPath, 'utf-8');
 
+// Opener-button rendering moved to the TerminalOpenerToolbar sibling module;
+// match against its source so the contract stays intact after the refactor.
+const openerToolbarPath = resolve(
+  __dirname,
+  '../../src/components/terminal/openers/TerminalOpenerToolbar.tsx',
+);
+const openerToolbarSource = readFileSync(openerToolbarPath, 'utf-8');
+
 describe('TabbedTerminal – tab switching contract (FLOWPAD-1645)', () => {
   it('renders a plain terminal button in the tab-end toolbar', () => {
-    expect(tabbedTerminalSource).toContain('data-testid="open-terminal-tab-button"');
-    expect(tabbedTerminalSource).toContain('await navigation.openNewShell()');
+    expect(openerToolbarSource).toContain("'open-terminal-tab-button'");
+    expect(tabbedTerminalSource).toContain('navigation.openNewShell');
   });
 
   it('locks tab creation buttons while a tab is being created', () => {
     expect(tabbedTerminalSource).toContain('disabled={isTabCreationPending}');
-    expect(tabbedTerminalSource).toContain("data-state={isClaudeCreationPending ? 'waiting' : 'idle'}");
-    expect(tabbedTerminalSource).toContain("data-state={isTerminalCreationPending ? 'waiting' : 'idle'}");
+    // Pending state drives an inline spinner (pendingInline) for each opener.
+    expect(tabbedTerminalSource).toContain('pendingInline: isClaudeCreationPending');
+    expect(tabbedTerminalSource).toContain('pendingInline: isTerminalCreationPending');
     expect(tabbedTerminalSource).toContain('Loader2 className="h-4 w-4 animate-spin"');
   });
 

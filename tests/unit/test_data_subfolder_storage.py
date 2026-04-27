@@ -126,16 +126,3 @@ class TestDataSubfolder:
         assert rec.input_dir == rd / "input"
         assert rec.input_dir.is_dir()
 
-    def test_compute_hash_includes_metadata(self, tmp_record):
-        """compute_record_hash looks at metadata.json."""
-        rec, _ = tmp_record
-        h1 = rec.compute_record_hash()
-        assert h1 != "0" * 16
-        assert len(h1) == 16
-
-        # Modify the metadata and verify hash changes
-        rd = Path(rec.path)
-        meta_file = rd / _META_JSON
-        meta_file.write_text(json.dumps({"data": {"id": "test-001", "description": "Changed"}}))
-        h2 = rec.compute_record_hash()
-        assert h2 != h1

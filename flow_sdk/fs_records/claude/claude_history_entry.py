@@ -16,7 +16,6 @@ class ClaudeHistoryEntryFsRecord(Record):
     """One prompt entry from the global Claude Code history."""
 
     _record_type: ClassVar[str] = RecordType.HISTORY_ENTRY
-    _scan_limit: ClassVar[int | None] = 1000
 
     def __init__(self, **kwargs):
         if "type" not in kwargs:
@@ -89,7 +88,7 @@ class ClaudeHistoryEntryFsRecord(Record):
         if ref is None or not ref.id:
             return None
         project = getattr(self, "project", "") or ""
-        return ClaudeSessionRecord.discover_one(ref.id, project=project)
+        return ClaudeSessionRecord.get(ref.id, project=project)
 
     # -- Factory --
 
@@ -118,7 +117,7 @@ class ClaudeHistoryEntryFsRecord(Record):
         return ClaudeHistoryFsRecord.default().entries
 
     @classmethod
-    def discover_one(cls, uid: str, scope=None, **kwargs) -> ClaudeHistoryEntryFsRecord | None:
+    def get(cls, uid: str, scope=None, **kwargs) -> ClaudeHistoryEntryFsRecord | None:
         """Find a single history entry by uid (linear scan)."""
         for entry in cls.discover(scope=scope, **kwargs):
             if entry.id == uid:

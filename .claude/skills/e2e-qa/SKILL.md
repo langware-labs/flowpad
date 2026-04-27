@@ -24,6 +24,27 @@ Your teammates:
 
 ---
 
+## Environment
+
+**Never hardcode port numbers.** Ports come from `.env.local` at the repo root. Always source it before running anything that touches the backend or frontend, and reference URLs through the env vars.
+
+```bash
+set -a; source .env.local; set +a
+# Now $LOCAL_SERVER_PORT and $VITE_PORT are set.
+API_URL="http://localhost:${LOCAL_SERVER_PORT}"
+APP_URL="http://localhost:${VITE_PORT}"
+```
+
+When passing the environment to teammates or tasks, pass these resolved URLs — do not bake literal port numbers into prompts, scenarios, or commands.
+
+Backend start command:
+```bash
+LOCAL_SERVER_PORT=${LOCAL_SERVER_PORT} uv run -m flow_sdk.server.run
+```
+(Module path is `flow_sdk.server.run`, not `server.run`.)
+
+---
+
 ## Your TODO List
 
 ### 1. Identify Job Type
@@ -112,7 +133,7 @@ Task(
   name="qa-tester-1",  # qa-tester-2, qa-tester-3
   prompt="You are a qa-tester teammate on the e2e-qa-cycle team.
     Read your full instructions at .claude/skills/e2e-qa/agents/qa-tester.md.
-    Environment: APP_URL=http://localhost:4097, API_URL=http://localhost:9007
+    Environment: APP_URL=http://localhost:${VITE_PORT}, API_URL=http://localhost:${LOCAL_SERVER_PORT}
     Output dir: <output-dir>/<timestamp>/
     Check TaskList and claim available 'Run:' or 'Validate:' tasks. Work through them until none remain.",
   run_in_background=true
@@ -191,8 +212,8 @@ python -m pytest tests/unit/ -v
 ### Phase 2 — pytest API tests (backend required)
 
 ```bash
-# Ensure backend is running at localhost:9007
-python -m server.run &   # restart if needed
+# Ensure backend is running at localhost:${LOCAL_SERVER_PORT}
+uv run -m flow_sdk.server.run &   # restart if needed
 
 python -m pytest tests/api/ -v
 ```
@@ -203,17 +224,18 @@ python -m pytest tests/api/ -v
 ### Phase 3 — pytest long tests (backend required)
 
 ```bash
-# Ensure backend is running at localhost:9007
-DEEP_TESTING=true python -m pytest tests/long_tests/ -v
+# Ensure backend is running at localhost:${LOCAL_SERVER_PORT}
+DEEP_TESTING=1 FLOWPAD_HUB_URL="http://localhost:${LOCAL_SERVER_PORT}" python -m pytest tests/long_tests/ -v
 ```
 
-- Always set `DEEP_TESTING=true` — without it all long tests are skipped.
+- Always set `DEEP_TESTING=1` (not `=true` — pydantic BaseSettings parses it inconsistently, learned 2026-04-21).
+- Some long tests hardcode `FLOWPAD_HUB_URL` default to 8093; pass it explicitly.
 - **Gate**: all tests pass → proceed to Phase 4
 
 ### Phase 4 — vitest unit tests
 
 ```bash
-cd ui && npm run test:unit
+cd ui && npm run test:vitest:unit
 ```
 
 - **Gate**: all tests pass → proceed to Phase 5
@@ -221,8 +243,8 @@ cd ui && npm run test:unit
 ### Phase 5 — vitest API tests (backend required)
 
 ```bash
-# Ensure backend is running at localhost:9007
-cd ui && npm run test:api
+# Ensure backend is running at localhost:${LOCAL_SERVER_PORT}
+cd ui && npm run test:vitest:api
 ```
 
 - Backend must be running (you own it — restart if needed).
@@ -231,7 +253,7 @@ cd ui && npm run test:api
 ### Phase 6 — vitest react tests
 
 ```bash
-cd ui && npm run test:react
+cd ui && npm run test:vitest:react
 ```
 
 - **Gate**: all tests pass → proceed to Phase 7
@@ -239,7 +261,7 @@ cd ui && npm run test:react
 ### Phase 7 — vitest long tests (backend required)
 
 ```bash
-# Ensure backend is running at localhost:9007
+# Ensure backend is running at localhost:${LOCAL_SERVER_PORT}
 cd ui && npm run test:vitest:long
 ```
 
@@ -252,7 +274,7 @@ cd ui && npm run test:vitest:long
 - Follow [Run Mode](#run-mode) steps 1–12
 - **Before each scenario**, the tester must reset the DB to a clean state:
   ```bash
-  curl -s -X POST http://localhost:9007/api/v1/graph/compute_node/@local/desktop-db/clear
+  curl -s -X POST http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/compute_node/@local/desktop-db/clear
   ```
   This backs up and wipes the DB + FTS index so each scenario starts from a clean bootstrap state.
 - **Gate**: all scenarios pass (or explicitly user-approved skips)
@@ -345,7 +367,7 @@ For each `.md.ts` file the expert produces:
 TaskCreate(
   subject="Run: _discovery/<timestamp>/<scenario-name>",
   description="Execute Playwright scenario at ui/tests/manual_regression/_discovery/<timestamp>/<file>.md.ts
-    Command: cd ui && VITE_PORT=4097 npx playwright test --config tests/manual_regression/_discovery/playwright.config.ts <file>.md.ts
+    Command: cd ui && VITE_PORT=${VITE_PORT} npx playwright test --config tests/manual_regression/_discovery/playwright.config.ts <file>.md.ts
     Write JSON result to <output-dir>/<timestamp>/discovery--<scenario-name>.json
     Report unexpected behavior even if not a hard assertion failure."
 )
@@ -453,7 +475,7 @@ Simple execution — no debug lifecycle unless failures occur.
      description="Execute scenario at <scenario-path>.
        Write JSON result to <output-dir>/<timestamp>/<category>--<scenario-name>.json.
        Playwright .md.ts exists: yes/no.
-       APP_URL=http://localhost:4097, API_URL=http://localhost:9007",
+       APP_URL=http://localhost:${VITE_PORT}, API_URL=http://localhost:${LOCAL_SERVER_PORT}",
      activeForm="Running <category>/<scenario>"
    )
    ```
@@ -621,7 +643,7 @@ This applies to all roles — manager, tester, debugger, and fixer. No team memb
    TaskCreate(
      subject="SkipChallenge: <category>/<scenario>",
      description="Tester proposed skip with reason: <skip_reason>.
-       Investigate the live UI at http://localhost:4097.
+       Investigate the live UI at http://localhost:${VITE_PORT}.
        Determine if the scenario can be automated with alternative steps.
        Output: updated scenario file if automatable, or confirmed-skip justification.
        Skip is ONLY valid for: clipboard API, live Claude response, wrong platform."

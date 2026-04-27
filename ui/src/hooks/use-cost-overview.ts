@@ -19,6 +19,9 @@ interface UseCostOverviewResult {
   data: CostOverview | null;
   isLoading: boolean;
   error: string | null;
+  /** Cache-respecting fetch — no-op if data is still fresh. Use for deferred initial loads. */
+  fetch: () => Promise<void>;
+  /** Force a network refresh, bypassing the cache freshness check. */
   refetch: () => Promise<void>;
 }
 
@@ -73,8 +76,10 @@ export function useCostOverview(options: UseCostOverviewOptions = {}): UseCostOv
       setError(null);
 
       try {
+        // Always dedup concurrent requests — forceRefresh only bypasses the
+        // cache freshness check above, not an already-in-flight fetch.
         let pending = costOverviewInFlight.get(cacheKey);
-        if (!pending || forceRefresh) {
+        if (!pending) {
           pending = fetchCostOverviewFromComputeNode(computeNode.id, sessionLimit);
           costOverviewInFlight.set(cacheKey, pending);
         }
@@ -98,12 +103,14 @@ export function useCostOverview(options: UseCostOverviewOptions = {}): UseCostOv
     }
   }, [autoFetch, computeNode?.id, fetchData]);
 
+  const fetch = useCallback(() => fetchData(false), [fetchData]);
   const refetch = useCallback(() => fetchData(true), [fetchData]);
 
   return {
     data,
     isLoading,
     error,
+    fetch,
     refetch,
   };
 }

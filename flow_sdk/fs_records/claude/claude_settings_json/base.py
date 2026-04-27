@@ -97,7 +97,7 @@ class ClaudeSettingsJsonFsRecord(Record):
         return [r for r in rl if isinstance(r, cls)]
 
     @classmethod
-    def discover_one(cls, record_id: str, scope: Scope | None = None, **kwargs) -> ClaudeSettingsJsonFsRecord | None:
+    def get(cls, record_id: str, scope: Scope | None = None, **kwargs) -> ClaudeSettingsJsonFsRecord | None:
         """Find a specific settings record by id."""
         for r in cls.discover(scope=scope):
             if r.id == record_id:

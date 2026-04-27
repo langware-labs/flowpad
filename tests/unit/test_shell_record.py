@@ -57,10 +57,10 @@ def test_save_and_discover():
     assert "discover-test" in ids
 
 
-def test_discover_one():
+def test_get():
     record = ShellRecord(id="one-test", name="unique")
     record.save()
-    found = ShellRecord.discover_one("one-test")
+    found = ShellRecord.get("one-test")
     assert found is not None
     assert found.id == "one-test"
     assert found.name == "unique"

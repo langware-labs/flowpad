@@ -1,0 +1,41 @@
+/**
+ * Single source of truth for xterm visual config + viewport-size estimates.
+ *
+ * The xterm constructor in InteractiveTerminal/SidecarShellTerminal reads
+ * FONT_FAMILY and FONT_SIZE_PX. The route loader uses estimateCols/Rows to
+ * seed the PTY's initial winsize close to the actual rendered grid, so the
+ * worker's first paint isn't wrapped at 80 cols on a wide viewport. The
+ * InteractiveTerminal still issues an authoritative shell.resize(term.cols,
+ * term.rows) once fit.fit() has run — this seed only needs to be in the right
+ * ballpark.
+ */
+
+export const FONT_FAMILY =
+  '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, Monaco, "Courier New", monospace';
+
+export const FONT_SIZE_PX = 14;
+
+// Empirical ratios for monospace at this font size — accurate enough that the
+// post-mount fit.fit() rarely changes by more than ±2 cols.
+const CELL_WIDTH_RATIO = 0.6;   // Cascadia at 14px renders ~8.4 px/char
+const LINE_HEIGHT_RATIO = 1.3;  // xterm default
+
+// Rough budget for chrome around the terminal pane in /dock/shell:
+// left sidebar + column gutters ≈ 200 px, top/bottom bars ≈ 100 px.
+// The fit.fit() call after mount is what actually places the terminal —
+// this is just a seed so Claude doesn't paint at 80 cols on a 1900px screen.
+const RESERVED_X_PX = 200;
+const RESERVED_Y_PX = 100;
+
+const cellW = FONT_SIZE_PX * CELL_WIDTH_RATIO;
+const cellH = FONT_SIZE_PX * LINE_HEIGHT_RATIO;
+
+/** Best-guess column count for a window of `innerWidth` px. */
+export function estimateCols(innerWidth: number): number {
+  return Math.max(80, Math.floor((innerWidth - RESERVED_X_PX) / cellW));
+}
+
+/** Best-guess row count for a window of `innerHeight` px. */
+export function estimateRows(innerHeight: number): number {
+  return Math.max(24, Math.floor((innerHeight - RESERVED_Y_PX) / cellH));
+}

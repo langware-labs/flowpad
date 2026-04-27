@@ -20,6 +20,7 @@ import {
   FileText,
   Info,
   Loader2,
+  Terminal,
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -505,6 +506,10 @@ export function ClaudeTranscriptViewer({ projectEncodedName, sessionId, selected
     return { ...base, role: 'system', raw: entry };
   };
 
+  const handleOpenInTerminal = useCallback(() => {
+    void navigation.openClaudeSession(sessionId);
+  }, [navigation, sessionId]);
+
   const handleOpenTaskLink = useMemo(() => {
     if (!transcript?.sessionId) return undefined;
     return (activeForm?: string) => {
@@ -644,6 +649,15 @@ export function ClaudeTranscriptViewer({ projectEncodedName, sessionId, selected
       {/* Single top bar — always in the same place, never moves */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2">
         <ViewModeToggle mode={viewMode} onChange={switchMode} />
+
+        <button
+          type="button"
+          onClick={handleOpenInTerminal}
+          className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+          title="Open agentic process in terminal"
+        >
+          <Terminal className="h-3 w-3" />
+        </button>
 
         {/* Scroll-position clock — updates as you scroll */}
         <div className="flex flex-1 items-center justify-center gap-0 text-[11px] tabular-nums">

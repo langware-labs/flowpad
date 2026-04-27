@@ -52,6 +52,11 @@ export class PtyConnection {
     return this._replayDone;
   }
 
+  /** True if this connection is fully attached to the given PTY (started + replay done). */
+  isAttachedTo(ptyId: string): boolean {
+    return this.started && this._replayDone && this._attachedPtyId === ptyId;
+  }
+
   /**
    * True when replay is done AND the WS is live.
    * Equivalent to the old shell.connected.

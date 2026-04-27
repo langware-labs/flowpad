@@ -54,6 +54,7 @@ export enum ViewType {
   CRON = 'cron', // Scheduled cron jobs manager
   WORKFLOWS = 'workflows', // Workflows manager with markdown editor
   ASSETS = 'assets', // Assets - unified docs/skills/workflows tree
+  PROJECT = 'project', // Collaboration on a project — meet, share tabs/docs/plans
   INBOX = 'inbox', // Inbox — received FlowMessages from hub
 }
 

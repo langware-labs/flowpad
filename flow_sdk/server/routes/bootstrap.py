@@ -41,9 +41,14 @@ from flow_sdk.builtin.user import User
 from flow_sdk.builtin.workspace import Workspace
 from flow_sdk.config import (
     AGENT_MOUNT_FOLDER,
+    FLOWPAD_ASSISTANT_DIRNAME,
+    FLOWPAD_ASSISTANT_PROJECT_NAME,
+    FLOWPAD_ASSISTANT_PROJECT_UNAME,
     ComputeProviderType,
     StorageProvider,
+    flowpad_assistant_project_root,
     get_os_root_path,
+    system_projects_root,
 )
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.core.schema import get_public_schema
@@ -99,6 +104,23 @@ def get_default_desktop_email() -> str:
     """
     hostname = socket.gethostname()
     return f"{hostname}@{DESKTOP_EMAIL_DOMAIN}"
+
+
+def get_name() -> Optional[str]:
+    """Get user full name from git config user.name."""
+    try:
+        result = subprocess.run(
+            ["git", "config", "user.name"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        name = result.stdout.strip()
+        if name:
+            return name
+    except Exception:
+        pass
+    return None
 
 
 def get_email() -> Optional[str]:
@@ -416,8 +438,10 @@ def build_app_paths() -> AppPaths:
     workspace = f"{home}/Flowpad workspace"
     skills = f"{workspace}/.claude/skills"
     user_skills = f"{home}/.claude/skills"
-    system_skills = f"{workspace}/.flow/system_assets/skills"
-    system_agents = f"{workspace}/.flow/system_assets/agents"
+    user_agents = f"{home}/.claude/agents"
+    _assistant_root = flowpad_assistant_project_root()
+    system_skills = str(_assistant_root / ".claude" / "skills")
+    system_agents = str(_assistant_root / ".claude" / "agents")
     logs = f"{home}/.flow/logs"
     settings = f"{workspace}/.flow/settings.json"
 
@@ -427,6 +451,7 @@ def build_app_paths() -> AppPaths:
         workspace=workspace,
         skills=skills,
         user_skills=user_skills,
+        user_agents=user_agents,
         system_skills=system_skills,
         system_agents=system_agents,
         logs=logs,
@@ -622,14 +647,20 @@ async def get_or_create_local_user() -> User:
         if DESKTOP_LABEL not in (existing_by_uname.labels or []):
             existing_by_uname.add_label(DESKTOP_LABEL)
             await existing_by_uname.save()
-        # Update email/name if still defaults
-        if existing_by_uname.name == "Local Desktop User" or not existing_by_uname.email:
-            email = await asyncio.to_thread(get_email) or get_default_desktop_email()
-            name = email.split("@")[0].replace(".", " ").title()
+        # Update email/name: always prefer git config user.name over auto-derived names
+        email = await asyncio.to_thread(get_email) or get_default_desktop_email()
+        git_name = await asyncio.to_thread(get_name)
+        name_from_email = email.split("@")[0].replace(".", " ").title()
+        needs_update = (
+            not existing_by_uname.email
+            or existing_by_uname.name == "Local Desktop User"
+            or (git_name and existing_by_uname.name != git_name)
+        )
+        if needs_update:
             existing_by_uname.email = email
-            existing_by_uname.name = name
+            existing_by_uname.name = git_name or name_from_email
             await existing_by_uname.save()
-            logging.info(f"Updated @local user with email: {email}, name: {name}")
+            logging.info(f"Updated @local user with email: {email}, name: {existing_by_uname.name}")
         return existing_by_uname
 
     # Create new desktop user
@@ -638,8 +669,9 @@ async def get_or_create_local_user() -> User:
         email = get_default_desktop_email()
         logging.info(f"No email found for desktop user, using default: {email}")
 
-    # Extract name from email (before @)
-    name = email.split("@")[0].replace(".", " ").title()
+    # Prefer git config user.name; fall back to email-derived name
+    git_name = await asyncio.to_thread(get_name)
+    name = git_name or email.split("@")[0].replace(".", " ").title()
 
     user = User(
         type="user",
@@ -817,7 +849,7 @@ async def get_or_create_local_compute_node(
     # Generate provider_id if not set (needed for PTY operations)
     if not compute_node.node_provider_id:
         try:
-            compute_node.node_provider_id = "name_" + str(uuid.uuid4())
+            compute_node.node_provider_id = _new_provider_id("name")
             await compute_node.save()
             logging.info(f"@local compute node initialized with provider_id: {compute_node.node_provider_id}")
         except Exception as e:
@@ -826,61 +858,197 @@ async def get_or_create_local_compute_node(
     return compute_node
 
 
+def _new_provider_id(prefix: str) -> str:
+    """Stable per-process id used by PTY session manager & provider caches."""
+    return f"{prefix}_{uuid.uuid4()}"
+
+
+def is_sandbox_available() -> bool:
+    """True iff the E2B SDK is installed and an E2B_KEY is configured.
+
+    Drives both the bootstrap `sandbox_available` flag and whether the
+    @sandbox compute node is created.
+    """
+    if not os.getenv("E2B_KEY"):
+        return False
+    try:
+        from flow_sdk.compute.providers.e2b.provider import E2B_AVAILABLE  # noqa: PLC0415
+        return E2B_AVAILABLE
+    except Exception:
+        return False
+
+
+async def get_docker_compute_nodes() -> list:
+    """Return @docker-* ComputeNode entities for every live worker in the registry.
+
+    Only returns nodes that both (a) exist in the DB and (b) have an active
+    WS connection — i.e. the container is currently reachable.
+    """
+    try:
+        from flow_sdk.compute.providers.docker import docker_registry  # noqa: PLC0415
+    except Exception:
+        return []
+
+    live_machine_ids = [w["machine_id"] for w in docker_registry.list_workers()]
+    if not live_machine_ids:
+        return []
+
+    # Resolve by provider id directly — avoids fetching every @docker-* CN.
+    results = []
+    for mid in live_machine_ids:
+        try:
+            cn = await ComputeNode.get_by_prop("node_provider_id", mid, "compute_node")
+        except Exception:
+            continue
+        if cn is not None:
+            results.append(cn)
+    return results
+
+
+async def get_or_create_sandbox_compute_node(
+    local_project: Optional[Entity] = None,
+    desktop_user: Optional[Entity] = None,
+) -> ComputeNode:
+    """Get or create the @sandbox compute node backed by E2B.
+
+    Mirrors get_or_create_local_compute_node but uses ComputeProviderType.E2B
+    and a sandbox-scoped mount path (/home/user). The actual E2B Sandbox
+    boots lazily on first PTY attach.
+    """
+    sandbox_mount_path = "/home/user"
+
+    compute_node: Optional[ComputeNode] = None
+    try:
+        compute_node = await ComputeNode.get_by_prop("uname", "sandbox", "compute_node")
+    except Exception as e:
+        if "Multiple rows were found" in str(e):
+            try:
+                rows = await ComputeNode.get_all({"match": {"uname": "sandbox"}})
+                if rows:
+                    compute_node = rows[0]
+            except Exception as list_error:
+                logging.error(f"Failed to resolve duplicate @sandbox rows: {list_error}")
+
+    already_existed = compute_node is not None
+    if compute_node is None:
+        logging.info("Creating @sandbox compute node for E2B environment")
+        compute_node = ComputeNode(
+            type="compute_node",
+            uname="sandbox",
+            name="@sandbox",
+            runtime=RuntimeEnvironment(name="e2b_sandbox_runtime", os_type=OSType.LINUX),
+            node_provider_type=ComputeProviderType.E2B,
+            fs_storage_provider=StorageProvider.SANDBOX,
+            fs_storage_mount_path=sandbox_mount_path,
+            visitor_role="owner",
+        )
+        try:
+            await compute_node.save(owner=desktop_user)
+        except Exception as save_error:
+            if "already exist" in str(save_error):
+                existing = await ComputeNode.get_by_prop("uname", "sandbox", "compute_node")
+                if existing:
+                    compute_node = existing
+                    already_existed = True
+                else:
+                    raise save_error
+            else:
+                raise save_error
+        logging.info(
+            f"Created @sandbox compute node: {compute_node.id} with owner: "
+            f"{desktop_user.id if desktop_user else 'None'}"
+        )
+
+    if not already_existed:
+        if local_project:
+            await local_project.add_child(compute_node)
+        await compute_node.set_visitor_role("owner")
+
+    if not compute_node.node_provider_id:
+        try:
+            compute_node.node_provider_id = _new_provider_id("sandbox")
+            await compute_node.save()
+            logging.info(
+                f"@sandbox compute node initialized with provider_id: {compute_node.node_provider_id}"
+            )
+        except Exception as e:
+            logging.warning(f"Failed to initialize @sandbox provider_id: {e}")
+
+    return compute_node
+
+
 # ---------------------------------------------------------------------------
+# System projects — Project records mounted at SDK-shipped asset folders.
+# ---------------------------------------------------------------------------
+
+
+async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list[Project]:
+    """Upsert one Project per subdirectory of flow_sdk/system_projects/.
+
+    Idempotent: queried by uname. Updates fs_storage_mount_path when the SDK
+    install path moves (e.g. editable → wheel). Currently only the Flowpad
+    Assistant is shipped, but the loop accommodates future system projects.
+    """
+    root = system_projects_root()
+    if not root.is_dir():
+        logging.info(f"[bootstrap] No system_projects/ at {root}, skipping")
+        return []
+
+    ensured: list[Project] = []
+    for sub in sorted(root.iterdir()):
+        if not sub.is_dir() or sub.name.startswith('.'):
+            continue
+        if sub.name == FLOWPAD_ASSISTANT_DIRNAME:
+            uname = FLOWPAD_ASSISTANT_PROJECT_UNAME
+            display_name = FLOWPAD_ASSISTANT_PROJECT_NAME
+        else:
+            uname = sub.name
+            display_name = sub.name.replace('_', ' ').title()
+
+        mount_path = str(sub)
+        existing = await Project.get_by_prop("uname", uname, "project")
+        if existing:
+            dirty = False
+            if existing.fs_storage_mount_path != mount_path:
+                existing.fs_storage_mount_path = mount_path
+                dirty = True
+            if not getattr(existing, "system", False):
+                existing.system = True
+                dirty = True
+            if dirty:
+                await existing.save()
+                logging.info(f"[bootstrap] Updated system project '{uname}' → mount={mount_path} system=True")
+            ensured.append(existing)
+            continue
+
+        project = Project(
+            type="project",
+            uname=uname,
+            name=display_name,
+            fs_storage_mount_path=mount_path,
+            fs_storage_provider=StorageProvider.LOCAL.value,
+            visitor_role="owner",
+            system=True,
+        )
+        try:
+            await project.save(owner=desktop_user)
+        except Exception as save_error:
+            if "already exist" in str(save_error):
+                retry = await Project.get_by_prop("uname", uname, "project")
+                if retry:
+                    ensured.append(retry)
+                    continue
+            raise
+        await project.set_visitor_role("owner")
+        ensured.append(project)
+        logging.info(f"[bootstrap] Created system project '{uname}' at {mount_path}")
+
+    return ensured
+
+
 # ---------------------------------------------------------------------------
 # File system setup (migrated from desktop_loader.py:init_desktop_entities)
 # ---------------------------------------------------------------------------
-
-
-def _copy_system_assets(workspace_path: Path) -> None:
-    """Copy SDK-bundled system assets to workspace/.flow/system_assets/.
-
-    Uses shutil.copytree with dirs_exist_ok=True so new assets are
-    added on upgrade without deleting user modifications.
-    Source: flow_sdk/system_assets/
-    Destination: ~/Flowpad workspace/.flow/system_assets/
-
-    A stamp file (.sync_stamp) stores the SDK version last synced.
-    Re-copy is skipped when the stamp matches the current version.
-
-    Also ensures backward-compat system_skills dir exists (symlink or plain dir).
-    """
-    import flow_sdk
-
-    source = Path(flow_sdk.__file__).parent / "system_assets"
-    dest = workspace_path / ".flow" / "system_assets"
-    stamp = dest / ".sync_stamp"
-
-    if source.exists():
-        # Skip copy if already synced for this version
-        try:
-            if stamp.exists() and stamp.read_text().strip() == __version__:
-                logging.info(f"System assets already up-to-date (v{__version__}), skipping copy")
-            else:
-                shutil.copytree(str(source), str(dest), dirs_exist_ok=True)
-                stamp.write_text(__version__)
-                logging.info(f"System assets copied to: {dest}")
-        except Exception as e:
-            logging.warning(f"Failed to copy system assets: {e}")
-    else:
-        dest.mkdir(parents=True, exist_ok=True)
-        logging.info(f"System assets dir ensured at: {dest} (no bundled source)")
-
-    # Ensure backward-compat system_skills path exists
-    system_skills_path = workspace_path / ".flow" / "system_skills"
-    skills_source = dest / "skills"
-    if not system_skills_path.exists():
-        if skills_source.is_dir():
-            try:
-                system_skills_path.symlink_to(skills_source)
-                logging.info(f"Symlinked system_skills -> {skills_source}")
-            except OSError:
-                # Symlinks may fail on some Windows configs; just mkdir
-                system_skills_path.mkdir(parents=True, exist_ok=True)
-                logging.info(f"System skills folder ensured at: {system_skills_path}")
-        else:
-            system_skills_path.mkdir(parents=True, exist_ok=True)
-            logging.info(f"System skills folder ensured at: {system_skills_path}")
 
 
 def setup_desktop_filesystem() -> None:
@@ -1038,21 +1206,6 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         await init_db()
         _t.time("init_db")
 
-        # One-time migration: delete all legacy Asset entities
-        try:
-            from flow_sdk.core.entity.entity_model import Entity as _Entity  # noqa: PLC0415
-            _asset_entities = await _Entity.get_all({"type": "asset"})
-            for _ae in _asset_entities:
-                try:
-                    await _ae.delete()
-                except Exception:
-                    pass
-            if _asset_entities:
-                logging.info(f"[bootstrap] Cleaned up {len(_asset_entities)} legacy Asset entities")
-        except Exception as _e:
-            logging.warning(f"[bootstrap] Asset cleanup failed (non-fatal): {_e}")
-        _t.time("cleanup_asset_entities")
-
         # Set up desktop filesystem (.flow/logs, .flow/system_skills, settings.json)
         await asyncio.to_thread(setup_desktop_filesystem)
         _t.time("setup_desktop_filesystem")
@@ -1063,10 +1216,37 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         _t.time("get_or_create_local_user")
         project = await get_or_create_local_project(desktop_user=user)
         _t.time("get_or_create_local_project")
+        try:
+            await _ensure_system_projects(desktop_user=user)
+        except Exception as e:
+            logging.warning(f"[bootstrap] Failed to ensure system projects (non-fatal): {e}")
+        _t.time("ensure_system_projects")
         workspace = await get_or_create_local_workspace(desktop_user=user)
         _t.time("get_or_create_local_workspace")
         compute_node = await get_or_create_local_compute_node(local_project=project, desktop_user=user)
         _t.time("get_or_create_local_compute_node")
+
+        sandbox_available = is_sandbox_available()
+        sandbox_compute_node: Optional[ComputeNode] = None
+        if sandbox_available:
+            try:
+                sandbox_compute_node = await get_or_create_sandbox_compute_node(
+                    local_project=project, desktop_user=user
+                )
+            except Exception as e:
+                logging.warning(f"[bootstrap] Failed to create @sandbox compute node: {e}")
+                sandbox_available = False
+        _t.time("get_or_create_sandbox_compute_node")
+
+        # Docker: one @docker-<name> CN per live worker. No env gate — only the
+        # presence of a registered worker in docker_registry flips availability.
+        try:
+            docker_cns = await get_docker_compute_nodes()
+        except Exception as e:
+            logging.warning(f"[bootstrap] Failed to list docker compute nodes: {e}")
+            docker_cns = []
+        docker_available = len(docker_cns) > 0
+        _t.time("get_docker_compute_nodes")
 
         # Get desktop info (LLM providers, installed agents, paths)
         desktop_info = await get_desktop_info()
@@ -1103,6 +1283,10 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             default_project=entity_to_dict(project),
             default_workspace=entity_to_dict(workspace),
             default_compute_node=entity_to_dict(compute_node),
+            sandbox_available=sandbox_available,
+            sandbox_compute_node=entity_to_dict(sandbox_compute_node) if sandbox_compute_node else None,
+            docker_available=docker_available,
+            docker_compute_nodes=[entity_to_dict(cn) for cn in docker_cns],
             env=EnvInfo(env_name="desktop", cloud_api_url=os.environ.get("FLOWPAD_CLOUD_API_URL"), version=__version__),
             desktop_info=desktop_info,
             scan_info=scan_info,

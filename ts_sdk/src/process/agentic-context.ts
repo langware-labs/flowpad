@@ -70,6 +70,19 @@ export interface AgenticContext {
 
   /** Extra directories to expose to Claude via --add-dir */
   additionalDirs?: string[];
+
+  /** Serialized TypeId ("type-id") of the entity this process attaches to (markdown, trigger, …). */
+  targetTypeIdStr?: string;
+
+  /** One of "text" | "json" | "stream-json"; omit for CLI default. When
+   * "stream-json", the process runs print-mode (no PTY) and `AgenticProcess.prompt`
+   * streams per-event FlowData over HTTP. */
+  outputFormat?: string;
+
+  /** Backend worker (`'claude_code'` | `'codex'`). Default: backend's
+   * `FLOWPAD_DEFAULT_WORKER` (typically claude). Surfaced so the UI can
+   * launch a Codex tab from the same opener flow. */
+  workerType?: 'claude_code' | 'codex';
 }
 
 /**
@@ -129,5 +142,8 @@ export function serializeAgenticContext(ctx: AgenticContext): Record<string, unk
     debug: ctx.debug,
     worktree: ctx.worktree,
     additional_dirs: ctx.additionalDirs ?? [],
+    target_typeid_str: ctx.targetTypeIdStr,
+    output_format: ctx.outputFormat,
+    worker_type: ctx.workerType,
   };
 }

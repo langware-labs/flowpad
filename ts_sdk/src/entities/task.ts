@@ -84,7 +84,11 @@ export class Task extends APIEntity<Task> implements ITask {
       return '';
     }
     try {
-      return JSON.parse(this.description).root.children[0].children[0]?.text || '';
+      const root = JSON.parse(this.description).root;
+      const lines: string[] = (root.children || []).map((paragraph: any) =>
+        (paragraph.children || []).map((node: any) => node.text || '').join('')
+      );
+      return lines.join('\n');
     } catch (e) {
       console.error('Error parsing task description', e, this.description);
       return this.description;
@@ -115,4 +119,16 @@ export class Task extends APIEntity<Task> implements ITask {
       : '';
   }
 
+  /**
+   * Create a task with the given title. The `project` argument is accepted for
+   * API parity with other createInProject statics (tasks aren't file-backed per project today).
+   */
+  static async createInProject(
+    _project: unknown,
+    name: string,
+    _folderVfsPath?: string,
+  ): Promise<Task> {
+    const task = new Task({ title: name.trim() });
+    return task.save();
+  }
 }

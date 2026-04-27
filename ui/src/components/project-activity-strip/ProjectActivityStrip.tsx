@@ -44,6 +44,7 @@ const RESOURCE_META: Record<ProjectResourceType, ResourceMeta> = {
   command: { label: 'Command', icon: Command },
   agent: { label: 'Agent', icon: Bot },
   session: { label: 'Session', icon: FolderOpen },
+  collaboration_room: { label: 'Collaboration Room', icon: FolderOpen },
   todo: { label: 'Todo', icon: CheckSquare },
   claude_md: { label: 'CLAUDE.md', icon: FileText },
 };
@@ -471,7 +472,7 @@ export function ProjectActivityStrip({
       <div className="activity-table" data-testid="project-activity-strip">
         {uploadSection}
         <div className="activity-table-header">
-          <span className="activity-table-title">Current Activity</span>
+          <span className="activity-table-title">Sessions</span>
           {refreshButton}
         </div>
         <div className="flex flex-1 flex-col items-center justify-center py-12">
@@ -485,7 +486,7 @@ export function ProjectActivityStrip({
     <div className="activity-table" data-testid="project-activity-strip">
       {uploadSection}
       <div className="activity-table-header">
-        <span className="activity-table-title">Current Activity</span>
+        <span className="activity-table-title">Sessions</span>
         {refreshButton}
         <div className="activity-table-search">
           <Search className="activity-table-search-icon" />

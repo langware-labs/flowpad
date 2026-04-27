@@ -1,7 +1,10 @@
 import logging
 import os
+import random
+import string
 import sys
-from typing import ClassVar, List
+from datetime import datetime, timezone
+from typing import Any, ClassVar, List
 
 from fastapi import HTTPException
 from pydantic import ConfigDict, Field, model_validator
@@ -23,7 +26,19 @@ from flow_sdk.request_context.methods import (
     get_current_request_info,
     get_current_service,
 )
-from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _generate_session_code() -> str:
+    """Generate a shareable XXXX-XXXX join code."""
+    alphabet = string.ascii_uppercase + string.digits
+    left = "".join(random.choices(alphabet, k=4))
+    right = "".join(random.choices(alphabet, k=4))
+    return f"{left}-{right}"
 
 
 class ProjectInitializeOptions(ComputeSourceControlInitializeOptions):
@@ -42,6 +57,19 @@ class Project(Entity):
     fs_storage_provider: StorageProvider | None = StorageProvider.SANDBOX
     fs_storage_mount_path: str | None = APIField(
         default=None, description="Full path to the project folder"
+    )
+    # ── Collaboration overlay (merged from the former CollaborationSpace entity) ──
+    session_code: str | None = APIField(
+        default=None,
+        description="Shareable join code for the project's collaboration space, e.g. ABCD-EFGH. Lazily generated.",
+    )
+    host_member_id: str | None = APIField(
+        default=None,
+        description="Stable local member_id of whoever first started collaboration on this project",
+    )
+    members: list[dict] = APIField(
+        default_factory=list,
+        description="Collaboration participants: [{member_id, name, joined_at, last_seen_at}]",
     )
     _api_visible: ClassVar[bool] = True
     _icon: ClassVar[str] = "FolderOpen"
@@ -213,74 +241,34 @@ class Project(Entity):
             data={"compute_node": compute_node.model_dump() if compute_node else None}
         )
 
-    async def _create_process_impl(
-        self,
-        process_id: str = "",
-        agent_id: str | None = None,
-        source_vfs_path: str | None = None,
-    ):
-        return ApiFailResponse(
-            message="_create_process_impl is a cloud-only path and is not supported in the desktop environment."
-        )
-
-    @action.post(action_name="create-process")
-    async def create_process(
-        self,
-        process_id: str = "",
-        agent_id: str | None = None,
-        source_vfs_path: str | None = None,
-    ):
-        return await self._create_process_impl(
-            process_id=process_id,
-            agent_id=agent_id,
-            source_vfs_path=source_vfs_path,
-        )
-
-    @action.post(action_name="create-flow")
-    async def create_flow(
-        self,
-        flow_id: str = "",
-        agent_id: str | None = None,
-        source_vfs_path: str | None = None,
-    ):
-        """Backward-compatible alias for create_process."""
-        return await self._create_process_impl(
-            process_id=flow_id,
-            agent_id=agent_id,
-            source_vfs_path=source_vfs_path,
-        )
-
-    async def _get_process_by_source_impl(self, source_vfs_path: str):
-        """Find an existing process entity associated with the given source file path."""
+    async def _get_process_by_source_impl(self, asset_ref: str):
+        """Find an existing process entity associated with the given asset_ref."""
         from flow_sdk.builtin.process import Flow
 
-        if not source_vfs_path:
-            raise HTTPException(status_code=400, detail="source_vfs_path is required")
+        if not asset_ref:
+            raise HTTPException(status_code=400, detail="asset_ref is required")
 
-        # Query all child process entities of this project
         process_filter = QueryFilter.by_type(Flow.get_type())
         child_processes = await self.get_children(child_filter=process_filter)
 
-        # Find the process with matching source_vfs_path
         for child in child_processes:
             process_entity = child.value
             if (
                 isinstance(process_entity, Flow)
-                and process_entity.source_vfs_path == source_vfs_path
+                and process_entity.asset_ref == asset_ref
             ):
                 return ApiSuccessResponse(data=process_entity)
 
-        # No process found with this source path
         return ApiSuccessResponse(data=None)
 
     @action.get(action_name="get-process-by-source")
-    async def get_process_by_source(self, source_vfs_path: str):
-        return await self._get_process_by_source_impl(source_vfs_path)
+    async def get_process_by_source(self, asset_ref: str):
+        return await self._get_process_by_source_impl(asset_ref)
 
     @action.get(action_name="get-flow-by-source")
-    async def get_flow_by_source(self, source_vfs_path: str):
+    async def get_flow_by_source(self, asset_ref: str):
         """Backward-compatible alias for get_process_by_source."""
-        return await self._get_process_by_source_impl(source_vfs_path)
+        return await self._get_process_by_source_impl(asset_ref)
 
     @action.get(action_name="get-compute-node")
     async def get_compute_node_action(self):
@@ -335,3 +323,100 @@ class Project(Entity):
                 else None,
             }
         )
+
+    # ── Collaboration helpers (merged from CollaborationSpace) ──────────────
+
+    async def _upsert_member(self, member_id: str, name: str) -> dict:
+        now = _now_iso()
+        members = list(self.members or [])
+        for m in members:
+            if m.get("member_id") == member_id:
+                m["name"] = name
+                m["last_seen_at"] = now
+                if not m.get("joined_at"):
+                    m["joined_at"] = now
+                self.members = members
+                await self.save()
+                return m
+        entry = {
+            "member_id": member_id,
+            "name": name,
+            "joined_at": now,
+            "last_seen_at": now,
+        }
+        members.append(entry)
+        self.members = members
+        await self.save()
+        return entry
+
+    async def _touch_member(self, member_id: str) -> bool:
+        members = list(self.members or [])
+        now = _now_iso()
+        for m in members:
+            if m.get("member_id") == member_id:
+                m["last_seen_at"] = now
+                self.members = members
+                await self.save()
+                return True
+        return False
+
+    @classmethod
+    async def get_by_session_code(cls, code: str) -> "Project | None":
+        """Find a Project whose session_code matches (case-insensitive)."""
+        normalized = (code or "").upper().strip()
+        if not normalized:
+            return None
+        all_projects = await cls.get_all()
+        for proj in all_projects:
+            if (proj.session_code or "").upper() == normalized:
+                return proj
+        return None
+
+    @action.post(action_name="ensure-collaboration-code")
+    async def _http_ensure_collaboration_code(self) -> ApiResponse:
+        """Ensure this project has a session_code + host. Idempotent."""
+        request_info = get_current_request_info()
+        body: dict[str, Any] = await request_info.get_post_data() if request_info else {}
+        host_name = body.get("host_name")
+        host_member_id = body.get("host_member_id")
+        changed = False
+        if not self.session_code:
+            self.session_code = _generate_session_code()
+            changed = True
+        if host_member_id and not self.host_member_id:
+            self.host_member_id = host_member_id
+            changed = True
+        if changed:
+            await self.save()
+        # Seed the host as the first member on first call.
+        if host_name and host_member_id:
+            existing = next(
+                (m for m in (self.members or []) if m.get("member_id") == host_member_id),
+                None,
+            )
+            if existing is None:
+                await self._upsert_member(host_member_id, host_name)
+        return ApiSuccessResponse(data=self.model_dump(mode="json"))
+
+    @action.post(action_name="join-collaboration")
+    async def _http_join_collaboration(self) -> ApiResponse:
+        """POST body: {member_id, name} → add the caller to project.members."""
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        member_id = body.get("member_id")
+        name = body.get("name")
+        if not member_id or not name:
+            return ApiFailResponse(message="member_id and name are required")
+        await self._upsert_member(member_id=member_id, name=name)
+        return ApiSuccessResponse(data=self.model_dump(mode="json"))
+
+    @action.post(action_name="heartbeat-collaboration")
+    async def _http_heartbeat_collaboration(self) -> ApiResponse:
+        """POST body: {member_id} → bump last_seen_at for that member."""
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        member_id = body.get("member_id")
+        if not member_id:
+            return ApiFailResponse(message="member_id is required")
+        updated = await self._touch_member(member_id)
+        return ApiSuccessResponse(data={"ok": updated, "members": self.members})

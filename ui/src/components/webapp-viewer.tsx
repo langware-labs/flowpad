@@ -9,7 +9,7 @@ import { DockPointer, useDockNavigation } from '@src/navigation';
 import { useCurrentArtifacts } from '@src/hooks/flow-hooks';
 import { useProcessWebApp } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks';
-import { ActionInfo, ArtifactType, MachineStatus, ViewType, WebappSubview } from '@sdk';
+import { ArtifactType, MachineStatus, ViewType, WebappSubview } from '@sdk';
 import { ExternalLink, RefreshCw, Terminal } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -30,30 +30,6 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry }
   const subview = currentDock?.pointer as WebappSubview | undefined;
   const showPanel = subview === WebappSubview.SHELL || subview === WebappSubview.ARTIFACTS;
   const activeTab = subview || WebappSubview.SHELL;
-
-  // Fetch machine status for artifacts tab
-  const fetchMachineStatus = useCallback(async () => {
-    if (!flow?.id) return;
-    try {
-      const actionInfo = new ActionInfo('get-machine-status', 'flow', flow.id, 'GET');
-      const response = await fetch(actionInfo.fullActionUrl, { credentials: 'include' });
-      if (response.ok) {
-        const data = await response.json();
-        if (data.data) {
-          setMachineStatus(data.data);
-        }
-      }
-    } catch {
-      // Silently fail
-    }
-  }, [flow?.id]);
-
-  // Fetch machine status on mount and poll every 5 seconds
-  useEffect(() => {
-    void fetchMachineStatus();
-    const interval = setInterval(() => void fetchMachineStatus(), 5000);
-    return () => clearInterval(interval);
-  }, [fetchMachineStatus]);
 
   // Navigate to show shell panel (used by ServiceStatusLed on restart)
   const handleShowShell = useCallback(() => {
@@ -175,7 +151,7 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry }
                   })}
                 </SelectContent>
               </Select>
-              <ServiceStatusLed onShowShell={handleShowShell} onRefreshWebapp={handleRefresh} />
+              <ServiceStatusLed onShowShell={handleShowShell} onRefreshWebapp={handleRefresh} onStatusChange={setMachineStatus} />
             </>
           ) : (
             <span className="text-xs text-muted-foreground">Webapp not found in artifacts</span>

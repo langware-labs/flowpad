@@ -2,7 +2,7 @@
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
 
-import { dataContext, fsStore, isProcessLive, Shell, type AgenticProcess } from '@sdk';
+import { dataContext, FlowDataSource, fsStore, ProcessStatus, Shell, type AgenticProcess } from '@sdk';
 import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
 import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
@@ -34,6 +34,8 @@ import {
   QueuePanel,
   SideTabId,
   SideWindow,
+  parseSideTabIdList,
+  parseSideTabId,
   type PromptEntry,
 } from './side-windows';
 import { SidecarShellTerminal } from './SidecarShellTerminal';
@@ -109,54 +111,8 @@ function saveTraceFilters(f: TraceFilters): void {
   }
 }
 
-// Static terminal color themes (never change at runtime)
-const DARK_THEME = {
-  background: '#1e1e1e',
-  foreground: '#d4d4d4',
-  cursor: '#ffffff',
-  cursorAccent: '#1e1e1e',
-  selectionBackground: 'rgba(255, 255, 255, 0.3)',
-  black: '#000000',
-  red: '#cd3131',
-  green: '#0dbc79',
-  yellow: '#e5e510',
-  blue: '#2472c8',
-  magenta: '#bc3fbc',
-  cyan: '#11a8cd',
-  white: '#e5e5e5',
-  brightBlack: '#666666',
-  brightRed: '#f14c4c',
-  brightGreen: '#23d18b',
-  brightYellow: '#f5f543',
-  brightBlue: '#3b8eea',
-  brightMagenta: '#d670d6',
-  brightCyan: '#29b8db',
-  brightWhite: '#ffffff',
-};
-
-const LIGHT_THEME = {
-  background: '#ffffff',
-  foreground: '#1e1e1e',
-  cursor: '#1e1e1e',
-  cursorAccent: '#ffffff',
-  selectionBackground: 'rgba(0, 122, 204, 0.18)',
-  black: '#000000',
-  red: '#cd3131',
-  green: '#00bc00',
-  yellow: '#949800',
-  blue: '#0451a5',
-  magenta: '#bc05bc',
-  cyan: '#0598bc',
-  white: '#555555',
-  brightBlack: '#666666',
-  brightRed: '#cd3131',
-  brightGreen: '#14ce14',
-  brightYellow: '#b5ba00',
-  brightBlue: '#0451a5',
-  brightMagenta: '#bc05bc',
-  brightCyan: '#0598bc',
-  brightWhite: '#a5a5a5',
-};
+import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
+import { FONT_FAMILY, FONT_SIZE_PX } from './terminalConfig';
 
 // ── Side-window state (tabs + active) managed atomically via reducer ─────────
 
@@ -225,7 +181,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   className = '',
   active = false,
   onTitleChange,
-  process,
+  process: propProcess,
   embedded,
   onClose,
   onWorkerSessionId,
@@ -233,7 +189,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // _flow is used only in the React.memo comparator below
   void _flow;
 
-  const { agenticProcessTypeId } = useContext();
+  const { agenticProcessTypeId, agenticProcess: contextProcess } = useContext();
+  // Prop takes precedence (e.g. WorkflowsPage passes an explicit process).
+  // For TabbedTerminal, no prop is passed — fall back to the context process
+  // set by the loader, which is always authoritative for the active tab.
+  const process = propProcess ?? contextProcess ?? undefined;
   const { navigation } = useDockNavigation();
   const { resolvedTheme } = useTheme();
   const [searchParams] = useSearchParams();
@@ -268,7 +228,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const [shellReady, setShellReady] = useState(false);
   // Keep shellRef in sync so callbacks and hooks that capture shellRef still work.
   shellRef.current = shell;
-  const processIsActive = isProcessLive(process?.status ?? '');
+  const processIsActive = process?.status === ProcessStatus.RUNNING;
 
   // Notify parent when the worker session ID becomes known (or clears)
   useEffect(() => {
@@ -293,6 +253,20 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     dispatchSideTab({ type: 'close', tab });
   }, []);
 
+  // URL-driven side windows: ?windows=team,git&activeWindow=team
+  // One-shot on sessionId change — user closing a tab afterwards does not rewrite the URL.
+  const urlWindowsAppliedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const key = `${sessionId}|${searchParams.get('windows') ?? ''}|${searchParams.get('activeWindow') ?? ''}`;
+    if (urlWindowsAppliedRef.current === key) return;
+    urlWindowsAppliedRef.current = key;
+    const ids = parseSideTabIdList(searchParams.get('windows'));
+    if (ids.length === 0) return;
+    for (const tab of ids) dispatchSideTab({ type: 'open', tab });
+    const active = parseSideTabId(searchParams.get('activeWindow'));
+    if (active && ids.includes(active)) dispatchSideTab({ type: 'select', tab: active });
+  }, [sessionId, searchParams]);
+
   // Queue hook — idle injection of queued prompts
   const { queue, addEntry, removeEntry, setEnabled, moveEntry } = useAgenticQueue(
     process?.id,
@@ -300,8 +274,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     shellRef,
   );
 
-  // Input dir info for file attachment workflow
-  const inputDirInfo = useInputDir(process);
+  // Input dir info for file attachment workflow.
+  // Only fetch for the active tab — inactive pre-mounted terminals share the
+  // same contextProcess, which caused N identical /input-dir API calls per
+  // render cycle (amplified by re-render loops into 20+ redundant requests).
+  const inputDirInfo = useInputDir(active ? process : undefined);
   const inputFs = useFS(inputDirInfo?.computeNodeTypeId ?? undefined);
   const inputFsRef = useRef(inputFs);
   inputFsRef.current = inputFs;
@@ -332,15 +309,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     if (!process) return;
     if (!sidecarShellId) {
       // Create a plain Shell entity and let SidecarShellTerminal start its PTY
-      // process.compute_node_id may be a TypeId object (deepAssign converts "type-UUID" strings).
-      // Extract the plain UUID (.id) to pass to Shell so attachPty() constructs valid ActionInfo URLs.
-      const rawCnId = process.compute_node_id ?? shellRef.current?.compute_node_id ?? null;
-      if (!rawCnId) return;
-      const computeNodeId: string | null =
-        typeof rawCnId === 'object' ? ((rawCnId as unknown as { id: string }).id ?? null) : rawCnId;
+      const computeNodeId = shellRef.current?.compute_node_id ?? dataContext.computeNode?.id ?? null;
+      const computeNodeUname = shellRef.current?.compute_node_uname ?? dataContext.computeNode?.uname ?? null;
       if (!computeNodeId) return;
       const workdir = process.workdir ?? shellRef.current?.workdir ?? undefined;
-      const shell = new Shell({ compute_node_id: computeNodeId, workdir: workdir ?? null });
+      const shell = new Shell({
+        compute_node_id: computeNodeId,
+        compute_node_uname: computeNodeUname,
+        workdir: workdir ?? null,
+      });
       await shell.save();
       process.sidecar_shell_id = shell.id;
       await process.save();
@@ -415,10 +392,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     liveCount,
     sessionStartTime,
     allEvents: allTraceEvents,
-  } = useTraceGutter(process?.session_id, terminalReady, ptySyncRef.current, shellReady, ptySyncSnapshot.version);
+  } = useTraceGutter(process ?? null, terminalReady, ptySyncRef.current, shellReady, ptySyncSnapshot.version);
   const lastMessageTime = useMemo(() => {
+    // Latest history event timestamp — used to anchor the "time since last
+    // message" indicator.
     const last = allTraceEvents
-      .filter((e) => e.source === 'transcript')
+      .filter((e) => e.source === FlowDataSource.History)
       .reduce<string | null>((max, e) => (max === null || e.timestamp > max ? e.timestamp : max), null);
     return last;
   }, [allTraceEvents]);
@@ -553,7 +532,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       anchorsResolvedRef.current = ptySyncRef.current.hasAnchorSegments();
     } else if (sessionStartTime) {
       const lastEventMs = allTraceEvents
-        .filter((e) => e.source === 'transcript')
+        .filter((e) => e.source === FlowDataSource.History)
         .reduce((max, e) => Math.max(max, new Date(e.timestamp).getTime()), 0);
       if (lastEventMs > 0) {
         ptySyncRef.current.finalizeDefaultSegment(lastEventMs);
@@ -636,8 +615,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // Shell entity is resolved reactively by useShell(sessionId) above.
 
   // Recalibrate Phase-1 segment when the real session start time becomes known.
-  // sessionStartTime comes from ClaudeSessionRecord.discover() via useTraceGutter
-  // and reflects the original Claude session start — not the shell/replay creation time.
+  // sessionStartTime now comes from the earliest FlowData timestamp on
+  // process.flowDataStream (vendor-agnostic), not a Claude-specific record.
   useEffect(() => {
     if (!sessionStartTime || !ptySyncSnapshot.adapter) return;
     const startMs = new Date(sessionStartTime).getTime();
@@ -688,8 +667,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         scrollOnUserInput: true,
         disableStdin: false,
         cursorStyle: 'block',
-        fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, Monaco, "Courier New", monospace',
-        fontSize: 14,
+        fontFamily: FONT_FAMILY,
+        fontSize: FONT_SIZE_PX,
         fontWeight: '400',
         fontWeightBold: '700',
         allowTransparency: true,
@@ -917,18 +896,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       }
     };
 
-    // Persistent scrollTop watcher — logs scroll resets
-    const vp2 = terminalRef.current?.element?.querySelector('.xterm-viewport') as HTMLElement | null;
-    let prevST2 = vp2?.scrollTop ?? 0;
-    const scrollInterval = setInterval(() => {
-      if (!vp2) return;
-      const st = vp2.scrollTop;
-      if (prevST2 > 500 && st < 50) {
-        console.log('[SCROLL] scrollTop reset!', prevST2, '→', st, 'scrollH:', vp2.scrollHeight);
-      }
-      prevST2 = st;
-    }, 16);
-
     const handlePtyData = (data: string, seq?: number) => {
       if (data.includes('\x1b[3J'))
         console.log('[PTY] ESC[3J (clear scrollback) received, seq:', seq, 'size:', data.length);
@@ -1044,7 +1011,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     return () => {
       unsubStatus();
       unsubOutput?.();
-      clearInterval(scrollInterval);
+
       if (syncTimer) clearTimeout(syncTimer);
       if (syncBuf && terminalRef.current) {
         try {
@@ -1229,7 +1196,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           onColVisChange={setColVis}
           sessionStartTime={sessionStartTime}
           lastMessageTime={lastMessageTime}
-          sessionTraceCount={totalTraceEvents}
           embedded={embedded}
           onClose={onClose}
           shell={shell}
@@ -1363,12 +1329,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
               >
                 {activeSideTab === SideTabId.Git && (
                   <GitPanel
-                    computeNodeId={(() => {
-                      const fromShell = shellRef.current?.compute_node_id;
-                      if (fromShell) return fromShell;
-                      const fullId = process?.compute_node_id ?? undefined;
-                      return fullId ? fullId.replace(/^compute_node-/, '') : '';
-                    })()}
+                    computeNodeId={shellRef.current?.compute_node_id ?? dataContext.computeNode?.id ?? ''}
                     workdir={shellRef.current?.workdir ?? process?.workdir ?? ''}
                     sidecarShellId={sidecarShellId}
                   />

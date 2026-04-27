@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
-    from flow_sdk.fs_records.agent_status import AgenticProcessStatus
+    from flow_sdk.fs_records.agent_status import WorkerStatus
 
 
 def _now_iso() -> str:
@@ -21,7 +21,6 @@ class AgenticContext(BaseModel):
     workdir: str | None = None
     model: str | None = None
     max_thinking_tokens: int | None = None
-    compute_node_id: str | None = None
 
 
 class ContextData(BaseModel):
@@ -80,7 +79,7 @@ class RunResult:
 
     text: str
     session_id: str
-    status: "AgenticProcessStatus"
+    status: "WorkerStatus"
     ok: bool                        # False when status is error or interrupted
     duration_ms: int | None = None
     models_used: list[str] = field(default_factory=list)
@@ -102,7 +101,7 @@ class StreamEvent:
 class ProcessError(Exception):
     """Raised by AgenticProcess.run() when status is error or interrupted."""
 
-    def __init__(self, status: "AgenticProcessStatus", session_id: str):
+    def __init__(self, status: "WorkerStatus", session_id: str):
         self.status = status
         self.session_id = session_id
         super().__init__(f"Process ended with status={status} session_id={session_id}")

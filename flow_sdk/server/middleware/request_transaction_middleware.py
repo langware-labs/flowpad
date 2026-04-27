@@ -71,11 +71,14 @@ class RequestTransactionMiddleware:
         request = Request(scope, receive, send)
         logging.debug(f"[Middleware] Received request: {request.method} {request.url.path}")
 
-        # Create execution context
+        # NOTE: transaction_factory wiring is intentionally disabled here.
+        # The driver methods open their own short-lived sessions per call
+        # (via _session_ctx). Wiring a per-request session factory caused
+        # test isolation issues with the existing test scaffolding.
         execution_context = ExecutionContext(False, None)
         set_execution_context(execution_context)
 
-        # Setup request info from the request
+        # Setup request info from the request (also opens the per-request session).
         try:
             await execution_context.setup(request=request, context_name="Request")
         except Exception as e:
@@ -100,8 +103,13 @@ class RequestTransactionMiddleware:
         except Exception as ex:
             await execution_context.rollback_transaction()
             raise ex
+        else:
+            # Success path: commit the per-request transaction so writes
+            # durably persist. cleanup() then closes the session.
+            await execution_context.commit_transaction()
         finally:
-            # Cleanup
+            # Cleanup (close session) — runs on both success and exception
+            # paths; idempotent and safe after commit/rollback.
             execution_context = get_execution_context()
             if execution_context:
                 await execution_context.cleanup()

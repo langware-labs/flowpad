@@ -1,8 +1,7 @@
 ---
-name: dual-env
+name: "dual-env"
 description: "Set up and run flow-cli in dual mode: a production instance (flow-cli-prod) and a development instance (flow-cli) side by side"
-tags: [dev, setup, environment, dogfooding]
-
+tags: "[dev, setup, environment, dogfooding]"
 ---
 
 # Dual Environment Setup (Prod + Dev)
@@ -11,23 +10,30 @@ Run two flow-cli instances simultaneously: a stable **production** instance for 
 
 ## Port Allocation
 
-| Instance | Backend | Frontend | Folder |
-|----------|---------|----------|--------|
-| **Prod** | 9007 | 4097 | `~/Developer/flow-cli-prod` |
-| **Dev** | 9008 | 4098 | `~/Developer/flow-cli` |
+| Instance | Backend | Frontend | Folder                      |
+| -------- | ------- | -------- | --------------------------- |
+| **Prod** | 9007    | 4097     | `~/Developer/flow-cli-prod` |
+| **Dev**  | 9008    | 4098     | `~/Developer/flow-cli`      |
 
 ## Shared State (IMPORTANT)
 
-Both instances share **the same `~/.flow/` directory**, which means:
+Both instances share **the same** **`~/.flow/`** **directory**, which means:
 
-- **Database**: `~/.flow/db/flowpad_db` — both read/write the same SQLite DB. Entities created in one are visible in the other.
-- **Hooks**: `~/.flow/hooks/` — hook registrations are shared.
-- **Sessions**: `~/.flow/sessions/` — Claude CLI session data is shared.
-- **Records**: `~/.flow/records/` — file-system records are shared.
-- **Server info**: `~/.flow/server.json` — only tracks the last `flow start` instance. `flow stop` may target the wrong instance if both use `flow start`.
-- **Logs**: `~/.flow/server.log` and `~/.flow/monitor.log` — written by whichever instance uses `flow start`. The dev instance run from PyCharm/terminal logs to its own console, avoiding interleaving.
-- **CLI commands** (`flow hooks report`, etc.) — use `LOCAL_SERVER_PORT` env var to decide which server to talk to. In a shell with the prod venv active, they'll hit 9007. In the dev venv, they'll hit 9008.
-- **DB path override**: Set `SQLITE_DATABASE_PATH` in `.env.local` if you want fully isolated databases per instance.
+* **Database**: `~/.flow/db/flowpad_db` — both read/write the same SQLite DB. Entities created in one are visible in the other.
+
+* **Hooks**: `~/.flow/hooks/` — hook registrations are shared.
+
+* **Sessions**: `~/.flow/sessions/` — Claude CLI session data is shared.
+
+* **Records**: `~/.flow/records/` — file-system records are shared.
+
+* **Server info**: `~/.flow/server.json` — only tracks the last `flow start` instance. `flow stop` may target the wrong instance if both use `flow start`.
+
+* **Logs**: `~/.flow/server.log` and `~/.flow/monitor.log` — written by whichever instance uses `flow start`. The dev instance run from PyCharm/terminal logs to its own console, avoiding interleaving.
+
+* **CLI commands** (`flow hooks report`, etc.) — use `LOCAL_SERVER_PORT` env var to decide which server to talk to. In a shell with the prod venv active, they'll hit 9007. In the dev venv, they'll hit 9008.
+
+* **DB path override**: Set `SQLITE_DATABASE_PATH` in `.env.local` if you want fully isolated databases per instance.
 
 ## Setup Instructions
 
@@ -103,10 +109,13 @@ The `vite.config.ts` reads `VITE_PORT` and `VITE_API_URL` from `.env.local` via 
 
 ### 3. Verify Isolation
 
-- Open `http://localhost:4097` — should be the prod frontend
-- Open `http://localhost:4098` — should be the dev frontend
-- Changes in `flow-cli/` code (Python + React) should only affect the dev instance via HMR
-- The prod instance stays stable on the last `git pull` / `flow start`
+* Open `http://localhost:4097` — should be the prod frontend
+
+* Open `http://localhost:4098` — should be the dev frontend
+
+* Changes in `flow-cli/` code (Python + React) should only affect the dev instance via HMR
+
+* The prod instance stays stable on the last `git pull` / `flow start`
 
 ## Startup Order
 
@@ -144,3 +153,4 @@ When asked to set up dual-env, execute these steps:
 5. Kill any processes on ports 9007, 9008, 4097, 4098.
 6. Start prod: `cd ~/Developer/flow-cli-prod && source .venv/bin/activate && flow start`.
 7. Inform user to start dev instance from PyCharm or via `uv run -m server.run` + `cd ui && npm run dev`.
+

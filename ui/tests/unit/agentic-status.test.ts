@@ -1,0 +1,259 @@
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import {
+  getDisplayStatus,
+  hasWorkerStarted,
+  isProcessActive,
+  isProcessRunning,
+  isProcessStartable,
+  isReadyForInput,
+  isWorkerRunning,
+  isWorkerTerminal,
+  ProcessStatus,
+  WorkerStatus,
+} from '@sdk';
+
+/**
+ * Canonical status contract tests.
+ *
+ * These tests validate the two-axis status model surfaced by
+ * ``ts_sdk/src/process/agentic-types.ts``:
+ *
+ *   ProcessStatus — app/user-level lifecycle (6 values, stored, explicit writers)
+ *   WorkerStatus  — expert-level worker state (12 values, derived, not stored)
+ *
+ * Set parity (WORKER_RUNNING_STATUSES / WORKER_TERMINAL_STATUSES) is enforced
+ * against the shared fixture ``test_fixtures/status_sets.json`` — the same file
+ * the Python ``test_running_set_matches_spec`` test loads. Editing one side
+ * without updating the other breaks both tests.
+ */
+
+// ─── Shared fixture ──────────────────────────────────────────────────────────
+
+interface StatusSetsFixture {
+  worker_running: string[];
+  worker_terminal: string[];
+  worker_ready_for_input: string[];
+  process_running: string[];
+  process_startable: string[];
+}
+
+const FIXTURE_PATH = resolve(__dirname, '../../../test_fixtures/status_sets.json');
+const fixture: StatusSetsFixture = JSON.parse(readFileSync(FIXTURE_PATH, 'utf-8'));
+
+// ─── ProcessStatus wire values ───────────────────────────────────────────────
+
+describe('ProcessStatus', () => {
+  it('has exactly 6 canonical values', () => {
+    expect(Object.values(ProcessStatus).sort()).toEqual(
+      ['failed', 'new', 'running', 'starting', 'stopped', 'stopping'].sort(),
+    );
+  });
+
+  it('wire value for RUNNING is "running" (renamed from "live")', () => {
+    expect(ProcessStatus.RUNNING).toBe('running');
+    expect((ProcessStatus as Record<string, unknown>).LIVE).toBeUndefined();
+  });
+
+  it.each([
+    [ProcessStatus.STARTING, true],
+    [ProcessStatus.RUNNING, true],
+    [ProcessStatus.STOPPING, true],
+    [ProcessStatus.NEW, false],
+    [ProcessStatus.STOPPED, false],
+    [ProcessStatus.FAILED, false],
+  ])('isProcessRunning(%s) == %s', (status, expected) => {
+    expect(isProcessRunning(status)).toBe(expected);
+  });
+
+  it('isProcessActive is a deprecation alias of isProcessRunning', () => {
+    for (const status of Object.values(ProcessStatus)) {
+      expect(isProcessActive(status)).toBe(isProcessRunning(status));
+    }
+  });
+
+  it.each([
+    [ProcessStatus.NEW, true],
+    [ProcessStatus.STOPPED, true],
+    [ProcessStatus.FAILED, true],
+    [ProcessStatus.STARTING, false],
+    [ProcessStatus.RUNNING, false],
+    [ProcessStatus.STOPPING, false],
+  ])('isProcessStartable(%s) == %s', (status, expected) => {
+    expect(isProcessStartable(status)).toBe(expected);
+  });
+});
+
+// ─── WorkerStatus wire values ────────────────────────────────────────────────
+
+describe('WorkerStatus', () => {
+  it('has exactly 12 canonical values post-consolidation', () => {
+    expect(Object.values(WorkerStatus).sort()).toEqual(
+      [
+        'initializing',
+        'idle',
+        'waiting',
+        'thinking',
+        'tool_call',
+        'tool_running',
+        'complete',
+        'interrupted',
+        'inactive',
+        'error',
+        'api_error',
+        'api_timeout',
+        'unknown',
+      ].sort(),
+    );
+  });
+
+  it.each(['NEW', 'INIT', 'EMPTY', 'PAUSED', 'STEPPING', 'RUNNING'])(
+    'removed value %s is not present',
+    (removed) => {
+      expect((WorkerStatus as Record<string, unknown>)[removed]).toBeUndefined();
+    },
+  );
+
+  it('INITIALIZING replaces INIT + EMPTY', () => {
+    expect(WorkerStatus.INITIALIZING).toBe('initializing');
+  });
+
+  it('UNKNOWN replaces the old RUNNING fallback', () => {
+    expect(WorkerStatus.UNKNOWN).toBe('unknown');
+  });
+});
+
+// ─── Set parity against shared fixture ───────────────────────────────────────
+
+describe('set parity (vs test_fixtures/status_sets.json)', () => {
+  it('WORKER_RUNNING_STATUSES matches fixture byte-for-byte', () => {
+    const actual = Object.values(WorkerStatus).filter((s) => isWorkerRunning(s as WorkerStatus));
+    expect(new Set(actual)).toEqual(new Set(fixture.worker_running));
+  });
+
+  it('WORKER_TERMINAL_STATUSES matches fixture byte-for-byte', () => {
+    const actual = Object.values(WorkerStatus).filter((s) => isWorkerTerminal(s as WorkerStatus));
+    expect(new Set(actual)).toEqual(new Set(fixture.worker_terminal));
+  });
+
+  it('process_running fixture matches isProcessRunning', () => {
+    const actual = Object.values(ProcessStatus).filter((s) => isProcessRunning(s as ProcessStatus));
+    expect(new Set(actual)).toEqual(new Set(fixture.process_running));
+  });
+
+  it('process_startable fixture matches isProcessStartable', () => {
+    const actual = Object.values(ProcessStatus).filter((s) => isProcessStartable(s as ProcessStatus));
+    expect(new Set(actual)).toEqual(new Set(fixture.process_startable));
+  });
+});
+
+// ─── isReadyForInput truth table ─────────────────────────────────────────────
+
+describe('isReadyForInput', () => {
+  const readyWorkers: WorkerStatus[] = [
+    WorkerStatus.IDLE,
+    WorkerStatus.COMPLETE,
+    WorkerStatus.INTERRUPTED,
+  ];
+  const notReadyWorkers: WorkerStatus[] = [
+    WorkerStatus.INITIALIZING,
+    WorkerStatus.WAITING,
+    WorkerStatus.THINKING,
+    WorkerStatus.TOOL_CALL,
+    WorkerStatus.TOOL_RUNNING,
+    WorkerStatus.ERROR,
+    WorkerStatus.INACTIVE,
+    WorkerStatus.API_ERROR,
+    WorkerStatus.API_TIMEOUT,
+    WorkerStatus.UNKNOWN,
+  ];
+
+  it.each(readyWorkers)('returns true when status=RUNNING and workerStatus=%s', (w) => {
+    expect(isReadyForInput({ status: ProcessStatus.RUNNING, workerStatus: w })).toBe(true);
+  });
+
+  it.each(notReadyWorkers)('returns false when status=RUNNING and workerStatus=%s', (w) => {
+    expect(isReadyForInput({ status: ProcessStatus.RUNNING, workerStatus: w })).toBe(false);
+  });
+
+  it.each([
+    ProcessStatus.NEW,
+    ProcessStatus.STARTING,
+    ProcessStatus.STOPPING,
+    ProcessStatus.STOPPED,
+    ProcessStatus.FAILED,
+  ])('returns false for non-RUNNING lifecycle status %s regardless of worker status', (s) => {
+    for (const w of [...readyWorkers, ...notReadyWorkers]) {
+      expect(isReadyForInput({ status: s, workerStatus: w })).toBe(false);
+    }
+  });
+
+  it('treats missing workerStatus + no session as ready (never prompted)', () => {
+    expect(isReadyForInput({ status: ProcessStatus.RUNNING, session_id: null })).toBe(true);
+    expect(isReadyForInput({ status: ProcessStatus.RUNNING })).toBe(true);
+  });
+
+  it('treats missing workerStatus + session set as busy (just launched)', () => {
+    expect(isReadyForInput({ status: ProcessStatus.RUNNING, session_id: 'sess-1' })).toBe(false);
+  });
+
+  it('reads worker_status (snake_case) on wire payloads', () => {
+    expect(
+      isReadyForInput({
+        status: ProcessStatus.RUNNING,
+        worker_status: WorkerStatus.IDLE,
+      }),
+    ).toBe(true);
+  });
+});
+
+// ─── getDisplayStatus ────────────────────────────────────────────────────────
+
+describe('getDisplayStatus', () => {
+  it('returns workerStatus when the process is in a running lifecycle state', () => {
+    expect(
+      getDisplayStatus({ status: ProcessStatus.RUNNING, workerStatus: WorkerStatus.THINKING }),
+    ).toBe(WorkerStatus.THINKING);
+    expect(
+      getDisplayStatus({ status: ProcessStatus.STARTING, workerStatus: WorkerStatus.IDLE }),
+    ).toBe(WorkerStatus.IDLE);
+  });
+
+  it('falls back to ProcessStatus when workerStatus is missing', () => {
+    expect(getDisplayStatus({ status: ProcessStatus.RUNNING })).toBe(ProcessStatus.RUNNING);
+  });
+
+  it('returns ProcessStatus for non-running lifecycle states', () => {
+    for (const s of [ProcessStatus.NEW, ProcessStatus.STOPPED, ProcessStatus.FAILED]) {
+      expect(getDisplayStatus({ status: s, workerStatus: WorkerStatus.THINKING })).toBe(s);
+    }
+  });
+
+  it('returns undefined for processes with no status at all', () => {
+    expect(getDisplayStatus({})).toBeUndefined();
+  });
+});
+
+// ─── hasWorkerStarted ────────────────────────────────────────────────────────
+
+describe('hasWorkerStarted', () => {
+  it('is false only for INITIALIZING', () => {
+    expect(hasWorkerStarted(WorkerStatus.INITIALIZING)).toBe(false);
+    const started: WorkerStatus[] = [
+      WorkerStatus.IDLE,
+      WorkerStatus.WAITING,
+      WorkerStatus.THINKING,
+      WorkerStatus.TOOL_CALL,
+      WorkerStatus.TOOL_RUNNING,
+      WorkerStatus.COMPLETE,
+      WorkerStatus.ERROR,
+      WorkerStatus.INTERRUPTED,
+      WorkerStatus.INACTIVE,
+      WorkerStatus.API_ERROR,
+      WorkerStatus.API_TIMEOUT,
+      WorkerStatus.UNKNOWN,
+    ];
+    for (const s of started) expect(hasWorkerStarted(s)).toBe(true);
+  });
+});

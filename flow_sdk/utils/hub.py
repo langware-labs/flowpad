@@ -11,12 +11,11 @@ URL structure follows the Flowpad Hub API guidelines:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 import httpx
 
-if TYPE_CHECKING:
-    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +28,7 @@ def hub_base_url() -> Optional[str]:
 
 
 def hub_graph_url(
-    entity_type: "BuiltinEntityType",
+    entity_type: BuiltinEntityType,
     entity_id: str | None = None,
     action: str | None = None,
     sub_path: str | None = None,
@@ -88,7 +87,7 @@ def _auth_headers() -> dict[str, str]:
 
 
 async def hub_get(
-    entity_type: "BuiltinEntityType",
+    entity_type: BuiltinEntityType,
     entity_id: str | None = None,
     action: str | None = None,
     sub_path: str | None = None,
@@ -115,12 +114,11 @@ async def hub_get(
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping GET %s/%s", entity_type, entity_id)
         return None
     try:
-        timeout = 60 if raw else 10
+        timeout = httpx.Timeout(connect=10, write=10, read=600, pool=5) if raw else httpx.Timeout(10)
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.get(url, headers=_auth_headers(), params=params or {})
             if resp.status_code == 200:
                 result = resp.content if raw else resp.json().get("data") or {}
-                logger.info("[hub] GET %s -> 200 (%s bytes)", url, len(resp.content))
                 return result
             logger.warning("[hub] GET %s returned %s: %s", url, resp.status_code, resp.text[:500])
             return None
@@ -130,7 +128,7 @@ async def hub_get(
 
 
 async def hub_post(
-    entity_type: "BuiltinEntityType",
+    entity_type: BuiltinEntityType,
     payload: dict[str, Any],
     entity_id: str | None = None,
     action: str | None = None,
@@ -157,7 +155,7 @@ async def hub_post(
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping POST %s/%s", entity_type, entity_id)
         return None
     try:
-        timeout = 60 if files else 10
+        timeout = httpx.Timeout(connect=10, write=600, read=60, pool=5) if files else httpx.Timeout(10)
         async with httpx.AsyncClient(timeout=timeout) as client:
             if files:
                 resp = await client.post(url, headers=_auth_headers(), files=files)
@@ -173,7 +171,7 @@ async def hub_post(
 
 
 async def hub_put(
-    entity_type: "BuiltinEntityType",
+    entity_type: BuiltinEntityType,
     entity_id: str,
     payload: dict[str, Any],
     *,

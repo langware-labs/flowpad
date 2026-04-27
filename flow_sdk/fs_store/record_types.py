@@ -102,10 +102,20 @@ class RecordType(StrEnum):
     # Workflow record type
     WORKFLOW = "workflow"
 
-    ASSET = "asset"
-    DOCS = "docs"
+    MARKDOWN = "markdown"
     SPEC = "spec"
     CONVERSATION = "conversation"
+
+    COLLABORATION_ROOM = "collaboration_room"
+
+    USER_HOME_FOLDER = "user_home_folder"
+    REAL_PROJECT_CWD = "real_project_cwd"
+    SYSTEM_ROOT = "system_root"
+    CWD_ROOT = "cwd_root"
+
+    # Transient scaffold emitted by project_folder_walker_fn — fan-out only,
+    # never persisted as a terminal record (no record_cls registered).
+    FOLDER = "folder"
 
 
 class SkillitRecordType(StrEnum):

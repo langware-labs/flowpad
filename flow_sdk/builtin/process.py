@@ -203,7 +203,7 @@ class Flow(Entity):
     slack_thread_ts: Optional[str] = APIField(default=None)
     fs_storage_provider: StorageProvider | None = StorageProvider.SANDBOX
     project_id: str | None = APIField(default=None)
-    source_vfs_path: str | None = APIField(default=None)
+    asset_ref: str | None = APIField(default=None)
     current_compute_node_id: str | None = APIField(default=None)
     current_terminal_id: str | None = APIField(default=None)
     worker_session_id: str | None = APIField(default=None)

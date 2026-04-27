@@ -1,20 +1,24 @@
+---
+
+---
+
 # Record Discovery & PropertyRecord System
 
-> **Naming note:** This document covers the **Record-level discovery** mechanism (`Record.discovery()`, `PropertyRecord` descriptors, and `state.json` TTL caching). It does **not** cover the **Flowpad app discovery** module (`flow_sdk/discovery/flowpad_discovery.py`), which detects whether the Flowpad desktop app is running via `~/.flow/server.json` and health checks. For Flowpad app discovery, see [`flow_sdk/discovery/`](../flow_sdk/discovery/__init__.py). For filesystem scan and index orchestration, see [scan-and-discovery.md](data-management/scan-and-discovery.md).
+> **Naming note:** This document covers the **Record-level discovery** mechanism (`Record.discovery()`, `PropertyRecord` descriptors, and `state.json` TTL caching). It does **not** cover the **Flowpad app discovery** module (`flow_sdk/discovery/flowpad_discovery.py`), which detects whether the Flowpad desktop app is running via `~/.flow/server.json` and health checks. For Flowpad app discovery, see [`flow_sdk/discovery/`](../flow_sdk/discovery/__init__.py). For filesystem indexing, see [`flow_sdk/fs_store/indexer/`](../flow_sdk/fs_store/indexer/__init__.py).
 
 ## Overview
 
 The `Record` class in `flow_sdk/fs_store/` now supports a three-layer storage model:
 
-| Layer | File | Description |
-|-------|------|-------------|
-| **DomainData** | `data.json` | All domain fields (id, name, status, …) |
-| **Metadata** | inside `data.json` | name, status, created_at, etc. (merged into `_data`) |
-| **State** | `state.json` | Discovery flag + cached PropertyRecord values |
+| Layer          | File               | Description                                           |
+| -------------- | ------------------ | ----------------------------------------------------- |
+| **DomainData** | `data.json`        | All domain fields (id, name, status, …)               |
+| **Metadata**   | inside `data.json` | name, status, created\_at, etc. (merged into `_data`) |
+| **State**      | `state.json`       | Discovery flag + cached PropertyRecord values         |
 
 `state.json` lives in the same folder as `metadata.json` (FOLDER layout). For read-only records without a folder path (e.g. JSONL-backed sessions), saves are silently skipped.
 
----
+***
 
 ## PropertyRecord — Pydantic-Field-style descriptors
 
@@ -80,7 +84,7 @@ class ClaudeSessionRecord(Record):
 The subclass is instantiated as the descriptor (`SessionActivePropertyRecord()`).
 `_default_ttl` on the subclass provides the default when no `ttl=` kwarg is passed.
 
----
+***
 
 ## `state.json` format
 
@@ -106,7 +110,7 @@ The subclass is instantiated as the descriptor (`SessionActivePropertyRecord()`)
 
 `discovered_at` is inferred from the file's presence (if `state.json` exists and has a `fields` key, the record is considered discovered). List properties use their `list_key` as the storage key instead of `"value"`.
 
----
+***
 
 ## `Record.discovery()`
 
@@ -114,17 +118,17 @@ The subclass is instantiated as the descriptor (`SessionActivePropertyRecord()`)
 record.discovery(force=False, recursive=False) -> Record
 ```
 
-| `force` | `already_discovered` | Behaviour |
-|---------|---------------------|-----------|
-| `False` | No | Full scan: reload `data.json` + run all properties |
-| `False` | Yes | Skip `data.json` reload; re-run **expired** properties only |
-| `True`  | Any | Always reload `data.json` + re-run **all** properties |
+| `force` | `already_discovered` | Behaviour                                                   |
+| ------- | -------------------- | ----------------------------------------------------------- |
+| `False` | No                   | Full scan: reload `data.json` + run all properties          |
+| `False` | Yes                  | Skip `data.json` reload; re-run **expired** properties only |
+| `True`  | Any                  | Always reload `data.json` + re-run **all** properties       |
 
 `recursive=True` propagates the same call to all `children` loaded via `children_refs`.
 
 Returns `self` for chaining.
 
----
+***
 
 ## `Record.get_prop(key)`
 
@@ -134,17 +138,17 @@ TTL-aware accessor. Checks the `RecordState` for a cached entry:
 2. If entry is fresh → returns `descriptor.get_value(entry)` directly (no discovery)
 3. If no descriptor registered for `key` → falls back to `self._data.get(key)`
 
----
+***
 
 ## TTL rules
 
-| `ttl` value | Behaviour |
-|-------------|-----------|
-| `> 0` | Re-run if `(now - discovered_at).total_seconds() > ttl` |
-| `-1` | Never auto-invalidates on `get_prop()`. Only refreshed by `discovery(force=True)` |
-| Missing `discovered_at` | Always treated as expired |
+| `ttl` value             | Behaviour                                                                         |
+| ----------------------- | --------------------------------------------------------------------------------- |
+| `> 0`                   | Re-run if `(now - discovered_at).total_seconds() > ttl`                           |
+| `-1`                    | Never auto-invalidates on `get_prop()`. Only refreshed by `discovery(force=True)` |
+| Missing `discovered_at` | Always treated as expired                                                         |
 
----
+***
 
 ## `list_key` parameter
 
@@ -159,7 +163,7 @@ tags = PropertyRecord(ttl=300, list_key="items", discovery=lambda r: get_tags(r)
 
 Non-list values passed to a `list_key` descriptor are coerced to `[]`.
 
----
+***
 
 ## Source layout
 
@@ -177,13 +181,13 @@ flow_sdk/fs_records/claude/
     session_active.py       # SessionActivePropertyRecord (subclass example)
 ```
 
----
+***
 
 ## Read-only records
 
 Records with `_read_only = True` (e.g. `ClaudeSessionRecord`) may have no folder path. `RecordState.save()` silently skips writing when `_state_path()` returns `None`. Properties still compute on `get_prop()` — values are just not persisted across calls.
 
----
+***
 
 ## Testing
 
@@ -192,13 +196,24 @@ python -m pytest tests/unit/test_records.py -v
 ```
 
 Key scenarios tested:
-- `discovery(force=False)` on fresh record → full scan + writes `state.json`
-- `discovery(force=False)` on known record → skips `data.json`; re-runs expired TTLs
-- `discovery(force=True)` → always reloads `data.json` + re-runs all props
-- `get_prop()` first access, cached, TTL expiry, `ttl=-1`, fallback to `_data`
-- Corrupted `state.json` → silently ignored
-- Missing source file → no crash, still marks discovered
-- Read-only record → no `state.json` written
-- `list_key` storage/retrieval round-trip
-- Child class inherits + extends parent descriptors
-- Rapid repeated access → discovery called only once (no excess calls)
+
+* `discovery(force=False)` on fresh record → full scan + writes `state.json`
+
+* `discovery(force=False)` on known record → skips `data.json`; re-runs expired TTLs
+
+* `discovery(force=True)` → always reloads `data.json` + re-runs all props
+
+* `get_prop()` first access, cached, TTL expiry, `ttl=-1`, fallback to `_data`
+
+* Corrupted `state.json` → silently ignored
+
+* Missing source file → no crash, still marks discovered
+
+* Read-only record → no `state.json` written
+
+* `list_key` storage/retrieval round-trip
+
+* Child class inherits + extends parent descriptors
+
+* Rapid repeated access → discovery called only once (no excess calls)
+

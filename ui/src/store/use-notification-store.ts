@@ -213,7 +213,7 @@ export function initNotificationListener(): () => void {
             category: ViewType.SKILLS,
             title: `Generating: ${context.skill_name}`,
             navigationPath: context.session_id
-              ? `/dock/${ViewType.SHELL}/${context.session_id}?resumeClaude=true`
+              ? `/dock/${ViewType.SHELL}/${context.session_id}`
               : undefined,
             metadata: {
               event_type: eventName,

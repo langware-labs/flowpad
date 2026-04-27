@@ -2,13 +2,14 @@ import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { SearchFilters } from '@src/hooks/use-record-search';
 import { cn } from '@src/lib/utils';
+import { RecordType } from '@sdk';
 import { CornerDownLeft, Search, SlidersHorizontal, X } from 'lucide-react';
 import { KeyboardEvent, useCallback, useRef, useState } from 'react';
 
 const RECORD_TYPES = [
-  'bookmark', 'claude_session', 'skill', 'agent', 'claude_hook', 'command',
-  'annotation', 'comment', 'task', 'workflow', 'docs', 'plan',
-  'claude_md', 'claude_memory', 'claude_rules', 'project', 'asset',
+  'bookmark', 'claude_session', RecordType.SKILL, RecordType.AGENT, 'claude_hook', RecordType.COMMAND,
+  RecordType.ANNOTATION, 'comment', RecordType.TASK, 'workflow', RecordType.MARKDOWN, RecordType.PLAN,
+  RecordType.CLAUDE_MD, 'claude_memory', 'claude_rules', RecordType.PROJECT,
 ];
 const TIME_PRESETS = [
   { value: '1h', label: '1h' },
@@ -44,8 +45,10 @@ const TYPE_COLORS: Record<string, string> = {
 };
 
 interface RecordSearchBarProps {
-  /** Compact mode: shows Tools toggle button, filters hidden by default */
+  /** Compact mode: filters hidden by default */
   compact?: boolean;
+  /** Show the Tools toggle button (default: false) */
+  showTools?: boolean;
   placeholder?: string;
   query: string;
   filters: SearchFilters;
@@ -88,6 +91,7 @@ function CustomDateRangeInputs({
 
 export function RecordSearchBar({
   compact = true,
+  showTools = false,
   placeholder = 'Search records...',
   query,
   filters,
@@ -163,7 +167,7 @@ export function RecordSearchBar({
           </button>
         )}
 
-        {compact && (
+        {showTools && (
           <Button
             variant="ghost"
             size="sm"

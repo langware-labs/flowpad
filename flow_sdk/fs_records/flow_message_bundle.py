@@ -66,8 +66,8 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
     tmp_root = Path(tempfile.mkdtemp(prefix="flowmsg_pack_"))
     try:
         # 1. Write top-level message.json
-        # FILE attachment data is stored as absolute paths locally; rewrite to
-        # zip-relative paths so the receiver can find them without our directory layout.
+        # FILE attachment data is stored as a VFS subpath locally (e.g. "data/file.txt");
+        # rewrite to zip-relative paths so the receiver can locate them inside the zip.
         msg_data = flow_message.model_dump(
             mode="python",
             include=_FM_FIELDS,
@@ -86,7 +86,9 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
         # 2. Process each attachment entry
         for entry in flow_message.attachment:
             if entry.attachment_type == AttachmentType.FILE:
-                file_path = Path(entry.data)
+                from flow_sdk.storage import get_entity_embedded_storage
+                storage = get_entity_embedded_storage(flow_message.typeid)
+                file_path = Path(storage.get_storage_path(entry.data))
                 if file_path.exists():
                     files_dir = attachment_dir / "files"
                     files_dir.mkdir(exist_ok=True)
@@ -180,29 +182,18 @@ async def _pack_flow_message_entry(fm_id: str, attachment_dir: Path) -> None:
 # _rewrite_file_attachments
 # ---------------------------------------------------------------------------
 
-def _normalise_attachments(fm_data: dict) -> None:
-    """Normalise attachment dicts to the {'attachment_type': ..., 'data': ...} format.
 
-    Handles TypeId dict format that may appear in bundle files created by older
-    hub or sender code: {'type': 'spec', 'id': '...'} → {'attachment_type': 'type_id', 'data': 'spec-...'}.
-    Mutates fm_data in-place.
+def _rewrite_file_attachments(fm_data: dict, tmp_root: Path, fm_id: str) -> None:
+    """Copy FILE attachments from the extracted zip into the FlowMessage's embedded
+    storage and rewrite their `data` field to a VFS subpath (data/{filename}).
+
+    This mirrors how the sender stores files so that fs/download works identically
+    for both sender and recipient.
     """
-    raw = fm_data.get("attachment") or []
-    normalised = []
-    for att in raw:
-        if not isinstance(att, dict):
-            continue
-        if "attachment_type" in att:
-            normalised.append(att)
-        elif "type" in att and "id" in att:
-            normalised.append({"attachment_type": AttachmentType.TYPE_ID.value, "data": f"{att['type']}-{att['id']}"})
-    fm_data["attachment"] = normalised
-
-
-def _rewrite_file_attachments(fm_data: dict, tmp_root: Path, task_id: str) -> None:
-    """Copy FILE attachments from the extracted zip to a permanent location and
-    rewrite their `data` field from zip-relative paths to absolute disk paths."""
-    from flow_sdk.config import FLOW_HOME
+    from flow_sdk.api.type_id import TypeId
+    from flow_sdk.storage import get_entity_embedded_storage
+    fm_typeid = TypeId(type="flow_message", id=fm_id)
+    storage = get_entity_embedded_storage(fm_typeid)
     for att in fm_data.get("attachment", []):
         if att.get("attachment_type") != AttachmentType.FILE.value:
             continue
@@ -210,11 +201,11 @@ def _rewrite_file_attachments(fm_data: dict, tmp_root: Path, task_id: str) -> No
         src = tmp_root / rel_path
         if not src.exists():
             continue
-        dest_dir = FLOW_HOME / "tasks" / f"files-{task_id[:8]}" if task_id else FLOW_HOME / "tasks" / "files"
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        dest = dest_dir / src.name
+        vfs_subpath = f"data/{src.name}"
+        dest = Path(storage.get_storage_path(vfs_subpath))
+        dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
-        att["data"] = str(dest)
+        att["data"] = vfs_subpath
 
 
 # ---------------------------------------------------------------------------
@@ -383,24 +374,22 @@ async def unpack_bundle(
                         perm_task_dir.mkdir(parents=True, exist_ok=True)
                         perm_jsonl = perm_task_dir / "conversation.jsonl"
                         _merge_conversation_jsonl(jsonl_file, perm_jsonl)
+                        # notify=False — the conversation save would otherwise fire a
+                        # sync notification before the referenced FlowMessage is saved
+                        # (step 5), causing the UI to fetch a not-yet-saved FM (404).
+                        # We send the conversation sync explicitly in step 7 instead.
                         conv = await _create_conversation_from_disk(
                             task_dir=perm_task_dir,
                             task_id=task_id_for_conv or "",
                             conversation_id=entry_id,
                             owner_typeid=owner_typeid,
+                            notify=False,
                         )
                         if conv:
                             conversation_id = conv.id
-                            # Notify frontend that conversation was updated (e.g. new reply arrived)
-                            try:
-                                send_resource_sync(
-                                    type="conversation",
-                                    id=conv.id,
-                                    operation=SyncOperation.UPDATE,
-                                    data={"event_data": {"task_id": task_id_for_conv or "", "conversation_id": conv.id}},
-                                )
-                            except Exception:
-                                pass
+                            # Frontend notification is deferred to step 7 — firing it here
+                            # would tell the UI to refetch the conversation before the
+                            # referenced FlowMessage is saved (step 5), causing 404s.
 
                 elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
                     fm_file = entry_dir / "message.json"
@@ -410,9 +399,8 @@ async def unpack_bundle(
                         fm_id = fm_data.get("id") or entry_id
                         existing_fm = await FlowMessage.get_one({"id": fm_id})
                         if existing_fm is not None and not overwrite:
-                            raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": fm_id}])
-                        _normalise_attachments(fm_data)
-                        _rewrite_file_attachments(fm_data, tmp_root, task_id or "")
+                            continue  # already exists — skip without aborting the whole unpack
+                        _rewrite_file_attachments(fm_data, tmp_root, fm_id)
                         inner_fm = FlowMessage.model_validate(fm_data)
                         inner_fm.id = fm_id
                         await inner_fm.save(owner_typeid)
@@ -424,10 +412,9 @@ async def unpack_bundle(
         if top_fm_already_exists and not overwrite:
             raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
 
-        _normalise_attachments(msg_data)
-        _rewrite_file_attachments(msg_data, tmp_root, task_id or "")
-        top_fm = FlowMessage.model_validate(msg_data)
         top_fm_id = msg_data.get("id") or FlowMessage.allocate_id(msg_data)
+        _rewrite_file_attachments(msg_data, tmp_root, top_fm_id)
+        top_fm = FlowMessage.model_validate(msg_data)
         top_fm.id = top_fm_id
         top_fm = await top_fm.save(owner_typeid)
 
@@ -450,7 +437,9 @@ async def unpack_bundle(
                     )
                     rec.append_message_pointer(top_fm.id, datetime.now(UTC).isoformat())
 
-        # 7. Fire resource sync
+        # 7. Fire resource sync — both flow_message (CREATE) and conversation (UPDATE)
+        # are sent here, AFTER the FM is saved, so the UI doesn't refetch the
+        # conversation and try to load an FM that hasn't been persisted yet.
         try:
             task_id_for_sync = next(
                 (c.id for c in top_fm.context if c.type == BuiltinEntityType.TASK.value),
@@ -462,6 +451,20 @@ async def unpack_bundle(
                 operation=SyncOperation.CREATE,
                 data={"event_data": {"flow_message_id": top_fm.id, "task_id": task_id_for_sync}},
             )
+            # Notify the UI that the conversation has changed via the entity-event
+            # channel (notify_updated), not just send_resource_sync — useEntity hooks
+            # in the UI listen on the entity event channel, so this is what makes
+            # the conversation/task view re-render with the new message pointer.
+            if conversation_id:
+                conv_to_notify = await Conversation.get_one({"id": conversation_id})
+                if conv_to_notify:
+                    await conv_to_notify.notify_updated()
+                send_resource_sync(
+                    type="conversation",
+                    id=conversation_id,
+                    operation=SyncOperation.UPDATE,
+                    data={"event_data": {"task_id": task_id_for_sync, "conversation_id": conversation_id}},
+                )
         except Exception:
             pass
 

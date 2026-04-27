@@ -11,7 +11,9 @@ export function ActivityProgressBar({
   progress: ActivityProgress;
   onClick: () => void;
 }) {
-  const pct = progress.total > 0 ? (progress.done.length / progress.total) * 100 : 0;
+  const typesDone = progress.jobDone ?? progress.done.length ?? 0;
+  const typesTotal = progress.jobTotal ?? progress.total ?? 0;
+  const pct = typesTotal > 0 ? (typesDone / typesTotal) * 100 : 0;
   const isDone = progress.current === null && progress.pending.length === 0;
 
   return (
@@ -21,7 +23,7 @@ export function ActivityProgressBar({
     >
       <div className="flex items-center justify-between mb-1">
         <span className="text-xs font-medium tabular-nums">
-          {progress.done.length}/{progress.total} types
+          {typesDone}/{typesTotal} types
         </span>
         {progress.current ? (
           <span className="text-xs text-muted-foreground truncate max-w-[180px] ml-2 font-mono">
@@ -54,12 +56,15 @@ export function ActivityProgressModal({
 }) {
   if (!progress) return null;
 
+  const typesDone = progress.jobDone ?? progress.done.length ?? 0;
+  const typesTotal = progress.jobTotal ?? progress.total ?? 0;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle className="text-sm font-semibold">
-            {title} — {progress.done.length}/{progress.total}
+            {title} — {typesDone}/{typesTotal}
           </DialogTitle>
         </DialogHeader>
 

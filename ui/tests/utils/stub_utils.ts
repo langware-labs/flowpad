@@ -1,25 +1,8 @@
-import { Agent, dataManager, Flow, FlowExecutionStatus, UserAction } from '@sdk';
+import { dataManager, Flow, FlowExecutionStatus, UserAction } from '@sdk';
 import { screen, waitFor } from '@testing-library/react';
 import { UserEvent } from '@testing-library/user-event';
 import { expect } from 'vitest';
-import { getChatAgentConfig } from './test-utils';
 import { waitForRequest } from './waitForRequest';
-
-/**
- * Create an agent and flow for testing
- */
-export async function createTestAgentAndFlow(
-  agentName: string,
-  flowName: string,
-): Promise<{ agent: Agent; flow: Flow }> {
-  const agentConfig = getChatAgentConfig(agentName);
-  const agent = new Agent(agentConfig.toAgentConstructor());
-  await agent.save();
-
-  const flow = await agent.createFlow(flowName);
-
-  return { agent, flow };
-}
 
 /**
  * Wait for component to be ready

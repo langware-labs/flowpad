@@ -33,7 +33,7 @@ class RecordList:
     """Storage-agnostic typed record collection.
 
     Read operations delegate to ``provider.discover()`` or
-    ``record_class.discover()`` / ``record_class.discover_one()``.
+    ``record_class.discover()`` / ``record_class.get()``.
     Write operations delegate to ``record.persist()`` / ``record.save()``
     / ``record.delete()``.
 
@@ -113,7 +113,7 @@ class RecordList:
                 if r.id == record_id:
                     return r
             return None
-        return self.record_class.discover_one(record_id, scope=self.scope, **self._kwargs)
+        return self.record_class.get(record_id, scope=self.scope, **self._kwargs)
 
     def __iter__(self) -> Iterator[Record]:
         return iter(self._get_records())

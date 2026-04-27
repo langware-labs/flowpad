@@ -1,6 +1,9 @@
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
+import { IndexingIndicator } from '@src/components/search-index/IndexingIndicator';
 import { useProjects } from '@src/hooks/use-projects';
 import { useContext } from '@src/hooks/useContext';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { fsManager } from '@sdk';
 import { ExternalLink, ArrowLeftRight } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
@@ -28,6 +31,7 @@ export function StatusBar({ className = '' }: StatusBarProps) {
   const { project, computeNode, bootstrapInfo, workdir } = useContext();
   const workspacePath = bootstrapInfo?.desktop_info?.paths?.workspace;
   const { refetch: refetchProjects } = useProjects();
+  const { navigation } = useDockNavigation();
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
 
   // Get the active working directory path — prefer context workdir (reflects active tab),
@@ -82,10 +86,10 @@ export function StatusBar({ className = '' }: StatusBarProps) {
           <span style={glowStyle}>Switch Project</span>
         </button>
         <button
-          onClick={openProjectModal}
+          onClick={() => navigation.openDock(DockPointer.forProject(project.id))}
           className="text-xs font-medium transition-colors hover:underline"
           style={isRoot ? glowStyle : { color: 'var(--muted-foreground)' }}
-          title={isRoot ? rootTooltip : 'Switch project'}
+          title={isRoot ? rootTooltip : 'Open project view'}
         >
           {project.displayName}
         </button>
@@ -99,6 +103,7 @@ export function StatusBar({ className = '' }: StatusBarProps) {
             <ExternalLink className="h-3 w-3 shrink-0" />
           </button>
         )}
+        <IndexingIndicator />
       </div>
       <OpenProjectComponent
         open={isProjectModalOpen}

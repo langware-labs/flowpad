@@ -38,6 +38,13 @@ def _agent_search_dirs() -> list[Path]:
 
     _add(Path.home() / ".claude" / "agents")
 
+    # SDK-shipped system agents under the Flowpad Assistant system project.
+    try:
+        from flow_sdk.config import flowpad_assistant_project_root
+        _add(flowpad_assistant_project_root() / ".claude" / "agents")
+    except Exception:
+        pass
+
     from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
     for real in iter_claude_project_paths():
         _add(real / ".claude" / "agents")
@@ -90,7 +97,13 @@ class AgentRecord(Record):
     _record_type: ClassVar[str] = RecordType.AGENT
     _indexed_by_default: ClassVar[bool] = True
     _user_asset: ClassVar[bool] = True
+    _creatable: ClassVar[bool] = True
+    _icon: ClassVar[str] = "Bot"
     index_fields: ClassVar[list[str]] = ["description"]
+
+    # Framework upsert: <scope_root>/.claude/agents/<safe_name>.md
+    _main_subdir: ClassVar[str] = ".claude/agents"
+    _main_layout: ClassVar[str] = "file"
 
     def __init__(self, **kwargs: Any):
         kwargs.setdefault("type", RecordType.AGENT)
@@ -101,16 +114,18 @@ class AgentRecord(Record):
         if prompt_val is not None:
             object.__getattribute__(self, "__dict__")["prompt_text"] = prompt_val
 
-    @property
-    def source_path(self) -> str:
-        """Absolute path to the agent .md file on disk."""
-        ar = self.asset_ref
-        if ar is not None:
-            return ar.path
-        rd = self.record_dir
-        if rd is not None and self.name:
-            return str(rd / f"{self.name}.md")
-        return ""
+    def _safe_name(self, entity) -> str:
+        # Agent file is named after the entity name as-is (used by Claude Code
+        # CLI as the agent identifier). Slugify only what filesystems disallow.
+        raw = (getattr(entity, "name", None) or "").strip()
+        return raw or "untitled"
+
+    def default_body(self, entity) -> "str | None":
+        name = (getattr(entity, "name", None) or "").strip()
+        if not name:
+            return None
+        desc = (getattr(entity, "description", None) or "").strip()
+        return _render_frontmatter({"name": name, "description": desc}) + "\n"
 
     @property
     def agent_doc(self) -> "Any":  # FrontMatterFsRef | None
@@ -130,6 +145,8 @@ class AgentRecord(Record):
         return self.agent_doc
 
     def meta_dict(self) -> dict:
+        # Keep asset-mtime as updated_date so the FTS layer sees the freshest
+        # timestamp — base asset_ref injection is handled by Record.meta_dict.
         result = super().meta_dict()
         try:
             import os as _os
@@ -218,8 +235,11 @@ class AgentRecord(Record):
         return cls(**data)
 
     @classmethod
-    def _external_source_find_one(cls, uid: str) -> "AgentRecord | None":
-        """Find an agent by name/id: checks user dirs then system assets."""
+    def get(cls, uid: str, **kwargs: Any) -> "AgentRecord | None":
+        """Find an agent by name/id: records_root first, then user dirs, then system assets."""
+        rec = super().get(uid, **kwargs)
+        if rec is not None:
+            return rec
         for agents_dir in _agent_search_dirs():
             md = agents_dir / f"{uid}.md"
             if md.exists():
@@ -309,9 +329,16 @@ class AgentRecord(Record):
         if not p.is_dir():
             return super().load_record(path)
 
-        # Shadow record dir (has metadata.json or old data.json) — load normally
+        # Shadow record dir (has metadata.json or old data.json) — load normally,
+        # then wire up asset_ref to the companion .md if present.
         if (p / _META_JSON).exists() or (p / "data.json").exists():
-            return super().load_record(path)
+            rec = super().load_record(path)
+            if rec.asset_ref is None:
+                md_files = list(p.glob("*.md"))
+                if md_files:
+                    from flow_sdk.fs_store.fs_ref import FrontMatterFsRef
+                    object.__setattr__(rec, "_asset_ref", FrontMatterFsRef(md_files[0].resolve()))
+            return rec
 
         # Markdown bootstrap: dir contains only .md (external asset folder)
         md_files = list(p.glob("*.md"))
@@ -361,23 +388,39 @@ class AgentRecord(Record):
         md_path.write_text(self._render_markdown())
         return AgentRecord.from_file(md_path)
 
+    # -- External-source hooks (flat .md files in ~/.claude/agents/ etc.) ----
+
+    @classmethod
+    async def from_fsref(cls, ref) -> list["AgentRecord"]:
+        """Indexer entry point — construct from an FSRef emitted by agent_fn."""
+        return [cls.from_file(ref._path)]
+
+    @classmethod
+    def getId(cls, ref) -> str:
+        """Id = agent name — prefer frontmatter `name` field, else filename stem.
+
+        Matches `AgentRecord.from_file` which sets `id = agent_name` where
+        agent_name is the yaml.name from frontmatter (or fallback to stem)."""
+        try:
+            text = ref._path.read_text(encoding="utf-8")
+            fm_raw = _extract_frontmatter(text)
+            if fm_raw:
+                fields = _yaml_load(fm_raw) or {}
+                name = fields.get("name")
+                if isinstance(name, str) and name.strip():
+                    return name.strip()
+        except OSError:
+            pass
+        return ref._path.stem
+
     # -- Loader helpers ----------------------------------------------------
 
     @classmethod
-    def discovery_items_count(cls, limit: int | None = None) -> int:
-        """Count agent .md files across all search dirs (fast, no file reads)."""
+    def discover(cls, scope: Scope | None = None, **kwargs: Any) -> list["AgentRecord"]:
+        """Discover all agent .md files from user and project .claude/agents/ folders."""
+        results: list[AgentRecord] = []
         seen: set[str] = set()
-        for agents_dir in _agent_search_dirs():
-            for f in agents_dir.glob("*.md"):
-                seen.add(str(f.resolve()))
-        count = len(seen)
-        return min(count, limit) if limit is not None else count
-
-    @classmethod
-    def discover_iter(cls, limit: int | None = None, scope: Scope | None = None, **kwargs: Any):
-        """Lazy generator — yields one AgentRecord per .md file."""
-        seen: set[str] = set()
-        count = 0
+        limit = kwargs.get("limit")
         for agents_dir in _agent_search_dirs():
             for f in sorted(agents_dir.glob("*.md")):
                 key = str(f.resolve())
@@ -385,17 +428,12 @@ class AgentRecord(Record):
                     continue
                 seen.add(key)
                 try:
-                    yield cls.from_file(f)
-                    count += 1
-                    if limit is not None and count >= limit:
-                        return
+                    results.append(cls.from_file(f))
+                    if limit is not None and len(results) >= limit:
+                        return results
                 except Exception:
                     continue
-
-    @classmethod
-    def discover(cls, scope: Scope | None = None, **kwargs: Any) -> list["AgentRecord"]:
-        """Discover all agent .md files from user and project .claude/agents/ folders."""
-        return list(cls.discover_iter(scope=scope, **kwargs))
+        return results
 
     @staticmethod
     def load_from_dir(agent_dir: Path) -> AgentRecord | None:

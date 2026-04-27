@@ -29,11 +29,26 @@ export interface SendNotificationParams {
   plan_id?: string | null;
   project_path?: string | null;
   team_space_id?: string | null;
+  sender_name?: string | null;
+  files?: File[];
 }
 
 export async function sendNotification(params: SendNotificationParams): Promise<{ git_error?: string | null; sent?: boolean; email_error?: string | null }> {
   const action = new ActionInfo('share_task', null, null, 'POST');
-  action.bodyParameters = { sub_action: 'send', ...params };
+  const { files, ...rest } = params;
+  if (files && files.length > 0) {
+    const form = new FormData();
+    form.append('sub_action', 'send');
+    for (const [key, value] of Object.entries(rest)) {
+      if (value != null) form.append(key, String(value));
+    }
+    for (const file of files) {
+      form.append('files', file, file.name);
+    }
+    action.bodyParameters = form;
+  } else {
+    action.bodyParameters = { sub_action: 'send', ...rest };
+  }
   const res = await dataManager.callAction<undefined, { git_error?: string | null; sent?: boolean; email_error?: string | null }>(action);
   return { git_error: res?.git_error ?? null, sent: res?.sent, email_error: res?.email_error ?? null };
 }

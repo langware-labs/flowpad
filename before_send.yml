@@ -1,0 +1,11 @@
+- generic [ref=e2]:
+  - region "Notifications (F8)":
+    - list
+  - region "Notifications alt+T"
+  - generic [ref=e5]:
+    - generic [ref=e6]:
+      - list [ref=e9]
+      - generic [ref=e52]
+    - generic [ref=e72]:
+      - tabpanel [ref=e77]
+      - contentinfo [ref=e135]
