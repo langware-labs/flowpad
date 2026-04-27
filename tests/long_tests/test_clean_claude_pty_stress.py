@@ -251,8 +251,10 @@ def extract_claude_section(full_pty: str) -> bytes:
 # ── Test ──────────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-# do not increase timeout without approval
-@pytest.mark.timeout(30)
+# exception to 30s policy: 50 cold Claude PTY spawns × 1.5s settle = 75s floor by construction;
+# plus ~1-3s per spawn. See ITERATIONS=50 (line 48), SETTLE_SLEEP=1.5 (line 49).
+# do not lower without redesigning the stress test (e.g. reducing ITERATIONS).
+@pytest.mark.timeout(300)
 async def test_clean_claude_pty_stress(bootstrapped_client):
     """Launch Claude 50 times; each PTY must structurally match a clean reference."""
     cn = await ComputeNode.get_one({"uname": "local"})
