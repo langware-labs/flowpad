@@ -5,13 +5,11 @@
  * Replaces the sliding TaskDetailPanel for spec_id tasks.
  */
 
-import { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Spec, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ExpansionRequest } from '@sdk/FlowSync/query';
 import { ConversationView } from '@src/components/conversation';
-import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 
 interface SharedTaskViewProps {
   task: Task;
@@ -19,8 +17,6 @@ interface SharedTaskViewProps {
 }
 
 export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
-  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
-
   const blobExpansion = new ExpansionRequest({ expand: ['blobs'] });
 
   const taskMeta = task.metadata as Record<string, unknown> | undefined;
@@ -84,7 +80,6 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
                 conversationId={task.conversation_id}
                 task={task}
                 senderName={senderName}
-                onChooseProject={() => setProjectPickerOpen(true)}
               />
             ) : (
               <p className="text-xs italic text-muted-foreground/60">No conversation yet.</p>
@@ -93,10 +88,6 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
         </section>
       </div>
 
-      <OpenProjectComponent
-        open={projectPickerOpen}
-        onOpenChange={setProjectPickerOpen}
-      />
     </div>
   );
 }

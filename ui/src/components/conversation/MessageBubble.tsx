@@ -4,6 +4,7 @@ import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { FlowMessage } from '@sdk';
 import type { ITask } from '@sdk/entities/task';
 import { MessageActions } from './MessageActions';
+import { MessageActionChips } from './MessageActionChips';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -104,19 +105,20 @@ export function MessageBubble({
             </button>
           )}
           {time && <span className="text-[10px] text-muted-foreground">{time}</span>}
-          <MessageActions
-            flowMessageId={flowMessageId}
-            flowMessage={flowMessage}
-            task={task}
-            onShowTask={onShowTask}
-            onExecute={onExecute}
-            onApproveAndExecute={onApproveAndExecute}
-          />
+          <MessageActions flowMessageId={flowMessageId} />
         </div>
         <div className={`text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
           {message.content}
         </div>
         {footer}
+        <MessageActionChips
+          flowMessageId={flowMessageId}
+          flowMessage={flowMessage}
+          task={task}
+          onShowTask={onShowTask}
+          onExecute={onExecute}
+          onApproveAndExecute={onApproveAndExecute}
+        />
       </div>
     </div>
   );
