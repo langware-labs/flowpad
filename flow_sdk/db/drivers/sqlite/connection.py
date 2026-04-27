@@ -5,8 +5,8 @@ import os
 # Configuration from environment
 from pathlib import Path
 
-from sqlalchemy import Boolean, Column, DateTime, String, Text, event
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text, event, text
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 _default_db_path = str(Path.home() / ".flow" / "db" / "flowpad_db")
@@ -78,12 +78,74 @@ class RelationshipSchema(Base):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 
+class LinksSchema(Base):
+    """Wiki links — one row per [[...]] occurrence in a source record's body."""
+
+    __tablename__ = "links"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    src_type = Column(String(50), nullable=False)
+    src_id = Column(String(36), nullable=False)
+    target_raw = Column(Text, nullable=False)
+    target_resolved_type = Column(String(50), nullable=True)
+    target_resolved_id = Column(String(36), nullable=True)
+    line = Column(Integer, nullable=False)
+
+    __table_args__ = (
+        Index("idx_links_src", "src_type", "src_id"),
+        Index("idx_links_target", "target_resolved_type", "target_resolved_id"),
+        Index(
+            "idx_links_unresolved_raw",
+            "target_raw",
+            sqlite_where=text("target_resolved_id IS NULL"),
+        ),
+    )
+
+    def to_dict(self) -> dict:
+        """Convert schema to dictionary."""
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
+
 def get_database_url(path: str = SQLITE_DATABASE_PATH) -> str:
     """Get the async SQLite database URL."""
     if path == ":memory:":
         # Use shared cache mode so all connections share the same database
         return "sqlite+aiosqlite:///:memory:?cache=shared"
     return f"sqlite+aiosqlite:///{path}"
+
+
+def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
+    """Register the SQLite production pragmas on a driver engine.
+
+    Pragmas (per-connection, set on every new aiosqlite connection):
+      - journal_mode=WAL          readers concurrent with one writer
+      - synchronous=NORMAL        safe with WAL, fsync only on checkpoint
+      - busy_timeout=5000         5s wait on writer-lock contention
+      - temp_store=MEMORY         temp tables in RAM
+      - cache_size=-64000         64 MB page cache
+      - mmap_size=268435456       256 MB memory-mapped I/O for reads
+      - foreign_keys=ON           enforce FK constraints
+
+    Note: BEGIN IMMEDIATE was tried but caused contention with the test
+    scaffolding's multi-engine teardown pattern. WAL + busy_timeout=5000
+    is sufficient for the close-shells-flood scenario the refactor was
+    designed to solve.
+    """
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _on_connect(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        for stmt in (
+            "PRAGMA journal_mode=WAL",
+            "PRAGMA synchronous=NORMAL",
+            "PRAGMA busy_timeout=5000",
+            "PRAGMA temp_store=MEMORY",
+            "PRAGMA cache_size=-64000",
+            "PRAGMA mmap_size=268435456",
+            "PRAGMA foreign_keys=ON",
+        ):
+            cursor.execute(stmt)
+        cursor.close()
 
 
 async def create_engine_and_session(path: str = SQLITE_DATABASE_PATH):

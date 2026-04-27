@@ -66,7 +66,7 @@ def test_close_sets_status_and_deletes_pty(use_tmp_records_root):
     assert record.status == ShellStatus.CLOSED
     assert not pty_path.exists()
 
-    reloaded = ShellRecord.discover_one("test-session-1")
+    reloaded = ShellRecord.get("test-session-1")
     assert reloaded is not None
     assert reloaded.status == ShellStatus.CLOSED
 

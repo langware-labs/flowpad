@@ -14,7 +14,7 @@ test.describe('Terminal Tab Switch – No Content Duplication', () => {
 
     // Capture the session ID from the URL so we can switch back to the exact tab
     const url = page.url();
-    const sessionIdMatch = url.match(/\/dock\/shell\/(shell-\d+)/);
+    const sessionIdMatch = url.match(/\/dock\/shell\/(shell-[A-Za-z0-9_-]+)/);
     expect(sessionIdMatch, 'Could not extract session ID from URL').toBeTruthy();
     const firstSessionId = sessionIdMatch![1];
 

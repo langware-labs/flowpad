@@ -211,6 +211,7 @@ export function TimeGutter({ rows, cellHeight, filters, ptySyncSession, viewport
   return (
     <TooltipProvider delayDuration={500}>
       <div
+        data-testid="time-gutter"
         style={{ width, minWidth: width }}
         className="relative shrink-0 border-r border-border/50 bg-muted/30 select-none"
       >

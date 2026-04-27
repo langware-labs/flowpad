@@ -79,6 +79,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   isPopupOpen = false;
   dataOpQueryInvalidation = false;
   private subscriptions: SubscriptionMap<T> = new SubscriptionMap<T>();
+  private _inFlightGets: Map<string, Promise<unknown>> = new Map();
   private watches: WatchMap = new WatchMap();
   private watchedQueries: WatchQueryMap<T> = new WatchQueryMap<T>();
   private streamingRequestsCount: number = 0;
@@ -347,7 +348,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
 
     const flowData = new FlowData(elementType, content, attributes);
-    flowData.source = FlowDataSource.WebSocket;
+    // The FlowData constructor already reads `attributes['source']` and sets
+    // `flowData.source` to the matching FlowDataSource enum value (or
+    // FlowDataSource.Unknown when absent). For backend-translated events
+    // (sniffer hooks via convert_hook_event, history replay, etc.) the
+    // source is set authoritatively upstream, so we respect it here. Only
+    // events that don't carry a source attribute (legacy WS-only paths) get
+    // tagged as WebSocket.
+    if (flowData.source === FlowDataSource.Unknown) {
+      flowData.source = FlowDataSource.WebSocket;
+    }
 
     // Route to entity's handleFlowData method if it exists
     if (typeof (entity as any).handleFlowData === 'function') {
@@ -855,16 +865,37 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       };
     }
 
+    // In-flight dedup for GETs: share a pending request with concurrent callers
+    // (e.g. StrictMode double-invoke, or multiple components mounting at once).
+    // Safe because GETs are idempotent. Mutations (POST/PUT/DELETE) are never deduped.
+    const method = actionInfo.method ?? 'GET';
+    const isDedupable = method === 'GET' && !actionInfo.abortSignal;
+    if (isDedupable) {
+      const key = endpoint;
+      const pending = this._inFlightGets.get(key);
+      if (pending) return pending as Promise<Res>;
+      const promise = (async () => {
+        try {
+          const raw = (await apiClient.get<Res>(endpoint, requestConfig)) as unknown as Res;
+          return actionInfo.castResponse ? (this.castAndDeepAssign(raw) as unknown as Res) : raw;
+        } finally {
+          this._inFlightGets.delete(key);
+        }
+      })();
+      this._inFlightGets.set(key, promise);
+      return promise;
+    }
+
     let response: Res;
 
-    switch (actionInfo.method) {
+    switch (method) {
       case 'POST':
       case 'PUT':
         if (!actionInfo.queryParameters) {
-          throw new Error(`Can not call ${actionInfo.method} action ${actionInfo.name}, Missing request data`);
+          throw new Error(`Can not call ${method} action ${actionInfo.name}, Missing request data`);
         }
         response =
-          actionInfo.method === 'POST'
+          method === 'POST'
             ? ((await apiClient.post<Res>(endpoint, actionInfo.bodyParameters, requestConfig)) as unknown as Res)
             : ((await apiClient.put<Res>(endpoint, actionInfo.bodyParameters, requestConfig)) as unknown as Res);
         break;
@@ -874,8 +905,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           ...requestConfig,
         })) as unknown as Res;
         break;
-      case 'GET':
       default:
+        // Fallthrough GET that opted out of dedup (e.g. has abortSignal)
         response = (await apiClient.get<Res>(endpoint, requestConfig)) as unknown as Res;
         break;
     }

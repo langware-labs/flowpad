@@ -25,16 +25,14 @@ pytestmark = [
         not test_service_config.deep_testing,
         reason="Skipping long tests when DEEP_TESTING is disabled",
     ),
-    pytest.mark.skip(
-        reason="AgenticProcess.output_folder removed in refactor"
-    ),
 ]
 
 from flow_sdk.builtin.workflow import Workflow
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(180)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_workflow_run_creates_hello_world():
     """workflow.run() executes workflow content; output_folder contains hello_world.txt."""
 
@@ -51,14 +49,15 @@ async def test_workflow_run_creates_hello_world():
 
     try:
         # 2. Build a Workflow entity pointing at the temp file (no DB save required)
-        # source_vfs_path is stored without the leading "/" (VFS convention)
-        workflow = Workflow(source_vfs_path=str(workflow_path).lstrip("/"))
+        # asset_ref is stored without the leading "/" (VFS convention)
+        workflow = Workflow(asset_ref=str(workflow_path).lstrip("/"))
 
         # 3. Run the workflow — saves record canonically, launches Claude CLI directly
         process = await workflow.run()
 
         # 4. Wait for the process to complete
-        await process.waitForIdle(timeout=120)
+        # do not increase timeout without approval
+        await process.waitForIdle(timeout=28)
 
         # 5. output_folder is record.output_dir — granted by the Record system
         output_folder = process.output_folder

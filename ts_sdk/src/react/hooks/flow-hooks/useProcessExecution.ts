@@ -1,15 +1,15 @@
-import { Flow, FlowEvents, FlowExecutionStatus } from '@sdk';
+import { Flow, FlowEvents, SendStatus } from '@sdk';
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react';
 
 /**
- * Hook for tracking flow execution state
- * Returns execution state and boolean flags for common state checks
- * Read-only: reflects the actual state from the Flow entity
+ * Hook for tracking client-side send-status on a Flow ("is a sendMessage in flight?").
+ * Returns the SendStatus and a few boolean convenience flags.
+ * Read-only: reflects the state owned by the Flow entity.
  */
-export function useProcessExecution(flow: Flow | null) {
+export function useSendStatus(flow: Flow | null) {
   // Cache the snapshot to prevent infinite re-renders
   const snapshotRef = useRef({
-    executionState: FlowExecutionStatus.Ready,
+    sendState: SendStatus.Ready,
     isRunning: false,
     isReady: true,
     isCanceled: false,
@@ -19,7 +19,7 @@ export function useProcessExecution(flow: Flow | null) {
   // Reset all refs when flow changes (onFlowChange)
   useEffect(() => {
     snapshotRef.current = {
-      executionState: FlowExecutionStatus.Ready,
+      sendState: SendStatus.Ready,
       isRunning: false,
       isReady: true,
       isCanceled: false,
@@ -34,17 +34,16 @@ export function useProcessExecution(flow: Flow | null) {
         return () => {};
       }
 
-      // Listen to the execution status event emitted by Flow entity
-      const unsubscribeExecutionStatus = flow.on(FlowEvents.EXECUTION_STATUS, callback);
+      const unsubscribeSendStatus = flow.on(FlowEvents.SEND_STATUS, callback);
 
-      // Also listen to stream events as backup (they may trigger execution state changes)
+      // Also listen to stream events as backup (they may trigger send-status changes)
       const unsubscribeStart = flow.on(FlowEvents.STREAM_START, callback);
       const unsubscribeEnd = flow.on(FlowEvents.STREAM_END, callback);
       const unsubscribeCancel = flow.on(FlowEvents.STREAM_CANCEL, callback);
       const unsubscribeError = flow.on(FlowEvents.ERROR, callback);
 
       return () => {
-        unsubscribeExecutionStatus();
+        unsubscribeSendStatus();
         unsubscribeStart();
         unsubscribeEnd();
         unsubscribeCancel();
@@ -54,23 +53,22 @@ export function useProcessExecution(flow: Flow | null) {
     [flow],
   );
 
-  // Snapshot function to get current execution state
+  // Snapshot function to get current send state
   const getSnapshot = useCallback(() => {
-    // Read execution state directly from flow (read-only)
-    const executionState = flow?.executionStatus || FlowExecutionStatus.Ready;
+    const sendState = flow?.sendStatus || SendStatus.Ready;
 
     const newSnapshot = {
-      executionState,
-      isRunning: executionState === FlowExecutionStatus.Running,
-      isReady: executionState === FlowExecutionStatus.Ready,
-      isCanceled: executionState === FlowExecutionStatus.Canceled,
-      isError: executionState === FlowExecutionStatus.Error,
+      sendState,
+      isRunning: sendState === SendStatus.Running,
+      isReady: sendState === SendStatus.Ready,
+      isCanceled: sendState === SendStatus.Canceled,
+      isError: sendState === SendStatus.Error,
     };
 
     // Only update if something actually changed
     const current = snapshotRef.current;
     if (
-      current.executionState !== newSnapshot.executionState ||
+      current.sendState !== newSnapshot.sendState ||
       current.isRunning !== newSnapshot.isRunning ||
       current.isReady !== newSnapshot.isReady ||
       current.isCanceled !== newSnapshot.isCanceled ||
@@ -84,3 +82,6 @@ export function useProcessExecution(flow: Flow | null) {
 
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
+
+/** @deprecated Use ``useSendStatus``. */
+export const useProcessExecution = useSendStatus;

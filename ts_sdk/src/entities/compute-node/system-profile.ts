@@ -773,17 +773,24 @@ export async function openExternal(processId: string, path: string): Promise<{ o
 /**
  * Open a file or directory in the system's default application via compute node.
  * Preferred over openExternal when you have a compute node ID.
+ *
+ * Pass `{select: true}` to reveal a file in the OS file manager (Finder/Explorer)
+ * with the file selected, instead of opening it in its default app. Folders ignore
+ * the flag. Linux falls back to opening the parent directory.
  */
 export async function openExternalFromComputeNode(
   computeNodeId: string,
   path: string,
-): Promise<{ opened: string } | null> {
+  options?: { select?: boolean },
+): Promise<{ opened: string; selected?: boolean } | null> {
   const actionInfo = new ActionInfo('open-external', 'compute_node', computeNodeId, 'POST');
+  const body: Record<string, unknown> = { path };
+  if (options?.select) body.select = true;
   const response = await fetch(actionInfo.fullActionUrl, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path }),
+    body: JSON.stringify(body),
   });
   const result = await response.json();
   return result.data || null;
@@ -839,6 +846,8 @@ export interface ProjectListItem {
   cwd: string | null;
   session_count: number;
   modified_at: string | null;
+  /** True when this project entry represents an SDK-shipped system project. */
+  system?: boolean;
 }
 
 /**

@@ -57,6 +57,8 @@ class DBBaseRecord(BaseModel):
 
     def __init_subclass__(cls, **kwargs: Unpack[ConfigDict]):
         super().__init_subclass__(**kwargs)
+        if cls.__dict__.get('_abstract', False):
+            return
         type_name = cls.get_type()
         if type_name:
             from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo  # noqa: PLC0415
@@ -65,6 +67,7 @@ class DBBaseRecord(BaseModel):
                 locations=["index"],
                 entity_cls=cls,
                 user_asset=bool(getattr(cls, "_user_asset", False)),
+                creatable=bool(getattr(cls, "_creatable", False)),
                 icon=getattr(cls, "_icon", None),
             ))
 

@@ -4,8 +4,8 @@ import json
 import sys
 import pytest
 
-from flow_sdk.builtin.cli_workers.claude_cli import ClaudeCliOptions
-from flow_sdk.builtin.cli_workers import factory
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import factory
+from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
 
 
 @pytest.fixture(autouse=True)
@@ -262,7 +262,7 @@ def test_factory_unknown_type_raises():
 def test_from_json_defaults():
     cmd = ClaudeCliOptions.from_json({})
     assert cmd.resume is False
-    assert cmd.debug is True
+    assert cmd.debug is False
     assert cmd.permission_mode == "bypassPermissions"
     assert cmd.chrome is False
     assert cmd.worktree is False

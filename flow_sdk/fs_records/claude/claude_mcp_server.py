@@ -48,7 +48,7 @@ class ClaudeMcpServerFsRecord(Record):
         return [r for r in rl if isinstance(r, cls)]
 
     @classmethod
-    def discover_one(cls, uid: str, scope: ScopeType | None = None, **kwargs) -> ClaudeMcpServerFsRecord | None:
+    def get(cls, uid: str, scope: ScopeType | None = None, **kwargs) -> ClaudeMcpServerFsRecord | None:
         """Find a specific MCP server record by uid."""
         for r in cls.discover(scope=scope):
             if r.id == uid:

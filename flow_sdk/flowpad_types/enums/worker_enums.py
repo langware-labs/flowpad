@@ -7,6 +7,7 @@ class WorkerType(str, Enum):
     CLAUDE_CODE = "claude_code"
     CLAUDE_CODE_CLI = "claude_code_cli"
     UNSECURED_CLAUDE = "unsecured_claude"
+    CODEX = "codex"
     SIMPLE = "simple"
     MOCK = "mock"
 

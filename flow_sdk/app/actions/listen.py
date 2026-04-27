@@ -35,6 +35,12 @@ from flow_sdk.core.flow.models.webhook_flow_data import (
     WebhookPayload,
     WebhookType,
 )
+from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
+    FlowData,
+    FlowDataSource,
+    FlowDataType,
+    FlowElementType,
+)
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
@@ -72,13 +78,15 @@ async def _route_to_source_process(
     except Exception:
         return
 
-    now_iso = datetime.now(timezone.utc).isoformat()
-    flow_msg = {
-        "element_type": "webhook",
-        "data_type": "object",
-        "flow_value": payload_data,
-        "attributes": {"t": now_iso},
-    }
+    # Translate the webhook payload to a canonical FlowData via the shared
+    # dispatcher (agent_hook → convert_hook_event, hook_op → convert_hook_op_event).
+    # The renderer reads attributes (`hook-op-event-name`, `workflow-label`,
+    # `hook-message`, …) instead of digging into payload_data itself.
+    from flow_sdk.app.actions._webhook_to_flowdata import convert_webhook_event
+    fds = convert_webhook_event(payload_data)
+    if not fds:
+        return
+    flow_msg = fds[0].model_dump(mode="python")
 
     # Route via execution_scope (hook_op events)
     if execution_scope:
@@ -154,21 +162,23 @@ async def _broadcast_to_sniffer(
     if skip_hook_id and sniffer_hook.id == skip_hook_id:
         return
 
-    attrs = {
-        "element-type": element_type or "webhook",
-        "data-type": data_type or "object",
-        "webhook_type": webhook_type,
-        "t": datetime.now(timezone.utc).isoformat(),
-    }
+    # Translate via the shared dispatcher so the global sniffer view receives
+    # the same canonical FlowData shape as the per-process trace gutter.
+    from flow_sdk.app.actions._webhook_to_flowdata import convert_webhook_event
+    fds = convert_webhook_event(payload_data)
+    if not fds:
+        return
+    fd = fds[0]
+    if element_type:
+        fd.attributes["element-type"] = element_type
+    if data_type:
+        fd.attributes["data-type"] = data_type
     if warning:
-        attrs["warning"] = warning
+        fd.attributes["warning"] = warning
 
     try:
         await sniffer_hook.emit_flow_data(
-            {
-                "flow_value": payload_data,
-                "attributes": attrs,
-            }
+            {"flow_value": fd.flow_value, "attributes": fd.attributes}
         )
     except Exception as e:
         logger.debug(f"Sniffer broadcast failed (non-critical): {e}")
@@ -363,7 +373,10 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
     # Use the refactored handle_webhook method
     result = await agent_hook.handle_webhook(webhook_data)
 
-    # Emit FlowData for live sniffer/watchers
+    # Emit FlowData for live sniffer/watchers. Route through the canonical
+    # ``convert_hook_event`` translator so the global sniffer view receives
+    # exactly the same shape as the per-process fan-out below — both end up
+    # as ``FlowData(element-type=status, source=sniffer, attributes={...})``.
     payload_data = {
         "webhook_type": "agent_hook",
         "agent_hook_id": agent_hook_id,
@@ -373,22 +386,45 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
         "hook_file_path": webhook_data.hook_file_path,
     }
 
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude.hook_to_flowdata import (
+        convert_hook_event,
+    )
+    converted_fds = convert_hook_event(payload_data)
+    for fd in converted_fds:
+        try:
+            await agent_hook.emit_flow_data(
+                {"flow_value": fd.flow_value, "attributes": fd.attributes}
+            )
+        except Exception as e:
+            logger.debug(f"AgentHook emit_flow_data failed (non-critical): {e}")
+
+    # Per-process sniffer fan-out: ingest the same converted FlowData into
+    # the matching AgenticProcess.flowDataStream so the InteractiveTerminal
+    # trace gutter can render it alongside live completion + history.
     try:
-        await agent_hook.emit_flow_data(
-            {
-                "flow_value": payload_data,
-                "attributes": {
-                    "element-type": "webhook",
-                    "data-type": "object",
-                    "webhook_type": "agent_hook",
-                    "hook_event_name": hook_event_name or "",
-                    "agent_hook_id": agent_hook_id,
-                    "t": datetime.now(timezone.utc).isoformat(),
-                },
-            }
-        )
-    except Exception as e:
-        logger.debug(f"AgentHook emit_flow_data failed (non-critical): {e}")
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
+
+        target_process = None
+        if agentic_process_id:
+            target_process = await AgenticProcess.get_by_id(agentic_process_id)
+        if target_process is None and hook_session_id:
+            processes = await AgenticProcess.get_all(
+                entities_filter=QueryFilter(match=ExpressionNode(session_id=hook_session_id))
+            )
+            if processes:
+                target_process = processes[0]
+
+        if target_process is not None:
+            for fd in converted_fds:
+                try:
+                    await target_process.emit_flow_data(
+                        {"flow_value": fd.flow_value, "attributes": fd.attributes}
+                    )
+                except Exception as exc:
+                    logger.debug("AgenticProcess sniffer emit_flow_data failed (non-critical): %s", exc)
+    except Exception as exc:
+        logger.debug("Sniffer fan-out skipped (non-critical): %s", exc)
 
     return ApiSuccessResponse(data=result.model_dump())
 

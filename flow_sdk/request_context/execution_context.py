@@ -62,8 +62,26 @@ class ExecutionContext:
             await handler.start()
 
     async def cleanup(self):
+        """Close the transaction. Idempotent and safe after commit/rollback.
+
+        cleanup() is the finally-block teardown and never decides durability.
+        Callers are expected to invoke commit_transaction() on the success
+        path or rollback_transaction() on the exception path BEFORE cleanup.
+        """
         if self.request_info and self.request_info.transaction_handler:
             await self.request_info.transaction_handler.close()
+
+    async def commit_transaction(self):
+        """Commit the request-scoped transaction.
+
+        Called on the success path of a request handler so writes durably
+        persist before the session is closed in cleanup().
+        """
+        if self.request_info and self.request_info.transaction_handler:
+            handler = self.request_info.transaction_handler
+            commit = getattr(handler, "commit", None)
+            if commit is not None:
+                await commit()
 
     async def rollback_transaction(self):
         logging.info(f"{self.context_name}-> context rollback")

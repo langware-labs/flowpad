@@ -528,7 +528,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         from uuid import uuid4
 
         from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.cli_workers import ClaudeCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data()
@@ -622,7 +622,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     async def fix_all_cloud_errors_action(self) -> ApiResponse:
         """Spawn an AgenticProcess for each error with a saved cloud fix instruction."""
         from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.cli_workers import ClaudeCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
         from flow_sdk.fs_records.claude.claude_error import ClaudeErrorRecord, Fix
 
         request_info = get_current_request_info()

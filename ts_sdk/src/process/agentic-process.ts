@@ -10,10 +10,12 @@
 
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
+import { FSRef, type FSRefJson } from '../fs/FSRef';
 import { ClaudeCliOptions } from '../cli_workers';
+import { dataContext } from '../FlowSync/context';
 import { FlowDataFactory } from '../entities/flow/flow-data-factory';
 import { Shell, ShellStatus } from '../entities/shell';
-import { FlowData } from '../flow_processing';
+import { FlowData, FlowDataSource } from '../flow_processing';
 import { FlowElementTypes } from '../flow_processing/flow-element-types';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
@@ -22,7 +24,7 @@ import { InstructionFile } from '../models/workflow/InstructionFile';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
-import { ProcessStatus, ProcessorStatus, isProcessorRunning, isProcessorTerminal } from './agentic-types';
+import { ProcessStatus, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
 
 /**
  * Result returned by AgenticProcess.spawn().
@@ -52,7 +54,7 @@ export interface ExecuteOptions {
  * ProcessState — minimal status wrapper for a process instance.
  */
 export interface ProcessState {
-  status: ProcessorStatus;
+  status: WorkerStatus;
 }
 
 /**
@@ -77,13 +79,13 @@ interface HistoryResponse {
  */
 export interface IAgenticProcess extends IEntity {
   instruction_content?: string;
-  source_vfs_path?: string;
+  asset_ref?: string;
   workdir?: string | null;
   context?: Record<string, unknown>;
   context_data?: Record<string, unknown>;
   favorite_index?: number | null;
   readonly status?: ProcessStatus;
-  readonly worker_status?: ProcessorStatus;
+  readonly worker_status?: WorkerStatus;
   session_id?: string | null;
   use_worker_history?: boolean;
   /** False=direct PTY spawn (default), True=legacy zsh intermediary */
@@ -94,16 +96,31 @@ export interface IAgenticProcess extends IEntity {
   visible?: boolean;
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
-  /** Backend TTL live field: true if a PTY session is actually alive (30s TTL) */
-  is_active?: boolean;
-  /** True when Claude has finished its turn and is waiting for user input */
-  waiting_for_prompt?: boolean;
+  /**
+   * Derived: true when the worker is ready for a new user prompt.
+   * Computed server-side via ``is_ready_for_input``. Read-only on the wire.
+   */
+  ready_for_input?: boolean;
   /** @internal — use AgenticProcess.cliOptions getter/setter instead */
   cli_config?: Record<string, any>;
   /** Extra directories passed to Claude via --add-dir */
   additional_dirs?: string[];
+  /** TypeIds of entities materialized under the process's assets dir. */
+  embedded_asset_refs?: TypeId[];
   /** Owning project ID */
   project_id?: string | null;
+  /** CollaborationRoom this process was spawned in, if any */
+  collaboration_room_id?: string | null;
+  /** Serialized TypeId ("type-id") of the entity this process is attached to (trigger, markdown, …). */
+  target_typeid_str?: string | null;
+  /** Root of the per-process execution folder — `<record_dir>/execution/`. */
+  exe_folder?: FSRefJson | null;
+  /** `<exe_folder>/input/` — instruction/queue inputs. */
+  input_folder?: FSRefJson | null;
+  /** `<exe_folder>/output/` — artifacts the agent writes back. */
+  output_folder?: FSRefJson | null;
+  /** `<exe_folder>/assets/` — materialised embedded agents / skills. */
+  assets_folder?: FSRefJson | null;
 }
 
 /**
@@ -407,7 +424,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   instruction_content?: string;
 
   /** Source VFS path of the executed file */
-  source_vfs_path?: string;
+  asset_ref?: string;
 
   /** Serialized execution context */
   context?: Record<string, unknown>;
@@ -422,7 +439,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   private _status: ProcessStatus = ProcessStatus.NEW;
 
   /** Granular transcript-derived worker status. */
-  private _workerStatus: ProcessorStatus = ProcessorStatus.IDLE;
+  private _workerStatus: WorkerStatus = WorkerStatus.INITIALIZING;
 
   /** Backend-owned lifecycle status. Read-only outside this class. */
   get status(): ProcessStatus {
@@ -434,11 +451,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /** Transcript-derived worker status. Read-only outside this class. */
-  get workerStatus(): ProcessorStatus {
+  get workerStatus(): WorkerStatus {
     return this._workerStatus;
   }
 
-  private set workerStatus(value: ProcessorStatus) {
+  private set workerStatus(value: WorkerStatus) {
     this._workerStatus = value;
   }
 
@@ -466,11 +483,23 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Owning project ID */
   project_id?: string | null;
 
-  /** Backend TTL live field: true if a PTY session is actually alive (30s TTL) */
-  is_active: boolean = false;
+  /** CollaborationRoom this process was spawned in, if any */
+  collaboration_room_id: string | null = null;
 
-  /** True when Claude has finished its turn and is waiting for user input */
-  waiting_for_prompt: boolean = false;
+  /** Serialized TypeId ("type-id") of the entity this process is attached to (trigger, markdown, …). */
+  target_typeid_str: string | null = null;
+
+  /** Execution folder — `<record_dir>/execution/`. Null until the process has a record on disk. */
+  exe_folder: FSRef | null = null;
+
+  /** `<exe_folder>/input/`. */
+  input_folder: FSRef | null = null;
+
+  /** `<exe_folder>/output/` — where the agent writes artifacts back. */
+  output_folder: FSRef | null = null;
+
+  /** `<exe_folder>/assets/` — materialised embedded agents / skills. */
+  assets_folder: FSRef | null = null;
 
   /** Deserialize cli_config into a live ClaudeCliOptions instance.
    *
@@ -529,20 +558,24 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   constructor(entity: Partial<IAgenticProcess> = {}) {
     super(entity);
     this.instruction_content = entity.instruction_content;
-    this.source_vfs_path = entity.source_vfs_path;
+    this.asset_ref = entity.asset_ref;
     this.context = entity.context;
     this.context_data = entity.context_data;
     this.favorite_index = entity.favorite_index;
     this.status = (entity.status as ProcessStatus) ?? ProcessStatus.NEW;
-    this.workerStatus = (entity.worker_status as ProcessorStatus) ?? ProcessorStatus.IDLE;
+    this.workerStatus = (entity.worker_status as WorkerStatus) ?? WorkerStatus.INITIALIZING;
     this.session_id = entity.session_id;
     this.use_worker_history = entity.use_worker_history;
     this.shell_mode = entity.shell_mode;
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;
     this.sidecar_shell_id = entity.sidecar_shell_id;
-    this.is_active = entity.is_active ?? false;
-    this.waiting_for_prompt = entity.waiting_for_prompt ?? false;
+    this.collaboration_room_id = entity.collaboration_room_id ?? null;
+    this.target_typeid_str = entity.target_typeid_str ?? null;
+    this.exe_folder = entity.exe_folder ? FSRef.fromJson(entity.exe_folder) : null;
+    this.input_folder = entity.input_folder ? FSRef.fromJson(entity.input_folder) : null;
+    this.output_folder = entity.output_folder ? FSRef.fromJson(entity.output_folder) : null;
+    this.assets_folder = entity.assets_folder ? FSRef.fromJson(entity.assets_folder) : null;
   }
 
   /**
@@ -554,7 +587,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /**
    * Get the workdir as a VFSPath if available.
-   * Resolves machine paths using compute_node_id from context_data.
+   * Resolves plain machine paths against the current compute-node context.
    */
   get workDirVfs(): VFSPath | null {
     const contextWorkdir = this.workdir;
@@ -567,17 +600,29 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       return VFSPath.parse(contextWorkdir);
     }
 
-    const computeNodeId = this.context_data?.compute_node_id as string | undefined;
-    if (!computeNodeId) {
+    const computeNodeTypeId = dataContext.computeNode?.typeId;
+    if (!computeNodeTypeId) {
       return VFSPath.parse(contextWorkdir);
     }
 
     try {
-      const typeId = new TypeId(computeNodeId);
-      return VFSPath.fromMachinePath(contextWorkdir, typeId);
+      return VFSPath.fromMachinePath(contextWorkdir, computeNodeTypeId);
     } catch {
       return VFSPath.parse(contextWorkdir);
     }
+  }
+
+  get shellEntity(): Shell | null {
+    if (!this.shell_id) return null;
+    return dataManager.getByTypeIdFromCache<Shell>(new TypeId(Shell.type, this.shell_id));
+  }
+
+  get compute_node_id(): string | null {
+    return this.shellEntity?.compute_node_id ?? null;
+  }
+
+  get compute_node_uname(): string | null {
+    return this.shellEntity?.compute_node_uname ?? null;
   }
 
   /**
@@ -790,8 +835,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
               continue;
             }
           }
-          // Mark as ready (historical items are complete)
+          // Mark as ready (historical items are complete) and tag as History
+          // so downstream consumers (e.g. useDerivedWorkerStatus) can distinguish
+          // replayed events from live stream deltas and avoid mis-transitioning
+          // the worker indicator back into THINKING on refresh.
           flowData.markReady();
+          flowData.source = FlowDataSource.History;
           historyItems.push(flowData);
         }
 
@@ -803,21 +852,28 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
           }),
         );
 
+        // Filter out duplicates (already-ingested items by element/role/content
+        // signature) BEFORE ingesting so the batch only carries new items.
+        const newItems: FlowData[] = [];
         for (const item of historyItems) {
           const role = item.attributes.role ?? '';
           const key = `${item.elementType}|${role}|${item.content ?? ''}`;
-          if (existingKeys.has(key)) {
-            continue;
-          }
-          this.flowDataStream.ingest(item);
+          if (existingKeys.has(key)) continue;
           existingKeys.add(key);
+          newItems.push(item);
         }
+        // Coalesce per-item `'data'` emissions into a single one so React
+        // consumers (`useSyncExternalStore` via `useAgenticProcessStream` /
+        // `useDerivedWorkerStatus` / `useEntityData`) re-render once per
+        // loadHistory call instead of once per item — prevents 700+
+        // notifications from blowing past React's nested-update budget.
+        this.flowDataStream.ingestBatch(newItems);
         // Close any open groups after loading history
         this.flowDataStream.closeOpenGroups();
 
         // Check if the worker already reached a terminal state.
-        if (isProcessorTerminal(this.workerStatus)) {
-          if (this.workerStatus === ProcessorStatus.COMPLETE) {
+        if (isWorkerTerminal(this.workerStatus)) {
+          if (this.workerStatus === WorkerStatus.COMPLETE) {
             this._markComplete();
           } else {
             this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
@@ -899,6 +955,117 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * await process.wait();
    * ```
    */
+  /**
+   * Load an agent from a VFS path and embed it into this process.
+   * Mirrors the Python `process.load_embedded_agent()` API.
+   * The agent spec is merged into cli_config on the backend and persisted.
+   */
+  async loadEmbeddedAgent(sourcePath: string): Promise<void> {
+    const actionInfo = new ActionInfo('load-embedded-agent', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { asset_ref: sourcePath };
+    await dataManager.callAction(actionInfo);
+  }
+
+  /**
+   * Unified attach/detach/list for file-backed entities (agents, skills, …)
+   * materialized under the process's assets dir and discovered by Claude via
+   * ``--add-dir``. Mirrors Python ``process.attach_embedded_asset`` /
+   * ``detach_embedded_asset`` / ``list_embedded_assets``.
+   *
+   * Pass a serialized TypeId (``agent-<id>`` / ``skill-<id>``) or the entity
+   * itself — ``typeId.toString()`` is extracted automatically.
+   */
+  readonly embeddedAssets = {
+    attach: async (entityOrRef: { typeId?: TypeId } | TypeId | string): Promise<void> => {
+      const ref = this._coerceRef(entityOrRef);
+      const actionInfo = new ActionInfo('attach-embedded-asset', AgenticProcess.type, this.id, 'POST');
+      actionInfo.bodyParameters = { entity_ref: ref.toString() };
+      await dataManager.callAction(actionInfo);
+      const current = this.embedded_asset_refs ?? [];
+      const has = current.some((r) => r.type === ref.type && r.id === ref.id);
+      if (!has) this.embedded_asset_refs = [...current, ref];
+    },
+    detach: async (entityOrRef: { typeId?: TypeId } | TypeId | string): Promise<void> => {
+      const ref = this._coerceRef(entityOrRef);
+      const actionInfo = new ActionInfo('detach-embedded-asset', AgenticProcess.type, this.id, 'POST');
+      actionInfo.bodyParameters = { entity_ref: ref.toString() };
+      await dataManager.callAction(actionInfo);
+      this.embedded_asset_refs = (this.embedded_asset_refs ?? [])
+        .filter((r) => !(r.type === ref.type && r.id === ref.id));
+    },
+    list: (): TypeId[] => [...(this.embedded_asset_refs ?? [])],
+  };
+
+  /** Normalize the three accepted input shapes to a TypeId. */
+  private _coerceRef(input: { typeId?: TypeId } | TypeId | string): TypeId {
+    if (input instanceof TypeId) return input;
+    if (typeof input === 'string') return new TypeId(input);
+    if (input.typeId) return input.typeId;
+    throw new Error('embeddedAssets: input must be TypeId, entity with typeId, or serialized string');
+  }
+
+  /**
+   * Print-mode streaming prompt. Available on ``visible === false`` (print-mode)
+   * processes created with ``outputFormat: "stream-json"`` on the AgenticContext.
+   *
+   * POSTs ``/agentic_process/<id>/prompt`` with ``{ message }``, consumes the
+   * streaming XML response body via ``FlowStreamProcessor``, and ingests each
+   * emitted FlowData into ``this.flowDataStream`` so the UI sees it via the
+   * same hook pipeline (``useProcessStream``) the rest of the app already uses.
+   *
+   * PTY-interactive processes (visible=true) will 409 on this action — they
+   * use ``inject``/``executeInstruction`` instead.
+   */
+  async prompt(text: string, abortController?: AbortController): Promise<void> {
+    const { FlowStreamProcessor } = await import('../flow_processing/flow-stream-processor');
+    const { FlowEvents } = await import('../flow_processing/flow-events');
+
+    const ctrl = abortController ?? new AbortController();
+
+    // Optimistic echo of the user turn into the stream.
+    this.appendUserMessage(text);
+
+    const actionInfo = new ActionInfo(
+      'prompt',
+      AgenticProcess.type,
+      this.id,
+      'POST',
+      false,
+      true, // streaming
+      ctrl.signal,
+    );
+    actionInfo.bodyParameters = { message: text };
+
+    const response = await dataManager.callAction<unknown, Response>(actionInfo);
+    if (!response || !response.body) {
+      throw new Error('[AgenticProcess.prompt] no streaming response body');
+    }
+
+    const processor = new FlowStreamProcessor();
+    processor.on(FlowEvents.DATA, (fd: FlowData) => {
+      try {
+        this.flowDataStream.ingest(fd);
+        this._handleFlowData(fd);
+      } catch (err) {
+        console.error('[AgenticProcess.prompt] ingest error', err);
+      }
+    });
+    processor.on(FlowEvents.ERROR, (err) => {
+      console.error('[AgenticProcess.prompt] processor error', err);
+    });
+
+    await processor.ingestStream(response.body.getReader(), ctrl);
+  }
+
+  /**
+   * Cancel the in-flight prompt turn. Server-side SIGTERMs the subprocess with
+   * a 5 s grace then SIGKILL; a final ``<flow-end>`` arrives on the stream.
+   */
+  async cancelPrompt(): Promise<void> {
+    const actionInfo = new ActionInfo('cancel-prompt', AgenticProcess.type, this.id, 'POST');
+    await dataManager.callAction(actionInfo);
+  }
+
   async executeInstruction(
     instruction: string,
     options: { sync?: boolean; workerSessionId?: string } = {},
@@ -913,7 +1080,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       throw new Error('Process failed to start');
     }
 
-    if (isProcessorRunning(this.workerStatus)) {
+    if (isWorkerRunning(this.workerStatus)) {
       throw new Error('Process is already running');
     }
 
@@ -984,21 +1151,21 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Use this after async execute() calls to wait for completion.
    */
   async wait(): Promise<void> {
-    if (isProcessorTerminal(this.workerStatus)) {
+    if (isWorkerTerminal(this.workerStatus)) {
       return;
     }
 
     return new Promise((resolve, reject) => {
       const checkState = () => {
-        if (this.workerStatus === ProcessorStatus.COMPLETE) {
+        if (this.workerStatus === WorkerStatus.COMPLETE) {
           unsubState();
           unsubError();
           resolve();
-        } else if (this.workerStatus === ProcessorStatus.ERROR) {
+        } else if (this.workerStatus === WorkerStatus.ERROR) {
           unsubState();
           unsubError();
           reject(new Error(this._error?.message || 'Process error'));
-        } else if (this.workerStatus === ProcessorStatus.INTERRUPTED) {
+        } else if (this.workerStatus === WorkerStatus.INTERRUPTED) {
           unsubState();
           unsubError();
           reject(new Error('Process was terminated'));
@@ -1088,10 +1255,37 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @param options - Optional instruction to execute
    * @returns Shell session ID and session ID
    */
-  async start(options?: { instruction?: string; visible?: boolean; ptyTimeout?: number }): Promise<boolean> {
+  async start(options?: {
+    instruction?: string;
+    visible?: boolean;
+    ptyTimeout?: number;
+    /** Initial PTY dimensions. Authoritative resize is issued by the
+     * InteractiveTerminal once xterm has fitted; this seed exists so the
+     * worker's first paint isn't wrapped at 80 cols on a wide viewport. */
+    cols?: number;
+    rows?: number;
+  }): Promise<boolean> {
     const { Shell } = await import('../entities/shell');
     if (this.status === ProcessStatus.STOPPING) {
       throw new Error('Process is stopping');
+    }
+
+    // Fast path: if this process is already LIVE, its shell is cached, and the PTY is fully
+    // attached in this client, skip the backend `open` round-trip entirely. Tab switches
+    // between live sessions hit this path. Instructions must always go to the backend,
+    // so we only short-circuit when no instruction is provided.
+    // Requires the Shell entity to already be in cache AND its ptyConnection to be
+    // attached to the current pty_pid. That holds for repeat visits to a tab during
+    // the same app session; first visit still pays the full open + attach round-trip.
+    if (
+      this.status === ProcessStatus.RUNNING &&
+      this.shell_id &&
+      !options?.instruction
+    ) {
+      const cachedShell = dataManager.getByTypeIdFromCache<Shell>(new TypeId(Shell.type, this.shell_id));
+      if (cachedShell && cachedShell.pty_pid && cachedShell.ptyConnection?.isAttachedTo(cachedShell.pty_pid)) {
+        return true;
+      }
     }
 
     const actionInfo = new ActionInfo('open', AgenticProcess.type, this.id, 'POST');
@@ -1115,8 +1309,62 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       shell.ptyConnection.shellId = shell.id;
       if (shell.compute_node_id) shell.ptyConnection.computeNodeId = shell.compute_node_id;
     }
-    await shell.attachPty({ cols: 80, rows: 24, timeout: options?.ptyTimeout, ptyId: result.pty_id });
+    await shell.attachPty({
+      cols: options?.cols ?? Shell.DEFAULT_COLS,
+      rows: options?.rows ?? Shell.DEFAULT_ROWS,
+      timeout: options?.ptyTimeout,
+      ptyId: result.pty_id,
+    });
     return true;
+  }
+
+  /**
+   * Fork this session into a new sibling AgenticProcess.
+   *
+   * Creates a new process that resumes from this session's conversation history
+   * but diverges into a fresh session ID — equivalent to running:
+   *   claude --resume <this.session_id> --fork-session
+   *
+   * @param visible - Whether the new process should appear in the tabs view (default: false).
+   *                  Pass true when forking from the UI toolbar.
+   * @returns The new AgenticProcess, already opened with a live PTY.
+   */
+  async fork(visible = false): Promise<AgenticProcess> {
+    const actionInfo = new ActionInfo('fork', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { visible };
+    const data = await dataManager.callAction<{ visible: boolean }, Record<string, unknown>>(actionInfo);
+    if (!data?.id) throw new Error('Fork failed: backend returned no process data');
+    dataManager.updateEntityFromJson(data);
+    const newProcess = await dataManager.getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, data.id as string));
+    if (!newProcess) throw new Error(`Fork failed: new process ${data.id} not found after registration`);
+    await newProcess.start();
+    return newProcess;
+  }
+
+  /**
+   * Start a CollaborationRoom around this process — creates a fresh room on
+   * the project and binds this process to it.
+   */
+  async createCollaborationRoom(
+    hostName: string,
+    options?: { hostMemberId?: string; name?: string | null },
+  ): Promise<import('../entities/collaboration-room').CollaborationRoom> {
+    const { CollaborationRoom } = await import('../entities/collaboration-room');
+    const room = await CollaborationRoom.create({
+      projectId: this.project_id ?? undefined,
+      hostName,
+      hostMemberId: options?.hostMemberId,
+      name: options?.name ?? null,
+    });
+    // Bind this process to the new room on both ends.
+    this.collaboration_room_id = room.id;
+    await this.save();
+    try {
+      await room.addProcess(this.id);
+    } catch (err) {
+      console.warn('[AgenticProcess.createCollaborationRoom] addProcess failed', err);
+    }
+    return room;
   }
 
   /**
@@ -1138,16 +1386,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (this.shell_id) await this.stop();
     await this.start();
     this.emit('restarted', { process: this });
-  }
-
-  /**
-   * Send an instruction to Claude for execution.
-   * Alias for executeInstruction() with sync=false.
-   *
-   * @param text - Instruction text
-   */
-  async prompt(text: string): Promise<void> {
-    await this.executeInstruction(text, { sync: false });
   }
 
   /**
@@ -1322,9 +1560,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (elementType === 'status' && typeof data.data === 'object' && data.data !== null) {
       const statusData = data.data as Record<string, unknown>;
       if (statusData.status && typeof statusData.status === 'string') {
-        this.workerStatus = statusData.status as ProcessorStatus;
-        this.emit('state_change', { status: this.status });
-        if (this.workerStatus === ProcessorStatus.ERROR || this.workerStatus === ProcessorStatus.INTERRUPTED) {
+        const oldWorker = this.workerStatus;
+        this.workerStatus = statusData.status as WorkerStatus;
+        this.emit('state_change', {
+          field: 'workerStatus',
+          oldValue: oldWorker,
+          newValue: this.workerStatus,
+        });
+        if (this.workerStatus === WorkerStatus.ERROR || this.workerStatus === WorkerStatus.INTERRUPTED) {
           this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
         }
       }
@@ -1338,27 +1581,39 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /**
    * Called by the store when the backend pushes an entity update via WebSocket.
    * Propagates state changes (including COMPLETE) so output() terminates correctly.
+   *
+   * The ``state_change`` event carries a delta payload:
+   *   { field: 'status' | 'workerStatus', oldValue, newValue }
+   * so subscribers can distinguish lifecycle transitions from worker-status updates
+   * without re-reading the entity.
    * @internal
    */
   protected onEntityUpdate(data: Partial<IAgenticProcess>): void {
     if (data.status) {
+      const oldStatus = this.status;
       this.status = data.status as ProcessStatus;
-      this.emit('state_change', { status: this.status });
-      if (this.status === ProcessStatus.FAILED && !isProcessorTerminal(this.workerStatus)) {
+      this.emit('state_change', {
+        field: 'status',
+        oldValue: oldStatus,
+        newValue: this.status,
+      });
+      if (this.status === ProcessStatus.FAILED && !isWorkerTerminal(this.workerStatus)) {
         this._markError(new Error(`Process ended with lifecycle status: ${this.status}`));
       }
     }
     if (data.worker_status) {
-      this.workerStatus = data.worker_status as ProcessorStatus;
-      this.emit('state_change', { status: this.status });
-      if (this.workerStatus === ProcessorStatus.COMPLETE) {
+      const oldWorker = this.workerStatus;
+      this.workerStatus = data.worker_status as WorkerStatus;
+      this.emit('state_change', {
+        field: 'workerStatus',
+        oldValue: oldWorker,
+        newValue: this.workerStatus,
+      });
+      if (this.workerStatus === WorkerStatus.COMPLETE) {
         this._markComplete();
-      } else if (this.workerStatus === ProcessorStatus.ERROR || this.workerStatus === ProcessorStatus.INTERRUPTED) {
+      } else if (this.workerStatus === WorkerStatus.ERROR || this.workerStatus === WorkerStatus.INTERRUPTED) {
         this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
       }
-    }
-    if (data.waiting_for_prompt !== undefined) {
-      this.waiting_for_prompt = data.waiting_for_prompt;
     }
   }
 

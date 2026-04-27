@@ -11,11 +11,11 @@ export function ClaudeUsageChip() {
   const [open, setOpen] = useState(false);
   const { data: usage } = useClaudeUsage();
   // Defer cost fetch — footer chip is not critical for initial page load
-  const { data: costOverview, refetch } = useCostOverview({ autoFetch: false });
+  const { data: costOverview, fetch: fetchCostOverview } = useCostOverview({ autoFetch: false });
   useEffect(() => {
-    const timer = setTimeout(() => void refetch(), 5000);
+    const timer = setTimeout(() => void fetchCostOverview(), 5000);
     return () => clearTimeout(timer);
-  }, [refetch]);
+  }, [fetchCostOverview]);
 
   // Push a history entry when the dialog opens so the browser back button closes it
   useEffect(() => {

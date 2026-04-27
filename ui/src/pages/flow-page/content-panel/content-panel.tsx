@@ -21,16 +21,16 @@ import { PlanEditor } from '@src/components/plan-editor/PlanEditor';
 import { ShowView } from '@src/components/show-view/ShowView';
 import { HomeLanding } from '@src/pages/home-landing';
 import { LiveStatus } from '@src/pages/live-status';
-import { SessionAnalysisPage } from '@src/pages/session-analysis';
 import { SearchView } from '@src/pages/search-view/SearchView';
 import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
 
 import { WorkflowsPage } from '@src/components/workflows-view/WorkflowsPage';
+import { CollaborationPage } from '@src/components/collaboration';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
 import { InboxView } from '@src/components/inbox-view/InboxView';
 import { TriggersView } from '@src/components/triggers-view';
 import { SurveyView } from '@src/components/survey/SurveyView';
-import { TabbedTerminal } from '@src/components/terminal';
+import { TabbedTerminal, useStandardTabNav } from '@src/components/terminal';
 import { WebappViewer } from '@src/components/webapp-viewer';
 import { useContentPanelStore } from '@src/hooks/use-content-panel-store';
 import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
@@ -72,6 +72,7 @@ export function ContentPanel() {
   useActiveViewer(flow);
 
   const { tabs: terminalTabs, isLoading: terminalsLoading } = useActiveTerminals();
+  const { onTabClick, onTabClose, onTabOpen } = useStandardTabNav();
 
   /**
    * Returns the first tab the backend considers alive (not closed/error).
@@ -224,7 +225,13 @@ export function ContentPanel() {
           >
             <div className="min-h-0 flex-1 overflow-auto">
               {currentOverviewTab === ViewType.SHELL ? (
-                <TabbedTerminal className="h-full" addTabButton />
+                <TabbedTerminal
+                  className="h-full"
+                  addTabButton
+                  onTabClick={onTabClick}
+                  onTabClose={onTabClose}
+                  onTabOpen={onTabOpen}
+                />
               ) : currentOverviewTab === ViewType.EDITOR ? (
                 <CodeEditor activePath={editorActivePath} />
               ) : currentOverviewTab === ViewType.WEB_APP ? (
@@ -247,8 +254,6 @@ export function ContentPanel() {
                 <HomeLanding />
               ) : currentOverviewTab === ViewType.SYSTEM_PROFILE ? (
                 <LiveStatus />
-              ) : currentOverviewTab === ViewType.ANALYSIS ? (
-                <SessionAnalysisPage />
               ) : (
                 <HomeLanding />
               )}
@@ -259,7 +264,13 @@ export function ContentPanel() {
             value={ViewType.SHELL}
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in overflow-auto shadow-lg data-[state=inactive]:hidden"
           >
-            <TabbedTerminal className="h-full" addTabButton />
+            <TabbedTerminal
+              className="h-full"
+              addTabButton
+              onTabClick={onTabClick}
+              onTabClose={onTabClose}
+              onTabOpen={onTabOpen}
+            />
           </TabsContent>
 
           <TabsContent
@@ -274,13 +285,6 @@ export function ContentPanel() {
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in overflow-auto shadow-lg data-[state=inactive]:hidden"
           >
             <WebappViewer onWebappErrorRetry={onWebappErrorRetry} />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.ANALYSIS}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in overflow-auto shadow-lg data-[state=inactive]:hidden"
-          >
-            <SessionAnalysisPage />
           </TabsContent>
 
           <TabsContent
@@ -506,6 +510,13 @@ export function ContentPanel() {
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
           >
             <AssetsPage />
+          </TabsContent>
+
+          <TabsContent
+            value={ViewType.PROJECT}
+            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
+          >
+            <CollaborationPage />
           </TabsContent>
 
           <TabsContent

@@ -1,5 +1,5 @@
 import { dataContext, detectLanguage, downloadFile, EditorLanguage, FSItem, fsManager, Shell, VFSPath } from '@sdk';
-import { TabbedTerminal } from '@src/components/terminal';
+import { TabbedTerminal, useStandardTabNav } from '@src/components/terminal';
 import { Button } from '@src/components/ui/button';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@src/components/ui/resizable';
@@ -186,7 +186,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
   const [activeTab, setActiveTab] = useState<string>(editorActiveTab || '');
   const [pendingOpenFile, setPendingOpenFile] = useState<string | null>(null);
   const [diffTab, setDiffTab] = useState<{ checkpoint_hash: string } | null>(null);
-  const [activeTerminalSessionId, setActiveTerminalSessionId] = useState<string>('');
+  const { onTabClick: onTerminalClick, onTabClose: onTerminalClose, onTabOpen: onTerminalOpen } =
+    useStandardTabNav();
 
   // Convert activeTab to vfs_abs_path format for DirectoryTree selection
   const selectedPath = useMemo(() => {
@@ -383,7 +384,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
         await runShell.save(cn.typeId);
       }
 
-      setActiveTerminalSessionId(runShell.id);
+      dataContext.setActiveShellId(runShell.id);
 
       if (!runShell.pty?.isLive) {
         await runShell.start({ cols: 80, rows: 24, workdir: runShell.workdir ?? dataContext.project?.fs_storage_mount_path ?? undefined });
@@ -391,7 +392,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
       await runShell.resize(80, 24);
       await runShell.sendInput(command.trim() + '\r');
     },
-    [setIsTerminalExpanded, setActiveTerminalSessionId],
+    [setIsTerminalExpanded],
   );
 
   const downloadAllFiles = useCallback(async () => {
@@ -568,8 +569,9 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
       <div className="flex-1 overflow-hidden">
         <TabbedTerminal
           className="h-full"
-          activeSessionId={activeTerminalSessionId}
-          onActiveSessionChange={setActiveTerminalSessionId}
+          onTabClick={onTerminalClick}
+          onTabClose={onTerminalClose}
+          onTabOpen={onTerminalOpen}
         />
       </div>
     </div>

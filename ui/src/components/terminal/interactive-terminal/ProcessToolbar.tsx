@@ -8,7 +8,8 @@
  * surfaced via RestartRequiredOverlay.
  */
 
-import { AgenticProcess, claudeSessionManager, type Shell } from '@sdk';
+import { AgenticProcess, type Shell } from '@sdk';
+import { hasWorkerStarted, ProcessStatus, WorkerStatus } from '@sdk/process/agentic-types.js';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
 import { AskForAssistanceButton } from '@src/components/live-workflow/AskForAssistanceButton';
@@ -29,7 +30,6 @@ import { useToast } from '@src/hooks/use-toast';
 import { ToastAction } from '@src/components/ui/toast';
 import { RestartRequiredOverlay } from './RestartRequiredOverlay';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useDevMode } from '@src/contexts/dev-mode-context';
 import { PTYViewer } from './pty-viewer';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
 
@@ -41,8 +41,6 @@ interface ProcessToolbarProps {
   onColVisChange: (v: ColVisibility) => void;
   sessionStartTime?: string | null;
   lastMessageTime?: string | null;
-  /** Combined historical + live trace event count — used to gate the fork button. */
-  sessionTraceCount?: number;
   /** Embedded mode: hide nav-out buttons (Open Terminal, Fork). */
   embedded?: boolean;
   /** Called when the close button is clicked (only shown when embedded=true). */
@@ -51,15 +49,21 @@ interface ProcessToolbarProps {
   shell?: Shell | null;
 }
 
-export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, colVis, onColVisChange, sessionStartTime, lastMessageTime, sessionTraceCount, embedded, onClose, shell }: ProcessToolbarProps) {
+export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, colVis, onColVisChange, sessionStartTime, lastMessageTime, embedded, onClose, shell }: ProcessToolbarProps) {
   const handleInjectPrompt = useCallback((text: string) => void shell?.sendInput(text + '\r'), [shell]);
   const { navigation } = useDockNavigation();
-  const devMode = useDevMode();
   const [showPtyViewer, setShowPtyViewer] = useState(false);
 
   const hasSession = !!process.session_id;
-  const canFork = hasSession && sessionTraceCount && sessionTraceCount > 0;
-  const canToggle = hasSession;
+  const workerStatus = process.workerStatus;
+  // started: PTY is alive RIGHT NOW (gates Restart, CLI flag toggles, Apply)
+  const started = process.status === ProcessStatus.RUNNING;
+  // hasTranscript: at least one real assistant turn happened (gates Fork, Open Transcript)
+  const hasTranscript = hasSession
+    && hasWorkerStarted(workerStatus)
+    && workerStatus !== WorkerStatus.IDLE;
+  const canFork = hasTranscript;
+  const canToggle = started;
   const workdir = process.workdir ?? '';
 
   const _cliOpts = process.cliOptions;
@@ -86,7 +90,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const { toast, dismiss } = useToast();
   const apiTimeoutToastId = useRef<string | null>(null);
   useEffect(() => {
-    if (process.workerStatus === 'api_timeout') {
+    if (process.workerStatus === WorkerStatus.API_TIMEOUT) {
       if (apiTimeoutToastId.current) return; // already shown
       const { id } = toast({
         title: 'Agent is taking a long time to respond',
@@ -138,7 +142,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
     if (isForking) return;
     setIsForking(true);
     try {
-      const newProcess = await claudeSessionManager.forkSession(process);
+      const newProcess = await process.fork(true);
       void navigation.openShellProcess(newProcess.id);
     } finally {
       setIsForking(false);
@@ -324,7 +328,13 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
           <IconToggleButton
             icon={<GitFork className="h-3.5 w-3.5" />}
             active={false}
-            tooltip={canFork ? 'Fork session — new tab, same settings' : hasSession ? 'No messages yet — start a conversation first' : 'Launch a session first'}
+            tooltip={
+              isForking ? 'Forking…'
+              : canFork ? 'Fork session — new tab, same conversation history'
+              : !hasSession ? 'Launch a session first'
+              : !started ? 'Session is not running'
+              : 'Send a message first — fork requires conversation history'
+            }
             disabled={!canFork || isForking}
             onClick={() => void handleFork()}
           />
@@ -337,8 +347,12 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
         <IconToggleButton
           icon={<RotateCcw className="h-3.5 w-3.5" />}
           active={false}
-          tooltip={hasSession ? 'Restart session' : 'Launch a session first'}
-          disabled={!hasSession || isRestarting}
+          tooltip={
+            isRestarting ? 'Restarting…'
+            : started ? 'Restart session'
+            : 'Session is not running'
+          }
+          disabled={!started || isRestarting}
           onClick={() => void handleRestart()}
         />
 
@@ -350,8 +364,12 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
           <IconToggleButton
             icon={<ScrollText className="h-3.5 w-3.5" />}
             active={false}
-            tooltip="Open transcript"
-            disabled={false}
+            tooltip={
+              hasTranscript ? 'Open transcript'
+              : !started ? 'Session is not running'
+              : 'Send a message first — no transcript yet'
+            }
+            disabled={!hasTranscript}
             onClick={() => {
               void (async () => {
                 const sessionId = process.session_id!;
@@ -451,18 +469,22 @@ function IconToggleButton({
 }) {
   return (
     <Tooltip>
+      {/* Wrap in span so tooltip fires even when the button is disabled
+          (disabled elements swallow pointer events and never trigger the tooltip). */}
       <TooltipTrigger asChild>
-        <button
-          className={`inline-flex h-7 w-7 items-center justify-center rounded transition-colors
-            ${disabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-accent cursor-pointer'}
-            ${active && activeClassName ? activeClassName : 'text-muted-foreground'}
-          `}
-          disabled={disabled}
-          onClick={onClick}
-          aria-pressed={active}
-        >
-          {icon}
-        </button>
+        <span className="inline-flex" style={disabled ? { pointerEvents: 'auto' } : undefined}>
+          <button
+            className={`inline-flex h-7 w-7 items-center justify-center rounded transition-colors
+              ${disabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-accent cursor-pointer'}
+              ${active && activeClassName ? activeClassName : 'text-muted-foreground'}
+            `}
+            disabled={disabled}
+            onClick={onClick}
+            aria-pressed={active}
+          >
+            {icon}
+          </button>
+        </span>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="text-xs">
         {tooltip}

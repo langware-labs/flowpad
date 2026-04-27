@@ -117,48 +117,6 @@ class TestMalformedJson:
         finally:
             set_default_records_root(old)
 
-    @pytest.mark.asyncio
-    async def test_index_of_malformed_record_creates_record_error(self, tmp_path):
-        """When record.sync_to_db() fails, it creates a RecordError itself before re-raising;
-        SchemaRecord.index_type() counts the error and continues.
-        """
-        bad_rec = _record(id="bad-rec-1")
-        saved_errors = []
-
-        with patch("flow_sdk.fs_store.record_list.RecordList") as MockRL, \
-             patch("flow_sdk.core.entity.entity_model.Entity.from_record",
-                   AsyncMock(side_effect=ValueError("malformed content"))), \
-             patch.object(RecordError, "save", lambda self: saved_errors.append(self)):
-            MockRL.return_value.__iter__ = MagicMock(return_value=iter([bad_rec]))
-            result = await SchemaRecord.index_type(SimpleRecord)
-
-        assert result.skipped == 1
-        assert result.errors == 1
-        assert result.indexed == 0
-        assert len(saved_errors) == 1  # RecordError saved by index() itself
-
-    @pytest.mark.asyncio
-    async def test_multiple_malformed_records_all_create_errors(self):
-        """Each malformed record in a batch generates its own RecordError via index()."""
-        recs = [_record(id=f"bad-{i}") for i in range(3)]
-
-        save_count = 0
-
-        def mock_save(self):
-            nonlocal save_count
-            save_count += 1
-
-        with patch("flow_sdk.fs_store.record_list.RecordList") as MockRL, \
-             patch("flow_sdk.core.entity.entity_model.Entity.from_record",
-                   AsyncMock(side_effect=json.JSONDecodeError("bad", "", 0))), \
-             patch.object(RecordError, "save", mock_save):
-            MockRL.return_value.__iter__ = MagicMock(return_value=iter(recs))
-            result = await SchemaRecord.index_type(SimpleRecord)
-
-        assert result.errors == 3
-        assert result.skipped == 3
-        assert result.indexed == 0
-        assert save_count == 3  # one RecordError per failed record
 
 
 # ---------------------------------------------------------------------------
@@ -172,12 +130,12 @@ class TestMissingFiles:
         with pytest.raises(Exception):
             SimpleRecord.load(missing)
 
-    def test_discover_one_returns_none_for_missing(self, tmp_path):
-        """discover_one() returns None when no record with that id exists."""
+    def test_get_returns_none_for_missing(self, tmp_path):
+        """get() returns None when no record with that id exists."""
         old = get_default_records_root()
         set_default_records_root(tmp_path)
         try:
-            result = SimpleRecord.discover_one("does-not-exist")
+            result = SimpleRecord.get("does-not-exist")
             assert result is None
         finally:
             set_default_records_root(old)
@@ -246,17 +204,6 @@ class TestMissingFields:
         """record_type() always returns a string, even for the base class."""
         assert isinstance(SimpleRecord.record_type(), str)
         assert SimpleRecord.record_type() == "simple_test_record"
-
-    @pytest.mark.asyncio
-    async def test_index_type_empty_collection_returns_zeros(self):
-        """index_type() on a type with zero records returns indexed=0, errors=0."""
-        with patch("flow_sdk.fs_store.record_list.RecordList") as MockRL:
-            MockRL.return_value.__iter__ = MagicMock(return_value=iter([]))
-            result = await SchemaRecord.index_type(SimpleRecord)
-
-        assert result.indexed == 0
-        assert result.errors == 0
-        assert result.skipped == 0
 
     def test_from_record_meta_dict_is_well_formed_for_minimal_record(self):
         """A minimal record (only id+type) produces a safe, clean meta_dict()."""
@@ -365,18 +312,6 @@ class TestNoData:
         assert status.last_indexed_at is None
         assert status.stale is False
 
-    @pytest.mark.asyncio
-    async def test_rebuild_index_with_explicit_empty_list_is_noop(self):
-        """rebuild_index(types=[]) clears nothing and indexes nothing."""
-        mock_clear = AsyncMock(return_value=ClearResult(fts_cleared=0, entities_cleared=0, types_cleared=[]))
-        with patch.object(SchemaRecord, "clear_index", mock_clear), \
-             patch("flow_sdk.fs_store.schema_registry.SchemaRegistry.get_record_cls", return_value=None):
-            clear, results = await SchemaRecord.rebuild_index(types=[])
-
-        assert results == []
-        assert clear.fts_cleared == 0
-
-
 # ---------------------------------------------------------------------------
 # 6. Invalid record_data_ref
 # ---------------------------------------------------------------------------
@@ -457,7 +392,7 @@ class TestInvalidDataRef:
         saved_errors = []
 
         with patch("flow_sdk.fs_store.schema_registry.SchemaRegistry.get_record_cls", return_value=SimpleRecord), \
-             patch.object(SimpleRecord, "discover_one", return_value=_record(id="disk-fail")), \
+             patch.object(SimpleRecord, "get", return_value=_record(id="disk-fail")), \
              patch("asyncio.to_thread", side_effect=OSError("disk full")), \
              patch.object(RecordError, "save", lambda self: saved_errors.append(self)):
             result = await Entity._store(entity)

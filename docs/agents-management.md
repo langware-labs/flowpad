@@ -1,136 +1,117 @@
 # Agent Management
 
-This document is the top-level index for all agent management documentation. Each sub-topic has its own focused file in `docs/agent-management/`.
+This is the top-level index for agent management documentation. The focused topic
+documents live in `docs/agent-management/`.
 
----
+## Current Model
 
-## Overview
+Flowpad represents an agent run as an `AgenticProcess` entity. The entity is the
+durable control plane: it stores the workdir, instruction/context, CLI
+configuration, `session_id`, lifecycle `status`, visibility, and the linked
+`shell_id` when a terminal is open.
 
-The agent management system allows the frontend and backend to create, run, monitor, and control Claude CLI agents as `AgenticProcess` entities. Each process can be driven in one of two modes:
+The same entity supports two execution modes:
 
-- **PTY mode** — a real interactive terminal session (xterm.js + WebSocket + OS pseudo-terminal). Claude is launched as a subprocess; the user can interact in real time.
-- **AMD mode** — structured instruction execution via `flow-do` AMD blocks, with streaming `FlowData` output.
+| Mode | Entity flag | Runtime | Output path | Primary frontend surface |
+|------|-------------|---------|-------------|--------------------------|
+| **PTY mode** | `visible=true` | A linked `Shell` owns an OS PTY running the worker CLI | PTY bytes -> replay buffer -> WebSocket -> xterm.js | Terminal tab / `InteractiveTerminal` |
+| **CLI mode** | `visible=false` | Driver runs a headless print turn, usually one subprocess per prompt | Structured `FlowData` stream plus transcript/history | Programmatic SDK flows and non-terminal UI |
 
-Key components in the stack:
+Both modes use the same `session_id` concept. For Claude, that ID points at the
+JSONL transcript under `~/.claude/projects/<encoded-project>/<session_id>.jsonl`.
+The live PTY identifier is not a process field; it belongs to the linked `Shell`
+and is returned from `AgenticProcess.open` as `pty_id`.
+
+## Main Components
 
 | Layer | Role |
 |-------|------|
-| `AgenticProcess` entity | DB-persisted process record; owns session IDs and state |
-| `ClaudeSessionManager` | TS singleton; handles start/resume/fork/restart lifecycle |
-| PTY / WebSocket transport | OS PTY → base64 → WebSocket → xterm.js |
-| Shell sessions (ShellManager) | Per-tab session bookkeeping, sync, and PTY routing |
-| Records layer | Filesystem snapshots (JSONL, record.json) linked via `vfs_record` |
-| UI (TabbedTerminal, ProcessToolbar) | Tab bar, toolbar controls, restart overlay |
-
----
+| Backend `AgenticProcess` | Persistent process entity and action surface: `open`, `exit`, `restart`, `fork`, `prompt`, `execute`, `status`, `get-history` |
+| Worker drivers | Vendor-specific CLI/transcript behavior under `flow_sdk/builtin/agentic_process/cli_drivers/` |
+| `Shell` entity | Owns live PTY metadata, worker PID, terminal input/output, and close/terminate behavior |
+| PTY transport | OS PTY, replay buffer, websocket attach/replay/input/resize/close actions |
+| Filesystem records | Durable Claude session transcripts, process records, status derivation, and search/index sync |
+| Frontend `AgenticProcess` | TypeScript SDK wrapper for starting, forking, restarting, prompting, status updates, and shell attachment |
+| Frontend `Shell` / `PtyConnection` | Browser-side PTY attachment, replay sequencing, deduplication, input, and resize |
+| UI terminal components | `InteractiveTerminal`, `ProcessToolbar`, route loaders, terminal tab discovery |
 
 ## Sub-Topic Documentation
 
 ### 1. [AgenticProcess Entity](agent-management/agentic-process.md)
 
-All fields, PTY lifecycle stages, AMD execution blocks, status derivation from the JSONL transcript, and the TypeScript API.
+Backend and frontend `AgenticProcess` behavior.
 
 Topics covered:
-- Entity fields and `ProcessorState` structure
-- `context_data` keys and `AgenticContext` DTO
-- PTY lifecycle: create → start → running → kill → resume → exit callback
-- AMD `flow-do` block format, run modes, multi-turn execution, injection, debug mode
-- Status derivation: `_discover_status_from_transcript()` decision tree, `stop_reason` mapping
-- `AgenticProcess` and `AgenticProcessor` TypeScript class reference
-- All REST API endpoints
-
----
+- Current entity fields and lifecycle
+- `session_id`, `shell_id`, `visible`, `status`, `worker_status`, and `ready_for_input`
+- PTY mode startup, restart, fork, close, and shell ownership
+- CLI mode prompt/execute streaming
+- Driver layer and vendor-specific transcript/history handling
+- REST/action entry points
 
 ### 2. [Agent Records](agent-management/agent-records.md)
 
-The filesystem record layer and how it syncs with DB entities.
+Filesystem records and transcript/status sync.
 
 Topics covered:
-- Base `Record` / `FsRecord` class: meta vs. data storage, folder layout, `RecordStatus`
-- `ClaudeSessionFsRecord`: JSONL parsing, status derivation, `discover()` / `discover_one()`
-- `AgenticProcess` Record: `ProcessorStatus` enum, `discover_status()` delegation
-- `AgentRecord`: dual-file layout, `--agents` JSON serialization, load priority
-- `vfs_record` entity sync: `sync_record()`, `_apply_record_metadata()`, orphan handling
-- Read/write patterns with code examples
-
----
+- `ClaudeSessionRecord` and transcript discovery
+- `AgenticProcessRecord` and legacy compatibility fields
+- `WorkerStatus` derivation from transcript tails
+- Difference between durable records and live `Shell`/PTY runtime state
+- How CLI and PTY modes share session history
 
 ### 3. [ClaudeSessionManager](agent-management/claude-session-manager.md)
 
-The TypeScript singleton that wraps all Claude CLI lifecycle operations.
+Small TypeScript helper for creating and opening new Claude sessions.
 
 Topics covered:
-- Singleton pattern and responsibilities
-- All five public methods: `startSession`, `resumeSession`, `restartSession`, `forkSession`, `killSession`
-- `ClaudeSessionEvent` enum and event subscription
-- `ClaudeCliCommand`: fields, factory methods, generation, `with()` immutable update
-- Session IDs: `worker_session_id` vs `pty_pid` semantics
-- Fork pattern: 7-step walkthrough, what is and is not copied
-- Restart pattern: before/after state, `context_data` save requirement
-- Backend shell command construction and `ProcessToolbar` integration
-
----
+- Actual current API: `createAndStartSession(context, { instruction? })`
+- What lifecycle operations now live on `AgenticProcess`
+- How process creation flows through `ComputeNode.createProcess`
+- How CLI mode and PTY mode are started
 
 ### 4. [PTY & WebSocket Transport](agent-management/pty-websocket.md)
 
-The full data path from OS PTY to xterm.js in the browser.
+Terminal runtime and browser transport.
 
 Topics covered:
-- Five-layer PTY stack: OS PTY → replay buffer → WebSocket → ShellManager → xterm.js
-- WebSocket endpoint, connection lifecycle, and frame multiplexing
-- All message formats: `pty_output_msg`, `pty_session_status_msg`, `data_op_msg`, `response_msg`
-- Output encoding: raw bytes → base64 → UTF-8 via streaming `TextDecoder`
-- Input encoding: `term.onData` → `rest_api_msg` → `PtyProcess.write`
-- Replay buffer: 2 MB / 5000-chunk limit, FIFO eviction, last-chunk protection
-- Sequence numbers: assignment, deduplication, client-side tracking
-- Reconnection and reattach: survival matrix, exponential backoff, 11-step reattach flow
-- Error handling: unknown messages, session expiry, PTY death callback
-
----
+- `Shell`-owned PTY state and worker process liveness
+- Compute-node terminal actions: attach, input, resize, close, list, ping
+- Replay buffer sequence numbers and reconnect behavior
+- WebSocket message routing and browser-side deduplication
+- Boundaries between PTY mode and CLI mode
 
 ### 5. [Tabs Management](agent-management/tabs-management.md)
 
-The multi-tab terminal UI and session lifecycle management.
+Terminal tabs, routing, and visible process discovery.
 
 Topics covered:
-- `TabbedTerminal` props, internal state, creating/closing/renaming tabs
-- `ViewType` enum: all 30+ values and what each view renders
-- `ShellManager` singleton: session ownership model, all events, all methods
-- `ShellSession` data object: properties, PTY state, sequence-number deduplication
-- `useShellSessions`, `useShell`, and `useShellSession` hooks
-- `SessionViewer`: tab bar, `favorite_index` ordering, tab lifecycle, URL sync
-- `NavigationActions`: `openShell`, `openSession`, `openAgenticProcess`, and core navigation
-
----
+- Loading an `AgenticProcess` route and opening it in PTY mode
+- How visible processes and shells become terminal tabs
+- Dock pointers, active shell state, and route-level startup
+- How headless CLI processes differ from terminal tabs
 
 ### 6. [Terminal Toolbars](agent-management/terminal-toolbars.md)
 
-The `ProcessToolbar` controls and `RestartRequiredOverlay`.
+Controls mounted above interactive agent terminals.
 
 Topics covered:
-- Component hierarchy: where the toolbar is mounted in `InteractiveTerminal`
-- `ProcessToolbar` props and `IconToggleButton` sub-component
-- Chrome toggle: `--chrome` flag, `pendingChrome` staging
-- Full Trust toggle: `--dangerously-skip-permissions`, `pendingDanger` staging
-- Show Events toggle: `showGutter` / `SnifferGutter` visibility
-- Open Terminal button: `navigation.openShell()` with `context_data.workdir`
-- Fork button: `handleFork` flow, `claudeSessionManager.forkSession()`
-- Restart button: `handleRestart` flow, `claudeSessionManager.restartSession()`
-- Session Info popover: all 8 displayed fields and command reconstruction
-- `RestartRequiredOverlay`: trigger condition, apply flow, cancel flow
-- State management: all local state variables and the `useEffect` reset
+- Current `ProcessToolbar` controls and flag staging
+- Restart and fork flows through `AgenticProcess`
+- Session info popover behavior
+- PTY-only terminal controls versus CLI/headless processes
 
----
+## Current Source Files
 
-## Source Specs
-
-The following existing documentation was used as source material for the above files:
-
-| Document | Contents |
-|----------|----------|
-| [`docs/agent-management-spec.md`](agent-management-spec.md) | Comprehensive spec: entity hierarchy, all lifecycle sections, ClaudeSessionManager reference |
-| [`docs/agentic-process.md`](agentic-process.md) | Deep dive: three-layer architecture, PTY mechanics, reconnection flow |
-| [`docs/claude-session-manager.md`](claude-session-manager.md) | `ClaudeSessionManager` full API reference (original) |
-| [`docs/pty-terminal-spec.md`](pty-terminal-spec.md) | WebSocket protocol, replay buffer, encoding details |
-| [`docs/fs_store.md`](fs_store.md) | Record base class, storage layouts, CRUD patterns |
-| [`docs/record-entity-sync.md`](record-entity-sync.md) | `vfs_record` sync algorithm and orphan handling |
+| Area | Main files |
+|------|------------|
+| Backend process entity | `flow_sdk/builtin/agentic_process/agentic_process.py` |
+| Driver layer | `flow_sdk/builtin/agentic_process/cli_drivers/` |
+| Shell entity | `flow_sdk/builtin/shell.py` |
+| PTY actions | `flow_sdk/builtin/faas/pty_actions.py` |
+| Desktop PTY provider | `flow_sdk/compute/providers/desktop/provider.py` |
+| Worker status | `flow_sdk/fs_records/agent_status.py` |
+| TS process entity | `ts_sdk/src/process/agentic-process.ts` |
+| TS status types | `ts_sdk/src/process/agentic-types.ts` |
+| TS shell/PTY client | `ts_sdk/src/entities/shell.ts`, `ts_sdk/src/services/shell/ptyConnection.ts` |
+| Terminal UI | `ui/src/components/terminal/interactive-terminal/` |

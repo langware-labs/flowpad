@@ -67,6 +67,7 @@ export interface ViewerMeta {
     | 'CheckSquare'
     | 'SearchIcon'
     | 'Workflow'
+    | 'Users'
     | 'Inbox';
   /** Where this viewer renders: 'overview' tab or dedicated tab */
   tabLocation: 'overview' | 'dedicated';
@@ -286,8 +287,14 @@ export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
     canAddAsTab: true,
   },
   [ViewType.ASSETS]: {
-    title: 'Assets',
+    title: 'Wiki',
     iconName: 'BookOpen',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
+  [ViewType.PROJECT]: {
+    title: 'Collaboration',
+    iconName: 'Users',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },

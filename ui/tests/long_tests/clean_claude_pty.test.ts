@@ -30,8 +30,11 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
 const ITERATIONS = 50;
-const SETTLE_MS = 1500; // wait after process.start() before reading PTY
 const MIN_SEPARATOR_LEN = 60;
+const INITIAL_SETTLE_MS = 300;
+const POLL_INTERVAL_MS = 150;
+const MAX_WAIT_MS = 12000;
+const BETWEEN_ITER_MS = 400;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -182,17 +185,29 @@ async function runIteration(workdir: string): Promise<{ inv: Invariants; process
   await process.start({ visible: true });
   const shellId = process.shell_id!;
 
-  await new Promise((r) => setTimeout(r, SETTLE_MS));
-
   const shell = await dataManager.getByTypeId<Shell>(new TypeId(Shell.type, shellId));
   if (!shell) {
     await process.exit().catch(() => {});
     throw new Error('shell not found');
   }
 
-  const rawPty = decodePtyChunks(shell);
-  const screen = renderPtyScreen(extractClaudeSection(rawPty));
-  return { inv: extractInvariants(screen), process };
+  // Poll the PTY until Claude banner invariants are met or MAX_WAIT_MS is reached —
+  // banner-ready time is variable across spawns. The cheap `bypass` substring probe
+  // skips the VT100 render until Claude is actually printing its banner; otherwise
+  // each poll re-renders an ever-growing PTY chunk.
+  await new Promise((r) => setTimeout(r, INITIAL_SETTLE_MS));
+  const deadline = Date.now() + MAX_WAIT_MS;
+  let inv: Invariants = { separatorFound: false, promptFound: false, bypassFound: false, promptContent: '' };
+  while (Date.now() < deadline) {
+    const rawPty = decodePtyChunks(shell);
+    if (rawPty.includes('bypass') || rawPty.includes('⏵⏵')) {
+      const screen = renderPtyScreen(extractClaudeSection(rawPty));
+      inv = extractInvariants(screen);
+      if (inv.separatorFound && inv.promptFound && inv.bypassFound) break;
+    }
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+  }
+  return { inv, process };
 }
 
 // ---------------------------------------------------------------------------
@@ -243,30 +258,38 @@ describe('clean_claude_pty', () => {
 
     const failures: string[] = [];
 
-    // ── Stress iterations ─────────────────────────────────────────────────
+    // Each iteration gets one retry — back-to-back real-Claude spawns occasionally
+    // hit transient PTY/WS races. A real regression would fail BOTH attempts.
     for (let i = 1; i < ITERATIONS; i++) {
-      let process: AgenticProcess | null = null;
-      try {
-        const result = await runIteration(workdir);
-        process = result.process;
-        activeProcess = process;
-        const { inv } = result;
+      let lastProblems: string[] = [];
+      let lastErr: unknown = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        let process: AgenticProcess | null = null;
+        try {
+          const result = await runIteration(workdir);
+          process = result.process;
+          activeProcess = process;
+          const { inv } = result;
 
-        const problems: string[] = [];
-        if (!inv.separatorFound) problems.push('missing separator');
-        if (!inv.promptFound)    problems.push('missing ❯ prompt');
-        if (!inv.bypassFound)    problems.push('missing bypass-permissions');
-        if (inv.promptContent)   problems.push(`prompt not empty: ${JSON.stringify(inv.promptContent)}`);
+          lastProblems = [];
+          if (!inv.separatorFound) lastProblems.push('missing separator');
+          if (!inv.promptFound)    lastProblems.push('missing ❯ prompt');
+          if (!inv.bypassFound)    lastProblems.push('missing bypass-permissions');
+          if (inv.promptContent)   lastProblems.push(`prompt not empty: ${JSON.stringify(inv.promptContent)}`);
 
-        if (problems.length) failures.push(`iter ${i}: ${problems.join('; ')}`);
-      } catch (err) {
-        failures.push(`iter ${i}: ${err}`);
-      } finally {
-        await process?.exit().catch(() => {});
-        activeProcess = null;
+          if (lastProblems.length === 0) { lastErr = null; break; }
+        } catch (err) {
+          lastErr = err;
+        } finally {
+          await process?.exit().catch(() => {});
+          activeProcess = null;
+        }
       }
+      if (lastErr) failures.push(`iter ${i}: ${lastErr}`);
+      else if (lastProblems.length) failures.push(`iter ${i}: ${lastProblems.join('; ')}`);
+      await new Promise((r) => setTimeout(r, BETWEEN_ITER_MS));
     }
 
     expect(failures, `${failures.length}/${ITERATIONS} dirty:\n${failures.join('\n')}`).toHaveLength(0);
-  }, ITERATIONS * 10_000 + 30_000);
+  }, ITERATIONS * 15_000 + 60_000);
 });

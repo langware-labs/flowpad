@@ -1,45 +1,23 @@
-import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { MarkdownAssetEditor } from '@src/components/assets/editor/markdown/MarkdownAssetEditor';
-import { dataContext } from '@sdk';
-import { useMemo } from 'react';
+import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownEditor';
+import { useEntityByPath } from '@src/hooks/use-entity-by-path';
+import { FSRef, Skill } from '@sdk';
 
 interface SkillAssetEditorProps {
-  /** Absolute machine path to the skill folder, or bare skill name for legacy DB entries */
-  sourcePath: string;
+  /** FSRef to the skill folder. SKILL.md is resolved via child(). */
+  fsRef: FSRef;
 }
 
 /**
- * Thin wrapper around MarkdownAssetEditor for skill assets.
- *
- * Handles two path forms:
- *   - Absolute folder path: /Users/x/.claude/skills/my-skill → appends /SKILL.md
- *   - Bare name (legacy DB entry): "my-skill" → resolves against user_skills base path
+ * Thin wrapper around MarkdownEditor for skill assets.
+ * Skills are folders; the content lives at <folder>/SKILL.md. Chat keys on
+ * the folder-level Skill entity, not on SKILL.md itself.
  */
-export function SkillAssetEditor({ sourcePath }: SkillAssetEditorProps) {
-  const { computeNode } = useAgentContext();
-  const typeIdStr = computeNode?.typeId?.toString();
-
-  const skillMdPath = useMemo(() => {
-    if (!typeIdStr) return null;
-
-    let resolvedPath = sourcePath.replace(/\/$/, '');
-    const isBareName = !resolvedPath.includes('/') || resolvedPath.lastIndexOf('/') === 0;
-
-    if (isBareName) {
-      const userSkillsBase = dataContext.bootstrapInfo?.desktop_info?.paths?.user_skills;
-      const name = resolvedPath.replace(/^\//, '');
-      resolvedPath = userSkillsBase
-        ? `${userSkillsBase}/${name}`
-        : `${computeNode!.typeId}/.claude/skills/${name}`;
-    }
-
-    if (!resolvedPath.startsWith('/')) resolvedPath = '/' + resolvedPath;
-
-    return resolvedPath + '/SKILL.md';
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typeIdStr, sourcePath]);
-
-  if (!skillMdPath) return null;
-
-  return <MarkdownAssetEditor sourcePath={skillMdPath} />;
+export function SkillAssetEditor({ fsRef }: SkillAssetEditorProps) {
+  const { entity: skill } = useEntityByPath<Skill>(Skill.type, fsRef);
+  return (
+    <MarkdownEditor
+      fsRef={fsRef.child('SKILL.md')}
+      chatTarget={skill ? skill.typeId.toString() : null}
+    />
+  );
 }

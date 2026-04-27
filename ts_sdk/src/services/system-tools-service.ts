@@ -124,6 +124,12 @@ export interface ActivityProgress {
 export class SystemToolsService extends EventEmitter {
   private readonly base: string;
   private _progressEmitPending = false;
+  /** ms since epoch of the most recent WS progress event (any stage). */
+  private _lastProgressAt = 0;
+  /** Active idle-watchdog handle. */
+  private _idleWatchdog: ReturnType<typeof setTimeout> | null = null;
+  /** Idle threshold: how long without a WS event before we ask the backend. */
+  private static readonly _IDLE_TIMEOUT_MS = 5000;
 
   currentActivity: SystemActivity | null = null;
   activityProgress: ActivityProgress | null = null;
@@ -133,6 +139,9 @@ export class SystemToolsService extends EventEmitter {
   constructor(userTypeId: { type: string; id: string }) {
     super();
     this.base = `/graph/${userTypeId.type}/${userTypeId.id}/${ACTION}`;
+    // Restore any in-flight scan/index state across page loads (fire-and-forget).
+    // Lets the footer indexing indicator and progress modal reappear after refresh.
+    void this.refreshActivityStatus().catch(() => {/* ignore — offline/boot race */});
     // Keep scanInfo in sync with dataManager
     dataManager.onScanInfoChange((info) => {
       this.scanInfo = info;
@@ -147,14 +156,24 @@ export class SystemToolsService extends EventEmitter {
       const jobName = attrs.job_name as SystemActivity | undefined;
       if (!jobName) return;
 
-      // Auto-initialize if state was lost (e.g. page refresh while job was running)
+      // Note arrival time so the idle watchdog can detect a missing
+      // completion event (WS dropped the final batch).
+      this._lastProgressAt = Date.now();
+      this._armIdleWatchdog();
+
+      // Auto-initialize if state was lost (e.g. page refresh while job was running).
+      // Seed `total` only from a job-level event (sub_activity_name=null) — otherwise
+      // sub_total (records-within-a-type) would leak in as the orchestration total.
       if (!this.activityProgress || this.currentActivity !== jobName) {
+        const isJobLevel = attrs.sub_activity_name == null;
         this.currentActivity = jobName;
         this.activityProgress = {
-          total: (attrs.total as number) ?? 0,
+          total: isJobLevel ? (attrs.total as number) ?? 0 : 0,
           done: [],
           current: null,
           pending: [],
+          jobDone: isJobLevel ? (attrs.done as number) : undefined,
+          jobTotal: isJobLevel ? (attrs.total as number) : undefined,
         };
         this.emit('state_changed');
       }
@@ -202,6 +221,40 @@ export class SystemToolsService extends EventEmitter {
     });
   }
 
+  /**
+   * Idle watchdog: if a job is supposedly running but no WS progress event
+   * has arrived in `_IDLE_TIMEOUT_MS`, query the backend's `/activity-status`
+   * to settle. This is the safety net for the case where the WS dropped the
+   * final completion event and we'd otherwise stay stuck mid-progress.
+   */
+  private _armIdleWatchdog(): void {
+    if (this._idleWatchdog != null) return;
+    const tick = (): void => {
+      this._idleWatchdog = null;
+      if (this.currentActivity == null) return;
+      const elapsed = Date.now() - this._lastProgressAt;
+      if (elapsed < SystemToolsService._IDLE_TIMEOUT_MS) {
+        // Activity arrived since the timer was set — re-arm.
+        this._armIdleWatchdog();
+        return;
+      }
+      // No events for a while; ask the backend whether the job is really done.
+      void this.refreshActivityStatus().catch(() => {/* keep going */}).then(() => {
+        // If the backend said "still running", refreshActivityStatus() will
+        // have re-seeded state (which counts as a synthetic progress arrival).
+        if (this.currentActivity != null) this._armIdleWatchdog();
+      });
+    };
+    this._idleWatchdog = setTimeout(tick, SystemToolsService._IDLE_TIMEOUT_MS);
+  }
+
+  private _clearIdleWatchdog(): void {
+    if (this._idleWatchdog != null) {
+      clearTimeout(this._idleWatchdog);
+      this._idleWatchdog = null;
+    }
+  }
+
   /** Batch rapid WS progress events to ~60fps so React renders smoothly. */
   private _emitProgressThrottled(): void {
     if (this._progressEmitPending) return;
@@ -215,6 +268,14 @@ export class SystemToolsService extends EventEmitter {
   private _setActivity(activity: SystemActivity | null, progress?: ActivityProgress | null): void {
     this.currentActivity = activity;
     this.activityProgress = progress ?? null;
+    if (activity == null) {
+      this._clearIdleWatchdog();
+    } else {
+      // Treat the explicit phase change as a recent "event" so the watchdog
+      // doesn't misfire just because no WS message has arrived yet.
+      this._lastProgressAt = Date.now();
+      this._armIdleWatchdog();
+    }
     this.emit('state_changed');
   }
 
@@ -285,6 +346,52 @@ export class SystemToolsService extends EventEmitter {
   async getScanInfo(): Promise<ScanInfo> {
     await dataManager.refreshScanInfo();
     return dataManager.scanInfo ?? { total_indexed: 0, last_indexed_at: null, never_indexed: true, stale: false };
+  }
+
+  /**
+   * Fetch the in-flight scan/index activity from the backend and re-seed state.
+   *
+   * Called after a page refresh so the rebuild-index progress modal can reopen
+   * mid-job. Returns the active job_name (or null) so callers can decide whether
+   * to auto-open their progress UI.
+   */
+  async refreshActivityStatus(): Promise<SystemActivity | null> {
+    try {
+      const data = await apiClient.get<{
+        job_name: SystemActivity;
+        done: number;
+        total: number;
+        sub_activity_name: string | null;
+        sub_done: number;
+        sub_total: number;
+        sub_skipped: number;
+        sub_errors: number;
+      } | null>(`${FS_RECORDS_BASE}/activity-status`);
+
+      if (!data) {
+        // No activity running — clear any stale local state
+        if (this.currentActivity !== null) this._setActivity(null);
+        return null;
+      }
+
+      this.currentActivity = data.job_name;
+      this.activityProgress = {
+        total: data.total ?? 0,
+        done: [],
+        current: data.sub_activity_name,
+        pending: [],
+        jobDone: data.done,
+        jobTotal: data.total,
+        recordsDone: data.sub_activity_name ? data.sub_done : undefined,
+        recordsTotal: data.sub_activity_name ? data.sub_total : undefined,
+        recordsSkipped: data.sub_activity_name ? data.sub_skipped : undefined,
+        recordsErrors: data.sub_activity_name ? data.sub_errors : undefined,
+      };
+      this.emit('state_changed');
+      return data.job_name;
+    } catch {
+      return null;
+    }
   }
 
   // ---- scan index (fs-records) ---------------------------------------------
@@ -379,19 +486,80 @@ export class SystemToolsService extends EventEmitter {
       );
 
       // 4. Aggregate scan — WS progress_report events drive current/done/records progress
-      this._setActivity('scan', { total: types.length, done: [], current: null, pending: [...types] });
+      this._setActivity('scan', {
+        total: types.length, done: [], current: null, pending: [...types],
+        jobDone: 0, jobTotal: types.length,
+      });
       const scanData = await apiClient.get(`${FS_RECORDS_BASE}/scan?trigger=manual`);
       const scanResult = scanData as unknown as LastScanResult;
       if (scanResult?.types) capturedScanResult = scanResult;
 
       // 5. Aggregate index — WS progress_report events drive current/done/records progress
-      this._setActivity('index', { total: types.length, done: [], current: null, pending: [...types] });
+      this._setActivity('index', {
+        total: types.length, done: [], current: null, pending: [...types],
+        jobDone: 0, jobTotal: types.length,
+      });
       await apiClient.post(`${FS_RECORDS_BASE}/index`);
     } finally {
       // Set lastScanResult before clearing activity so the state_changed event carries both
       if (capturedScanResult) this.lastScanResult = capturedScanResult;
       this._setActivity(null);
       void dataManager.refreshScanInfo();
+    }
+  }
+
+  /**
+   * Incremental "fast scan": POST /fs-records/index with no archive/clear.
+   *
+   * Skip-fresh in the indexer means only files whose mtime > entity.updated_date
+   * get re-parsed. Footer indicator + ActivityProgressModal react automatically
+   * via the existing WS progress_report path. The backend `index_end` event
+   * settles state on completion; the idle watchdog covers WS-loss.
+   */
+  async fastScan(): Promise<void> {
+    this._setActivity('index');
+    try {
+      await apiClient.post(`${FS_RECORDS_BASE}/index`);
+      void dataManager.refreshScanInfo();
+    } finally {
+      // The WS `index_end` event normally clears state; this is a safety net
+      // for the request-failed case where no terminal event will fire.
+      if (this.currentActivity === 'index') this._setActivity(null);
+    }
+  }
+
+  /**
+   * Project-scoped fast scan: indexer walks only the project's
+   * `fs_storage_mount_path` subtree (one REAL_PROJECT_CWD root). Same
+   * skip-fresh + WS progress + index_end settle path as `fastScan()`.
+   */
+  async fastScanProject(projectId: string): Promise<void> {
+    this._setActivity('index');
+    try {
+      await apiClient.post(
+        `${FS_RECORDS_BASE}/index?project_id=${encodeURIComponent(projectId)}`,
+      );
+      void dataManager.refreshScanInfo();
+    } finally {
+      if (this.currentActivity === 'index') this._setActivity(null);
+    }
+  }
+
+  /**
+   * Project-scoped hard refresh: same single-root walk as fastScanProject,
+   * but with `force=true` so skip-fresh is bypassed and every file under the
+   * project's mount path is re-parsed and re-upserted. Other projects' data
+   * is untouched (no global archive, no global delete).
+   */
+  async hardRefreshProject(projectId: string): Promise<void> {
+    this._setActivity('index');
+    try {
+      await apiClient.post(
+        `${FS_RECORDS_BASE}/index?project_id=${encodeURIComponent(projectId)}&force=true`,
+      );
+      void dataManager.refreshScanInfo();
+    } finally {
+      if (this.currentActivity === 'index') this._setActivity(null);
     }
   }
 

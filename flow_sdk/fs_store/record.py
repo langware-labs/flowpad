@@ -18,7 +18,6 @@ import os
 import platform
 import shutil
 import subprocess
-import time
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
@@ -104,13 +103,50 @@ def parse_record_stem(stem: str) -> tuple[str, str]:
     return record_type, uid
 
 
-# Fields excluded from to_dict() and from_dict() output
+# Fields excluded from to_dict() and from_dict() output.
+# `system` is included here so from_dict() skips it (it's derived from source_file
+# on every read); to_dict() re-adds it explicitly after the main serialization loop.
 _SKIP_SERIALIZE: frozenset[str] = frozenset({
     "source_file", "path",
     "json_path",
     "fs_sync", "storage_layout",
     "raw_json",
+    "system",
 })
+
+
+# ---------------------------------------------------------------------------
+# System-asset path check: a Record is "system" iff its source_file lives under
+# the SDK-shipped system_projects/ directory. Resolved lazily + cached so the
+# first call pays the importlib.resources cost and subsequent calls are cheap.
+# ---------------------------------------------------------------------------
+
+_SYSTEM_PROJECTS_ROOT_CACHE: "Path | None" = None
+
+
+def _system_projects_root_cached() -> "Path | None":
+    global _SYSTEM_PROJECTS_ROOT_CACHE
+    if _SYSTEM_PROJECTS_ROOT_CACHE is None:
+        try:
+            from flow_sdk.config import system_projects_root
+            _SYSTEM_PROJECTS_ROOT_CACHE = system_projects_root().resolve()
+        except Exception:
+            _SYSTEM_PROJECTS_ROOT_CACHE = None
+    return _SYSTEM_PROJECTS_ROOT_CACHE
+
+
+def _is_system_path(source: "str | Path | None") -> bool:
+    """Return True when `source` sits under the SDK system_projects/ tree."""
+    if not source:
+        return False
+    root = _system_projects_root_cached()
+    if root is None:
+        return False
+    try:
+        Path(str(source)).resolve().relative_to(root)
+    except (ValueError, OSError):
+        return False
+    return True
 
 _FS_SYNC_SKIP = frozenset({"fs_sync", "storage_layout", "source_file", "path"})
 
@@ -183,7 +219,7 @@ class Record:
 
     ID:
       id    — always a UUID (v4 random, or v5 derived via identity_key/fingerprint)
-              used for filesystem stem and discover_one()
+              used for filesystem stem and get()
     """
 
     # Subclasses set this to auto-register in the type registry.
@@ -214,8 +250,8 @@ class Record:
     _indexed_by_default: ClassVar[bool] = False
     # Subclasses set this to True to mark the type as user-facing (shown in asset browser).
     _user_asset: ClassVar[bool] = False
-    # Subclasses set this to cap how many records are scanned by default (None = no limit).
-    _scan_limit: ClassVar[int | None] = None
+    # Subclasses set this to True to surface the type in quick-create menus.
+    _creatable: ClassVar[bool] = False
     # Extra field names concatenated into the embedding text.
     index_fields: ClassVar[list[str]] = []
     # Map of property key → RecordField (computed mode). Defined by subclasses.
@@ -268,6 +304,8 @@ class Record:
                     defaults=dict(getattr(cls, "_DATA_DEFAULTS", {})),
                     indexed_by_default=bool(getattr(cls, "_indexed_by_default", False)),
                     user_asset=bool(getattr(cls, "_user_asset", False)),
+                    creatable=bool(getattr(cls, "_creatable", False)),
+                    icon=getattr(cls, "_icon", None),
                     parent_type=parent_type,
                     locations=["record"],
                     record_cls=cls,
@@ -488,6 +526,26 @@ class Record:
     def path(self, value: str | None) -> None:
         object.__setattr__(self, "_path", value)
 
+    # -- System-asset marker: True when any known source location of this record
+    # lives under the SDK-shipped system_projects/ tree. Derived on read so it
+    # always reflects the current source and the current SDK install location.
+    # Records keep their source path in _source_file or in _asset_ref (FSRef).
+
+    @property
+    def system(self) -> bool:
+        candidates: list[Any] = []
+        for attr in ("_source_file",):
+            v = getattr(self, attr, None)
+            if v:
+                candidates.append(v)
+        for attr in ("_asset_ref", "_record_folder_ref"):
+            ref = getattr(self, attr, None)
+            if ref is not None:
+                path_val = getattr(ref, "path", None)
+                if path_val:
+                    candidates.append(path_val)
+        return any(_is_system_path(c) for c in candidates)
+
     @property
     def record_folder_ref(self) -> "Any":  # FSRef | None
         """FSRef pointing to this record's own metadata folder in records_root.
@@ -535,6 +593,15 @@ class Record:
 
     @asset_ref.setter
     def asset_ref(self, value: "Any") -> None:
+        # Accept either an FSRef (in-memory handle) or a string path (from
+        # Entity DB round-trip via sync_from_entity) — coerce strings to FSRef
+        # so _save_split_format and callers always see the FSRef contract.
+        if isinstance(value, str):
+            if value:
+                from .fs_ref import FSRef as _FSRef
+                value = _FSRef(value, read_only=self._is_read_only())
+            else:
+                value = None
         object.__setattr__(self, "_asset_ref", value)
 
     @property
@@ -548,6 +615,71 @@ class Record:
             return None
         from flow_sdk.fs_store.fs_ref import JSONFsRef
         return JSONFsRef(rd / _META_JSON)
+
+    # -- Scope-aware upsert (framework hook) --
+    #
+    # Subclasses that map an Entity to a user-facing file on disk declare
+    # ``_main_subdir`` (relative path under scope_root, e.g. ".claude/docs")
+    # and ``_main_layout`` ("file" → <subdir>/<safe_name>.md, "folder" →
+    # <subdir>/<safe_name>/). They override ``default_body(entity)`` to return
+    # the body to write iff ``main_ref`` does not yet exist. Entity.save()
+    # resolves scope_root from request_context once and calls
+    # ``compute_asset_ref(scope_root, entity)`` + ``upsert_main_ref(entity)``
+    # so creation goes through the FSRef contract — no per-type ``store()``.
+
+    _main_subdir: ClassVar[str | None] = None
+    _main_layout: ClassVar[str] = "file"  # "file" | "folder"
+
+    def _safe_name(self, entity) -> str:
+        """Slug from entity.name; subclasses override for custom rules."""
+        raw = (getattr(entity, "name", None) or "").strip().lower()
+        out = "".join(c if (c.isalnum() or c in "_-") else "_" for c in raw)
+        return out or "untitled"
+
+    def compute_asset_ref(self, scope_root, entity) -> "Any":  # FSRef | None
+        """Default location for this Record's primary asset under scope_root.
+
+        Returns an FSRef pointing at the file (``_main_layout == 'file'``) or
+        folder (``_main_layout == 'folder'``). Subclasses with non-trivial
+        layout (e.g. plugin slugs) override this method directly.
+        """
+        if not self._main_subdir:
+            return None
+        from pathlib import Path
+        from flow_sdk.fs_store.fs_ref import FSRef
+        safe = self._safe_name(entity)
+        base = Path(scope_root) / self._main_subdir
+        if self._main_layout == "folder":
+            target = base / safe
+        else:
+            target = base / f"{safe}.md"
+        return FSRef(target)
+
+    def default_body(self, entity) -> "str | None":
+        """Default body to write iff main_ref does not exist. None disables upsert."""
+        return None
+
+    def upsert_main_ref(self, entity) -> None:
+        """Create the main_ref file if missing, writing default_body(entity).
+
+        No-op when main_ref is None, the file already exists, or default_body
+        returns None. Creates parent directories as needed. Honors the FSRef
+        read-only contract.
+        """
+        mr = self.main_ref
+        if mr is None:
+            return
+        path = getattr(mr, "_path", None)
+        if path is None or path.exists():
+            return
+        body = self.default_body(entity)
+        if body is None:
+            return
+        try:
+            mr.write(body)
+        except IOError:
+            # Read-only main_ref — silently skip; framework boundary.
+            return
 
     # -- Relationship refs --
 
@@ -734,66 +866,21 @@ class Record:
         inp.mkdir(parents=True, exist_ok=True)
         return inp
 
-    def compute_record_hash(self) -> str:
-        """SHA256 of record content files (16 hex chars)."""
-        rd = self.record_dir
-        if rd is None:
-            return "0" * 16
-        h = hashlib.sha256()
-        # Primary: metadata.json (contains all fields)
-        p = rd / "metadata.json"
-        if p.exists():
-            h.update(p.read_bytes())
-        # Named FSRef children (live directly in record folder)
-        for key in sorted(getattr(type(self), "_domain_fsref_keys", [])):
-            named_p = rd / f"{key}.json"
-            if named_p.exists():
-                h.update(named_p.read_bytes())
-        return h.hexdigest()[:16]
-
-    def _fingerprint_paths(self) -> list[Path]:
-        """Return paths to stat for fingerprint computation."""
-        rd = self.record_dir
-        if rd is None:
-            return []
-        paths = []
-        # Primary: metadata.json (contains all fields)
-        p = rd / "metadata.json"
-        if p.exists():
-            paths.append(p)
-        # Named FSRef children (live directly in record folder)
-        for key in sorted(getattr(type(self), "_domain_fsref_keys", [])):
-            named_p = rd / f"{key}.json"
-            if named_p.exists():
-                paths.append(named_p)
-        return paths
-
     @property
-    def content_fingerprint(self) -> str:
-        """Lightweight content fingerprint based on file mtime + size.
+    def assets_dir(self) -> Path:
+        """The assets subdirectory — materialization target for embedded_assets.
 
-        O(1) filesystem stat calls — no file reads. Returns 16 hex chars.
-        For FOLDER layout: combines stats of metadata.json + data/_obj_data.json.
-        For FILE layout: stat of source_file.
-        Returns '0' * 16 if no files exist.
+        Layout under this dir mirrors Claude's discovery conventions:
+        ``.claude/agents/<name>.md`` and ``.claude/skills/<name>/SKILL.md``.
+        The parent (`assets_dir` itself) is what gets appended to
+        `additional_dirs` so Claude sees everything via `--add-dir`.
         """
-        rd = self.record_dir
-        if rd is None:
-            return "0" * 16
-        h = hashlib.md5()
-        for p in self._fingerprint_paths():
-            try:
-                st = p.stat()
-                h.update(f"{st.st_mtime}:{st.st_size}".encode())
-            except OSError:
-                pass
-        digest = h.hexdigest()[:16]
-        return digest if digest != hashlib.md5(b"").hexdigest()[:16] else "0" * 16
-
-    @property
-    def fingerprint(self) -> str:
-        """Backward-compatible alias for content_fingerprint."""
-        return self.content_fingerprint
+        d = self.data_dir
+        if d is None:
+            raise ValueError("No path or source_file set")
+        a = d / "assets"
+        a.mkdir(parents=True, exist_ok=True)
+        return a
 
     @property
     def identity_key(self) -> str | None:
@@ -806,67 +893,6 @@ class Record:
         Must only access instance attrs (already populated from kwargs at __init__ time).
         """
         return None
-
-    @property
-    def index_state_dir(self) -> Path | None:
-        """Directory where flow-internal index state files (hash sentinels) are stored.
-
-        Always resolves through ``record_folder_ref`` which is always under
-        records_root — never an external source directory (skill folders, etc.).
-        Returns None when the record has no type/id to form a default path.
-        """
-        rfr = self.record_folder_ref
-        if rfr is None:
-            return None
-        return Path(rfr._path)
-
-    def write_hash_file(self, fingerprint: str) -> None:
-        """Write <fingerprint>.<timestamp>.hash in index_state_dir. Removes old markers."""
-        rd = self.index_state_dir
-        if rd is None:
-            return
-        rd.mkdir(parents=True, exist_ok=True)
-        for old in rd.glob("*.hash"):
-            old.unlink(missing_ok=True)
-        timestamp = int(time.time())
-        (rd / f"{fingerprint}.{timestamp}.hash").touch()
-
-    def read_hash_file(self) -> tuple[str, float] | None:
-        """Return (fingerprint, timestamp) from hash sentinel file, or None."""
-        rd = self.index_state_dir
-        if rd is None or not rd.is_dir():
-            return None
-        for f in rd.glob("*.hash"):
-            parts = f.stem.split(".")
-            if len(parts) == 2:
-                try:
-                    return parts[0], float(parts[1])
-                except ValueError:
-                    pass
-        return None
-
-    def record_update_required(self, ttl: float = 30.0) -> bool:
-        """True if hash sentinel missing, TTL expired, or fingerprint mismatch."""
-        result = self.read_hash_file()
-        if result is None:
-            return True
-        stored_fingerprint, timestamp = result
-        if time.time() - timestamp > ttl:
-            return True
-        return self.content_fingerprint != stored_fingerprint
-
-    @property
-    def index_required(self) -> bool:
-        """True if this record needs (re-)indexing.
-
-        Returns True when the hash sentinel file is absent. Does not check fingerprint
-        match or TTL — those are for live-refresh decisions.
-        """
-        rd = self.index_state_dir
-        if rd is None:
-            return False
-        sentinel_files = list(rd.glob("*.hash"))
-        return len(sentinel_files) == 0
 
     @property
     def default_path(self) -> Path | None:
@@ -934,7 +960,141 @@ class Record:
                 continue
             result[key] = _convert(value)
 
+        # Computed system flag — always derived from source_file at serialization
+        # time so the persisted value can't drift from the canonical path rule.
+        result["system"] = self.system
+
         return result
+
+    @classmethod
+    async def from_fsref(cls, ref: "FSRef") -> list["Record"]:
+        """Construct record(s) from an FSRef emitted by the indexer.
+
+        Override on every terminal record class. Returns a list so types
+        like CLAUDE_HOOK (1 settings.json -> N records) share one signature.
+        """
+        raise NotImplementedError(
+            f"{cls.__name__} has no from_fsref parser — override required"
+        )
+
+    @classmethod
+    def getId(cls, ref: "FSRef") -> str:
+        """Cheap, read-only identifier for this asset.
+
+        Default: uuid5(NAMESPACE_URL, resolved path) — matches the existing
+        private `_plan_id` / `_rule_id` / `_mem_id` / `_md_id` / `_spec_id` /
+        `_workflow_id` helpers, so records keyed by path-uuid5 remain findable.
+
+        Override on types whose id is content-derived (session id in JSONL,
+        task_id in manifest.json) or name-derived (project encoded dir,
+        skill folder, agent name). The invariant is:
+            cls.getId(ref) == (await cls.from_fsref(ref))[0].id
+        for 1:1 types. For 1:N types (CLAUDE_HOOK), getId returns a file-
+        level identifier used for skip-fresh; individual record ids are set
+        by from_fsref.
+        """
+        import uuid
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, str(ref._path.resolve())))
+
+    @classmethod
+    def genId(cls, ref: "FSRef") -> str:
+        """Content-derived identifier.
+
+        In Phase 7a, `genId` == `getId`. The split exists so future phases
+        can introduce per-type minting (write an `_id` into the asset on
+        first encounter) behind `genId` without changing `getId`'s semantics.
+        """
+        return cls.getId(ref)
+
+    # ── Asset freshness (Phase 7b) ───────────────────────────────────────────
+    # Skip-fresh is keyed on the DB's `updated_date` column, not a sentinel
+    # file. The comparison is: asset_hash (mtime of the source asset) vs
+    # entity.updated_date (set by the DB on every write). If the asset is
+    # older than or equal to the last DB write, the record is valid.
+
+    def _asset_paths(self) -> list[Path]:
+        """Paths whose max mtime defines this record's `asset_hash`.
+
+        Default: [asset_ref._path] if set, else [Path(source_file)] if it's
+        a real asset (not the `metadata.json` shadow). Override for folder-
+        based types whose content lives in specific inner files — skill
+        dirs use SKILL.md + skill.yaml, for example.
+        """
+        try:
+            ar = object.__getattribute__(self, "_asset_ref")
+        except AttributeError:
+            ar = None
+        if ar is not None and ar._path.exists() and ar._path.is_file():
+            return [ar._path]
+        sf = self.source_file
+        if sf:
+            p = Path(sf)
+            if p.exists() and p.is_file() and p.name != "metadata.json":
+                return [p]
+        return []
+
+    @property
+    def asset_hash(self) -> float:
+        """Max `st_mtime` across `_asset_paths()`. Returns 0.0 when no asset.
+
+        This is the signal the indexer compares against DB `updated_date`
+        to decide whether to re-parse. Cheap: one `stat()` per path.
+        """
+        ts = 0.0
+        for p in self._asset_paths():
+            try:
+                ts = max(ts, p.stat().st_mtime)
+            except OSError:
+                pass
+        return ts
+
+    def is_valid(self) -> bool:
+        """True when the DB copy of this record is current.
+
+        Compares `asset_hash` (source mtime) to `updated_date` (last DB
+        write). Returns False when either is missing or when the asset is
+        newer than the DB row — meaning the indexer needs to re-parse.
+        """
+        from datetime import datetime as _dt, timezone as _tz
+
+        ah = self.asset_hash
+        if ah <= 0:
+            return False
+        ud = object.__getattribute__(self, "__dict__").get("updated_date")
+        if ud is None:
+            return False
+        if hasattr(ud, "timestamp"):
+            dt = ud if getattr(ud, "tzinfo", None) is not None else ud.replace(tzinfo=_tz.utc)
+            stored_ts = dt.timestamp()
+        elif isinstance(ud, str):
+            try:
+                dt = _dt.fromisoformat(ud.replace(" ", "T"))
+            except ValueError:
+                return False
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=_tz.utc)
+            stored_ts = dt.timestamp()
+        else:
+            try:
+                stored_ts = float(ud)
+            except (TypeError, ValueError):
+                return False
+        return ah <= stored_ts
+
+    @classmethod
+    def asset_hash_for_ref(cls, ref: "FSRef") -> float:
+        """`asset_hash` computed from an FSRef alone (no record instance).
+
+        Used by FSIndexer's skip-fresh check before parsing. Default is
+        `mtime(ref._path)` — correct for every file-backed type. Folder-
+        backed types (SkillRecord) override to stat the inner content
+        files, since directory mtime doesn't update when a child's content
+        is edited.
+        """
+        try:
+            return ref._path.stat().st_mtime
+        except OSError:
+            return 0.0
 
     @classmethod
     def from_dict(cls, data: dict) -> "Record":
@@ -1160,194 +1320,72 @@ class Record:
 
     # -- Discovery (overridable by subclasses) --
 
-    # -- External-source hooks (override in subclasses for multi-source discovery) --
-
-    @classmethod
-    def _external_source_iter(cls: type[T], limit: int | None = None) -> Any:
-        """Yield records from sources other than records_root.
-
-        Override alongside ``_external_source_count`` and ``_external_source_find_one``
-        to add a second discovery source (e.g. ``~/.claude/projects/``).
-        The base implementation yields nothing.
-        """
-        return iter([])
-
-    @classmethod
-    def _external_source_count(cls, limit: int | None = None) -> int:
-        """Count records from the external source.
-
-        Override when ``_external_source_iter`` is overridden so that
-        ``discovery_items_count()`` — and therefore progress-bar totals — stay accurate.
-        """
-        return 0
-
-    @classmethod
-    def _external_source_find_one(cls: type[T], uid: str) -> T | None:
-        """O(1) lookup in the external source by uid.
-
-        Override alongside ``_external_source_iter`` so that ``discover_one()``
-        can find records that live outside records_root without a full scan.
-        """
-        return None
-
     @classmethod
     def discover(cls: type[T], scope: Scope | None = None, **kwargs: Any) -> list[T]:
-        """Find all records of this type on disk.
+        """Find all records of this type on disk (records_root scan).
 
-        Default implementation: directory-scan of ``records_root / <type> /``,
-        then appends any records from ``_external_source_iter()`` (deduped by id).
-        Source-file-backed records override this to parse their source file.
+        Directory scan of ``records_root / <type> /``. Subclasses with external
+        storage (JSONL, flat .md files, etc.) override this to replace or
+        augment the default walk.
 
         Parameters:
             scope: optional scope filter (not used by default scan)
             **kwargs: passed to subclass overrides
         """
-        return list(cls.discover_iter(scope=scope, **kwargs))
-
-    @classmethod
-    def discovery_items_count(cls, limit: int | None = None) -> int:
-        """Return the number of discoverable items for this record type.
-
-        Base implementation: counts subdirectories in ``records_root / _record_type /``
-        plus any items reported by ``_external_source_count()``.
-        Subclasses that fully override ``discover()`` should also override this method.
-
-        Raises NotImplementedError if ``_record_type`` is empty and no override is
-        provided — callers should treat that as "unknown" and fall back to a full scan.
-        """
         record_type = str(getattr(cls, "_record_type", ""))
         if not record_type:
-            raise NotImplementedError(
-                f"{cls.__name__}.discovery_items_count() not implemented — "
-                "override this method or set _record_type"
-            )
+            return []
+        limit = kwargs.get("limit")
+        results: list[T] = []
         type_dir = get_default_records_root() / record_type
-        count = sum(1 for e in type_dir.iterdir() if e.is_dir() and _NAME_SEP in e.name) if type_dir.is_dir() else 0
-        count += cls._external_source_count()
-        return min(count, limit) if limit is not None else count
-
-    @classmethod
-    def discover_iter(cls: type[T], limit: int | None = None, scope: Scope | None = None, **kwargs: Any):
-        """Lazy generator — yields one Record at a time without building a full list.
-
-        Phase 1: records_root directory scan (standard storage).
-        Phase 2: ``_external_source_iter()`` with seen-id dedup (O(1) per record).
-
-        Callers can emit progress events without waiting for all records to load.
-        Subclasses that fully replace discovery should override this method directly.
-        """
-        record_type = str(getattr(cls, "_record_type", ""))
-        if not record_type:
-            # Fallback: wrap discover() lazily — no external source in this path
-            count = 0
-            for rec in cls._records_root_discover(scope=scope, **kwargs):
-                yield rec
-                count += 1
-                if limit is not None and count >= limit:
-                    return
-            return
-
-        seen_ids: set[str] = set()
-        count = 0
-
-        # Phase 1: records_root
-        type_dir = get_default_records_root() / record_type
-        if type_dir.is_dir():
-            for entry in sorted(type_dir.iterdir()):
-                if not entry.is_dir() or _NAME_SEP not in entry.name:
-                    continue
-                # Skip folders with no data file (no metadata.json and no migratable old format)
-                meta_file = entry / _META_JSON
-                if not meta_file.exists() and _migrate_old_format(entry) is None:
-                    continue
-                try:
-                    rec = cls.load_record(entry)
-                    seen_ids.add(rec.id)
-                    yield rec
-                    count += 1
-                    if limit is not None and count >= limit:
-                        return
-                except (json.JSONDecodeError, OSError, ValueError):
-                    continue
-
-        # Phase 2: external source (deduped)
-        remaining = None if limit is None else max(0, limit - count)
-        for rec in cls._external_source_iter(limit=remaining):
-            if rec.id not in seen_ids:
-                seen_ids.add(rec.id)
-                yield rec
-                count += 1
-                if limit is not None and count >= limit:
-                    return
-
-    @classmethod
-    def _records_root_discover(cls: type[T], scope: Scope | None = None, **kwargs: Any):
-        """Internal: yield records from records_root only (no external source).
-
-        Used by the no-_record_type fallback path in discover_iter().
-        """
-        record_type = getattr(cls, "_record_type", "") or cls().type
-        if not record_type:
-            return
-
-        records_root = get_default_records_root()
-        type_dir = records_root / record_type
         if not type_dir.is_dir():
-            return
-
+            return results
         for entry in sorted(type_dir.iterdir()):
             if not entry.is_dir() or _NAME_SEP not in entry.name:
                 continue
             meta_file = entry / _META_JSON
-            if meta_file.exists():
-                try:
-                    yield cls.load_record(entry)
-                except (json.JSONDecodeError, OSError, ValueError):
-                    continue
-                continue
-            # Try migrating old format
-            migrated = _migrate_old_format(entry)
-            if migrated is None:
+            if not meta_file.exists() and _migrate_old_format(entry) is None:
                 continue
             try:
-                rec = cls.load_record(entry)
-                rec.path = str(entry)
-                yield rec
+                results.append(cls.load_record(entry))
+                if limit is not None and len(results) >= limit:
+                    return results
             except (json.JSONDecodeError, OSError, ValueError):
                 continue
+        return results
 
     @classmethod
-    def discover_one(cls: type[T], uid: str, scope: Scope | None = None, **kwargs: Any) -> T | None:
-        """Find a single record by uid.
+    def get(cls: type[T], uid: str, **kwargs: Any) -> T | None:
+        """O(1) disk load of a single record by uid.
 
-        Tries records_root first (O(1) path lookup), then ``_external_source_find_one()``.
+        Looks in ``records_root / <type> / <type>-@<uid>/`` and returns the
+        loaded record, or None if absent. Subclasses with alternative on-disk
+        layouts (e.g. JSONL sessions, flat .md skills) override this method
+        directly.
         """
         record_type = getattr(cls, "_record_type", "") or cls().type
         if not record_type:
             return None
 
-        # O(1) records_root lookup
         records_root = get_default_records_root()
         stem = record_stem(record_type, uid)
         folder = records_root / record_type / stem
-        if folder.is_dir():
-            meta_file = folder / _META_JSON
-            if meta_file.exists():
-                try:
-                    return cls.load_record(folder)
-                except (json.JSONDecodeError, OSError):
-                    return None
-            # Try migrating old format
-            migrated = _migrate_old_format(folder)
-            if migrated is not None:
-                try:
-                    return cls.load_record(folder)
-                except (json.JSONDecodeError, OSError):
-                    return None
-            # fall through to external source
-
-        # O(1) external source lookup
-        return cls._external_source_find_one(uid)
+        if not folder.is_dir():
+            return None
+        meta_file = folder / _META_JSON
+        if meta_file.exists():
+            try:
+                return cls.load_record(folder)
+            except (json.JSONDecodeError, OSError):
+                return None
+        # Try migrating old format
+        migrated = _migrate_old_format(folder)
+        if migrated is not None:
+            try:
+                return cls.load_record(folder)
+            except (json.JSONDecodeError, OSError):
+                return None
+        return None
 
     # ── State cache ───────────────────────────────────────────────────────
 
@@ -1583,7 +1621,6 @@ class Record:
         # the record — avoids 3-4 file writes per record on bulk re-index runs
         # (sessions, skills, etc.) when nothing has changed.
         changed = {k: v for k, v in metadata.items() if getattr(self, k, None) != v}
-        self.write_hash_file(self.content_fingerprint)
         if not changed:
             return False
         for k, v in changed.items():
@@ -1950,9 +1987,21 @@ class Record:
         All non-None fields from to_dict() are included.  Internal fields
         (source_file, path, fs_sync, storage_layout) are excluded by to_dict().
         None-valued fields are omitted.
+
+        `asset_ref` is injected here as the single canonical on-disk path
+        so every file-backed record emits it uniformly to the wire + DB.
+        The `_asset_ref` FSRef itself is private (in-memory I/O wrapper);
+        only its `.path` string leaves the server.
         """
         d = self.to_dict()
-        return {k: v for k, v in d.items() if v is not None}
+        result = {k: v for k, v in d.items() if v is not None}
+        try:
+            _ar = object.__getattribute__(self, "_asset_ref")
+        except AttributeError:
+            _ar = None
+        if _ar is not None:
+            result["asset_ref"] = _ar.path
+        return result
 
     def index_content(self) -> str | None:
         """Return searchable text for FTS indexing."""
@@ -1967,6 +2016,20 @@ class Record:
         """Remove the corresponding Entity DB row + FTS entry."""
         from flow_sdk.core.entity.entity_model import Entity  # lazy import (circular)
         from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+
+        # Cleanup wiki edges that mention this record on either side.
+        # We do this at the Record level (not just inside Entity.delete) so
+        # unindex still cleans even when Entity.get_one fails to find the
+        # row by id-only filter (a pre-existing quirk of the base lookup).
+        try:
+            from flow_sdk import wiki
+            await wiki.delete_for_id(self.type, str(self.id))
+        except Exception as wiki_exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "wiki.delete_for_id failed for %s:%s — %s",
+                self.type, self.id, wiki_exc,
+            )
 
         entity = await Entity.get_one(QueryFilter.parse({"id": self.id}))
         if entity is not None:
@@ -1984,35 +2047,58 @@ class Record:
         connection via ``driver.fts_upsert(fts_batch)``.
 
         On failure, saves a RecordError to disk and re-raises so callers can count/log.
+
+        Performance note: opens a single session via `flow_sdk.db.session()`
+        and the driver's contextvar handshake makes every nested call
+        (Entity.from_record, fts_upsert, wiki.index) reuse it. Without this,
+        each step would open and close its own aiosqlite connection — fine
+        for one-off use, but at ~10ms per connection setup this multiplies
+        on bulk indexer paths that touch hundreds of records.
         """
         from flow_sdk.core.entity.entity_model import Entity  # already lazy-imported
+        from flow_sdk.db import session as _db_session  # noqa: PLC0415
 
         try:
-            # Step 1: Entity row (delegates to Entity.from_record)
-            entity = await Entity.from_record(self, notify=notify)
+            async with _db_session():
+                # Step 1: Entity row (delegates to Entity.from_record)
+                entity = await Entity.from_record(self, notify=notify)
 
-            # Write entity's db_json() back to metadata.json so disk reflects entity state,
-            # then write the hash sentinel (sync_from_entity handles both).
-            import asyncio as _asyncio
-            await _asyncio.to_thread(self.sync_from_entity, entity)
+                # Write entity's db_json() back to metadata.json so disk reflects entity state,
+                # then write the hash sentinel (sync_from_entity handles both).
+                import asyncio as _asyncio
+                await _asyncio.to_thread(self.sync_from_entity, entity)
 
-            # Step 2: FTS upsert — use record's search fields directly (already in memory)
-            from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry
-            entry = FtsEntry(
-                entity_id=entity.id,
-                entity_type=entity.type,
-                name=self.name or None,
-                title=self.search_title,
-                description=self.search_description,
-                content=self.search_content,
-            )
-            if fts_batch is not None:
-                fts_batch.append(entry)
-            else:
-                from flow_sdk.db import get_db_driver
-                driver = get_db_driver()
-                if hasattr(driver, "fts_upsert"):
-                    await driver.fts_upsert(entry)
+                # Step 2: FTS upsert — use record's search fields directly (already in memory)
+                from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry
+                entry = FtsEntry(
+                    entity_id=entity.id,
+                    entity_type=entity.type,
+                    name=self.name or None,
+                    title=self.search_title,
+                    description=self.search_description,
+                    content=self.search_content,
+                )
+                if fts_batch is not None:
+                    fts_batch.append(entry)
+                else:
+                    from flow_sdk.db import get_db_driver
+                    driver = get_db_driver()
+                    if hasattr(driver, "fts_upsert"):
+                        await driver.fts_upsert(entry)
+
+                # Step 3: Wiki link extraction. Records whose wiki_body() returns
+                # None (the default) are silently skipped. Errors here are logged
+                # but do not fail the sync_to_db — entity/FTS state is already
+                # consistent at this point.
+                try:
+                    from flow_sdk import wiki
+                    await wiki.index(self.type, self.id, self.wiki_body())
+                except Exception as wiki_exc:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "wiki.index failed for %s:%s — %s",
+                        self.type, self.id, wiki_exc,
+                    )
         except Exception as exc:
             from flow_sdk.fs_records.record_error import RecordError  # lazy (circular-safe)
             RecordError.from_exception(self, exc, trigger="sync_to_db").save()
@@ -2046,6 +2132,30 @@ class Record:
             subprocess.Popen(["explorer", str(folder)])
         else:
             subprocess.Popen(["xdg-open", str(folder)])
+
+    # ==================== Wiki link capability ====================
+
+    def wiki_body(self) -> str | None:
+        """Return the markdown body to extract wiki links from.
+
+        Default: ``None`` — the record is not a wiki source. Subclasses with
+        markdown content (MarkdownRecord, SkillRecord, AgentRecord,
+        WorkflowRecord, …) override this to return their body text.
+
+        Records returning ``None`` are still wiki *targets* — they can be
+        linked TO via ``[[name]]`` from any wiki source.
+        """
+        return None
+
+    async def get_links(self) -> list:
+        """Outgoing wiki links from this record (delegates to flow_sdk.wiki)."""
+        from flow_sdk import wiki
+        return await wiki.outgoing(self.type, self.id)
+
+    async def get_backlinks(self) -> list:
+        """Inbound wiki links pointing at this record (delegates to flow_sdk.wiki)."""
+        from flow_sdk import wiki
+        return await wiki.backlinks(self.type, self.id)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(id={self.id!r}, type={self.type!r}, name={self.name!r})"

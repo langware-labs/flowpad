@@ -119,4 +119,16 @@ export class Task extends APIEntity<Task> implements ITask {
       : '';
   }
 
+  /**
+   * Create a task with the given title. The `project` argument is accepted for
+   * API parity with other createInProject statics (tasks aren't file-backed per project today).
+   */
+  static async createInProject(
+    _project: unknown,
+    name: string,
+    _folderVfsPath?: string,
+  ): Promise<Task> {
+    const task = new Task({ title: name.trim() });
+    return task.save();
+  }
 }

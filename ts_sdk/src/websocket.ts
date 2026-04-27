@@ -15,7 +15,8 @@ type MessageType =
   | 'response_msg'
   | 'pty_output_msg'
   | 'flow_data_msg'
-  | 'llm_config_msg';
+  | 'llm_config_msg'
+  | 'ui_command';
 
 function convertToWebSocketUrl(url: string) {
   // Create a URL object to parse the input URL
@@ -84,6 +85,22 @@ export interface ControlMessage extends BaseMessage {
 export interface OAuthMessage extends BaseMessage {
   oauth_request_id: string;
   status: 'success' | 'error';
+}
+
+/**
+ * Server → client directive to drive the UI (navigate, open, etc.).
+ * Emitted by the local Flowpad server when an agent invokes a `flow navigate ...`
+ * command. The server resolves targeting via presence tracking and sends this
+ * to the single active tab.
+ */
+export interface UiCommandMessage extends BaseMessage {
+  message_type: 'ui_command';
+  /** Discriminator for the specific action the UI should perform. */
+  kind: 'navigate_entity' | string;
+  /** For `navigate_entity`: the entity's type (e.g. "shell", "project"). */
+  type?: string;
+  /** For `navigate_entity`: the entity's id. */
+  id?: string;
 }
 
 export interface LlmConfigMessage extends BaseMessage {
@@ -336,6 +353,13 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'llm_config_msg') {
       return this.onLlmConfigMessage(data as LlmConfigMessage);
     }
+    if (data.message_type === 'ui_command') {
+      return this.onUiCommandMessage(data as UiCommandMessage);
+    }
+  }
+
+  onUiCommandMessage(data: UiCommandMessage) {
+    this.emit('on_ui_command', data);
   }
 
   onBinMessage(data: ArrayBuffer) {

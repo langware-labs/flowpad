@@ -119,7 +119,7 @@ class ClaudeSettingsFsRecord(Record):
         return [r for r in rl if isinstance(r, cls)]
 
     @classmethod
-    def discover_one(cls, uid: str, scope: Scope | None = None, **kwargs) -> ClaudeSettingsFsRecord | None:
+    def get(cls, uid: str, scope: Scope | None = None, **kwargs) -> ClaudeSettingsFsRecord | None:
         """Find a specific settings record by uid."""
         for r in cls.discover(scope=scope):
             if r.id == uid:

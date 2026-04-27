@@ -71,6 +71,11 @@ except ImportError as e:
     print(f"[WARN] Failed to import Shell: {e}")
 
 try:
+    from flow_sdk.builtin.collaboration_room import CollaborationRoom  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import CollaborationRoom: {e}")
+
+try:
     from flow_sdk.builtin.cron_event import CronEvent  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import CronEvent: {e}")
@@ -92,7 +97,7 @@ except ImportError as e:
 # from builtin.question import Question  # noqa: F401
 
 try:
-    from flow_sdk.builtin.claude_memory_entities import ClaudeMemory, ClaudeRules, ClaudePlan, ClaudeMd  # noqa: F401
+    from flow_sdk.builtin.claude_memory_entities import Markdown, Docs, ClaudeMemory, ClaudeRules, ClaudePlan, ClaudeMd  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import claude memory entities: {e}")
 

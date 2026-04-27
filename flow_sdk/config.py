@@ -36,6 +36,27 @@ FLOW_HOME = Path.home() / ".flow"
 SERVER_JSON_PATH = FLOW_HOME / "server.json"
 DEV_SERVER_JSON_PATH = FLOW_HOME / "dev_server.json"
 
+# ---------------------------------------------------------------------------
+# System projects (shipped inside the flow_sdk package)
+# ---------------------------------------------------------------------------
+
+SYSTEM_PROJECTS_DIRNAME = "system_projects"
+FLOWPAD_ASSISTANT_DIRNAME = "flowpad_assistant"
+FLOWPAD_ASSISTANT_PROJECT_UNAME = "flowpad_assistant"
+FLOWPAD_ASSISTANT_PROJECT_NAME = "Flowpad Assistant"
+
+
+def system_projects_root() -> Path:
+    """Filesystem root containing all SDK-shipped system projects."""
+    import importlib.resources
+
+    return Path(str(importlib.resources.files("flow_sdk") / SYSTEM_PROJECTS_DIRNAME))
+
+
+def flowpad_assistant_project_root() -> Path:
+    """Mount path for the Flowpad Assistant system project."""
+    return system_projects_root() / FLOWPAD_ASSISTANT_DIRNAME
+
 
 def _is_dev_mode() -> bool:
     return os.environ.get("FLOWPAD_DEV", "").lower() == "true"
@@ -133,6 +154,7 @@ class ComputeProviderType(StrEnum):
     GCP = "gcp"
     AWS = "aws"
     E2B = "e2b"
+    DOCKER = "docker"
 
 
 class DBDriver(StrEnum):

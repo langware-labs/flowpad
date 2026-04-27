@@ -220,7 +220,9 @@ class ScanActionsMixin:
             AgenticProcess entity data
         """
         from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.cli_workers.claude_cli import ClaudeCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions
+        from flow_sdk.flowpad_types.enums import WorkerType
 
         try:
             request_info = get_current_request_info()
@@ -241,34 +243,88 @@ class ScanActionsMixin:
 
             context_data = dict(context_raw)
             workdir = context_data.pop("workdir", None)
+            project_id = context_data.pop("project_id", None)
+            # Serialized TypeId of the attached entity (trigger, markdown, …); stored on the process.
+            target_typeid_str = context_data.pop("target_typeid_str", None)
 
             fork_session = bool(context_data.pop("fork_session", False))
             resume_session_id = context_data.pop("resume_session_id", None)
             additional_dirs: list[str] = list(context_data.pop("additional_dirs", None) or [])
 
-            cli_opts = ClaudeCliOptions(
-                model=context_data.pop("model", None) or None,
-                permission_mode=context_data.pop("permission_mode", "bypassPermissions"),
-                chrome=bool(context_data.pop("chrome", False)),
-                debug=bool(context_data.pop("debug", True)),
-                worktree=bool(context_data.pop("worktree", False)),
-                agents_json=context_data.pop("agents_json", None),
-            )
+            # Worker selection — accept ``worker_type`` from the AgenticContext
+            # so the UI can launch a Codex tab from the same opener flow that
+            # spawns Claude. Anything other than ``codex`` falls back to the
+            # historical Claude CLI shape.
+            worker_type_raw = context_data.pop("worker_type", None) or WorkerType.CLAUDE_CODE.value
+            try:
+                worker_type = WorkerType(worker_type_raw)
+            except ValueError:
+                worker_type = WorkerType.CLAUDE_CODE
 
-            if fork_session and resume_session_id:
+            model = context_data.pop("model", None) or None
+            permission_mode = context_data.pop("permission_mode", "bypassPermissions")
+            agents_json = context_data.pop("agents_json", None)
+            output_format = context_data.pop("output_format", None)
+            if worker_type == WorkerType.CODEX:
+                cli_opts = CodexCliOptions(
+                    model=model,
+                    permission_mode=permission_mode,
+                )
+                # Codex reads agent specs at runtime from the process entity
+                # (``CodexDriver.cli_options`` mirrors them onto ``skill_names``),
+                # and doesn't expose ``output_format``/``chrome``/``debug``/
+                # ``worktree`` flags — drop them from the unrecognized-fields
+                # carry-over.
+                context_data.pop("chrome", None)
+                context_data.pop("debug", None)
+                context_data.pop("worktree", None)
+            else:
+                cli_opts = ClaudeCliOptions(
+                    model=model,
+                    permission_mode=permission_mode,
+                    agents_json=agents_json,
+                    output_format=output_format,
+                    chrome=bool(context_data.pop("chrome", False)),
+                    debug=bool(context_data.pop("debug", True)),
+                    worktree=bool(context_data.pop("worktree", False)),
+                )
+
+            if fork_session and resume_session_id and worker_type != WorkerType.CODEX:
+                # Codex has no fork concept — fall through to plain resume below.
                 cli_opts.resume = True
                 cli_opts.fork_session_id = resume_session_id
             elif resume_session_id:
                 cli_opts.resume = True
 
+            # Resolve project_id from workdir prefix-match when the caller didn't
+            # supply one. Otherwise AgenticProcess.get_project() falls back to
+            # DB ancestry which returns the user's canonical project — not the
+            # UI-active one — causing a project/workdir mismatch on the entity.
+            if workdir and not project_id:
+                try:
+                    from flow_sdk.builtin.project import Project
+
+                    projects = await Project.get_all()
+                    best, best_len = None, 0
+                    for p in projects:
+                        mp = getattr(p, "fs_storage_mount_path", None)
+                        if mp and workdir.startswith(str(mp)) and len(str(mp)) > best_len:
+                            best, best_len = p, len(str(mp))
+                    if best:
+                        project_id = best.id
+                except Exception:
+                    pass
+
             process = AgenticProcess(
-                compute_node_id=str(self.typeid),
+                worker_type=worker_type,
                 instruction_content="",
                 cli_config=cli_opts.to_json(),
                 context_data=context_data,
                 workdir=workdir,
                 visible=visible,
                 additional_dirs=additional_dirs,
+                project_id=project_id or None,
+                target_typeid_str=target_typeid_str or None,
             )
             if resume_session_id and not fork_session:
                 process.session_id = resume_session_id
@@ -371,7 +427,7 @@ class ScanActionsMixin:
                 from flow_sdk.builtin.project import Project
                 from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 
-                session_rec = ClaudeSessionRecord.discover_one(session_id)
+                session_rec = ClaudeSessionRecord.get(session_id)
                 if session_rec:
                     if session_rec.cwd and not workdir:
                         workdir = session_rec.cwd
@@ -391,7 +447,7 @@ class ScanActionsMixin:
             # Create new process directly on this compute node
             owner = request_info.someone_typeid if request_info else None
 
-            context_data = {"compute_node_id": f"{self.type}-{self.id}"}
+            context_data = {}
             if workdir:
                 context_data["workdir"] = workdir
             if project_id:
@@ -401,7 +457,6 @@ class ScanActionsMixin:
                 session_id=session_id,
                 use_worker_history=True,
                 context_data=context_data,
-                compute_node_id=str(self.typeid),
                 project_id=project_id or None,
                 project_encoded_name=project_encoded_name or None,
             )
@@ -415,9 +470,9 @@ class ScanActionsMixin:
             # Set resume flag if transcript exists on disk (O(1) with workdir, O(P) fallback).
             # Once resume=True is stored we skip this check on subsequent calls.
             if not process.cli_config.get("resume"):
-                record = ClaudeSessionRecord.discover_one(session_id, project=process.workdir)
+                record = ClaudeSessionRecord.get(session_id, project=process.workdir)
                 if record:
-                    from flow_sdk.builtin.cli_workers import factory as _cli_factory
+                    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import factory as _cli_factory
                     _cmd = _cli_factory(process.cli_config, worker_type="claude")
                     _cmd.resume = True
                     process.cli_config = _cmd.to_json()

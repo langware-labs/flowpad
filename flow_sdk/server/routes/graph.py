@@ -132,6 +132,15 @@ async def get_by_id(target: TypeId) -> Tuple[Type[Entity], Entity]:
 async def handle_request(
     request: Request, response: Response | None = None, background_tasks: BackgroundTasks | None = None
 ) -> ApiResponse | Response:
+    import time as _bench_time
+    _hr_t0 = _bench_time.perf_counter()
+    def _hr_bench(label):
+        try:
+            with open("/tmp/bench_open.log", "a") as _f:
+                _f.write(f"[BENCH handle_request {request.url.path[-30:]}] {label}: {(_bench_time.perf_counter() - _hr_t0) * 1000:.1f}ms\n")
+        except Exception:
+            pass
+    _hr_bench("entry")
     request_info = get_current_request_info()
     if not request_info:
         service_log.warn("Request info not found in handle_request")
@@ -152,6 +161,7 @@ async def handle_request(
             detail=f"Action handler not found: {request_info.action}",
         )
 
+    _hr_bench("after action lookup")
     sig = inspect.signature(a.handler)
     params = sig.parameters
     kwargs = {}
@@ -160,6 +170,7 @@ async def handle_request(
     first_param = list(params.values())[0] if params else None
     if first_param:
         await fill_self_cls_param_if_needed(kwargs, first_param, request_info)
+    _hr_bench("after fill_self_cls_param")
 
     request_params = request_info.request_parameters
 
@@ -236,6 +247,7 @@ async def handle_request(
             if name in json_data:
                 kwargs[name] = json_data[name]
 
+    _hr_bench("before handler call")
     # Call the function with the matched arguments
     try:
         if inspect.iscoroutinefunction(a.handler):
@@ -245,6 +257,7 @@ async def handle_request(
     except Exception as e:
         service_log.error(f"Action failed: {request_info.action}, {e}")
         raise e
+    _hr_bench("after handler call")
 
     if isinstance(response, Response):
         return response
@@ -269,6 +282,7 @@ async def handle_request(
         if getattr(response, "status_code", None) != 404:
             service_log.warn(f"Action returned non-success: {request_info.action}, message: {response.message}")
 
+    _hr_bench("before return (response built)")
     return response
 
 
@@ -342,3 +356,4 @@ async def catch_all(request: Request, response: Response, background_tasks: Back
 # Note: To access body data, you may need to use different strategies based on the HTTP method,
 # since GET and HEAD requests typically do not have a body.
 # You might also need special handling for content types (e.g., JSON, form data).
+# bench-trigger-1777147027

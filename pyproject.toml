@@ -52,6 +52,7 @@ dependencies = [
     "appdirs",
     "colorama",
     "apscheduler~=3.10",
+    "pathspec",
 ]
 
 [project.urls]
@@ -84,7 +85,11 @@ where = ["."]
 include = ["flow_sdk*"]
 
 [tool.setuptools.package-data]
-"flow_sdk" = ["system_assets/**/*", "server/static/**/*"]
+"flow_sdk" = [
+    "system_projects/**/*",
+    "system_projects/**/.claude/**/*",
+    "server/static/**/*",
+]
 
 [tool.ruff]
 line-length = 120

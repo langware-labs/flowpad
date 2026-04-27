@@ -4,6 +4,7 @@ import { dataContext } from '../FlowSync/context';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models';
 import { DockPointerData } from '../models/DockPointer';
+import { TypeId } from '../models/TypeId';
 import { PtyConnection } from '../services/shell/ptyConnection';
 import { ViewType } from '../utils/ui/view-types';
 
@@ -62,7 +63,9 @@ export interface IShell extends IEntity {
   workdir?: string | null;
   pty_pid?: string | null;
   compute_node_id?: string | null;
+  compute_node_uname?: string | null;
   project_id?: string | null;
+  collaboration_room_id?: string | null;
   tab_order?: number;
   claude_session_id?: string | null;
   created_at?: string | null;
@@ -104,7 +107,9 @@ export class Shell extends APIEntity<Shell> implements IShell {
   env: Record<string, string> | null = null;
   pty_pid: string | null = null;
   compute_node_id: string | null = null;
+  compute_node_uname: string | null = null;
   project_id: string | null = null;
+  collaboration_room_id: string | null = null;
   tab_order: number = 0;
   claude_session_id: string | null = null;
   created_at: string | null = null;
@@ -122,6 +127,10 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
   get dockPointer(): DockPointerData {
     return new DockPointerData(ViewType.SHELL, this.typeId?.toString());
+  }
+
+  get computeNodeTypeId(): TypeId | null {
+    return this.compute_node_id ? new TypeId('compute_node', this.compute_node_id) : null;
   }
 
   constructor(entity: Partial<IShell> = {}) {
@@ -351,11 +360,12 @@ export class Shell extends APIEntity<Shell> implements IShell {
   // ── Static helpers ────────────────────────────────────────────────────────
 
   static create(
-    computeNode: { id: string; typeId?: any },
+    computeNode: { id: string; uname?: string | null; typeId?: any },
     opts?: { name?: string; workdir?: string; tab_order?: number },
   ): Shell {
     return new Shell({
       compute_node_id: computeNode.id,
+      compute_node_uname: computeNode.uname ?? null,
       status: ShellStatus.IDLE,
       ...opts,
     });
@@ -364,7 +374,12 @@ export class Shell extends APIEntity<Shell> implements IShell {
   static async newLiveShell(opts?: { name?: string; workdir?: string; cols?: number; rows?: number }): Promise<Shell> {
     const computeNodeId = dataContext.computeNode?.id;
     if (!computeNodeId) throw new Error('[Shell.newLiveShell] No compute node');
-    const shell = new Shell({ name: opts?.name ?? 'shell', workdir: opts?.workdir, compute_node_id: computeNodeId });
+    const shell = new Shell({
+      name: opts?.name ?? 'shell',
+      workdir: opts?.workdir,
+      compute_node_id: computeNodeId,
+      compute_node_uname: dataContext.computeNode?.uname ?? null,
+    });
     await shell.save();
     await shell.start({ cols: opts?.cols ?? 80, rows: opts?.rows ?? 24, workdir: opts?.workdir });
     return shell;
@@ -378,6 +393,20 @@ export class Shell extends APIEntity<Shell> implements IShell {
     const results: Shell[] = [];
     for (const d of data) {
       try {
+        const id = (d as any)?.id;
+        // Prefer the cached instance — constructing `new Shell(d)` registers
+        // in the DataManager cache and orphans any previous instance, breaking
+        // existing subscribers (InteractiveTerminal's onOutput would keep firing
+        // on the orphaned instance while PTY routing hits the new one). Merge
+        // fresh fields into the cached instance instead.
+        if (id) {
+          const existing = Shell.getByIdFromCache(id);
+          if (existing) {
+            Object.assign(existing, d);
+            results.push(existing);
+            continue;
+          }
+        }
         results.push(new Shell(d));
       } catch {
         // skip entries with invalid IDs (e.g. non-UUID legacy records)

@@ -91,7 +91,7 @@ async def test_upload_flow_message_duplicate_returns_409(bootstrapped_client):
     fm_id = _new_id()
     inner_fm_id = _new_id()
     msg = _msg_data(fm_id)
-    msg["attachment"] = [{"type": "flow_message", "id": inner_fm_id}]
+    msg["attachment"] = [{"attachment_type": "type_id", "data": f"flow_message-{inner_fm_id}"}]
     flowmsg_bytes = _make_flowmsg_bytes_with_attachment(msg, inner_fm_id)
 
     # First upload — should succeed (creates both FlowMessages in DB)
@@ -121,7 +121,7 @@ async def test_upload_flow_message_overwrite_returns_200(bootstrapped_client):
     fm_id = _new_id()
     inner_fm_id = _new_id()
     msg = _msg_data(fm_id)
-    msg["attachment"] = [{"type": "flow_message", "id": inner_fm_id}]
+    msg["attachment"] = [{"attachment_type": "type_id", "data": f"flow_message-{inner_fm_id}"}]
     flowmsg_bytes = _make_flowmsg_bytes_with_attachment(msg, inner_fm_id)
 
     # First upload
@@ -150,7 +150,7 @@ async def test_download_flow_message_returns_zip(bootstrapped_client):
     fm_id = _new_id()
     task_id = _new_id()
     msg = _msg_data(fm_id, task_id)
-    msg["attachment"] = [{"type": "flow_message", "id": fm_id}]
+    msg["attachment"] = [{"attachment_type": "type_id", "data": f"flow_message-{fm_id}"}]
     flowmsg_bytes = _make_flowmsg_bytes(msg)
 
     # Upload first

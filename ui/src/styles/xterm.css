@@ -248,6 +248,54 @@
   cursor: default;
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+ * Light-mode overrides for the xterm-256 palette.
+ * xterm.js's `theme` option only maps the basic 16 ANSI colors. Extended
+ * 256-color escape codes (e.g. ESC[38;5;231m for pure white) bypass the theme
+ * and render with a fixed palette baked into xterm.js. Several of those —
+ * notably the upper grayscale range (240..255) and palette index 231 (#fff) —
+ * are unreadable on a white background. The rules below remap those indices
+ * to darker values when the app is in light mode.
+ *
+ * The :not([class*="xterm-bg-"]) guard is critical: ESC[38;5;231m is also
+ * used as the foreground for cells that paint a colored bg (e.g. red diff-
+ * removed lines, green diff-added lines), where the original white is the
+ * correct readable choice. We only invert when there is no per-cell bg.
+ *
+ * Selector specificity: html.light .xterm .xterm-fg-N matches xterm.js's own
+ * generated rule (.xterm .xterm-fg-N) with two extra classes/pseudo, so it
+ * wins without !important.
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/* Grayscale 243..255: too light on white. Skip cells with bg color.
+ * Indices 232..242 (#080808..#6c6c6c) are already dark enough on white;
+ * remapping them would lower contrast, so we leave them alone. */
+html.light .xterm .xterm-fg-243:not([class*="xterm-bg-"]) { color: #585858; }
+html.light .xterm .xterm-fg-244:not([class*="xterm-bg-"]) { color: #4e4e4e; }
+html.light .xterm .xterm-fg-245:not([class*="xterm-bg-"]) { color: #444444; }
+html.light .xterm .xterm-fg-246:not([class*="xterm-bg-"]) { color: #3a3a3a; }
+html.light .xterm .xterm-fg-247:not([class*="xterm-bg-"]) { color: #303030; }
+html.light .xterm .xterm-fg-248:not([class*="xterm-bg-"]) { color: #262626; }
+html.light .xterm .xterm-fg-249:not([class*="xterm-bg-"]) { color: #1c1c1c; }
+html.light .xterm .xterm-fg-250:not([class*="xterm-bg-"]) { color: #121212; }
+html.light .xterm .xterm-fg-251:not([class*="xterm-bg-"]) { color: #080808; }
+html.light .xterm .xterm-fg-252:not([class*="xterm-bg-"]) { color: #080808; }
+html.light .xterm .xterm-fg-253:not([class*="xterm-bg-"]) { color: #080808; }
+html.light .xterm .xterm-fg-254:not([class*="xterm-bg-"]) { color: #080808; }
+html.light .xterm .xterm-fg-255:not([class*="xterm-bg-"]) { color: #080808; }
+
+/* Cube indices that map to "white-ish" values — invisible on white,
+ * but kept as-is when the cell has its own bg. */
+html.light .xterm .xterm-fg-15:not([class*="xterm-bg-"]) { color: #1e1e1e; }
+html.light .xterm .xterm-fg-231:not([class*="xterm-bg-"]) { color: #1e1e1e; }
+html.light .xterm .xterm-fg-230:not([class*="xterm-bg-"]) { color: #767000; }
+html.light .xterm .xterm-fg-225:not([class*="xterm-bg-"]) { color: #8b1f6e; }
+html.light .xterm .xterm-fg-195:not([class*="xterm-bg-"]) { color: #006d6d; }
+html.light .xterm .xterm-fg-194:not([class*="xterm-bg-"]) { color: #1e6817; }
+html.light .xterm .xterm-fg-189:not([class*="xterm-bg-"]) { color: #4a4a8a; }
+html.light .xterm .xterm-fg-188:not([class*="xterm-bg-"]) { color: #6e6e6e; }
+
+
 /* Arrows */
 .xterm .xterm-scrollable-element > .scrollbar > .scra {
   cursor: pointer;

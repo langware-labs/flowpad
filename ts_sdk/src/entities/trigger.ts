@@ -26,6 +26,9 @@ export interface ITrigger extends IEntity {
   sched_trigger_type?: 'cron' | 'interval' | 'date';
   next_run?: Date;
   last_run?: Date;
+  instruction?: string;
+  workdir?: string;
+  project_id?: string | null;
 }
 
 /**
@@ -53,6 +56,9 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
   sched_trigger_type?: 'cron' | 'interval' | 'date';
   next_run?: Date;
   last_run?: Date;
+  instruction?: string;
+  workdir?: string;
+  project_id?: string | null;
 
   constructor(entity: Partial<ITrigger> = {}) {
     super(entity);
@@ -72,6 +78,23 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     this.sched_trigger_type = entity.sched_trigger_type;
     this.next_run = entity.next_run;
     this.last_run = entity.last_run;
+    this.instruction = entity.instruction;
+    this.workdir = entity.workdir;
+    this.project_id = entity.project_id ?? null;
+  }
+
+  /**
+   * Fire this trigger immediately. For schedule triggers, runs the same
+   * code path APScheduler would run (incl. spawning the agentic process
+   * if `instruction` is set).
+   */
+  async runNow(): Promise<{ status: string; counter: number }> {
+    if (!this.id) {
+      throw new Error('Cannot run unsaved Trigger');
+    }
+    const action = new ActionInfo('test', Trigger.type, this.id, 'POST' as HttpMethod);
+    const response = await dataManager.callAction<undefined, { status: string; counter: number }>(action);
+    return response as { status: string; counter: number };
   }
 
   /**

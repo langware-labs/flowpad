@@ -1,8 +1,7 @@
+import { AgenticProcess, dataContext, getDisplayStatus, isProcessRunning, isReadyForInput, ProcessStatus, Shell, ShellStatus, type ComputeNode } from '@sdk';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { useActiveTerminals } from '@src/hooks/useActiveTerminals';
-import { dataContext, isProcessLive, ShellStatus, type AgenticProcess } from '@sdk';
-import { useContext } from '@src/hooks/useContext';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
+import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { Button } from '@src/components/ui/button';
 import {
   ContextMenu,
@@ -11,17 +10,67 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@src/components/ui/context-menu';
-import { ChevronLeft, ChevronRight, FolderGit2, History, Loader2, SquareTerminal, X, XCircle } from 'lucide-react';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import InteractiveTerminal from './interactive-terminal';
+import { InputDialog } from '@src/components/ui/input-dialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
+import { useActiveTerminals } from '@src/hooks/useActiveTerminals';
+import { useContext } from '@src/hooks/useContext';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Cloud,
+  Container,
+  FolderGit2,
+  History,
+  Loader2,
+  SquareTerminal,
+  X,
+  XCircle,
+} from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HistoryModal } from './HistoryModal';
+import InteractiveTerminal from './interactive-terminal';
+import { TerminalOpenerToolbar } from './openers/TerminalOpenerToolbar';
+import type { OpenerDescriptor } from './openers/tab_opener_types';
+
+const ClaudeResumeIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <span className={`relative inline-flex items-center justify-center ${className ?? ''}`}>
+    <ClaudeIcon className="!h-4 !w-4 text-orange-500" />
+    <History className="absolute -bottom-0.5 -right-0.5 !h-2.5 !w-2.5 text-foreground/80" strokeWidth={3} />
+  </span>
+);
+
+import type { TerminalTab } from '@src/hooks/useActiveTerminals';
 
 interface TabbedTerminalProps {
   className?: string;
   /** Whether to show the "Add Tab" button (default: false) */
   addTabButton?: boolean;
+  /** When set, only shells shared into this collaboration room are shown. */
+  collaborationRoomId?: string | null;
+  /**
+   * When set, new shells/processes created from this tab strip are pinned to
+   * this project_id (not `dataContext.project?.id` at click time). Used by the
+   * CollaborationSpace view to prevent the active project context leaking into
+   * a process that belongs to the space's project.
+   */
+  spawnProjectId?: string | null;
+  /**
+   * Fires when the user clicks a tab. The consumer performs navigation; the
+   * component never calls navigation.openDock for tab clicks itself.
+   */
+  onTabClick?: (shellId: string, session: TerminalTab) => void;
+  /**
+   * Fires after a tab's close has been committed to the backend (shell status
+   * transitions to CLOSED). The consumer decides where to navigate next.
+   */
+  onTabClose?: (shellId: string) => void;
+  /**
+   * Fires after a new tab has been created (Shell/AgenticProcess persisted).
+   * The consumer decides the destination URL.
+   */
+  onTabOpen?: (session: TerminalTab) => void;
 }
 
 /** Find the first available "Tab N" name, filling gaps from closed tabs. */
@@ -52,35 +101,43 @@ function timeAgo(date: Date | string | undefined | null): string {
 function formatDateTime(date: Date | string | undefined | null): string {
   if (!date) return '—';
   const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
 }
 
-const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: string }> = ({ process, statusReason }) => {
+const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: string }> = ({
+  process,
+  statusReason,
+}) => {
   const workdir = process.workdir;
-  const isActive = process.is_active;
-  const status = isProcessLive(process.status) ? process.workerStatus : process.status;
+  // "Alive" under the new model = the process container is in a running lifecycle state.
+  const isAlive = isProcessRunning(process.status ?? ProcessStatus.NEW);
+  const status = getDisplayStatus(process) ?? ProcessStatus.NEW;
   const workerSessionId = process.session_id ?? null;
 
   return (
-    <div className="space-y-1.5 min-w-[220px]">
-      {statusReason && (
-        <p className="text-amber-500 text-[11px]">{statusReason}</p>
-      )}
+    <div className="min-w-[220px] space-y-1.5">
+      {statusReason && <p className="text-[11px] text-amber-500">{statusReason}</p>}
       <div className="flex items-center gap-2">
-        <span className={`inline-block h-1.5 w-1.5 rounded-full shrink-0 ${isActive ? 'bg-emerald-500' : 'bg-muted-foreground'}`} />
-        <span className="capitalize text-[11px] font-semibold text-foreground">{status}</span>
+        <span
+          className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${isAlive ? 'bg-emerald-500' : 'bg-muted-foreground'}`}
+        />
+        <span className="text-[11px] font-semibold capitalize text-foreground">{status}</span>
       </div>
       {workdir && (
-        <p className="text-[10px] text-muted-foreground font-mono truncate max-w-[240px]" title={workdir}>
+        <p className="max-w-[240px] truncate font-mono text-[10px] text-muted-foreground" title={workdir}>
           {workdir}
         </p>
       )}
-      <div className="border-t pt-1.5 space-y-1">
+      <div className="space-y-1 border-t pt-1.5">
         <InfoRow label="Created" value={`${formatDateTime(process.created_date)} · ${timeAgo(process.created_date)}`} />
         <InfoRow label="Updated" value={`${formatDateTime(process.updated_date)} · ${timeAgo(process.updated_date)}`} />
-        {workerSessionId && (
-          <InfoRow label="Session" value={workerSessionId.slice(0, 8) + '…'} />
-        )}
+        {workerSessionId && <InfoRow label="Session" value={workerSessionId.slice(0, 8) + '…'} />}
       </div>
     </div>
   );
@@ -88,7 +145,7 @@ const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: str
 
 const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) => (
   <div className="flex items-baseline gap-2">
-    <span className="text-[10px] text-muted-foreground w-14 shrink-0">{label}</span>
+    <span className="w-14 shrink-0 text-[10px] text-muted-foreground">{label}</span>
     <span className="text-[10px] text-foreground">{value}</span>
   </div>
 );
@@ -100,22 +157,33 @@ const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) =
  * Tab clicks navigate via navigation.openDock(entity.dockPointer), which re-runs the loader.
  * All flags and statuses come from Shell / AgenticProcess entities via useActiveTerminals.
  */
-const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabButton }) => {
-  const { tabs: sessions } = useActiveTerminals();
+const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
+  className = '',
+  addTabButton,
+  collaborationRoomId,
+  spawnProjectId,
+  onTabClick,
+  onTabClose,
+  onTabOpen,
+}) => {
+  const { tabs: sessions } = useActiveTerminals({ collaborationRoomId });
   const { flow } = useAgentContext();
-  const { activeShellId: contextShellId } = useContext();
+  const { activeShellId: contextShellId, agenticProcess: contextAgenticProcess } = useContext();
   const _perfLoggedRef = useRef(false);
   if (!_perfLoggedRef.current) {
     _perfLoggedRef.current = true;
     const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
-    if (t0 !== undefined) console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms TabbedTerminal first render (${sessions.length} sessions)`);
+    if (t0 !== undefined)
+      console.log(
+        `[PERF] +${(performance.now() - t0).toFixed(0)}ms TabbedTerminal first render (${sessions.length} sessions)`,
+      );
   }
 
   const tabCreationLockRef = useRef(false);
   const [editingShellId, setEditingShellId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [pendingTabCreation, setPendingTabCreation] = useState<{
-    kind: 'claude' | 'terminal';
+    kind: 'claude' | 'codex' | 'terminal';
     targetShellId: string | null;
     targetProcessId: string | null;
   } | null>(null);
@@ -124,6 +192,8 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   const tabContainerRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [resumeByIdOpen, setResumeByIdOpen] = useState(false);
+  const { resumeInTerminal } = useResumeInTerminal();
   const [hasTabOverflow, setHasTabOverflow] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -136,10 +206,11 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   const activeShellId = (contextShellId ? contextShellId : visibleSessions[0]?.shellId) || '';
   const hasActiveTab = Boolean(activeShellId && visibleSessions.some((session) => session.shellId === activeShellId));
 
-  // Lazy-mount: only render InteractiveTerminal for sessions that have been
-  // active at least once. Inactive sessions that were never visited render a
-  // cheap placeholder <div>. Once mounted the component stays alive (the Set
-  // never shrinks) so subsequent tab switches are instant.
+  // Lazy-mount: only mount the active terminal initially; mount others on
+  // first switch. With many tabs (e.g. 69), eagerly mounting all of them
+  // caused a 14-second main-thread freeze from 69 InteractiveTerminal
+  // component trees (each with ~30 hooks, xterm init, addon loading).
+  // The Set never shrinks so subsequent switches stay instant.
   const [mountedShellIds, setMountedShellIds] = useState<Set<string>>(
     () => new Set(activeShellId ? [activeShellId] : []),
   );
@@ -163,52 +234,105 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
     setPendingTabCreation(null);
   }, []);
 
-  // "Start Claude" button — creates AgenticProcess entity then navigates to it
-  const handleStartClaude = useCallback(async () => {
-    if (tabCreationLockRef.current) return;
-    tabCreationLockRef.current = true;
-    setPendingTabCreation({ kind: 'claude', targetShellId: null, targetProcessId: null });
-    const result = await navigation.openNewClaudeProcess();
-    if (!result) {
-      clearPendingTabCreation();
-      return;
-    }
-    // Set pending tab first so the tab strip shows the new tab immediately,
-    // then navigate — keeping openDock outside the async spawn body prevents
-    // React Router from cancelling the navigation due to in-flight re-renders.
-    setPendingTabCreation({
-      kind: 'claude',
-      targetShellId: result.shellId,
-      targetProcessId: result.processId,
-    });
-    navigation.openDock(result.dockPointer);
-  }, [clearPendingTabCreation, navigation]);
+  // "Start Claude" button — creates AgenticProcess entity, then emits onTabOpen
+  // so the consumer can navigate / tag / start.
+  const startAgenticTab = useCallback(
+    async (kind: 'claude' | 'codex', workerType?: 'claude_code' | 'codex') => {
+      if (tabCreationLockRef.current) return;
+      tabCreationLockRef.current = true;
+      setPendingTabCreation({ kind, targetShellId: null, targetProcessId: null });
+      const result = await navigation.openNewClaudeProcess({
+        ...(spawnProjectId ? { projectId: spawnProjectId } : {}),
+        ...(workerType ? { workerType } : {}),
+      });
+      if (!result) {
+        clearPendingTabCreation();
+        return;
+      }
+      setPendingTabCreation({
+        kind,
+        targetShellId: result.shellId,
+        targetProcessId: result.processId,
+      });
+      const agenticProcess =
+        AgenticProcess.getByIdFromCache<AgenticProcess>(result.processId) ?? undefined;
+      const shell =
+        result.shellId
+          ? Shell.getByIdFromCache<Shell>(result.shellId) ?? undefined
+          : undefined;
+      onTabOpen?.({
+        shellId: result.shellId ?? '',
+        tabOrder: shell?.tab_order ?? 0,
+        name: shell?.name ?? null,
+        type: 'claude',
+        agenticProcess,
+        shell,
+        isDisabled: false,
+        statusReason: '',
+      });
+    },
+    [clearPendingTabCreation, navigation, onTabOpen, spawnProjectId],
+  );
 
-  const handleStartTerminal = useCallback(async () => {
-    if (tabCreationLockRef.current) return;
-    tabCreationLockRef.current = true;
-    setPendingTabCreation({ kind: 'terminal', targetShellId: null, targetProcessId: null });
-    const result = await navigation.openNewShell();
-    if (!result?.shellId) {
-      clearPendingTabCreation();
-      return;
-    }
-    setPendingTabCreation({ kind: 'terminal', targetShellId: result.shellId, targetProcessId: null });
-  }, [clearPendingTabCreation, navigation]);
+  const handleStartClaude = useCallback(() => startAgenticTab('claude', 'claude_code'), [startAgenticTab]);
+  const handleStartCodex = useCallback(() => startAgenticTab('codex', 'codex'), [startAgenticTab]);
 
-  // Navigate to a tab via its entity's dockPointer
+  const startTerminalTab = useCallback(
+    async (computeNode?: ComputeNode) => {
+      if (tabCreationLockRef.current) return;
+      tabCreationLockRef.current = true;
+      setPendingTabCreation({ kind: 'terminal', targetShellId: null, targetProcessId: null });
+      // skipNavigate: true — consumer owns destination via onTabOpen.
+      const result = await navigation.openNewShell({
+        ...(computeNode ? { computeNode } : {}),
+        ...(spawnProjectId ? { projectId: spawnProjectId } : {}),
+        skipNavigate: true,
+      });
+      if (!result?.shellId) {
+        clearPendingTabCreation();
+        return;
+      }
+      setPendingTabCreation({ kind: 'terminal', targetShellId: result.shellId, targetProcessId: null });
+      const shell = Shell.getByIdFromCache<Shell>(result.shellId) ?? undefined;
+      onTabOpen?.({
+        shellId: result.shellId,
+        tabOrder: shell?.tab_order ?? 0,
+        name: shell?.name ?? null,
+        type: 'plain',
+        shell,
+        isDisabled: false,
+        statusReason: '',
+      });
+    },
+    [clearPendingTabCreation, navigation, onTabOpen],
+  );
+
+  const handleStartTerminal = useCallback(() => startTerminalTab(), [startTerminalTab]);
+
+  const handleStartSandbox = useCallback(() => {
+    const sandboxNode = dataContext.sandboxComputeNode;
+    if (!sandboxNode) return;
+    return startTerminalTab(sandboxNode);
+  }, [startTerminalTab]);
+
+  const handleStartDocker = useCallback((dockerNode: ComputeNode) => startTerminalTab(dockerNode), [startTerminalTab]);
+
+  // Navigate to a tab by emitting onTabClick — consumer owns the destination.
+  // Uses sessionsRef to avoid re-creating the callback when the sessions
+  // array identity changes (which cascades into selectTab → scroll effects).
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
   const navigateToSession = useCallback(
     (shellId: string) => {
-      const session = sessions.find((s) => s.shellId === shellId);
+      const session = sessionsRef.current.find((s) => s.shellId === shellId);
       if (!session) return;
       // Set activeShellId immediately so the CSS display toggle happens
       // before the loader's async work (entity queries). The loader will
       // later call setActiveShellId with the same value (no-op).
       dataContext.setActiveShellId(shellId);
-      const entity = session.agenticProcess ?? session.shell;
-      if (entity) navigation.openDock(entity.dockPointer);
+      onTabClick?.(shellId, session);
     },
-    [sessions, navigation],
+    [onTabClick],
   );
 
   const scrollSelectedTabIntoView = useCallback((shellId: string) => {
@@ -258,7 +382,8 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
     if (!pendingTabCreation) return;
     const session = visibleSessions.find((s) => {
       if (pendingTabCreation.targetShellId && s.shellId === pendingTabCreation.targetShellId) return true;
-      if (pendingTabCreation.targetProcessId && s.agenticProcess?.id === pendingTabCreation.targetProcessId) return true;
+      if (pendingTabCreation.targetProcessId && s.agenticProcess?.id === pendingTabCreation.targetProcessId)
+        return true;
       return false;
     });
     if (session) {
@@ -275,48 +400,47 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   useEffect(() => {
     if (!activeShellId || !hasActiveTab) return;
     selectTab(activeShellId, { navigate: false });
-  }, [activeShellId, hasActiveTab, hasTabOverflow, canScrollLeft, selectTab]);
+    // scrollSelectedTabIntoView reads DOM on each call — no need to re-run on
+    // scroll/overflow state changes, and doing so caused an infinite setState loop
+    // because selectTab scrolls the container, which flips hasTabOverflow/canScrollLeft.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeShellId, hasActiveTab, selectTab]);
 
   const closeTab = useCallback(
     async (shellId: string): Promise<void> => {
       const session = sessions.find((s) => s.shellId === shellId);
       if (!session) return;
       try {
-        if (session.agenticProcess) {
-          await session.agenticProcess.close();
+        const sessionProcess = session.shellId === activeShellId ? contextAgenticProcess : undefined;
+        if (sessionProcess) {
+          await sessionProcess.close();
         } else if (session.shell) {
           await session.shell.close();
         }
+        onTabClose?.(shellId);
       } catch (error) {
         console.error('[TabbedTerminal] Failed to close tab:', shellId, error);
       }
     },
-    [sessions],
+    [sessions, activeShellId, contextAgenticProcess, onTabClose],
   );
 
   const handleCloseTab = useCallback(
     (shellId: string) => {
-      if (activeShellId === shellId) {
-        const idx = visibleSessions.findIndex((s) => s.shellId === shellId);
-        const remaining = visibleSessions.filter((s) => s.shellId !== shellId && !s.isDisabled);
-        remaining.length > 0 ? selectTab(remaining[Math.min(idx, remaining.length - 1)].shellId) : navigation.openShellView();
-      }
       void closeTab(shellId);
     },
-    [activeShellId, visibleSessions, closeTab, selectTab, navigation],
+    [closeTab],
   );
 
   const handleCloseAll = useCallback(() => {
     void Promise.all(visibleSessions.map((s) => closeTab(s.shellId)));
-    navigation.openShellView();
-  }, [visibleSessions, closeTab, navigation]);
+  }, [visibleSessions, closeTab]);
 
   const handleCloseAllButThis = useCallback(
     (shellId: string) => {
       void Promise.all(visibleSessions.filter((s) => s.shellId !== shellId).map((s) => closeTab(s.shellId)));
-      selectTab(shellId);
     },
-    [visibleSessions, closeTab, selectTab],
+    [visibleSessions, closeTab],
   );
 
   const handleCloseToTheRight = useCallback(
@@ -324,9 +448,8 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
       const idx = visibleSessions.findIndex((s) => s.shellId === shellId);
       const toClose = visibleSessions.slice(idx + 1);
       void Promise.all(toClose.map((s) => closeTab(s.shellId)));
-      if (toClose.some((s) => s.shellId === activeShellId)) selectTab(shellId);
     },
-    [visibleSessions, activeShellId, closeTab, selectTab],
+    [visibleSessions, closeTab],
   );
 
   const handleTabDoubleClick = (shellId: string, currentName: string) => {
@@ -371,17 +494,17 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
 
     void shell.updateDisplay({ name: newName, is_pty: !injectRename });
 
-    // Inject /rename only when user-initiated AND Claude is at the prompt (waiting_for_prompt),
+    // Inject /rename only when user-initiated AND the worker is ready for input,
     // never when the title came from xterm (PTY escape sequence), to avoid a loop
     // where Claude sets the title → we inject /rename → Claude sets the title again.
-    if (injectRename && session.agenticProcess?.waiting_for_prompt) {
+    if (injectRename && session.shellId === activeShellId && contextAgenticProcess && isReadyForInput(contextAgenticProcess)) {
       void shell.sendInput(`/rename ${newName}\r`);
     }
   };
 
   // Get display name for a session
   const getDisplayName = (session: { shellId: string; name: string | null }): string => {
-    return (typeof session.name === 'string' && session.name) ? session.name : session.shellId;
+    return typeof session.name === 'string' && session.name ? session.name : session.shellId;
   };
 
   // Check if tabs overflow and update scroll button state
@@ -425,7 +548,8 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
   }, [visibleSessions]);
 
   // Use Ctrl key on Mac, Win key on Windows, Alt key on Linux
-  const osPlatform: string = (navigator as Navigator & { userAgentData?: { platform: string } }).userAgentData?.platform ?? navigator.userAgent;
+  const osPlatform: string =
+    (navigator as Navigator & { userAgentData?: { platform: string } }).userAgentData?.platform ?? navigator.userAgent;
   const modKey = /Mac/i.test(osPlatform) ? 'Ctrl' : /Win/i.test(osPlatform) ? 'Meta' : 'Alt';
   const modLabel = /Mac/i.test(osPlatform) ? 'Ctrl' : /Win/i.test(osPlatform) ? 'Win' : 'Alt';
 
@@ -456,53 +580,99 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
 
   const isTabCreationPending = pendingTabCreation !== null;
   const isClaudeCreationPending = pendingTabCreation?.kind === 'claude';
+  const isCodexCreationPending = pendingTabCreation?.kind === 'codex';
   const isTerminalCreationPending = pendingTabCreation?.kind === 'terminal';
+  const sandboxAvailable = !!dataContext.bootstrapInfo?.sandbox_available && !!dataContext.sandboxComputeNode;
+  const dockerNodes = dataContext.dockerComputeNodes;
+  const openers = useMemo<OpenerDescriptor[]>(() => {
+    const list: OpenerDescriptor[] = [
+      {
+        id: 'claude',
+        label: `Start Claude (${modLabel}+C)`,
+        Icon: ClaudeIcon,
+        iconClassName: 'text-orange-500',
+        onActivate: handleStartClaude,
+        available: true,
+        pendingInline: isClaudeCreationPending,
+        disabled: isTabCreationPending,
+      },
+      {
+        id: 'codex',
+        label: 'Start Codex',
+        Icon: CodexIcon,
+        iconClassName: 'text-emerald-500',
+        onActivate: handleStartCodex,
+        available: true,
+        pendingInline: isCodexCreationPending,
+        disabled: isTabCreationPending,
+      },
+      {
+        id: 'claude-resume-by-id',
+        label: 'Resume Claude session…',
+        Icon: ClaudeResumeIcon,
+        onActivate: () => setResumeByIdOpen(true),
+        available: true,
+        disabled: isTabCreationPending,
+      },
+      {
+        id: 'terminal',
+        label: `Open terminal (${modLabel}+T)`,
+        Icon: SquareTerminal,
+        onActivate: handleStartTerminal,
+        available: true,
+        pendingInline: isTerminalCreationPending,
+        disabled: isTabCreationPending,
+      },
+      {
+        id: 'sandbox',
+        label: 'Open sandbox terminal (E2B)',
+        Icon: Cloud,
+        iconClassName: 'text-sky-500',
+        onActivate: handleStartSandbox,
+        available: sandboxAvailable,
+        pendingInline: isTerminalCreationPending,
+        disabled: isTabCreationPending,
+      },
+      {
+        id: 'docker',
+        label: 'Open docker terminal',
+        Icon: Container,
+        iconClassName: 'text-blue-500',
+        onActivate: () => {
+          if (dockerNodes.length === 1) handleStartDocker(dockerNodes[0]);
+        },
+        onDockerNodeSelect: handleStartDocker,
+        available: dockerNodes.length > 0,
+        pendingInline: isTerminalCreationPending,
+        disabled: isTabCreationPending,
+        dockerNodes,
+      },
+      {
+        id: 'history',
+        label: 'Open from history',
+        Icon: History,
+        onActivate: () => setHistoryModalOpen(true),
+        available: true,
+      },
+    ];
+    return list;
+  }, [
+    modLabel,
+    handleStartClaude,
+    handleStartCodex,
+    handleStartTerminal,
+    handleStartSandbox,
+    handleStartDocker,
+    sandboxAvailable,
+    dockerNodes,
+    isClaudeCreationPending,
+    isCodexCreationPending,
+    isTerminalCreationPending,
+    isTabCreationPending,
+  ]);
+
   const tabEndToolbar = addTabButton ? (
-    <div className="flex shrink-0 items-center gap-1 border-l px-1" data-testid="terminal-tab-end-toolbar">
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 rounded"
-        onClick={handleStartClaude}
-        disabled={isTabCreationPending}
-        aria-busy={isClaudeCreationPending}
-        aria-label={isClaudeCreationPending ? 'Starting Claude session' : 'Start Claude'}
-        data-testid="start-claude-button"
-        data-state={isClaudeCreationPending ? 'waiting' : 'idle'}
-        title={isClaudeCreationPending ? 'Starting Claude session...' : `Start Claude (${modLabel}+C)`}
-      >
-        {isClaudeCreationPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClaudeIcon className="h-4 w-4 text-orange-500" />}
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 rounded"
-        onClick={handleStartTerminal}
-        disabled={isTabCreationPending}
-        aria-busy={isTerminalCreationPending}
-        aria-label={isTerminalCreationPending ? 'Opening terminal' : 'Open terminal'}
-        data-testid="open-terminal-tab-button"
-        data-state={isTerminalCreationPending ? 'waiting' : 'idle'}
-        title={isTerminalCreationPending ? 'Opening terminal...' : `Open terminal (${modLabel}+T)`}
-      >
-        {isTerminalCreationPending ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : (
-          <SquareTerminal className="h-4 w-4" />
-        )}
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 rounded"
-        onClick={() => setHistoryModalOpen(true)}
-        aria-label="Open from history"
-        title="Open from history"
-        data-testid="open-history-button"
-      >
-        <History className="h-4 w-4" />
-      </Button>
-    </div>
+    <TerminalOpenerToolbar openers={openers} isTabCreationPending={isTabCreationPending} />
   ) : null;
 
   return (
@@ -510,7 +680,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
       {/* Main terminal area */}
       <div className="flex h-full w-full flex-col">
         {/* Tab Bar */}
-        <div className="flex items-center border-b bg-muted/30" data-testid="terminal-tab-bar">
+        <div className="flex items-center border-b bg-muted" data-testid="terminal-tab-bar">
           {/* Left Scroll Button */}
           {canScrollLeft && (
             <Button
@@ -535,6 +705,18 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
               const displayName = getDisplayName(session);
               const isDisabled = session.isDisabled;
               const isClosing = session.shell?.status === ShellStatus.CLOSING;
+              // Sandbox flag: derived from the shell's compute node uname.
+              // Used to swap the tab's green dot for a Cloud icon so sandbox
+              // shells are visually distinct from local ones.
+              const isSandboxShell = session.shell?.compute_node_uname === 'sandbox';
+              // Use context process for the active tab (always authoritative);
+              // inactive tabs have no reliable process reference.
+              const sessionProcess = session.shellId === activeShellId ? contextAgenticProcess : undefined;
+              // The worker_type marker — `session.agenticProcess` is populated
+              // by `useActiveTerminals` for every tab, so we can render the
+              // Codex glyph next to the status dot regardless of which tab is
+              // active.
+              const isCodexShell = session.agenticProcess?.worker_type === 'codex';
 
               const tabContent = (
                 <div
@@ -551,13 +733,33 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
                   onClick={() => !isDisabled && selectTab(session.shellId)}
                   data-testid={`tab-shell-${session.shellId}`}
                 >
-                  {/* Status dot */}
-                  <span
-                    className={`inline-block h-2 w-2 shrink-0 rounded-full ${
-                      isClosing ? 'bg-amber-500/70' : isDisabled ? 'bg-red-500/70' : 'bg-green-500/70'
-                    }`}
-                  />
-                  {Boolean(session.agenticProcess?.cliOptions?.worktree) && (
+                  {/* Status indicator — Cloud icon for sandbox shells, green
+                      dot for everything else. Sits to the left of the name.
+                      For codex tabs we additionally render the Codex glyph
+                      between the dot and the name so worker type is visible
+                      at a glance without needing the tab to be active. */}
+                  {isSandboxShell ? (
+                    <Cloud
+                      className="h-3.5 w-3.5 shrink-0 text-sky-500"
+                      data-testid={`shell-sandbox-icon-${session.shellId}`}
+                      aria-label="Sandbox shell"
+                    />
+                  ) : (
+                    <span
+                      className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                        isClosing ? 'bg-amber-500/70' : isDisabled ? 'bg-red-500/70' : 'bg-green-500/70'
+                      }`}
+                      data-testid={`shell-status-dot-${session.shellId}`}
+                    />
+                  )}
+                  {isCodexShell && (
+                    <CodexIcon
+                      className="h-3.5 w-3.5 shrink-0 text-emerald-500"
+                      data-testid={`shell-codex-icon-${session.shellId}`}
+                      aria-label="Codex tab"
+                    />
+                  )}
+                  {Boolean(sessionProcess?.cliOptions?.worktree) && (
                     <FolderGit2 className="h-3 w-3 shrink-0 text-amber-500" />
                   )}
                   {editingShellId === session.shellId ? (
@@ -600,29 +802,33 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
               return (
                 <ContextMenu key={session.shellId}>
                   <TooltipProvider delayDuration={600}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <ContextMenuTrigger asChild>
-                        {tabContent}
-                      </ContextMenuTrigger>
-                    </TooltipTrigger>
-                    {session.agenticProcess ? (
-                      <TooltipContent side="bottom" className="p-2.5 bg-popover text-popover-foreground border shadow-md">
-                        <ProcessInfoTooltip
-                          process={session.agenticProcess}
-                          statusReason={isDisabled ? session.statusReason : undefined}
-                        />
-                      </TooltipContent>
-                    ) : isDisabled ? (
-                      <TooltipContent side="bottom">{session.statusReason}</TooltipContent>
-                    ) : null}
-                  </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <ContextMenuTrigger asChild>{tabContent}</ContextMenuTrigger>
+                      </TooltipTrigger>
+                      {sessionProcess ? (
+                        <TooltipContent
+                          side="bottom"
+                          className="border bg-popover p-2.5 text-popover-foreground shadow-md"
+                        >
+                          <ProcessInfoTooltip
+                            process={sessionProcess}
+                            statusReason={isDisabled ? session.statusReason : undefined}
+                          />
+                        </TooltipContent>
+                      ) : isDisabled ? (
+                        <TooltipContent side="bottom">{session.statusReason}</TooltipContent>
+                      ) : null}
+                    </Tooltip>
                   </TooltipProvider>
                   <ContextMenuContent>
-                    <ContextMenuItem onSelect={() => handleTabDoubleClick(session.shellId, displayName)}>Rename</ContextMenuItem>
+                    <ContextMenuItem onSelect={() => handleTabDoubleClick(session.shellId, displayName)}>
+                      Rename
+                    </ContextMenuItem>
                     <ContextMenuSeparator />
                     <ContextMenuItem onSelect={() => void handleStartClaude()}>
-                      New Claude Session <span className="ml-auto pl-4 text-xs text-muted-foreground">{modLabel}+C</span>
+                      New Claude Session{' '}
+                      <span className="ml-auto pl-4 text-xs text-muted-foreground">{modLabel}+C</span>
                     </ContextMenuItem>
                     <ContextMenuItem onSelect={() => void handleStartTerminal()}>
                       New Terminal <span className="ml-auto pl-4 text-xs text-muted-foreground">{modLabel}+T</span>
@@ -649,12 +855,15 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
               );
             })}
 
-            {!hasTabOverflow && tabEndToolbar}
-
+            {/* Toolbar flows after the last tab but sticks to the right edge
+                when tabs overflow. Placement is unconditional, so it does not
+                oscillate with hasTabOverflow. */}
+            {tabEndToolbar && (
+              <div className="sticky right-0 z-10 flex items-center self-stretch bg-muted">
+                {tabEndToolbar}
+              </div>
+            )}
           </div>
-
-          {/* Once tabs overflow, pin the end toolbar next to the right scroll control. */}
-          {hasTabOverflow && tabEndToolbar}
 
           {/* Right Scroll Button */}
           {hasTabOverflow && (
@@ -709,8 +918,13 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
                   className="gap-2"
                   onClick={handleStartClaude}
                   disabled={isTabCreationPending}
+                  data-testid="start-claude-button"
                 >
-                  {isClaudeCreationPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ClaudeIcon className="h-4 w-4 text-orange-500" />}
+                  {isClaudeCreationPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ClaudeIcon className="h-4 w-4 text-orange-500" />
+                  )}
                   Claude Code
                 </Button>
                 <Button
@@ -720,7 +934,11 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
                   onClick={handleStartTerminal}
                   disabled={isTabCreationPending}
                 >
-                  {isTerminalCreationPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <SquareTerminal className="h-4 w-4" />}
+                  {isTerminalCreationPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <SquareTerminal className="h-4 w-4" />
+                  )}
                   Terminal
                 </Button>
               </div>
@@ -749,7 +967,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
                         if (session.isDisabled) return;
                         onTabRename(session, title, false);
                       }}
-                      process={session.agenticProcess}
                     />
                   )}
                 </div>
@@ -761,10 +978,19 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', addTabB
       <HistoryModal
         open={historyModalOpen}
         onOpenChange={setHistoryModalOpen}
-        onSelect={(p) => {
+        onSelect={(item) => {
           setHistoryModalOpen(false);
-          void navigation.openShellProcess(p.id);
+          navigation.openDockPointer(item.dockPointer);
         }}
+      />
+      <InputDialog
+        open={resumeByIdOpen}
+        onOpenChange={setResumeByIdOpen}
+        title="Resume Claude session"
+        description="Paste a Claude CLI session id (UUID) to resume it in a new tab."
+        placeholder="e.g. 0fa1a8c2-7b1d-4d6c-9d4e-b3e6c2f1d8aa"
+        confirmLabel="Resume"
+        onConfirm={(sessionId) => resumeInTerminal(sessionId)}
       />
     </div>
   );

@@ -20,12 +20,12 @@ def _write_jsonl(path, lines):
     path.write_text("\n".join(json.dumps(l) for l in lines))
 
 
-def test_status_idle_empty_file(tmp_path):
-    """Empty JSONL → empty (file exists but no parseable content)."""
+def test_status_initializing_empty_file(tmp_path):
+    """Empty JSONL → initializing (file exists but no parseable content yet)."""
     f = tmp_path / "session.jsonl"
     f.write_text("")
     session = ClaudeSessionFsRecord(jsonl_path=str(f))
-    assert session.status == "empty"
+    assert session.status == "initializing"
 
 
 def test_status_complete_end_turn(tmp_path):

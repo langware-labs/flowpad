@@ -1,6 +1,8 @@
 import { Button } from '@src/components/ui/button';
+import { Checkbox } from '@src/components/ui/checkbox';
 import { type ITrigger } from '@sdk';
 import { Plus } from 'lucide-react';
+import { useState } from 'react';
 import { TriggerListItem } from './TriggerListItem';
 
 interface Props {
@@ -35,47 +37,32 @@ export function TriggersList({
   onNewSchedule,
   isCreatingSchedule,
 }: Props) {
-  const hookTriggers = triggers.filter(t => (t.trigger_type ?? 'hook') === 'hook');
-  const scheduleTriggers = triggers.filter(t => t.trigger_type === 'schedule');
+  const [showSystem, setShowSystem] = useState(false);
+
+  const visibleTriggers = showSystem ? triggers : triggers.filter(t => t.scope !== 'system');
+  const hookTriggers = visibleTriggers.filter(t => (t.trigger_type ?? 'hook') === 'hook');
+  const scheduleTriggers = visibleTriggers.filter(t => t.trigger_type === 'schedule');
 
   const hookGrouped = groupByScope(hookTriggers);
   const scheduleGrouped = groupByScope(scheduleTriggers);
 
-  if (triggers.length === 0 && !isCreatingSchedule) {
-    return (
-      <div className="flex h-full items-center justify-center p-4 text-center text-sm text-muted-foreground">
-        No triggers found. Create rules in <code className="mx-1 rounded bg-muted px-1">~/.flow/rules/</code>
-      </div>
-    );
-  }
+  const hiddenSystemCount = showSystem ? 0 : triggers.filter(t => t.scope === 'system').length;
 
   return (
     <div>
-      {/* Hook Triggers section */}
-      {hookTriggers.length > 0 && (
-        <div>
-          <div className="sticky top-0 bg-muted/70 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Hook Triggers
-          </div>
-          {SCOPE_ORDER.filter(s => hookGrouped[s]?.length).map(scope => (
-            <div key={scope}>
-              <div className="sticky top-5 bg-muted/50 px-3 py-0.5 text-[10px] font-medium text-muted-foreground/70">
-                {SCOPE_LABELS[scope]}
-              </div>
-              {hookGrouped[scope].map(trigger => (
-                <TriggerListItem
-                  key={trigger.id || trigger.name}
-                  trigger={trigger}
-                  isSelected={selectedTrigger?.id === trigger.id}
-                  onSelect={() => onSelect(trigger)}
-                  onOpenLog={() => onOpenLog(trigger)}
-                  onLogModeChange={(mode) => onLogModeChange(trigger.id || '', mode)}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Top filter row */}
+      <div className="flex items-center gap-1.5 border-b px-3 py-1.5">
+        <Checkbox
+          id="triggers-show-system"
+          checked={showSystem}
+          onCheckedChange={(v) => setShowSystem(v === true)}
+          className="h-3 w-3"
+        />
+        <label htmlFor="triggers-show-system" className="cursor-pointer select-none text-[10px] text-muted-foreground">
+          Show system triggers
+          {hiddenSystemCount > 0 && <span className="ml-1 text-muted-foreground/60">({hiddenSystemCount})</span>}
+        </label>
+      </div>
 
       {/* Schedule Triggers section */}
       <div>
@@ -117,6 +104,32 @@ export function TriggersList({
           </div>
         )}
       </div>
+
+      {/* Hook Triggers section */}
+      {hookTriggers.length > 0 && (
+        <div>
+          <div className="sticky top-0 bg-muted/70 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Hook Triggers
+          </div>
+          {SCOPE_ORDER.filter(s => hookGrouped[s]?.length).map(scope => (
+            <div key={scope}>
+              <div className="sticky top-5 bg-muted/50 px-3 py-0.5 text-[10px] font-medium text-muted-foreground/70">
+                {SCOPE_LABELS[scope]}
+              </div>
+              {hookGrouped[scope].map(trigger => (
+                <TriggerListItem
+                  key={trigger.id || trigger.name}
+                  trigger={trigger}
+                  isSelected={selectedTrigger?.id === trigger.id}
+                  onSelect={() => onSelect(trigger)}
+                  onOpenLog={() => onOpenLog(trigger)}
+                  onLogModeChange={(mode) => onLogModeChange(trigger.id || '', mode)}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

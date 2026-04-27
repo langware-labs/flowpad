@@ -8,17 +8,19 @@ from __future__ import annotations
 
 import os
 import re
+import uuid
 from pathlib import Path
 
-from typing import Any, ClassVar, Iterator
+from typing import Any, ClassVar
 
 from flow_sdk.fs_store import Record, RecordType
 
 from ._frontmatter import (
     _extract_body,
     _extract_frontmatter,
+    _render_frontmatter,
     _yaml_load,
-)
+)  # noqa: F401  (_render_frontmatter is used by default_body)
 
 _WALK_IGNORED: frozenset[str] = frozenset({
     ".git", "node_modules", ".venv", "venv", "__pycache__",
@@ -72,6 +74,13 @@ def _doc_search_dirs() -> list[Path]:
 
     _add(Path.home() / ".claude" / "docs")
 
+    # SDK-shipped system docs under the Flowpad Assistant system project.
+    try:
+        from flow_sdk.config import flowpad_assistant_project_root
+        _add(flowpad_assistant_project_root() / ".claude" / "docs")
+    except Exception:
+        pass
+
     from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
     for real in iter_claude_project_paths():
         for docs_dir in _find_docs_subdirs(real):
@@ -87,6 +96,29 @@ def _doc_search_dirs() -> list[Path]:
             _add(Path(extra.strip()))
 
     return dirs
+
+
+def _resolve_vault_root(path: Path) -> str | None:
+    """Return the canonical abs path of the scan root that owns `path`, if any.
+
+    Walks _doc_search_dirs() looking for the first root that is an ancestor of
+    `path.resolve()`. Resolved before comparison so symlinks agree.
+    """
+    try:
+        target = path.resolve()
+    except OSError:
+        return None
+    for root in _doc_search_dirs():
+        try:
+            root_resolved = root.resolve()
+        except OSError:
+            continue
+        try:
+            target.relative_to(root_resolved)
+        except ValueError:
+            continue
+        return str(root_resolved)
+    return None
 
 
 # Map from directory name to asset_type
@@ -108,16 +140,37 @@ def _extract_wiki_links(body: str) -> list[str]:
 class MarkdownRecord(Record):
     """A record backed by a markdown asset file with YAML frontmatter."""
 
-    _record_type: ClassVar[str] = RecordType.DOCS
+    _record_type: ClassVar[str] = RecordType.MARKDOWN
     _indexed_by_default: ClassVar[bool] = True
     _user_asset: ClassVar[bool] = True
+    _creatable: ClassVar[bool] = True
     _icon: ClassVar[str] = "BookOpen"
     index_fields: ClassVar[list[str]] = ["title", "tags", "links"]
 
+    # Framework upsert: <scope_root>/.claude/docs/<safe_name>.md
+    _main_subdir: ClassVar[str] = ".claude/docs"
+    _main_layout: ClassVar[str] = "file"
+
     def __init__(self, **kwargs: Any):
-        kwargs.setdefault("type", RecordType.DOCS)
+        kwargs.setdefault("type", RecordType.MARKDOWN)
         kwargs.setdefault("status", "active")
+        kwargs.setdefault("project_id", None)
         super().__init__(**kwargs)
+
+    @property
+    def main_ref(self) -> "Any":  # FrontMatterFsRef | None
+        """Primary content ref points at the .md file via asset_ref."""
+        from flow_sdk.fs_store.fs_ref import FrontMatterFsRef
+        ar = self.asset_ref
+        if ar is not None:
+            return FrontMatterFsRef(ar._path)
+        return None
+
+    def default_body(self, entity) -> "str | None":
+        # Stamp asset_id into frontmatter so the indexer's getId reads back
+        # the same id and never creates a duplicate Record on next scan.
+        name = (getattr(entity, "name", None) or "").strip() or "Untitled"
+        return _render_frontmatter({"asset_id": entity.id, "title": name}) + f"\n# {name}\n"
 
     @classmethod
     def from_markdown(cls, text: str, path: Path | None = None) -> "MarkdownRecord":
@@ -150,7 +203,6 @@ class MarkdownRecord(Record):
 
         raw_id = fields.get("asset_id") or fields.get("id")
         if not raw_id and path is not None:
-            import uuid
             asset_id = str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
         else:
             asset_id = raw_id
@@ -170,8 +222,21 @@ class MarkdownRecord(Record):
         if scope:
             data["scope"] = scope
 
+        # Folder containment for the Obsidian-style wiki tree. parent_path is the
+        # immediate containing directory (canonical absolute path). vault_root is
+        # the scan root that owns the file (one of _doc_search_dirs entries).
+        if path is not None:
+            try:
+                resolved = path.resolve()
+                data["parent_path"] = str(resolved.parent)
+            except OSError:
+                pass
+            vault = _resolve_vault_root(path)
+            if vault:
+                data["vault_root"] = vault
+
         rec = cls(**data)
-        # Set asset_ref to point to the source .md file (replaces _data["source_path"])
+        # Set asset_ref to point to the source .md file
         if path is not None:
             from flow_sdk.fs_store.fs_ref import FSRef
             object.__setattr__(rec, "_asset_ref", FSRef(path))
@@ -184,25 +249,12 @@ class MarkdownRecord(Record):
         text = p.read_text(encoding="utf-8")
         return cls.from_markdown(text, path=p)
 
-    @property
-    def source_path(self) -> str | None:
-        """Path to the source .md file. Compat accessor — prefer asset_ref.path."""
-        ar = self.asset_ref
-        if ar is not None:
-            return ar.path
-        # also check attrs written by save()
-        return getattr(self, "source_path_field", None) or getattr(self, "asset_ref_path", None)
-
-    def _fingerprint_paths(self):
-        """Fingerprint the source .md file by mtime + size."""
+    def _asset_paths(self):
+        """The source .md file."""
         ar = self.asset_ref
         if ar is not None and ar.exists():
             return [ar._path]
-        src = getattr(self, "source_path_field", None)
-        if not src:
-            return []
-        p = Path(src)
-        return [p] if p.exists() else []
+        return []
 
     @property
     def name(self) -> str:  # type: ignore[override]
@@ -242,48 +294,99 @@ class MarkdownRecord(Record):
             parts.append(" ".join(str(l) for l in links))
         return " ".join(parts) if parts else None
 
-    @classmethod
-    def _external_source_count(cls, limit: int | None = None) -> int:
-        seen: set[str] = set()
-        for docs_dir in _doc_search_dirs():
-            for md_file in docs_dir.rglob("*.md"):
-                seen.add(str(md_file.resolve()))
-        count = len(seen)
-        return min(count, limit) if limit is not None else count
+    def wiki_body(self) -> str | None:
+        """Read the markdown body from the asset file for wiki link extraction."""
+        ar = self.asset_ref
+        if ar is None or not ar.exists():
+            return None
+        try:
+            return _extract_body(Path(ar.path).read_text(encoding="utf-8"))
+        except Exception:
+            return None
+
+    def meta_dict(self) -> dict:
+        # Base Record.meta_dict injects asset_ref; we only set the display name.
+        result = super().meta_dict()
+        result["name"] = self.name
+        return result
 
     @classmethod
-    def _external_source_iter(cls, limit: int | None = None) -> Iterator["MarkdownRecord"]:
-        seen: set[str] = set()
-        count = 0
-        for docs_dir in _doc_search_dirs():
-            for md_file in sorted(docs_dir.rglob("*.md")):
-                key = str(md_file.resolve())
-                if key in seen:
-                    continue
-                seen.add(key)
-                try:
-                    yield cls.from_file(md_file)
-                    count += 1
-                    if limit is not None and count >= limit:
-                        return
-                except Exception:
-                    continue
+    async def from_fsref(cls, ref) -> list["MarkdownRecord"]:
+        """Indexer entry point — construct from an FSRef emitted by markdown_fn.
 
-    @classmethod
-    def discover(cls, project_dir: str | Path = "", **kwargs) -> list["MarkdownRecord"]:
-        """Discover MarkdownRecords.
-
-        If project_dir is given: walk all .md files in that directory tree.
-        Otherwise: fall back to the base Record discovery (scans records root).
+        When the FSRef carries `project_id` (stamped on the project root by
+        the index handler, inherited via the parent chain), tag the record
+        so the UI's project-scoped Docs query finds it.
         """
-        if not project_dir:
-            # Standard pipeline path — scan ~/.flow/records/docs/ via base class
-            return super().discover(**kwargs)  # type: ignore[return-value]
-        results: list[MarkdownRecord] = []
-        p = Path(project_dir)
-        for md_file in sorted(p.rglob("*.md")):
+        rec = cls.from_file(ref._path)
+        pid = getattr(ref, "project_id", None)
+        if pid:
             try:
-                results.append(cls.from_file(md_file))
+                object.__setattr__(rec, "project_id", pid)
             except Exception:
-                continue
-        return results
+                pass
+        return [rec]
+
+    # ── Portable identity (Phase 7c) ─────────────────────────────────────────
+    # MarkdownRecord opts into `asset_id` minting: genId writes a stable uuid
+    # into the file's YAML frontmatter on first encounter, so the id survives
+    # path moves / cross-machine sync. getId is read-only.
+
+    _mintable: ClassVar[bool] = True
+
+    @classmethod
+    def _read_frontmatter_asset_id(cls, path: Path) -> str | None:
+        """Return `asset_id` from the file's frontmatter, or None if absent."""
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return None
+        fm = _extract_frontmatter(text)
+        if not fm:
+            return None
+        fields = _yaml_load(fm) or {}
+        raw = fields.get("asset_id") or fields.get("id")
+        return str(raw).strip() if isinstance(raw, str) and raw.strip() else None
+
+    @classmethod
+    def getId(cls, ref) -> str:
+        """asset_id from frontmatter when present; else uuid5 of resolved path."""
+        existing = cls._read_frontmatter_asset_id(ref._path)
+        if existing:
+            return existing
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, str(ref._path.resolve())))
+
+    @classmethod
+    def genId(cls, ref) -> str:
+        """Read asset_id, or mint one into the frontmatter and return it.
+
+        Idempotent: if the file already has an `asset_id`, no write happens.
+        Otherwise a fresh `uuid4()` is inserted at the top of the frontmatter,
+        preserving every other field and the markdown body verbatim.
+        """
+        existing = cls._read_frontmatter_asset_id(ref._path)
+        if existing:
+            return existing
+        new_id = str(uuid.uuid4())
+        try:
+            text = ref._path.read_text(encoding="utf-8")
+        except OSError:
+            return new_id  # can't write; still return a usable id
+        fm = _extract_frontmatter(text)
+        body = _extract_body(text)
+        fields: dict = {}
+        if fm:
+            parsed = _yaml_load(fm)
+            if isinstance(parsed, dict):
+                fields.update(parsed)
+        # Insert asset_id at the front for readability
+        merged = {"asset_id": new_id, **{k: v for k, v in fields.items() if k not in ("asset_id",)}}
+        try:
+            ref._path.write_text(
+                _render_frontmatter(merged) + "\n\n" + body + ("\n" if body and not body.endswith("\n") else ""),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+        return new_id
+

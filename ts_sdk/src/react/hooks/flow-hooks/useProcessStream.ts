@@ -40,12 +40,12 @@ export function useProcessStream(flow: Flow | null) {
 
       flow.stream.on(FlowEvents.DATA, dataCallback);
       flow.stream.on(FlowEvents.RENDER, renderCallback);
-      flow.on(FlowEvents.EXECUTION_STATUS, statusCallback);
+      flow.on(FlowEvents.SEND_STATUS, statusCallback);
 
       return () => {
         flow.stream.off(FlowEvents.DATA, dataCallback);
         flow.stream.off(FlowEvents.RENDER, renderCallback);
-        flow.off(FlowEvents.EXECUTION_STATUS, statusCallback);
+        flow.off(FlowEvents.SEND_STATUS, statusCallback);
       };
     },
     [flow],

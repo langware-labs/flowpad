@@ -1,5 +1,5 @@
 test 1: Time gutter field columns are aligned with fixed widths
-- navigate to {APP_URL}/dock/shell/new_terminal?startClaude=true
+- navigate to {APP_URL}/dock/shell/new_terminal then click the Start Claude button (data-testid="start-claude-button")
 - wait for Claude CLI banner to appear (up to 45 seconds)
 - open the Columns & Trace dropdown in the toolbar
 - enable the "Time gutter" toggle if not already on
@@ -45,7 +45,7 @@ test 5: Prompt annotations do not appear before replay is complete
 - this confirms annotations are only positioned after the xterm buffer is fully populated
 
 test 6: Column header bar — hide and restore trace column
-- navigate to {APP_URL}/dock/shell/new_terminal?startClaude=true
+- navigate to {APP_URL}/dock/shell/new_terminal then click the Start Claude button (data-testid="start-claude-button")
 - wait for Claude CLI banner
 - validate the column header bar is visible (18px strip above the terminal content)
 - validate the trace gutter is visible (data-testid="trace-gutter")
@@ -56,7 +56,7 @@ test 6: Column header bar — hide and restore trace column
 - validate the trace gutter reappears
 
 test 7: Column header bar — hide and restore annotations column
-- navigate to {APP_URL}/dock/shell/new_terminal?startClaude=true
+- navigate to {APP_URL}/dock/shell/new_terminal then click the Start Claude button (data-testid="start-claude-button")
 - wait for Claude CLI banner
 - validate the annotation gutter is visible (data-testid="annotation-gutter")
 - click the EyeOff icon in the Annotations column header cell
@@ -66,7 +66,7 @@ test 7: Column header bar — hide and restore annotations column
 - validate the annotation gutter reappears
 
 test 8: Column visibility persists across page refresh
-- navigate to {APP_URL}/dock/shell/new_terminal?startClaude=true
+- navigate to {APP_URL}/dock/shell/new_terminal then click the Start Claude button (data-testid="start-claude-button")
 - hide the trace column via the EyeOff button in the column header
 - reload the page
 - wait for terminal to be ready
@@ -74,3 +74,24 @@ test 8: Column visibility persists across page refresh
 - restore via the Activity icon
 - reload the page again
 - validate the trace gutter is now visible again
+
+test 9: BugPlay dropdown — Trace and Annotations column toggles (entry-point parity with column header)
+- navigate to {APP_URL}/dock/shell/new_terminal then click the Start Claude button (data-testid="start-claude-button")
+- wait for Claude CLI banner
+- open the Columns & Trace dropdown (BugPlay icon in the process toolbar)
+- uncheck "Trace events"
+- validate the trace gutter disappears (same effect as tests 6/7 via header EyeOff)
+- re-check "Trace events"; validate the trace gutter reappears AND traceFilters.events is on
+- uncheck "Annotations"; validate the annotation gutter disappears
+- re-check "Annotations"; validate the annotation gutter reappears
+- this locks entry-point parity: dropdown checkboxes and column-header icons must produce the same colVis state
+
+test 10: Time-gutter row/anchor time-range fields render extra columns
+- navigate to a Claude process that has completed at least one prompt/response cycle
+  e.g. {APP_URL}/dock/shell/<an agentic_process id>
+- wait for replay to complete
+- open the Columns & Trace dropdown and enable "Time gutter"
+- note the current time-gutter width
+- enable "Row time range" (traceFilters.debugTime); validate the gutter widens and a row-time-range field cell appears
+- enable "Anchor time range" (traceFilters.refTime); validate the gutter widens again and the anchor-time-range field cell appears
+- disable both; validate the gutter returns to its prior width and the extra cells are removed

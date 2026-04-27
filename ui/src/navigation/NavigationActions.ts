@@ -1,6 +1,7 @@
 import {
   AgenticProcess,
   CodeRef,
+  ComputeNode,
   dataContext,
   DockPointerData,
   FSItem,
@@ -157,6 +158,13 @@ export class NavigationActions {
     this.openDock(DockPointer.forAssetList(typeName));
   }
 
+  openProject(
+    projectId?: string,
+    sub?: { roomId?: string | null; tab?: import('@sdk').TypeId | null },
+  ): void {
+    this.openDock(DockPointer.forProject(projectId, sub));
+  }
+
   openEditor(path?: string, options?: FileOptions): void {
     const pointer = DockPointer.forFile(path, {
       line: options?.line,
@@ -191,7 +199,7 @@ export class NavigationActions {
 
   async openShell(
     shellId: string,
-    options?: { startClaude?: boolean; cwd?: string; startCommand?: string; skipPermissions?: boolean },
+    options?: { cwd?: string; startCommand?: string; skipPermissions?: boolean },
   ): Promise<Shell | null> {
     const extraOptions = toStringRecord(options);
     const shell = Shell.getByIdFromCache(shellId) ?? (await Shell.getById(shellId));
@@ -202,7 +210,10 @@ export class NavigationActions {
     return shell;
   }
 
-  async openShellProcess(agenticProcessId: string, options?: { t?: string }): Promise<AgenticProcess | null> {
+  async openShellProcess(
+    agenticProcessId: string,
+    options?: { t?: string; windows?: string; activeWindow?: string },
+  ): Promise<AgenticProcess | null> {
     const extraOptions = toStringRecord(options);
     const process =
       AgenticProcess.getByIdFromCache(agenticProcessId) ?? (await AgenticProcess.getById(agenticProcessId));
@@ -270,6 +281,8 @@ export class NavigationActions {
 
   async openNewClaudeProcess(options?: {
     cwd?: string;
+    projectId?: string;
+    workerType?: 'claude_code' | 'codex';
   }): Promise<{ processId: string; shellId: string | null; dockPointer: IDockPointer } | null> {
     try {
       const computeNode = dataContext.computeNode;
@@ -278,7 +291,11 @@ export class NavigationActions {
         return null;
       }
       const agenticProcess = await computeNode.createProcess(
-        { workdir: options?.cwd || dataContext.project?.fs_storage_mount_path },
+        {
+          workdir: options?.cwd || dataContext.project?.fs_storage_mount_path,
+          projectId: options?.projectId ?? dataContext.project?.id,
+          ...(options?.workerType ? { workerType: options.workerType } : {}),
+        },
         { watchProcess: false, visible: true },
       );
       return {
@@ -292,25 +309,44 @@ export class NavigationActions {
     }
   }
 
-  async openNewShell(options?: { cwd?: string; startCommand?: string }): Promise<{ shellId: string } | null> {
+  async openNewShell(
+    options?: {
+      cwd?: string;
+      startCommand?: string;
+      computeNode?: ComputeNode;
+      skipNavigate?: boolean;
+      projectId?: string;
+    },
+  ): Promise<{ shellId: string } | null> {
     try {
-      const cn = dataContext.computeNode;
+      const cn = options?.computeNode ?? dataContext.computeNode;
       if (!cn) {
         console.error('[NavigationActions] No compute node');
-        this.openShellView();
+        if (!options?.skipNavigate) this.openShellView();
         return null;
       }
       const { nextTerminalName } = await import('@src/components/terminal/TabbedTerminal');
       const shells = await Shell.list(cn.id);
       const name = nextTerminalName(shells.map((s) => ({ name: s.name ?? '' })));
-      const cwd = options?.cwd || dataContext.project?.fs_storage_mount_path || undefined;
+      // For sandbox compute nodes the project's host path is meaningless;
+      // fall back to the node's own mount path (e.g. /home/user) instead.
+      const cwd =
+        options?.cwd ||
+        (options?.computeNode
+          ? options.computeNode.fs_storage_mount_path ?? undefined
+          : dataContext.project?.fs_storage_mount_path) ||
+        undefined;
       const newShell = Shell.create(cn, { name, workdir: cwd });
+      const pinnedProjectId = options?.projectId ?? dataContext.project?.id ?? null;
+      if (pinnedProjectId) newShell.project_id = pinnedProjectId;
       await newShell.save(cn.typeId);
-      await this.openShell(newShell.id, options);
+      if (!options?.skipNavigate) {
+        await this.openShell(newShell.id, options);
+      }
       return { shellId: newShell.id };
     } catch (error) {
       console.error('[NavigationActions] Error creating terminal:', error);
-      this.openShellView();
+      if (!options?.skipNavigate) this.openShellView();
       return null;
     }
   }

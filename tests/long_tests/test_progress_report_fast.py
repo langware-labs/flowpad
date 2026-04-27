@@ -3,8 +3,6 @@ Fast tests for progress_report WebSocket events.
 
 Tests both sub-activity (per-record) and job-level (per-type) progress_report events
 using minimal record counts (3 records) so the test suite runs quickly.
-
-These replace/supplement the slower tests in test_scan_index_progress_ws.py.
 """
 
 from __future__ import annotations
@@ -151,6 +149,7 @@ def _assert_ts(attrs: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
+# do not increase timeout without approval
 @pytest.mark.timeout(30)
 def test_scan_progress_report_events():
     """Aggregate scan emits progress_report events.
@@ -198,6 +197,7 @@ def test_scan_progress_report_events():
 # ---------------------------------------------------------------------------
 
 
+# do not increase timeout without approval
 @pytest.mark.timeout(30)
 def test_index_progress_report_events():
     """Aggregate index emits progress_report events.
@@ -245,6 +245,7 @@ def test_index_progress_report_events():
 # ---------------------------------------------------------------------------
 
 
+# do not increase timeout without approval
 @pytest.mark.timeout(30)
 def test_progress_report_events_monotonic():
     """During aggregate scan, progress_report done values are non-decreasing.
@@ -284,6 +285,7 @@ def test_progress_report_events_monotonic():
 # ---------------------------------------------------------------------------
 
 
+# do not increase timeout without approval
 @pytest.mark.timeout(30)
 def test_per_type_scan_emits_progress_report():
     """Per-type scan (?type=X) also emits progress_report events."""
@@ -317,9 +319,15 @@ def test_per_type_scan_emits_progress_report():
 # ---------------------------------------------------------------------------
 
 
+# do not increase timeout without approval
 @pytest.mark.timeout(30)
 def test_per_type_index_emits_progress_report():
-    """Per-type index (?type=X) also emits progress_report events."""
+    """Per-type index (?type=X) also emits progress_report events.
+
+    Uses ``limit_per_type=20`` so the test stays fast on dev machines whose
+    real ``~/.claude/skills/`` holds hundreds of folders — matches the
+    pattern used by ``test_index_progress_report_events`` above.
+    """
     with TestClient(app) as tc:
         boot = _bootstrap(tc)
         skill_base = _cn_url(boot, "skill")
@@ -328,7 +336,7 @@ def test_per_type_index_emits_progress_report():
             _create_skill(tc, skill_base, f"per-type-idx-{i}")
 
         index_url = _cn_url(boot, "index")
-        collected = _collect_ws_during(tc, f"{index_url}?type=skill", method="post")
+        collected = _collect_ws_during(tc, f"{index_url}?type=skill&limit_per_type=20", method="post")
 
     reports = _get_progress_reports(collected, "index")
     all_events = reports["sub_activity"] + reports["job_level"]

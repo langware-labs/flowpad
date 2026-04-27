@@ -20,7 +20,8 @@ export interface HistoryEntryResponse {
 
 // ─── Hook ───────────────────────────────────────────────────────────────────
 
-export function useClaudeHistory(limit = 20) {
+export function useClaudeHistory(limit = 20, options?: { enabled?: boolean }) {
+  const enabled = options?.enabled ?? true;
   const { computeNode } = useContext();
 
   const actionInfo = useMemo(() => {
@@ -37,7 +38,7 @@ export function useClaudeHistory(limit = 20) {
   }, [computeNode?.typeId?.id, limit]);
 
   const { data, isLoading, refetch } = useAction<HistoryEntryResponse[]>(actionInfo, {
-    enabled: !!computeNode?.typeId?.id,
+    enabled: enabled && !!computeNode?.typeId?.id,
   });
 
   const entries = useMemo(() => {

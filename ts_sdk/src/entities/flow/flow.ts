@@ -38,12 +38,24 @@ interface HistoryMessage {
 
 export const FlowModeOptions = ['Ask', 'Agent', 'Auto'] as const;
 
-export enum FlowExecutionStatus {
-  Ready = 'Ready', // waiting for user inputs
-  Running = 'Running', // Flow is running
-  Canceled = 'Canceled', // Canceled was requested, Flow is not running
-  Error = 'Error', // Not running, flow has error
+/**
+ * Client-side "is there a send in flight on this Flow right now?" signal.
+ *
+ * This is TS-SDK-only (not persisted, not on the wire). Renamed from the former
+ * ``FlowExecutionStatus`` so its vocabulary no longer collides with the actual
+ * backend ``ProcessStatus`` (NEW/STARTING/RUNNING/…) on ``AgenticProcess``.
+ */
+export enum SendStatus {
+  Ready = 'Ready', // idle; sendMessage can be invoked
+  Running = 'Running', // sendMessage is streaming
+  Canceled = 'Canceled', // cancel was requested; stream is torn down
+  Error = 'Error', // stream terminated abnormally
 }
+
+/** @deprecated Use ``SendStatus``. Kept as an alias during the rename sweep. */
+export const FlowExecutionStatus = SendStatus;
+/** @deprecated Use ``SendStatus``. Kept as an alias during the rename sweep. */
+export type FlowExecutionStatus = SendStatus;
 
 export enum UserAction {
   Run = 'Run',
@@ -170,14 +182,14 @@ export class Flow extends APIEntity<Flow> {
   workspace_id?: string;
   agent_id?: string;
   project_id?: string;
-  source_vfs_path?: string;
+  asset_ref?: string;
   current_compute_node_id?: string;
   current_terminal_id?: string;
   private _state: IFlowState | null = null;
   private _completionOptions: CompletionOptions | null = null;
   private _streamAbortController: AbortController | null = null;
   // Legacy _streamListeners removed - using pure FlowData events instead
-  private _executionStatus: FlowExecutionStatus = FlowExecutionStatus.Ready;
+  private _sendStatus: SendStatus = SendStatus.Ready;
   public statusCounters: Record<string, number> = {};
   public isResuming: boolean = false;
   private _sendMessageInProgress: boolean = false;
@@ -227,29 +239,40 @@ export class Flow extends APIEntity<Flow> {
     return historyStream;
   }
 
-  get executionStatus(): FlowExecutionStatus {
-    return this._executionStatus;
+  /** Client-side "is a send in flight?" state. */
+  get sendStatus(): SendStatus {
+    return this._sendStatus;
+  }
+
+  /** @deprecated Use ``sendStatus``. */
+  get executionStatus(): SendStatus {
+    return this._sendStatus;
   }
 
   get runningCounter(): number {
-    return this.statusCounters[FlowExecutionStatus.Running] || 0;
+    return this.statusCounters[SendStatus.Running] || 0;
   }
 
-  set executionStatus(value: FlowExecutionStatus) {
-    if (this._executionStatus !== value) {
-      const previousValue = this._executionStatus;
-      this._executionStatus = value;
-      this.log('executionStatus', `${previousValue} -> ${value}`, '🔄');
-      this.emit(FlowEvents.EXECUTION_STATUS, value);
+  set sendStatus(value: SendStatus) {
+    if (this._sendStatus !== value) {
+      const previousValue = this._sendStatus;
+      this._sendStatus = value;
+      this.log('sendStatus', `${previousValue} -> ${value}`, '🔄');
+      this.emit(FlowEvents.SEND_STATUS, value);
       // Increment status counter for this state
       this.statusCounters[value] = (this.statusCounters[value] || 0) + 1;
 
-      // Emit stream:end when execution completes (Running -> Ready)
-      if (previousValue === FlowExecutionStatus.Running && value === FlowExecutionStatus.Ready) {
+      // Emit stream:end when send completes (Running -> Ready)
+      if (previousValue === SendStatus.Running && value === SendStatus.Ready) {
         this.emit(FlowEvents.STREAM_END);
-        this.log('Flow ended (execution completed)', undefined, '✔');
+        this.log('Flow ended (send completed)', undefined, '✔');
       }
     }
+  }
+
+  /** @deprecated Use ``sendStatus`` setter. */
+  set executionStatus(value: SendStatus) {
+    this.sendStatus = value;
   }
 
   // Backward compatibility and convenience getters
@@ -258,23 +281,23 @@ export class Flow extends APIEntity<Flow> {
   }
 
   set streamLoading(value: boolean) {
-    this.executionStatus = value ? FlowExecutionStatus.Running : FlowExecutionStatus.Ready;
+    this.sendStatus = value ? SendStatus.Running : SendStatus.Ready;
   }
 
   get isRunning(): boolean {
-    return this._executionStatus === FlowExecutionStatus.Running;
+    return this._sendStatus === SendStatus.Running;
   }
 
   get isReady(): boolean {
-    return this._executionStatus === FlowExecutionStatus.Ready;
+    return this._sendStatus === SendStatus.Ready;
   }
 
   get isCanceled(): boolean {
-    return this._executionStatus === FlowExecutionStatus.Canceled;
+    return this._sendStatus === SendStatus.Canceled;
   }
 
   get isError(): boolean {
-    return this._executionStatus === FlowExecutionStatus.Error;
+    return this._sendStatus === SendStatus.Error;
   }
   get streamError(): Error | null {
     return this._streamError;
@@ -566,7 +589,7 @@ export class Flow extends APIEntity<Flow> {
     });
 
     this._streamProcessor.on(FlowEvents.STREAM_END, () => {
-      this.executionStatus = FlowExecutionStatus.Ready;
+      this.executionStatus = SendStatus.Ready;
       this.isResuming = false;
       this._streamAbortController = null;
       this._sendMessageInProgress = false;
@@ -576,7 +599,7 @@ export class Flow extends APIEntity<Flow> {
     });
 
     this._streamProcessor.on(FlowEvents.STREAM_CANCEL, () => {
-      this.executionStatus = FlowExecutionStatus.Ready;
+      this.executionStatus = SendStatus.Ready;
       this.isResuming = false;
       this._streamAbortController = null;
       this._sendMessageInProgress = false;
@@ -1198,7 +1221,7 @@ export class Flow extends APIEntity<Flow> {
    */
   protected processCancelResult(): void {
     // Only emit cancel event after successful API response
-    this.executionStatus = FlowExecutionStatus.Canceled;
+    this.executionStatus = SendStatus.Canceled;
     this._streamError = null;
     this._streamProcessor?.reset();
     this._streamProcessor = null;
@@ -1229,7 +1252,7 @@ export class Flow extends APIEntity<Flow> {
   clear(): void {
     this._streamAbortController?.abort();
     this._streamAbortController = null;
-    this.executionStatus = FlowExecutionStatus.Ready;
+    this.executionStatus = SendStatus.Ready;
     this._streamError = null;
     this._errorLog = [];
     this._streamProcessor?.reset();
@@ -1312,7 +1335,7 @@ export class Flow extends APIEntity<Flow> {
     console.error(`Flow.${operation}: Error occurred`, error);
     // Set error state and emit standardized error
     this._streamError = error instanceof Error ? error : new Error(String(error));
-    this.executionStatus = FlowExecutionStatus.Error;
+    this.executionStatus = SendStatus.Error;
     this.log(`${operation} error`, this._streamError, '🔴');
 
     // Emit standardized error event
@@ -1328,7 +1351,7 @@ export class Flow extends APIEntity<Flow> {
   protected async processResumeResult(response: Response, abortController: AbortController): Promise<void> {
     // Set streaming state after successful response
     this._streamAbortController = abortController;
-    this.executionStatus = FlowExecutionStatus.Running;
+    this.executionStatus = SendStatus.Running;
     // this.emitStreamData(); // Legacy removed
     this.emit(FlowEvents.STREAM_RESUME);
     await this._handleStreamResponse(response, abortController);
@@ -1340,7 +1363,7 @@ export class Flow extends APIEntity<Flow> {
     if (
       this._sendMessageInProgress ||
       this._streamAbortController ||
-      this.executionStatus === FlowExecutionStatus.Running
+      this.executionStatus === SendStatus.Running
     ) {
       return;
     }
@@ -1354,7 +1377,7 @@ export class Flow extends APIEntity<Flow> {
       if (result) {
         // Initialize stream for resumed conversation
         this.isResuming = true;
-        this.executionStatus = FlowExecutionStatus.Running;
+        this.executionStatus = SendStatus.Running;
         const timestamp = new Date().toISOString();
         this.initializeStreamForNewMessage(`resume-${timestamp}`);
         await this.processResumeResult(result.response, result.abortController);
@@ -1389,7 +1412,7 @@ export class Flow extends APIEntity<Flow> {
    */
   protected async processSendMessageResult(response: Response, abortController: AbortController): Promise<void> {
     // Set streaming state after successful response
-    this.executionStatus = FlowExecutionStatus.Running;
+    this.executionStatus = SendStatus.Running;
     // this.emitStreamData(); // Legacy removed
 
     this._streamAbortController = abortController;

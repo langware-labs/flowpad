@@ -10,8 +10,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess, ProcessError, RunResult
-from flow_sdk.fs_records.agent_status import AgenticProcessStatus
-from flow_sdk.fs_records.agentic_process_lifecycle import AgenticProcessLifecycleStatus
+from flow_sdk.fs_records.agent_status import WorkerStatus
+from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+from flow_sdk.responses.response import ApiSuccessResponse
 from flow_sdk.fs_store.record import (
     get_default_records_data_root,
     get_default_records_root,
@@ -32,7 +33,7 @@ def use_tmp_records_root(tmp_path):
 
 
 def _proc(**kwargs) -> AgenticProcess:
-    return AgenticProcess(id=str(uuid.uuid4()), compute_node_id=str(uuid.uuid4()), **kwargs)
+    return AgenticProcess(id=str(uuid.uuid4()), **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -42,7 +43,7 @@ def _proc(**kwargs) -> AgenticProcess:
 def test_defaults():
     """New process has NEW lifecycle status, no session_id, no shell_id."""
     proc = AgenticProcess()
-    assert proc.status == AgenticProcessLifecycleStatus.NEW.value
+    assert proc.status == ProcessStatus.NEW.value
     assert proc.session_id is None
     assert proc.shell_id is None
 
@@ -89,7 +90,7 @@ async def test_is_running_returns_false_when_no_shell():
 async def test_wait_returns_when_no_transcript():
     """wait() returns quickly when lifecycle has already failed and no transcript exists."""
     proc = _proc()
-    proc.status = AgenticProcessLifecycleStatus.FAILED.value
+    proc.status = ProcessStatus.FAILED.value
     await proc.wait(timeout=2.0)
 
 
@@ -127,6 +128,120 @@ def test_fork_factory_does_not_set_session_id():
     assert proc.session_id is None
 
 
+def test_fork_factory_passes_workdir():
+    """AgenticProcess.fork() passes workdir to the new instance."""
+    proc = AgenticProcess.fork("src-session-456", workdir="/project/dir")
+    assert proc.workdir == "/project/dir"
+
+
+# ---------------------------------------------------------------------------
+# CLAUDE_PROJECT_DIR lookup uses source session on fork
+# ---------------------------------------------------------------------------
+
+def test_claude_project_dir_lookup_uses_fork_session_id():
+    """When forking, CLAUDE_PROJECT_DIR lookup uses fork_session_id, not the new session_id."""
+    from unittest.mock import MagicMock
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
+
+    proc = _proc(session_id="new-session-uuid")
+    # Simulate cli_options with fork_session_id set
+    cmd = ClaudeCliOptions(
+        session_id="new-session-uuid",
+        resume=True,
+        fork_session_id="src-session-uuid",
+        workdir="/project",
+    )
+
+    fake_record = MagicMock()
+    fake_record.cwd = "/project/dir"
+
+    calls = []
+
+    def fake_discover(session_id):
+        calls.append(session_id)
+        return fake_record if session_id == "src-session-uuid" else None
+
+    with patch.object(proc, "_discover_claude_record_session", side_effect=fake_discover):
+        lookup_id = cmd.fork_session_id or proc.session_id
+        session_rec = proc._discover_claude_record_session(lookup_id)
+
+    assert calls == ["src-session-uuid"], "Should look up the source session, not the new one"
+    assert session_rec is fake_record
+
+
+# ---------------------------------------------------------------------------
+# fork action
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_fork_action_creates_sibling_with_fork_session_id():
+    """fork_action() calls AgenticProcess.fork() with source session_id and returns ApiSuccessResponse."""
+    source = _proc(session_id="source-session-abc", workdir="/project")
+
+    fake_new_proc = MagicMock()
+    fake_new_proc.id = "new-proc-id"
+    fake_new_proc.type = "agentic_process"
+    fake_new_proc.save = AsyncMock()
+
+    with patch.object(AgenticProcess, "fork", return_value=fake_new_proc) as mock_fork, \
+         patch("flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info", return_value=None):
+        result = await source.fork_action()
+
+    mock_fork.assert_called_once_with(
+        session_id="source-session-abc",
+        workdir="/project",
+        visible=False,
+    )
+    fake_new_proc.save.assert_awaited_once_with(None)
+    from flow_sdk.responses.response import ApiSuccessResponse
+    assert isinstance(result, ApiSuccessResponse)
+    assert result.data == {"id": "new-proc-id", "type": "agentic_process"}
+
+
+@pytest.mark.asyncio
+async def test_fork_action_visible_false_by_default():
+    """fork_action() defaults visible=False when request body is absent."""
+    source = _proc(session_id="src-sess", workdir="/project")
+
+    fake_new_proc = MagicMock()
+    fake_new_proc.save = AsyncMock()
+    fake_new_proc.to_dict = MagicMock(return_value={"id": "x"})
+
+    with patch.object(AgenticProcess, "fork", return_value=fake_new_proc) as mock_fork, \
+         patch("flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info", return_value=None):
+        await source.fork_action()
+
+    mock_fork.assert_called_once_with(
+        session_id="src-sess",
+        workdir="/project",
+        visible=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_fork_action_visible_true_when_passed():
+    """fork_action() passes visible=True when request body contains visible: true."""
+    source = _proc(session_id="src-sess", workdir="/project")
+
+    fake_new_proc = MagicMock()
+    fake_new_proc.save = AsyncMock()
+    fake_new_proc.to_dict = MagicMock(return_value={"id": "x"})
+
+    mock_req = MagicMock()
+    mock_req.someone_typeid = None
+    mock_req.get_post_data = AsyncMock(return_value={"visible": True})
+
+    with patch.object(AgenticProcess, "fork", return_value=fake_new_proc) as mock_fork, \
+         patch("flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info", return_value=mock_req):
+        await source.fork_action()
+
+    mock_fork.assert_called_once_with(
+        session_id="src-sess",
+        workdir="/project",
+        visible=True,
+    )
+
+
 # ---------------------------------------------------------------------------
 # context manager
 # ---------------------------------------------------------------------------
@@ -155,6 +270,35 @@ async def test_context_manager_calls_start_and_stop():
 
     assert start_called == [True]
     assert exit_called == [True]
+
+
+@pytest.mark.asyncio
+async def test_start_promotes_stuck_starting_process_to_live_when_pty_is_attachable():
+    """A wedged STARTING process should heal back to LIVE when its shell PTY is still attachable."""
+    proc = _proc(
+        status=ProcessStatus.STARTING.value,
+        shell_id="shell-123",
+        session_id="session-123",
+    )
+    shell = MagicMock()
+    shell.id = "shell-123"
+    shell.pty_pid = "pty-123"
+    shell.worker_pid = 4321
+    shell.model_dump.return_value = {"id": "shell-123"}
+    shell.ensure_live_compute_node_binding = AsyncMock(return_value=True)
+    shell.has_attachable_pty = AsyncMock(return_value=True)
+
+    with patch.object(AgenticProcess, "shell", new=AsyncMock(return_value=shell)), \
+         patch.object(AgenticProcess, "save", new=AsyncMock()) as save, \
+         patch.object(AgenticProcess, "get_project", new=AsyncMock()) as get_project:
+        result = await proc.start()
+
+    assert isinstance(result, ApiSuccessResponse)
+    assert proc.status == ProcessStatus.RUNNING.value
+    shell.ensure_live_compute_node_binding.assert_awaited_once_with()
+    shell.has_attachable_pty.assert_awaited_once()
+    save.assert_awaited_once()
+    get_project.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +334,7 @@ def test_run_result_ok_when_complete():
     result = RunResult(
         text="done",
         session_id="abc",
-        status=AgenticProcessStatus.COMPLETE,
+        status=WorkerStatus.COMPLETE,
         ok=True,
     )
     assert result.ok is True
@@ -201,7 +345,7 @@ def test_run_result_not_ok_when_error():
     result = RunResult(
         text="",
         session_id="abc",
-        status=AgenticProcessStatus.ERROR,
+        status=WorkerStatus.ERROR,
         ok=False,
     )
     assert result.ok is False
@@ -212,7 +356,7 @@ def test_run_result_not_ok_when_interrupted():
     result = RunResult(
         text="",
         session_id="abc",
-        status=AgenticProcessStatus.INTERRUPTED,
+        status=WorkerStatus.INTERRUPTED,
         ok=False,
     )
     assert result.ok is False
@@ -225,10 +369,10 @@ def test_run_result_not_ok_when_interrupted():
 def test_process_error_carries_status_and_session_id():
     """ProcessError stores status and session_id for programmatic inspection."""
     err = ProcessError(
-        status=AgenticProcessStatus.ERROR,
+        status=WorkerStatus.ERROR,
         session_id="err-session-123",
     )
-    assert err.status == AgenticProcessStatus.ERROR
+    assert err.status == WorkerStatus.ERROR
     assert err.session_id == "err-session-123"
     assert isinstance(err, Exception)
 
@@ -257,5 +401,5 @@ def test_is_idle_true_when_not_running():
 def test_is_idle_false_when_running():
     """is_idle is False when lifecycle is LIVE."""
     proc = _proc()
-    proc.status = AgenticProcessLifecycleStatus.LIVE.value
+    proc.status = ProcessStatus.RUNNING.value
     assert proc.is_idle is False
