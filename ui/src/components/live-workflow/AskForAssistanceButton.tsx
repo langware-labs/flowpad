@@ -93,7 +93,7 @@ export function AskForAssistanceButton({ process }: AskForAssistanceButtonProps)
     try {
       const entity = process as any;
       if (typeof entity?.loadHistory === 'function') {
-        await entity.loadHistory({ force: false });
+        await entity.loadHistory({ force: true });
       }
       const items: readonly FlowData[] = (entity?.flowDataStream?.items as readonly FlowData[]) ?? [];
       setSessionTitle(getSessionTitle(process));

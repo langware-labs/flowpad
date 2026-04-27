@@ -86,14 +86,9 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
         # 2. Process each attachment entry
         for entry in flow_message.attachment:
             if entry.attachment_type == AttachmentType.FILE:
-                # entry.data may be an absolute path (legacy) or a VFS subpath (new).
-                # Resolve to a real filesystem path so we can copy it into the zip.
-                if Path(entry.data).is_absolute():
-                    file_path = Path(entry.data)
-                else:
-                    from flow_sdk.storage import get_entity_embedded_storage
-                    storage = get_entity_embedded_storage(flow_message.typeid)
-                    file_path = Path(storage.get_storage_path(entry.data))
+                from flow_sdk.storage import get_entity_embedded_storage
+                storage = get_entity_embedded_storage(flow_message.typeid)
+                file_path = Path(storage.get_storage_path(entry.data))
                 if file_path.exists():
                     files_dir = attachment_dir / "files"
                     files_dir.mkdir(exist_ok=True)
@@ -379,24 +374,22 @@ async def unpack_bundle(
                         perm_task_dir.mkdir(parents=True, exist_ok=True)
                         perm_jsonl = perm_task_dir / "conversation.jsonl"
                         _merge_conversation_jsonl(jsonl_file, perm_jsonl)
+                        # notify=False — the conversation save would otherwise fire a
+                        # sync notification before the referenced FlowMessage is saved
+                        # (step 5), causing the UI to fetch a not-yet-saved FM (404).
+                        # We send the conversation sync explicitly in step 7 instead.
                         conv = await _create_conversation_from_disk(
                             task_dir=perm_task_dir,
                             task_id=task_id_for_conv or "",
                             conversation_id=entry_id,
                             owner_typeid=owner_typeid,
+                            notify=False,
                         )
                         if conv:
                             conversation_id = conv.id
-                            # Notify frontend that conversation was updated (e.g. new reply arrived)
-                            try:
-                                send_resource_sync(
-                                    type="conversation",
-                                    id=conv.id,
-                                    operation=SyncOperation.UPDATE,
-                                    data={"event_data": {"task_id": task_id_for_conv or "", "conversation_id": conv.id}},
-                                )
-                            except Exception:
-                                pass
+                            # Frontend notification is deferred to step 7 — firing it here
+                            # would tell the UI to refetch the conversation before the
+                            # referenced FlowMessage is saved (step 5), causing 404s.
 
                 elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
                     fm_file = entry_dir / "message.json"
@@ -444,7 +437,9 @@ async def unpack_bundle(
                     )
                     rec.append_message_pointer(top_fm.id, datetime.now(UTC).isoformat())
 
-        # 7. Fire resource sync
+        # 7. Fire resource sync — both flow_message (CREATE) and conversation (UPDATE)
+        # are sent here, AFTER the FM is saved, so the UI doesn't refetch the
+        # conversation and try to load an FM that hasn't been persisted yet.
         try:
             task_id_for_sync = next(
                 (c.id for c in top_fm.context if c.type == BuiltinEntityType.TASK.value),
@@ -456,6 +451,20 @@ async def unpack_bundle(
                 operation=SyncOperation.CREATE,
                 data={"event_data": {"flow_message_id": top_fm.id, "task_id": task_id_for_sync}},
             )
+            # Notify the UI that the conversation has changed via the entity-event
+            # channel (notify_updated), not just send_resource_sync — useEntity hooks
+            # in the UI listen on the entity event channel, so this is what makes
+            # the conversation/task view re-render with the new message pointer.
+            if conversation_id:
+                conv_to_notify = await Conversation.get_one({"id": conversation_id})
+                if conv_to_notify:
+                    await conv_to_notify.notify_updated()
+                send_resource_sync(
+                    type="conversation",
+                    id=conversation_id,
+                    operation=SyncOperation.UPDATE,
+                    data={"event_data": {"task_id": task_id_for_sync, "conversation_id": conversation_id}},
+                )
         except Exception:
             pass
 

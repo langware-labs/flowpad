@@ -675,6 +675,10 @@ class LocalComputeProvider(ComputeProvider):
             # Ensure working directory exists (required on Windows for winpty)
             os.makedirs(pty_working_dir, exist_ok=True)
 
+            logger.info(
+                f"Spawning PTY (session={session_id}, cwd={pty_working_dir!r}, "
+                f"argv={final_spawn_args!r})"
+            )
             try:
                 pty_process = PtyProcess.spawn(  # type: ignore[union-attr]
                     final_spawn_args,
@@ -711,13 +715,21 @@ class LocalComputeProvider(ComputeProvider):
                                         exit_code = pty_process.exitstatus
                                     except Exception:
                                         pass
+                                    logger.info(
+                                        f"PTY process exited (session={session_id}, "
+                                        f"argv={final_spawn_args!r}, exit_code={exit_code})"
+                                    )
                                     break
                             except EOFError:
                                 # PTY closed
                                 break
-                            except Exception:
+                            except Exception as read_exc:
                                 if not pty_session_running["value"]:
                                     break
+                                logger.warning(
+                                    f"PTY read error (session={session_id}, "
+                                    f"argv={final_spawn_args!r}): {read_exc!r}"
+                                )
                                 break
                     except Exception:
                         pass

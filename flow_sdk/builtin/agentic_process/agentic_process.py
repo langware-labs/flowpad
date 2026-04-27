@@ -1595,7 +1595,6 @@ class AgenticProcess(Entity):
                 "compute_node_id": compute_node_id,
             }
         )
-
     # ── Internals ─────────────────────────────────────────────────────────────
 
     def _is_exist_claude_resume_session(self, session_id: str | None) -> bool:
