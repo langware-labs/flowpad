@@ -241,4 +241,12 @@ class FSRef:
 
     @staticmethod
     def _pydantic_serialize(ref: "FSRef") -> dict:
+        if not hasattr(ref, "to_dict"):
+            import logging
+            import traceback
+            logging.error(
+                "[FSRef._pydantic_serialize] expected FSRef, got %s: %r\n"
+                "Stack:\n%s",
+                type(ref).__name__, ref, "".join(traceback.format_stack(limit=15)),
+            )
         return ref.to_dict()
