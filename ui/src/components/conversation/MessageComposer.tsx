@@ -1,13 +1,18 @@
 import { useRef, useState } from 'react';
-import { File, Paperclip, Send, X } from 'lucide-react';
+import { File, MessageSquarePlus, Paperclip, Send, X } from 'lucide-react';
 import { sendReply } from '@sdk/entities/notifications';
 import type { ITask } from '@sdk/entities/task';
 import { cn } from '@src/lib/utils';
+import { PromptComposerDialog, type QueuedPrompt } from './PromptComposerDialog';
 
 interface MessageComposerProps {
   task: ITask;
   disabled?: boolean;
   onSent?: () => void;
+  /** Optional queued prompt provided by per-message Add-prompt chips. */
+  queuedPrompt?: QueuedPrompt | null;
+  /** Update / clear the externally-queued prompt. */
+  onQueuedPromptChange?: (prompt: QueuedPrompt | null) => void;
 }
 
 function formatSize(bytes: number): string {
@@ -16,13 +21,21 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function MessageComposer({ task, disabled, onSent }: MessageComposerProps) {
+export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueuedPromptChange }: MessageComposerProps) {
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [localPrompt, setLocalPrompt] = useState<QueuedPrompt | null>(null);
+  const [showPromptDialog, setShowPromptDialog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const activePrompt = queuedPrompt ?? localPrompt;
+  const setActivePrompt = (p: QueuedPrompt | null) => {
+    if (onQueuedPromptChange) onQueuedPromptChange(p);
+    else setLocalPrompt(p);
+  };
 
   const isDisabled = disabled || sending;
 
@@ -47,9 +60,16 @@ export function MessageComposer({ task, disabled, onSent }: MessageComposerProps
     setSending(true);
     setError(null);
     try {
-      await sendReply(task, trimmed, files.length > 0 ? files : undefined);
+      const extras = activePrompt
+        ? {
+            promptText: activePrompt.text || undefined,
+            promptFiles: activePrompt.files.length > 0 ? activePrompt.files : undefined,
+          }
+        : undefined;
+      await sendReply(task, trimmed, files.length > 0 ? files : undefined, extras);
       setText('');
       setFiles([]);
+      setActivePrompt(null);
       onSent?.();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to send reply.');
@@ -98,6 +118,20 @@ export function MessageComposer({ task, disabled, onSent }: MessageComposerProps
         >
           <Paperclip className="h-3.5 w-3.5" />
         </button>
+        <button
+          type="button"
+          onClick={() => setShowPromptDialog(true)}
+          disabled={isDisabled}
+          title={activePrompt ? 'Edit attached prompt' : 'Add prompt'}
+          className={cn(
+            'flex h-7 w-7 shrink-0 items-center justify-center rounded transition-colors disabled:opacity-40',
+            activePrompt
+              ? 'text-emerald-600 hover:bg-emerald-500/10'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+          )}
+        >
+          <MessageSquarePlus className="h-3.5 w-3.5" />
+        </button>
         <input
           ref={fileInputRef}
           type="file"
@@ -127,6 +161,37 @@ export function MessageComposer({ task, disabled, onSent }: MessageComposerProps
         </button>
       </div>
 
+      {activePrompt && (
+        <div className="flex items-start gap-2 rounded border border-emerald-500/40 bg-emerald-500/5 px-2 py-1 text-xs">
+          <MessageSquarePlus className="mt-0.5 h-3 w-3 shrink-0 text-emerald-600" />
+          <div className="min-w-0 flex-1">
+            <div className="text-emerald-700 dark:text-emerald-300">Prompt attached</div>
+            {activePrompt.text && (
+              <div className="mt-0.5 line-clamp-2 text-muted-foreground">{activePrompt.text}</div>
+            )}
+            {activePrompt.files.length > 0 && (
+              <div className="mt-0.5 text-muted-foreground">
+                {activePrompt.files.length} file{activePrompt.files.length === 1 ? '' : 's'}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowPromptDialog(true)}
+            className="shrink-0 rounded px-1.5 py-0.5 text-emerald-700 transition-colors hover:bg-emerald-500/10 dark:text-emerald-300"
+          >
+            Edit
+          </button>
+          <button
+            type="button"
+            onClick={() => setActivePrompt(null)}
+            className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+
       {files.length > 0 && (
         <ul className="space-y-1">
           {files.map((f, i) => (
@@ -151,6 +216,13 @@ export function MessageComposer({ task, disabled, onSent }: MessageComposerProps
       )}
 
       {error && <p className="text-xs text-destructive">{error}</p>}
+
+      <PromptComposerDialog
+        open={showPromptDialog}
+        onClose={() => setShowPromptDialog(false)}
+        initial={activePrompt}
+        onQueue={(p) => setActivePrompt(p)}
+      />
     </div>
   );
 }

@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { FileText, MessageSquarePlus, Sparkles } from 'lucide-react';
-import { dataManager, FlowMessage, TypeId } from '@sdk';
+import { FlowMessage } from '@sdk';
 import { AttachmentType } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { useLocalUser } from './useLocalUser';
-import { PromptComposerDialog } from './PromptComposerDialog';
+import { PromptComposerDialog, type QueuedPrompt } from './PromptComposerDialog';
 
 interface MessageActionChipsProps {
   flowMessageId?: string;
@@ -14,6 +14,8 @@ interface MessageActionChipsProps {
   onShowTask?: () => void;
   onExecute?: () => void;
   onApproveAndExecute?: (attachmentIndex: number) => void;
+  /** Push the composed prompt onto the composer's queue so it ships with the next message. */
+  onQueuePrompt?: (prompt: QueuedPrompt) => void;
 }
 
 const chipBase =
@@ -26,6 +28,7 @@ export function MessageActionChips({
   onShowTask,
   onExecute,
   onApproveAndExecute,
+  onQueuePrompt,
 }: MessageActionChipsProps) {
   const { localUser } = useLocalUser();
   const [showPrompt, setShowPrompt] = useState(false);
@@ -51,14 +54,16 @@ export function MessageActionChips({
         </button>
       )}
 
-      <button
-        type="button"
-        onClick={() => setShowPrompt(true)}
-        className={`${chipBase} border-border bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground`}
-      >
-        <MessageSquarePlus className="h-3 w-3" />
-        Add prompt
-      </button>
+      {onQueuePrompt && (
+        <button
+          type="button"
+          onClick={() => setShowPrompt(true)}
+          className={`${chipBase} border-border bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground`}
+        >
+          <MessageSquarePlus className="h-3 w-3" />
+          Add prompt
+        </button>
+      )}
 
       {showApprove && (
         <button
@@ -85,12 +90,7 @@ export function MessageActionChips({
       <PromptComposerDialog
         open={showPrompt}
         onClose={() => setShowPrompt(false)}
-        task={task}
-        onSent={async () => {
-          if (flowMessageId) {
-            await dataManager.getByTypeId<FlowMessage>(new TypeId(FlowMessage.type, flowMessageId)).catch(() => null);
-          }
-        }}
+        onQueue={(p) => onQueuePrompt?.(p)}
       />
     </div>
   );

@@ -5,6 +5,7 @@ import type { FlowMessage } from '@sdk';
 import type { ITask } from '@sdk/entities/task';
 import { MessageActions } from './MessageActions';
 import { MessageActionChips } from './MessageActionChips';
+import type { QueuedPrompt } from './PromptComposerDialog';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -16,6 +17,7 @@ interface MessageBubbleProps {
   onShowTask?: () => void;
   onExecute?: () => void;
   onApproveAndExecute?: (attachmentIndex: number) => void;
+  onQueuePrompt?: (prompt: QueuedPrompt) => void;
   /** Optional content rendered below the message body (e.g. attachment chips). */
   footer?: ReactNode;
 }
@@ -48,6 +50,7 @@ export function MessageBubble({
   onShowTask,
   onExecute,
   onApproveAndExecute,
+  onQueuePrompt,
   footer,
 }: MessageBubbleProps) {
   const [editing, setEditing] = useState(false);
@@ -118,6 +121,7 @@ export function MessageBubble({
           onShowTask={onShowTask}
           onExecute={onExecute}
           onApproveAndExecute={onApproveAndExecute}
+          onQueuePrompt={onQueuePrompt}
         />
       </div>
     </div>

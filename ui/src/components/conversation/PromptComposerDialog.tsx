@@ -1,6 +1,4 @@
 import { useEffect, useState } from 'react';
-import { sendReply } from '@sdk/entities/notifications';
-import type { ITask } from '@sdk/entities/task';
 import {
   Dialog,
   DialogContent,
@@ -12,54 +10,46 @@ import {
 import { Button } from '@src/components/ui/button';
 import { FileAttachmentPicker } from './FileAttachmentPicker';
 
+export interface QueuedPrompt {
+  text: string;
+  files: File[];
+}
+
 interface PromptComposerDialogProps {
   open: boolean;
   onClose: () => void;
-  task: ITask;
-  onSent?: () => void;
+  /** Initial values when reopening to edit a queued prompt. */
+  initial?: QueuedPrompt | null;
+  /** Called when the user confirms — the prompt is *queued*, not sent. */
+  onQueue: (prompt: QueuedPrompt) => void;
 }
 
-export function PromptComposerDialog({ open, onClose, task, onSent }: PromptComposerDialogProps) {
+export function PromptComposerDialog({ open, onClose, initial, onQueue }: PromptComposerDialogProps) {
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
-      setText('');
-      setFiles([]);
-      setError(null);
+      setText(initial?.text ?? '');
+      setFiles(initial?.files ?? []);
     }
-  }, [open]);
+  }, [open, initial]);
 
-  const canSend = (text.trim().length > 0 || files.length > 0) && !busy;
+  const canQueue = text.trim().length > 0 || files.length > 0;
 
-  const handleSubmit = async () => {
-    if (!canSend) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await sendReply(task, '', undefined, {
-        promptText: text.trim() || undefined,
-        promptFiles: files.length > 0 ? files : undefined,
-      });
-      onSent?.();
-      onClose();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to send prompt');
-    } finally {
-      setBusy(false);
-    }
+  const handleQueue = () => {
+    if (!canQueue) return;
+    onQueue({ text: text.trim(), files });
+    onClose();
   };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o && !busy) onClose(); }}>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Propose a prompt</DialogTitle>
+          <DialogTitle>Add a prompt to your reply</DialogTitle>
           <DialogDescription>
-            Type a prompt or attach a file. The other user will see an "Approve &amp; Execute" button on this message; once approved, the prompt runs in their forked Claude Code session.
+            The prompt will be attached to your next message. The other user will see an "Approve &amp; Execute" chip; once approved, the prompt runs in their forked Claude Code session.
           </DialogDescription>
         </DialogHeader>
 
@@ -69,17 +59,15 @@ export function PromptComposerDialog({ open, onClose, task, onSent }: PromptComp
             onChange={(e) => setText(e.target.value)}
             placeholder="Describe what you'd like Claude to do…"
             rows={6}
-            disabled={busy}
-            className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none disabled:opacity-50"
+            className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none"
           />
-          <FileAttachmentPicker files={files} onChange={setFiles} disabled={busy} />
-          {error && <p className="text-xs text-destructive">{error}</p>}
+          <FileAttachmentPicker files={files} onChange={setFiles} />
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button onClick={() => void handleSubmit()} disabled={!canSend}>
-            {busy ? 'Sending…' : 'Send prompt'}
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleQueue} disabled={!canQueue}>
+            Attach to reply
           </Button>
         </DialogFooter>
       </DialogContent>
