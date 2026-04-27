@@ -71,7 +71,7 @@ export function AskForAssistanceDialog({
   const [success, setSuccess] = useState(false);
   const [gitError, setGitError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
-  const [attachTranscript, setAttachTranscript] = useState(false);
+  const [attachTranscript, setAttachTranscript] = useState(true);
 
   useEffect(() => {
     if (open) {
@@ -85,7 +85,7 @@ export function AskForAssistanceDialog({
       setGitError(null);
       setEmailError(null);
       setEditingName(false);
-      setAttachTranscript(false);
+      setAttachTranscript(true);
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -319,7 +319,7 @@ export function AskForAssistanceDialog({
                     disabled={busy}
                     className="h-3.5 w-3.5 rounded border-input"
                   />
-                  Attach my Claude Code transcript (conversation.jsonl)
+                  Attach my Claude Code transcript
                 </label>
               )}
             </div>

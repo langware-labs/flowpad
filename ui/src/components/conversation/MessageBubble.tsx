@@ -2,10 +2,12 @@ import { useState, type ReactNode } from 'react';
 import { Pencil } from 'lucide-react';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { FlowMessage } from '@sdk';
+import { AttachmentType } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
 import { MessageActions } from './MessageActions';
 import { MessageActionChips } from './MessageActionChips';
-import type { QueuedPrompt } from './PromptComposerDialog';
+import { PromptApprovalRow } from './PromptApprovalRow';
+import { useLocalUser } from './useLocalUser';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -17,7 +19,6 @@ interface MessageBubbleProps {
   onShowTask?: () => void;
   onExecute?: () => void;
   onApproveAndExecute?: (attachmentIndex: number) => void;
-  onQueuePrompt?: (prompt: QueuedPrompt) => void;
   /** Optional content rendered below the message body (e.g. attachment chips). */
   footer?: ReactNode;
 }
@@ -50,11 +51,18 @@ export function MessageBubble({
   onShowTask,
   onExecute,
   onApproveAndExecute,
-  onQueuePrompt,
   footer,
 }: MessageBubbleProps) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
+  const { localUser } = useLocalUser();
+
+  const isFromOther = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id !== localUser.id);
+  const promptIdx = (flowMessage?.attachment ?? []).findIndex(
+    (a) => a.attachment_type === AttachmentType.PROMPT && !a.approved_by,
+  );
+  const promptAttachment = promptIdx >= 0 ? flowMessage?.attachment?.[promptIdx] : undefined;
+  const showPromptRow = isFromOther && !!promptAttachment && !!onApproveAndExecute;
 
   const startEdit = () => {
     setEditValue(senderName);
@@ -113,15 +121,18 @@ export function MessageBubble({
         <div className={`text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
           {message.content}
         </div>
+        {showPromptRow && promptAttachment && (
+          <PromptApprovalRow
+            attachment={promptAttachment}
+            onApprove={() => onApproveAndExecute!(promptIdx)}
+          />
+        )}
         {footer}
         <MessageActionChips
           flowMessageId={flowMessageId}
-          flowMessage={flowMessage}
           task={task}
           onShowTask={onShowTask}
           onExecute={onExecute}
-          onApproveAndExecute={onApproveAndExecute}
-          onQueuePrompt={onQueuePrompt}
         />
       </div>
     </div>

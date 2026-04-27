@@ -9,7 +9,6 @@ import { useProjectMapping } from './useProjectMapping';
 import { SpecSidePane } from './SpecSidePane';
 import { useExecuteConversation } from './useExecuteConversation';
 import { useApproveAndExecute } from './useApproveAndExecute';
-import type { QueuedPrompt } from './PromptComposerDialog';
 
 interface ConversationViewProps {
   conversationId: string;
@@ -26,7 +25,6 @@ export function ConversationView({ conversationId, task, senderName }: Conversat
   const needsMapping = !!remoteProjectId && mappingLoaded && !mapping[remoteProjectId];
   const [showMapping, setShowMapping] = useState(true);
   const [showSpec, setShowSpec] = useState(false);
-  const [queuedPrompt, setQueuedPrompt] = useState<QueuedPrompt | null>(null);
 
   const { data: conversation, refetch } = useEntity<Conversation>(
     new TypeId(Conversation.type, conversationId),
@@ -78,18 +76,12 @@ export function ConversationView({ conversationId, task, senderName }: Conversat
                 await approveAndExecute(messageId, idx);
                 void refetch();
               }}
-              onQueuePrompt={setQueuedPrompt}
             />
           ))}
         </div>
       )}
 
-      <MessageComposer
-        task={task}
-        onSent={() => void refetch()}
-        queuedPrompt={queuedPrompt}
-        onQueuedPromptChange={setQueuedPrompt}
-      />
+      <MessageComposer task={task} onSent={() => void refetch()} />
     </div>
   );
 }
