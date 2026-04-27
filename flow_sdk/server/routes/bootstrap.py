@@ -637,7 +637,14 @@ async def get_or_create_local_user() -> User:
             logging.info(f"Desktop user {desktop_user.id} has no email, setting default: {default_email}")
             desktop_user.email = default_email
             await desktop_user.save()
-        logging.info(f"Desktop user already exists: {desktop_user.id} ({desktop_user.email})")
+        # Refresh name from git config user.name if available and different
+        git_name = await asyncio.to_thread(get_name)
+        if git_name and desktop_user.name != git_name:
+            old_name = desktop_user.name
+            desktop_user.name = git_name
+            await desktop_user.save()
+            logging.info(f"Updated desktop user {desktop_user.id} name: {old_name} -> {git_name}")
+        logging.info(f"Desktop user already exists: {desktop_user.id} ({desktop_user.email}, {desktop_user.name})")
         return desktop_user
 
     # Also check by uname for backward compatibility with pre-migration entities

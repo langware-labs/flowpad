@@ -53,59 +53,61 @@ export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBub
     (a) => a.attachment_type === AttachmentType.FILE,
   );
 
-  return (
-    <div>
-      <MessageBubble
-        message={message}
-        flowMessageId={messageId}
-        senderName={displayName}
-        onEditName={isCurrentUser ? async (newName) => {
-          setOverrideName(newName);
-          await updateName(newName);
-        } : undefined}
-      />
+  const hasAttachments = !!fm.attachment_filename || fileAttachments.length > 0;
+
+  const footer = hasAttachments ? (
+    <div className="mt-1.5 space-y-1">
       {fm.attachment_filename && (
-        <div className="mt-1.5 px-1">
+        <a
+          href={downloadFlowMessageUrl(messageId, fm.attachment_filename)}
+          download
+          className="flex max-w-[240px] items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-muted"
+          title={fm.attachment_filename}
+        >
+          <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
+          <span className="truncate">{fm.attachment_filename}</span>
+          <Download className="h-3 w-3 shrink-0 text-muted-foreground" />
+        </a>
+      )}
+      {fileAttachments.map((a) => {
+        const name = a.data.split('/').pop() ?? a.data;
+        return (
           <a
-            href={downloadFlowMessageUrl(messageId, fm.attachment_filename)}
-            download
-            className="flex items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-[11px] text-foreground hover:bg-muted transition-colors max-w-[200px]"
-            title={fm.attachment_filename}
+            key={a.data}
+            href={fileAttachmentUrl(messageId, a.data)}
+            download={name}
+            className="flex max-w-[240px] items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-muted"
+            title={name}
           >
             <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
-            <span className="truncate">{fm.attachment_filename}</span>
+            <span className="truncate">{name}</span>
             <Download className="h-3 w-3 shrink-0 text-muted-foreground" />
           </a>
-        </div>
-      )}
+        );
+      })}
       {fileAttachments.length > 0 && (
-        <div className="mt-1.5 space-y-1 px-1">
-          {fileAttachments.map((a) => {
-            const name = a.data.split('/').pop() ?? a.data;
-            return (
-              <a
-                key={a.data}
-                href={fileAttachmentUrl(messageId, a.data)}
-                download={name}
-                className="flex items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-[11px] text-foreground hover:bg-muted transition-colors max-w-[200px]"
-                title={name}
-              >
-                <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
-                <span className="truncate">{name}</span>
-                <Download className="h-3 w-3 shrink-0 text-muted-foreground" />
-              </a>
-            );
-          })}
-          <a
-            href={localBundleUrl(messageId)}
-            download
-            className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-          >
-            <Download className="h-3 w-3" />
-            Download all attachments
-          </a>
-        </div>
+        <a
+          href={localBundleUrl(messageId)}
+          download
+          className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <Download className="h-3 w-3" />
+          Download all attachments
+        </a>
       )}
     </div>
+  ) : null;
+
+  return (
+    <MessageBubble
+      message={message}
+      flowMessageId={messageId}
+      senderName={displayName}
+      onEditName={isCurrentUser ? async (newName) => {
+        setOverrideName(newName);
+        await updateName(newName);
+      } : undefined}
+      footer={footer}
+    />
   );
 }
