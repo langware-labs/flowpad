@@ -27,7 +27,6 @@ interface FlowMessageBubbleProps {
   onShowTask?: () => void;
   onExecute?: (messageId: string) => void;
   onApproveAndExecute?: (messageId: string, attachmentIndex: number) => void;
-  onQueuePrompt?: (prompt: import('./PromptComposerDialog').QueuedPrompt) => void;
 }
 
 export function FlowMessageBubble({
@@ -37,7 +36,6 @@ export function FlowMessageBubble({
   onShowTask,
   onExecute,
   onApproveAndExecute,
-  onQueuePrompt,
 }: FlowMessageBubbleProps) {
   const { data: fm } = useEntity<FlowMessage>(
     new TypeId(FlowMessage.type, messageId),
@@ -62,11 +60,14 @@ export function FlowMessageBubble({
     timestamp,
   };
 
-  const fileAttachments = (fm.attachment ?? []).filter(
+  const allFileAttachments = (fm.attachment ?? []).filter(
     (a) => a.attachment_type === AttachmentType.FILE,
   );
+  const isTranscript = (a: { data: string }) => a.data.endsWith('conversation.jsonl');
+  const fileAttachments = allFileAttachments.filter((a) => !isTranscript(a));
+  const transcriptAttachment = allFileAttachments.find(isTranscript);
 
-  const hasAttachments = !!fm.attachment_filename || fileAttachments.length > 0;
+  const hasAttachments = !!fm.attachment_filename || fileAttachments.length > 0 || !!transcriptAttachment;
   const totalAttachments = (fm.attachment_filename ? 1 : 0) + fileAttachments.length;
 
   const footer = hasAttachments ? (
@@ -97,6 +98,17 @@ export function FlowMessageBubble({
           Download all attachments
         </a>
       )}
+      {transcriptAttachment && (
+        <a
+          href={fileAttachmentUrl(messageId, transcriptAttachment.data)}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-block text-[11px] text-muted-foreground/80 underline-offset-2 transition-colors hover:text-foreground hover:underline"
+          title="View sender's conversation transcript"
+        >
+          conversation.jsonl
+        </a>
+      )}
     </div>
   ) : null;
 
@@ -114,7 +126,6 @@ export function FlowMessageBubble({
       onShowTask={onShowTask}
       onExecute={onExecute ? () => onExecute(messageId) : undefined}
       onApproveAndExecute={onApproveAndExecute ? (idx) => onApproveAndExecute(messageId, idx) : undefined}
-      onQueuePrompt={onQueuePrompt}
       footer={footer}
     />
   );
