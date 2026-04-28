@@ -120,6 +120,9 @@ export function AskForAssistanceDialog({
         project_path: projectPath ?? null,
         sender_name: senderName.trim() || null,
         files: filesWithTranscript.length > 0 ? filesWithTranscript : undefined,
+        // Carry the sender's session_id so the *sender's* Approve & Execute path
+        // can fork directly without rehydrating. Receiver side ignores it.
+        initiator_session_id: attachTranscript ? (sessionId ?? null) : null,
       });
       if (result.git_error) {
         setGitError(result.git_error);

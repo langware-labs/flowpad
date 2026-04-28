@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Pencil, Sparkles } from 'lucide-react';
 import type { Attachment } from '@sdk/entities/flow-message';
 import {
   Dialog,
@@ -11,7 +11,10 @@ import {
 
 interface PromptApprovalRowProps {
   attachment: Attachment;
-  onApprove: () => void;
+  /** Show the Approve & Execute CTA (receiver, unapproved). */
+  onApprove?: () => void;
+  /** Show an Edit CTA (sender, message not sent yet — composer preview). */
+  onEdit?: () => void;
 }
 
 const TRIM_LIMIT = 90;
@@ -22,7 +25,7 @@ function truncate(text: string, limit: number): string {
   return oneLine.slice(0, limit - 1).trimEnd() + '…';
 }
 
-export function PromptApprovalRow({ attachment, onApprove }: PromptApprovalRowProps) {
+export function PromptApprovalRow({ attachment, onApprove, onEdit }: PromptApprovalRowProps) {
   const [promptText, setPromptText] = useState<string>(() => {
     if (attachment.data && !attachment.data.startsWith('prompt/')) return attachment.data;
     return '';
@@ -75,14 +78,26 @@ export function PromptApprovalRow({ attachment, onApprove }: PromptApprovalRowPr
           </pre>
         </DialogContent>
       </Dialog>
-      <button
-        type="button"
-        onClick={onApprove}
-        className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-500/20 dark:text-emerald-300"
-      >
-        <Sparkles className="h-3 w-3" />
-        Approve &amp; Execute
-      </button>
+      {onApprove && (
+        <button
+          type="button"
+          onClick={onApprove}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-500/20 dark:text-emerald-300"
+        >
+          <Sparkles className="h-3 w-3" />
+          Approve &amp; Execute
+        </button>
+      )}
+      {!onApprove && onEdit && (
+        <button
+          type="button"
+          onClick={onEdit}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/5 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15 dark:text-emerald-300"
+        >
+          <Pencil className="h-3 w-3" />
+          Edit
+        </button>
+      )}
     </div>
   );
 }

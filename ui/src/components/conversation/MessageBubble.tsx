@@ -58,11 +58,16 @@ export function MessageBubble({
   const { localUser } = useLocalUser();
 
   const isFromOther = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id !== localUser.id);
+  // Show the prompt row for ANY message that has a PROMPT attachment so the
+  // sender sees the same preview the receiver does. The Approve & Execute
+  // button is only wired when it's the other user's still-unapproved prompt.
   const promptIdx = (flowMessage?.attachment ?? []).findIndex(
-    (a) => a.attachment_type === AttachmentType.PROMPT && !a.approved_by,
+    (a) => a.attachment_type === AttachmentType.PROMPT,
   );
   const promptAttachment = promptIdx >= 0 ? flowMessage?.attachment?.[promptIdx] : undefined;
-  const showPromptRow = isFromOther && !!promptAttachment && !!onApproveAndExecute;
+  const showPromptRow = !!promptAttachment;
+  const canApprovePrompt =
+    isFromOther && !!promptAttachment && !promptAttachment.approved_by && !!onApproveAndExecute;
 
   const startEdit = () => {
     setEditValue(senderName);
@@ -118,13 +123,15 @@ export function MessageBubble({
           {time && <span className="text-[10px] text-muted-foreground">{time}</span>}
           <MessageActions flowMessageId={flowMessageId} />
         </div>
-        <div className={`text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
-          {message.content}
-        </div>
+        {message.content && message.content !== '(proposed prompt)' && (
+          <div className={`text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
+            {message.content}
+          </div>
+        )}
         {showPromptRow && promptAttachment && (
           <PromptApprovalRow
             attachment={promptAttachment}
-            onApprove={() => onApproveAndExecute!(promptIdx)}
+            onApprove={canApprovePrompt ? () => onApproveAndExecute!(promptIdx) : undefined}
           />
         )}
         {footer}
