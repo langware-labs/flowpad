@@ -22,12 +22,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, ClassVar
 
-from flow_sdk.config import FLOW_HOME
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.instance_settings import get_instance_settings
 
 _MAX_LOG_ENTRIES: int = 100
 
-SCHEMA_DIR: Path = FLOW_HOME / "schema"
+SCHEMA_DIR: Path = get_instance_settings().schema_dir
 
 
 def _sanitize_type_name(type_name: str) -> str:

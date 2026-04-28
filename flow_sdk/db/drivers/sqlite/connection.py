@@ -9,8 +9,12 @@ from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text, 
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.orm import DeclarativeBase
 
-_default_db_path = str(Path.home() / ".flow" / "db" / "flowpad_db")
-SQLITE_DATABASE_PATH = os.environ.get("SQLITE_DATABASE_PATH", _default_db_path)
+def _resolved_default_db_path() -> str:
+    from flow_sdk.instance_settings import get_instance_settings
+    return str(get_instance_settings().db_path)
+
+
+SQLITE_DATABASE_PATH = os.environ.get("SQLITE_DATABASE_PATH") or _resolved_default_db_path()
 DEVELOPMENT = os.environ.get("DEVELOPMENT", "true").lower() == "true"
 
 

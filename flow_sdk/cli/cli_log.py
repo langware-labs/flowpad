@@ -11,16 +11,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, ClassVar
 
-from flow_sdk.config import FLOW_HOME
 from flow_sdk.fs_store import Record
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.scope import Scope
+from flow_sdk.instance_settings import get_instance_settings
 
 # ---------------------------------------------------------------------------
-# Paths — tests monkeypatch these module-level vars
+# Paths — resolved at module-import via the per-instance settings.
+# Tests monkeypatch these module-level vars when they need to redirect.
 # ---------------------------------------------------------------------------
 
-CLI_LOG_DIR: Path = FLOW_HOME / "logs"
+CLI_LOG_DIR: Path = get_instance_settings().logs_dir
 CLI_LOG_FILE: Path = CLI_LOG_DIR / "cli.log.jsonl"
 
 MAX_ENTRIES = 800

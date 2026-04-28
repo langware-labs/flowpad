@@ -710,29 +710,27 @@ class ServiceConfig(BaseSettings):
             )
             self.db_driver = DBDriver.SQLITE
 
+        # All per-instance paths come from InstanceSettings (single source of truth).
+        # See flow_sdk/instance_settings/ — picks dev/test/prod based on env.
+        from flow_sdk.instance_settings import get_instance_settings
+
+        settings = get_instance_settings()
+
         # Configure SQLite-specific paths only when using SQLite
         if self.db_driver == DBDriver.SQLITE.value:
-            db_folder = Path.home() / ".flow" / "db"
-            db_folder.mkdir(parents=True, exist_ok=True)
-            sqlite_db_path = str(db_folder / "flowpad_db")
-            # Only set the default path if not already configured — allows tests and
-            # explicit env var overrides (e.g. SQLITE_DATABASE_PATH=/tmp/flowpad_test.db)
-            # to take precedence over the production default.
-            if ENV_SQLITE_DATABASE_PATH not in os.environ:
-                os.environ[ENV_SQLITE_DATABASE_PATH] = sqlite_db_path
-            else:
-                sqlite_db_path = os.environ[ENV_SQLITE_DATABASE_PATH]
+            settings.db_dir.mkdir(parents=True, exist_ok=True)
+            sqlite_db_path = str(settings.db_path)
+            # Mirror the resolved path into SQLITE_DATABASE_PATH for downstream code
+            # (sqlite driver, tests). InstanceSettings already honored any pre-existing
+            # explicit override; this just keeps the env-var contract intact.
+            os.environ[ENV_SQLITE_DATABASE_PATH] = sqlite_db_path
             db_info = f"SQLite at {sqlite_db_path}"
         else:
             db_info = f"{self.db_driver} database driver"
 
-        # Configure records root path (prod vs dev).
-        # Tests override this via FS_RECORD_PATH env var set before import.
-        if ENV_FS_RECORD_PATH not in os.environ:
-            records_folder_name = "dev_records" if _is_dev_mode() else "records"
-            records_root = Path.home() / ".flow" / records_folder_name
-            records_root.mkdir(parents=True, exist_ok=True)
-            os.environ[ENV_FS_RECORD_PATH] = str(records_root)
+        # Records root — same single-source pattern.
+        settings.records_root.mkdir(parents=True, exist_ok=True)
+        os.environ[ENV_FS_RECORD_PATH] = str(settings.records_root)
 
         # Force local compute provider for desktop
         self.default_compute_provider = ComputeProviderType.LOCAL_MACHINE

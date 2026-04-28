@@ -34,16 +34,21 @@ T = TypeVar("T", bound="Record")
 _META_JSON = "metadata.json"
 _DATA_JSON = "data.json"  # backward-compat: used by resource_record_list
 
-_FLOWPAD_HOME: Path = Path.home() / ".flow"
-_DEFAULT_RECORDS_ROOT: Path = _FLOWPAD_HOME / "records"
-_DEFAULT_RECORDS_DATA_ROOT: Path = _FLOWPAD_HOME / "records_data"
+def _instance_settings():
+    from flow_sdk.instance_settings import get_instance_settings
+    return get_instance_settings()
+
+
+_FLOWPAD_HOME: Path = _instance_settings().flow_home
+_DEFAULT_RECORDS_ROOT: Path = _instance_settings().records_root
+_DEFAULT_RECORDS_DATA_ROOT: Path = _instance_settings().records_data_dir
 
 ENV_FS_RECORD_PATH = "FS_RECORD_PATH"
 
 
 def get_flowpad_home() -> Path:
-    """Return the flowpad home directory (~/.flow by default)."""
-    return _FLOWPAD_HOME
+    """Return the flowpad home directory (per-instance, via InstanceSettings)."""
+    return _instance_settings().flow_home
 
 
 def get_default_records_root() -> Path:

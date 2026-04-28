@@ -10,11 +10,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, ClassVar
 
-from flow_sdk.config import FLOW_HOME
 from flow_sdk.fs_store import Record
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.instance_settings import get_instance_settings
 
-TRIGGER_LOG_DIR: Path = FLOW_HOME / "records" / "trigger_log"
+TRIGGER_LOG_DIR: Path = get_instance_settings().records_root / "trigger_log"
 MAX_ENTRIES = 1000
 DROP_COUNT = 200
 

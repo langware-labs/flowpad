@@ -65,8 +65,9 @@ exit 0
 
 
 def get_wrapper_path() -> Path:
-    """Return the OS-specific wrapper script path inside ~/.flow/."""
-    flow_dir = Path.home() / ".flow"
+    """Return the OS-specific wrapper script path under the per-instance flow_home."""
+    from flow_sdk.instance_settings import get_instance_settings
+    flow_dir = get_instance_settings().flow_home
     if sys.platform == "win32":
         return flow_dir / "flowpad_runner.ps1"
     return flow_dir / "flowpad_runner.sh"

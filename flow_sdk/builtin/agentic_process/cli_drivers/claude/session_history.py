@@ -87,6 +87,11 @@ def load_session_history(session_id: str) -> list[FlowData]:
 
     for entry in entries:
         entry_type = entry.get("type")
+        # Claude writes an ISO 8601 `timestamp` field per user/assistant/system/
+        # attachment entry. Reuse it as created_time for every FlowData produced
+        # from this entry so the UI timeline shows the original transcript time
+        # instead of the get-history call time.
+        entry_ts = entry.get("timestamp") or ""
 
         if entry_type == "user":
             message = entry.get("message", {})
@@ -101,6 +106,7 @@ def load_session_history(session_id: str) -> list[FlowData]:
                 history.append(
                     FlowData(
                         flow_value=text,
+                        created_time=entry_ts,
                         attributes={
                             "element-type": FlowElementType.USER_MESSAGE,
                             "data-type": FlowDataType.TEXT,
@@ -125,6 +131,7 @@ def load_session_history(session_id: str) -> list[FlowData]:
                             history.append(
                                 FlowData(
                                     flow_value=text,
+                                    created_time=entry_ts,
                                     attributes={
                                         "element-type": FlowElementType.CHAT,
                                         "data-type": FlowDataType.TEXT,
@@ -141,6 +148,7 @@ def load_session_history(session_id: str) -> list[FlowData]:
                             history.append(
                                 FlowData(
                                     flow_value=thinking,
+                                    created_time=entry_ts,
                                     attributes={
                                         "element-type": FlowElementType.REASONING,
                                         "data-type": FlowDataType.TEXT,
@@ -159,6 +167,7 @@ def load_session_history(session_id: str) -> list[FlowData]:
                                     "tool_call_id": block.get("id"),
                                     "args": block.get("input"),
                                 },
+                                created_time=entry_ts,
                                 attributes={
                                     "element-type": FlowElementType.TOOL_CALL,
                                     "data-type": FlowDataType.OBJECT,
@@ -177,6 +186,7 @@ def load_session_history(session_id: str) -> list[FlowData]:
                                     "tool_call_id": block.get("tool_use_id"),
                                     "content": block.get("content"),
                                 },
+                                created_time=entry_ts,
                                 attributes={
                                     "element-type": FlowElementType.TOOL_RESULT,
                                     "data-type": FlowDataType.OBJECT,

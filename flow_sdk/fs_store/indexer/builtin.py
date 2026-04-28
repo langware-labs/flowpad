@@ -62,8 +62,11 @@ def build_default_indexer(state_dir: Path | None = None) -> FSIndexer:
         claude_hook_fn, claude_hook_extras_fn,
     )
 
+    if state_dir is None:
+        from flow_sdk.instance_settings import get_instance_settings
+        state_dir = get_instance_settings().indexer_state_dir
     idx = FSIndexer(
-        state_dir=state_dir or (Path.home() / ".flow" / "indexer_state"),
+        state_dir=state_dir,
         roots=default_roots(),
     )
 

@@ -21,7 +21,7 @@ from flow_sdk.builtin.spec import Spec
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
-from flow_sdk.config import FLOW_HOME
+from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_records.conversation_record import ConversationRecord
 from flow_sdk.fs_records.flow_message_bundle import FlowMessageExistsError
@@ -106,8 +106,8 @@ async def handle_create_task_bundle(
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
 
-    # 3. Create Conversation + conversation.jsonl under FLOW_HOME/tasks/<slug>-<id>/
-    task_dir = FLOW_HOME / "tasks" / f"{_meaningful_name(task_title)}-{task.id[:8]}"
+    # 3. Create Conversation + conversation.jsonl under <tasks_dir>/<slug>-<id>/
+    task_dir = get_instance_settings().tasks_dir / f"{_meaningful_name(task_title)}-{task.id[:8]}"
     task_dir.mkdir(parents=True, exist_ok=True)
     jsonl_path = task_dir / "conversation.jsonl"
     jsonl_path.touch()
@@ -306,22 +306,23 @@ async def download_flow_message() -> ApiResponse:
 # Inbox actions
 # ---------------------------------------------------------------------------
 
-_LAST_FETCH_PATH = FLOW_HOME / ".inbox_last_fetch.json"
+def _last_fetch_path() -> Path:
+    return get_instance_settings().inbox_last_fetch_path
 
 
 def _load_last_fetch() -> Optional[str]:
     """Return ISO timestamp of last successful hub fetch, or None."""
     try:
-        if _LAST_FETCH_PATH.exists():
-            return _json.loads(_LAST_FETCH_PATH.read_text()).get("last_fetch")
+        if _last_fetch_path().exists():
+            return _json.loads(_last_fetch_path().read_text()).get("last_fetch")
     except Exception:
         pass
     return None
 
 
 def _save_last_fetch(ts: str) -> None:
-    _LAST_FETCH_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _LAST_FETCH_PATH.write_text(_json.dumps({"last_fetch": ts}))
+    _last_fetch_path().parent.mkdir(parents=True, exist_ok=True)
+    _last_fetch_path().write_text(_json.dumps({"last_fetch": ts}))
 
 
 async def _download_and_unpack_bundle(fm_id: str, attachment_filename: str) -> bool:
