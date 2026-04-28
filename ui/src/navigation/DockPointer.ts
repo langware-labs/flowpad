@@ -255,23 +255,30 @@ export class DockPointer implements IDockPointer {
 
   /**
    * Create dock pointer for a project's collaboration view, optionally with
-   * an active collaboration_room and/or an active tab inside that room.
+   * an active collaboration_room and/or an active tab inside that room, or
+   * a focused conversation.
    *
    * URL formats:
    *   /dock/project/<projectId>
    *   /dock/project/<projectId>/collaboration_room/<roomId>
    *   /dock/project/<projectId>/collaboration_room/<roomId>/tab/<typeid>
+   *   /dock/project/<projectId>/conversation/<conversationId>
    *
    * `typeid` is the standard TypeId string (e.g. "agentic_process-<uuid>").
+   *
+   * Precedence: when both `roomId` and `conversationId` are passed, `conversationId`
+   * wins — the room shape is dropped to keep the URL unambiguous.
    */
   static forProject(
     projectId?: string,
-    sub?: { roomId?: string | null; tab?: TypeId | null },
+    sub?: { roomId?: string | null; tab?: TypeId | null; conversationId?: string | null },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     if (!projectId) return new DockPointer(ViewType.PROJECT, undefined, undefined, layout);
     const segments: string[] = [projectId];
-    if (sub?.roomId) {
+    if (sub?.conversationId) {
+      segments.push('conversation', sub.conversationId);
+    } else if (sub?.roomId) {
       segments.push('collaboration_room', sub.roomId);
       if (sub.tab) {
         segments.push('tab', sub.tab.toString());
@@ -287,18 +294,22 @@ export class DockPointer implements IDockPointer {
    *   <projectId>
    *   <projectId>/collaboration_room/<roomId>
    *   <projectId>/collaboration_room/<roomId>/tab/<type>-<id>
+   *   <projectId>/conversation/<conversationId>
    *
    * Returns nulls for segments that aren't present or the input is malformed.
    */
   static parseProjectPointer(
     pointer: string | undefined | null,
-  ): { projectId: string | null; roomId: string | null; tabTypeId: TypeId | null } {
-    if (!pointer) return { projectId: null, roomId: null, tabTypeId: null };
+  ): { projectId: string | null; roomId: string | null; tabTypeId: TypeId | null; conversationId: string | null } {
+    if (!pointer) return { projectId: null, roomId: null, tabTypeId: null, conversationId: null };
     const parts = pointer.split('/').filter(Boolean);
     const projectId = parts[0] ?? null;
     let roomId: string | null = null;
     let tabTypeId: TypeId | null = null;
-    if (parts[1] === 'collaboration_room' && parts[2]) {
+    let conversationId: string | null = null;
+    if (parts[1] === 'conversation' && parts[2]) {
+      conversationId = parts[2];
+    } else if (parts[1] === 'collaboration_room' && parts[2]) {
       roomId = parts[2];
       if (parts[3] === 'tab' && parts[4]) {
         try {
@@ -308,7 +319,26 @@ export class DockPointer implements IDockPointer {
         }
       }
     }
-    return { projectId, roomId, tabTypeId };
+    return { projectId, roomId, tabTypeId, conversationId };
+  }
+
+  /**
+   * Create dock pointer for the inbox, optionally focused on a specific conversation
+   * and/or message via query params.
+   *
+   * URL formats:
+   *   /dock/inbox
+   *   /dock/inbox?conversation=<id>
+   *   /dock/inbox?conversation=<id>&message=<id>
+   */
+  static forInbox(
+    options?: { conversationId?: string | null; messageId?: string | null },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const queryOptions: Record<string, string> = {};
+    if (options?.conversationId) queryOptions.conversation = options.conversationId;
+    if (options?.messageId) queryOptions.message = options.messageId;
+    return new DockPointer(ViewType.INBOX, undefined, Object.keys(queryOptions).length ? queryOptions : undefined, layout);
   }
 
   /**

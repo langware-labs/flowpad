@@ -726,7 +726,8 @@ def hooks_report(
             if project_settings.exists():
                 return (metadata or None), str(project_settings)
 
-        fallback_path = Path.home() / ".claude" / "settings.json"
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+        fallback_path = get_instance_settings().claude_settings_json_path
         settings_path = str(fallback_path) if fallback_path.exists() else None
         return (metadata or None), settings_path
 

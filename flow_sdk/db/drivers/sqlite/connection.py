@@ -2,19 +2,21 @@
 
 import os
 
-# Configuration from environment
-from pathlib import Path
-
 from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text, event, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.orm import DeclarativeBase
 
-def _resolved_default_db_path() -> str:
+
+def get_database_path() -> str:
+    """Per-instance SQLite database path (call-time, via InstanceSettings).
+
+    InstanceSettings already reads the SQLITE_DATABASE_PATH env var inside
+    `from_env()` — never read the env here, that defeats the contract.
+    """
     from flow_sdk.instance_settings import get_instance_settings
     return str(get_instance_settings().db_path)
 
 
-SQLITE_DATABASE_PATH = os.environ.get("SQLITE_DATABASE_PATH") or _resolved_default_db_path()
 DEVELOPMENT = os.environ.get("DEVELOPMENT", "true").lower() == "true"
 
 
@@ -110,8 +112,10 @@ class LinksSchema(Base):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 
-def get_database_url(path: str = SQLITE_DATABASE_PATH) -> str:
-    """Get the async SQLite database URL."""
+def get_database_url(path: str | None = None) -> str:
+    """Get the async SQLite database URL. Resolves per-instance default at call time."""
+    if path is None:
+        path = get_database_path()
     if path == ":memory:":
         # Use shared cache mode so all connections share the same database
         return "sqlite+aiosqlite:///:memory:?cache=shared"

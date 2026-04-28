@@ -204,6 +204,7 @@ async def _create_conversation_and_fm(
         "sender_name": sender_name,
         "receiver_address": recipient_email,
         "receiver_address_type": "email",
+        "conversation_id": conv.id,
     })
     fm.id = FlowMessage.allocate_id(fm.model_dump())
     fm.attachment = [
@@ -644,6 +645,7 @@ def _build_reply_flow_message(
         "attachment": [],
         "sender_id": sender_id,
         "sender_name": sender_name,
+        "conversation_id": conv_id,
     })
     reply_fm.id = FlowMessage.allocate_id(reply_fm.model_dump())
     reply_fm.attachment = [

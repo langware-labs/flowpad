@@ -51,11 +51,7 @@ class BaseInstanceSettings:
     records_root: Path
     db_dir: Path
     db_path: Path
-    indexer_state_dir: Path
-    index_dir: Path
-    sessions_dir: Path
     tasks_dir: Path
-    storage_dir: Path
     skill_rules_dir: Path
     schema_dir: Path
     records_data_dir: Path
@@ -69,10 +65,20 @@ class BaseInstanceSettings:
     db_driver: str               # "sqlite" | "neo4j" | "networkx"
 
     # ---- User-level (intentionally shared across instances unless overridden) ----
+    user_home: Path
     claude_home: Path
     claude_skills_dir: Path
     claude_agents_dir: Path
     claude_projects_dir: Path
+    claude_commands_dir: Path
+    claude_plans_dir: Path
+    claude_workflows_dir: Path
+    claude_docs_dir: Path
+    claude_tasks_dir: Path
+    claude_history_path: Path
+    claude_mcp_json_path: Path
+    claude_settings_json_path: Path
+    claude_managed_settings_path: Path
 
     # ---- Defaults / runtime ----
     default_compute_provider: str = "local-machine"
@@ -108,11 +114,7 @@ class BaseInstanceSettings:
             records_root=records_root,
             db_dir=db_dir,
             db_path=db_path,
-            indexer_state_dir=flow_home / "indexer_state",
-            index_dir=flow_home / "index",
-            sessions_dir=flow_home / "sessions",
             tasks_dir=flow_home / "tasks",
-            storage_dir=flow_home / "storage",
             skill_rules_dir=flow_home / "skill_rules",
             schema_dir=flow_home / "schema",
             records_data_dir=flow_home / "records_data",
@@ -120,10 +122,20 @@ class BaseInstanceSettings:
             monitor_log_path=flow_home / "monitor.log",
             inbox_last_fetch_path=flow_home / ".inbox_last_fetch.json",
             db_driver=os.environ.get(ENV_DESKTOP_DB, DEFAULT_DB_DRIVER).lower(),
+            user_home=Path.home(),
             claude_home=claude_home,
             claude_skills_dir=claude_home / "skills",
             claude_agents_dir=claude_home / "agents",
             claude_projects_dir=claude_home / "projects",
+            claude_commands_dir=claude_home / "commands",
+            claude_plans_dir=claude_home / "plans",
+            claude_workflows_dir=claude_home / "workflows",
+            claude_docs_dir=claude_home / "docs",
+            claude_tasks_dir=claude_home / "tasks",
+            claude_history_path=claude_home / "history.jsonl",
+            claude_mcp_json_path=claude_home / "mcp.json",
+            claude_settings_json_path=claude_home / "settings.json",
+            claude_managed_settings_path=claude_home / "managed-settings.json",
         )
 
     # -----------------------------------------------------------------

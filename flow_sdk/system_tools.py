@@ -81,13 +81,15 @@ def _default_db_path() -> str:
 
 
 def get_db_path() -> Path:
-    db_path_str = os.environ.get("SQLITE_DATABASE_PATH")
-    if not db_path_str:
-        from flow_sdk.instance_settings import get_instance_settings
-        settings = get_instance_settings()
-        settings.db_dir.mkdir(parents=True, exist_ok=True)
-        db_path_str = str(settings.db_path)
-    return Path(db_path_str)
+    """Per-instance SQLite database path (call-time, via InstanceSettings).
+
+    InstanceSettings reads the SQLITE_DATABASE_PATH env var inside `from_env()`;
+    we never read the env here directly.
+    """
+    from flow_sdk.instance_settings import get_instance_settings
+    settings = get_instance_settings()
+    settings.db_dir.mkdir(parents=True, exist_ok=True)
+    return Path(settings.db_path)
 
 
 def get_backup_folder() -> Path:

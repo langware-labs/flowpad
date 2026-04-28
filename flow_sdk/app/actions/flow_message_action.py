@@ -77,6 +77,7 @@ async def handle_create_task_bundle(
     someone_typeid: str,
     message: Optional[str] = None,
     team_space_id: Optional[str] = None,
+    project_id: Optional[str] = None,
 ) -> ApiResponse:
     """Create Task + Spec + Conversation + FlowMessage locally (no git push, no email).
 
@@ -114,6 +115,7 @@ async def handle_create_task_bundle(
 
     conv = Conversation.model_validate({
         "task_id": task.id,
+        "project_id": project_id,
         "data_path": str(jsonl_path),
         "message_count": 0,
     })
@@ -140,6 +142,7 @@ async def handle_create_task_bundle(
         "attachment": [],
         "sender_id": sender_id,
         "sender_name": sender_name,
+        "conversation_id": conv.id,
     })
     fm.id = FlowMessage.allocate_id(fm.model_dump())
     fm.attachment = [
@@ -231,6 +234,7 @@ async def create_task_bundle() -> ApiResponse:
             someone_typeid=request_info.someone_typeid,
             message=(body.get("message") or "").strip() or None,
             team_space_id=(body.get("team_space_id") or "").strip() or None,
+            project_id=(body.get("project_id") or "").strip() or None,
         )
     except Exception as e:
         logger.error(f"[flow_message_action] create-task-bundle error: {e}", exc_info=True)

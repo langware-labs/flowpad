@@ -1,151 +1,391 @@
-import { useCallback, useEffect, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Archive, ArrowLeft, CheckSquare, RefreshCw } from 'lucide-react';
+import { Conversation, FlowMessage, Project, QueryRequest, Task, TypeId } from '@sdk';
+import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useInboxStore } from '@src/store/use-inbox-store';
+import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import {
-  listInboxMessages,
   fetchInboxFromHub,
   updateMessage,
   bulkUpdateMessages,
   openInboxMessage,
-  type InboxMessage,
 } from './inbox-api';
-import { InboxMessageRow } from './InboxMessageRow';
+
+// ── Time formatter (Gmail-style) ────────────────────────────────────────────
+// today → "12:34 PM"  ·  this year → "Apr 28"  ·  older → locale date
+function formatGmailTime(iso?: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+  if (d.getFullYear() === now.getFullYear()) {
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  }
+  return d.toLocaleDateString();
+}
+
+// ── Conversation list row (Gmail thread row) ────────────────────────────────
+// Single line: [sender(s)] [subject — snippet…] [time]
+// Click anywhere on the row opens the conversation via its dockPointer.
+
+interface ConversationListRowProps {
+  conv: Conversation;
+  isFocused: boolean;
+  onArchive: (messageId: string) => void;
+  onToggleRead: (messageId: string, isRead: boolean) => void;
+  refSetter: (el: HTMLDivElement | null) => void;
+}
+
+function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, refSetter }: ConversationListRowProps) {
+  const { navigation } = useDockNavigation();
+  const taskTypeId = useMemo(
+    () => (conv.task_id ? new TypeId(Task.type, conv.task_id) : null),
+    [conv.task_id],
+  );
+  const { data: task } = useEntity<Task>(taskTypeId);
+
+  // Fetch only the latest FlowMessage for sender + snippet + read state.
+  const pointers = conv.conversationMessageIds ?? [];
+  const latest = pointers[pointers.length - 1];
+  const latestTypeId = useMemo(
+    () => (latest ? new TypeId(FlowMessage.type, latest.message_id) : null),
+    [latest?.message_id],
+  );
+  const { data: latestMessage } = useEntity<FlowMessage>(latestTypeId);
+
+  const sender = latestMessage?.sender_name?.trim() || 'Unknown';
+  const count = pointers.length;
+  const subject = task?.title?.trim() || 'Conversation';
+  const snippet = latestMessage?.text?.replace(/\s+/g, ' ').trim() ?? '';
+  const time = formatGmailTime(conv.updated_date);
+  const ago = formatTimeAgo(conv.updated_date);
+  const isUnread = latestMessage ? !latestMessage.is_read : false;
+
+  const handleClick = () => {
+    navigation.openDock(conv.dockPointer);
+  };
+
+  return (
+    <div
+      ref={refSetter}
+      data-testid="inbox-conversation-row"
+      data-conversation-id={conv.id ?? ''}
+      data-focused={isFocused ? 'true' : 'false'}
+      data-unread={isUnread ? 'true' : 'false'}
+      onClick={handleClick}
+      className={`group relative flex h-9 cursor-pointer items-center gap-3 border-b border-border/40 px-3 text-sm transition-colors hover:bg-accent/40 hover:shadow-sm ${
+        isFocused ? 'bg-primary/10' : ''
+      } ${isUnread ? 'bg-background' : 'bg-muted/20'}`}
+    >
+      <span
+        data-testid="inbox-row-sender"
+        className={`w-44 shrink-0 truncate ${isUnread ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
+      >
+        {sender}
+        {count > 1 && <span className="ml-1 font-normal text-muted-foreground">({count})</span>}
+      </span>
+      <span className="min-w-0 flex-1 truncate" data-testid="inbox-row-subject-line">
+        <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
+        {snippet && (
+          <>
+            <span className="mx-1 text-muted-foreground">—</span>
+            <span className="text-muted-foreground">{snippet}</span>
+          </>
+        )}
+      </span>
+      <span className="shrink-0 text-xs text-muted-foreground transition-opacity group-hover:opacity-0">
+        {time}
+        {ago && <span className="ml-1.5 text-muted-foreground/70">· {ago}</span>}
+      </span>
+      <div
+        className="absolute right-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          className="rounded p-1 hover:bg-muted"
+          title={isUnread ? 'Mark read' : 'Mark unread'}
+          onClick={() => latestMessage?.id && onToggleRead(latestMessage.id, isUnread)}
+        >
+          <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
+        </button>
+        <button
+          className="rounded p-1 hover:bg-destructive/10"
+          title="Archive"
+          onClick={() => latestMessage?.id && onArchive(latestMessage.id)}
+        >
+          <Archive className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Reader: a single thread, oldest-first ───────────────────────────────────
+
+interface ConversationReaderProps {
+  conversationId: string;
+  focusedMessageId: string | null;
+  onBack: () => void;
+  onArchive: (messageId: string) => void;
+  onToggleRead: (messageId: string, isRead: boolean) => void;
+}
+
+function ConversationReader({ conversationId, focusedMessageId, onBack, onArchive, onToggleRead }: ConversationReaderProps) {
+  const convTypeId = useMemo(() => new TypeId(Conversation.type, conversationId), [conversationId]);
+  const { data: conv } = useEntity<Conversation>(convTypeId);
+  const taskTypeId = useMemo(
+    () => (conv?.task_id ? new TypeId(Task.type, conv.task_id) : null),
+    [conv?.task_id],
+  );
+  const { data: task } = useEntity<Task>(taskTypeId);
+  const projectTypeId = useMemo(
+    () => (conv?.project_id ? new TypeId(Project.type, conv.project_id) : null),
+    [conv?.project_id],
+  );
+  const { data: project } = useEntity<Project>(projectTypeId);
+
+  const pointers = conv?.conversationMessageIds ?? [];
+  const subject = task?.title?.trim() || 'Conversation';
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5">
+        <button
+          type="button"
+          onClick={onBack}
+          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          title="Back to inbox"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <span className="truncate text-sm font-semibold">{subject}</span>
+        {project?.name && (
+          <span className="shrink-0 rounded-md border border-primary/30 bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+            {project.name}
+          </span>
+        )}
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {pointers.length === 0 ? (
+          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+            No messages
+          </div>
+        ) : (
+          pointers.map((p) => (
+            <ReaderMessage
+              key={p.message_id}
+              messageId={p.message_id}
+              isFocused={focusedMessageId === p.message_id}
+              onArchive={onArchive}
+              onToggleRead={onToggleRead}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface ReaderMessageProps {
+  messageId: string;
+  isFocused: boolean;
+  onArchive: (messageId: string) => void;
+  onToggleRead: (messageId: string, isRead: boolean) => void;
+}
+
+function ReaderMessage({ messageId, isFocused, onArchive, onToggleRead }: ReaderMessageProps) {
+  const typeId = useMemo(() => new TypeId(FlowMessage.type, messageId), [messageId]);
+  const { data: fm } = useEntity<FlowMessage>(typeId);
+  if (!fm || fm.is_archived) return null;
+
+  const sender = fm.sender_name?.trim() || 'Unknown';
+  const time = formatGmailTime(fm.created_date);
+  const ago = formatTimeAgo(fm.created_date);
+  const isUnread = !fm.is_read;
+
+  return (
+    <div
+      data-testid="reader-message"
+      data-message-id={fm.id}
+      data-focused={isFocused ? 'true' : 'false'}
+      className={`group border-b border-border/40 px-4 py-3 ${isFocused ? 'bg-primary/5' : ''}`}
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <span className={`text-sm ${isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}`}>
+          {sender}
+        </span>
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {time}
+          {ago && <span className="ml-1.5 text-muted-foreground/70">· {ago}</span>}
+        </span>
+      </div>
+      <div className="mt-1 whitespace-pre-wrap text-sm text-foreground/90">{fm.text}</div>
+      <div
+        className="mt-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          className="rounded p-1 hover:bg-muted"
+          title={isUnread ? 'Mark read' : 'Mark unread'}
+          onClick={() => fm.id && onToggleRead(fm.id, isUnread)}
+        >
+          <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
+        </button>
+        <button
+          className="rounded p-1 hover:bg-destructive/10"
+          title="Archive"
+          onClick={() => fm.id && onArchive(fm.id)}
+        >
+          <Archive className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── InboxView ───────────────────────────────────────────────────────────────
 
 export function InboxView() {
-  const [messages, setMessages] = useState<InboxMessage[]>([]);
-  const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
-  const { navigation } = useDockNavigation();
+  const rowRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  const { navigation, currentDock } = useDockNavigation();
   const { setUnreadCount } = useInboxStore();
 
-  const loadMessages = useCallback(async () => {
-    setLoading(true);
-    try {
-      const msgs = await listInboxMessages();
-      setMessages(msgs);
-      setUnreadCount(msgs.filter((m) => !m.is_read).length);
-    } finally {
-      setLoading(false);
-    }
-  }, [setUnreadCount]);
+  const focusedConversationId = currentDock?.options?.conversation ?? null;
+  const focusedMessageId = currentDock?.options?.message ?? null;
 
+  const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
+  const { data: conversations = [], refetch, isLoading } = useEntitiesQuery<Conversation>(request);
+
+  const sorted = useMemo(() => {
+    const list = [...conversations];
+    list.sort((a, b) => {
+      const ta = a.updated_date ? new Date(a.updated_date).getTime() : 0;
+      const tb = b.updated_date ? new Date(b.updated_date).getTime() : 0;
+      return tb - ta;
+    });
+    return list;
+  }, [conversations]);
+
+  // Keep the unread badge in sync with the legacy inbox-list (still authoritative).
   useEffect(() => {
-    void loadMessages();
-  }, [loadMessages]);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { listInboxMessages } = await import('./inbox-api');
+        const msgs = await listInboxMessages();
+        if (!cancelled) setUnreadCount(msgs.filter((m) => !m.is_read).length);
+      } catch {
+        // non-fatal
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [setUnreadCount, conversations.length]);
+
+  // When the URL focuses a conversation in list mode (we're in reader instead),
+  // make sure the row is visible if the user navigates back.
+  useEffect(() => {
+    if (!focusedConversationId) return;
+    const el = rowRefs.current.get(focusedConversationId);
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  }, [focusedConversationId, sorted.length]);
 
   const handleRefresh = useCallback(async () => {
     setFetching(true);
     try {
       await fetchInboxFromHub();
-      await loadMessages();
+      void refetch();
     } finally {
       setFetching(false);
     }
-  }, [loadMessages]);
+  }, [refetch]);
 
   const handleArchive = useCallback(async (id: string) => {
     await updateMessage(id, { is_archived: true });
-    setMessages((prev) => {
-      const next = prev.filter((m) => m.id !== id);
-      setUnreadCount(next.filter((m) => !m.is_read).length);
-      return next;
-    });
-  }, [setUnreadCount]);
+    void refetch();
+  }, [refetch]);
 
   const handleToggleRead = useCallback(async (id: string, isRead: boolean) => {
     await updateMessage(id, { is_read: isRead });
-    setMessages((prev) => {
-      const next = prev.map((m) => (m.id === id ? { ...m, is_read: isRead } : m));
-      setUnreadCount(next.filter((m) => !m.is_read).length);
-      return next;
-    });
-  }, [setUnreadCount]);
+    void refetch();
+  }, [refetch]);
 
   const handleMarkAllRead = useCallback(async () => {
     await bulkUpdateMessages({ is_read: true });
-    setMessages((prev) => prev.map((m) => ({ ...m, is_read: true })));
     setUnreadCount(0);
-  }, [setUnreadCount]);
-
-  const handleMarkAllUnread = useCallback(async () => {
-    await bulkUpdateMessages({ is_read: false });
-    setMessages((prev) => {
-      setUnreadCount(prev.length);
-      return prev.map((m) => ({ ...m, is_read: false }));
-    });
-  }, [setUnreadCount]);
+    void refetch();
+  }, [refetch, setUnreadCount]);
 
   const handleArchiveAll = useCallback(async () => {
     await bulkUpdateMessages({ is_archived: true });
-    setMessages([]);
     setUnreadCount(0);
-  }, [setUnreadCount]);
+    void refetch();
+  }, [refetch, setUnreadCount]);
 
-  const handleMessageClick = useCallback(
-    (message: InboxMessage) => {
-      // Mark as read (fire-and-forget, optimistic update)
-      void updateMessage(message.id, { is_read: true });
-      setMessages((prev) => {
-        const next = prev.map((m) => (m.id === message.id ? { ...m, is_read: true } : m));
-        setUnreadCount(next.filter((m) => !m.is_read).length);
-        return next;
-      });
+  const handleBackToList = useCallback(() => {
+    navigation.openDock(DockPointer.forInbox());
+  }, [navigation]);
 
-      // Open via inbox-open to materialize the task if needed, then navigate
-      void openInboxMessage(message.id).then((result) => {
-        const taskId = result?.task_id
-          ?? message.context.find((c) => c.startsWith('task-'))?.replace(/^task-/, '');
-        if (taskId) {
-          navigation.openDock(DockPointer.forTasks(taskId));
+  // Mark the focused conversation's latest message as read on entering the reader.
+  useEffect(() => {
+    if (!focusedConversationId) return;
+    void (async () => {
+      try {
+        const result = await openInboxMessage(focusedConversationId);
+        if (result?.task_id) {
+          // no-op — we already navigated into the reader; this just primes the bundle.
         }
-      });
-    },
-    [navigation, setUnreadCount],
-  );
+      } catch {
+        /* non-fatal */
+      }
+    })();
+  }, [focusedConversationId]);
 
-  const unreadCount = messages.filter((m) => !m.is_read).length;
+  // Reader mode
+  if (focusedConversationId) {
+    return (
+      <ConversationReader
+        conversationId={focusedConversationId}
+        focusedMessageId={focusedMessageId}
+        onBack={handleBackToList}
+        onArchive={handleArchive}
+        onToggleRead={handleToggleRead}
+      />
+    );
+  }
 
+  // List mode
   return (
     <div className="flex h-full flex-col">
-      {/* Header toolbar */}
-      <div className="flex shrink-0 items-center justify-between border-b px-4 py-2">
+      <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold">Inbox</span>
-          {unreadCount > 0 && (
-            <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-              {unreadCount}
-            </span>
-          )}
+          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            {sorted.length}
+          </span>
         </div>
-
         <div className="flex items-center gap-1">
           <Button
             variant="ghost"
             size="sm"
             className="h-7 text-xs"
             onClick={() => void handleMarkAllRead()}
-            disabled={loading || messages.length === 0}
+            disabled={isLoading || sorted.length === 0}
           >
             Mark all read
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs"
-            onClick={() => void handleMarkAllUnread()}
-            disabled={loading || messages.length === 0}
-          >
-            Mark all unread
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
             className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
             onClick={() => void handleArchiveAll()}
-            disabled={loading || messages.length === 0}
+            disabled={isLoading || sorted.length === 0}
           >
             Archive all
           </Button>
@@ -162,15 +402,14 @@ export function InboxView() {
         </div>
       </div>
 
-      {/* Message list */}
-      <div className="flex-1 space-y-1 overflow-y-auto p-3">
-        {loading && (
+      <div className="flex-1 overflow-y-auto">
+        {isLoading && (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">Loading…</div>
         )}
 
-        {!loading && messages.length === 0 && (
+        {!isLoading && sorted.length === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
-            <span className="text-sm">No messages</span>
+            <span className="text-sm">No conversations</span>
             <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
               <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
               Check for new messages
@@ -178,14 +417,17 @@ export function InboxView() {
           </div>
         )}
 
-        {!loading &&
-          messages.map((msg) => (
-            <InboxMessageRow
-              key={msg.id}
-              message={msg}
-              onArchive={(id) => void handleArchive(id)}
-              onToggleRead={(id, isRead) => void handleToggleRead(id, isRead)}
-              onClick={handleMessageClick}
+        {!isLoading &&
+          sorted.map((conv) => (
+            <ConversationListRow
+              key={conv.id ?? ''}
+              conv={conv}
+              isFocused={!!focusedConversationId && conv.id === focusedConversationId}
+              onArchive={handleArchive}
+              onToggleRead={handleToggleRead}
+              refSetter={(el) => {
+                if (conv.id) rowRefs.current.set(conv.id, el);
+              }}
             />
           ))}
       </div>

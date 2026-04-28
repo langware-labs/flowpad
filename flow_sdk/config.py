@@ -29,12 +29,19 @@ from flow_sdk.utils.validation import UUID_PATTERN
 FLOWPAD_CLOUD_URL = "https://app.flowpad.ai"
 
 # ---------------------------------------------------------------------------
-# Path constants
+# Path getters — call-time, via InstanceSettings (single source of truth).
+# Direct `Path.home() / ".flow" / X` constructions are a contract violation.
 # ---------------------------------------------------------------------------
 
-FLOW_HOME = Path.home() / ".flow"
-SERVER_JSON_PATH = FLOW_HOME / "server.json"
-DEV_SERVER_JSON_PATH = FLOW_HOME / "dev_server.json"
+
+def _flow_home() -> Path:
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    return get_instance_settings().flow_home
+
+
+def _server_json_path() -> Path:
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    return get_instance_settings().server_json_path
 
 # ---------------------------------------------------------------------------
 # System projects (shipped inside the flow_sdk package)
@@ -63,7 +70,8 @@ def _is_dev_mode() -> bool:
 
 
 def _active_server_json_path() -> Path:
-    return DEV_SERVER_JSON_PATH if _is_dev_mode() else SERVER_JSON_PATH
+    """Per-instance server.json path. InstanceSettings handles the dev/prod split."""
+    return _server_json_path()
 
 # SDK repo root and UI build output
 _SDK_PKG_DIR = Path(__file__).resolve().parent          # .../flow-cli/flow_sdk/

@@ -40,8 +40,8 @@ def get_session_jsonl_path(session_id: str, project_path: Path | None = None) ->
     Returns:
         Path to JSONL file or None if not found
     """
-    claude_home = Path.home() / ".claude"
-    projects_dir = claude_home / "projects"
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    projects_dir = get_instance_settings().claude_projects_dir
 
     if not projects_dir.exists():
         return None

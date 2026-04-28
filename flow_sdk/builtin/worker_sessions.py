@@ -103,7 +103,8 @@ def get_worker_sessions() -> list[dict]:
     current_path = Path(current_dir).resolve()
     # Replace /, spaces, and periods with hyphens for Claude project naming
     claude_project_name = re.sub(r"[/. ]", "-", str(current_path))
-    project_dir = Path.home() / ".claude" / "projects" / claude_project_name
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    project_dir = get_instance_settings().claude_projects_dir / claude_project_name
 
     if not project_dir.exists():
         logging.info(f"Claude project not found at {project_dir}")

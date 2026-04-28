@@ -21,16 +21,27 @@ from typing import ClassVar
 from flow_sdk.fs_store import Record, RecordType
 from .claude_session import ClaudeSessionRecord
 
-_CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 _TEMP_PATH_PREFIXES = ("/tmp/", "/var/folders/", "/private/var/folders/", "/private/tmp/")
-_HOME_STR: str = str(Path.home())
-# Prefixes (applied to os.path.normpath(mount_path)) that identify system artifacts.
-# The stored paths use a buggy double-slash form (/Users/foo//flow/records/...) which
-# normpath collapses to /Users/foo/flow/records/... — so we check both variants.
-_FLOW_RECORDS_NORM_PREFIXES: tuple[str, ...] = (
-    _HOME_STR + "/.flow/records/",
-    _HOME_STR + "/flow/records/",
-)
+
+
+def _claude_projects_dir() -> Path:
+    """Per-instance ~/.claude/projects (call-time, via InstanceSettings)."""
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    return get_instance_settings().claude_projects_dir
+
+
+def _flow_records_norm_prefixes() -> tuple[str, ...]:
+    """Prefixes (against os.path.normpath of mount_path) identifying system
+    artifacts. Resolved per-call from InstanceSettings.user_home so test-mode
+    sandboxing works correctly. The stored paths use a buggy double-slash form
+    (/Users/foo//flow/records/...) which normpath collapses; we check both.
+    """
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    home_str = str(get_instance_settings().user_home)
+    return (
+        home_str + "/.flow/records/",
+        home_str + "/flow/records/",
+    )
 
 
 def _project_id(encoded: str) -> str:
@@ -85,7 +96,7 @@ class ClaudeProjectFsRecord(Record):
         if project_dir is None:
             encoded = self.data.get("encoded_path") or ""
             if encoded:
-                candidate = _CLAUDE_PROJECTS_DIR / encoded
+                candidate = _claude_projects_dir() / encoded
                 if candidate.is_dir():
                     project_dir = candidate
         if project_dir is None:
@@ -116,7 +127,7 @@ class ClaudeProjectFsRecord(Record):
         if path.startswith(_TEMP_PATH_PREFIXES):
             return False
         normalized = os.path.normpath(path) + os.sep
-        return not normalized.startswith(_FLOW_RECORDS_NORM_PREFIXES)
+        return not normalized.startswith(_flow_records_norm_prefixes())
 
     @classmethod
     def _from_claude_dir(cls, d: Path) -> "ClaudeProjectFsRecord":
@@ -181,7 +192,7 @@ class ClaudeProjectFsRecord(Record):
                     continue
 
         # Phase 2: ~/.claude/projects/ (deduped by id)
-        projects_dir = _CLAUDE_PROJECTS_DIR
+        projects_dir = _claude_projects_dir()
         if projects_dir.is_dir():
             for d in sorted(projects_dir.iterdir()):
                 if not d.is_dir() or not cls._is_valid_project_dir(d):
@@ -209,7 +220,7 @@ class ClaudeProjectFsRecord(Record):
         removed = 0
 
         # Source 1: ~/.claude/projects/
-        projects_dir = _CLAUDE_PROJECTS_DIR
+        projects_dir = _claude_projects_dir()
         if projects_dir.is_dir():
             for d in list(projects_dir.iterdir()):
                 if d.is_dir() and not cls._is_valid_project_dir(d):
@@ -256,7 +267,7 @@ class ClaudeProjectFsRecord(Record):
         rec = super().get(uid, **kwargs)
         if rec is not None:
             return rec
-        projects_dir = _CLAUDE_PROJECTS_DIR
+        projects_dir = _claude_projects_dir()
         if not projects_dir.is_dir():
             return None
         for d in projects_dir.iterdir():

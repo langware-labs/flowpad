@@ -19,6 +19,7 @@ from .base_settings import (
 )
 
 import os
+from pathlib import Path
 
 DEFAULT_DEV_PORT = 9008
 
@@ -47,11 +48,7 @@ class DevInstanceSettings(BaseInstanceSettings):
             records_root=records_root,
             db_dir=db_dir,
             db_path=db_path,
-            indexer_state_dir=flow_home / "dev_indexer_state",
-            index_dir=flow_home / "dev_index",
-            sessions_dir=flow_home / "dev_sessions",
             tasks_dir=flow_home / "dev_tasks",
-            storage_dir=flow_home / "dev_storage",
             skill_rules_dir=flow_home / "dev_skill_rules",
             schema_dir=flow_home / "dev_schema",
             records_data_dir=flow_home / "dev_records_data",
@@ -59,8 +56,18 @@ class DevInstanceSettings(BaseInstanceSettings):
             monitor_log_path=flow_home / "dev_monitor.log",
             inbox_last_fetch_path=flow_home / ".dev_inbox_last_fetch.json",
             db_driver=os.environ.get(ENV_DESKTOP_DB, DEFAULT_DB_DRIVER).lower(),
+            user_home=Path.home(),
             claude_home=claude_home,
             claude_skills_dir=claude_home / "skills",
             claude_agents_dir=claude_home / "agents",
             claude_projects_dir=claude_home / "projects",
+            claude_commands_dir=claude_home / "commands",
+            claude_plans_dir=claude_home / "plans",
+            claude_workflows_dir=claude_home / "workflows",
+            claude_docs_dir=claude_home / "docs",
+            claude_tasks_dir=claude_home / "tasks",
+            claude_history_path=claude_home / "history.jsonl",
+            claude_mcp_json_path=claude_home / "mcp.json",
+            claude_settings_json_path=claude_home / "settings.json",
+            claude_managed_settings_path=claude_home / "managed-settings.json",
         )

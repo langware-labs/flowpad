@@ -44,9 +44,8 @@ class TestInstanceSettings(BaseInstanceSettings):
         claude_home = sandbox / ".claude"
         flow_home.mkdir(parents=True, exist_ok=True)
         claude_home.mkdir(parents=True, exist_ok=True)
-        (claude_home / "skills").mkdir(parents=True, exist_ok=True)
-        (claude_home / "agents").mkdir(parents=True, exist_ok=True)
-        (claude_home / "projects").mkdir(parents=True, exist_ok=True)
+        for sub in ("skills", "agents", "projects", "commands", "plans", "workflows", "docs", "tasks"):
+            (claude_home / sub).mkdir(parents=True, exist_ok=True)
 
         # Tests can still override via FS_RECORD_PATH / SQLITE_DATABASE_PATH for
         # per-test isolation on top of the sandbox.
@@ -71,11 +70,7 @@ class TestInstanceSettings(BaseInstanceSettings):
             records_root=records_root,
             db_dir=db_dir,
             db_path=db_path,
-            indexer_state_dir=flow_home / "indexer_state",
-            index_dir=flow_home / "index",
-            sessions_dir=flow_home / "sessions",
             tasks_dir=flow_home / "tasks",
-            storage_dir=flow_home / "storage",
             skill_rules_dir=flow_home / "skill_rules",
             schema_dir=flow_home / "schema",
             records_data_dir=flow_home / "records_data",
@@ -83,10 +78,20 @@ class TestInstanceSettings(BaseInstanceSettings):
             monitor_log_path=flow_home / "monitor.log",
             inbox_last_fetch_path=flow_home / ".inbox_last_fetch.json",
             db_driver=os.environ.get(ENV_DESKTOP_DB, DEFAULT_DB_DRIVER).lower(),
+            user_home=sandbox,
             claude_home=claude_home,
             claude_skills_dir=claude_home / "skills",
             claude_agents_dir=claude_home / "agents",
             claude_projects_dir=claude_home / "projects",
+            claude_commands_dir=claude_home / "commands",
+            claude_plans_dir=claude_home / "plans",
+            claude_workflows_dir=claude_home / "workflows",
+            claude_docs_dir=claude_home / "docs",
+            claude_tasks_dir=claude_home / "tasks",
+            claude_history_path=claude_home / "history.jsonl",
+            claude_mcp_json_path=claude_home / "mcp.json",
+            claude_settings_json_path=claude_home / "settings.json",
+            claude_managed_settings_path=claude_home / "managed-settings.json",
         )
 
     @staticmethod

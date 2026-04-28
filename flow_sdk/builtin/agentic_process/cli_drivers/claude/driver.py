@@ -290,7 +290,8 @@ class ClaudeDriver:
         """Snapshot of ``~/.claude/projects/`` entries that encode an
         agentic-process records path. Tests assert this set doesn't grow.
         """
-        claude_projects = Path.home() / ".claude" / "projects"
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+        claude_projects = get_instance_settings().claude_projects_dir
         if not claude_projects.is_dir():
             return set()
         return {

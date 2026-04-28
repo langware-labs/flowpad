@@ -7,8 +7,6 @@ from here via ``get_shared_indexer()``.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from flow_sdk.fs_store.indexer.index_function import FSIndexer
 from flow_sdk.fs_store.indexer.roots import default_roots
 from flow_sdk.fs_store.record_types import RecordType
@@ -34,7 +32,7 @@ INDEXABLE_TYPES: list[RecordType] = [
 ]
 
 
-def build_default_indexer(state_dir: Path | None = None) -> FSIndexer:
+def build_default_indexer() -> FSIndexer:
     """Construct an FSIndexer with the canonical root set + all functions registered."""
     # Import locally to keep this module import-light at package-init time.
     from flow_sdk.fs_store.indexer.functions.claude_projects import claude_projects_fn
@@ -62,11 +60,7 @@ def build_default_indexer(state_dir: Path | None = None) -> FSIndexer:
         claude_hook_fn, claude_hook_extras_fn,
     )
 
-    if state_dir is None:
-        from flow_sdk.instance_settings import get_instance_settings
-        state_dir = get_instance_settings().indexer_state_dir
     idx = FSIndexer(
-        state_dir=state_dir,
         roots=default_roots(),
     )
 
