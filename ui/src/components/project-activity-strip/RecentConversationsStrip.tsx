@@ -1,9 +1,10 @@
 import { Conversation, FlowMessage, Project, QueryRequest, Task, TypeId } from '@sdk';
 import { uploadFlowMessage, type UploadConflict } from '@sdk/entities/flow-message';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
+import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { MessageSquare, RefreshCw, Upload } from 'lucide-react';
+import { MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { formatTimeAgo } from './project-activity-utils';
 
@@ -20,6 +21,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadConflicts, setUploadConflicts] = useState<UploadConflict[] | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [newConvOpen, setNewConvOpen] = useState(false);
 
   const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
   const { data: conversations = [], refetch, isLoading } = useEntitiesQuery<Conversation>(request);
@@ -102,6 +104,15 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
           <button
             type="button"
             className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            onClick={() => setNewConvOpen(true)}
+            title="New conversation"
+            data-testid="new-conversation-button"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             onClick={() => fileInputRef.current?.click()}
             title="Upload message"
             data-testid="upload-message-button"
@@ -162,6 +173,14 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
           Open all ({sorted.length})
         </button>
       )}
+
+      <NewConversationDialog
+        open={newConvOpen}
+        onClose={() => {
+          setNewConvOpen(false);
+          void refetch();
+        }}
+      />
     </div>
   );
 }

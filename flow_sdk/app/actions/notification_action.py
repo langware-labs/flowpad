@@ -112,7 +112,8 @@ async def _resolve_recipient(recipient_id: str) -> tuple[Optional[str], str]:
     if recipient_user:
         return recipient_user.email, recipient_user.id
     if "@" in recipient_id:
-        return recipient_id, recipient_id
+        recipient_user = await User.get_or_create_by_email(recipient_id)
+        return recipient_user.email, recipient_user.id
     raise ValueError(f"Recipient not found: {recipient_id}")
 
 
