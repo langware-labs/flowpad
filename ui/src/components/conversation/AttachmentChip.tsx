@@ -16,6 +16,15 @@ import type { LucideIcon } from 'lucide-react';
 import { cn } from '@src/lib/utils';
 
 const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico']);
+const VIDEO_EXTS = new Set(['mp4', 'mov', 'm4v', 'webm', 'ogv', 'ogg']);
+const VIDEO_MIME: Record<string, string> = {
+  mp4: 'video/mp4',
+  m4v: 'video/mp4',
+  mov: 'video/quicktime',
+  webm: 'video/webm',
+  ogv: 'video/ogg',
+  ogg: 'video/ogg',
+};
 
 function extOf(name: string): string {
   const dot = name.lastIndexOf('.');
@@ -24,6 +33,10 @@ function extOf(name: string): string {
 
 function isImage(name: string): boolean {
   return IMAGE_EXTS.has(extOf(name));
+}
+
+function isVideo(name: string): boolean {
+  return VIDEO_EXTS.has(extOf(name));
 }
 
 interface FileMeta {
@@ -37,16 +50,46 @@ function fileMeta(name: string): FileMeta {
   const upper = ext ? ext.toUpperCase() : 'FILE';
   if (ext === 'pdf') return { Icon: FileText, bg: 'bg-red-500', label: 'PDF' };
   if (['doc', 'docx', 'rtf', 'odt'].includes(ext)) return { Icon: FileText, bg: 'bg-blue-500', label: upper };
-  if (['xls', 'xlsx', 'csv', 'ods', 'tsv'].includes(ext)) return { Icon: FileSpreadsheet, bg: 'bg-emerald-600', label: upper };
+  if (['xls', 'xlsx', 'csv', 'ods', 'tsv'].includes(ext))
+    return { Icon: FileSpreadsheet, bg: 'bg-emerald-600', label: upper };
   if (['ppt', 'pptx', 'odp', 'key'].includes(ext)) return { Icon: FileText, bg: 'bg-orange-500', label: upper };
-  if (['zip', 'tar', 'gz', '7z', 'rar', 'bz2', 'xz'].includes(ext)) return { Icon: FileArchive, bg: 'bg-yellow-600', label: upper };
-  if (['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'].includes(ext)) return { Icon: FileAudio, bg: 'bg-indigo-500', label: upper };
+  if (['zip', 'tar', 'gz', '7z', 'rar', 'bz2', 'xz'].includes(ext))
+    return { Icon: FileArchive, bg: 'bg-yellow-600', label: upper };
+  if (['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'].includes(ext))
+    return { Icon: FileAudio, bg: 'bg-indigo-500', label: upper };
   if (['mp4', 'mov', 'avi', 'mkv', 'webm'].includes(ext)) return { Icon: FileVideo, bg: 'bg-pink-500', label: upper };
   if (
     [
-      'js', 'jsx', 'ts', 'tsx', 'json', 'html', 'htm', 'css', 'scss', 'sass',
-      'py', 'java', 'c', 'h', 'cpp', 'hpp', 'rb', 'go', 'rs', 'sh', 'bash', 'zsh',
-      'yaml', 'yml', 'toml', 'xml', 'sql', 'php', 'kt', 'swift',
+      'js',
+      'jsx',
+      'ts',
+      'tsx',
+      'json',
+      'html',
+      'htm',
+      'css',
+      'scss',
+      'sass',
+      'py',
+      'java',
+      'c',
+      'h',
+      'cpp',
+      'hpp',
+      'rb',
+      'go',
+      'rs',
+      'sh',
+      'bash',
+      'zsh',
+      'yaml',
+      'yml',
+      'toml',
+      'xml',
+      'sql',
+      'php',
+      'kt',
+      'swift',
     ].includes(ext)
   ) {
     return { Icon: FileCode, bg: 'bg-purple-500', label: upper };
@@ -68,6 +111,7 @@ interface AttachmentChipProps {
 export function AttachmentChip({ url, filename }: AttachmentChipProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
+  const [videoFailed, setVideoFailed] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -172,6 +216,26 @@ export function AttachmentChip({ url, filename }: AttachmentChipProps) {
             className="block max-h-[280px] max-w-full object-contain"
           />
         </a>
+        {overlay}
+      </div>
+    );
+  }
+
+  if (isVideo(filename) && !videoFailed) {
+    const mime = VIDEO_MIME[extOf(filename)];
+    return (
+      <div ref={containerRef} className="group relative inline-block">
+        <div className="block max-w-[360px] overflow-hidden rounded-lg border border-border bg-black" title={filename}>
+          <video
+            controls
+            preload="metadata"
+            playsInline
+            onError={() => setVideoFailed(true)}
+            className="block max-h-[280px] max-w-full bg-black"
+          >
+            {mime ? <source src={url} type={mime} /> : <source src={url} />}
+          </video>
+        </div>
         {overlay}
       </div>
     );
