@@ -460,11 +460,12 @@ async def set_db_path(new_path: str) -> DbSettingsResult:
 # ---------------------------------------------------------------------------
 
 
-def get_scan_info() -> dict:
-    """Return current index status — reads SchemaRegistry in-memory log cache, no DB query."""
+async def get_scan_info() -> dict:
+    """Return current index status. Reads JSONL bookkeeping + queries the DB
+    for live entity counts (single chokepoint via SchemaRegistry.get_index_status)."""
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-    status = SchemaRegistry.get_index_status()
+    status = await SchemaRegistry.get_index_status()
     total_indexed = sum(t.entity_count for t in status.per_type)
     return {
         "total_indexed": total_indexed,

@@ -348,7 +348,7 @@ class FsRecordsActionsMixin:
 
         from flow_sdk.fs_records.schema_record import SchemaRecord  # noqa: PLC0415
 
-        status = SchemaRecord.get_index_status()
+        status = await SchemaRecord.get_index_status()
         return ApiSuccessResponse(
             data={
                 "never_indexed": status.never_indexed,

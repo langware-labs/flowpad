@@ -1269,9 +1269,9 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         desktop_info = await get_desktop_info()
         _t.time("get_desktop_info")
 
-        # Get scan info (index status, no DB query needed)
+        # Get scan info (index status; queries DB for live entity counts).
         from flow_sdk.system_tools import get_scan_info  # noqa: PLC0415
-        scan_info = get_scan_info()
+        scan_info = await get_scan_info()
         _t.time("get_scan_info")
 
         # Auto-enable sniffer hook on desktop init.

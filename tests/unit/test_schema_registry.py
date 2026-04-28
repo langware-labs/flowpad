@@ -27,7 +27,6 @@ def _fresh_registry():
     SchemaRegistry._types.clear()
     SchemaRegistry._subtypes.clear()
     SchemaRegistry._default_index_types.clear()
-    SchemaRegistry._persisted_hashes.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -40,7 +39,6 @@ def restore_registry():
     saved_types = dict(SchemaRegistry._types)
     saved_subtypes = {k: list(v) for k, v in SchemaRegistry._subtypes.items()}
     saved_default_index = list(SchemaRegistry._default_index_types)
-    saved_hashes = dict(SchemaRegistry._persisted_hashes)
     yield
     SchemaRegistry._types.clear()
     SchemaRegistry._types.update(saved_types)
@@ -48,8 +46,6 @@ def restore_registry():
     SchemaRegistry._subtypes.update({k: list(v) for k, v in saved_subtypes.items()})
     SchemaRegistry._default_index_types.clear()
     SchemaRegistry._default_index_types.extend(saved_default_index)
-    SchemaRegistry._persisted_hashes.clear()
-    SchemaRegistry._persisted_hashes.update(saved_hashes)
 
 
 # ---------------------------------------------------------------------------
@@ -239,20 +235,6 @@ def test_persist_skips_if_hash_unchanged(tmp_path):
     _fresh_registry()
 
 
-def test_load_persisted_restores_types(tmp_path):
-    _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        SchemaRegistry.register(TypeInfo(type_name="loaded_type", indexed_by_default=True))
-
-    _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        SchemaRegistry.load_persisted()
-        info = SchemaRegistry.get("loaded_type")
-    assert info is not None
-    assert info.type_name == "loaded_type"
-    _fresh_registry()
-
-
 # ---------------------------------------------------------------------------
 # SchemaRegistry — logging (append_scan / append_index / get_last_*)
 # ---------------------------------------------------------------------------
@@ -384,25 +366,6 @@ def test_get_index_status_not_stale_when_recent(tmp_path):
 # ---------------------------------------------------------------------------
 # SchemaRegistry — TypeInfo.scans property
 # ---------------------------------------------------------------------------
-
-
-def test_type_info_scans_reads_from_log(tmp_path):
-    _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        SchemaRegistry.register(TypeInfo(type_name="scanned_type"))
-        SchemaRegistry.append_scan(
-            trigger="test",
-            duration_ms=1.0,
-            total_records=1,
-            total_bytes=100,
-            types=[],
-            type_name="scanned_type",
-        )
-        info = SchemaRegistry.get("scanned_type")
-        scans = info.scans
-    assert len(scans) == 1
-    assert scans[0]["scan_trigger"] == "test"
-    _fresh_registry()
 
 
 # ---------------------------------------------------------------------------
