@@ -22,4 +22,5 @@ class Conversation(Entity):
     data_path: Optional[str] = APIField(None)
     message_count: int = APIField(0)
     message_ids: Optional[str] = APIField(None)  # JSON-encoded [{"message_id": uuid, "timestamp": ISO}]
+    participants: list[dict] = APIField(default_factory=list)  # [{user_id, email, name}]
     _api_visible: ClassVar[bool] = True
