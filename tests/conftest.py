@@ -116,14 +116,18 @@ def app():
 
 
 @pytest.fixture(autouse=True)
-def isolated_records_root(tmp_path):
-    """Redirect the default records root to a temp dir for every test."""
-    from flow_sdk.fs_store.record import (
-        get_default_records_root,
-        set_default_records_root,
-    )
+def isolated_records_root(tmp_path, monkeypatch):
+    """Redirect the default records root to a temp dir for every test.
 
-    original = get_default_records_root()
-    set_default_records_root(tmp_path / "records")
+    Sets FS_RECORD_PATH env var (which BaseInstanceSettings.from_env reads)
+    and resets the cached singleton so the next get_instance_settings()
+    rebuilds with the new path. Mirrors the per-instance contract — no
+    module-level mutation, the InstanceSettings singleton is the single
+    source of truth.
+    """
+    from flow_sdk.instance_settings import reset_instance_settings  # noqa: PLC0415
+
+    monkeypatch.setenv("FS_RECORD_PATH", str(tmp_path / "records"))
+    reset_instance_settings()
     yield tmp_path / "records"
-    set_default_records_root(original)
+    reset_instance_settings()
