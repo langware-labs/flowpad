@@ -24,9 +24,6 @@ interface FlowMessageBubbleProps {
   messageId: string;
   timestamp: string;
   task: ITask;
-  onShowTask?: () => void;
-  onClaudeCode?: () => void;
-  isStartLabel?: boolean;
   onApproveAndExecute?: (messageId: string, attachmentIndex: number) => void;
 }
 
@@ -34,9 +31,6 @@ export function FlowMessageBubble({
   messageId,
   timestamp,
   task,
-  onShowTask,
-  onClaudeCode,
-  isStartLabel,
   onApproveAndExecute,
 }: FlowMessageBubbleProps) {
   const { data: fm } = useEntity<FlowMessage>(
@@ -45,7 +39,20 @@ export function FlowMessageBubble({
   const { localUser, updateName } = useLocalUser();
   const [overrideName, setOverrideName] = useState<string | null>(null);
 
-  if (!fm) return null;
+  if (!fm) {
+    // The pointer to this FlowMessage is in the conversation.jsonl, but the
+    // entity itself hasn't been materialised locally yet (it lands via the
+    // hub bundle, which is fetched asynchronously). Show a thin placeholder
+    // instead of returning null so the bubble doesn't disappear silently.
+    return (
+      <div className="flex gap-2 opacity-60">
+        <div className="h-8 w-8 shrink-0 animate-pulse rounded-full bg-muted" />
+        <div className="flex min-w-0 flex-1 flex-col gap-1 pt-1">
+          <span className="text-[11px] italic text-muted-foreground/70">Loading message…</span>
+        </div>
+      </div>
+    );
+  }
 
   const isCurrentUser = !!(fm.sender_id && localUser?.id && fm.sender_id === localUser.id);
   const displayName = overrideName ?? (fm.sender_name || (isCurrentUser ? (localUser?.name || 'You') : 'Unknown'));
@@ -62,14 +69,12 @@ export function FlowMessageBubble({
     timestamp,
   };
 
-  const allFileAttachments = (fm.attachment ?? []).filter(
-    (a) => a.attachment_type === AttachmentType.FILE,
+  // Filter out the conversation.jsonl transcript — that lives on the toolbar now.
+  const fileAttachments = (fm.attachment ?? []).filter(
+    (a) => a.attachment_type === AttachmentType.FILE && !a.data.endsWith('conversation.jsonl'),
   );
-  const isTranscript = (a: { data: string }) => a.data.endsWith('conversation.jsonl');
-  const fileAttachments = allFileAttachments.filter((a) => !isTranscript(a));
-  const transcriptAttachment = allFileAttachments.find(isTranscript);
 
-  const hasAttachments = !!fm.attachment_filename || fileAttachments.length > 0 || !!transcriptAttachment;
+  const hasAttachments = !!fm.attachment_filename || fileAttachments.length > 0;
   const totalAttachments = (fm.attachment_filename ? 1 : 0) + fileAttachments.length;
 
   const footer = hasAttachments ? (
@@ -100,17 +105,6 @@ export function FlowMessageBubble({
           Download all attachments
         </a>
       )}
-      {transcriptAttachment && (
-        <a
-          href={fileAttachmentUrl(messageId, transcriptAttachment.data)}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-block text-[11px] text-muted-foreground/80 underline-offset-2 transition-colors hover:text-foreground hover:underline"
-          title="View sender's conversation transcript"
-        >
-          conversation.jsonl
-        </a>
-      )}
     </div>
   ) : null;
 
@@ -125,9 +119,6 @@ export function FlowMessageBubble({
         setOverrideName(newName);
         await updateName(newName);
       } : undefined}
-      onShowTask={onShowTask}
-      onClaudeCode={onClaudeCode}
-      isStartLabel={isStartLabel}
       onApproveAndExecute={onApproveAndExecute ? (idx) => onApproveAndExecute(messageId, idx) : undefined}
       footer={footer}
     />

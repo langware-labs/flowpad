@@ -1,11 +1,16 @@
 import { useState, type ReactNode } from 'react';
 import { Pencil } from 'lucide-react';
+import {
+  AgenticProcess,
+  dataManager,
+  type FlowMessage,
+  TypeId,
+} from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
-import type { FlowMessage } from '@sdk';
 import { AttachmentType } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { MessageActions } from './MessageActions';
-import { MessageActionChips } from './MessageActionChips';
 import { PromptApprovalRow } from './PromptApprovalRow';
 import { useLocalUser } from './useLocalUser';
 
@@ -16,10 +21,6 @@ interface MessageBubbleProps {
   task?: ITask;
   senderName: string;
   onEditName?: (newName: string) => void;
-  onShowTask?: () => void;
-  onClaudeCode?: () => void;
-  /** True when the Claude Code chip should read "Start Claude Code session" instead of "Open Claude Code". */
-  isStartLabel?: boolean;
   onApproveAndExecute?: (attachmentIndex: number) => void;
   /** Optional content rendered below the message body (e.g. attachment chips). */
   footer?: ReactNode;
@@ -50,15 +51,13 @@ export function MessageBubble({
   task,
   senderName,
   onEditName,
-  onShowTask,
-  onClaudeCode,
-  isStartLabel,
   onApproveAndExecute,
   footer,
 }: MessageBubbleProps) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const { localUser } = useLocalUser();
+  const { navigation } = useDockNavigation();
 
   const isFromOther = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id !== localUser.id);
   // Show the prompt row for ANY message that has a PROMPT attachment so the
@@ -71,6 +70,20 @@ export function MessageBubble({
   const showPromptRow = !!promptAttachment;
   const canApprovePrompt =
     isFromOther && !!promptAttachment && !promptAttachment.approved_by && !!onApproveAndExecute;
+
+  const sharedProcessId = (task?.metadata as Record<string, unknown> | undefined)?.shared_process_id as
+    | string
+    | undefined;
+  const canOpenShared = !!promptAttachment && !!promptAttachment.approved_by && !!sharedProcessId;
+
+  const handleOpenShared = async () => {
+    if (!sharedProcessId) return;
+    const proc = await dataManager
+      .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, sharedProcessId))
+      .catch(() => null);
+    if (!proc) return;
+    navigation.openInBrowserTab(proc.dockPointer);
+  };
 
   const startEdit = () => {
     setEditValue(senderName);
@@ -135,17 +148,10 @@ export function MessageBubble({
           <PromptApprovalRow
             attachment={promptAttachment}
             onApprove={canApprovePrompt ? () => onApproveAndExecute!(promptIdx) : undefined}
+            onOpenShared={canOpenShared ? () => void handleOpenShared() : undefined}
           />
         )}
         {footer}
-        <MessageActionChips
-          flowMessageId={flowMessageId}
-          flowMessage={flowMessage}
-          task={task}
-          onShowTask={onShowTask}
-          onClaudeCode={onClaudeCode}
-          isStartLabel={isStartLabel}
-        />
       </div>
     </div>
   );

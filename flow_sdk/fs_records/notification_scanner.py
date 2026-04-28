@@ -320,6 +320,14 @@ async def _sync_conversation(task: Task, task_dir: Path) -> None:
     await conv.save(owner_typeid)
 
     try:
+        import asyncio as _asyncio
+        from flow_sdk.app.actions.flow_message_action import handle_inbox_fetch
+        if owner_typeid is not None:
+            _asyncio.ensure_future(handle_inbox_fetch(str(owner_typeid)))
+    except Exception as e:
+        logger.warning(f"notification_scanner: schedule inbox-fetch failed (non-fatal): {e}")
+
+    try:
         send_resource_sync(
             type="conversation",
             id=conv.id,
