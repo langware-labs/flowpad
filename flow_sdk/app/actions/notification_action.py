@@ -1043,14 +1043,15 @@ async def update_local_user_name() -> ApiResponse:
 
 # ────────────────────────────────────────────────────────────────────────────
 # Project mapping (per-machine: remote_project_id → local_project_id)
-# Stored as a JSON file under FLOW_HOME so the mapping survives restarts and
-# is independent of the User entity (which has no settings field today).
+# Stored as a JSON file under InstanceSettings.flow_home so the mapping
+# survives restarts and is independent of the User entity (which has no
+# settings field today).
 # ────────────────────────────────────────────────────────────────────────────
 
 
 def _project_mapping_path() -> Path:
-    from flow_sdk.config import FLOW_HOME
-    return Path(FLOW_HOME) / "project_mapping.json"
+    from flow_sdk.instance_settings import get_instance_settings
+    return get_instance_settings().flow_home / "project_mapping.json"
 
 
 def _load_project_mapping() -> dict:
