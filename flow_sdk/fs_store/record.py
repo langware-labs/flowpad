@@ -665,6 +665,11 @@ class Record:
         No-op when main_ref is None, the file already exists, or default_body
         returns None. Creates parent directories as needed. Honors the FSRef
         read-only contract.
+
+        Invariant guard: refuses to write inside the records-root shadow tree.
+        asset_ref is the only editable surface for body content; the shadow
+        holds metadata only. If main_ref ever resolves to a shadow path, that's
+        a bug — fail loud rather than plant a stub.
         """
         mr = self.main_ref
         if mr is None:
@@ -675,6 +680,17 @@ class Record:
         body = self.default_body(entity)
         if body is None:
             return
+        try:
+            records_root = get_default_records_root().resolve()
+            if records_root in Path(path).resolve().parents:
+                raise RuntimeError(
+                    f"upsert_main_ref refused: {path} is under the records-root shadow {records_root}. "
+                    "Body content must live at asset_ref (user-owned file), never inside the shadow folder."
+                )
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
         try:
             mr.write(body)
         except IOError:

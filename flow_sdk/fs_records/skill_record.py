@@ -102,10 +102,13 @@ class SkillRecord(Record):
         kwargs.setdefault("status", "active")
         super().__init__(**kwargs)
 
-    def default_body(self, entity) -> str:
+    def default_body(self, entity) -> "str | None":
+        """YAML stub for new skills. Only invoked by upsert_main_ref when
+        SKILL.md doesn't yet exist at the asset_ref folder. Shadow guard in
+        Record.upsert_main_ref refuses writes inside the shadow tree."""
         name = (getattr(entity, "name", None) or "").strip()
         if not name:
-            return None  # type: ignore[return-value]
+            return None
         desc = (getattr(entity, "description", None) or "").strip()
         return f'---\nname: {name}\ndescription: "{desc}"\n---\n\n# {name}\n\n'
 
@@ -113,15 +116,12 @@ class SkillRecord(Record):
 
     @property
     def skill_doc(self) -> "Any":  # FrontMatterFsRef | None
-        """FrontMatterFsRef pointing to SKILL.md inside the skill folder."""
+        """FrontMatterFsRef pointing to SKILL.md inside the skill folder at asset_ref."""
         from flow_sdk.fs_store.fs_ref import FrontMatterFsRef
         ar = self.asset_ref
-        if ar is not None:
-            return FrontMatterFsRef(ar._path / "SKILL.md")
-        rd = self.record_dir
-        if rd is not None:
-            return FrontMatterFsRef(rd / "SKILL.md")
-        return None
+        if ar is None:
+            return None
+        return FrontMatterFsRef(ar._path / "SKILL.md")
 
     @property
     def main_ref(self) -> "Any":  # FrontMatterFsRef | None
@@ -254,11 +254,10 @@ class SkillRecord(Record):
         if not p.is_dir():
             return super().load_record(path)
 
-        # Shadow record dir — load normally and set asset_ref to skill folder
+        # Shadow record dir — load normally. asset_ref MUST come from
+        # metadata.json["asset_ref"]; never overwrite with the shadow path.
         if (p / _META_JSON).exists() or (p / "data.json").exists():
-            rec = super().load_record(path)
-            object.__setattr__(rec, "_asset_ref", FSRef(p.resolve()))
-            return rec
+            return super().load_record(path)
 
         # YAML/frontmatter bootstrap for live skill dirs
         yaml_fields = _load_skill_yaml_from_dir(p)

@@ -121,6 +121,11 @@ class AgentRecord(Record):
         return raw or "untitled"
 
     def default_body(self, entity) -> "str | None":
+        """YAML stub for new agents. Only invoked by upsert_main_ref when the
+        target file at asset_ref doesn't yet exist. The hardening guard in
+        Record.upsert_main_ref refuses to write inside the shadow folder, so
+        this stub can only land at the user-owned path computed from
+        compute_asset_ref."""
         name = (getattr(entity, "name", None) or "").strip()
         if not name:
             return None
@@ -129,15 +134,12 @@ class AgentRecord(Record):
 
     @property
     def agent_doc(self) -> "Any":  # FrontMatterFsRef | None
-        """FrontMatterFsRef pointing to the agent's .md file."""
+        """FrontMatterFsRef pointing to the agent's .md file at asset_ref."""
         from flow_sdk.fs_store.fs_ref import FrontMatterFsRef
         ar = self.asset_ref
-        if ar is not None:
-            return FrontMatterFsRef(ar._path)
-        rd = self.record_dir
-        if rd is not None and self.name:
-            return FrontMatterFsRef(rd / f"{self.name}.md")
-        return None
+        if ar is None:
+            return None
+        return FrontMatterFsRef(ar._path)
 
     @property
     def main_ref(self) -> "Any":  # FrontMatterFsRef | None
@@ -329,16 +331,11 @@ class AgentRecord(Record):
         if not p.is_dir():
             return super().load_record(path)
 
-        # Shadow record dir (has metadata.json or old data.json) — load normally,
-        # then wire up asset_ref to the companion .md if present.
+        # Shadow record dir (has metadata.json or old data.json) — load normally.
+        # asset_ref MUST come from metadata.json["asset_ref"]; never invent one
+        # from a stray .md inside the shadow folder (that .md is drift, not data).
         if (p / _META_JSON).exists() or (p / "data.json").exists():
-            rec = super().load_record(path)
-            if rec.asset_ref is None:
-                md_files = list(p.glob("*.md"))
-                if md_files:
-                    from flow_sdk.fs_store.fs_ref import FrontMatterFsRef
-                    object.__setattr__(rec, "_asset_ref", FrontMatterFsRef(md_files[0].resolve()))
-            return rec
+            return super().load_record(path)
 
         # Markdown bootstrap: dir contains only .md (external asset folder)
         md_files = list(p.glob("*.md"))
@@ -370,11 +367,8 @@ class AgentRecord(Record):
         return rec
 
     def save(self) -> None:
-        """Save both record.json and the companion .md file."""
+        """Save shadow metadata. Body lives at asset_ref and is owned by the user — never written from save()."""
         super().save()
-        doc = self.agent_doc
-        if doc is not None:
-            doc.write_doc(body=self.prompt, frontmatter=self._frontmatter_fields())
 
     def clone(self, base_dir: "str | Path") -> "AgentRecord":
         """Install this agent into base_dir/.claude/agents/<name>.md.

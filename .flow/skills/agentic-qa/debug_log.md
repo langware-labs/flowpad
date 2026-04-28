@@ -362,4 +362,153 @@ The reported symptom is consistent with two different SDK/server
 race scenarios; cannot pick between them without runtime evidence.
 
 
+## 2026-04-27 — ui/tests/long_tests/useHooksSnifferIntegration.test.tsx test 4 (sniffer.clear() race)
+
+### Failure
+`AssertionError: expected 2 to be +0` at line 264. After
+`result.current.sniffer.clear()` the test waits 5s for
+`sniffer.events.filter(e => e.session_id === sessTrace).length` to
+reach 0; it stays at 2. Reproduces on full-file invocation; passes
+when test 4 runs in isolation. Manager's bug_fixer hypothesis was a
+React-render race in the events memo. **That hypothesis is wrong.**
+
+### Root cause (high confidence)
+**Two AgentHook entity instances coexist with the same `id`. The
+React subscription (`useEntityData`) is on instance A's
+`flowDataStream`. `useHooksSniffer.clear()` clears instance B's
+`flowDataStream`. They are different `FlowDataStream` objects.
+Instance A's stream is never cleared, so React state never resets,
+so the events memo keeps producing the pre-clear events.**
+
+This is not a React/render/memo issue. The memo recomputes correctly
+when `flowData` changes. `flowData` never changes because the stream
+the React effect listens to never receives a `'clear'` event.
+
+### Reproduction & evidence (instrumented run on the branch)
+Probes added to `snifferManager.attach()` and to `useEntityData`'s
+mount effect captured `_instanceIndex`, `id`, and `flowDataStream.id`.
+For test 4:
+```
+attach: i_attached= 5  id= 20a1cca5-...  stream= agent_hook-20a1cca5-...-default
+mount:  i= 4           id= 20a1cca5-...  streamId= agent_hook-0029d2b3-...-default
+sniffer.clear: streamMatch=false, subscribedHasListeners=0,
+              handleClearFiredThisCall=0, _ownItemsAfter=0
+```
+- `snifferManager._entity` is instance #5 (E5) created in test 4's
+  `enable()`. Its `flowDataStream.id` is correctly
+  `agent_hook-20a1cca5-...-default`.
+- `useEntityData`'s cache lookup (`dataManager.getByTypeIdFromCache(
+  TypeId(agent_hook, 20a1cca5))`) returns instance #4 (E4) — a
+  different object whose `id` field is now `20a1cca5` but whose
+  `_flowDataStream` was created lazily back when its id was
+  `0029d2b3-...` (test 5's hook id). E4's stream id therefore is
+  the previous test's `agent_hook-0029d2b3-...-default`.
+- `useHooksSniffer.clear()` calls `snifferManager.entity.flowDataStream.clear()`
+  → that's E5's stream, which has 0 listeners (nobody is subscribed to it).
+- E4's stream — the one `useEntityData` IS subscribed to — has 1
+  listener and `_ownItems = [...9 items]` and is never cleared.
+- React state stays stale for the full 5s `waitFor` window.
+
+When test 4 runs in isolation, only one entity is ever created; E5
+== the cached entity, both streams identical, clear works. The full
+file run interleaves disable/enable across tests 1, 5, 4 in such a
+way that the cache slot for the new hook_id ends up holding a
+prior-test entity instance whose `id` was mutated.
+
+### Why two AgentHook objects share an id
+Across `enable()` / `disable()` cycles in the singleton
+`snifferManager`, a stale `AgentHook` from a prior test remains in
+`dataManager.entities` (the disable path doesn't evict it). When the
+backend assigns the new test's hook_id and code paths
+(deepAssign / castAndDeepAssign / WS create-update events) merge new
+data into that stale instance, its `id` field gets reassigned but its
+already-cached `_flowDataStream` (created by the lazy getter on
+first access) keeps the previous id baked into the stream's name —
+and remains a different object from the freshly-constructed
+`AgentHook` that `snifferManager.enable()` builds.
+
+The exact mutation pathway (deepAssign vs WS create vs
+AgentHook.list() refresh) was not nailed down — multiple paths in
+`flow_processing` and `FlowSync/store.ts` reuse a cached entity by
+typeId and `deepAssign` fields onto it. Pinning the exact line that
+mutates the id is not necessary to fix the symptom.
+
+### Confidence
+high — direct probe captured the divergence (E5's stream has 0
+listeners, E4's stream has 1, sniffer.clear hits E5's, useEntityData
+listens on E4's). Probes reverted before reporting.
+
+### Recommended fix path
+**Lowest-risk, most localized fix: harden
+`useHooksSniffer.clear()` so it resets the React state directly
+instead of relying on the right stream emitting 'clear'.** The
+existing `useEntityData` hook already returns a `clear()` callback
+that does `setFlowData([])` unconditionally. Wire it through:
+
+```ts
+// in useHooksSniffer:
+const { flowData, clear: clearEntityData } = useEntityData(
+  hookId ? new TypeId(AgentHook.type, hookId) : null,
+);
+...
+const clear = useCallback(() => {
+  sessionToProjectRef.current.clear();
+  const entity = snifferManager.entity;
+  if (entity && 'flowDataStream' in entity) {
+    const stream = (entity as any).flowDataStream;
+    const clearedCount = stream._ownItems?.length ?? 0;
+    globalIndexOffsetRef.current += clearedCount;
+    stream.clear();
+  }
+  // Force-reset React state regardless of which stream emitted 'clear'.
+  // Defends against the entity-instance-divergence case where
+  // snifferManager.entity is a different object from the one
+  // useEntityData subscribed to.
+  clearEntityData();
+}, [clearEntityData]);
+```
+
+This is the recommended fix because:
+- It is fully localized to `useHooksSniffer` — no ts_sdk changes.
+- It does not depend on the underlying entity-instance-consistency
+  bug being fixed (which is a deeper, riskier refactor).
+- It is defensively safe: if the streams DO match,
+  `clearEntityData()` is a no-op idempotent reset; if they DON'T
+  match, it correctly resets the consumer's view.
+
+**Deeper fix (NOT recommended for this PR):** make
+`snifferManager` evict the prior entity from `dataManager` cache on
+`disable()` (or on `attach()` when replacing). This eliminates the
+divergence root cause but touches `dataManager` lifecycle and risks
+breaking other consumers of the AgentHook entity cache. Worth a
+separate task with broader review.
+
+### Constraints honored
+- No flaky markers, no .skip, no mocks, no timeout extensions: the
+  recommended fix is a one-line state-reset in production code.
+- Fix is in production code (the `useHooksSniffer` hook), not in
+  the test.
+
+### Side note — bug_fixer's earlier hypothesis
+The hypothesis "stream.clear emits 'clear' but the events memo
+doesn't re-run because flowData reference doesn't change" was
+**incorrect**. The events memo DOES re-run when `flowData` changes;
+the issue is that `setFlowData([])` is never called for the right
+React instance because the 'clear' event fires on a different stream
+object that has no listeners. The "ring-buffer eviction in
+full-suite case masks it" framing is also incorrect — the full-suite
+case doesn't mask via eviction; subsequent events arriving after
+`clear()` happen to hit the *correct* stream (E4's), causing
+`setFlowData([...newItems])` and incidentally re-rendering the
+consumer with non-stale `flowData`. The "trim fixes it" theory is a
+misread of the same effect.
+
+### Classification
+Real production bug — entity-instance divergence between
+`snifferManager._entity` and the corresponding cache slot in
+`dataManager`. The recommended one-line consumer-side fix is robust
+without requiring a deeper cache-invariant cleanup.
+
+
+
 
