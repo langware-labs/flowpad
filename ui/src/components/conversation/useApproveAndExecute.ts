@@ -107,10 +107,10 @@ export function useApproveAndExecute({ task }: UseApproveAndExecuteOptions): Use
 
     // Determine the session to fork from:
     //   - On the initiator's machine, agentic_session_id is the live original session.
-    //   - On the receiver's machine, initiator_session_id is the rehydrated transcript;
+    //   - On the receiver's machine, sender_session_id is the rehydrated transcript;
     //     if absent, rehydrate from the attached conversation.jsonl now (first approve).
     let resumeSessionId = (taskMeta.agentic_session_id as string | undefined)
-      ?? (taskMeta.initiator_session_id as string | undefined);
+      ?? (taskMeta.sender_session_id as string | undefined);
 
     if (!resumeSessionId) {
       const transcript = await findInitiatorTranscriptMessage(task);
@@ -120,7 +120,7 @@ export function useApproveAndExecute({ task }: UseApproveAndExecuteOptions): Use
           resumeSessionId = result.session_id;
           const t = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId));
           if (t) {
-            t.metadata = { ...(t.metadata ?? {}), initiator_session_id: result.session_id };
+            t.metadata = { ...(t.metadata ?? {}), sender_session_id: result.session_id };
             await t.save();
           }
         }

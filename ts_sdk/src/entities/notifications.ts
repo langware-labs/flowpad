@@ -48,8 +48,8 @@ export interface SendNotificationParams {
   team_space_id?: string | null;
   sender_name?: string | null;
   files?: File[];
-  /** Sender's local Claude Code session id — stored on the recipient side as task.metadata.initiator_session_id. */
-  initiator_session_id?: string | null;
+  /** Sender's local Claude Code session id — stored on the recipient side as task.metadata.sender_session_id. */
+  sender_session_id?: string | null;
 }
 
 export async function sendNotification(params: SendNotificationParams): Promise<{ git_error?: string | null; sent?: boolean; email_error?: string | null }> {
