@@ -27,7 +27,14 @@ from flow_sdk.instance_settings import get_instance_settings
 
 _MAX_LOG_ENTRIES: int = 100
 
-SCHEMA_DIR: Path = get_instance_settings().schema_dir
+
+def _schema_dir() -> Path:
+    """Resolve the per-instance schema dir at call time.
+
+    Lives on InstanceSettings — never cache the result, never construct
+    `~/.flow/<...>/schema` directly. This getter is the single chokepoint.
+    """
+    return get_instance_settings().schema_dir
 
 
 def _sanitize_type_name(type_name: str) -> str:
@@ -36,7 +43,7 @@ def _sanitize_type_name(type_name: str) -> str:
 
 
 def _schema_dir_for(type_name: str) -> Path:
-    return SCHEMA_DIR / "types" / _sanitize_type_name(type_name)
+    return _schema_dir() / "types" / _sanitize_type_name(type_name)
 
 
 # ---------------------------------------------------------------------------
@@ -440,7 +447,7 @@ class SchemaRegistry:
     @classmethod
     def load_persisted(cls) -> None:
         """Load all type_info.json files at startup. Best-effort, never raises."""
-        types_dir = SCHEMA_DIR / "types"
+        types_dir = _schema_dir() / "types"
         if not types_dir.is_dir():
             return
         for type_dir in types_dir.iterdir():
@@ -489,7 +496,7 @@ class SchemaRegistry:
                 "created_at": now,
             }
             sanitized = _sanitize_type_name(type_name)
-            _append_jsonl(SCHEMA_DIR / "types" / sanitized / "scan_log.jsonl", entry)
+            _append_jsonl(_schema_dir() / "types" / sanitized / "scan_log.jsonl", entry)
         else:
             global_entry = {
                 "id": str(uuid.uuid4()),
@@ -501,7 +508,7 @@ class SchemaRegistry:
                 "types": types,
                 "created_at": now,
             }
-            _append_jsonl(SCHEMA_DIR / "scan_log.jsonl", global_entry)
+            _append_jsonl(_schema_dir() / "scan_log.jsonl", global_entry)
             for t in types:
                 t_name = t.get("type", "")
                 if not t_name:
@@ -517,7 +524,7 @@ class SchemaRegistry:
                     "created_at": now,
                 }
                 sanitized = _sanitize_type_name(t_name)
-                _append_jsonl(SCHEMA_DIR / "types" / sanitized / "scan_log.jsonl", t_entry)
+                _append_jsonl(_schema_dir() / "types" / sanitized / "scan_log.jsonl", t_entry)
 
         return now
 
@@ -543,7 +550,7 @@ class SchemaRegistry:
                 "created_at": now,
             }
             sanitized = _sanitize_type_name(type_name)
-            _append_jsonl(SCHEMA_DIR / "types" / sanitized / "index_log.jsonl", entry)
+            _append_jsonl(_schema_dir() / "types" / sanitized / "index_log.jsonl", entry)
         else:
             global_entry = {
                 "id": str(uuid.uuid4()),
@@ -554,7 +561,7 @@ class SchemaRegistry:
                 "types": types,
                 "created_at": now,
             }
-            _append_jsonl(SCHEMA_DIR / "index_log.jsonl", global_entry)
+            _append_jsonl(_schema_dir() / "index_log.jsonl", global_entry)
             for t in types:
                 t_name = t.get("type", "")
                 if not t_name:
@@ -569,25 +576,25 @@ class SchemaRegistry:
                     "created_at": now,
                 }
                 sanitized = _sanitize_type_name(t_name)
-                _append_jsonl(SCHEMA_DIR / "types" / sanitized / "index_log.jsonl", t_entry)
+                _append_jsonl(_schema_dir() / "types" / sanitized / "index_log.jsonl", t_entry)
 
         return now
 
     @staticmethod
     def get_last_scan_at(type_name: str) -> str | None:
         sanitized = _sanitize_type_name(type_name)
-        entry = _read_last_entry(SCHEMA_DIR / "types" / sanitized / "scan_log.jsonl")
+        entry = _read_last_entry(_schema_dir() / "types" / sanitized / "scan_log.jsonl")
         return (entry or {}).get("created_at")
 
     @staticmethod
     def get_last_index_at(type_name: str) -> str | None:
         sanitized = _sanitize_type_name(type_name)
-        entry = _read_last_entry(SCHEMA_DIR / "types" / sanitized / "index_log.jsonl")
+        entry = _read_last_entry(_schema_dir() / "types" / sanitized / "index_log.jsonl")
         return (entry or {}).get("created_at")
 
     @staticmethod
     def get_last_global_index_at() -> str | None:
-        entry = _read_last_entry(SCHEMA_DIR / "index_log.jsonl")
+        entry = _read_last_entry(_schema_dir() / "index_log.jsonl")
         return (entry or {}).get("created_at")
 
     # ---------------------------------------------------------------------------
@@ -606,10 +613,10 @@ class SchemaRegistry:
             entities_cleared = (
                 await driver.delete_entities_by_type(None) if hasattr(driver, "delete_entities_by_type") else 0
             )
-            global_log = SCHEMA_DIR / "index_log.jsonl"
+            global_log = _schema_dir() / "index_log.jsonl"
             if global_log.exists():
                 global_log.unlink()
-            types_dir = SCHEMA_DIR / "types"
+            types_dir = _schema_dir() / "types"
             if types_dir.is_dir():
                 for per_type_log in types_dir.glob("*/index_log.jsonl"):
                     per_type_log.unlink()
@@ -623,7 +630,7 @@ class SchemaRegistry:
                 if hasattr(driver, "delete_entities_by_type"):
                     entities_cleared += await driver.delete_entities_by_type(type_name)
                 sanitized = _sanitize_type_name(type_name)
-                log_file = SCHEMA_DIR / "types" / sanitized / "index_log.jsonl"
+                log_file = _schema_dir() / "types" / sanitized / "index_log.jsonl"
                 if log_file.exists():
                     log_file.unlink()
                 types_cleared.append(type_name)

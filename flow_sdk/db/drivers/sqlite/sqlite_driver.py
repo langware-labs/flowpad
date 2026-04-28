@@ -42,10 +42,10 @@ from dataclasses import dataclass
 
 from .connection import (
     DEVELOPMENT,
-    SQLITE_DATABASE_PATH,
     Base,
     EntitySchema,
     RelationshipSchema,
+    get_database_path,
     get_database_url,
     install_pragmas_and_immediate,
 )
@@ -279,7 +279,7 @@ class SQLiteDBDriver(DBDriver):
     def __init__(self, cfg: Optional[DBConfig] = None):
         if not cfg:
             cfg = DBConfig()
-            cfg.database = SQLITE_DATABASE_PATH
+            cfg.database = get_database_path()
         super().__init__(cfg)
         self.engine: Optional[AsyncEngine] = None
         self.session_factory: Optional[async_sessionmaker] = None

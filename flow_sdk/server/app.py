@@ -60,11 +60,11 @@ from .routes import (
 async def _on_server_startup():
     """Write server.json for discovery by hooks/CLI and start cron scheduler."""
     from flow_sdk.config import set_server_info
-    from flow_sdk.db.drivers.sqlite.connection import SQLITE_DATABASE_PATH
+    from flow_sdk.db.drivers.sqlite.connection import get_database_path
     from flow_sdk.instance_settings import get_instance_settings
 
     settings = get_instance_settings()
-    print(f"  Database path: {SQLITE_DATABASE_PATH}")
+    print(f"  Database path: {get_database_path()}")
 
     if os.environ.get("FLOWPAD_SKIP_LOCK", "").lower() == "true":
         return

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from flow_sdk.fs_store import Record, RecordType
+from flow_sdk.instance_settings import get_instance_settings
 
 from ._frontmatter import _extract_frontmatter, _render_frontmatter, _yaml_load
 
@@ -48,7 +49,7 @@ def _workflow_search_dirs() -> list[Path]:
             seen.add(rp)
             dirs.append(p)
 
-    _add(Path.home() / ".claude" / "workflows")
+    _add(get_instance_settings().claude_workflows_dir)
 
     from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
     for real in iter_claude_project_paths():

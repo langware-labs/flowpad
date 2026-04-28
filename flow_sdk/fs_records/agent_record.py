@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.record import Scope, _META_JSON
+from flow_sdk.instance_settings import get_instance_settings
 
 
 def _agent_search_dirs() -> list[Path]:
@@ -36,7 +37,7 @@ def _agent_search_dirs() -> list[Path]:
             seen.add(rp)
             dirs.append(p)
 
-    _add(Path.home() / ".claude" / "agents")
+    _add(get_instance_settings().claude_agents_dir)
 
     # SDK-shipped system agents under the Flowpad Assistant system project.
     try:
@@ -460,7 +461,7 @@ class AgentRecord(Record):
                 return AgentRecord.load_from_dir(p)
 
         # User agents
-        user = Path.home() / ".claude" / "agents" / name
+        user = get_instance_settings().claude_agents_dir / name
         if user.is_dir():
             return AgentRecord.load_from_dir(user)
 

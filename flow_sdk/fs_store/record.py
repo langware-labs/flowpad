@@ -39,48 +39,55 @@ def _instance_settings():
     return get_instance_settings()
 
 
-_FLOWPAD_HOME: Path = _instance_settings().flow_home
-_DEFAULT_RECORDS_ROOT: Path = _instance_settings().records_root
-_DEFAULT_RECORDS_DATA_ROOT: Path = _instance_settings().records_data_dir
-
-ENV_FS_RECORD_PATH = "FS_RECORD_PATH"
-
-
 def get_flowpad_home() -> Path:
-    """Return the flowpad home directory (per-instance, via InstanceSettings)."""
+    """Per-instance flow home (call-time, via InstanceSettings)."""
     return _instance_settings().flow_home
 
 
 def get_default_records_root() -> Path:
-    """Return the default root for record metadata storage.
+    """Per-instance records root (call-time, via InstanceSettings).
 
-    Resolution order:
-    1. ``FS_RECORD_PATH`` env var (allows tests and explicit overrides)
-    2. ``_DEFAULT_RECORDS_ROOT`` (set by ``set_default_records_root()`` or config)
+    InstanceSettings already resolves the FS_RECORD_PATH env var inside
+    `from_env()` — never read the env here, that defeats the contract.
     """
-    env_path = os.environ.get(ENV_FS_RECORD_PATH)
-    if env_path:
-        return Path(env_path)
-    return _DEFAULT_RECORDS_ROOT
+    return _instance_settings().records_root
 
 
 def get_default_records_data_root() -> Path:
-    """Return the default root for record data/blob storage (~/.flow/records_data)."""
-    return _DEFAULT_RECORDS_DATA_ROOT
+    """Per-instance records data root (call-time, via InstanceSettings)."""
+    return _instance_settings().records_data_dir
+
+
+# ---------------------------------------------------------------------------
+# Test-only helpers
+#
+# These set the canonical env var that InstanceSettings reads in `from_env()`,
+# then reset the cached singleton so the next `get_instance_settings()` call
+# rebuilds with the new path. They do NOT mutate any module-level state — the
+# InstanceSettings singleton is the single source of truth.
+# ---------------------------------------------------------------------------
 
 
 def set_default_records_root(path: Path) -> None:
-    """Override the default records root (primarily for testing)."""
-    global _DEFAULT_RECORDS_ROOT
-    _DEFAULT_RECORDS_ROOT = path
-    # Sync the env var so get_default_records_root() — which checks it first — stays consistent.
-    os.environ[ENV_FS_RECORD_PATH] = str(path)
+    """Test-only: redirect records_root via FS_RECORD_PATH + InstanceSettings rebuild."""
+    from flow_sdk.instance_settings import reset_instance_settings  # noqa: PLC0415
+
+    os.environ["FS_RECORD_PATH"] = str(path)
+    reset_instance_settings()
 
 
 def set_default_records_data_root(path: Path) -> None:
-    """Override the default records data root (primarily for testing)."""
-    global _DEFAULT_RECORDS_DATA_ROOT
-    _DEFAULT_RECORDS_DATA_ROOT = path
+    """Test-only: redirect records_data_dir.
+
+    No env-var hook exists for this field — fall back to monkey-overriding the
+    `get_default_records_data_root` getter on this module. Test fixtures that
+    call this helper should call it inside a `monkeypatch.setattr` block, OR
+    accept that the override leaks until the next test resets InstanceSettings.
+    Prefer `monkeypatch.setattr(flow_sdk.fs_store.record, "get_default_records_data_root", lambda: path)`
+    in new tests.
+    """
+    global get_default_records_data_root
+    get_default_records_data_root = lambda: path  # noqa: E731
 
 
 class RecordStatus(str, Enum):

@@ -64,6 +64,10 @@ async def reinit_db(new_path: str) -> None:
     """
     expanded = os.path.expanduser(new_path)
     os.environ["SQLITE_DATABASE_PATH"] = expanded
+    # Rebuild the InstanceSettings singleton so callers using
+    # `get_instance_settings().db_path` see the new path.
+    from flow_sdk.instance_settings import reset_instance_settings  # noqa: PLC0415
+    reset_instance_settings()
 
     driver = _driver_instances.get("sqlite")
     if driver is not None:

@@ -29,13 +29,6 @@ def _server_json_path() -> Path:
     return get_instance_settings().server_json_path
 
 
-# Back-compat module-level constants. Kept so existing tests that import
-# these continue to work; new code should use _server_json_path() or
-# go through flow_sdk.instance_settings directly.
-SERVER_JSON_PATH = Path.home() / ".flow" / "server.json"
-DEV_SERVER_JSON_PATH = Path.home() / ".flow" / "dev_server.json"
-
-
 @dataclass
 class FlowpadServerInfo:
     """Server connection information from port file."""

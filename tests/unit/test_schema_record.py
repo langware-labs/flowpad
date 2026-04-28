@@ -52,7 +52,7 @@ def test_index_request_defaults():
 
 
 def test_append_scan_writes_global_log(tmp_path):
-    with mock.patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with mock.patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         ts = SchemaRecord.append_scan(
             trigger="test",
             duration_ms=10.0,
@@ -69,7 +69,7 @@ def test_append_scan_writes_global_log(tmp_path):
 
 
 def test_append_scan_writes_per_type_log(tmp_path):
-    with mock.patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with mock.patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         ts = SchemaRecord.append_scan(
             trigger="test",
             duration_ms=5.0,
@@ -86,7 +86,7 @@ def test_append_scan_writes_per_type_log(tmp_path):
 
 
 def test_append_index_writes_both_logs(tmp_path):
-    with mock.patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with mock.patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         ts = SchemaRecord.append_index(
             trigger="test",
             duration_ms=20.0,
@@ -107,13 +107,13 @@ def test_append_index_writes_both_logs(tmp_path):
 
 
 def test_get_last_scan_at_none_when_missing(tmp_path):
-    with mock.patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with mock.patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         result = SchemaRecord.get_last_scan_at("nonexistent_type")
     assert result is None
 
 
 def test_get_last_index_at_returns_timestamp(tmp_path):
-    with mock.patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with mock.patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         ts = SchemaRecord.append_index(
             trigger="t",
             duration_ms=1.0,

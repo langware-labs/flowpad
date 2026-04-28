@@ -7,7 +7,7 @@ from .project_collector import (
     get_project_cwd,
 )
 from ..utils import (
-    CLAUDE_HOME,
+    _claude_home,
     calculate_session_cost,
 )
 
@@ -42,7 +42,8 @@ def _resolve_tasks_path(primary_session_id: str, fallback_session_id: str | None
         candidates.append(fallback_session_id)
 
     for candidate in candidates:
-        tasks_dir = Path.home() / ".claude" / "tasks" / candidate
+        from flow_sdk.instance_settings import get_instance_settings as _gis
+        tasks_dir = _gis().claude_tasks_dir / candidate
         if tasks_dir.exists() and any(tasks_dir.glob("*.json")):
             return str(tasks_dir)
     return None
@@ -173,7 +174,7 @@ def get_session_info_quick(jsonl_path: Path, project_encoded_name: str | None = 
     # Check if plan file exists for this slug
     plan_path = None
     if slug:
-        potential_plan = CLAUDE_HOME / "plans" / f"{slug}.md"
+        potential_plan = _claude_home() / "plans" / f"{slug}.md"
         if potential_plan.exists():
             plan_path = str(potential_plan)
 
@@ -397,7 +398,7 @@ def get_session_info(jsonl_path: Path, project_encoded_name: str | None = None) 
     # Check if plan file exists for this slug
     plan_path = None
     if slug:
-        potential_plan = CLAUDE_HOME / "plans" / f"{slug}.md"
+        potential_plan = _claude_home() / "plans" / f"{slug}.md"
         if potential_plan.exists():
             plan_path = str(potential_plan)
 
@@ -449,7 +450,7 @@ def get_recent_sessions(limit: int = 10, per_project_limit: int = 0, quick: bool
         quick: Use quick mode (file metadata only) for faster listing (default True).
                Set to False to get full token/cost data (slower).
     """
-    projects_dir = CLAUDE_HOME / "projects"
+    projects_dir = _claude_home() / "projects"
 
     if not projects_dir.exists():
         return []

@@ -14,7 +14,11 @@ from flow_sdk.fs_store import Record
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
 
-TRIGGER_LOG_DIR: Path = get_instance_settings().records_root / "trigger_log"
+def _trigger_log_dir() -> Path:
+    """Per-instance trigger_log dir (call-time, via InstanceSettings)."""
+    return get_instance_settings().records_root / "trigger_log"
+
+
 MAX_ENTRIES = 1000
 DROP_COUNT = 200
 
@@ -38,7 +42,7 @@ class TriggerLogRecord(Record):
 
     @staticmethod
     def _log_file(rule_name: str) -> Path:
-        return TRIGGER_LOG_DIR / rule_name / "calls.jsonl"
+        return _trigger_log_dir() / rule_name / "calls.jsonl"
 
     @staticmethod
     def append_entry(rule_name: str, entry_dict: dict[str, Any]) -> None:
@@ -92,10 +96,11 @@ class TriggerLogRecord(Record):
             return cls._discover_rule(effective_rule, limit)
 
         # Generic scan — return entries across all rules
-        if not TRIGGER_LOG_DIR.exists():
+        log_dir = _trigger_log_dir()
+        if not log_dir.exists():
             return []
         results: list[dict[str, Any]] = []
-        for rule_dir in TRIGGER_LOG_DIR.iterdir():
+        for rule_dir in log_dir.iterdir():
             if rule_dir.is_dir():
                 results.extend(cls._discover_rule(rule_dir.name, limit))
         return results

@@ -422,9 +422,10 @@ def build_app_paths() -> AppPaths:
 
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
     """
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
     root = get_os_root_path()
     # Get home path relative to root (strip leading slash for VFS)
-    home_abs = str(Path.home())
+    home_abs = str(get_instance_settings().user_home)
     if platform.system() == "Windows":
         # On Windows: strip drive letter (e.g., "C:\") and normalize backslashes to forward slashes
         # "C:\Users\tamir" -> "Users/tamir"

@@ -9,6 +9,7 @@ from typing import Any, ClassVar
 
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.record import Scope
+from flow_sdk.instance_settings import get_instance_settings
 
 from ._frontmatter import _coerce_scalar, _extract_frontmatter, _yaml_load  # noqa: F401
 
@@ -45,7 +46,7 @@ def _skill_search_dirs() -> list[Path]:
             seen.add(rp)
             dirs.append(p)
 
-    _add(Path.home() / ".claude" / "skills")
+    _add(get_instance_settings().claude_skills_dir)
 
     # SDK-shipped system skills under the Flowpad Assistant system project.
     try:
@@ -327,7 +328,7 @@ class SkillRecord(Record):
         from flow_sdk.fs_store.fs_ref import FSRef
         results: list[SkillRecord] = []
         seen: set[str] = set()
-        user_dir = (Path.home() / ".claude" / "skills").resolve()
+        user_dir = (get_instance_settings().claude_skills_dir).resolve()
         limit = kwargs.get("limit")
         for skills_dir in _skill_search_dirs():
             is_user_dir = skills_dir.resolve() == user_dir
@@ -354,7 +355,7 @@ class SkillRecord(Record):
         return results
 
     def copy_to_claude_user_home(self) -> Path:
-        return self.copy_to(Path.home() / ".claude" / "skills")
+        return self.copy_to(get_instance_settings().claude_skills_dir)
 
     def copy_to_project(self, project_dir: str | Path) -> Path:
         return self.copy_to(Path(project_dir) / ".claude" / "skills")

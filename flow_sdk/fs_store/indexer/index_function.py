@@ -10,7 +10,6 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
 from typing import Any, Awaitable, Callable, Protocol
 
 from flow_sdk.fs_store.fs_ref import FSRef
@@ -169,10 +168,8 @@ async def _load_updated_map(driver: Any, type_name: str) -> dict[str, float]:
 class FSIndexer:
     def __init__(
         self,
-        state_dir: Path,
         roots: list[FSRef] | None = None,
     ) -> None:
-        self._state_dir: Path = state_dir
         self._roots: list[FSRef] = list(roots) if roots is not None else []
         self._functions: dict[RecordType, list[IndexerFunc]] = {}
 
@@ -366,28 +363,50 @@ class FSIndexer:
                     await driver.fts_upsert(fts_batch)
 
             # ----- Orphan handling -----
-            # An orphan is a DB row that existed before this run (in valid_map)
-            # but was never touched (not in seen_ids) — meaning its source on
-            # disk is gone. We compute these only when types_filter is set OR
-            # when the entire targets set was scanned from the indexer's roots.
+            # DEFINITION: a record is orphan iff its source (Layer 1, e.g.
+            # ~/.claude/skills/<name>/SKILL.md) does not exist. The orphan
+            # condition is independent of which materializations remain — DB
+            # row only, fs_record dir only, or both. We detect by looking at
+            # BOTH known materializations and asking the same question for each:
+            # was this id seen during the scan (meaning Layer 1 still exists)?
+            #
+            #   orphan_ids = (records_dir_ids | db_row_ids) - seen_ids
+            #
             # Project-scoped runs (opts.project_id != None) are skipped because
-            # valid_map covers the whole DB but seen_ids only covers the project.
+            # both valid_map and the records-dir walk are global, but seen_ids
+            # only covers refs from the project subtree.
             orphan_records: dict[RecordType, list[str]] = {}
+            orphan_id_sources: dict[RecordType, dict[str, dict[str, bool]]] = {}
             if opts.project_id is None:
-                orphan_filter_types = (
-                    {str(t) for t in opts.types} if opts.types else set(valid_map.keys())
+                orphan_filter_types = self._resolve_orphan_filter_types(
+                    opts.types, valid_map
                 )
-                for rt_name, db_ids in valid_map.items():
-                    if rt_name not in orphan_filter_types:
-                        continue
+                # Map type → set of ids found by walking the records dir on disk.
+                disk_ids_per_type = self._discover_records_dir_ids(orphan_filter_types)
+
+                for type_name in orphan_filter_types:
                     try:
-                        rt = RecordType(rt_name)
+                        rt = RecordType(type_name)
                     except ValueError:
                         continue
+
+                    db_ids = set(valid_map.get(type_name, {}).keys())
+                    disk_ids = disk_ids_per_type.get(type_name, set())
+                    all_ids = db_ids | disk_ids
+
                     seen = seen_ids.get(rt, set())
-                    missing = [eid for eid in db_ids.keys() if eid not in seen]
-                    if missing:
-                        orphan_records[rt] = missing
+                    missing = sorted(all_ids - seen)
+                    if not missing:
+                        continue
+
+                    orphan_records[rt] = missing
+                    orphan_id_sources[rt] = {
+                        eid: {
+                            "in_db": eid in db_ids,
+                            "on_disk": eid in disk_ids,
+                        }
+                        for eid in missing
+                    }
 
             for rt, ids in orphan_records.items():
                 acc = per_type_counts.setdefault(
@@ -400,7 +419,8 @@ class FSIndexer:
 
                 if opts.orphan_action != OrphanAction.INDEX:
                     db_removed, disk_removed = await self._apply_orphan_action(
-                        rt, ids, opts.orphan_action
+                        rt, ids, opts.orphan_action,
+                        id_sources=orphan_id_sources.get(rt, {}),
                     )
 
                 acc["orphans_db_removed"] = db_removed
@@ -455,19 +475,102 @@ class FSIndexer:
             total_orphans_disk_removed=sum(p.orphans_disk_removed for p in per_type.values()),
         )
 
+    @staticmethod
+    def _resolve_orphan_filter_types(
+        types: list[RecordType] | None, valid_map: dict[str, dict[str, float]],
+    ) -> set[str]:
+        """Decide which type names to check for orphans on this run.
+
+        - If the caller passed ``types``, restrict to those.
+        - Otherwise check every type that either has DB rows OR has a records
+          dir on disk — caller didn't filter so we sweep everything we can see.
+        """
+        if types:
+            return {str(t) for t in types}
+
+        # Union of "types with DB rows" and "types with a records dir on disk"
+        # so we never miss a records-dir orphan just because no DB row exists.
+        from flow_sdk.fs_store.record import get_default_records_root  # noqa: PLC0415
+
+        result: set[str] = set(valid_map.keys())
+        records_root = get_default_records_root()
+        try:
+            for child in records_root.iterdir():
+                if child.is_dir():
+                    result.add(child.name)
+        except (FileNotFoundError, OSError):
+            pass
+        return result
+
+    @staticmethod
+    def _discover_records_dir_ids(type_names: set[str]) -> dict[str, set[str]]:
+        """Walk ``<records_root>/<type>/`` for each type and return ``{type → {id}}``.
+
+        IDs come from parsing the directory stem (``<type>-@<id>``). Folders
+        that don't match the stem pattern are skipped — they aren't records.
+        """
+        from flow_sdk.fs_store.record import (  # noqa: PLC0415
+            get_default_records_root,
+            parse_record_stem,
+        )
+
+        out: dict[str, set[str]] = {}
+        records_root = get_default_records_root()
+        for type_name in type_names:
+            type_dir = records_root / type_name
+            if not type_dir.is_dir():
+                continue
+            ids: set[str] = set()
+            try:
+                for entry in type_dir.iterdir():
+                    if not entry.is_dir():
+                        continue
+                    try:
+                        parsed_type, parsed_id = parse_record_stem(entry.name)
+                    except ValueError:
+                        continue
+                    if parsed_type != type_name:
+                        continue
+                    ids.add(parsed_id)
+            except (FileNotFoundError, OSError):
+                continue
+            if ids:
+                out[type_name] = ids
+        return out
+
     async def _apply_orphan_action(
-        self, rt: RecordType, ids: list[str], action: OrphanAction,
+        self,
+        rt: RecordType,
+        ids: list[str],
+        action: OrphanAction,
+        *,
+        id_sources: dict[str, dict[str, bool]] | None = None,
     ) -> tuple[int, int]:
         """Apply IGNORE / DELETE to a list of orphan ids of a single type.
 
         Returns ``(db_removed, disk_removed)``. INDEX never reaches this method.
 
-        - IGNORE: remove the entity row + FTS entry, keep the on-disk fs_record.
-        - DELETE: also rmtree the fs_record dir at ``records_root/<type>/<stem>/``.
+        Action semantics (orphan = source missing, layers may be partial):
 
-        Failures are tolerated per-id so a single bad row doesn't abort the
-        sweep — the per-type errors counter would already have logged any
-        deeper inconsistency in the main loop.
+        - IGNORE: remove the DB row + FTS entry if present. Disk dir untouched.
+        - DELETE: remove DB row + FTS entry if present, AND rmtree the records
+          dir at ``records_root/<type>/<stem>/`` if present.
+
+        Cleanup chain for a DB-side orphan goes through ``Entity.delete()`` so
+        the orphan removal benefits from the same downstream invalidation a
+        normal API delete would: entity cache, auth cache, uname cache, wiki
+        edges. Without this, ~1000 orphan ids would leave their wiki backlinks
+        and cache references in place until the next natural eviction.
+
+        For records-dir-only orphans (no DB row), we still issue a best-effort
+        ``wiki.delete_for_id`` because wiki edges can outlive an entity row
+        that was deleted previously without proper cleanup.
+
+        ``id_sources`` (optional) maps each id to ``{"in_db": bool, "on_disk":
+        bool}``. When omitted we attempt every removal — driver returns False
+        harmlessly for missing rows.
+
+        Failures are tolerated per-id so a single bad row doesn't abort the sweep.
         """
         if not ids:
             return 0, 0
@@ -485,21 +588,57 @@ class FSIndexer:
         disk_removed = 0
 
         for eid in ids:
+            sources = (id_sources or {}).get(eid, {"in_db": True, "on_disk": True})
+            in_db = sources.get("in_db", True)
+            on_disk = sources.get("on_disk", True)
+
+            # Best-effort wiki edge cleanup — idempotent, runs for every orphan
+            # regardless of whether the DB row currently exists. Stale edges
+            # pointing at a previously-deleted id would otherwise persist.
             try:
-                fts_deleted = False
-                if hasattr(driver, "fts_delete"):
+                from flow_sdk import wiki  # noqa: PLC0415
+                await wiki.delete_for_id(type_name, eid)
+            except Exception:
+                pass
+
+            if in_db:
+                cleaned = False
+                # Preferred path: load the Entity, call entity.delete(). This
+                # cascades through the standard caches the same way an API
+                # delete would.
+                try:
+                    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+                    from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+
+                    entity = await Entity.get_one(QueryFilter.parse({"id": eid}))
+                    if entity is not None:
+                        if hasattr(driver, "fts_delete"):
+                            try:
+                                await driver.fts_delete(eid)
+                            except Exception:
+                                pass
+                        await entity.delete()
+                        db_removed += 1
+                        cleaned = True
+                except Exception:
+                    pass
+
+                # Fallback: row didn't load (already gone, or no Entity class
+                # registered for this type). Fall through to a raw driver delete
+                # so the bulk sweep still makes progress.
+                if not cleaned:
                     try:
-                        await driver.fts_delete(eid)
-                        fts_deleted = True
+                        if hasattr(driver, "fts_delete"):
+                            try:
+                                await driver.fts_delete(eid)
+                            except Exception:
+                                pass
+                        if await driver.delete_by_id(eid, type_name):
+                            db_removed += 1
                     except Exception:
                         pass
-                ok = await driver.delete_by_id(eid, type_name)
-                if ok or fts_deleted:
-                    db_removed += 1
-            except Exception:
-                continue
 
-            if action == OrphanAction.DELETE:
+            if action == OrphanAction.DELETE and on_disk:
                 try:
                     rec_dir = (
                         get_default_records_root() / type_name / record_stem(type_name, eid)
@@ -509,7 +648,7 @@ class FSIndexer:
                         shutil.rmtree(rec_dir, ignore_errors=True)
                         disk_removed += 1
                 except Exception:
-                    continue
+                    pass
 
         return db_removed, disk_removed
 

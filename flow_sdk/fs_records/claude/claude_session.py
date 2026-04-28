@@ -29,6 +29,7 @@ from flow_sdk._compat import Self
 
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.fs_records.claude.properties import (
     SessionActivePropertyRecord,
     SessionStartTimePropertyRecord,
@@ -448,7 +449,7 @@ class ClaudeSessionRecord(Record):
     @classmethod
     def discover_paths_iter(cls, limit: int | None = None, **kwargs):
         """Lazy generator — yields Path objects for each JSONL file (no file reads)."""
-        projects_dir = Path.home() / ".claude" / "projects"
+        projects_dir = get_instance_settings().claude_projects_dir
         if not projects_dir.is_dir():
             return
         count = 0
@@ -485,7 +486,7 @@ class ClaudeSessionRecord(Record):
         project directory.  Without it, falls back to scanning all
         project directories.
         """
-        projects_dir = Path.home() / ".claude" / "projects"
+        projects_dir = get_instance_settings().claude_projects_dir
         if not projects_dir.is_dir():
             return None
         fname = f"{uid}.jsonl"

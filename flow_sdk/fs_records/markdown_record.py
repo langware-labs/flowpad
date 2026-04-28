@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from flow_sdk.fs_store import Record, RecordType
+from flow_sdk.instance_settings import get_instance_settings
 
 from ._frontmatter import (
     _extract_body,
@@ -72,7 +73,7 @@ def _doc_search_dirs() -> list[Path]:
             seen.add(rp)
             dirs.append(p)
 
-    _add(Path.home() / ".claude" / "docs")
+    _add(get_instance_settings().claude_docs_dir)
 
     # SDK-shipped system docs under the Flowpad Assistant system project.
     try:

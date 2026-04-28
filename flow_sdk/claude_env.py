@@ -656,7 +656,8 @@ class ClaudeProjectEnvManager:
         Expands ALL cached versions of this plugin across ALL marketplaces.
         """
         plugin_name, _marketplace_name, _version = self._read_plugin_meta()
-        base_cache = Path.home() / ".claude" / "plugins" / "cache"
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+        base_cache = get_instance_settings().claude_home / "plugins" / "cache"
         if not base_cache.is_dir():
             return
         for marketplace_dir in base_cache.iterdir():

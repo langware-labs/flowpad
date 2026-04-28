@@ -310,6 +310,7 @@ async def unpack_bundle(
 
         conversation_id: str | None = None
         task_id: str = ""
+        bundle_project_id: str | None = None
         if attachment_dir.exists():
             for entry_dir in sorted(attachment_dir.iterdir(), key=_entry_sort_key):
                 if not entry_dir.is_dir():
@@ -329,6 +330,14 @@ async def unpack_bundle(
                     if manifest_file.exists():
                         task_data = json.loads(manifest_file.read_text(encoding="utf-8"))
                         task_id = task_data.get("id") or entry_id
+                        # Resolve project_id from task's project_root (deterministic uuid5)
+                        bundle_project_root = (task_data.get("metadata") or {}).get("project_root") or ""
+                        if bundle_project_root and bundle_project_id is None:
+                            try:
+                                from flow_sdk.builtin.project import Project
+                                bundle_project_id = Project.allocate_id({"fs_storage_mount_path": bundle_project_root})
+                            except Exception:
+                                bundle_project_id = None
                         existing_task = await Task.get_one({"id": task_id})
                         # Patch sender_email into existing task metadata if the bundle has it
                         # and it was missing (e.g. task imported before sender_email was added)
@@ -384,6 +393,7 @@ async def unpack_bundle(
                             conversation_id=entry_id,
                             owner_typeid=owner_typeid,
                             notify=False,
+                            project_id=bundle_project_id,
                         )
                         if conv:
                             conversation_id = conv.id
@@ -414,6 +424,9 @@ async def unpack_bundle(
 
         top_fm_id = msg_data.get("id") or FlowMessage.allocate_id(msg_data)
         _rewrite_file_attachments(msg_data, tmp_root, top_fm_id)
+        # Backfill conversation_id from bundle context if sender bundle predates the field
+        if not msg_data.get("conversation_id") and conversation_id:
+            msg_data["conversation_id"] = conversation_id
         top_fm = FlowMessage.model_validate(msg_data)
         top_fm.id = top_fm_id
         top_fm = await top_fm.save(owner_typeid)

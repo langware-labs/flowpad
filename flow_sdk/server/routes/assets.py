@@ -22,8 +22,9 @@ def _markdown_vaults() -> list[dict]:
     local compute node's VFS regardless of project scope.
     """
     from flow_sdk.fs_records.markdown_record import _doc_search_dirs  # noqa: PLC0415
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
-    home = Path.home().resolve()
+    home = get_instance_settings().user_home.resolve()
     seen: set[str] = set()
     vaults: list[dict] = []
     for raw in _doc_search_dirs():
