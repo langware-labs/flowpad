@@ -25,7 +25,8 @@ interface FlowMessageBubbleProps {
   timestamp: string;
   task: ITask;
   onShowTask?: () => void;
-  onExecute?: (messageId: string) => void;
+  onClaudeCode?: () => void;
+  isStartLabel?: boolean;
   onApproveAndExecute?: (messageId: string, attachmentIndex: number) => void;
 }
 
@@ -34,7 +35,8 @@ export function FlowMessageBubble({
   timestamp,
   task,
   onShowTask,
-  onExecute,
+  onClaudeCode,
+  isStartLabel,
   onApproveAndExecute,
 }: FlowMessageBubbleProps) {
   const { data: fm } = useEntity<FlowMessage>(
@@ -124,7 +126,8 @@ export function FlowMessageBubble({
         await updateName(newName);
       } : undefined}
       onShowTask={onShowTask}
-      onExecute={onExecute ? () => onExecute(messageId) : undefined}
+      onClaudeCode={onClaudeCode}
+      isStartLabel={isStartLabel}
       onApproveAndExecute={onApproveAndExecute ? (idx) => onApproveAndExecute(messageId, idx) : undefined}
       footer={footer}
     />

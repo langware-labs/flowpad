@@ -32,7 +32,7 @@ export function ConversationView({ conversationId, task, senderName }: Conversat
 
   const pointers = conversation?.conversationMessageIds ?? [];
 
-  const { execute } = useExecuteConversation({
+  const { execute, isStartLabel } = useExecuteConversation({
     task,
     conversationId,
     senderName,
@@ -71,7 +71,8 @@ export function ConversationView({ conversationId, task, senderName }: Conversat
               timestamp={ptr.timestamp}
               task={task}
               onShowTask={() => setShowSpec(true)}
-              onExecute={(messageId) => void execute(messageId)}
+              onClaudeCode={() => void execute()}
+              isStartLabel={isStartLabel}
               onApproveAndExecute={async (messageId, idx) => {
                 await approveAndExecute(messageId, idx);
                 void refetch();

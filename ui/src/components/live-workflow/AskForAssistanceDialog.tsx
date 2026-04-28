@@ -11,7 +11,7 @@ import { useContext } from '@sdk/react/hooks';
 import { sendNotification } from '@sdk/entities/notifications';
 import { createTaskBundle, DeliveryMode } from '@sdk/entities/flow-message';
 import { ActionInfo } from '@sdk/models/ActionInfo';
-import { oauthService, OAUTH_PROVIDERS } from '@sdk';
+import { AgenticProcess, dataManager, oauthService, OAUTH_PROVIDERS, TypeId } from '@sdk';
 import { loadOptionalTranscript } from '@src/components/conversation/transcript-attachment';
 import { toast } from 'sonner';
 import { Mail, Download, Github, Pencil } from 'lucide-react';
@@ -42,8 +42,8 @@ interface AskForAssistanceDialogProps {
   onClose: () => void;
   sessionTitle: string;
   sessionContent: string;
-  /** Active Claude session UUID — used to look up the conversation.jsonl path. */
-  sessionId?: string;
+  /** Active AgenticProcess id — stamped onto the sender's task as my_process_id, and resolved internally to a session_id when the transcript checkbox is on. */
+  processId?: string;
   /** Project / cwd of the active session — used by ClaudeSessionRecord.discover for O(1) lookup. */
   projectPath?: string;
 }
@@ -53,7 +53,7 @@ export function AskForAssistanceDialog({
   onClose,
   sessionTitle,
   sessionContent,
-  sessionId,
+  processId,
   projectPath,
 }: AskForAssistanceDialogProps) {
   const { cloudLoginAvailable } = useContext();
@@ -103,6 +103,11 @@ export function AskForAssistanceDialog({
     setBusy(true);
     setError(null);
     try {
+      // Resolve the AgenticProcess to grab its session_id for transcript discovery.
+      const proc = processId
+        ? await dataManager.getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, processId)).catch(() => null)
+        : null;
+      const sessionId = proc?.session_id ?? undefined;
       const filesWithTranscript = await loadOptionalTranscript(files, {
         attach: attachTranscript,
         sessionId,
@@ -120,9 +125,9 @@ export function AskForAssistanceDialog({
         project_path: projectPath ?? null,
         sender_name: senderName.trim() || null,
         files: filesWithTranscript.length > 0 ? filesWithTranscript : undefined,
-        // Carry the sender's session_id so the *sender's* Approve & Execute path
-        // can fork directly without rehydrating. Receiver side ignores it.
-        sender_session_id: attachTranscript ? (sessionId ?? null) : null,
+        // Stamp the sender's AgenticProcess id so their per-message "Open Claude
+        // Code" chip is wired immediately, no Start step required.
+        sender_process_id: processId ?? null,
       });
       if (result.git_error) {
         setGitError(result.git_error);
@@ -313,7 +318,7 @@ export function AskForAssistanceDialog({
                 className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               />
               <FileAttachmentPicker files={files} onChange={setFiles} disabled={busy} />
-              {sessionId && (
+              {processId && (
                 <label className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
                   <input
                     type="checkbox"

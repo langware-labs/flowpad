@@ -21,7 +21,6 @@ Routes:
 import asyncio
 import json as _json
 import logging
-import os
 import re
 import uuid
 from datetime import datetime
@@ -154,7 +153,7 @@ async def _create_spec_and_task(
     project_id: Optional[str] = None,
     project_name: Optional[str] = None,
     project_root: Optional[str] = None,
-    sender_session_id: Optional[str] = None,
+    sender_process_id: Optional[str] = None,
 ) -> tuple[Spec, Task]:
     """Create Spec + Task entities locally and register the task on the hub."""
     spec = Spec.model_validate({
@@ -177,10 +176,12 @@ async def _create_spec_and_task(
         task_meta["team_space_id"] = team_space_id
     if project_id:
         task_meta["project_id"] = project_id
-    if sender_session_id:
-        # Sender's local Claude session — used by their own Approve & Execute path
-        # so it can fork directly without rehydrating from the attached transcript.
-        task_meta["sender_session_id"] = sender_session_id
+    if sender_process_id:
+        # Sender's clean AgenticProcess for this conversation. Stamping it here
+        # means the per-message "Open Claude Code" chip is wired immediately on
+        # the sender side, no Start step required. Receiver-side materialisation
+        # explicitly strips this so each user has their own.
+        task_meta["my_process_id"] = sender_process_id
     if project_name:
         task_meta["project_name"] = project_name
     if project_root:
@@ -521,7 +522,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     plan_id = (body.get("plan_id") or "").strip() or None
     project_path = (body.get("project_path") or "").strip() or None
     team_space_id = (body.get("team_space_id") or "").strip() or None
-    sender_session_id = (body.get("sender_session_id") or "").strip() or None
+    sender_process_id = (body.get("sender_process_id") or "").strip() or None
 
     if not recipient_id:
         return ApiFailResponse(message="recipient_id is required")
@@ -561,7 +562,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         project_id=project_id_val,
         project_name=project_name_val,
         project_root=str(project_root) if project_root else None,
-        sender_session_id=sender_session_id,
+        sender_process_id=sender_process_id,
     )
 
     uploaded_files = body.get("files") or []
@@ -1138,77 +1139,6 @@ async def approve_prompt() -> ApiResponse:
     fm.attachment = new_atts
     await fm.save(request_info.someone_typeid or "")
     return ApiSuccessResponse(data={"attachment_index": target_idx, "approved_by": approver_id})
-
-
-# ────────────────────────────────────────────────────────────────────────────
-# Rehydrate a Claude Code session from an attached conversation.jsonl
-# Used on the receiver side: copies the jsonl into Claude's session dir so
-# it can be resumed (and forked) locally.
-# ────────────────────────────────────────────────────────────────────────────
-
-
-@action.post(action_name="rehydrate-claude-session", types=None)
-async def rehydrate_claude_session() -> ApiResponse:
-    """Copy a FlowMessage's attached conversation.jsonl into ~/.claude/projects/...
-    so it can be resumed locally. Returns the new local session_id.
-
-    Body: { flow_message_id: str, attachment_data: str (VFS subpath, e.g. "data/conversation.jsonl"),
-            project_root?: str (used to derive the Claude project dir name) }
-    """
-    request_info = get_current_request_info()
-    if not request_info:
-        return ApiFailResponse(message="No request info found")
-    body = await request_info.get_post_data() or {}
-    fm_id = (body.get("flow_message_id") or "").strip()
-    att_data = (body.get("attachment_data") or "").strip()
-    project_root = (body.get("project_root") or "").strip()
-    if not fm_id or not att_data:
-        return ApiFailResponse(message="flow_message_id and attachment_data are required")
-
-    from flow_sdk.builtin.flow_message import FlowMessage as FM
-    from flow_sdk.storage import get_entity_embedded_storage
-    from flow_sdk.fs_store.type_id import TypeId as _TID
-
-    fm = await FM.get_one({"id": fm_id})
-    if not fm:
-        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}")
-
-    storage = get_entity_embedded_storage(_TID(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm_id))
-    src_path = Path(storage.get_storage_path(att_data))
-    if not src_path.exists():
-        return ApiFailResponse(message=f"Attached jsonl not found at {src_path}")
-
-    # Claude Code stores transcripts at ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl.
-    # The encoding replaces both POSIX and Windows path separators with '-' AND keeps the
-    # leading dash on POSIX absolute paths — that's what Claude itself does (see
-    # flow_sdk/fs_records/claude/claude_session.py find_session_by_id, line ~496).
-    home = Path.home()
-    claude_root = home / ".claude" / "projects"
-    if project_root:
-        resolved = str(Path(project_root).resolve())
-        encoded = resolved.replace("/", "-").replace("\\", "-")
-        # Prefer reusing an existing project directory if one already matches —
-        # avoids creating a parallel directory whose name disagrees with whatever
-        # Claude itself has been writing into.
-        if not (claude_root / encoded).exists() and claude_root.is_dir():
-            tail = Path(resolved).name
-            for child in claude_root.iterdir():
-                if child.is_dir() and child.name.endswith(f"-{tail}"):
-                    encoded = child.name
-                    break
-    else:
-        encoded = "rehydrated"
-    target_dir = claude_root / encoded
-    target_dir.mkdir(parents=True, exist_ok=True)
-
-    new_session_id = str(uuid.uuid4())
-    target_path = target_dir / f"{new_session_id}.jsonl"
-    target_path.write_bytes(src_path.read_bytes())
-
-    return ApiSuccessResponse(data={
-        "session_id": new_session_id,
-        "jsonl_path": str(target_path),
-    })
 
 
 @action.get(action_name="open", types=["notification"])
