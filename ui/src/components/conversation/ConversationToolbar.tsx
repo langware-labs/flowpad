@@ -76,7 +76,7 @@ export function ConversationToolbar({
   const claudeTooltip = isStartLabel ? 'Start Claude Code session' : 'Open Claude Code';
 
   return (
-    <div className="ml-auto flex items-center gap-1">
+    <div className="flex items-center gap-1">
       {showOpenTask && (
         <button
           type="button"

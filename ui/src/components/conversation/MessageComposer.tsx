@@ -6,6 +6,7 @@ import type { ITask } from '@sdk/entities/task';
 import { cn } from '@src/lib/utils';
 import { PromptComposerDialog, type QueuedPrompt } from './PromptComposerDialog';
 import { PromptApprovalRow } from './PromptApprovalRow';
+import { useLocalUser } from './useLocalUser';
 
 interface MessageComposerProps {
   task: ITask;
@@ -32,6 +33,11 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
   const [localPrompt, setLocalPrompt] = useState<QueuedPrompt | null>(null);
   const [showPromptDialog, setShowPromptDialog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { localUser } = useLocalUser();
+  // The initiator approves prompts (they own my_process_id and the fork);
+  // recipients propose them. So Add prompt is recipient-only.
+  const isInitiator = !!(localUser?.id && task.shared_by_id && task.shared_by_id === localUser.id);
+  const canAddPrompt = !isInitiator;
 
   const activePrompt = queuedPrompt ?? localPrompt;
   const setActivePrompt = (p: QueuedPrompt | null) => {
@@ -152,21 +158,23 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
           disabled={isDisabled}
           className="min-h-[1.5rem] flex-1 resize-none bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
         />
-        <button
-          type="button"
-          onClick={() => setShowPromptDialog(true)}
-          disabled={isDisabled}
-          title={activePrompt ? 'Edit attached prompt' : 'Add a prompt to your reply'}
-          className={cn(
-            'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors disabled:opacity-40',
-            activePrompt
-              ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-300'
-              : 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300',
-          )}
-        >
-          <MessageSquarePlus className="h-3 w-3" />
-          {activePrompt ? 'Edit prompt' : 'Add prompt'}
-        </button>
+        {canAddPrompt && (
+          <button
+            type="button"
+            onClick={() => setShowPromptDialog(true)}
+            disabled={isDisabled}
+            title={activePrompt ? 'Edit attached prompt' : 'Add a prompt to your reply'}
+            className={cn(
+              'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors disabled:opacity-40',
+              activePrompt
+                ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-300'
+                : 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300',
+            )}
+          >
+            <MessageSquarePlus className="h-3 w-3" />
+            {activePrompt ? 'Edit prompt' : 'Add prompt'}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => void handleSend()}
@@ -183,7 +191,7 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
         </button>
       </div>
 
-      {activePrompt && (
+      {canAddPrompt && activePrompt && (
         <div className="flex items-start gap-1">
           <div className="min-w-0 flex-1">
             <PromptApprovalRow
@@ -232,12 +240,14 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
 
       {error && <p className="text-xs text-destructive">{error}</p>}
 
-      <PromptComposerDialog
-        open={showPromptDialog}
-        onClose={() => setShowPromptDialog(false)}
-        initial={activePrompt}
-        onQueue={(p) => setActivePrompt(p)}
-      />
+      {canAddPrompt && (
+        <PromptComposerDialog
+          open={showPromptDialog}
+          onClose={() => setShowPromptDialog(false)}
+          initial={activePrompt}
+          onQueue={(p) => setActivePrompt(p)}
+        />
+      )}
     </div>
   );
 }
