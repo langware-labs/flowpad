@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   AgenticProcess,
   Conversation,
-  dataContext,
   dataManager,
   FlowMessage,
   ProcessStatus,
@@ -129,12 +128,22 @@ export function useMyProcess({ task, conversationId, senderName }: UseMyProcessO
   const taskMeta = (task.metadata as Record<string, unknown> | undefined) ?? {};
   const myProcessId = taskMeta.my_process_id as string | undefined;
   const isInitiator = !!(localUser?.id && task.shared_by_id && task.shared_by_id === localUser.id);
-  const workdir = (taskMeta.project_root as string | undefined) ?? dataContext.project?.fs_storage_mount_path;
+  // Workdir must come from the task's own mapped project. We deliberately do
+  // NOT fall back to the global active project (`dataContext.project`) — that
+  // would pick up whatever the footer happens to have selected, which is the
+  // exact mistake the mapping dialog exists to prevent.
+  const workdir = taskMeta.project_root as string | undefined;
 
   const isStartLabel = !myProcessId;
 
   const openOrStart = async () => {
     if (busy || !taskId) return;
+    // Hard guard: refuse to spawn / resume without a project. The mapping
+    // gate in the parent should have surfaced the dialog before we got here.
+    if (!workdir) {
+      console.warn('[useMyProcess] openOrStart called without project_root — skipping');
+      return;
+    }
     setBusy(true);
     try {
       // Open path: process already exists for this task. Reattach if dead, then navigate.

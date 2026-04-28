@@ -82,7 +82,9 @@ export function MessageBubble({
       .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, sharedProcessId))
       .catch(() => null);
     if (!proc) return;
-    navigation.openInBrowserTab(proc.dockPointer);
+    // Open in the SAME browser tab — replaces the conversation view with the
+    // shared terminal. The user wants this in-place, not in a secondary window.
+    navigation.openDock(proc.dockPointer);
   };
 
   const startEdit = () => {
