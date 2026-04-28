@@ -3,23 +3,24 @@ import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useMemo } from 'react';
 
 /**
- * Subscribe to all AgenticProcesses attached to a given target entity.
+ * Subscribe to all AgenticProcesses keyed to a given VFS path.
  *
- * The attachment is stored on `AgenticProcess.target_typeid_str` as a serialized
- * TypeId ("<type>-<id>"). Use `TypeId#toString()` on the host entity to build
- * `targetTypeIdStr`.
+ * The attachment is stored on `AgenticProcess.target_vfs_path`. For
+ * entity-scoped chats this is just `TypeId#toString()` (e.g. `agent-<id>`);
+ * for surface-scoped chats it's a `<typeid>/<sub_path>` form (e.g.
+ * `compute_node-<id>/Users/.../foo.md` for a per-doc chat).
  */
 export function useProcessesForTarget(
-  targetTypeIdStr: string | null | undefined,
+  targetVfsPath: string | null | undefined,
   options?: { enabled?: boolean },
 ) {
-  const key = targetTypeIdStr || '';
+  const key = targetVfsPath || '';
   const query = useMemo(
     () => new QueryRequest({
       type: AgenticProcess.type,
       scope: [],
       name: `processesForTarget:${key || 'none'}`,
-      query: new QueryFilter({ match: { target_typeid_str: key } as Record<string, unknown> }),
+      query: new QueryFilter({ match: { target_vfs_path: key } as Record<string, unknown> }),
     }),
     [key],
   );

@@ -71,8 +71,8 @@ export interface AgenticContext {
   /** Extra directories to expose to Claude via --add-dir */
   additionalDirs?: string[];
 
-  /** Serialized TypeId ("type-id") of the entity this process attaches to (markdown, trigger, …). */
-  targetTypeIdStr?: string;
+  /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats (e.g. per-doc chat keyed on the file path). */
+  targetVfsPath?: string;
 
   /** One of "text" | "json" | "stream-json"; omit for CLI default. When
    * "stream-json", the process runs print-mode (no PTY) and `AgenticProcess.prompt`
@@ -142,7 +142,7 @@ export function serializeAgenticContext(ctx: AgenticContext): Record<string, unk
     debug: ctx.debug,
     worktree: ctx.worktree,
     additional_dirs: ctx.additionalDirs ?? [],
-    target_typeid_str: ctx.targetTypeIdStr,
+    target_vfs_path: ctx.targetVfsPath,
     output_format: ctx.outputFormat,
     worker_type: ctx.workerType,
   };

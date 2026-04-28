@@ -26,10 +26,20 @@ from flow_sdk.fs_records.task import TaskResource  # noqa: F401
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
-def isolate_records_root(tmp_path):
-    """Redirect all record I/O to a temp directory for test isolation."""
+def isolate_records_root(tmp_path, monkeypatch):
+    """Redirect all record I/O to a temp directory for test isolation.
+
+    Also redirects HOME/USERPROFILE to a temp dir so the indexer's
+    USER_HOME_FOLDER root (Path.home()) does not walk the developer's real
+    ~/.claude/skills/, which can hold hundreds of test-fixture leftovers and
+    blow the 30s test timeout on cold metadata writes.
+    """
     original = get_default_records_root()
     set_default_records_root(tmp_path)
+    fake_home = tmp_path / "_home"
+    fake_home.mkdir()
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.setenv("USERPROFILE", str(fake_home))
     yield tmp_path
     set_default_records_root(original)
 
@@ -60,12 +70,13 @@ async def _create_skill(client, cn_url_base, name: str) -> str:
 async def test_scan_per_type_returns_records(bootstrapped_client):
     """Per-type scan returns a records list with correct structure."""
     boot = await _bootstrap(bootstrapped_client)
+    skill_base = _cn_url(boot, "skill")
+    await _create_skill(bootstrapped_client, skill_base, "scan-per-type-skill")
 
     resp = await bootstrapped_client.get(_cn_url(boot, "scan") + "?type=skill")
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["type"] == "skill"
-    # Scan discovers skills from ~/.claude/skills/ — expect at least the user's real skills
     assert data["count"] >= 1
     assert "records" in data
     assert isinstance(data["records"], list)
@@ -108,13 +119,7 @@ async def test_scan_unknown_type_returns_400(bootstrapped_client):
 @pytest.mark.timeout(30)
 @pytest.mark.asyncio
 async def test_index_per_type_no_records(bootstrapped_client):
-    """Index with no test-created records returns a valid response.
-
-    Note: real skills from ~/.claude/skills/ may be discovered and indexed,
-    so we only assert the response structure, not indexed == 0.
-    Timeout extended because the discovery scan honors real ~/.claude/skills/
-    which can hold hundreds of dirs on dev machines.
-    """
+    """Index with no test-created records returns a valid response."""
     boot = await _bootstrap(bootstrapped_client)
     resp = await bootstrapped_client.post(_cn_url(boot, "index") + "?type=skill")
     assert resp.status_code == 200
@@ -166,20 +171,16 @@ async def test_search_empty_query_no_filter_returns_empty(bootstrapped_client):
 
 @pytest.mark.asyncio
 async def test_search_filter_only_browse_returns_records(bootstrapped_client):
-    """GET /search?record_type=skill (no query) returns skill records — browse mode.
-
-    Note: browse uses RecordList → SkillRecord.discover() which scans
-    ~/.claude/skills/, so results include real user skills. We verify the
-    response structure and that at least some skill records are returned.
-    """
+    """GET /search?record_type=skill (no query) returns skill records — browse mode."""
     boot = await _bootstrap(bootstrapped_client)
+    skill_base = _cn_url(boot, "skill")
+    await _create_skill(bootstrapped_client, skill_base, "browse-mode-skill")
 
     resp = await bootstrapped_client.get(_cn_url(boot, "search") + "?record_type=skill")
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert "results" in data
     results = data["results"]
-    # Browse discovers real skills from ~/.claude/skills/
     assert len(results) >= 1
 
     # Every result must have the correct shape

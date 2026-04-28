@@ -397,6 +397,7 @@ class FsRecordsActionsMixin:
         from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
             INDEXABLE_TYPES,
             IndexerOptions,
+            OrphanAction,
             ProgressEvent,
             get_shared_indexer,
         )
@@ -413,6 +414,19 @@ class FsRecordsActionsMixin:
         limit_per_type_raw = qp.get("limit_per_type", "").strip()
         limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
         project_id = qp.get("project_id", "").strip() or None
+        orphan_action_raw = qp.get("orphan_action", "").strip().lower()
+        try:
+            orphan_action = (
+                OrphanAction(orphan_action_raw) if orphan_action_raw else OrphanAction.INDEX
+            )
+        except ValueError:
+            return ApiFailResponse(
+                message=(
+                    f"Invalid orphan_action '{orphan_action_raw}'. "
+                    f"Valid: {[a.value for a in OrphanAction]}"
+                ),
+                status_code=400,
+            )
 
         # Resolve project_id → single REAL_PROJECT_CWD root via the project's
         # fs_storage_mount_path. This restricts the walker to that subtree only.
@@ -563,6 +577,7 @@ class FsRecordsActionsMixin:
                 roots=custom_roots,
                 force=force,
                 project_id=project_id,
+                orphan_action=orphan_action,
             ))
         finally:
             self._complete_activity("index")
@@ -573,6 +588,9 @@ class FsRecordsActionsMixin:
                 "indexed": pt.indexed,
                 "errors": pt.errors,
                 "duration_ms": pt.duration_ms,
+                "orphans_found": pt.orphans_found,
+                "orphans_db_removed": pt.orphans_db_removed,
+                "orphans_disk_removed": pt.orphans_disk_removed,
             }
             for rt, pt in result.per_type.items()
         ]
@@ -588,16 +606,29 @@ class FsRecordsActionsMixin:
         if filter_type:
             if not types_out:
                 return ApiSuccessResponse(data={
-                    "type": filter_type, "indexed": 0, "errors": 0,
+                    "type": filter_type,
+                    "indexed": 0,
+                    "errors": 0,
+                    "orphans_found": 0,
+                    "orphans_db_removed": 0,
+                    "orphans_disk_removed": 0,
                 })
             one = types_out[0]
             return ApiSuccessResponse(data={
-                "type": one["type"], "indexed": one["indexed"], "errors": one["errors"],
+                "type": one["type"],
+                "indexed": one["indexed"],
+                "errors": one["errors"],
+                "orphans_found": one["orphans_found"],
+                "orphans_db_removed": one["orphans_db_removed"],
+                "orphans_disk_removed": one["orphans_disk_removed"],
             })
 
         return ApiSuccessResponse(data={
             "indexed": result.total_indexed,
             "errors": result.total_errors,
+            "orphans_found": result.total_orphans_found,
+            "orphans_db_removed": result.total_orphans_db_removed,
+            "orphans_disk_removed": result.total_orphans_disk_removed,
             "types": types_out,
             "duration_ms": result.duration_ms,
         })

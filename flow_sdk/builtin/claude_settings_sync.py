@@ -37,7 +37,8 @@ def get_settings_path(hook_scope: "HookScope", project_path: Optional[Path] = No
     scope_str = hook_scope.value.lower() if hasattr(hook_scope, "value") else str(hook_scope).lower()
 
     if scope_str == "user":
-        return Path.home() / ".claude" / "settings.json"
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+        return get_instance_settings().claude_settings_json_path
     elif scope_str in ("project", "local"):
         base_path = project_path if project_path else Path.cwd()
         filename = "settings.json" if scope_str == "project" else "settings.local.json"

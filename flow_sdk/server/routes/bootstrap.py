@@ -426,9 +426,10 @@ def build_app_paths() -> AppPaths:
 
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
     """
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
     root = get_os_root_path()
     # Get home path relative to root (strip leading slash for VFS)
-    home_abs = str(Path.home())
+    home_abs = str(get_instance_settings().user_home)
     if platform.system() == "Windows":
         # On Windows: strip drive letter (e.g., "C:\") and normalize backslashes to forward slashes
         # "C:\Users\tamir" -> "Users/tamir"
@@ -1087,8 +1088,9 @@ def setup_desktop_filesystem() -> None:
     except Exception as e:
         logging.warning(f"Failed to create skills folder: {e}")
 
-    # Create logs folder structure under ~/.flow/logs/
-    logs_base = Path.home() / ".flow" / "logs"
+    # Create logs folder structure under the per-instance logs dir.
+    from flow_sdk.instance_settings import get_instance_settings
+    logs_base = get_instance_settings().logs_dir
     for subdir in ("server", "monitor", "main_desktop"):
         try:
             (logs_base / subdir).mkdir(parents=True, exist_ok=True)

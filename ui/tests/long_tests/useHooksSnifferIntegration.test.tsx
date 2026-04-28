@@ -9,7 +9,7 @@
  *   1. EventSnifferChip / HeartbeatEventsViewer — events array, count, clear
  *   2. HomeLanding                              — per-session event counts
  *   3. HooksBrowser                             — per-hook-file event counts
- *   4. useClaudeSessionTrace                   — live session accumulation via SnifferProvider
+ *   4. useProcessSniffer                        — live session accumulation that survives sniffer.clear()
  *   5. HeartbeatEventsViewer (maxEvents)        — trim + monotonic idx after trim
  *   6. sniffer_view_mock                        — events non-empty, raw_line parseable
  *   7. HooksManager                             — enable/disable toggle cycle
@@ -34,7 +34,6 @@ import { v4 as uuid } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { useSnifferContext, SnifferProvider } from '@src/contexts/SnifferContext';
 import { useProcessSniffer } from '@src/hooks/use-process-sniffer';
-import { useClaudeSessionTrace } from '@src/hooks/use-claude-session-trace';
 import { apiTestSetup } from '../utils/test-utils';
 
 // ---------------------------------------------------------------------------
@@ -225,14 +224,14 @@ describe('useHooksSniffer integration — real backend + CLI injection', () => {
     }
   });
 
-  it('4: useClaudeSessionTrace accumulates live events by sessionId via SnifferProvider', async () => {
+  it('4: useProcessSniffer accumulates live events by sessionId and survives sniffer.clear()', async () => {
     const sessTrace = uuid();
     const sessOther = uuid();
 
     const { result, unmount } = renderHook(
       () => ({
         sniffer: useSnifferContext(),
-        trace: useClaudeSessionTrace(sessTrace),
+        proc: useProcessSniffer(sessTrace),
       }),
       { wrapper: makeSnifferWrapper() },
     );
@@ -249,13 +248,13 @@ describe('useHooksSniffer integration — real backend + CLI injection', () => {
       injectHookEvent(hookId, { hook_event_name: 'PostToolUse', session_id: sessTrace, cwd: '/tmp' });
       injectHookEvent(hookId, { hook_event_name: 'Stop',        session_id: sessOther, cwd: '/tmp' });
 
-      // Session trace should accumulate only events for sessTrace
+      // useProcessSniffer should accumulate only events for sessTrace
       await waitFor(
-        () => expect(result.current.trace.liveCount).toBeGreaterThanOrEqual(2),
+        () => expect(result.current.proc.events.length).toBeGreaterThanOrEqual(2),
         { timeout: 10000 },
       );
-      // Stable ids ensure no re-accumulation after trim — liveCount is exactly 2
-      expect(result.current.trace.liveCount).toBe(2);
+      // idx-stable dedup ensures no re-accumulation — exactly 2 events for sessTrace
+      expect(result.current.proc.events.length).toBe(2);
 
       // Ring-buffer eviction survival: clear the sniffer stream
       result.current.sniffer.clear();
@@ -266,13 +265,13 @@ describe('useHooksSniffer integration — real backend + CLI injection', () => {
         { timeout: 5000 },
       );
 
-      // useClaudeSessionTrace accumulates into its own buffer — survives clear
-      expect(result.current.trace.liveCount).toBe(2);
+      // useProcessSniffer keeps its own accumulator — survives clear
+      expect(result.current.proc.events.length).toBe(2);
 
       // New events after clear still arrive correctly
       injectHookEvent(hookId, { hook_event_name: 'PreToolUse', session_id: sessTrace, cwd: '/tmp' });
       await waitFor(
-        () => expect(result.current.trace.liveCount).toBe(3),
+        () => expect(result.current.proc.events.length).toBe(3),
         { timeout: 8000 },
       );
     } finally {

@@ -3,7 +3,6 @@
 All implementation has moved to flow_sdk.fs_store.schema_registry.
 """
 from flow_sdk.fs_store.schema_registry import (
-    SCHEMA_DIR as SCHEMA_DIR,
     SchemaRegistry as SchemaRecord,
     ScanResult as ScanResult,
     IndexResult as IndexResult,
@@ -19,7 +18,6 @@ from flow_sdk.fs_store.schema_registry import (
 
 __all__ = [
     "SchemaRecord",
-    "SCHEMA_DIR",
     "ScanResult",
     "IndexResult",
     "IndexRequest",

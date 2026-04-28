@@ -34,48 +34,60 @@ T = TypeVar("T", bound="Record")
 _META_JSON = "metadata.json"
 _DATA_JSON = "data.json"  # backward-compat: used by resource_record_list
 
-_FLOWPAD_HOME: Path = Path.home() / ".flow"
-_DEFAULT_RECORDS_ROOT: Path = _FLOWPAD_HOME / "records"
-_DEFAULT_RECORDS_DATA_ROOT: Path = _FLOWPAD_HOME / "records_data"
-
-ENV_FS_RECORD_PATH = "FS_RECORD_PATH"
+def _instance_settings():
+    from flow_sdk.instance_settings import get_instance_settings
+    return get_instance_settings()
 
 
 def get_flowpad_home() -> Path:
-    """Return the flowpad home directory (~/.flow by default)."""
-    return _FLOWPAD_HOME
+    """Per-instance flow home (call-time, via InstanceSettings)."""
+    return _instance_settings().flow_home
 
 
 def get_default_records_root() -> Path:
-    """Return the default root for record metadata storage.
+    """Per-instance records root (call-time, via InstanceSettings).
 
-    Resolution order:
-    1. ``FS_RECORD_PATH`` env var (allows tests and explicit overrides)
-    2. ``_DEFAULT_RECORDS_ROOT`` (set by ``set_default_records_root()`` or config)
+    InstanceSettings already resolves the FS_RECORD_PATH env var inside
+    `from_env()` — never read the env here, that defeats the contract.
     """
-    env_path = os.environ.get(ENV_FS_RECORD_PATH)
-    if env_path:
-        return Path(env_path)
-    return _DEFAULT_RECORDS_ROOT
+    return _instance_settings().records_root
 
 
 def get_default_records_data_root() -> Path:
-    """Return the default root for record data/blob storage (~/.flow/records_data)."""
-    return _DEFAULT_RECORDS_DATA_ROOT
+    """Per-instance records data root (call-time, via InstanceSettings)."""
+    return _instance_settings().records_data_dir
+
+
+# ---------------------------------------------------------------------------
+# Test-only helpers
+#
+# These set the canonical env var that InstanceSettings reads in `from_env()`,
+# then reset the cached singleton so the next `get_instance_settings()` call
+# rebuilds with the new path. They do NOT mutate any module-level state — the
+# InstanceSettings singleton is the single source of truth.
+# ---------------------------------------------------------------------------
 
 
 def set_default_records_root(path: Path) -> None:
-    """Override the default records root (primarily for testing)."""
-    global _DEFAULT_RECORDS_ROOT
-    _DEFAULT_RECORDS_ROOT = path
-    # Sync the env var so get_default_records_root() — which checks it first — stays consistent.
-    os.environ[ENV_FS_RECORD_PATH] = str(path)
+    """Test-only: redirect records_root via FS_RECORD_PATH + InstanceSettings rebuild."""
+    from flow_sdk.instance_settings import reset_instance_settings  # noqa: PLC0415
+
+    os.environ["FS_RECORD_PATH"] = str(path)
+    reset_instance_settings()
 
 
 def set_default_records_data_root(path: Path) -> None:
-    """Override the default records data root (primarily for testing)."""
-    global _DEFAULT_RECORDS_DATA_ROOT
-    _DEFAULT_RECORDS_DATA_ROOT = path
+    """Test-only: redirect records_data_dir.
+
+    No env-var hook exists for this field — fall back to monkey-overriding the
+    `get_default_records_data_root` getter on this module. Test fixtures that
+    call this helper should call it inside a `monkeypatch.setattr` block, OR
+    accept that the override leaks until the next test resets InstanceSettings.
+    Prefer `monkeypatch.setattr(flow_sdk.fs_store.record, "get_default_records_data_root", lambda: path)`
+    in new tests.
+    """
+    global get_default_records_data_root
+    get_default_records_data_root = lambda: path  # noqa: E731
 
 
 class RecordStatus(str, Enum):
@@ -665,6 +677,11 @@ class Record:
         No-op when main_ref is None, the file already exists, or default_body
         returns None. Creates parent directories as needed. Honors the FSRef
         read-only contract.
+
+        Invariant guard: refuses to write inside the records-root shadow tree.
+        asset_ref is the only editable surface for body content; the shadow
+        holds metadata only. If main_ref ever resolves to a shadow path, that's
+        a bug — fail loud rather than plant a stub.
         """
         mr = self.main_ref
         if mr is None:
@@ -675,6 +692,17 @@ class Record:
         body = self.default_body(entity)
         if body is None:
             return
+        try:
+            records_root = get_default_records_root().resolve()
+            if records_root in Path(path).resolve().parents:
+                raise RuntimeError(
+                    f"upsert_main_ref refused: {path} is under the records-root shadow {records_root}. "
+                    "Body content must live at asset_ref (user-owned file), never inside the shadow folder."
+                )
+        except RuntimeError:
+            raise
+        except Exception:
+            pass
         try:
             mr.write(body)
         except IOError:

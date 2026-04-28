@@ -18,6 +18,7 @@ from pathlib import Path
 
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.json_file_record_store import JsonFileRecordStore, _escape_json_pointer
+from flow_sdk.instance_settings import get_instance_settings
 
 from .claude_mcp_server import ClaudeMcpServerFsRecord
 
@@ -92,7 +93,7 @@ class ClaudeMcpJsonRecordList(JsonFileRecordStore):
     @classmethod
     def user_default(cls) -> ClaudeMcpJsonRecordList:
         """Create a record list backed by ~/.claude/mcp.json."""
-        return cls(source_file=Path.home() / ".claude" / "mcp.json", scope="user")
+        return cls(source_file=get_instance_settings().claude_mcp_json_path, scope="user")
 
     @classmethod
     def for_project(cls, project_dir: str | Path) -> ClaudeMcpJsonRecordList:
