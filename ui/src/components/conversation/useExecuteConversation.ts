@@ -67,14 +67,20 @@ export function useExecuteConversation({
         return `[${label}]: ${fm.text ?? ''}`;
       };
 
-      const fileLines = messages
+      const allFileAttachments = messages
         .flatMap((fm) => fm?.attachment ?? [])
-        .filter((a) => a.attachment_type === AttachmentType.FILE)
+        .filter((a) => a.attachment_type === AttachmentType.FILE);
+      const transcriptAttachment = allFileAttachments.find((a) => a.data.endsWith('conversation.jsonl'));
+      const otherFileLines = allFileAttachments
+        .filter((a) => a !== transcriptAttachment)
         .map((a) => {
           const absPath = a.local_path ?? a.data;
           const filename = a.data.split('/').pop() ?? a.data;
           return `- ${filename} (path: ${absPath})`;
         });
+      const transcriptPath = transcriptAttachment
+        ? (transcriptAttachment.local_path ?? transcriptAttachment.data)
+        : null;
 
       let prompt: string;
       const spec = task.spec_id
@@ -90,27 +96,48 @@ export function useExecuteConversation({
         const specContent = spec?.content ?? '';
         const senderLabel = senderName ?? 'Sender';
         const msgLines = messages.map(formatMsg).filter(Boolean).join('\n');
-        const intro = effectiveSpecType === 'session'
+        const isSession = effectiveSpecType === 'session';
+
+        // Section 1 — intro
+        const intro = isSession
           ? `Below is a session and conversation that ${senderLabel} sent for assistance: "${specTitle}"`
           : `You received a task from ${senderLabel}: "${specTitle}"`;
-        const parts = [intro, ''];
+        const parts: string[] = [intro, ''];
+
+        // Section 2 — plan / session content
         if (specContent) {
-          parts.push(effectiveSpecType === 'session' ? `Session content:\n\n${specContent}` : `Here is the plan:\n\n${specContent}`);
+          parts.push(isSession ? `Session content:\n\n${specContent}` : `Here is the plan:\n\n${specContent}`);
         } else {
           parts.push(`Task: ${task.title || 'Untitled'}`);
         }
-        if (msgLines) parts.push('', 'Conversation so far:', msgLines);
-        if (fileLines.length > 0) parts.push('', 'File attachments:', ...fileLines);
-        const closingInstruction = effectiveSpecType === 'session'
-          ? 'We are about to assist a user who encountered the following issue. Please read through the above session and conversation carefully and acknowledge you have everything you need. Then specify the conversation.json path that we attached, the conversation between the 2 users (like we have now), and a list of the rest of the attachments.'
-          : 'Please read through the plan and conversation carefully and implement the required changes. If anything is unclear, ask before proceeding.';
+
+        // Section 3 — sender's Claude Code transcript path (when attached)
+        if (transcriptPath) {
+          parts.push('', "Sender's Claude Code transcript (conversation.jsonl):", transcriptPath);
+        }
+
+        // Section 4 — conversation between the two users
+        if (msgLines) {
+          parts.push('', 'Conversation between the two users:', msgLines);
+        }
+
+        // Section 5 — remaining attachments
+        if (otherFileLines.length > 0) {
+          parts.push('', 'Other attachments:', ...otherFileLines);
+        }
+
+        // Section 6 — closing instruction
+        const closingInstruction = isSession
+          ? 'We are about to assist a user who encountered the following issue. Please read through the above session and conversation carefully and acknowledge you have everything you need.'
+          : 'Please read through the above plan and conversation carefully and implement the required changes. If anything is unclear, ask before proceeding.';
         parts.push('', closingInstruction);
         prompt = parts.join('\n');
       } else {
         const msgLines = messages.map(formatMsg).filter(Boolean).join('\n');
         const parts = ['New updates since last execution:'];
         if (msgLines) parts.push('', msgLines);
-        if (fileLines.length > 0) parts.push('', 'New file attachments:', ...fileLines);
+        if (transcriptPath) parts.push('', "Sender's Claude Code transcript (conversation.jsonl):", transcriptPath);
+        if (otherFileLines.length > 0) parts.push('', 'New file attachments:', ...otherFileLines);
         parts.push('', 'Please continue based on these updates.');
         prompt = parts.join('\n');
       }
