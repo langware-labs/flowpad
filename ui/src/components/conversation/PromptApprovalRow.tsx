@@ -8,11 +8,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@src/components/ui/dialog';
+import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 
 interface PromptApprovalRowProps {
   attachment: Attachment;
-  /** Show the Approve & Execute CTA (receiver, unapproved). */
+  /** Show the Approve & Execute CTA (initiator, prompt unapproved). */
   onApprove?: () => void;
+  /** Show "Open Shared Terminal" CTA (prompt already approved + shared_process_id exists). */
+  onOpenShared?: () => void;
   /** Show an Edit CTA (sender, message not sent yet — composer preview). */
   onEdit?: () => void;
 }
@@ -25,7 +28,7 @@ function truncate(text: string, limit: number): string {
   return oneLine.slice(0, limit - 1).trimEnd() + '…';
 }
 
-export function PromptApprovalRow({ attachment, onApprove, onEdit }: PromptApprovalRowProps) {
+export function PromptApprovalRow({ attachment, onApprove, onOpenShared, onEdit }: PromptApprovalRowProps) {
   const [promptText, setPromptText] = useState<string>(() => {
     if (attachment.data && !attachment.data.startsWith('prompt/')) return attachment.data;
     return '';
@@ -88,7 +91,17 @@ export function PromptApprovalRow({ attachment, onApprove, onEdit }: PromptAppro
           Approve &amp; Execute
         </button>
       )}
-      {!onApprove && onEdit && (
+      {!onApprove && onOpenShared && (
+        <button
+          type="button"
+          onClick={onOpenShared}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-orange-500/40 bg-orange-500/10 px-2.5 py-1 text-xs font-medium text-orange-700 transition-colors hover:bg-orange-500/20 dark:text-orange-300"
+        >
+          <ClaudeIcon className="h-3 w-3" />
+          Open Shared Terminal
+        </button>
+      )}
+      {!onApprove && !onOpenShared && onEdit && (
         <button
           type="button"
           onClick={onEdit}

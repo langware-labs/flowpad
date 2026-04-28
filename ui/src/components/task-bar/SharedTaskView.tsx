@@ -5,11 +5,14 @@
  * Replaces the sliding TaskDetailPanel for spec_id tasks.
  */
 
+import { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Spec, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ExpansionRequest } from '@sdk/FlowSync/query';
 import { ConversationView } from '@src/components/conversation';
+import { ConversationToolbar } from '@src/components/conversation/ConversationToolbar';
+import { SpecSidePane } from '@src/components/conversation/SpecSidePane';
 
 interface SharedTaskViewProps {
   task: Task;
@@ -18,6 +21,7 @@ interface SharedTaskViewProps {
 
 export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
   const blobExpansion = new ExpansionRequest({ expand: ['blobs'] });
+  const [showSpec, setShowSpec] = useState(false);
 
   const taskMeta = task.metadata as Record<string, unknown> | undefined;
   const senderName = taskMeta?.sender_name as string | undefined
@@ -71,8 +75,16 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
 
         {/* Conversation */}
         <section className="-mx-4 flex flex-col">
-          <div className="flex h-9 flex-shrink-0 items-center border-y border-border px-4 text-xs font-medium text-muted-foreground">
-            Conversation
+          <div className="flex h-9 flex-shrink-0 items-center gap-2 border-y border-border px-4 text-xs font-medium text-muted-foreground">
+            <span>Conversation</span>
+            {task.conversation_id && (
+              <ConversationToolbar
+                task={task}
+                conversationId={task.conversation_id}
+                senderName={senderName}
+                onShowTask={() => setShowSpec(true)}
+              />
+            )}
           </div>
           <div className="px-4 pt-3">
             {task.conversation_id ? (
@@ -88,6 +100,11 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
         </section>
       </div>
 
+      <SpecSidePane
+        open={showSpec}
+        onClose={() => setShowSpec(false)}
+        specId={task.spec_id}
+      />
     </div>
   );
 }
