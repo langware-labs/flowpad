@@ -29,10 +29,13 @@ function pickDefault(
   skips: { skipProcessIds?: Set<string>; skipShellIds?: Set<string> } = {},
 ) {
   const tabs = filterTabs(shells, processes, { visible: true });
-  return resolveDefaultTab(tabs, {
-    skipProcessIds: skips.skipProcessIds ?? new Set(),
-    skipShellIds: skips.skipShellIds ?? new Set(),
-  });
+  // resolveDefaultTab now takes a single Set<string> — process and shell ids
+  // are both UUIDs and don't collide.
+  const exclude = new Set<string>([
+    ...(skips.skipProcessIds ?? new Set()),
+    ...(skips.skipShellIds ?? new Set()),
+  ]);
+  return resolveDefaultTab(tabs, exclude);
 }
 
 describe('main-loader shell recovery', () => {

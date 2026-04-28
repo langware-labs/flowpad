@@ -25,7 +25,6 @@ import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
 import { loadShellRoute, resolveDefaultTab } from './load-shell';
 import { loadProjectRoute } from './load-project';
 import { describeProcessStartError } from './load-process';
-import { parseRecoverySkipsFromUrl, type ShellRecoverySkips } from './shell-recovery';
 
 // Re-exports kept for existing consumers (unit tests import from here).
 export { resolveDefaultTab, describeProcessStartError };
@@ -74,7 +73,6 @@ function _perfLog(label: string) {
 export async function loadAgentApp(args: LoaderArgs) {
   const { params } = args;
   const requestUrl = new URL(args.request.url);
-  const recoverySkips: ShellRecoverySkips = parseRecoverySkipsFromUrl(requestUrl.searchParams);
   const t = new TimeIt(`loadAgentApp(${params['*'] || params.viewType || '/'})`);
   _perfLog(`loadAgentApp start (${params['*'] || params.viewType || '?'})`);
 
@@ -133,12 +131,12 @@ export async function loadAgentApp(args: LoaderArgs) {
     t.time('ensureComputeNode');
 
     if (viewType === ViewType.SHELL) {
-      await loadShellRoute(pointer || undefined, recoverySkips);
+      await loadShellRoute(pointer || undefined);
       t.time('loadShellRoute');
     }
 
     if (viewType === ViewType.PROJECT) {
-      await loadProjectRoute(pointer || undefined, recoverySkips);
+      await loadProjectRoute(pointer || undefined);
       t.time('loadProjectRoute');
     }
 

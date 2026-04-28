@@ -24,7 +24,7 @@ import { estimateCols, estimateRows } from '@src/components/terminal/interactive
  */
 export class ProcessLoadError extends Error {
   constructor(
-    readonly kind: 'not_found' | 'start_failed' | 'no_shell',
+    readonly kind: 'not_found' | 'start_failed' | 'no_shell' | 'project_missing',
     readonly processId: string,
     readonly shellId?: string | null,
     readonly cause?: unknown,
@@ -97,10 +97,26 @@ export async function loadProcess(
     new TypeId(AgenticProcess.type, processId),
   );
   if (process.project_id) {
-    await dataContext.setContextEntityTypeId(
-      ContextEntitiesEnum.CurrentProjectTypeId,
-      new TypeId(Project.type, process.project_id),
-    );
+    try {
+      await dataContext.setContextEntityTypeId(
+        ContextEntitiesEnum.CurrentProjectTypeId,
+        new TypeId(Project.type, process.project_id),
+      );
+    } catch (cause) {
+      // The stored project_id can dangle when the project was deleted under us.
+      // Recover via the backend's 3-phase recover_by_path, then continue.
+      const status = (cause as { response?: { status?: number }; status?: number })?.response?.status
+        ?? (cause as { status?: number })?.status;
+      if (status !== 404) throw cause;
+      const recovered = await process.recoverProject().catch(() => null);
+      if (!recovered) {
+        throw new ProcessLoadError('project_missing', processId, process.shell_id ?? null, cause);
+      }
+      await dataContext.setContextEntityTypeId(
+        ContextEntitiesEnum.CurrentProjectTypeId,
+        new TypeId(Project.type, recovered.id),
+      );
+    }
   } else {
     await systemTools.resolveProjectContext(process.workdir, process);
   }
