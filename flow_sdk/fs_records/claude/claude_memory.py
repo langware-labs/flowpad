@@ -13,9 +13,6 @@ from typing import ClassVar, Iterator
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.fs_ref import FSRef
 
-_CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
-
-
 def _mem_id(path: Path) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
 

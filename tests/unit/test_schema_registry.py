@@ -126,7 +126,7 @@ def test_type_info_from_dict_uses_defaults():
 
 def test_register_and_get(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         info = TypeInfo(type_name="test_type")
         SchemaRegistry.register(info)
         result = SchemaRegistry.get("test_type")
@@ -137,7 +137,7 @@ def test_register_and_get(tmp_path):
 
 def test_register_idempotent_merges_locations(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         SchemaRegistry.register(TypeInfo(type_name="t", locations=["record"]))
         SchemaRegistry.register(TypeInfo(type_name="t", locations=["index"]))
         info = SchemaRegistry.get("t")
@@ -148,7 +148,7 @@ def test_register_idempotent_merges_locations(tmp_path):
 
 def test_register_idempotent_merges_record_cls(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
 
         class FakeRecordCls:
             pass
@@ -162,7 +162,7 @@ def test_register_idempotent_merges_record_cls(tmp_path):
 
 def test_register_parent_type_builds_subtypes(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         SchemaRegistry.register(TypeInfo(type_name="parent"))
         SchemaRegistry.register(TypeInfo(type_name="child", parent_type="parent"))
         subtypes = SchemaRegistry.get_subtypes("parent")
@@ -173,7 +173,7 @@ def test_register_parent_type_builds_subtypes(tmp_path):
 
 def test_get_all_types(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         SchemaRegistry.register(TypeInfo(type_name="a"))
         SchemaRegistry.register(TypeInfo(type_name="b"))
         all_types = SchemaRegistry.get_all_types()
@@ -188,7 +188,7 @@ def test_get_returns_none_for_unknown():
 
 def test_indexed_by_default_accumulates(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         SchemaRegistry.register(TypeInfo(type_name="x", indexed_by_default=True))
         SchemaRegistry.register(TypeInfo(type_name="y", indexed_by_default=True))
         result = SchemaRegistry.get_default_index_types()
@@ -212,7 +212,7 @@ def test_get_default_index_types_fallback_when_empty():
 
 def test_persist_writes_type_info_json(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         SchemaRegistry.register(TypeInfo(type_name="persist_me", locations=["record"]))
     json_file = tmp_path / "types" / "persist_me" / "type_info.json"
     assert json_file.exists()
@@ -223,7 +223,7 @@ def test_persist_writes_type_info_json(tmp_path):
 
 def test_persist_skips_if_hash_unchanged(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         info = TypeInfo(type_name="stable")
         SchemaRegistry.register(info)
         json_file = tmp_path / "types" / "stable" / "type_info.json"
@@ -241,11 +241,11 @@ def test_persist_skips_if_hash_unchanged(tmp_path):
 
 def test_load_persisted_restores_types(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         SchemaRegistry.register(TypeInfo(type_name="loaded_type", indexed_by_default=True))
 
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         SchemaRegistry.load_persisted()
         info = SchemaRegistry.get("loaded_type")
     assert info is not None
@@ -259,7 +259,7 @@ def test_load_persisted_restores_types(tmp_path):
 
 
 def test_append_scan_global_log(tmp_path):
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         ts = SchemaRegistry.append_scan(
             trigger="test",
             duration_ms=10.0,
@@ -276,7 +276,7 @@ def test_append_scan_global_log(tmp_path):
 
 
 def test_append_scan_per_type_log(tmp_path):
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         ts = SchemaRegistry.append_scan(
             trigger="test",
             duration_ms=5.0,
@@ -293,7 +293,7 @@ def test_append_scan_per_type_log(tmp_path):
 
 
 def test_append_index_global_and_per_type(tmp_path):
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         ts = SchemaRegistry.append_index(
             trigger="test",
             duration_ms=20.0,
@@ -308,13 +308,13 @@ def test_append_index_global_and_per_type(tmp_path):
 
 
 def test_get_last_scan_at_none_when_missing(tmp_path):
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         result = SchemaRegistry.get_last_scan_at("nonexistent_type")
     assert result is None
 
 
 def test_get_last_index_at_returns_timestamp(tmp_path):
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         ts = SchemaRegistry.append_index(
             trigger="t",
             duration_ms=1.0,
@@ -327,13 +327,13 @@ def test_get_last_index_at_returns_timestamp(tmp_path):
 
 
 def test_get_last_global_index_at_none_when_no_log(tmp_path):
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         result = SchemaRegistry.get_last_global_index_at()
     assert result is None
 
 
 def test_get_last_global_index_at_returns_last(tmp_path):
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         ts = SchemaRegistry.append_index(
             trigger="global_test",
             duration_ms=5.0,
@@ -350,7 +350,7 @@ def test_get_last_global_index_at_returns_last(tmp_path):
 
 
 def test_get_index_status_never_indexed(tmp_path):
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         status = SchemaRegistry.get_index_status()
     assert status.never_indexed is True
     assert status.last_indexed_at is None
@@ -388,7 +388,7 @@ def test_get_index_status_not_stale_when_recent(tmp_path):
 
 def test_type_info_scans_reads_from_log(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         SchemaRegistry.register(TypeInfo(type_name="scanned_type"))
         SchemaRegistry.append_scan(
             trigger="test",
@@ -412,7 +412,7 @@ def test_type_info_scans_reads_from_log(tmp_path):
 
 def test_type_info_extends_returns_parent(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         SchemaRegistry.register(TypeInfo(type_name="base_type"))
         SchemaRegistry.register(TypeInfo(type_name="derived_type", parent_type="base_type"))
         child_info = SchemaRegistry.get("derived_type")
@@ -424,7 +424,7 @@ def test_type_info_extends_returns_parent(tmp_path):
 
 def test_type_info_subtypes_returns_children(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         SchemaRegistry.register(TypeInfo(type_name="root"))
         SchemaRegistry.register(TypeInfo(type_name="child1", parent_type="root"))
         SchemaRegistry.register(TypeInfo(type_name="child2", parent_type="root"))
@@ -478,7 +478,7 @@ def test_type_info_type_id():
 
 def test_schema_registry_get_accepts_typeid(tmp_path):
     _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
+    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         SchemaRegistry.register(TypeInfo(type_name="skill_x", locations=["record"]))
         tid = TypeId("skill_x-@local")
         info = SchemaRegistry.get(tid)

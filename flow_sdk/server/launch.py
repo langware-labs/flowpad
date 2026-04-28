@@ -19,7 +19,13 @@ from pathlib import Path
 
 import psutil
 
-from flow_sdk.service_log import cleanup_old_logs, generate_timestamped_log_path, LOGS_BASE
+from flow_sdk.service_log import cleanup_old_logs, generate_timestamped_log_path
+
+
+def _logs_base() -> Path:
+    """Lazy logs-dir lookup via per-instance settings."""
+    from flow_sdk.instance_settings import get_instance_settings
+    return get_instance_settings().logs_dir
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -41,7 +47,7 @@ log = logging.getLogger("flow.monitor")
 def _setup_logging() -> None:
     """Configure timestamped file + stderr logging for the monitor process."""
 
-    monitor_log_dir = LOGS_BASE / "monitor"
+    monitor_log_dir = _logs_base() / "monitor"
     cleanup_old_logs(monitor_log_dir)
     monitor_log_path = generate_timestamped_log_path("monitor")
 
@@ -139,7 +145,7 @@ def start_server_process(port: int) -> int:
     env = os.environ.copy()
     env["LOCAL_SERVER_PORT"] = str(port)
 
-    server_log_dir = LOGS_BASE / "server"
+    server_log_dir = _logs_base() / "server"
     cleanup_old_logs(server_log_dir)
     server_log_path = generate_timestamped_log_path("server")
 
@@ -303,7 +309,7 @@ def launch_monitor(port: int) -> None:
             _save_info(info)
 
             if not wait_for_server_health(port, timeout=15.0):
-                log.error("Server did not become healthy within 15s (check %s)", LOGS_BASE / "server")
+                log.error("Server did not become healthy within 15s (check %s)", _logs_base() / "server")
 
             log.info("Entering monitor loop...")
             monitor_loop(port)

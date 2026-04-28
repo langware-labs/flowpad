@@ -5,7 +5,7 @@ import { UsageBar } from '@src/components/cost-dashboard';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
 import { NotificationFeed } from '@src/components/notification-feed';
 import { type ProjectResourceListItem } from '@src/components/project-resource-list';
-import { ProjectActivityStrip, BookmarkColumn } from '@src/components/project-activity-strip';
+import { ProjectActivityStrip, RecentConversationsStrip, BookmarkColumn } from '@src/components/project-activity-strip';
 import { WorkflowStrip } from '@src/components/workflows-view/WorkflowStrip';
 import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
 import { MiniDesktop } from '@src/components/quick-create';
@@ -772,21 +772,10 @@ export function HomeLanding() {
           </div>
         </div>
 
-        {/* Right column: Workflows strip + Session list */}
+        {/* Right column: Workflows strip + Recent conversations */}
         <div className="w-72 shrink-0 flex flex-col gap-2">
           <WorkflowStrip />
-          <ProjectActivityStrip
-            items={activityItems}
-            isLoading={isLoadingClaudeProjects}
-            onItemClick={handleResourceClick}
-            onSessionResume={handleSessionResume}
-            onSessionTasks={handleSessionTasks}
-            onActAccordingToClassification={(item, cmd) => void handleActAccordingToClassification(item, cmd)}
-            actingSessionId={actingSessionId}
-            sessionEventCounts={sessionEventCounts}
-            snifferEvents={snifferEvents}
-            learningTasks={learningTasks}
-          />
+          <RecentConversationsStrip />
         </div>
 
       </div>

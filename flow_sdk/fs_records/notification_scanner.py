@@ -145,12 +145,21 @@ async def _process_manifest(
     from flow_sdk.utils.git import git_remote_url
     project_url = git_remote_url(str(project_root))
 
+    # --- Resolve project_id from project_root via deterministic id ---
+    from flow_sdk.builtin.project import Project
+    resolved_project_id: str | None = None
+    try:
+        resolved_project_id = Project.allocate_id({"fs_storage_mount_path": str(project_root)})
+    except Exception as e:
+        logger.warning(f"notification_scanner: project_id resolution failed: {e}")
+
     # --- Create Conversation entity + record ---
     conv = await _create_conversation_from_disk(
         task_dir=task_dir,
         task_id=task_id,
         conversation_id=conversation_id,
         owner_typeid=owner_typeid,
+        project_id=resolved_project_id,
     )
 
     # --- Create Task entity ---
@@ -227,6 +236,7 @@ async def _create_conversation_from_disk(
     conversation_id: str | None,
     owner_typeid,
     notify: bool = True,
+    project_id: str | None = None,
 ) -> Conversation | None:
     """Create a Conversation entity from conversation.jsonl on disk (recipient side).
 
@@ -255,6 +265,7 @@ async def _create_conversation_from_disk(
 
     conv = Conversation.model_validate({
         "task_id": task_id,
+        "project_id": project_id,
         "data_path": str(jsonl_path),
         "message_count": len(pointers),
         "message_ids": json.dumps(pointers) if pointers else None,

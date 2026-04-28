@@ -1,31 +1,31 @@
 """Settings - load settings from various sources."""
 
 from .utils import (
-    CLAUDE_HOME,
-    CLAUDE_PROJECT,
-    HOME,
+    _claude_home,
+    _claude_project_dir,
+    _user_home,
     load_json,
 )
 
 
 def get_user_settings() -> dict | None:
     """Get ~/.claude/settings.json"""
-    return load_json(CLAUDE_HOME / "settings.json")
+    return load_json(_claude_home() / "settings.json")
 
 
 def get_project_settings() -> dict | None:
     """Get .claude/settings.json"""
-    return load_json(CLAUDE_PROJECT / "settings.json")
+    return load_json(_claude_project_dir() / "settings.json")
 
 
 def get_project_local_settings() -> dict | None:
     """Get .claude/settings.local.json"""
-    return load_json(CLAUDE_PROJECT / "settings.local.json")
+    return load_json(_claude_project_dir() / "settings.local.json")
 
 
 def get_legacy_settings() -> dict | None:
     """Get ~/.claude.json"""
-    return load_json(HOME / ".claude.json")
+    return load_json(_user_home() / ".claude.json")
 
 
 def clear_skill_usage() -> int:
@@ -35,7 +35,7 @@ def clear_skill_usage() -> int:
     """
     import json
 
-    claude_json_path = HOME / ".claude.json"
+    claude_json_path = _user_home() / ".claude.json"
     if not claude_json_path.exists():
         return 0
 

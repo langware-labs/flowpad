@@ -1,4 +1,6 @@
 import { APIEntity, registerEntity } from '../APIEntity';
+import { dataContext } from '../FlowSync/context';
+import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { fsManager } from '../services/fsService';
@@ -49,6 +51,13 @@ export class Workflow extends APIEntity<Workflow> {
 
   override get dockPointer(): DockPointerData {
     return new DockPointerData(ViewType.WORKFLOWS, this.id);
+  }
+
+  /** FrontMatterFsRef for the workflow .md file at asset_ref. */
+  get doc(): FrontMatterFsRef | null {
+    const typeId = dataContext.computeNodeTypeId;
+    if (!typeId || !this.asset_ref) return null;
+    return new FrontMatterFsRef(this.asset_ref, typeId);
   }
 
   /**
@@ -114,7 +123,7 @@ export class Workflow extends APIEntity<Workflow> {
         permissionMode: 'bypassPermissions',
         workdir,
         scope: [this.typeId],
-        targetTypeIdStr: this.typeId.toString(),
+        targetVfsPath: this.typeId.toString(),
       },
       { instruction },
     );

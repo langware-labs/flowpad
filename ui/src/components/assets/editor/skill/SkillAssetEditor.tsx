@@ -14,9 +14,12 @@ interface SkillAssetEditorProps {
  */
 export function SkillAssetEditor({ fsRef }: SkillAssetEditorProps) {
   const { entity: skill } = useEntityByPath<Skill>(Skill.type, fsRef);
+  // Prefer skill.doc (built from skill.asset_ref/SKILL.md) once entity loads;
+  // fall back to URL-derived fsRef.child('SKILL.md') while it's loading.
+  const editorRef = skill?.doc ?? fsRef.child('SKILL.md');
   return (
     <MarkdownEditor
-      fsRef={fsRef.child('SKILL.md')}
+      fsRef={editorRef}
       chatTarget={skill ? skill.typeId.toString() : null}
     />
   );

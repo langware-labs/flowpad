@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Iterator
 
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.record_ref import RecordRef
+from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.fs_store.source_file_record_list import (
     _escape_json_pointer,
     _unescape_json_pointer,
@@ -479,7 +480,7 @@ def _parse_hooks_from_plugins() -> list[ClaudeHookRecord]:
     Reads the plugin registry at ``~/.claude/plugins/installed_plugins.json``
     and scans each plugin's ``hooks/hooks.json`` file.
     """
-    claude_home = Path.home() / ".claude"
+    claude_home = get_instance_settings().claude_home
     registry_path = claude_home / "plugins" / "installed_plugins.json"
     if not registry_path.exists():
         return []
@@ -613,8 +614,8 @@ def _default_search_paths() -> list[tuple[Path, str]]:
 
     Mirrors the paths used by config_collector.get_all_hooks().
     """
-    home = Path.home()
-    claude_home = home / ".claude"
+    settings = get_instance_settings()
+    claude_home = settings.claude_home
     paths: list[tuple[Path, str]] = []
 
     # User-level
@@ -686,7 +687,7 @@ class ClaudeHookRecordList:
             records.extend(_parse_hooks_from_plugins())
 
             # Legacy ~/.claude.json
-            legacy_path = Path.home() / ".claude.json"
+            legacy_path = get_instance_settings().user_home / ".claude.json"
             if legacy_path.exists():
                 resolved = str(legacy_path.resolve())
                 if resolved not in seen_files:

@@ -2,7 +2,8 @@ import { FSRef } from '@sdk';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownEditor';
 import { SkillAssetEditor } from '@src/components/assets/editor/skill/SkillAssetEditor';
-import { FileText, Sparkles, X } from 'lucide-react';
+import { ConversationTabContent } from './ConversationTabContent';
+import { FileText, MessageSquare, Sparkles, X } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 
 /**
@@ -14,10 +15,10 @@ export interface RoomTab {
   /** Stable key, used for activation + close. */
   key: string;
   /** Discriminator for the renderer dispatch. */
-  type: 'markdown' | 'skill';
+  type: 'markdown' | 'skill' | 'conversation';
   /** Display label in the tab strip. */
   title: string;
-  /** Resolves the content to render — markdown: absolute file path; skill: skill folder path. */
+  /** Resolves the content to render — markdown: absolute file path; skill: skill folder path; conversation: conversation entity id. */
   asset_ref: string;
 }
 
@@ -95,6 +96,8 @@ function RoomTabChip({ tab, active, onActivate, onClose }: ChipProps) {
     >
       {tab.type === 'skill' ? (
         <Sparkles className="h-3 w-3 flex-shrink-0" />
+      ) : tab.type === 'conversation' ? (
+        <MessageSquare className="h-3 w-3 flex-shrink-0" />
       ) : (
         <FileText className="h-3 w-3 flex-shrink-0" />
       )}
@@ -124,6 +127,8 @@ function RoomTabContent({ tab }: { tab: RoomTab }) {
       return <MarkdownTabContent assetRef={tab.asset_ref} />;
     case 'skill':
       return <SkillTabContent assetRef={tab.asset_ref} />;
+    case 'conversation':
+      return <ConversationTabContent conversationId={tab.asset_ref} />;
     default:
       return <div className="p-4 text-sm text-muted-foreground">Unsupported tab type.</div>;
   }

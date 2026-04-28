@@ -10,8 +10,8 @@ from ..settings import (
     get_legacy_settings,
 )
 from ..utils import (
-    CLAUDE_HOME,
-    HOME,
+    _claude_home,
+    _user_home,
     get_file_mtime,
     load_json,
 )
@@ -156,7 +156,7 @@ def get_hooks_from_plugins() -> list[dict]:
     }
     """
     hooks: list[dict] = []
-    registry_path = CLAUDE_HOME / "plugins" / "installed_plugins.json"
+    registry_path = _claude_home() / "plugins" / "installed_plugins.json"
     if not registry_path.exists():
         return hooks
 
@@ -252,16 +252,16 @@ def _get_all_hooks_fallback() -> list[dict]:
     all_hooks: list[dict] = []
     seen_files: set[str] = set()
 
-    _merge_items(all_hooks, get_hooks_from_folder(CLAUDE_HOME, "user", seen_files))
+    _merge_items(all_hooks, get_hooks_from_folder(_claude_home(), "user", seen_files))
     _merge_items(all_hooks, get_hooks_from_plugins())
 
-    legacy_path = HOME / ".claude.json"
+    legacy_path = _user_home() / ".claude.json"
     if legacy_path.exists():
         data = load_json(legacy_path)
         if data:
             _merge_items(all_hooks, get_hooks_from_settings(data, "legacy", str(legacy_path)))
 
-    projects_dir = CLAUDE_HOME / "projects"
+    projects_dir = _claude_home() / "projects"
     if projects_dir.exists():
         for project_dir in projects_dir.iterdir():
             if not project_dir.is_dir():
@@ -321,11 +321,11 @@ def get_mcp_servers() -> list[dict]:
             if server.get("name"):
                 seen_names.add(server["name"])
 
-    for server in get_mcp_servers_from_file(HOME / ".mcp.json", "user"):
+    for server in get_mcp_servers_from_file(_user_home() / ".mcp.json", "user"):
         servers.append(server)
         seen_names.add(server["name"])
 
-    for server in get_mcp_servers_from_folder(CLAUDE_HOME, "user"):
+    for server in get_mcp_servers_from_folder(_claude_home(), "user"):
         if server["name"] not in seen_names:
             servers.append(server)
             seen_names.add(server["name"])
@@ -338,19 +338,19 @@ def get_mcp_servers() -> list[dict]:
             seen_names.add(name)
             servers.append(
                 {
-                    "id": f"{HOME / '.claude.json'}:{name}",
+                    "id": f"{_user_home() / '.claude.json'}:{name}",
                     "type": "mcp_server",
                     "name": name,
                     "scope": "user",
-                    "source_file": str(HOME / ".claude.json"),
-                    "modified_at": get_file_mtime(HOME / ".claude.json"),
+                    "source_file": str(_user_home() / ".claude.json"),
+                    "modified_at": get_file_mtime(_user_home() / ".claude.json"),
                     "command": config.get("command", ""),
                     "args": config.get("args", []),
                     "env": config.get("env", {}),
                 }
             )
 
-    projects_dir = CLAUDE_HOME / "projects"
+    projects_dir = _claude_home() / "projects"
     if projects_dir.exists():
         for project_dir in projects_dir.iterdir():
             if not project_dir.is_dir():
@@ -406,11 +406,11 @@ def get_commands() -> list[dict]:
             if cmd.get("name"):
                 seen.add(cmd["name"])
 
-    for cmd in get_commands_from_folder(CLAUDE_HOME, "global"):
+    for cmd in get_commands_from_folder(_claude_home(), "global"):
         commands.append(cmd)
         seen.add(cmd["name"])
 
-    projects_dir = CLAUDE_HOME / "projects"
+    projects_dir = _claude_home() / "projects"
     if projects_dir.exists():
         for project_dir in projects_dir.iterdir():
             if not project_dir.is_dir():
@@ -461,7 +461,7 @@ def get_agents() -> list[dict]:
             if agent.get("name"):
                 seen.add(agent["name"])
 
-    for agent in get_agents_from_folder(CLAUDE_HOME, "global"):
+    for agent in get_agents_from_folder(_claude_home(), "global"):
         agents.append(agent)
         seen.add(agent["name"])
 
@@ -470,7 +470,7 @@ def get_agents() -> list[dict]:
             agents.append(agent)
             seen.add(agent["name"])
 
-    projects_dir = CLAUDE_HOME / "projects"
+    projects_dir = _claude_home() / "projects"
     if projects_dir.exists():
         for project_dir in projects_dir.iterdir():
             if not project_dir.is_dir():
@@ -577,7 +577,7 @@ def get_skills() -> list[dict]:
             if skill.get("name"):
                 seen.add(skill["name"])
 
-    for skill in get_skills_from_folder(CLAUDE_HOME, "user"):
+    for skill in get_skills_from_folder(_claude_home(), "user"):
         skills.append(skill)
         seen.add(skill["name"])
 
@@ -586,7 +586,7 @@ def get_skills() -> list[dict]:
             skills.append(skill)
             seen.add(skill["name"])
 
-    projects_dir = CLAUDE_HOME / "projects"
+    projects_dir = _claude_home() / "projects"
     if projects_dir.exists():
         for project_dir in projects_dir.iterdir():
             if not project_dir.is_dir():

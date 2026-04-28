@@ -18,6 +18,7 @@ class Conversation(Entity):
 
     type: str = APIField(default="conversation")
     task_id: Optional[str] = APIField(None)
+    project_id: Optional[str] = APIField(None, description="ID of the parent project, or None when unscoped")
     data_path: Optional[str] = APIField(None)
     message_count: int = APIField(0)
     message_ids: Optional[str] = APIField(None)  # JSON-encoded [{"message_id": uuid, "timestamp": ISO}]
