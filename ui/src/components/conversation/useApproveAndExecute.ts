@@ -105,7 +105,6 @@ export function useApproveAndExecute({ task }: UseApproveAndExecuteOptions): Use
           return;
         }
       }
-      // Stored id no longer resolves — fall through to forking again.
     }
 
     // First approve for this task — fork from my_process_id's session.
