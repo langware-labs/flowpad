@@ -22,9 +22,13 @@ interface PromptComposerDialogProps {
   initial?: QueuedPrompt | null;
   /** Called when the user confirms — the prompt is *queued*, not sent. */
   onQueue: (prompt: QueuedPrompt) => void;
+  /** Optional one-click "queue + send the reply now" handler. When provided, a
+   *  Send button appears next to "Attach to reply" so the user doesn't have to
+   *  attach, then click Send in the composer. */
+  onQueueAndSend?: (prompt: QueuedPrompt) => void;
 }
 
-export function PromptComposerDialog({ open, onClose, initial, onQueue }: PromptComposerDialogProps) {
+export function PromptComposerDialog({ open, onClose, initial, onQueue, onQueueAndSend }: PromptComposerDialogProps) {
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
 
@@ -40,6 +44,12 @@ export function PromptComposerDialog({ open, onClose, initial, onQueue }: Prompt
   const handleQueue = () => {
     if (!canQueue) return;
     onQueue({ text: text.trim(), files });
+    onClose();
+  };
+
+  const handleQueueAndSend = () => {
+    if (!canQueue || !onQueueAndSend) return;
+    onQueueAndSend({ text: text.trim(), files });
     onClose();
   };
 
@@ -66,9 +76,14 @@ export function PromptComposerDialog({ open, onClose, initial, onQueue }: Prompt
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleQueue} disabled={!canQueue}>
+          <Button onClick={handleQueue} disabled={!canQueue} variant="secondary">
             Attach to reply
           </Button>
+          {onQueueAndSend && (
+            <Button onClick={handleQueueAndSend} disabled={!canQueue}>
+              Send
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

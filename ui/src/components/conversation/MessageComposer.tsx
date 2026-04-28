@@ -4,6 +4,7 @@ import { sendReply } from '@sdk/entities/notifications';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
 import { cn } from '@src/lib/utils';
+import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_LABEL } from './constants';
 import { PromptComposerDialog, type QueuedPrompt } from './PromptComposerDialog';
 import { PromptApprovalRow } from './PromptApprovalRow';
 import { useLocalUser } from './useLocalUser';
@@ -47,8 +48,9 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
 
   const queuedPromptAsAttachment: Attachment | null = useMemo(() => {
     if (!activePrompt) return null;
-    const text = activePrompt.text
-      || (activePrompt.files.length > 0
+    const text =
+      activePrompt.text ||
+      (activePrompt.files.length > 0
         ? `(${activePrompt.files.length} prompt file${activePrompt.files.length === 1 ? '' : 's'})`
         : '');
     return {
@@ -61,30 +63,46 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
 
   const addFiles = (incoming: FileList | null) => {
     if (!incoming) return;
+    const tooBig: string[] = [];
     setFiles((prev) => {
       const next = [...prev];
       for (const f of Array.from(incoming)) {
+        if (f.size > MAX_FILE_SIZE_BYTES) {
+          tooBig.push(f.name);
+          continue;
+        }
         if (!next.some((x) => x.name === f.name && x.size === f.size)) next.push(f);
       }
       return next;
     });
+    if (tooBig.length > 0) {
+      setError(
+        tooBig.length === 1
+          ? `"${tooBig[0]}" is over ${MAX_FILE_SIZE_LABEL} and was not attached.`
+          : `${tooBig.length} files over ${MAX_FILE_SIZE_LABEL} were not attached: ${tooBig.join(', ')}.`,
+      );
+    }
   };
 
   const removeFile = (index: number) => {
     setFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSend = async () => {
+  const handleSend = async (override?: { prompt?: QueuedPrompt | null }) => {
     const trimmed = text.trim();
     if (sending) return;
-    if (!trimmed && !activePrompt && files.length === 0) return;
+    // `prompt` lives on either react state (queued from the dialog's "Attach to
+    // reply") OR an explicit override (the dialog's "Send" button uses this so
+    // we don't lose the prompt to a state-update race).
+    const effectivePrompt = override && 'prompt' in override ? override.prompt : activePrompt;
+    if (!trimmed && !effectivePrompt && files.length === 0) return;
     setSending(true);
     setError(null);
     try {
-      const extras = activePrompt
+      const extras = effectivePrompt
         ? {
-            promptText: activePrompt.text || undefined,
-            promptFiles: activePrompt.files.length > 0 ? activePrompt.files : undefined,
+            promptText: effectivePrompt.text || undefined,
+            promptFiles: effectivePrompt.files.length > 0 ? effectivePrompt.files : undefined,
           }
         : undefined;
       await sendReply(task, trimmed, files.length > 0 ? files : undefined, extras);
@@ -118,7 +136,6 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
   };
 
   const canSend = (!!text.trim() || !!activePrompt || files.length > 0) && !isDisabled;
-  const sendNeedsAttention = canSend && !text.trim() && !!activePrompt;
 
   return (
     <div className="space-y-1.5">
@@ -179,13 +196,8 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
           type="button"
           onClick={() => void handleSend()}
           disabled={!canSend}
-          title={sendNeedsAttention ? 'Send prompt' : 'Send'}
-          className={cn(
-            'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-primary-foreground transition-colors disabled:opacity-40',
-            sendNeedsAttention
-              ? 'animate-pulse bg-emerald-600 ring-2 ring-emerald-400/60 hover:bg-emerald-700'
-              : 'bg-primary hover:bg-primary/90',
-          )}
+          title="Send"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
         >
           <Send className="h-3.5 w-3.5" />
         </button>
@@ -194,10 +206,7 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
       {canAddPrompt && activePrompt && (
         <div className="flex items-start gap-1">
           <div className="min-w-0 flex-1">
-            <PromptApprovalRow
-              attachment={queuedPromptAsAttachment!}
-              onEdit={() => setShowPromptDialog(true)}
-            />
+            <PromptApprovalRow attachment={queuedPromptAsAttachment!} onEdit={() => setShowPromptDialog(true)} />
             {activePrompt.files.length > 0 && (
               <div className="ml-1 mt-0.5 text-[11px] text-muted-foreground">
                 {activePrompt.files.length} prompt file{activePrompt.files.length === 1 ? '' : 's'} attached
@@ -223,7 +232,9 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
               className="flex items-center gap-2 rounded border border-input bg-muted/40 px-2 py-1 text-xs"
             >
               <File className="h-3 w-3 shrink-0 text-muted-foreground" />
-              <span className="flex-1 truncate text-foreground" title={f.name}>{f.name}</span>
+              <span className="flex-1 truncate text-foreground" title={f.name}>
+                {f.name}
+              </span>
               <span className="shrink-0 text-muted-foreground">{formatSize(f.size)}</span>
               <button
                 type="button"
@@ -246,6 +257,13 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
           onClose={() => setShowPromptDialog(false)}
           initial={activePrompt}
           onQueue={(p) => setActivePrompt(p)}
+          onQueueAndSend={(p) => {
+            // Park the prompt on state so the queued-prompt chip flashes
+            // briefly during send, then ship it via an explicit override so
+            // we don't lose it to React's setState batch.
+            setActivePrompt(p);
+            void handleSend({ prompt: p });
+          }}
         />
       )}
     </div>
