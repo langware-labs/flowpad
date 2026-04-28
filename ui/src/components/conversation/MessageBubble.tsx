@@ -17,7 +17,9 @@ interface MessageBubbleProps {
   senderName: string;
   onEditName?: (newName: string) => void;
   onShowTask?: () => void;
-  onExecute?: () => void;
+  onClaudeCode?: () => void;
+  /** True when the Claude Code chip should read "Start Claude Code session" instead of "Open Claude Code". */
+  isStartLabel?: boolean;
   onApproveAndExecute?: (attachmentIndex: number) => void;
   /** Optional content rendered below the message body (e.g. attachment chips). */
   footer?: ReactNode;
@@ -49,7 +51,8 @@ export function MessageBubble({
   senderName,
   onEditName,
   onShowTask,
-  onExecute,
+  onClaudeCode,
+  isStartLabel,
   onApproveAndExecute,
   footer,
 }: MessageBubbleProps) {
@@ -137,9 +140,11 @@ export function MessageBubble({
         {footer}
         <MessageActionChips
           flowMessageId={flowMessageId}
+          flowMessage={flowMessage}
           task={task}
           onShowTask={onShowTask}
-          onExecute={onExecute}
+          onClaudeCode={onClaudeCode}
+          isStartLabel={isStartLabel}
         />
       </div>
     </div>

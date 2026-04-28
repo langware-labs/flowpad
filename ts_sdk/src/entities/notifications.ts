@@ -48,8 +48,8 @@ export interface SendNotificationParams {
   team_space_id?: string | null;
   sender_name?: string | null;
   files?: File[];
-  /** Sender's local Claude Code session id — stored on the recipient side as task.metadata.sender_session_id. */
-  sender_session_id?: string | null;
+  /** Sender's clean AgenticProcess id — stamped on the *sender's* task as task.metadata.my_process_id so the per-message Open chip is wired immediately. Receiver-side materialisation strips it. */
+  sender_process_id?: string | null;
 }
 
 export async function sendNotification(params: SendNotificationParams): Promise<{ git_error?: string | null; sent?: boolean; email_error?: string | null }> {
