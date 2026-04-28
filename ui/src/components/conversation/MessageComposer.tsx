@@ -1,9 +1,11 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { File, MessageSquarePlus, Paperclip, Send, X } from 'lucide-react';
 import { sendReply } from '@sdk/entities/notifications';
+import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
 import { cn } from '@src/lib/utils';
 import { PromptComposerDialog, type QueuedPrompt } from './PromptComposerDialog';
+import { PromptApprovalRow } from './PromptApprovalRow';
 
 interface MessageComposerProps {
   task: ITask;
@@ -36,6 +38,18 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
     if (onQueuedPromptChange) onQueuedPromptChange(p);
     else setLocalPrompt(p);
   };
+
+  const queuedPromptAsAttachment: Attachment | null = useMemo(() => {
+    if (!activePrompt) return null;
+    const text = activePrompt.text
+      || (activePrompt.files.length > 0
+        ? `(${activePrompt.files.length} prompt file${activePrompt.files.length === 1 ? '' : 's'})`
+        : '');
+    return {
+      attachment_type: AttachmentType.PROMPT,
+      data: text,
+    };
+  }, [activePrompt]);
 
   const isDisabled = disabled || sending;
 
@@ -170,29 +184,22 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
       </div>
 
       {activePrompt && (
-        <div className="flex items-start gap-2 rounded border border-emerald-500/40 bg-emerald-500/5 px-2 py-1 text-xs">
-          <MessageSquarePlus className="mt-0.5 h-3 w-3 shrink-0 text-emerald-600" />
+        <div className="flex items-start gap-1">
           <div className="min-w-0 flex-1">
-            <div className="text-emerald-700 dark:text-emerald-300">Prompt attached</div>
-            {activePrompt.text && (
-              <div className="mt-0.5 line-clamp-2 text-muted-foreground">{activePrompt.text}</div>
-            )}
+            <PromptApprovalRow
+              attachment={queuedPromptAsAttachment!}
+              onEdit={() => setShowPromptDialog(true)}
+            />
             {activePrompt.files.length > 0 && (
-              <div className="mt-0.5 text-muted-foreground">
-                {activePrompt.files.length} file{activePrompt.files.length === 1 ? '' : 's'}
+              <div className="ml-1 mt-0.5 text-[11px] text-muted-foreground">
+                {activePrompt.files.length} prompt file{activePrompt.files.length === 1 ? '' : 's'} attached
               </div>
             )}
           </div>
           <button
             type="button"
-            onClick={() => setShowPromptDialog(true)}
-            className="shrink-0 rounded px-1.5 py-0.5 text-emerald-700 transition-colors hover:bg-emerald-500/10 dark:text-emerald-300"
-          >
-            Edit
-          </button>
-          <button
-            type="button"
             onClick={() => setActivePrompt(null)}
+            title="Remove queued prompt"
             className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive"
           >
             <X className="h-3 w-3" />

@@ -154,6 +154,7 @@ async def _create_spec_and_task(
     project_id: Optional[str] = None,
     project_name: Optional[str] = None,
     project_root: Optional[str] = None,
+    initiator_session_id: Optional[str] = None,
 ) -> tuple[Spec, Task]:
     """Create Spec + Task entities locally and register the task on the hub."""
     spec = Spec.model_validate({
@@ -176,6 +177,10 @@ async def _create_spec_and_task(
         task_meta["team_space_id"] = team_space_id
     if project_id:
         task_meta["project_id"] = project_id
+    if initiator_session_id:
+        # Sender's local Claude session — used by their own Approve & Execute path
+        # so it can fork directly without rehydrating from the attached transcript.
+        task_meta["initiator_session_id"] = initiator_session_id
     if project_name:
         task_meta["project_name"] = project_name
     if project_root:
@@ -516,6 +521,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     plan_id = (body.get("plan_id") or "").strip() or None
     project_path = (body.get("project_path") or "").strip() or None
     team_space_id = (body.get("team_space_id") or "").strip() or None
+    initiator_session_id = (body.get("initiator_session_id") or "").strip() or None
 
     if not recipient_id:
         return ApiFailResponse(message="recipient_id is required")
@@ -555,6 +561,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         project_id=project_id_val,
         project_name=project_name_val,
         project_root=str(project_root) if project_root else None,
+        initiator_session_id=initiator_session_id,
     )
 
     uploaded_files = body.get("files") or []
@@ -1171,12 +1178,24 @@ async def rehydrate_claude_session() -> ApiResponse:
     if not src_path.exists():
         return ApiFailResponse(message=f"Attached jsonl not found at {src_path}")
 
-    # Claude Code stores transcripts at ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl
-    # The encoded-cwd is the absolute project path with separators rewritten.
+    # Claude Code stores transcripts at ~/.claude/projects/<encoded-cwd>/<session-id>.jsonl.
+    # The encoding replaces both POSIX and Windows path separators with '-' AND keeps the
+    # leading dash on POSIX absolute paths — that's what Claude itself does (see
+    # flow_sdk/fs_records/claude/claude_session.py find_session_by_id, line ~496).
     home = Path.home()
     claude_root = home / ".claude" / "projects"
     if project_root:
-        encoded = str(Path(project_root).resolve()).replace(os.sep, "-").lstrip("-")
+        resolved = str(Path(project_root).resolve())
+        encoded = resolved.replace("/", "-").replace("\\", "-")
+        # Prefer reusing an existing project directory if one already matches —
+        # avoids creating a parallel directory whose name disagrees with whatever
+        # Claude itself has been writing into.
+        if not (claude_root / encoded).exists() and claude_root.is_dir():
+            tail = Path(resolved).name
+            for child in claude_root.iterdir():
+                if child.is_dir() and child.name.endswith(f"-{tail}"):
+                    encoded = child.name
+                    break
     else:
         encoded = "rehydrated"
     target_dir = claude_root / encoded
