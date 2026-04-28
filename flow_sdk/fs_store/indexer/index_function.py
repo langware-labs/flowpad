@@ -98,7 +98,7 @@ async def _load_updated_map(driver: Any, type_name: str) -> dict[str, float]:
 
     from sqlalchemy import text
 
-    async with await driver._get_session() as session:
+    async with driver._session_ctx() as session:
         result = await session.execute(
             text("SELECT id, updated_date FROM entities WHERE type = :t"),
             {"t": type_name},
@@ -187,7 +187,7 @@ class FSIndexer:
 
         # Imports localized to break cycles
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
-        from flow_sdk.db import get_db_driver
+        from flow_sdk.db import get_db_driver, session as _db_session
 
         # Bulk-preload {id: updated_date_ts} per type — one DB query each.
         # Used for the skip-fresh check: if an asset's mtime is <= the DB
@@ -238,78 +238,86 @@ class FSIndexer:
                 sub_total=per_type_totals.get(rt, 0),
             ))
 
-        for ref in targets:
-            if ref.record_type is None:
-                continue
-            info = SchemaRegistry.get(str(ref.record_type))
-            if info is None or info.record_cls is None:
-                continue
-            if not hasattr(info.record_cls, "from_fsref"):
-                continue
-
-            # On type-boundary transitions emit ``type_progress`` (NOT type_complete) —
-            # DFS interleaves types, so the same type can re-appear later. Final
-            # type_complete events fire post-loop, once per unique type.
-            if ref.record_type != current_rt:
-                current_rt = ref.record_type
-                if on_progress is not None and current_rt not in seen_progress_at:
-                    await on_progress(ProgressEvent(
-                        stage="type_start",
-                        record_type=current_rt,
-                        sub_done=0,
-                        sub_total=per_type_totals.get(current_rt, 0),
-                    ))
-
-            acc = per_type_counts.setdefault(
-                ref.record_type, {"indexed": 0, "errors": 0, "duration_ms": 0.0, "skipped": 0}
-            )
-
-            # Per-type cap: once we've indexed `limit_per_type` records of this
-            # type, skip further refs of the same type.
-            if opts.limit_per_type is not None and acc["indexed"] >= opts.limit_per_type:
-                continue
-
-            # Skip-fresh: in-memory dict lookup, one stat(), no parse.
-            # Bypassed when `opts.force` is set (hard refresh).
-            rt_name = str(ref.record_type)
-            last_ts = valid_map.get(rt_name, {}).get(info.record_cls.getId(ref))
-            if not opts.force and last_ts is not None:
-                asset_ts = info.record_cls.asset_hash_for_ref(ref)
-                if asset_ts and asset_ts <= last_ts:
-                    acc["skipped"] += 1
-                    # Throttled sub_progress even for skips.
-                    now = time.perf_counter()
-                    if now - seen_progress_at.get(ref.record_type, 0.0) >= _PROGRESS_THROTTLE_S:
-                        seen_progress_at[ref.record_type] = now
-                        await _emit_sub_progress(ref.record_type)
+        # Hoist a single DB session over the entire per-record loop + FTS
+        # flush. The driver's `_session_ctx` contextvar handshake makes
+        # every nested call (sync_to_db → Entity.from_record → driver.save,
+        # wiki.index → AsyncLinkStore, fts_upsert) reuse this one session,
+        # so we pay connection setup ONCE for the whole batch instead of
+        # per record. Critical for paths that touch hundreds of records
+        # (e.g. ~/.claude/skills/ scan).
+        async with _db_session():
+            for ref in targets:
+                if ref.record_type is None:
+                    continue
+                info = SchemaRegistry.get(str(ref.record_type))
+                if info is None or info.record_cls is None:
+                    continue
+                if not hasattr(info.record_cls, "from_fsref"):
                     continue
 
-            t_start = time.perf_counter()
-            try:
-                records = await info.record_cls.from_fsref(ref)
-                for rec in records:
-                    await rec.sync_to_db(fts_batch=fts_batch, notify=False)
-                acc["indexed"] += len(records)
-            except Exception:
-                acc["errors"] += 1
-            acc["duration_ms"] += (time.perf_counter() - t_start) * 1000
+                # On type-boundary transitions emit ``type_progress`` (NOT type_complete) —
+                # DFS interleaves types, so the same type can re-appear later. Final
+                # type_complete events fire post-loop, once per unique type.
+                if ref.record_type != current_rt:
+                    current_rt = ref.record_type
+                    if on_progress is not None and current_rt not in seen_progress_at:
+                        await on_progress(ProgressEvent(
+                            stage="type_start",
+                            record_type=current_rt,
+                            sub_done=0,
+                            sub_total=per_type_totals.get(current_rt, 0),
+                        ))
 
-            # Throttled sub_progress during a type.
-            now = time.perf_counter()
-            if now - seen_progress_at.get(ref.record_type, 0.0) >= _PROGRESS_THROTTLE_S:
-                seen_progress_at[ref.record_type] = now
-                await _emit_sub_progress(ref.record_type)
+                acc = per_type_counts.setdefault(
+                    ref.record_type, {"indexed": 0, "errors": 0, "duration_ms": 0.0, "skipped": 0}
+                )
+
+                # Per-type cap: once we've indexed `limit_per_type` records of this
+                # type, skip further refs of the same type.
+                if opts.limit_per_type is not None and acc["indexed"] >= opts.limit_per_type:
+                    continue
+
+                # Skip-fresh: in-memory dict lookup, one stat(), no parse.
+                # Bypassed when `opts.force` is set (hard refresh).
+                rt_name = str(ref.record_type)
+                last_ts = valid_map.get(rt_name, {}).get(info.record_cls.getId(ref))
+                if not opts.force and last_ts is not None:
+                    asset_ts = info.record_cls.asset_hash_for_ref(ref)
+                    if asset_ts and asset_ts <= last_ts:
+                        acc["skipped"] += 1
+                        # Throttled sub_progress even for skips.
+                        now = time.perf_counter()
+                        if now - seen_progress_at.get(ref.record_type, 0.0) >= _PROGRESS_THROTTLE_S:
+                            seen_progress_at[ref.record_type] = now
+                            await _emit_sub_progress(ref.record_type)
+                        continue
+
+                t_start = time.perf_counter()
+                try:
+                    records = await info.record_cls.from_fsref(ref)
+                    for rec in records:
+                        await rec.sync_to_db(fts_batch=fts_batch, notify=False)
+                    acc["indexed"] += len(records)
+                except Exception:
+                    acc["errors"] += 1
+                acc["duration_ms"] += (time.perf_counter() - t_start) * 1000
+
+                # Throttled sub_progress during a type.
+                now = time.perf_counter()
+                if now - seen_progress_at.get(ref.record_type, 0.0) >= _PROGRESS_THROTTLE_S:
+                    seen_progress_at[ref.record_type] = now
+                    await _emit_sub_progress(ref.record_type)
+
+            # Batch FTS commit — still inside the shared session.
+            if fts_batch:
+                driver = get_db_driver()
+                if hasattr(driver, "fts_upsert"):
+                    await driver.fts_upsert(fts_batch)
 
         # Emit one type_complete per unique type at the end (DFS interleaves
         # mean we can't know a type is "done" mid-loop without a second pass).
         for rt in per_type_counts.keys():
             await _emit_type_complete(rt)
-
-        # Batch FTS commit
-        if fts_batch:
-            driver = get_db_driver()
-            if hasattr(driver, "fts_upsert"):
-                await driver.fts_upsert(fts_batch)
 
         # Build per-type result (events already emitted inline above).
         per_type: dict[RecordType, PerTypeIndexResult] = {}

@@ -20,7 +20,7 @@ from ._frontmatter import (
     _extract_frontmatter,
     _render_frontmatter,
     _yaml_load,
-)  # noqa: F401  (_render_frontmatter is used by default_body)
+)
 
 _WALK_IGNORED: frozenset[str] = frozenset({
     ".git", "node_modules", ".venv", "venv", "__pycache__",
@@ -167,8 +167,10 @@ class MarkdownRecord(Record):
         return None
 
     def default_body(self, entity) -> "str | None":
-        # Stamp asset_id into frontmatter so the indexer's getId reads back
-        # the same id and never creates a duplicate Record on next scan.
+        """Stub for new markdown docs. Stamps asset_id into frontmatter so the
+        indexer's getId reads back the same id and never creates a duplicate
+        Record on next scan. Only fires when the file at the computed
+        asset_ref doesn't yet exist; shadow guard refuses writes there."""
         name = (getattr(entity, "name", None) or "").strip() or "Untitled"
         return _render_frontmatter({"asset_id": entity.id, "title": name}) + f"\n# {name}\n"
 

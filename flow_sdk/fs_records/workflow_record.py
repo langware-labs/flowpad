@@ -91,6 +91,9 @@ class WorkflowRecord(Record):
         return None
 
     def default_body(self, entity) -> "str | None":
+        """Stub for new workflows. Only fires when the file at the computed
+        asset_ref doesn't yet exist. Shadow guard in Record.upsert_main_ref
+        refuses writes inside the shadow tree."""
         name = (getattr(entity, "name", None) or "").strip() or "Untitled"
         desc = (getattr(entity, "description", None) or "").strip()
         fm: dict = {"asset_id": entity.id, "name": name}
