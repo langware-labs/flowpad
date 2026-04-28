@@ -1,4 +1,4 @@
-import { AgenticProcess, dataContext, dataManager, FlowMessage, ProcessStatus, Task, TypeId } from '@sdk';
+import { AgenticProcess, dataManager, FlowMessage, ProcessStatus, Task, TypeId } from '@sdk';
 import { ActionInfo } from '@sdk/models/ActionInfo';
 import { AttachmentType } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
@@ -37,6 +37,34 @@ async function resolvePromptText(att: { data: string; local_path?: string | null
   return att.data ?? '';
 }
 
+/**
+ * Merge every PROMPT attachment on a message into one instruction. Inline
+ * text comes first (whatever the user typed in the dialog), followed by each
+ * file's contents under a labelled section. Lets a "type some prompt + drop
+ * a file" reply run as a single Claude turn instead of N sequential ones.
+ */
+async function buildMergedPrompt(flowMessage: FlowMessage): Promise<string> {
+  const promptAtts = (flowMessage.attachment ?? []).filter(
+    (a) => a.attachment_type === AttachmentType.PROMPT,
+  );
+  const inlineParts: string[] = [];
+  const filePromptParts: string[] = [];
+
+  for (const att of promptAtts) {
+    const isFile = !!att.data && att.data.startsWith('prompt/');
+    const text = await resolvePromptText(att);
+    if (!text) continue;
+    if (isFile) {
+      const filename = att.data.split('/').pop() ?? att.data;
+      filePromptParts.push(`--- ${filename} ---\n${text}`);
+    } else {
+      inlineParts.push(text);
+    }
+  }
+
+  return [...inlineParts, ...filePromptParts].join('\n\n');
+}
+
 export function useApproveAndExecute({ task }: UseApproveAndExecuteOptions): UseApproveAndExecuteResult {
   const { navigation } = useDockNavigation();
 
@@ -53,9 +81,10 @@ export function useApproveAndExecute({ task }: UseApproveAndExecuteOptions): Use
       return;
     }
 
-    // Flip approved_by, then re-fetch so we can read the resolved local_path / approved_by.
+    // Approve every PROMPT attachment on the message in one shot, then re-fetch
+    // so we can read the resolved local_path / approved_by on each.
     const approveAction = new ActionInfo('approve-prompt', 'flow_message', messageId, 'POST');
-    approveAction.bodyParameters = { attachment_index: attachmentIndex };
+    approveAction.bodyParameters = { attachment_index: attachmentIndex, approve_all: true };
     await dataManager.callAction(approveAction);
 
     const flowMessage = await dataManager
@@ -63,15 +92,22 @@ export function useApproveAndExecute({ task }: UseApproveAndExecuteOptions): Use
       .catch(() => null);
     if (!flowMessage) return;
 
-    const att = (flowMessage.attachment ?? [])[attachmentIndex];
-    if (!att || att.attachment_type !== AttachmentType.PROMPT) return;
-    const promptText = await resolvePromptText(att);
+    // Merge text + file PROMPT attachments into a single instruction so the
+    // recipient's typed prompt and any attached prompt files run as one turn.
+    const promptText = await buildMergedPrompt(flowMessage);
     if (!promptText) {
       toast.error('Prompt is empty — nothing to execute.');
       return;
     }
 
-    const workdir = (taskMeta.project_root as string | undefined) ?? dataContext.project?.fs_storage_mount_path;
+    // Workdir must come from the task's own mapped project — never from the
+    // global active project. The mapping gate guarantees project_root is set
+    // by the time we get here.
+    const workdir = taskMeta.project_root as string | undefined;
+    if (!workdir) {
+      toast.warning('Map this conversation to a local project first.');
+      return;
+    }
     const sharedProcessId = taskMeta.shared_process_id as string | undefined;
 
     // Subsequent calls — reuse the cached fork if alive, otherwise resume it.

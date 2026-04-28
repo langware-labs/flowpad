@@ -24,6 +24,8 @@ interface ConversationToolbarProps {
   conversationId: string;
   senderName?: string;
   onShowTask: () => void;
+  /** Wraps any action that needs a `cwd`/project. When unmapped, the parent will pop the mapping dialog and resume the action after the user picks. */
+  ensureMapped?: (continuation: () => void | Promise<void>) => void;
 }
 
 /**
@@ -36,6 +38,7 @@ export function ConversationToolbar({
   conversationId,
   senderName,
   onShowTask,
+  ensureMapped,
 }: ConversationToolbarProps) {
   const [transcript, setTranscript] = useState<TranscriptInfo | null>(null);
   const { isStartLabel, busy, openOrStart } = useMyProcess({ task, conversationId, senderName });
@@ -107,7 +110,11 @@ export function ConversationToolbar({
           <TooltipTrigger asChild>
             <button
               type="button"
-              onClick={() => void openOrStart()}
+              onClick={() => {
+                const action = () => openOrStart();
+                if (ensureMapped) ensureMapped(action);
+                else void action();
+              }}
               disabled={busy}
               aria-label={claudeTooltip}
               className="inline-flex h-6 w-6 items-center justify-center rounded text-orange-500 transition-colors hover:bg-orange-500/10 disabled:opacity-50"

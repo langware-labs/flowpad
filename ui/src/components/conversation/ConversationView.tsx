@@ -1,49 +1,67 @@
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Conversation, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { MessageComposer } from './MessageComposer';
-import { ProjectMappingDialog } from './ProjectMappingDialog';
-import { useProjectMapping } from './useProjectMapping';
 import { useApproveAndExecute } from './useApproveAndExecute';
 
 interface ConversationViewProps {
   conversationId: string;
   task: ITask;
   senderName?: string;
+  /** Wraps any action that needs a `cwd`/project. Provided by the parent (SharedTaskView / TaskDetailPanel). */
+  ensureMapped?: (continuation: () => void | Promise<void>) => void;
 }
 
-export function ConversationView({ conversationId, task, senderName: _senderName }: ConversationViewProps) {
-  const taskId = task.id ?? '';
-
-  const { mapping, loaded: mappingLoaded } = useProjectMapping();
-  const remoteProjectId = (task.metadata as Record<string, unknown> | undefined)?.remote_project_id as string | undefined;
-  const remoteProjectName = (task.metadata as Record<string, unknown> | undefined)?.remote_project_name as string | undefined;
-  const needsMapping = !!remoteProjectId && mappingLoaded && !mapping[remoteProjectId];
-  const [showMapping, setShowMapping] = useState(true);
-
+export function ConversationView({
+  conversationId,
+  task,
+  senderName: _senderName,
+  ensureMapped,
+}: ConversationViewProps) {
   const { data: conversation, refetch } = useEntity<Conversation>(
     new TypeId(Conversation.type, conversationId),
   );
 
   const pointers = conversation?.conversationMessageIds ?? [];
 
+  const [approvedSet, setApprovedSet] = useState<Set<string>>(() => new Set());
+  const reportApproved = useCallback((messageId: string, hasApproved: boolean) => {
+    setApprovedSet((prev) => {
+      const isIn = prev.has(messageId);
+      if (hasApproved && isIn) return prev;
+      if (!hasApproved && !isIn) return prev;
+      const next = new Set(prev);
+      if (hasApproved) next.add(messageId);
+      else next.delete(messageId);
+      return next;
+    });
+  }, []);
+
+  const lastApprovedMessageId = useMemo(() => {
+    for (let i = pointers.length - 1; i >= 0; i -= 1) {
+      if (approvedSet.has(pointers[i].message_id)) return pointers[i].message_id;
+    }
+    return null;
+  }, [pointers, approvedSet]);
+
   const { approveAndExecute } = useApproveAndExecute({ task });
+
+  const runApprove = useCallback(
+    (messageId: string, idx: number) => {
+      const action = async () => {
+        await approveAndExecute(messageId, idx);
+        void refetch();
+      };
+      if (ensureMapped) ensureMapped(action);
+      else void action();
+    },
+    [approveAndExecute, refetch, ensureMapped],
+  );
 
   return (
     <div className="space-y-3">
-      {needsMapping && remoteProjectId && (
-        <ProjectMappingDialog
-          open={showMapping}
-          onClose={() => setShowMapping(false)}
-          remoteProjectId={remoteProjectId}
-          remoteProjectName={remoteProjectName ?? ''}
-          taskId={taskId}
-          onMapped={() => setShowMapping(false)}
-        />
-      )}
-
       {pointers.length === 0 ? (
         <p className="text-xs italic text-muted-foreground/60">No messages yet.</p>
       ) : (
@@ -54,10 +72,9 @@ export function ConversationView({ conversationId, task, senderName: _senderName
               messageId={ptr.message_id}
               timestamp={ptr.timestamp}
               task={task}
-              onApproveAndExecute={async (messageId, idx) => {
-                await approveAndExecute(messageId, idx);
-                void refetch();
-              }}
+              isLastApprovedPrompt={ptr.message_id === lastApprovedMessageId}
+              onApprovedPromptChange={reportApproved}
+              onApproveAndExecute={runApprove}
             />
           ))}
         </div>

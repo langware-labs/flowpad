@@ -15,6 +15,8 @@ import { getAnalysisPath, getTaskTypeLabel, openAnalysisReport } from './task-ut
 import { ConversationView } from '@src/components/conversation/ConversationView';
 import { ConversationToolbar } from '@src/components/conversation/ConversationToolbar';
 import { SpecSidePane } from '@src/components/conversation/SpecSidePane';
+import { ProjectMappingDialog } from '@src/components/conversation/ProjectMappingDialog';
+import { useProjectMappingGate } from '@src/components/conversation/useProjectMappingGate';
 
 interface TaskDetailPanelProps {
   task: Task;
@@ -30,6 +32,7 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
   const blobExpansion = new ExpansionRequest({ expand: ['blobs'] });
   const isSharedTask = !!task.spec_id;
   const [showSpec, setShowSpec] = useState(false);
+  const { ensureMapped, dialogProps: mappingDialogProps } = useProjectMappingGate(task);
 
   const { data: sender } = useEntity<User>(
     task.shared_by_id ? new TypeId(User.type, task.shared_by_id) : null,
@@ -162,12 +165,14 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
                     task={task}
                     conversationId={task.conversation_id}
                     onShowTask={() => setShowSpec(true)}
+                    ensureMapped={ensureMapped}
                   />
                 </div>
                 <div className="mt-1">
                   <ConversationView
                     conversationId={task.conversation_id}
                     task={task}
+                    ensureMapped={ensureMapped}
                   />
                 </div>
               </div>
@@ -181,6 +186,8 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
         onClose={() => setShowSpec(false)}
         specId={task.spec_id}
       />
+
+      <ProjectMappingDialog {...mappingDialogProps} />
 
       {/* Footer: Open full view */}
       <div className="flex items-center border-t border-border p-3">

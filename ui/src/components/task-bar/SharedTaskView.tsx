@@ -13,6 +13,8 @@ import { ExpansionRequest } from '@sdk/FlowSync/query';
 import { ConversationView } from '@src/components/conversation';
 import { ConversationToolbar } from '@src/components/conversation/ConversationToolbar';
 import { SpecSidePane } from '@src/components/conversation/SpecSidePane';
+import { ProjectMappingDialog } from '@src/components/conversation/ProjectMappingDialog';
+import { useProjectMappingGate } from '@src/components/conversation/useProjectMappingGate';
 
 interface SharedTaskViewProps {
   task: Task;
@@ -22,6 +24,7 @@ interface SharedTaskViewProps {
 export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
   const blobExpansion = new ExpansionRequest({ expand: ['blobs'] });
   const [showSpec, setShowSpec] = useState(false);
+  const { ensureMapped, dialogProps: mappingDialogProps } = useProjectMappingGate(task);
 
   const taskMeta = task.metadata as Record<string, unknown> | undefined;
   const senderName = taskMeta?.sender_name as string | undefined
@@ -83,6 +86,7 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
                 conversationId={task.conversation_id}
                 senderName={senderName}
                 onShowTask={() => setShowSpec(true)}
+                ensureMapped={ensureMapped}
               />
             )}
           </div>
@@ -92,6 +96,7 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
                 conversationId={task.conversation_id}
                 task={task}
                 senderName={senderName}
+                ensureMapped={ensureMapped}
               />
             ) : (
               <p className="text-xs italic text-muted-foreground/60">No conversation yet.</p>
@@ -105,6 +110,8 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
         onClose={() => setShowSpec(false)}
         specId={task.spec_id}
       />
+
+      <ProjectMappingDialog {...mappingDialogProps} />
     </div>
   );
 }

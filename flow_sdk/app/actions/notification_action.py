@@ -1105,10 +1105,15 @@ async def set_project_mapping() -> ApiResponse:
 
 @action.post(action_name="approve-prompt", types=["flow_message"])
 async def approve_prompt() -> ApiResponse:
-    """Mark a PROMPT attachment on a FlowMessage as approved by the current user.
+    """Mark PROMPT attachments on a FlowMessage as approved by the current user.
 
     The frontend then runs the prompt in a forked Claude session.
-    Body: { attachment_index?: number }  — defaults to the first PROMPT attachment.
+    Body: { attachment_index?: number, approve_all?: bool }
+      - With approve_all=True (default for the conversation flow): every PROMPT
+        attachment on the message flips to approved in one shot, so the typed
+        text and any attached prompt files all execute as a single Claude turn.
+      - Without approve_all: only the targeted attachment_index (or the first
+        unapproved PROMPT) is approved.
     """
     from flow_sdk.builtin.flow_message import AttachmentType, FlowMessage as FM
 
@@ -1122,10 +1127,24 @@ async def approve_prompt() -> ApiResponse:
 
     body = await request_info.get_post_data() or {}
     idx = body.get("attachment_index")
+    approve_all = bool(body.get("approve_all"))
     local_user = await User.get_one({"uname": "local"})
     approver_id = local_user.id if local_user else None
 
     new_atts = list(fm.attachment or [])
+
+    if approve_all:
+        approved_indices: list[int] = []
+        for i, a in enumerate(new_atts):
+            if a.attachment_type == AttachmentType.PROMPT and not a.approved_by:
+                new_atts[i] = a.model_copy(update={"approved_by": approver_id})
+                approved_indices.append(i)
+        if not approved_indices:
+            return ApiFailResponse(message="No unapproved PROMPT attachment found on this message")
+        fm.attachment = new_atts
+        await fm.save(request_info.someone_typeid or "")
+        return ApiSuccessResponse(data={"attachment_indices": approved_indices, "approved_by": approver_id})
+
     target_idx: Optional[int] = None
     if isinstance(idx, int) and 0 <= idx < len(new_atts):
         if new_atts[idx].attachment_type == AttachmentType.PROMPT:
