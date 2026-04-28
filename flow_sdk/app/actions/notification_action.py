@@ -154,7 +154,7 @@ async def _create_spec_and_task(
     project_id: Optional[str] = None,
     project_name: Optional[str] = None,
     project_root: Optional[str] = None,
-    initiator_session_id: Optional[str] = None,
+    sender_session_id: Optional[str] = None,
 ) -> tuple[Spec, Task]:
     """Create Spec + Task entities locally and register the task on the hub."""
     spec = Spec.model_validate({
@@ -177,10 +177,10 @@ async def _create_spec_and_task(
         task_meta["team_space_id"] = team_space_id
     if project_id:
         task_meta["project_id"] = project_id
-    if initiator_session_id:
+    if sender_session_id:
         # Sender's local Claude session — used by their own Approve & Execute path
         # so it can fork directly without rehydrating from the attached transcript.
-        task_meta["initiator_session_id"] = initiator_session_id
+        task_meta["sender_session_id"] = sender_session_id
     if project_name:
         task_meta["project_name"] = project_name
     if project_root:
@@ -521,7 +521,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     plan_id = (body.get("plan_id") or "").strip() or None
     project_path = (body.get("project_path") or "").strip() or None
     team_space_id = (body.get("team_space_id") or "").strip() or None
-    initiator_session_id = (body.get("initiator_session_id") or "").strip() or None
+    sender_session_id = (body.get("sender_session_id") or "").strip() or None
 
     if not recipient_id:
         return ApiFailResponse(message="recipient_id is required")
@@ -561,7 +561,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         project_id=project_id_val,
         project_name=project_name_val,
         project_root=str(project_root) if project_root else None,
-        initiator_session_id=initiator_session_id,
+        sender_session_id=sender_session_id,
     )
 
     uploaded_files = body.get("files") or []
