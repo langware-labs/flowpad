@@ -307,6 +307,99 @@ async def download_flow_message() -> ApiResponse:
 
 
 # ---------------------------------------------------------------------------
+# Project-scoped conversation creation (no Task)
+# ---------------------------------------------------------------------------
+
+
+async def handle_create_project_conversation(
+    project_id: str,
+    participants: list[dict],
+    someone_typeid: str,
+) -> ApiResponse:
+    """Create a Conversation directly under a Project (no Task).
+
+    Each participant entry is {email, name?}. Every email is upserted as a
+    local User so the contact list grows automatically.
+    """
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.fs_store.record_types import RecordType
+
+    project = await Project.get_one({"id": project_id})
+    if not project:
+        return ApiFailResponse(message=f"Project not found: {project_id}", status_code=404)
+    if not project.fs_storage_mount_path:
+        return ApiFailResponse(message="Project has no fs_storage_mount_path")
+
+    resolved: list[dict] = []
+    for p in participants or []:
+        email = (p.get("email") or "").strip()
+        if not email:
+            continue
+        name = (p.get("name") or "").strip() or None
+        user = await User.get_or_create_by_email(email, name=name)
+        resolved.append({"user_id": user.id, "email": user.email, "name": user.name})
+
+    slug_seed = "-".join(p["email"].split("@")[0] for p in resolved) or "conversation"
+    slug = _meaningful_name(slug_seed)
+
+    conv = Conversation.model_validate({
+        "task_id": None,
+        "project_id": project.id,
+        "participants": resolved,
+        "message_count": 0,
+    })
+    conv.id = Conversation.allocate_id(conv.model_dump())
+
+    conv_dir = Path(project.fs_storage_mount_path) / "conversations" / f"{slug}-{conv.id[:8]}"
+    conv_dir.mkdir(parents=True, exist_ok=True)
+    jsonl_path = conv_dir / "conversation.jsonl"
+    jsonl_path.touch()
+
+    conv.data_path = str(jsonl_path)
+    conv = await conv.save(someone_typeid)
+    await project.attach_child(conv)
+
+    rec = ConversationRecord.from_jsonl(
+        jsonl_path, project.id, conv.id, parent_type=RecordType.PROJECT
+    )
+    rec.save()
+    rec.link_to_parent_record()
+
+    return ApiSuccessResponse(data={
+        "conversation_id": conv.id,
+        "project_id": project.id,
+        "participants": resolved,
+    })
+
+
+@action.post(action_name="conversation-create", types=None)
+async def conversation_create() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info:
+            return ApiFailResponse(message="No request info found")
+        if not request_info.someone_typeid:
+            return ApiFailResponse(message="No authenticated user in request context")
+
+        body = await request_info.get_post_data() or {}
+        project_id = (body.get("project_id") or "").strip()
+        if not project_id:
+            return ApiFailResponse(message="project_id is required")
+        participants = body.get("participants") or []
+        if not isinstance(participants, list):
+            return ApiFailResponse(message="participants must be a list")
+
+        return await handle_create_project_conversation(
+            project_id=project_id,
+            participants=participants,
+            someone_typeid=request_info.someone_typeid,
+        )
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-create error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed to create conversation: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
 # Inbox actions
 # ---------------------------------------------------------------------------
 

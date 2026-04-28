@@ -330,6 +330,11 @@ async def unpack_bundle(
                     if manifest_file.exists():
                         task_data = json.loads(manifest_file.read_text(encoding="utf-8"))
                         task_id = task_data.get("id") or entry_id
+                        # Materialize the sender as a local User (contact list).
+                        bundle_sender_email = (task_data.get("metadata") or {}).get("sender_email") or ""
+                        bundle_sender_name = (task_data.get("metadata") or {}).get("sender_name") or None
+                        if bundle_sender_email:
+                            await User.get_or_create_by_email(bundle_sender_email, name=bundle_sender_name)
                         # Resolve project_id from task's project_root (deterministic uuid5)
                         bundle_project_root = (task_data.get("metadata") or {}).get("project_root") or ""
                         if bundle_project_root and bundle_project_id is None:
