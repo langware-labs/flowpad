@@ -73,9 +73,10 @@ async function buildReceiverContextPrompt(
   const transcriptPath = transcript ? (transcript.local_path ?? transcript.data) : null;
 
   const spec = task.spec_id
-    ? await dataManager.getByTypeId<Spec>(new TypeId(Spec.type, task.spec_id), {
-        query: new ExpansionRequest({ expand: ['blobs'] }),
-      }).catch(() => null)
+    ? await dataManager.getByTypeId<Spec>(
+        new TypeId(Spec.type, task.spec_id),
+        new ExpansionRequest({ expand: ['blobs'] }),
+      ).catch(() => null)
     : null;
 
   const taskMeta = (task.metadata as Record<string, unknown> | undefined) ?? {};
@@ -162,7 +163,6 @@ export function useMyProcess({ task, conversationId, senderName }: UseMyProcessO
           navigation.openInBrowserTab(existing.dockPointer);
           return;
         }
-        // Stored id no longer resolves — fall through to a fresh Start.
       }
 
       // Start path: spawn a brand-new process. Recipient gets the conversation
