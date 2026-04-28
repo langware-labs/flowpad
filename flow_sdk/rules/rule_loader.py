@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.config import FLOW_HOME
+from flow_sdk.instance_settings import get_instance_settings
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +29,8 @@ def get_system_rules_dir(override: Path | None = None) -> Path:
 
 
 def get_user_rules_dir() -> Path:
-    """Return the user-level rules directory (~/.flow/skill_rules)."""
-    return FLOW_HOME / "skill_rules"
+    """Return the user-level rules directory (resolved via InstanceSettings)."""
+    return get_instance_settings().skill_rules_dir
 
 
 def get_project_rules_dir(project_dir: str | None = None) -> Path | None:

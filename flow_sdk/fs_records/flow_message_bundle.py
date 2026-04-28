@@ -366,11 +366,11 @@ async def unpack_bundle(
                         # Copy conversation.jsonl to a permanent location before the
                         # temp dir is cleaned up — _create_conversation_from_disk
                         # stores data_path pointing at task_dir, so it must survive.
-                        from flow_sdk.config import FLOW_HOME
+                        from flow_sdk.instance_settings import get_instance_settings
                         import re as _re
                         task_obj = await Task.get_one({"id": task_id_for_conv}) if task_id_for_conv else None
                         task_title_slug = _re.sub(r"[^a-z0-9]+", "-", (task_obj.title or "task").lower()).strip("-")[:60] if task_obj else "task"
-                        perm_task_dir = FLOW_HOME / "tasks" / f"{task_title_slug}-{(task_id_for_conv or entry_id)[:8]}"
+                        perm_task_dir = get_instance_settings().tasks_dir / f"{task_title_slug}-{(task_id_for_conv or entry_id)[:8]}"
                         perm_task_dir.mkdir(parents=True, exist_ok=True)
                         perm_jsonl = perm_task_dir / "conversation.jsonl"
                         _merge_conversation_jsonl(jsonl_file, perm_jsonl)

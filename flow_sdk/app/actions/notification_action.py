@@ -318,9 +318,9 @@ async def _create_local_conversation_and_fm(
     Used when there is no project_root — ensures a .flowmsg bundle can still
     be packed and uploaded to the hub so the recipient can materialise the task.
     """
-    from flow_sdk.config import FLOW_HOME
+    from flow_sdk.instance_settings import get_instance_settings
 
-    task_dir = FLOW_HOME / "tasks" / f"{_meaningful_name(task_title)}-{task.id[:8]}"
+    task_dir = get_instance_settings().tasks_dir / f"{_meaningful_name(task_title)}-{task.id[:8]}"
     task_dir.mkdir(parents=True, exist_ok=True)
 
     return await _create_conversation_and_fm(

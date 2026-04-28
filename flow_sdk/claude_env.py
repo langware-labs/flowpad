@@ -532,8 +532,9 @@ class ClaudeProjectEnvManager:
         shutil.copytree(rule_src, rules_dir / rule_src.name)
 
     def load_all_user_rules(self) -> None:
-        """Copy all rules from ~/.flow/skill_rules/ into the env."""
-        user_rules = Path.home() / ".flow" / "skill_rules"
+        """Copy all rules from the per-instance skill_rules dir into the env."""
+        from flow_sdk.instance_settings import get_instance_settings
+        user_rules = get_instance_settings().skill_rules_dir
         if not user_rules.exists():
             return
         rules_dir = self._root / ".flow" / "skill_rules"

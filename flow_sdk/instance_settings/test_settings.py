@@ -1,0 +1,97 @@
+"""TestInstanceSettings — applied when FLOWPAD_TEST=true or PYTEST_CURRENT_TEST is set.
+
+Every path lives under a sandbox dir, never ``~/.flow`` and never
+``~/.claude``. This is the single mechanism that prevents tests from
+polluting the dev/prod DB or writing fixture skills/agents into the user's
+real ``~/.claude/skills/`` and ``~/.claude/agents/``.
+
+Sandbox root precedence:
+  1. ``FLOWPAD_TEST_SANDBOX`` env var, if set
+  2. ``$TMPDIR/flowpad-test-<pid>``
+
+The sandbox dir is mkdir'd on construction so callers get a guaranteed-empty
+isolated environment. Pytest's per-process pid suffix means parallel test
+processes get distinct sandboxes automatically.
+"""
+
+from __future__ import annotations
+
+import os
+import tempfile
+from pathlib import Path
+
+from .base_settings import (
+    DEFAULT_DB_DRIVER,
+    ENV_DESKTOP_DB,
+    ENV_FS_RECORD_PATH,
+    ENV_SQLITE_DATABASE_PATH,
+    BaseInstanceSettings,
+)
+
+ENV_FLOWPAD_TEST_SANDBOX = "FLOWPAD_TEST_SANDBOX"
+DEFAULT_TEST_PORT = 9009
+
+
+class TestInstanceSettings(BaseInstanceSettings):
+    """Test-mode settings. All paths anchored under a sandbox dir."""
+
+    @classmethod
+    def from_env(cls) -> "TestInstanceSettings":
+        sandbox = cls._resolve_sandbox()
+        sandbox.mkdir(parents=True, exist_ok=True)
+
+        flow_home = sandbox / ".flow"
+        claude_home = sandbox / ".claude"
+        flow_home.mkdir(parents=True, exist_ok=True)
+        claude_home.mkdir(parents=True, exist_ok=True)
+        (claude_home / "skills").mkdir(parents=True, exist_ok=True)
+        (claude_home / "agents").mkdir(parents=True, exist_ok=True)
+        (claude_home / "projects").mkdir(parents=True, exist_ok=True)
+
+        # Tests can still override via FS_RECORD_PATH / SQLITE_DATABASE_PATH for
+        # per-test isolation on top of the sandbox.
+        records_env = os.environ.get(ENV_FS_RECORD_PATH)
+        records_root = Path(records_env) if records_env else flow_home / "records"
+
+        db_dir = flow_home / "db"
+        db_env = os.environ.get(ENV_SQLITE_DATABASE_PATH)
+        db_path = Path(db_env) if db_env else db_dir / "flowpad_db"
+
+        port = cls._resolve_port(default_port=DEFAULT_TEST_PORT)
+
+        return cls(
+            instance_name="test",
+            is_dev=False,
+            port=port,
+            server_json_path=flow_home / "server.json",
+            server_pid_path=flow_home / "server.pid",
+            server_lock_path=flow_home / "server.lock",
+            server_log_path=flow_home / "server.log",
+            flow_home=flow_home,
+            records_root=records_root,
+            db_dir=db_dir,
+            db_path=db_path,
+            indexer_state_dir=flow_home / "indexer_state",
+            index_dir=flow_home / "index",
+            sessions_dir=flow_home / "sessions",
+            tasks_dir=flow_home / "tasks",
+            storage_dir=flow_home / "storage",
+            skill_rules_dir=flow_home / "skill_rules",
+            schema_dir=flow_home / "schema",
+            records_data_dir=flow_home / "records_data",
+            logs_dir=flow_home / "logs",
+            monitor_log_path=flow_home / "monitor.log",
+            inbox_last_fetch_path=flow_home / ".inbox_last_fetch.json",
+            db_driver=os.environ.get(ENV_DESKTOP_DB, DEFAULT_DB_DRIVER).lower(),
+            claude_home=claude_home,
+            claude_skills_dir=claude_home / "skills",
+            claude_agents_dir=claude_home / "agents",
+            claude_projects_dir=claude_home / "projects",
+        )
+
+    @staticmethod
+    def _resolve_sandbox() -> Path:
+        env = os.environ.get(ENV_FLOWPAD_TEST_SANDBOX)
+        if env:
+            return Path(env)
+        return Path(tempfile.gettempdir()) / f"flowpad-test-{os.getpid()}"
