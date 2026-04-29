@@ -1,5 +1,6 @@
-import { APIEntity, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
+import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
 import { ViewType } from '../utils/ui/view-types';
 
@@ -15,12 +16,19 @@ export interface ConversationMessagePointer {
   timestamp: string;
 }
 
+export interface ConversationParticipant {
+  user_id?: string | null;
+  email: string;
+  name?: string | null;
+}
+
 export interface IConversation extends IEntity {
   task_id?: string | null;
   project_id?: string | null;
   data_path?: string | null;
   message_count?: number;
   message_ids?: string | null;  // JSON-encoded ConversationMessagePointer[]
+  participants?: ConversationParticipant[];
 }
 
 @registerEntity
@@ -30,6 +38,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   data_path?: string | null;
   message_count?: number;
   message_ids?: string | null;
+  participants?: ConversationParticipant[];
   static type: string = 'conversation';
 
   constructor(entity: Partial<IConversation> = {}) {
@@ -39,6 +48,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.data_path = entity.data_path;
     this.message_count = entity.message_count;
     this.message_ids = entity.message_ids;
+    this.participants = entity.participants;
   }
 
   /**
@@ -64,4 +74,24 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
       return [];
     }
   }
+}
+
+export interface CreateProjectConversationParams {
+  project_id: string;
+  participants: ConversationParticipant[];
+}
+
+export interface CreateProjectConversationResult {
+  conversation_id: string;
+  project_id: string;
+  participants: ConversationParticipant[];
+}
+
+export async function createProjectConversation(
+  params: CreateProjectConversationParams,
+): Promise<CreateProjectConversationResult> {
+  const action = new ActionInfo('conversation-create', null, null, 'POST');
+  action.bodyParameters = params;
+  const res = await dataManager.callAction<CreateProjectConversationParams, CreateProjectConversationResult>(action);
+  return res!;
 }
