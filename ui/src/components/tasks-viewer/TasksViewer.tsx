@@ -23,13 +23,16 @@ export function TasksViewer() {
   const { project } = useProject();
   const pointer = currentDock?.pointer;
 
-  // Load existing task if pointer is a valid typeId
+  // Load existing task if pointer is a valid typeId. Pointers may carry a
+  // sub-path (e.g. `<taskId>/conversation/<convId>`) so we parse the first
+  // segment as the task id and ignore the rest — the canonical anchor is
+  // the URL only; the view itself only renders the task.
   const taskTypeId = useMemo(() => {
     if (!pointer) return undefined;
-    if (isTypeId(pointer)) return new TypeId(pointer);
-    // Try constructing from task type + id
+    const head = pointer.split('/')[0];
+    if (isTypeId(head)) return new TypeId(head);
     try {
-      return new TypeId(Task.type, pointer);
+      return new TypeId(Task.type, head);
     } catch {
       return undefined;
     }
