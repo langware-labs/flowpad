@@ -1,25 +1,19 @@
-import { useEffect, useState } from 'react';
-import { ExternalLink, FileText } from 'lucide-react';
-import { Conversation, dataManager, FlowMessage, TypeId } from '@sdk';
-import { AttachmentType } from '@sdk/entities/flow-message';
-import { ActionInfo } from '@sdk/models/ActionInfo';
+import { useEffect, useMemo, useState } from 'react';
+import { FileText } from 'lucide-react';
+import { AgenticProcess, Conversation, dataManager, Project, Task, TypeId } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useMyProcess } from './useMyProcess';
-
-interface TranscriptInfo {
-  messageId: string;
-  vfsPath: string;
-}
-
-function fileAttachmentUrl(messageId: string, vfsPath: string): string {
-  const action = new ActionInfo('fs', 'flow_message', messageId, 'GET');
-  action.subpath = `download/${vfsPath}`;
-  return action.fullActionUrl;
-}
+import { EntityLabel } from './EntityLabel';
+import { fileAttachmentUrl } from './attachment-url';
+import {
+  findConversationTranscript,
+  type ConversationTranscriptInfo,
+} from './find-conversation-transcript';
 
 interface ConversationToolbarProps {
   task: ITask;
@@ -47,92 +41,108 @@ export function ConversationToolbar({
   onShowTask,
   ensureMapped,
 }: ConversationToolbarProps) {
-  const [transcript, setTranscript] = useState<TranscriptInfo | null>(null);
+  const [transcript, setTranscript] = useState<ConversationTranscriptInfo | null>(null);
   const { isStartLabel, busy, openOrStart } = useMyProcess({ task, conversationId, senderName });
   const { navigation } = useDockNavigation();
   const localProjectId = (task.metadata as Record<string, unknown> | undefined)?.project_id as
     | string
     | undefined;
 
+  // Live-load the Project / Task entities for EntityLabel display. Both are
+  // optional — the label still renders the id as a fallback name when the
+  // entity isn't loaded yet.
+  const { data: project } = useEntity<Project>(
+    localProjectId ? new TypeId(Project.type, localProjectId) : null,
+  );
+  const { data: taskEntity } = useEntity<Task>(
+    task.id ? new TypeId(Task.type, task.id) : null,
+  );
+
+  const conversationContainer = useMemo(
+    () => ({ type: Conversation.type, id: conversationId }),
+    [conversationId],
+  );
+
   // Find the first conversation.jsonl FILE attachment across all messages.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const conv = await dataManager.getByTypeId<Conversation>(
-          new TypeId(Conversation.type, conversationId),
-        );
-        const pointers = conv?.conversationMessageIds ?? [];
-        for (const ptr of pointers) {
-          const fm = await dataManager
-            .getByTypeId<FlowMessage>(new TypeId(FlowMessage.type, ptr.message_id))
-            .catch(() => null);
-          if (!fm) continue;
-          const att = (fm.attachment ?? []).find(
-            (a) => a.attachment_type === AttachmentType.FILE && a.data.endsWith('conversation.jsonl'),
-          );
-          if (att) {
-            if (!cancelled) setTranscript({ messageId: ptr.message_id, vfsPath: att.data });
-            return;
-          }
-        }
-        if (!cancelled) setTranscript(null);
-      } catch {
-        if (!cancelled) setTranscript(null);
-      }
-    })();
+    void findConversationTranscript(conversationId).then((info) => {
+      if (!cancelled) setTranscript(info);
+    });
     return () => {
       cancelled = true;
     };
   }, [conversationId]);
 
-  const showOpenTask = !!task.spec_id;
+  const showTaskLabel = !!task.id;
   const claudeTooltip = isStartLabel ? 'Start Claude Code session' : 'Open Claude Code';
+  const sharedProcessId = (task.metadata as Record<string, unknown> | undefined)?.shared_process_id as
+    | string
+    | undefined;
+  const showSharedTerminal = !!sharedProcessId;
 
-  const handleOpenTask = () => {
-    if (onShowTask) {
-      onShowTask();
-      return;
-    }
-    if (!task.id) return;
-    // Canonical URL: /dock/tasks/<taskId>/conversation/<convId>
-    navigation.openDock(DockPointer.forTasks(task.id, { conversationId }));
+  const handleOpenShared = async () => {
+    if (!sharedProcessId) return;
+    const proc = await dataManager
+      .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, sharedProcessId))
+      .catch(() => null);
+    if (!proc) return;
+    navigation.openInBrowserTab(proc.dockPointer);
   };
 
   return (
     <div className="flex items-center gap-1">
-      {showOpenTask && (
-        <button
-          type="button"
-          onClick={handleOpenTask}
-          className="inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <FileText className="h-3 w-3" />
-          Open Task
-        </button>
+      {showTaskLabel && taskEntity && (
+        <EntityLabel
+          entity={{
+            typeId: new TypeId(Task.type, task.id ?? ''),
+            type: Task.type,
+            id: task.id,
+            name: taskEntity.title ?? task.title,
+          }}
+          inside={conversationContainer}
+          onClick={onShowTask}
+          title="Open this task"
+        />
       )}
 
-      <button
-        type="button"
-        onClick={() => {
-          const action = () => {
-            // After mapping (or if already mapped), pick the freshest project_id
-            // off task.metadata — `localProjectId` from the closure may be stale
-            // immediately after the mapping dialog confirms.
-            const meta = (task.metadata as Record<string, unknown> | undefined) ?? {};
-            const projId = (meta.project_id as string | undefined) ?? localProjectId;
-            if (!projId) return;
-            navigation.openDock(DockPointer.forProject(projId, { conversationId }));
-          };
-          if (ensureMapped) ensureMapped(action);
-          else if (localProjectId) action();
-        }}
-        title="Open this conversation under the local project"
-        className="inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-      >
-        <ExternalLink className="h-3 w-3" />
-        Open in Project
-      </button>
+      {/* Project chip — once a project is mapped we render the standard
+          EntityLabel; otherwise a passive dashed "Pick project…" chip lets
+          the user set one up *before* they actually need it. Either chip is
+          a preparation affordance, not an urgent prompt — when an action
+          *requires* a project (Open Claude Code, Approve & Execute, Open in
+          Project, etc.) the gate pops the picker dialog via ensureMapped. */}
+      {project ? (
+        <EntityLabel
+          entity={{
+            typeId: new TypeId(Project.type, project.id ?? ''),
+            type: Project.type,
+            id: project.id,
+            name: project.name ?? localProjectId,
+          }}
+          inside={conversationContainer}
+          title="Open this conversation under the local project"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => {
+            const action = () => {
+              const meta = (task.metadata as Record<string, unknown> | undefined) ?? {};
+              const projId = (meta.project_id as string | undefined) ?? localProjectId;
+              if (!projId) return;
+              navigation.openDock(DockPointer.forProject(projId, { conversationId }));
+            };
+            if (ensureMapped) ensureMapped(action);
+            else if (localProjectId) action();
+          }}
+          title="Open this conversation under the local project"
+          className="inline-flex h-6 items-center gap-1 rounded border border-dashed border-border px-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <FileText className="h-3 w-3" />
+          Pick project…
+        </button>
+      )}
 
       {transcript && (
         <a
@@ -146,6 +156,21 @@ export function ConversationToolbar({
           <FileText className="h-3 w-3" />
           Transcript File
         </a>
+      )}
+
+      {/* Open Shared Terminal — appears once any prompt has been approved
+          (i.e. shared_process_id is stamped on the task). One conversation-
+          level chip instead of N per-message ones. */}
+      {showSharedTerminal && (
+        <button
+          type="button"
+          onClick={() => void handleOpenShared()}
+          title="Open the shared terminal where approved prompts run"
+          className="inline-flex h-6 items-center gap-1 rounded-full border border-orange-500/40 bg-orange-500/10 px-2 text-[11px] font-medium text-orange-700 transition-colors hover:bg-orange-500/20 dark:text-orange-300"
+        >
+          <ClaudeIcon className="h-3 w-3" />
+          Open Shared Terminal
+        </button>
       )}
 
       <TooltipProvider>

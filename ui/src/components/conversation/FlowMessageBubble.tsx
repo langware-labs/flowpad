@@ -8,17 +8,13 @@ import { ActionInfo } from '@sdk/models/ActionInfo';
 import { Download } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { AttachmentChip } from './AttachmentChip';
+import { fileAttachmentUrl } from './attachment-url';
 import { useLocalUser } from './useLocalUser';
 
 function localBundleUrl(messageId: string): string {
   return new ActionInfo('create-and-download-local-flowmsg', 'flow_message', messageId, 'GET').fullActionUrl;
 }
 
-function fileAttachmentUrl(messageId: string, vfsPath: string): string {
-  const action = new ActionInfo('fs', 'flow_message', messageId, 'GET');
-  action.subpath = `download/${vfsPath}`;
-  return action.fullActionUrl;
-}
 
 interface FlowMessageBubbleProps {
   messageId: string;

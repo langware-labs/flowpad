@@ -1,19 +1,22 @@
 import { useCallback, useRef, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
-import { useProjectMapping } from './useProjectMapping';
 
 /**
  * Imperative gate for actions that need a project (cwd) — Start Claude Code,
- * Approve & Execute, etc. Replaces the old "open the mapping dialog at the
- * top of the conversation" flow: instead, the dialog only appears the first
- * time an action actually needs the project, and the action automatically
- * resumes once the user picks one.
+ * Approve & Execute, Open in Project, etc. The dialog only appears the first
+ * time an action actually needs the project; once the user picks one, the
+ * action automatically resumes.
+ *
+ * The dialog itself is `OpenProjectComponent` (the same component the footer's
+ * Switch Project button uses) — see #10–14 in the design discussion. We pass
+ * it the optional `taskId` + `remoteProjectId` so it stamps task metadata and
+ * writes the per-machine remote→local mapping when relevant.
  *
  * Usage from the parent (SharedTaskView / TaskDetailPanel):
  *
  * ```tsx
  * const gate = useProjectMappingGate(task);
- * // mount: <ProjectMappingDialog ...{...gate.dialogProps} />
+ * // mount: <OpenProjectComponent {...gate.dialogProps} />
  * // pass down: gate.ensureMapped(continuation)
  * ```
  */
@@ -25,12 +28,6 @@ export function useProjectMappingGate(task: ITask | null | undefined) {
   const remoteProjectId = taskMeta.remote_project_id as string | undefined;
   const remoteProjectName = (taskMeta.remote_project_name as string | undefined) ?? '';
   const projectRoot = taskMeta.project_root as string | undefined;
-  // The only signal that matters for "can we run a Claude session for this
-  // task" is whether the task has a concrete project_root stamped on it.
-  // Looking at the in-memory mapping table or assuming-mapped-when-no-remote-id
-  // both produced false-positives where the gate skipped the dialog and the
-  // action then bailed for missing workdir. Project_root is the source of
-  // truth; everything else is a hint.
   const hasMapping = !!projectRoot;
 
   const ensureMapped = useCallback(
@@ -47,20 +44,20 @@ export function useProjectMappingGate(task: ITask | null | undefined) {
 
   const dialogProps = {
     open,
-    onClose: () => {
-      setOpen(false);
-      continuationRef.current = null;
+    onOpenChange: (next: boolean) => {
+      setOpen(next);
+      if (!next) continuationRef.current = null;
     },
-    remoteProjectId: remoteProjectId ?? '',
+    taskId: task?.id ?? undefined,
+    remoteProjectId: remoteProjectId ?? null,
     remoteProjectName,
-    taskId: task?.id ?? '',
-    onMapped: () => {
-      setOpen(false);
+    trigger: (remoteProjectId ? 'map' : 'gate') as 'map' | 'gate',
+    onPicked: async () => {
+      // setCurrentProjectContext already wrote project_id/project_root to the
+      // task before we get here; defer one tick so React state catches up.
       const cont = continuationRef.current;
       continuationRef.current = null;
-      // Defer so the task entity's mapping write lands before the
-      // continuation reads task.metadata.project_root.
-      if (cont) setTimeout(() => void cont(), 0);
+      if (cont) await new Promise<void>((resolve) => setTimeout(() => { resolve(); }, 0)).then(() => cont());
     },
   };
 
