@@ -9,11 +9,12 @@
 import { useEffect, useState } from 'react';
 import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
+import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { useContext } from '@sdk/react/hooks';
 import { sendNotification } from '@sdk/entities/notifications';
 import { createTaskBundle, DeliveryMode } from '@sdk/entities/flow-message';
 import { ActionInfo } from '@sdk/models/ActionInfo';
-import { oauthService, OAUTH_PROVIDERS } from '@sdk';
+import { oauthService, OAUTH_PROVIDERS, type ConversationParticipant } from '@sdk';
 import { toast } from 'sonner';
 import { Mail, Download, Github, Pencil } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -63,10 +64,11 @@ export function SendPlanNotificationDialog({
   planFilePath,
   planContent,
 }: SendPlanNotificationDialogProps) {
-  const { cloudLoginAvailable } = useContext();
+  const ctx = useContext();
+  const { cloudLoginAvailable } = ctx;
   const { localUser, updateName } = useLocalUser();
   const [mode, setMode] = useState<DeliveryMode>(DeliveryMode.EMAIL);
-  const [recipientId, setRecipientId] = useState('');
+  const [recipients, setRecipients] = useState<ConversationParticipant[]>([]);
   const [specTitle, setSpecTitle] = useState('');
   const [specContent, setSpecContent] = useState('');
   const [message, setMessage] = useState('');
@@ -83,7 +85,7 @@ export function SendPlanNotificationDialog({
     if (open) {
       setSpecTitle(extractTitle(planContent, planFilePath));
       setSpecContent(planContent);
-      setRecipientId('');
+      setRecipients([]);
       setMessage('Hi,\nGot a new task for you.\nLMK if you have any questions.\nGood luck!');
       setFiles([]);
       setError(null);
@@ -104,12 +106,14 @@ export function SendPlanNotificationDialog({
   };
 
   const handleEmail = async () => {
-    if (!recipientId.trim() || !specTitle.trim() || busy) return;
+    const recipient = recipients[0];
+    const recipientId = recipient?.email?.trim() ?? '';
+    if (!recipientId || !specTitle.trim() || busy) return;
     setBusy(true);
     setError(null);
     try {
       const result = await sendNotification({
-        recipient_id: recipientId.trim(),
+        recipient_id: recipientId,
         spec_title: specTitle.trim(),
         spec_content: specContent.trim(),
         spec_type: 'plan',
@@ -167,7 +171,7 @@ export function SendPlanNotificationDialog({
     }
   };
 
-  const canSubmit = recipientId.trim().length > 0 && specTitle.trim().length > 0 && !busy;
+  const canSubmit = recipients.length > 0 && specTitle.trim().length > 0 && !busy;
 
   return (
     <>
@@ -265,13 +269,16 @@ export function SendPlanNotificationDialog({
 
             {/* Recipient */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Recipient email</label>
-              <Input
-                value={recipientId}
-                onChange={(e) => setRecipientId(e.target.value)}
-                placeholder="user@example.com"
-                autoFocus
+              <label className="text-xs font-medium text-muted-foreground">Recipient</label>
+              <ContactPicker
+                value={recipients}
+                onChange={setRecipients}
+                excludeUserId={ctx.user?.id}
+                max={1}
                 disabled={busy}
+                enabled={open}
+                placeholder="Search contacts or type an email"
+                testId="plan-recipient-input"
               />
             </div>
 

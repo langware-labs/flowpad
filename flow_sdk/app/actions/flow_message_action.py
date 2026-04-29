@@ -315,11 +315,14 @@ async def handle_create_project_conversation(
     project_id: str,
     participants: list[dict],
     someone_typeid: str,
+    title: Optional[str] = None,
 ) -> ApiResponse:
     """Create a Conversation directly under a Project (no Task).
 
     Each participant entry is {email, name?}. Every email is upserted as a
-    local User so the contact list grows automatically.
+    local User so the contact list grows automatically. `title` becomes the
+    conversation's display name; when omitted, falls back to a participants
+    summary.
     """
     from flow_sdk.builtin.project import Project
     from flow_sdk.fs_store.record_types import RecordType
@@ -342,11 +345,16 @@ async def handle_create_project_conversation(
     slug_seed = "-".join(p["email"].split("@")[0] for p in resolved) or "conversation"
     slug = _meaningful_name(slug_seed)
 
+    derived_name = (title or "").strip() or (
+        ", ".join(p.get("name") or p.get("email") for p in resolved if p.get("email")) or None
+    )
+
     conv = Conversation.model_validate({
         "task_id": None,
         "project_id": project.id,
         "participants": resolved,
         "message_count": 0,
+        "name": derived_name,
     })
     conv.id = Conversation.allocate_id(conv.model_dump())
 
@@ -369,6 +377,7 @@ async def handle_create_project_conversation(
         "conversation_id": conv.id,
         "project_id": project.id,
         "participants": resolved,
+        "name": conv.name,
     })
 
 
@@ -388,11 +397,13 @@ async def conversation_create() -> ApiResponse:
         participants = body.get("participants") or []
         if not isinstance(participants, list):
             return ApiFailResponse(message="participants must be a list")
+        title = (body.get("title") or "").strip() or None
 
         return await handle_create_project_conversation(
             project_id=project_id,
             participants=participants,
             someone_typeid=request_info.someone_typeid,
+            title=title,
         )
     except Exception as e:
         logger.error("[flow_message_action] conversation-create error: %s", e, exc_info=True)

@@ -4,8 +4,9 @@ import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownE
 import { SkillAssetEditor } from '@src/components/assets/editor/skill/SkillAssetEditor';
 import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
 import { useConversation } from '@src/components/conversation/useConversation';
-import { FileText, MessageSquare, Sparkles, X } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import { FileText, X } from 'lucide-react';
+import { ICON_BY_TYPE } from '@src/components/conversation/EntityLabel';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
  * A single tab in RoomTabs. Distinct from terminal tabs (those are tracked by
@@ -28,6 +29,9 @@ interface Props {
   activeKey: string | null;
   onActivate: (key: string) => void;
   onClose: (key: string) => void;
+  /** Rename a tab. Caller is responsible for both local state and any
+   * entity-side persistence (Conversation.name, Skill.name, etc.). */
+  onRename?: (key: string, newTitle: string) => void;
   className?: string;
 }
 
@@ -37,7 +41,7 @@ interface Props {
  * by the parent so callers can wire the open-tab affordance from elsewhere
  * (the Docs sidebar, etc.).
  */
-export function RoomTabs({ tabs, activeKey, onActivate, onClose, className = '' }: Props) {
+export function RoomTabs({ tabs, activeKey, onActivate, onClose, onRename, className = '' }: Props) {
   if (tabs.length === 0) {
     return (
       <div className={`flex h-full items-center justify-center text-xs text-muted-foreground ${className}`}>
@@ -58,6 +62,7 @@ export function RoomTabs({ tabs, activeKey, onActivate, onClose, className = '' 
             active={t.key === active.key}
             onActivate={onActivate}
             onClose={onClose}
+            onRename={onRename}
           />
         ))}
       </div>
@@ -73,9 +78,27 @@ interface ChipProps {
   active: boolean;
   onActivate: (key: string) => void;
   onClose: (key: string) => void;
+  onRename?: (key: string, newTitle: string) => void;
 }
 
-function RoomTabChip({ tab, active, onActivate, onClose }: ChipProps) {
+function RoomTabChip({ tab, active, onActivate, onClose, onRename }: ChipProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(tab.title);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Keep draft synced when the tab title changes externally (e.g. after the
+  // entity's name resolves) and when we're not actively editing.
+  useEffect(() => {
+    if (!editing) setDraft(tab.title);
+  }, [tab.title, editing]);
+
+  // Focus + select the input when entering edit mode.
+  useEffect(() => {
+    if (editing) {
+      requestAnimationFrame(() => inputRef.current?.select());
+    }
+  }, [editing]);
+
   const handleClose = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
@@ -84,25 +107,72 @@ function RoomTabChip({ tab, active, onActivate, onClose }: ChipProps) {
     [onClose, tab.key],
   );
 
+  const commit = useCallback(() => {
+    const next = draft.trim();
+    setEditing(false);
+    if (!next || next === tab.title || !onRename) return;
+    onRename(tab.key, next);
+  }, [draft, tab.title, tab.key, onRename]);
+
+  const cancel = useCallback(() => {
+    setDraft(tab.title);
+    setEditing(false);
+  }, [tab.title]);
+
   return (
-    <button
-      type="button"
+    <div
+      role="tab"
+      aria-selected={active}
+      tabIndex={0}
       onClick={() => onActivate(tab.key)}
-      className={`group inline-flex h-7 items-center gap-1.5 rounded-t-md border-b-2 px-2.5 text-xs transition-colors ${
+      onKeyDown={(e) => {
+        if (editing) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onActivate(tab.key);
+        }
+      }}
+      className={`group inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-t-md border-b-2 px-2.5 text-xs transition-colors ${
         active
           ? 'border-primary bg-background text-foreground'
           : 'border-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground'
       }`}
-      title={tab.asset_ref}
+      title={editing ? 'Press Enter to save, Esc to cancel' : `${tab.title} — double-click to rename`}
     >
-      {tab.type === 'skill' ? (
-        <Sparkles className="h-3 w-3 flex-shrink-0" />
-      ) : tab.type === 'conversation' ? (
-        <MessageSquare className="h-3 w-3 flex-shrink-0" />
+      {(() => {
+        const TabIcon = ICON_BY_TYPE[tab.type] ?? FileText;
+        return <TabIcon className="h-3 w-3 flex-shrink-0" />;
+      })()}
+      {editing && onRename ? (
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commit();
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              cancel();
+            }
+          }}
+          className="max-w-[200px] bg-transparent text-xs text-foreground outline-none"
+        />
       ) : (
-        <FileText className="h-3 w-3 flex-shrink-0" />
+        <span
+          className="max-w-[180px] truncate"
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            if (onRename) setEditing(true);
+          }}
+        >
+          {tab.title}
+        </span>
       )}
-      <span className="max-w-[180px] truncate">{tab.title}</span>
       <span
         role="button"
         tabIndex={0}
@@ -118,7 +188,7 @@ function RoomTabChip({ tab, active, onActivate, onClose }: ChipProps) {
       >
         <X className="h-3 w-3" />
       </span>
-    </button>
+    </div>
   );
 }
 
