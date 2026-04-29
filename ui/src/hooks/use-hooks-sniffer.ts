@@ -42,6 +42,7 @@ export type SnifferEvent = {
 
 const MAX_EVENTS_STORAGE_KEY = 'flowpad-sniffer-max-events';
 const DEFAULT_MAX_EVENTS = 100;
+const SNIFFER_ENABLED_STORAGE_KEY = 'flowpad-sniffer-enabled';
 
 function loadMaxEvents(): number {
   try {
@@ -54,6 +55,26 @@ function loadMaxEvents(): number {
     // ignore
   }
   return DEFAULT_MAX_EVENTS;
+}
+
+/** Last user decision; defaults to OFF when no preference has been recorded. */
+function loadSnifferPreference(): boolean {
+  try {
+    const stored = localStorage.getItem(SNIFFER_ENABLED_STORAGE_KEY);
+    if (stored === 'true') return true;
+    if (stored === 'false') return false;
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
+function saveSnifferPreference(enabled: boolean): void {
+  try {
+    localStorage.setItem(SNIFFER_ENABLED_STORAGE_KEY, enabled ? 'true' : 'false');
+  } catch {
+    // ignore
+  }
 }
 
 function safeParse(raw: string): any {
@@ -133,6 +154,20 @@ export function useHooksSniffer() {
       setHookId(null);
     }
   }, [snifferEnabled]);
+
+  // Reconcile server state with the user's last-saved preference, exactly once
+  // after bootstrap completes. Default is OFF (see loadSnifferPreference).
+  const reconciledRef = useRef(false);
+  useEffect(() => {
+    if (isBootstrapping || reconciledRef.current) return;
+    reconciledRef.current = true;
+    const desired = loadSnifferPreference();
+    if (desired === snifferEnabled) return;
+    setIsToggling(true);
+    void (desired ? snifferManager.enable() : snifferManager.disable())
+      .then(() => setHookId(desired ? snifferManager.entity?.id ?? null : null))
+      .finally(() => setIsToggling(false));
+  }, [isBootstrapping, snifferEnabled]);
   const sessionToProjectRef = useRef<Map<string, string | null>>(new Map());
 
   const projectFlowDataCounts = useMemo(() => {
@@ -425,6 +460,7 @@ export function useHooksSniffer() {
     try {
       await snifferManager.enable();   // entity.watch() fully awaited inside
       setHookId(snifferManager.entity?.id ?? null);
+      saveSnifferPreference(true);
     } finally {
       setIsToggling(false);
     }
@@ -437,6 +473,7 @@ export function useHooksSniffer() {
       setHookId(null);
       sessionToProjectRef.current.clear();
       globalIndexOffsetRef.current = 0;
+      saveSnifferPreference(false);
     } finally {
       setIsToggling(false);
     }
