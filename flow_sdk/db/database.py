@@ -1,101 +1,84 @@
-"""Database initialization and session management.
+"""Thin facade over the active DB driver.
 
-Provides async session factory and database initialization utilities
-for the flow-cli application.
+Historically this module owned its own SQLAlchemy engine + session
+factory in module-level globals (`_engine`, `_session_factory`). That
+created a second engine on the same SQLite file in parallel with
+`SQLiteDBDriver`, with separate pools and pragmas. Both engines fought
+for the writer lock without knowing about each other.
+
+Now there is exactly one engine, owned by the active DBDriver instance
+(`flow_sdk.db.drivers.db_driver.get_db_driver()`). This module exposes
+the historical names (`init_db`, `close_db`, `async_session`,
+`reinit_db`) as thin wrappers so existing call-sites keep working
+without churn.
+
+Prefer the new public API for new code:
+
+    from flow_sdk.db import session
+
+    async with session() as s:
+        ...
 """
 
 import logging
 import os
-from contextlib import asynccontextmanager
-from typing import Optional
 
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-from flow_sdk.db.drivers.sqlite.connection import create_engine_and_session
+from flow_sdk.db import session as _unified_session
+from flow_sdk.db.drivers.db_driver import _driver_instances, get_db_driver
 
 logger = logging.getLogger(__name__)
 
-# Global session factory - will be initialized on first use
-_session_factory: Optional[async_sessionmaker] = None
-_engine = None
-
 
 async def init_db() -> None:
-    """Initialize the database engine and create tables.
+    """Initialize the active DB driver and create tables.
 
-    Should be called once at application startup.
+    Idempotent: safe to call multiple times. Subsequent calls are a no-op
+    when the driver is already open (`SQLiteDBDriver.open()` early-returns).
     """
-    global _session_factory, _engine
-
-    if _session_factory is not None:
-        logger.debug("Database already initialized")
-        return
-
-    logger.info("Initializing database...")
-    _engine, _session_factory = await create_engine_and_session()
-    logger.info("Database initialized successfully")
+    await get_db_driver().open()
+    logger.debug("Database initialized")
 
 
 async def close_db() -> None:
-    """Dispose the database engine and clear the session factory.
-
-    Should be called once at application shutdown.
-    """
-    global _session_factory, _engine
-    engine = _engine
-    # Clear globals first so callers see a clean state even if dispose() raises.
-    _engine = None
-    _session_factory = None
-    if engine is not None:
+    """Dispose the active DB driver and drop the singleton."""
+    driver = _driver_instances.get("sqlite")
+    if driver is not None:
         try:
-            await engine.dispose()
+            await driver.close()
         except Exception:
             pass
+        _driver_instances.pop("sqlite", None)
 
 
-@asynccontextmanager
-async def async_session():
-    """Get a database session as an async context manager.
-
-    Usage:
-        async with async_session() as session:
-            result = await session.execute(select(...))
-
-    Raises:
-        RuntimeError: If database has not been initialized
-    """
-    global _session_factory
-
-    if _session_factory is None:
-        await init_db()
-
-    session: AsyncSession = _session_factory()
-    try:
-        yield session
-    finally:
-        await session.close()
+# Backwards-compat alias for callers writing
+# `from flow_sdk.db.database import async_session`. Internally delegates
+# to `flow_sdk.db.session()`.
+async_session = _unified_session
 
 
 async def reinit_db(new_path: str) -> None:
-    """Hot-swap the SQLite database to a new path without restarting the server."""
-    global _session_factory, _engine
+    """Hot-swap the SQLite database to a new path without restarting the server.
 
+    Closes the current engine, updates the env var + driver config,
+    reopens the engine on the new path, and clears the entity caches.
+    """
     expanded = os.path.expanduser(new_path)
-
-    await close_db()
     os.environ["SQLITE_DATABASE_PATH"] = expanded
-    _engine, _session_factory = await create_engine_and_session(expanded)
-
-    from flow_sdk.db.drivers.db_driver import _driver_instances
+    # Rebuild the InstanceSettings singleton so callers using
+    # `get_instance_settings().db_path` see the new path.
+    from flow_sdk.instance_settings import reset_instance_settings  # noqa: PLC0415
+    reset_instance_settings()
 
     driver = _driver_instances.get("sqlite")
     if driver is not None:
-        await driver.close()
+        try:
+            await driver.close()
+        except Exception:
+            pass
         driver.config.database = expanded
         await driver.open()
 
     from flow_sdk.core.cache.entity_cache import entity_cache, uname_cache
-
     entity_cache.clear()
     uname_cache.clear()
 

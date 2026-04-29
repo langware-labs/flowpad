@@ -22,12 +22,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, ClassVar
 
-from flow_sdk.config import FLOW_HOME
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.instance_settings import get_instance_settings
 
 _MAX_LOG_ENTRIES: int = 100
 
-SCHEMA_DIR: Path = FLOW_HOME / "schema"
+
+def _schema_dir() -> Path:
+    """Resolve the per-instance schema dir at call time.
+
+    Lives on InstanceSettings — never cache the result, never construct
+    `~/.flow/<...>/schema` directly. This getter is the single chokepoint.
+    """
+    return get_instance_settings().schema_dir
 
 
 def _sanitize_type_name(type_name: str) -> str:
@@ -36,7 +43,7 @@ def _sanitize_type_name(type_name: str) -> str:
 
 
 def _schema_dir_for(type_name: str) -> Path:
-    return SCHEMA_DIR / "types" / _sanitize_type_name(type_name)
+    return _schema_dir() / "types" / _sanitize_type_name(type_name)
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +151,6 @@ class ClearResult:
 class TypeIndexStatus:
     type_name: str
     last_indexed_at: str | None
-    last_scan_at: str | None
     entity_count: int
     stale: bool
 
@@ -164,13 +170,14 @@ class IndexStatus:
 # ---------------------------------------------------------------------------
 
 _BUILTIN_DEFAULT_TYPES: list[str] = [
+    # Filesystem-scannable types (must overlap with INDEXABLE_TYPES in
+    # flow_sdk/fs_store/indexer/builtin.py — the indexer can't walk types
+    # not registered there). Runtime-only types like BOOKMARK, ANNOTATION,
+    # AGENTIC_PROCESS, RECORD_ERROR, CLAUDE_ERROR are written to the DB by
+    # Record.save and intentionally excluded from this list.
     RecordType.SKILL,
-    RecordType.BOOKMARK,
     RecordType.AGENT,
     RecordType.TASK,
-    RecordType.AGENTIC_PROCESS,
-    RecordType.RECORD_ERROR,
-    RecordType.CLAUDE_ERROR,
     RecordType.MARKDOWN,
     RecordType.PLAN,
     RecordType.CLAUDE_MD,
@@ -178,7 +185,6 @@ _BUILTIN_DEFAULT_TYPES: list[str] = [
     RecordType.CLAUDE_RULES,
     RecordType.CLAUDE_HOOK,
     RecordType.COMMAND,
-    RecordType.ANNOTATION,
 ]
 
 
@@ -240,11 +246,6 @@ class TypeInfo:
     def subtypes(self) -> list["TypeInfo"]:
         return SchemaRegistry.get_subtypes(self.type_name)
 
-    @property
-    def scans(self) -> list[dict]:
-        """Last N scan/index entries. Reads scan_log.jsonl on access."""
-        return SchemaRegistry._read_scans(self.type_name)
-
     def to_dict(self) -> dict:
         return {
             "type_name": self.type_name,
@@ -287,7 +288,6 @@ class SchemaRegistry:
     _types: ClassVar[dict[str, TypeInfo]] = {}
     _subtypes: ClassVar[dict[str, list[str]]] = {}
     _default_index_types: ClassVar[list[str]] = []
-    _persisted_hashes: ClassVar[dict[str, str]] = {}
 
     # Backward compat: direct class attribute access for default_index_types
     default_index_types: ClassVar[list[str]] = _BUILTIN_DEFAULT_TYPES
@@ -335,8 +335,6 @@ class SchemaRegistry:
 
         if info.indexed_by_default and info.type_name not in cls._default_index_types:
             cls._default_index_types.append(info.type_name)
-
-        cls._maybe_persist(info)
 
     @classmethod
     def get(cls, type_name: "str | TypeId") -> TypeInfo | None:
@@ -412,56 +410,6 @@ class SchemaRegistry:
         return list(_BUILTIN_DEFAULT_TYPES)
 
     # ---------------------------------------------------------------------------
-    # Persistence
-    # ---------------------------------------------------------------------------
-
-    @classmethod
-    def _maybe_persist(cls, info: TypeInfo) -> None:
-        h = info.schema_hash
-        if cls._persisted_hashes.get(info.type_name) == h:
-            return
-        path = _schema_dir_for(info.type_name) / "type_info.json"
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(info.to_dict(), indent=2), encoding="utf-8")
-            cls._persisted_hashes[info.type_name] = h
-        except OSError:
-            pass
-
-    @classmethod
-    def _read_scans(cls, type_name: str, n: int = 20) -> list[dict]:
-        path = _schema_dir_for(type_name) / "scan_log.jsonl"
-        try:
-            lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
-            return [json.loads(ln) for ln in lines[-n:]]
-        except (OSError, json.JSONDecodeError):
-            return []
-
-    @classmethod
-    def load_persisted(cls) -> None:
-        """Load all type_info.json files at startup. Best-effort, never raises."""
-        types_dir = SCHEMA_DIR / "types"
-        if not types_dir.is_dir():
-            return
-        for type_dir in types_dir.iterdir():
-            f = type_dir / "type_info.json"
-            if not f.exists():
-                continue
-            try:
-                info = TypeInfo.from_dict(json.loads(f.read_text(encoding="utf-8")))
-                if info.type_name not in cls._types:
-                    cls._types[info.type_name] = info
-                    cls._persisted_hashes[info.type_name] = info.schema_hash
-                    if info.parent_type:
-                        cls._subtypes.setdefault(info.parent_type, [])
-                        if info.type_name not in cls._subtypes[info.parent_type]:
-                            cls._subtypes[info.parent_type].append(info.type_name)
-                    if info.indexed_by_default and info.type_name not in cls._default_index_types:
-                        cls._default_index_types.append(info.type_name)
-            except Exception:
-                pass
-
-    # ---------------------------------------------------------------------------
     # Logging methods
     # ---------------------------------------------------------------------------
 
@@ -489,7 +437,7 @@ class SchemaRegistry:
                 "created_at": now,
             }
             sanitized = _sanitize_type_name(type_name)
-            _append_jsonl(SCHEMA_DIR / "types" / sanitized / "scan_log.jsonl", entry)
+            _append_jsonl(_schema_dir() / "types" / sanitized / "scan_log.jsonl", entry)
         else:
             global_entry = {
                 "id": str(uuid.uuid4()),
@@ -501,7 +449,7 @@ class SchemaRegistry:
                 "types": types,
                 "created_at": now,
             }
-            _append_jsonl(SCHEMA_DIR / "scan_log.jsonl", global_entry)
+            _append_jsonl(_schema_dir() / "scan_log.jsonl", global_entry)
             for t in types:
                 t_name = t.get("type", "")
                 if not t_name:
@@ -517,7 +465,7 @@ class SchemaRegistry:
                     "created_at": now,
                 }
                 sanitized = _sanitize_type_name(t_name)
-                _append_jsonl(SCHEMA_DIR / "types" / sanitized / "scan_log.jsonl", t_entry)
+                _append_jsonl(_schema_dir() / "types" / sanitized / "scan_log.jsonl", t_entry)
 
         return now
 
@@ -529,7 +477,14 @@ class SchemaRegistry:
         types: list[dict[str, Any]],
         type_name: str | None = None,
     ) -> str:
-        """Log an index operation. Returns the ISO timestamp written."""
+        """Log an index operation. Returns the ISO timestamp written.
+
+        Per-type log only — the "global" timestamp is derived in
+        ``get_index_status`` as ``max(per_type[i].last_indexed_at)``. This
+        means per-type indexing (e.g. UI's "Index Now" loop) automatically
+        flips ``never_indexed`` to false without needing a separate global
+        write call.
+        """
         now = datetime.now(timezone.utc).isoformat()
 
         if type_name:
@@ -543,18 +498,8 @@ class SchemaRegistry:
                 "created_at": now,
             }
             sanitized = _sanitize_type_name(type_name)
-            _append_jsonl(SCHEMA_DIR / "types" / sanitized / "index_log.jsonl", entry)
+            _append_jsonl(_schema_dir() / "types" / sanitized / "index_log.jsonl", entry)
         else:
-            global_entry = {
-                "id": str(uuid.uuid4()),
-                "type": "index_log",
-                "index_trigger": trigger,
-                "duration_ms": duration_ms,
-                "total_indexed": total_indexed,
-                "types": types,
-                "created_at": now,
-            }
-            _append_jsonl(SCHEMA_DIR / "index_log.jsonl", global_entry)
             for t in types:
                 t_name = t.get("type", "")
                 if not t_name:
@@ -569,25 +514,20 @@ class SchemaRegistry:
                     "created_at": now,
                 }
                 sanitized = _sanitize_type_name(t_name)
-                _append_jsonl(SCHEMA_DIR / "types" / sanitized / "index_log.jsonl", t_entry)
+                _append_jsonl(_schema_dir() / "types" / sanitized / "index_log.jsonl", t_entry)
 
         return now
 
     @staticmethod
     def get_last_scan_at(type_name: str) -> str | None:
         sanitized = _sanitize_type_name(type_name)
-        entry = _read_last_entry(SCHEMA_DIR / "types" / sanitized / "scan_log.jsonl")
+        entry = _read_last_entry(_schema_dir() / "types" / sanitized / "scan_log.jsonl")
         return (entry or {}).get("created_at")
 
     @staticmethod
     def get_last_index_at(type_name: str) -> str | None:
         sanitized = _sanitize_type_name(type_name)
-        entry = _read_last_entry(SCHEMA_DIR / "types" / sanitized / "index_log.jsonl")
-        return (entry or {}).get("created_at")
-
-    @staticmethod
-    def get_last_global_index_at() -> str | None:
-        entry = _read_last_entry(SCHEMA_DIR / "index_log.jsonl")
+        entry = _read_last_entry(_schema_dir() / "types" / sanitized / "index_log.jsonl")
         return (entry or {}).get("created_at")
 
     # ---------------------------------------------------------------------------
@@ -606,10 +546,10 @@ class SchemaRegistry:
             entities_cleared = (
                 await driver.delete_entities_by_type(None) if hasattr(driver, "delete_entities_by_type") else 0
             )
-            global_log = SCHEMA_DIR / "index_log.jsonl"
+            global_log = _schema_dir() / "index_log.jsonl"
             if global_log.exists():
                 global_log.unlink()
-            types_dir = SCHEMA_DIR / "types"
+            types_dir = _schema_dir() / "types"
             if types_dir.is_dir():
                 for per_type_log in types_dir.glob("*/index_log.jsonl"):
                     per_type_log.unlink()
@@ -623,7 +563,7 @@ class SchemaRegistry:
                 if hasattr(driver, "delete_entities_by_type"):
                     entities_cleared += await driver.delete_entities_by_type(type_name)
                 sanitized = _sanitize_type_name(type_name)
-                log_file = SCHEMA_DIR / "types" / sanitized / "index_log.jsonl"
+                log_file = _schema_dir() / "types" / sanitized / "index_log.jsonl"
                 if log_file.exists():
                     log_file.unlink()
                 types_cleared.append(type_name)
@@ -638,36 +578,52 @@ class SchemaRegistry:
     clear = clear_index
 
     @classmethod
-    def get_index_status(cls, types: list[str] | None = None) -> IndexStatus:
+    async def get_index_status(cls, types: list[str] | None = None) -> IndexStatus:
+        """Snapshot of per-instance index state. Async because it queries the DB
+        for live entity counts.
+
+        ``last_indexed_at`` and ``never_indexed`` are derived from per-type
+        timestamps — there is no separate global JSONL. This means per-type
+        indexing (UI's "Index Now" loop) automatically flips ``never_indexed``.
+        ``entity_count`` comes from ``driver.count_entities_by_type`` so it
+        reflects what's actually searchable, not a stale log entry.
+        """
         from datetime import timedelta  # noqa: PLC0415
         from flow_sdk._compat import UTC
+        from flow_sdk.db import get_db_driver  # noqa: PLC0415
 
-        last_indexed_at = cls.get_last_global_index_at()
-        never_indexed = last_indexed_at is None
-        stale = False
-        if last_indexed_at:
-            dt = datetime.fromisoformat(last_indexed_at)
-            stale = (datetime.now(UTC) - dt) > timedelta(hours=24)
-        per_type = []
+        driver = get_db_driver()
+        per_type: list[TypeIndexStatus] = []
+        latest_iso: str | None = None
         for type_name in types or cls.get_default_index_types():
             type_last = cls.get_last_index_at(type_name)
             type_stale = True
             if type_last:
                 dt = datetime.fromisoformat(type_last)
                 type_stale = (datetime.now(UTC) - dt) > timedelta(hours=24)
+                if latest_iso is None or type_last > latest_iso:
+                    latest_iso = type_last
+            try:
+                count = await driver.count_entities_by_type(type_name)
+            except Exception:
+                count = 0
             per_type.append(
                 TypeIndexStatus(
                     type_name=type_name,
                     last_indexed_at=type_last,
-                    last_scan_at=cls.get_last_scan_at(type_name),
-                    entity_count=0,
+                    entity_count=count,
                     stale=type_stale,
                 )
             )
+        never_indexed = all(t.last_indexed_at is None for t in per_type)
+        global_stale = False
+        if latest_iso:
+            dt = datetime.fromisoformat(latest_iso)
+            global_stale = (datetime.now(UTC) - dt) > timedelta(hours=24)
         return IndexStatus(
             never_indexed=never_indexed,
-            last_indexed_at=last_indexed_at,
-            stale=stale,
+            last_indexed_at=latest_iso,
+            stale=global_stale,
             default_types=cls.get_default_index_types(),
             per_type=per_type,
         )

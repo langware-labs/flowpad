@@ -62,6 +62,15 @@ class User(Entity):
     async def get_user_by_email(cls, email: str) -> "User | None":
         return await cls.get_one({"email": email})
 
+    @classmethod
+    async def get_or_create_by_email(cls, email: str, name: str | None = None) -> "User":
+        existing = await cls.get_one({"email": email})
+        if existing:
+            return existing
+        user = cls(email=email, name=name)
+        await user.save()
+        return user
+
     async def migrate_visitor_to_user(self, visitor_typeid: TypeId):
         try:
             visitor = await Visitor.get_by_typeid(visitor_typeid)

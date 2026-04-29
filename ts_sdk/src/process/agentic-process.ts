@@ -111,8 +111,8 @@ export interface IAgenticProcess extends IEntity {
   project_id?: string | null;
   /** CollaborationRoom this process was spawned in, if any */
   collaboration_room_id?: string | null;
-  /** Serialized TypeId ("type-id") of the entity this process is attached to (trigger, markdown, …). */
-  target_typeid_str?: string | null;
+  /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats (e.g. per-doc chat keyed on the file path). */
+  target_vfs_path?: string | null;
   /** Root of the per-process execution folder — `<record_dir>/execution/`. */
   exe_folder?: FSRefJson | null;
   /** `<exe_folder>/input/` — instruction/queue inputs. */
@@ -486,8 +486,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** CollaborationRoom this process was spawned in, if any */
   collaboration_room_id: string | null = null;
 
-  /** Serialized TypeId ("type-id") of the entity this process is attached to (trigger, markdown, …). */
-  target_typeid_str: string | null = null;
+  /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats (e.g. per-doc chat keyed on the file path). */
+  target_vfs_path: string | null = null;
 
   /** Execution folder — `<record_dir>/execution/`. Null until the process has a record on disk. */
   exe_folder: FSRef | null = null;
@@ -571,7 +571,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.visible = entity.visible;
     this.sidecar_shell_id = entity.sidecar_shell_id;
     this.collaboration_room_id = entity.collaboration_room_id ?? null;
-    this.target_typeid_str = entity.target_typeid_str ?? null;
+    this.target_vfs_path = entity.target_vfs_path ?? null;
     this.exe_folder = entity.exe_folder ? FSRef.fromJson(entity.exe_folder) : null;
     this.input_folder = entity.input_folder ? FSRef.fromJson(entity.input_folder) : null;
     this.output_folder = entity.output_folder ? FSRef.fromJson(entity.output_folder) : null;
@@ -1216,6 +1216,31 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     await dataManager.callAction(actionInfo);
 
     // Shell entity is kept alive by the backend — do NOT call shell.close()
+  }
+
+  /**
+   * Re-attach this process to a Project derived from its `workdir`.
+   *
+   * Calls the `recover-project` backend action which walks 3 phases (existing
+   * exact-match → ~/.claude/projects materialization → fresh entity), repoints
+   * `self.project_id`, saves on the server, and returns the recovered Project.
+   * This method drops the recovered entity into the local `dataManager` cache
+   * and updates `this.project_id` (no save — backend already saved).
+   *
+   * Used by the route loader on a 404 from the project context fetch.
+   */
+  async recoverProject(): Promise<import('../entities/project').Project> {
+    const { Project } = await import('../entities/project');
+    const action = new ActionInfo('recover-project', AgenticProcess.type, this.id, 'POST');
+    const response = await dataManager.callAction<void, { project: unknown }>(action);
+    if (!response?.project) {
+      throw new Error('recover-project returned no project entity');
+    }
+    const project = dataManager.updateEntityFromJson<import('../entities/project').Project>(
+      response.project as Record<string, unknown>,
+    );
+    this.project_id = project.id;
+    return project;
   }
 
   /**

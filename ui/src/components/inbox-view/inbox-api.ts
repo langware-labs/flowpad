@@ -13,6 +13,8 @@ export interface InboxMessage {
   sender_id?: string | null;
   sender_name?: string | null;
   receiver_address?: string | null;
+  /** ID of the parent Conversation; null on legacy messages predating the field. */
+  conversation_id?: string | null;
   is_read: boolean;
   is_archived: boolean;
   created_date?: string | null;

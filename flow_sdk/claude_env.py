@@ -532,8 +532,9 @@ class ClaudeProjectEnvManager:
         shutil.copytree(rule_src, rules_dir / rule_src.name)
 
     def load_all_user_rules(self) -> None:
-        """Copy all rules from ~/.flow/skill_rules/ into the env."""
-        user_rules = Path.home() / ".flow" / "skill_rules"
+        """Copy all rules from the per-instance skill_rules dir into the env."""
+        from flow_sdk.instance_settings import get_instance_settings
+        user_rules = get_instance_settings().skill_rules_dir
         if not user_rules.exists():
             return
         rules_dir = self._root / ".flow" / "skill_rules"
@@ -655,7 +656,8 @@ class ClaudeProjectEnvManager:
         Expands ALL cached versions of this plugin across ALL marketplaces.
         """
         plugin_name, _marketplace_name, _version = self._read_plugin_meta()
-        base_cache = Path.home() / ".claude" / "plugins" / "cache"
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+        base_cache = get_instance_settings().claude_home / "plugins" / "cache"
         if not base_cache.is_dir():
             return
         for marketplace_dir in base_cache.iterdir():

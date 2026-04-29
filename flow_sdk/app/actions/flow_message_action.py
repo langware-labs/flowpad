@@ -21,7 +21,7 @@ from flow_sdk.builtin.spec import Spec
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
-from flow_sdk.config import FLOW_HOME
+from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_records.conversation_record import ConversationRecord
 from flow_sdk.fs_records.flow_message_bundle import FlowMessageExistsError
@@ -77,6 +77,7 @@ async def handle_create_task_bundle(
     someone_typeid: str,
     message: Optional[str] = None,
     team_space_id: Optional[str] = None,
+    project_id: Optional[str] = None,
 ) -> ApiResponse:
     """Create Task + Spec + Conversation + FlowMessage locally (no git push, no email).
 
@@ -106,14 +107,15 @@ async def handle_create_task_bundle(
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
 
-    # 3. Create Conversation + conversation.jsonl under FLOW_HOME/tasks/<slug>-<id>/
-    task_dir = FLOW_HOME / "tasks" / f"{_meaningful_name(task_title)}-{task.id[:8]}"
+    # 3. Create Conversation + conversation.jsonl under <tasks_dir>/<slug>-<id>/
+    task_dir = get_instance_settings().tasks_dir / f"{_meaningful_name(task_title)}-{task.id[:8]}"
     task_dir.mkdir(parents=True, exist_ok=True)
     jsonl_path = task_dir / "conversation.jsonl"
     jsonl_path.touch()
 
     conv = Conversation.model_validate({
         "task_id": task.id,
+        "project_id": project_id,
         "data_path": str(jsonl_path),
         "message_count": 0,
     })
@@ -140,6 +142,7 @@ async def handle_create_task_bundle(
         "attachment": [],
         "sender_id": sender_id,
         "sender_name": sender_name,
+        "conversation_id": conv.id,
     })
     fm.id = FlowMessage.allocate_id(fm.model_dump())
     fm.attachment = [
@@ -231,6 +234,7 @@ async def create_task_bundle() -> ApiResponse:
             someone_typeid=request_info.someone_typeid,
             message=(body.get("message") or "").strip() or None,
             team_space_id=(body.get("team_space_id") or "").strip() or None,
+            project_id=(body.get("project_id") or "").strip() or None,
         )
     except Exception as e:
         logger.error(f"[flow_message_action] create-task-bundle error: {e}", exc_info=True)
@@ -303,25 +307,119 @@ async def download_flow_message() -> ApiResponse:
 
 
 # ---------------------------------------------------------------------------
+# Project-scoped conversation creation (no Task)
+# ---------------------------------------------------------------------------
+
+
+async def handle_create_project_conversation(
+    project_id: str,
+    participants: list[dict],
+    someone_typeid: str,
+) -> ApiResponse:
+    """Create a Conversation directly under a Project (no Task).
+
+    Each participant entry is {email, name?}. Every email is upserted as a
+    local User so the contact list grows automatically.
+    """
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.fs_store.record_types import RecordType
+
+    project = await Project.get_one({"id": project_id})
+    if not project:
+        return ApiFailResponse(message=f"Project not found: {project_id}", status_code=404)
+    if not project.fs_storage_mount_path:
+        return ApiFailResponse(message="Project has no fs_storage_mount_path")
+
+    resolved: list[dict] = []
+    for p in participants or []:
+        email = (p.get("email") or "").strip()
+        if not email:
+            continue
+        name = (p.get("name") or "").strip() or None
+        user = await User.get_or_create_by_email(email, name=name)
+        resolved.append({"user_id": user.id, "email": user.email, "name": user.name})
+
+    slug_seed = "-".join(p["email"].split("@")[0] for p in resolved) or "conversation"
+    slug = _meaningful_name(slug_seed)
+
+    conv = Conversation.model_validate({
+        "task_id": None,
+        "project_id": project.id,
+        "participants": resolved,
+        "message_count": 0,
+    })
+    conv.id = Conversation.allocate_id(conv.model_dump())
+
+    conv_dir = Path(project.fs_storage_mount_path) / "conversations" / f"{slug}-{conv.id[:8]}"
+    conv_dir.mkdir(parents=True, exist_ok=True)
+    jsonl_path = conv_dir / "conversation.jsonl"
+    jsonl_path.touch()
+
+    conv.data_path = str(jsonl_path)
+    conv = await conv.save(someone_typeid)
+    await project.attach_child(conv)
+
+    rec = ConversationRecord.from_jsonl(
+        jsonl_path, project.id, conv.id, parent_type=RecordType.PROJECT
+    )
+    rec.save()
+    rec.link_to_parent_record()
+
+    return ApiSuccessResponse(data={
+        "conversation_id": conv.id,
+        "project_id": project.id,
+        "participants": resolved,
+    })
+
+
+@action.post(action_name="conversation-create", types=None)
+async def conversation_create() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info:
+            return ApiFailResponse(message="No request info found")
+        if not request_info.someone_typeid:
+            return ApiFailResponse(message="No authenticated user in request context")
+
+        body = await request_info.get_post_data() or {}
+        project_id = (body.get("project_id") or "").strip()
+        if not project_id:
+            return ApiFailResponse(message="project_id is required")
+        participants = body.get("participants") or []
+        if not isinstance(participants, list):
+            return ApiFailResponse(message="participants must be a list")
+
+        return await handle_create_project_conversation(
+            project_id=project_id,
+            participants=participants,
+            someone_typeid=request_info.someone_typeid,
+        )
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-create error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed to create conversation: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
 # Inbox actions
 # ---------------------------------------------------------------------------
 
-_LAST_FETCH_PATH = FLOW_HOME / ".inbox_last_fetch.json"
+def _last_fetch_path() -> Path:
+    return get_instance_settings().inbox_last_fetch_path
 
 
 def _load_last_fetch() -> Optional[str]:
     """Return ISO timestamp of last successful hub fetch, or None."""
     try:
-        if _LAST_FETCH_PATH.exists():
-            return _json.loads(_LAST_FETCH_PATH.read_text()).get("last_fetch")
+        if _last_fetch_path().exists():
+            return _json.loads(_last_fetch_path().read_text()).get("last_fetch")
     except Exception:
         pass
     return None
 
 
 def _save_last_fetch(ts: str) -> None:
-    _LAST_FETCH_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _LAST_FETCH_PATH.write_text(_json.dumps({"last_fetch": ts}))
+    _last_fetch_path().parent.mkdir(parents=True, exist_ok=True)
+    _last_fetch_path().write_text(_json.dumps({"last_fetch": ts}))
 
 
 async def _download_and_unpack_bundle(fm_id: str, attachment_filename: str) -> bool:
@@ -455,7 +553,9 @@ async def handle_inbox_open(fm_id: str) -> ApiResponse:
         except Exception:
             pass
 
-    if task_id and attachment_filename and not await Task.get_one({"id": task_id}):
+    needs_task_bundle = bool(task_id) and not await Task.get_one({"id": task_id})
+    needs_fm_bundle = local_fm is None
+    if attachment_filename and (needs_task_bundle or needs_fm_bundle):
         await _download_and_unpack_bundle(fm_id, attachment_filename)
 
     return ApiSuccessResponse(data={"task_id": task_id, "conversation_id": conv_id})

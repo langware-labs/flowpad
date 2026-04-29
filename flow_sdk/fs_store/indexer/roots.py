@@ -31,10 +31,16 @@ _ENV_VAR_TO_TYPE = (
 
 
 def default_roots() -> list[FSRef]:
-    """Return the three canonical roots plus any env-supplied extras."""
+    """Return the three canonical roots plus any env-supplied extras.
+
+    USER_HOME_FOLDER comes from InstanceSettings.user_home so test mode
+    (which sandboxes user_home) walks the sandbox, not the real home.
+    """
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    settings = get_instance_settings()
     roots: list[FSRef] = [
         FSRef(
-            Path.home(),
+            settings.user_home,
             record_type=RecordType.USER_HOME_FOLDER,
             scope="user",
         ),

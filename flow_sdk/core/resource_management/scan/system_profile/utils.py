@@ -4,13 +4,27 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-# Path constants
-HOME = Path.home()
-CLAUDE_HOME = HOME / ".claude"
-try:
-    CLAUDE_PROJECT = Path.cwd() / ".claude"
-except (FileNotFoundError, OSError):
-    CLAUDE_PROJECT = HOME / ".claude"
+
+# Path getters — call-time, via InstanceSettings (single source of truth).
+# Direct `Path.home() / ".claude"` constructions are a contract violation.
+
+
+def _user_home() -> Path:
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    return get_instance_settings().user_home
+
+
+def _claude_home() -> Path:
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    return get_instance_settings().claude_home
+
+
+def _claude_project_dir() -> Path:
+    """Project-scope ~/.claude (cwd-anchored). Falls back to user-level on FS errors."""
+    try:
+        return Path.cwd() / ".claude"
+    except (FileNotFoundError, OSError):
+        return _claude_home()
 
 
 # Pricing constants (per 1M tokens) - January 2026
@@ -85,8 +99,9 @@ def shorten_path(path: str, use_tilde: bool = True) -> str:
     """Shorten path for display, replacing home with ~."""
     if not path:
         return ""
-    if use_tilde and path.startswith(str(HOME)):
-        return "~" + path[len(str(HOME)) :]
+    home = str(_user_home())
+    if use_tilde and path.startswith(home):
+        return "~" + path[len(home):]
     return path
 
 

@@ -116,7 +116,7 @@ export function useHooksSniffer() {
     });
   }, []);
 
-  const { flowData } = useEntityData(hookId ? new TypeId(AgentHook.type, hookId) : null);
+  const { flowData, clear: clearEntityData } = useEntityData(hookId ? new TypeId(AgentHook.type, hookId) : null);
   const { projects } = useClaudeProjectList();
   const { computeNode, snifferEnabled, isBootstrapping } = useContext();
   const isLoading = isBootstrapping;
@@ -221,7 +221,13 @@ export function useHooksSniffer() {
       // stream.clear() emits 'clear' → useEntityData resets all React consumers automatically
       stream.clear();
     }
-  }, []);
+    // Defensive React-state reset: across disable/enable cycles, snifferManager._entity
+    // and dataManager's cached entity can diverge (different flowDataStream instances).
+    // stream.clear() above only emits 'clear' on snifferManager._entity's stream, which
+    // may have 0 listeners if the cached entity diverged. clearEntityData() forces the
+    // React state owned by useEntityData to reset regardless.
+    clearEntityData();
+  }, [clearEntityData]);
 
   // Trim the underlying stream when it exceeds maxEvents
   useEffect(() => {

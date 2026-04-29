@@ -45,7 +45,7 @@ _REDIRECT_HTML = """<!DOCTYPE html>
 <div class="card">
   <div class="spinner"></div>
   <h2>Opening FlowPad...</h2>
-  <p>Redirecting you to the task.</p>
+  <p>Redirecting you to the conversation.</p>
 </div>
 </body>
 </html>"""
