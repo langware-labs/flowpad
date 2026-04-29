@@ -416,7 +416,10 @@ async def _send_hub_notification(
     if not hub_configured:
         return None, None
 
-    flow_message_id = str(uuid.uuid4())
+    # Use the local FlowMessage id as the hub-side id — both sides reference
+    # the same key, so a receiver missing this message can call
+    # `inbox-open(message_id)` and the hub answers without any hub_id mapping.
+    flow_message_id = fm.id if fm else str(uuid.uuid4())
     task_meta = task.metadata or {}
     hub_flow_message_id: Optional[str] = None
     email_error: Optional[str] = None
@@ -878,7 +881,10 @@ async def _send_reply_to_hub(
     if not recipient_email or not hub_base_url():
         return
     try:
-        hub_reply_id = str(uuid.uuid4())
+        # Use the local reply FM id as the hub-side id so both sides share the
+        # same key — receivers missing this reply can fetch it directly via
+        # `inbox-open(message_id)` without any side-channel id mapping.
+        hub_reply_id = reply_fm.id
         hub_data = await hub_post(BuiltinEntityType.FLOW_MESSAGE, {
             "flow_message_id": hub_reply_id,
             "recipient_email": recipient_email,

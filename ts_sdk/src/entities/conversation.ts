@@ -12,17 +12,8 @@ export interface ConversationMessage {
 }
 
 export interface ConversationMessagePointer {
-  /** Sender's local FlowMessage id — what the unpacked bundle materializes locally. */
   message_id: string;
   timestamp: string;
-  /**
-   * Hub-side id for this message, set by the sender after a successful hub
-   * upload. Lets a receiver who skipped earlier deliveries (e.g. opened msg
-   * #5 directly without unpacking #3 and #4) call `inbox-open(hub_id)` to
-   * pull just the missing entities — without re-shipping every prior message
-   * inside the bundle.
-   */
-  hub_id?: string;
 }
 
 export interface ConversationParticipant {
