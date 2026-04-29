@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { ViewType } from '@src/types/ViewType';
 import { ConversationPanel } from './ConversationPanel';
 import { useConversation } from './useConversation';
 
@@ -21,16 +22,21 @@ import { useConversation } from './useConversation';
 export function ConversationRoute() {
   const { navigation, currentDock } = useDockNavigation();
 
-  // Take only the first path segment as the conversation id. Hidden tabs see
-  // pointers from whatever route is currently active (e.g. project's
-  // `<projId>/conversation/<convId>`); we ignore everything past the first
-  // slash so we never feed a multi-segment string into useConversation.
+  // Hidden tabs are kept mounted by Radix Tabs (data-[state=inactive]:hidden),
+  // so when the URL points at a different view this component still re-renders
+  // — and currentDock.pointer is whatever the *active* tab's pointer is (e.g.
+  // an agentic_process or shell id). Bail unless the dock is actually pointing
+  // at a conversation; otherwise we'd feed a foreign id into useConversation
+  // and TypeId would throw "Invalid type-id: conversation, agentic_process-…".
   const conversationId = useMemo(() => {
+    if (currentDock?.viewType !== ViewType.CONVERSATION) return null;
     const pointer = currentDock?.pointer;
     if (!pointer) return null;
+    // Defensive: trim any trailing path segments (multi-segment pointers
+    // aren't expected for this view, but keep the head-of-path guard).
     const head = pointer.split('/')[0];
     return head || null;
-  }, [currentDock?.pointer]);
+  }, [currentDock?.viewType, currentDock?.pointer]);
 
   const { conversation, task, senderName, taskMissing } = useConversation(conversationId);
 
