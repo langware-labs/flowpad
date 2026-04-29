@@ -1,6 +1,8 @@
 import { EventEmitter } from 'events';
 import { ActionInfo, dataContext, dataManager, OAuthMessage, TypeId } from '../../index';
 import { EntityEnv, EnvVarType } from '../../models/env_var';
+import { secretApprovalGate } from '../secretApprovalGate';
+import { secretsService } from '../secrets-service';
 import { BrowserAuthWindow, MockAuthWindow, OAuthWindow } from './oauth-window';
 
 // OAuth Provider Constants
@@ -229,6 +231,13 @@ export class OAuthService {
     sharedEntityVarName?: string,
   ): Promise<OauthFlow | null> {
     try {
+      // For cloud login, the OS keychain must be approved before we open the
+      // OAuth popup — otherwise the post-callback set_api_key write triggers
+      // an OS prompt at an awkward UX moment. Pre-flight here so the prompt
+      // (if any) fires under the user's intentional approve click.
+      if (provider === OAUTH_PROVIDERS.FLOWPAD_CLOUD) {
+        if (!(await this.ensureSecretsEnabled())) return null;
+      }
       // Start OAuth flow
       const oauthRequestInfo = await this.generateOauthRequestInfo(provider, targetEntity, sharedEntityVarName);
 
@@ -246,6 +255,30 @@ export class OAuthService {
     } catch (error) {
       console.error(`[OAuthService] OAuth connection failed for ${provider}:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Ensure secret-keychain access is enabled. Returns false if the user cancels
+   * or the OS denies — caller must NOT proceed to OAuth popup in that case.
+   * Mirrors the gate inside navigationService.navigateToLogin so that any
+   * cloud-login entry point (oauthService.connect) also goes through the
+   * SecretApprovalDialog before the OAuth popup opens.
+   */
+  private async ensureSecretsEnabled(): Promise<boolean> {
+    try {
+      const initial = await secretsService.isEnabled();
+      if (initial?.enabled) return true;
+    } catch {
+      // probe failed (offline/server down) — fall through to the dialog
+    }
+    const approved = await secretApprovalGate.request();
+    if (!approved) return false;
+    try {
+      const verified = await secretsService.isEnabled();
+      return Boolean(verified?.enabled);
+    } catch {
+      return false;
     }
   }
 

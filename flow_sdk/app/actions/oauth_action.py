@@ -162,7 +162,7 @@ async def _handle_flowpad_cloud_disconnect() -> ApiResponse:
     import os
 
     from flow_sdk.cli.app_config import set_user
-    from flow_sdk.cli.auth import delete_api_key
+    from flow_sdk.cli.auth.hub_login import delete_api_key
     from flow_sdk.cli.env_loader import get_logout_url
     from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
     from flow_sdk.server import state as server_state
