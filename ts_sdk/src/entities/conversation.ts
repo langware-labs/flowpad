@@ -52,16 +52,17 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   }
 
   /**
-   * If this conversation is scoped to a project, deep-link into the project view
-   * with the conversation tab open. Otherwise, open the inbox focused on this
-   * conversation via query params (?conversation=<id>).
+   * Deep-link to the dedicated conversation view at `/dock/conversation/<id>`.
+   * Project-scoped conversations still nest into the project tab so the
+   * collaboration UI keeps its split layout, but standalone conversations
+   * (inbox / shared-task) all land on the same conversation viewer.
    */
   override get dockPointer(): DockPointerData {
     if (this.project_id && this.id) {
       return new DockPointerData(ViewType.PROJECT, `${this.project_id}/conversation/${this.id}`);
     }
     if (this.id) {
-      return new DockPointerData(ViewType.INBOX, undefined, { conversation: this.id });
+      return new DockPointerData(ViewType.CONVERSATION, this.id);
     }
     return new DockPointerData(ViewType.INBOX);
   }

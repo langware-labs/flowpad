@@ -121,6 +121,9 @@ async def _process_manifest(
     conversation_id = data.get("conversation_id")
     manifest_branch = data.get("branch") or ""
     manifest_repo_id = data.get("repo_id") or ""
+    remote_project_id = data.get("project_id") or ""
+    remote_project_name = data.get("project_name") or ""
+    spec_type_meta = data.get("spec_type") or ""
 
     # Don't import tasks that were created by the local user (sender)
     if sender_id == local_user_id:
@@ -173,6 +176,9 @@ async def _process_manifest(
             "branch": manifest_branch,
             "sender_name": sender_name,
             "sender_email": data.get("sender_email") or "",
+            "remote_project_id": remote_project_id,
+            "remote_project_name": remote_project_name,
+            "spec_type": spec_type_meta,
         },
     })
     task = await task.save(owner_typeid)
@@ -312,6 +318,14 @@ async def _sync_conversation(task: Task, task_dir: Path) -> None:
     conv.message_ids = new_message_ids
     conv.message_count = len(pointers)
     await conv.save(owner_typeid)
+
+    try:
+        import asyncio as _asyncio
+        from flow_sdk.app.actions.flow_message_action import handle_inbox_fetch
+        if owner_typeid is not None:
+            _asyncio.ensure_future(handle_inbox_fetch(str(owner_typeid)))
+    except Exception as e:
+        logger.warning(f"notification_scanner: schedule inbox-fetch failed (non-fatal): {e}")
 
     try:
         send_resource_sync(

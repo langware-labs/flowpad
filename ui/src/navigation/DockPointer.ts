@@ -484,6 +484,15 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create dock pointer for the dedicated conversation viewer at
+   * `/dock/conversation/<conversationId>`. Same UI as the conversation
+   * panel embedded in task views — the URL is just a different host for it.
+   */
+  static forConversation(conversationId: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.CONVERSATION, conversationId, undefined, layout);
+  }
+
+  /**
    * Create dock pointer for live session view
    * @param processId - Process ID for the session
    */

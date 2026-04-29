@@ -124,6 +124,32 @@ export class NavigationActions {
   }
 
   /**
+   * Open a dock pointer in a separate browser tab named "flowpad-shell".
+   *
+   * - Reuses the existing browser tab named "flowpad-shell" if one is open,
+   *   so repeated clicks land in the same secondary tab instead of spawning new ones.
+   * - Leaves the current tab (e.g. the conversation view) untouched.
+   *
+   * Useful for shell / Claude Code sessions launched from a non-shell view.
+   */
+  openInBrowserTab(pointer: IDockPointer | DockPointer): void {
+    const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
+    const { viewType, pointer: pointerValue, layout } = base.toUrlSegments();
+    const searchParams = base.toSearchParams();
+
+    const fullUrl = buildDockUrl(
+      window.location.pathname,
+      viewType,
+      pointerValue,
+      Object.fromEntries(searchParams.entries()),
+      layout,
+    );
+    const absoluteUrl = `${window.location.origin}${fullUrl}`;
+    const opened = window.open(absoluteUrl, 'flowpad-shell');
+    if (opened) opened.focus();
+  }
+
+  /**
    * Close the current dock (navigate to base flow URL)
    */
   closeDock(): void {

@@ -5,9 +5,10 @@ import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import { AttachmentType, downloadFlowMessageUrl } from '@sdk/entities/flow-message';
 import { ActionInfo } from '@sdk/models/ActionInfo';
+import { Download } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
+import { AttachmentChip } from './AttachmentChip';
 import { useLocalUser } from './useLocalUser';
-import { Download, Paperclip } from 'lucide-react';
 
 function localBundleUrl(messageId: string): string {
   return new ActionInfo('create-and-download-local-flowmsg', 'flow_message', messageId, 'GET').fullActionUrl;
@@ -23,16 +24,35 @@ interface FlowMessageBubbleProps {
   messageId: string;
   timestamp: string;
   task: ITask;
+  onApproveAndExecute?: (messageId: string, attachmentIndex: number) => void;
 }
 
-export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBubbleProps) {
+export function FlowMessageBubble({
+  messageId,
+  timestamp,
+  task,
+  onApproveAndExecute,
+}: FlowMessageBubbleProps) {
   const { data: fm } = useEntity<FlowMessage>(
     new TypeId(FlowMessage.type, messageId),
   );
   const { localUser, updateName } = useLocalUser();
   const [overrideName, setOverrideName] = useState<string | null>(null);
 
-  if (!fm) return null;
+  if (!fm) {
+    // The pointer to this FlowMessage is in the conversation.jsonl, but the
+    // entity itself hasn't been materialised locally yet (it lands via the
+    // hub bundle, which is fetched asynchronously). Show a thin placeholder
+    // instead of returning null so the bubble doesn't disappear silently.
+    return (
+      <div className="flex gap-2 opacity-60">
+        <div className="h-8 w-8 shrink-0 animate-pulse rounded-full bg-muted" />
+        <div className="flex min-w-0 flex-1 flex-col gap-1 pt-1">
+          <span className="text-[11px] italic text-muted-foreground/70">Loading message…</span>
+        </div>
+      </div>
+    );
+  }
 
   const isCurrentUser = !!(fm.sender_id && localUser?.id && fm.sender_id === localUser.id);
   const displayName = overrideName ?? (fm.sender_name || (isCurrentUser ? (localUser?.name || 'You') : 'Unknown'));
@@ -49,63 +69,58 @@ export function FlowMessageBubble({ messageId, timestamp, task }: FlowMessageBub
     timestamp,
   };
 
+  // Filter out the conversation.jsonl transcript — that lives on the toolbar now.
   const fileAttachments = (fm.attachment ?? []).filter(
-    (a) => a.attachment_type === AttachmentType.FILE,
+    (a) => a.attachment_type === AttachmentType.FILE && !a.data.endsWith('conversation.jsonl'),
   );
 
-  return (
-    <div>
-      <MessageBubble
-        message={message}
-        flowMessageId={messageId}
-        senderName={displayName}
-        onEditName={isCurrentUser ? async (newName) => {
-          setOverrideName(newName);
-          await updateName(newName);
-        } : undefined}
-      />
+  const hasAttachments = !!fm.attachment_filename || fileAttachments.length > 0;
+  const totalAttachments = (fm.attachment_filename ? 1 : 0) + fileAttachments.length;
+
+  const footer = hasAttachments ? (
+    <div className="mt-2 space-y-1.5">
       {fm.attachment_filename && (
-        <div className="mt-1.5 px-1">
-          <a
-            href={downloadFlowMessageUrl(messageId, fm.attachment_filename)}
-            download
-            className="flex items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-[11px] text-foreground hover:bg-muted transition-colors max-w-[200px]"
-            title={fm.attachment_filename}
-          >
-            <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
-            <span className="truncate">{fm.attachment_filename}</span>
-            <Download className="h-3 w-3 shrink-0 text-muted-foreground" />
-          </a>
-        </div>
+        <AttachmentChip
+          url={downloadFlowMessageUrl(messageId, fm.attachment_filename)}
+          filename={fm.attachment_filename}
+        />
       )}
-      {fileAttachments.length > 0 && (
-        <div className="mt-1.5 space-y-1 px-1">
-          {fileAttachments.map((a) => {
-            const name = a.data.split('/').pop() ?? a.data;
-            return (
-              <a
-                key={a.data}
-                href={fileAttachmentUrl(messageId, a.data)}
-                download={name}
-                className="flex items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-[11px] text-foreground hover:bg-muted transition-colors max-w-[200px]"
-                title={name}
-              >
-                <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" />
-                <span className="truncate">{name}</span>
-                <Download className="h-3 w-3 shrink-0 text-muted-foreground" />
-              </a>
-            );
-          })}
-          <a
-            href={localBundleUrl(messageId)}
-            download
-            className="flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-          >
-            <Download className="h-3 w-3" />
-            Download all attachments
-          </a>
-        </div>
+      {fileAttachments.map((a) => {
+        const name = a.data.split('/').pop() ?? a.data;
+        return (
+          <AttachmentChip
+            key={a.data}
+            url={fileAttachmentUrl(messageId, a.data)}
+            filename={name}
+          />
+        );
+      })}
+      {totalAttachments > 1 && (
+        <a
+          href={localBundleUrl(messageId)}
+          download
+          className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <Download className="h-3 w-3" />
+          Download all attachments
+        </a>
       )}
     </div>
+  ) : null;
+
+  return (
+    <MessageBubble
+      message={message}
+      flowMessageId={messageId}
+      flowMessage={fm}
+      task={task}
+      senderName={displayName}
+      onEditName={isCurrentUser ? async (newName) => {
+        setOverrideName(newName);
+        await updateName(newName);
+      } : undefined}
+      onApproveAndExecute={onApproveAndExecute ? (idx) => onApproveAndExecute(messageId, idx) : undefined}
+      footer={footer}
+    />
   );
 }
