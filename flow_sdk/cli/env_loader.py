@@ -35,8 +35,8 @@ def get_login_url(redirect_url: str) -> str:
     """
     Get the login URL with the redirect URL properly formatted.
 
-    Reads API_BASE_URL and LOGIN_URL from environment variables, combines them,
-    and replaces {redirect_url} with the URL-encoded redirect URL.
+    Derives the API base URL from FLOWPAD_HUB_URL (+ API_PREFIX), combines it
+    with LOGIN_URL, and replaces {redirect_url} with the URL-encoded redirect URL.
 
     Args:
         redirect_url: The redirect URL to include in the login URL
@@ -45,7 +45,7 @@ def get_login_url(redirect_url: str) -> str:
         The formatted login URL with the redirect URL encoded
 
     Example:
-        If API_BASE_URL = "http://localhost:8000/api/v1"
+        If FLOWPAD_HUB_URL = "http://localhost:8000"
         and LOGIN_URL = "/login?target_path={redirect_url}"
         and redirect_url = "http://127.0.0.1:9006/post_login"
         Returns: "http://localhost:8000/login?target_path=http%3A%2F%2F127.0.0.1%3A9006%2Fpost_login"
@@ -71,8 +71,8 @@ def get_logout_url(return_url: str) -> str:
     """
     Get the cloud logout URL with the return URL properly formatted.
 
-    Reads API_BASE_URL and LOGOUT_URL from environment variables, combines them,
-    and replaces {return_url} with the URL-encoded return URL.
+    Derives the API base URL from FLOWPAD_HUB_URL (+ API_PREFIX), combines it
+    with LOGOUT_URL, and replaces {return_url} with the URL-encoded return URL.
 
     Args:
         return_url: The URL to return to after logout (e.g. the local /post_logout endpoint)
