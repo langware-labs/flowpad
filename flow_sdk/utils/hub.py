@@ -20,6 +20,40 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 logger = logging.getLogger(__name__)
 
 
+class HubError(Exception):
+    """Raised when a hub HTTP call fails (transport error or non-2xx response).
+
+    `status_code` is 0 for transport errors (DNS, timeout, refused, etc.).
+    `reason` is a short human-readable string suitable for surfacing to end users.
+    """
+
+    def __init__(self, status_code: int, reason: str):
+        self.status_code = status_code
+        self.reason = reason
+        super().__init__(f"hub error {status_code}: {reason}")
+
+
+def _extract_reason(resp: httpx.Response) -> str:
+    """Pull a short failure reason out of an httpx response body.
+
+    Tries JSON `message` / `detail` / `error` first (the shapes flowpad-hub
+    and FastAPI use), then falls back to the raw text trimmed to 300 chars.
+    """
+    try:
+        body = resp.json()
+        if isinstance(body, dict):
+            for key in ("message", "detail", "error"):
+                val = body.get(key)
+                if val:
+                    return str(val)
+    except Exception:
+        pass
+    text = (resp.text or "").strip()
+    if text:
+        return text[:300]
+    return f"HTTP {resp.status_code}"
+
+
 def hub_base_url() -> Optional[str]:
     """Return the hub base URL from config, or None if not configured."""
     from flow_sdk.config import default_service_config
@@ -137,9 +171,11 @@ async def hub_post(
     scope: list[tuple[str, str]] | None = None,
     files: dict | None = None,
 ) -> Optional[dict[str, Any]]:
-    """POST to a hub graph endpoint. Returns the response `data` dict on success, None on failure.
+    """POST to a hub graph endpoint. Returns the response `data` dict on success.
 
-    Returns None immediately if FLOWPAD_HUB_URL is not configured.
+    Returns None only when FLOWPAD_HUB_URL is not configured (offline mode).
+    Raises HubError on transport failure or non-200 response — callers that
+    want to suppress hub failures must catch HubError themselves.
 
     Args:
         entity_type: The entity type (e.g. "notification", "task").
@@ -154,20 +190,21 @@ async def hub_post(
     if not url:
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping POST %s/%s", entity_type, entity_id)
         return None
+    timeout = httpx.Timeout(connect=10, write=600, read=60, pool=5) if files else httpx.Timeout(10)
     try:
-        timeout = httpx.Timeout(connect=10, write=600, read=60, pool=5) if files else httpx.Timeout(10)
         async with httpx.AsyncClient(timeout=timeout) as client:
             if files:
                 resp = await client.post(url, headers=_auth_headers(), files=files)
             else:
                 resp = await client.post(url, json=payload, headers=_auth_headers())
-            if resp.status_code == 200:
-                return resp.json().get("data") or {}
-            logger.warning("[hub] POST %s returned %s: %s", url, resp.status_code, resp.text[:200])
-            return None
     except Exception as e:
-        logger.warning("[hub] POST %s error (non-fatal): %s", url, e)
-        return None
+        logger.warning("[hub] POST %s transport error: %s", url, e)
+        raise HubError(0, str(e))
+    if resp.status_code == 200:
+        return resp.json().get("data") or {}
+    reason = _extract_reason(resp)
+    logger.warning("[hub] POST %s returned %s: %s", url, resp.status_code, resp.text[:200])
+    raise HubError(resp.status_code, reason)
 
 
 async def hub_put(
@@ -177,7 +214,11 @@ async def hub_put(
     *,
     scope: list[tuple[str, str]] | None = None,
 ) -> Optional[dict[str, Any]]:
-    """PUT to a hub entity endpoint (update). Returns the response `data` dict on success, None on failure."""
+    """PUT to a hub entity endpoint (update). Returns the response `data` dict on success.
+
+    Returns None only when FLOWPAD_HUB_URL is not configured (offline mode).
+    Raises HubError on transport failure or non-200 response.
+    """
     url = hub_graph_url(entity_type, entity_id, scope=scope)
     if not url:
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping PUT %s/%s", entity_type, entity_id)
@@ -185,12 +226,13 @@ async def hub_put(
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.put(url, json=payload, headers=_auth_headers())
-            if resp.status_code == 200:
-                return resp.json().get("data") or {}
-            logger.warning("[hub] PUT %s returned %s: %s", url, resp.status_code, resp.text[:200])
-            return None
     except Exception as e:
-        logger.warning("[hub] PUT %s error (non-fatal): %s", url, e)
-        return None
+        logger.warning("[hub] PUT %s transport error: %s", url, e)
+        raise HubError(0, str(e))
+    if resp.status_code == 200:
+        return resp.json().get("data") or {}
+    reason = _extract_reason(resp)
+    logger.warning("[hub] PUT %s returned %s: %s", url, resp.status_code, resp.text[:200])
+    raise HubError(resp.status_code, reason)
 
 

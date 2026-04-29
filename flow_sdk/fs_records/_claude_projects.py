@@ -17,17 +17,24 @@ from pathlib import Path
 from typing import Iterator
 
 
-_CLAUDE_PROJECTS = Path.home() / ".claude" / "projects"
 _IS_WINDOWS = sys.platform == "win32"
 
-# Paths that MUST never be yielded as a "project" — walking them triggers
-# full-filesystem traversal. A stale session JSONL with cwd="/" or cwd=$HOME
-# would otherwise leak here and cause `.claude/docs` / `.claude/plans` walks
-# to enumerate the entire machine.
-_INVALID_PROJECT_ROOTS: set[Path] = {
-    Path("/").resolve(),
-    Path.home().resolve(),
-}
+
+def _claude_projects_dir() -> Path:
+    """Per-instance ~/.claude/projects (call-time, via InstanceSettings)."""
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    return get_instance_settings().claude_projects_dir
+
+
+def _invalid_project_roots() -> set[Path]:
+    """Paths that MUST never be yielded as a "project" — walking them would
+    enumerate the entire machine. Resolved per-call so test-mode isolation
+    correctly excludes the sandbox user_home."""
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    return {
+        Path("/").resolve(),
+        get_instance_settings().user_home.resolve(),
+    }
 
 # Match Windows encoded project names: starts with drive letter, e.g. "C-Users-<user-name>-project"
 _WIN_ENCODED_RE = re.compile(r"^([A-Za-z])-(.*)")
@@ -76,13 +83,15 @@ def iter_claude_project_paths(include_temp: bool = False) -> Iterator[Path]:
             prevents their ``.claude/agents/`` contents from polluting
             agent discovery and the scan index.
     """
-    if not _CLAUDE_PROJECTS.is_dir():
+    projects_dir = _claude_projects_dir()
+    if not projects_dir.is_dir():
         return
 
     from flow_sdk.utils.file_system import is_temp_path  # noqa: PLC0415
 
+    invalid_roots = _invalid_project_roots()
     seen: set[Path] = set()
-    for project_dir in sorted(_CLAUDE_PROJECTS.iterdir()):
+    for project_dir in sorted(projects_dir.iterdir()):
         if not project_dir.is_dir():
             continue
 
@@ -111,7 +120,7 @@ def iter_claude_project_paths(include_temp: bool = False) -> Iterator[Path]:
             rp = real.resolve()
         except OSError:
             continue
-        if rp in _INVALID_PROJECT_ROOTS:
+        if rp in invalid_roots:
             # Stale cwd pointing at / or $HOME — ignore, not a real project.
             continue
         if rp in seen:

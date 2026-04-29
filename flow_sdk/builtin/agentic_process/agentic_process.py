@@ -584,6 +584,29 @@ class AgenticProcess(Entity):
             return exit_result
         return await self.start()
 
+    @action.post(action_name="recover-project")
+    async def recover_project_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Re-attach this process to a Project derived from its ``workdir``.
+
+        Used when ``self.project_id`` points at a deleted project (dangling FK).
+        Walks the 3-phase recovery in ``Project.recover_by_path`` and writes the
+        resolved id back onto this process. Returns the recovered Project so the
+        frontend can drop it into the entity cache without an extra fetch.
+        """
+        try:
+            from flow_sdk.builtin.project import Project
+            if not self.workdir:
+                return ApiFailResponse(message="Process has no workdir; cannot recover project")
+            project = await Project.recover_by_path(self.workdir)
+            if not project:
+                return ApiFailResponse(message=f"Could not recover a project for {self.workdir}")
+            self.project_id = project.id
+            await self.save()
+            return ApiSuccessResponse(data={"project": project.model_dump(mode="json")})
+        except Exception as e:
+            logger.exception("AgenticProcess %s recover_project_action error: %s", self.id, e)
+            return ApiFailResponse(message=str(e))
+
     @action.post(action_name="fork")
     async def fork_action(self) -> ApiSuccessResponse | ApiFailResponse:
         """Create a sibling process that shares this session's conversation history.

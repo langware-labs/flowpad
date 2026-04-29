@@ -16,6 +16,7 @@ class AttachmentType(str, Enum):
     FILE = "file"
     REPO = "repo"
     URL = "url"
+    PROMPT = "prompt"
 
 
 class Attachment(BaseModel):
@@ -26,14 +27,20 @@ class Attachment(BaseModel):
       - FILE    : data is a path relative to the .flowmsg root
       - REPO    : data is the full repo path (uuid5 is derived from it)
       - URL     : data is a URL
+      - PROMPT  : data is the prompt text (inline) or a VFS subpath like "prompt/<filename>"
 
     local_path is a transient field populated at serialization time (API responses
     only — never stored in DB). For FILE attachments it holds the absolute filesystem
     path resolved via the entity's embedded storage.
+
+    proposer_id / approved_by apply to PROMPT attachments — proposer_id is the user
+    who suggested the prompt; approved_by is set when the other party approves it.
     """
     attachment_type: AttachmentType
     data: str
     local_path: Optional[str] = None
+    proposer_id: Optional[str] = None
+    approved_by: Optional[str] = None
 
 
 class FlowMessage(Entity):
@@ -47,6 +54,7 @@ class FlowMessage(Entity):
     receiver_address: Optional[str] = APIField(None)
     receiver_address_type: Optional[str] = APIField(None)  # "email"|"id"|"slack"|...
     attachment_filename: Optional[str] = APIField(None)  # original .flowmsg filename stored on hub
+    conversation_id: Optional[str] = APIField(None, description="ID of the parent Conversation, or None for legacy messages")
     is_read: bool = APIField(default=False)
     is_archived: bool = APIField(default=False)
     _api_visible: ClassVar[bool] = True
@@ -66,6 +74,10 @@ class FlowMessage(Entity):
             for att in data["attachment"]:
                 if att.get("attachment_type") == AttachmentType.FILE.value:
                     att["local_path"] = storage.get_storage_path(att.get("data", ""))
+                elif att.get("attachment_type") == AttachmentType.PROMPT.value:
+                    raw = att.get("data", "")
+                    if raw and raw.startswith("prompt/"):
+                        att["local_path"] = storage.get_storage_path(raw)
         return data
 
     async def to_file(self, dest_dir: Path | None = None) -> Path:

@@ -41,7 +41,7 @@ from ._collectors.user_collector import (
     get_todos,
 )
 from .settings import get_legacy_settings
-from .utils import CLAUDE_HOME, get_file_mtime, load_json
+from .utils import _claude_home, get_file_mtime, load_json
 
 # ─────────────────────────────────────────────────────────────────
 # Resource Type Constants
@@ -329,7 +329,7 @@ def scan_item(item_type: str, **kwargs) -> list | dict | None:
 def _iter_session_file_stats() -> list[tuple[int, int, str, str]]:
     """Collect (mtime_ns, size_bytes, project_encoded_name, filename) for all sessions."""
     stats: list[tuple[int, int, str, str]] = []
-    projects_dir = CLAUDE_HOME / "projects"
+    projects_dir = _claude_home() / "projects"
 
     if not projects_dir.exists():
         return stats
@@ -388,7 +388,7 @@ def _get_cost_overview_cache_path(limit: int) -> Path:
     """Return cache file path for a cost overview limit bucket."""
     safe_limit = "all" if limit == 0 else str(limit)
     return (
-        CLAUDE_HOME / _COST_OVERVIEW_CACHE_DIRNAME / f"cost_overview_{safe_limit}.json"
+        _claude_home() / _COST_OVERVIEW_CACHE_DIRNAME / f"cost_overview_{safe_limit}.json"
     )
 
 
@@ -980,8 +980,8 @@ def get_claude_md_for_project(
 def get_todos_for_project(project_encoded_name: str) -> list[dict]:
     """Get todos linked to this project's sessions."""
     todos = []
-    todos_dir = CLAUDE_HOME / "todos"
-    project_sessions_dir = CLAUDE_HOME / "projects" / project_encoded_name
+    todos_dir = _claude_home() / "todos"
+    project_sessions_dir = _claude_home() / "projects" / project_encoded_name
 
     if not todos_dir.exists() or not project_sessions_dir.exists():
         return todos
@@ -1023,7 +1023,7 @@ def scan_project(
     Returns:
         Dict with all resource types for this project
     """
-    project_dir = CLAUDE_HOME / "projects" / project_encoded_name
+    project_dir = _claude_home() / "projects" / project_encoded_name
     if not project_dir.exists():
         return {"error": f"Project not found: {project_encoded_name}"}
 
@@ -1088,7 +1088,7 @@ def scan_project(
 def list_projects_fast() -> dict:
     """Fast project enumeration - just directory listing with basic counts."""
     projects = []
-    projects_dir = CLAUDE_HOME / "projects"
+    projects_dir = _claude_home() / "projects"
 
     if not projects_dir.exists():
         return {"projects": [], "total_count": 0}

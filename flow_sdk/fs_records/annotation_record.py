@@ -9,7 +9,9 @@ from flow_sdk.fs_store import Record, RecordType
 
 class AnnotationRecord(Record):
     _record_type: ClassVar[str] = RecordType.ANNOTATION
-    _indexed_by_default: ClassVar[bool] = True
+    # Runtime-created via Record.save (not FS-scannable). Excluded from
+    # the indexer's default set — entities still flow into the DB normally.
+    _indexed_by_default: ClassVar[bool] = False
     _user_asset: ClassVar[bool] = True
     index_fields: ClassVar[list[str]] = ["target_type", "labels"]
 

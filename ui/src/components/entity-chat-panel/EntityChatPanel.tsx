@@ -31,9 +31,11 @@ import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 
 interface EntityChatPanelProps {
   /**
-   * Serialized entity TypeId, stored as-is in `AgenticProcess.target_typeid_str`.
-   * Callers pass `entity.typeId.toString()` — e.g. `"plan-<uuid>"`, `"agent-<uuid>"`,
-   * `"trigger-<uuid>"`. Null disables chat (send is guarded on non-empty target).
+   * VFS path the chat is keyed to, stored as-is in
+   * `AgenticProcess.target_vfs_path`. Either an entity TypeId string
+   * (`"agent-<uuid>"`, `"plan-<uuid>"`, …) or a `<typeid>/<sub_path>` form
+   * (`"compute_node-<id>/Users/.../foo.md"` for a per-doc chat). Null
+   * disables chat (send is guarded on non-empty target).
    */
   target: string | null;
   className?: string;
@@ -50,10 +52,10 @@ interface EntityChatPanelProps {
  * Compact chat panel attached to an arbitrary host entity (markdown file, trigger, …).
  *
  * Process lifecycle:
- *   - Queries AgenticProcess by `target_typeid_str === target`.
+ *   - Queries AgenticProcess by `target_vfs_path === target`.
  *   - If a process already exists, reuse it (chat persistence survives reloads).
  *   - If none, create one lazily on the first send via `computeNode.createProcess({
- *       targetTypeIdStr, outputFormat: "stream-json" })`. Print-mode processes
+ *       targetVfsPath, outputFormat: "stream-json" })`. Print-mode processes
  *     don't spawn a PTY, so no `start({headless})` needed.
  *   - Every send invokes `process.prompt(text)` which POSTs to the streaming
  *     `prompt` action on AgenticProcess; FlowData flows into `process.flowDataStream`
@@ -201,7 +203,7 @@ export function EntityChatPanel({ target, className, onProcessCreated }: EntityC
           const newProcess = await computeNode.createProcess({
             workdir: project?.fs_storage_mount_path ?? undefined,
             projectId: pendingProjectId ?? project?.id,
-            targetTypeIdStr: targetStr,
+            targetVfsPath: targetStr,
             outputFormat: 'stream-json',
           });
           if (onProcessCreated) await onProcessCreated(newProcess);

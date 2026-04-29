@@ -9,9 +9,9 @@ from ..settings import (
     get_user_settings,
 )
 from ..utils import (
-    CLAUDE_HOME,
-    CLAUDE_PROJECT,
-    HOME,
+    _claude_home,
+    _claude_project_dir,
+    _user_home,
     format_bytes,
     get_file_mtime,
     load_json,
@@ -22,7 +22,7 @@ from ..utils import (
 def get_installed_plugins() -> list[dict]:
     """Get all installed plugins."""
     plugins = []
-    data = load_json(CLAUDE_HOME / "plugins" / "installed_plugins.json")
+    data = load_json(_claude_home() / "plugins" / "installed_plugins.json")
     user_settings = get_user_settings() or {}
     enabled_plugins = user_settings.get("enabledPlugins", {})
 
@@ -40,7 +40,7 @@ def get_installed_plugins() -> list[dict]:
                         "type": "plugin",
                         "name": name,
                         "scope": install.get("scope", "user"),
-                        "source_file": str(CLAUDE_HOME / "plugins" / "installed_plugins.json"),
+                        "source_file": str(_claude_home() / "plugins" / "installed_plugins.json"),
                         "modified_at": installed_at,
                         "created_at": installed_at,
                         "path": install.get("installPath", ""),
@@ -56,7 +56,7 @@ def get_installed_plugins() -> list[dict]:
 def get_known_marketplaces() -> list[dict]:
     """Get all known plugin marketplaces."""
     marketplaces = []
-    data = load_json(CLAUDE_HOME / "plugins" / "known_marketplaces.json")
+    data = load_json(_claude_home() / "plugins" / "known_marketplaces.json")
 
     if data:
         for name, info in data.items():
@@ -68,7 +68,7 @@ def get_known_marketplaces() -> list[dict]:
                     "type": "marketplace",
                     "name": name,
                     "scope": "user",
-                    "source_file": str(CLAUDE_HOME / "plugins" / "known_marketplaces.json"),
+                    "source_file": str(_claude_home() / "plugins" / "known_marketplaces.json"),
                     "modified_at": last_updated,
                     "created_at": last_updated,
                     "source": source.get("source", "unknown"),
@@ -84,10 +84,10 @@ def get_claude_md_files() -> list[dict]:
     files = []
 
     locations = [
-        (CLAUDE_HOME / "CLAUDE.md", "global"),
+        (_claude_home() / "CLAUDE.md", "global"),
         (Path.cwd() / "CLAUDE.md", "project"),
         (Path.cwd() / "CLAUDE.local.md", "local"),
-        (CLAUDE_PROJECT / "CLAUDE.md", "project"),
+        (_claude_project_dir() / "CLAUDE.md", "project"),
     ]
 
     for path, scope in locations:
@@ -158,8 +158,8 @@ def get_github_repos() -> list[dict]:
                     "type": "github_repo",
                     "name": name,
                     "scope": "user",
-                    "source_file": str(HOME / ".claude.json"),
-                    "modified_at": get_file_mtime(HOME / ".claude.json"),
+                    "source_file": str(_user_home() / ".claude.json"),
+                    "modified_at": get_file_mtime(_user_home() / ".claude.json"),
                     "paths": [shorten_path(p) for p in paths] if isinstance(paths, list) else [shorten_path(paths)],
                 }
             )
@@ -173,7 +173,7 @@ def _build_slug_session_map() -> dict[str, list[dict]]:
     Only reads first few lines of each file for performance.
     """
     slug_map: dict[str, list[dict]] = {}
-    projects_dir = CLAUDE_HOME / "projects"
+    projects_dir = _claude_home() / "projects"
 
     if not projects_dir.exists():
         return slug_map
@@ -233,7 +233,7 @@ def _extract_plan_name(plan_file: Path, slug: str) -> str:
 def get_plans() -> list[dict]:
     """Get all saved plans with session/project correlation."""
     plans = []
-    plans_dir = CLAUDE_HOME / "plans"
+    plans_dir = _claude_home() / "plans"
 
     if not plans_dir.exists():
         return plans
@@ -306,7 +306,7 @@ def get_directories() -> list[dict]:
     ]
 
     for name, desc in subdirs:
-        path = CLAUDE_HOME / name
+        path = _claude_home() / name
         exists = path.exists()
         count = None
 
@@ -337,7 +337,7 @@ def get_directories() -> list[dict]:
 def get_todos() -> list[dict]:
     """Get all todo files from ~/.claude/todos/ directory."""
     todos = []
-    todos_dir = CLAUDE_HOME / "todos"
+    todos_dir = _claude_home() / "todos"
 
     if not todos_dir.exists():
         return todos
@@ -367,7 +367,7 @@ def get_todos() -> list[dict]:
             in_progress_count = sum(1 for e in entries if e.get("status") == "in_progress")
 
             project_encoded_name = None
-            projects_dir = CLAUDE_HOME / "projects"
+            projects_dir = _claude_home() / "projects"
             if projects_dir.exists():
                 for project_dir in projects_dir.iterdir():
                     if not project_dir.is_dir():

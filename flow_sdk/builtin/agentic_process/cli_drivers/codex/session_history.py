@@ -113,23 +113,28 @@ def _entry_to_flow_data(entry: dict) -> list[FlowData]:
       - process-local stream events (``thread.started`` / ``item.completed`` ...)
       - codex's own ``~/.codex/sessions/`` rollout shape
         (``response_item`` with ``role`` and ``content`` blocks).
+
+    Both shapes carry an outer ISO 8601 ``timestamp`` field per line; we
+    forward it as ``created_time`` so the UI timeline reflects the original
+    transcript time instead of the get-history call time.
     """
     etype = entry.get("type")
+    entry_ts = entry.get("timestamp") or ""
 
     # ── Process-local stream event shape ──────────────────────────────────────
     if etype == "item.completed":
         item = entry.get("item") or {}
-        return _item_to_flow_data(item)
+        return _item_to_flow_data(item, entry_ts)
 
     # ── codex sessions/* rollout shape ────────────────────────────────────────
     if etype == "response_item":
         payload = entry.get("payload") or {}
-        return _response_item_to_flow_data(payload)
+        return _response_item_to_flow_data(payload, entry_ts)
 
     return []
 
 
-def _item_to_flow_data(item: dict) -> list[FlowData]:
+def _item_to_flow_data(item: dict, entry_ts: str = "") -> list[FlowData]:
     itype = item.get("type")
     if itype == "agent_message":
         text = item.get("text") or ""
@@ -137,6 +142,7 @@ def _item_to_flow_data(item: dict) -> list[FlowData]:
             return []
         return [FlowData(
             flow_value=text,
+            created_time=entry_ts,
             attributes={
                 "element-type": FlowElementType.CHAT,
                 "data-type": FlowDataType.TEXT,
@@ -150,6 +156,7 @@ def _item_to_flow_data(item: dict) -> list[FlowData]:
                 "output": item.get("aggregated_output"),
                 "exit_code": item.get("exit_code"),
             },
+            created_time=entry_ts,
             attributes={
                 "element-type": FlowElementType.TOOL_RESULT,
                 "data-type": FlowDataType.OBJECT,
@@ -159,6 +166,7 @@ def _item_to_flow_data(item: dict) -> list[FlowData]:
     if itype == "file_change":
         return [FlowData(
             flow_value={"changes": item.get("changes")},
+            created_time=entry_ts,
             attributes={
                 "element-type": FlowElementType.TOOL_RESULT,
                 "data-type": FlowDataType.OBJECT,
@@ -168,7 +176,7 @@ def _item_to_flow_data(item: dict) -> list[FlowData]:
     return []
 
 
-def _response_item_to_flow_data(payload: dict) -> list[FlowData]:
+def _response_item_to_flow_data(payload: dict, entry_ts: str = "") -> list[FlowData]:
     if payload.get("type") != "message":
         return []
     role = payload.get("role")
@@ -188,6 +196,7 @@ def _response_item_to_flow_data(payload: dict) -> list[FlowData]:
     if role == "user":
         return [FlowData(
             flow_value=text,
+            created_time=entry_ts,
             attributes={
                 "element-type": FlowElementType.USER_MESSAGE,
                 "data-type": FlowDataType.TEXT,
@@ -197,6 +206,7 @@ def _response_item_to_flow_data(payload: dict) -> list[FlowData]:
     if role in ("assistant", "developer"):
         return [FlowData(
             flow_value=text,
+            created_time=entry_ts,
             attributes={
                 "element-type": FlowElementType.CHAT,
                 "data-type": FlowDataType.TEXT,

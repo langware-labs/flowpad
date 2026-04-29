@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 
 from flow_sdk.core import action
+from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
@@ -68,7 +69,7 @@ async def mcp_available():
     if request_info and request_info.request_parameters:
         server = request_info.request_parameters.get("server", server)
 
-    user_path = Path.home() / ".claude" / "mcp.json"
+    user_path = get_instance_settings().claude_mcp_json_path
     cwd = Path(os.getcwd())
     project_paths = [cwd / ".mcp.json", cwd / ".claude" / "mcp.json"]
 
@@ -98,7 +99,7 @@ async def mcp_enable():
     entry = {"type": "stdio", "command": server, "args": []}
 
     if scope == "user":
-        target = Path.home() / ".claude" / "mcp.json"
+        target = get_instance_settings().claude_mcp_json_path
     elif scope == "project":
         target = Path(os.getcwd()) / ".mcp.json"
     else:

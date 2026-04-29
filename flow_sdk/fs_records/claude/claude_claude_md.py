@@ -17,10 +17,6 @@ from typing import ClassVar
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.fs_ref import FSRef
 
-_CLAUDE_HOME = Path.home() / ".claude"
-_CLAUDE_PROJECTS = _CLAUDE_HOME / "projects"
-
-
 def _md_id(path: Path) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
 

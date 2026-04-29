@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from ..utils import (
-    CLAUDE_HOME,
+    _claude_home,
     load_jsonl,
     shorten_path,
 )
@@ -59,7 +59,7 @@ def get_project_cwd(project_dir: Path) -> str | None:
 def get_projects() -> list[dict]:
     """Get all projects."""
     projects = []
-    projects_dir = CLAUDE_HOME / "projects"
+    projects_dir = _claude_home() / "projects"
 
     if not projects_dir.exists():
         return projects

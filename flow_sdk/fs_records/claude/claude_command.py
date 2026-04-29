@@ -12,6 +12,7 @@ from typing import Any, ClassVar
 
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.record import Scope
+from flow_sdk.instance_settings import get_instance_settings
 
 
 def _command_search_dirs() -> list[tuple[Path, str]]:
@@ -25,7 +26,7 @@ def _command_search_dirs() -> list[tuple[Path, str]]:
             seen.add(rp)
             dirs.append((p, scope))
 
-    _add(Path.home() / ".claude" / "commands", "user")
+    _add(get_instance_settings().claude_commands_dir, "user")
     _add(Path(os.getcwd()) / ".claude" / "commands", "project")
     return dirs
 
