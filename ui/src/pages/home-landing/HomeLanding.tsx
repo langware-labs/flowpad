@@ -110,8 +110,25 @@ export function HomeLanding() {
           // Has a REPO attachment — show pull/clone dialog
           setPendingTask({ taskId, taskTitle, senderName, projectUrl, branch, repoId });
         } else {
-          // No REPO attachments — navigate directly to the task
-          navigation.openDock(DockPointer.fromUrl('tasks', `task-${taskId}`));
+          // No REPO attachments — try to land on the conversation route directly,
+          // since that's the new home for shared-task message threads. Fall back
+          // to the task route only if the task hasn't been materialised yet
+          // (its conversation_id will fill in on the next refresh).
+          void (async () => {
+            try {
+              const { dataManager, Task, TypeId } = await import('@sdk');
+              const task = await dataManager
+                .getByTypeId<import('@sdk').Task>(new TypeId(Task.type, taskId))
+                .catch(() => null);
+              if (task?.conversation_id) {
+                navigation.openDock(DockPointer.forConversation(task.conversation_id));
+                return;
+              }
+            } catch {
+              // fall through
+            }
+            navigation.openDock(DockPointer.fromUrl('tasks', `task-${taskId}`));
+          })();
         }
       }
     }

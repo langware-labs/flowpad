@@ -304,4 +304,10 @@ export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
+  [ViewType.CONVERSATION]: {
+    title: 'Conversation',
+    iconName: 'MessageSquare',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+  },
 };

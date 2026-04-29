@@ -1,18 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, ArrowLeft, CheckSquare, RefreshCw } from 'lucide-react';
-import { Conversation, FlowMessage, Project, QueryRequest, Task, TypeId } from '@sdk';
+import { Archive, CheckSquare, RefreshCw } from 'lucide-react';
+import { Conversation, FlowMessage, QueryRequest, Task, TypeId } from '@sdk';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
-import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
 import {
   fetchInboxFromHub,
   updateMessage,
   bulkUpdateMessages,
-  openInboxMessage,
 } from './inbox-api';
 
 // ── Time formatter (Gmail-style) ────────────────────────────────────────────
@@ -137,69 +134,6 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, refSett
   );
 }
 
-// ── Reader: a single thread rendered with the shared ConversationPanel ─────
-
-interface ConversationReaderProps {
-  conversationId: string;
-  onBack: () => void;
-}
-
-function ConversationReader({ conversationId, onBack }: ConversationReaderProps) {
-  const convTypeId = useMemo(() => new TypeId(Conversation.type, conversationId), [conversationId]);
-  const { data: conv } = useEntity<Conversation>(convTypeId);
-  const taskTypeId = useMemo(
-    () => (conv?.task_id ? new TypeId(Task.type, conv.task_id) : null),
-    [conv?.task_id],
-  );
-  const { data: task } = useEntity<Task>(taskTypeId);
-  const projectTypeId = useMemo(
-    () => (conv?.project_id ? new TypeId(Project.type, conv.project_id) : null),
-    [conv?.project_id],
-  );
-  const { data: project } = useEntity<Project>(projectTypeId);
-
-  const subject = task?.title?.trim() || 'Conversation';
-  const senderName = (task?.metadata as Record<string, unknown> | undefined)?.sender_name as
-    | string
-    | undefined
-    || task?.shared_by_id
-    || undefined;
-
-  return (
-    <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5">
-        <button
-          type="button"
-          onClick={onBack}
-          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          title="Back to inbox"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <span className="truncate text-sm font-semibold">{subject}</span>
-        {project?.name && (
-          <span className="shrink-0 rounded-md border border-primary/30 bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-            {project.name}
-          </span>
-        )}
-      </div>
-      <div className="flex-1 overflow-y-auto">
-        {!task ? (
-          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
-            Loading…
-          </div>
-        ) : (
-          <ConversationPanel
-            task={task}
-            conversationId={conversationId}
-            senderName={senderName}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ── InboxView ───────────────────────────────────────────────────────────────
 
 export function InboxView() {
@@ -208,8 +142,6 @@ export function InboxView() {
   const rowRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const { navigation, currentDock } = useDockNavigation();
   const { setUnreadCount } = useInboxStore();
-
-  const focusedConversationId = currentDock?.options?.conversation ?? null;
 
   const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
   const { data: conversations = [], refetch, isLoading } = useEntitiesQuery<Conversation>(request);
@@ -258,13 +190,6 @@ export function InboxView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // When the URL focuses a conversation in list mode (we're in reader instead),
-  // make sure the row is visible if the user navigates back.
-  useEffect(() => {
-    if (!focusedConversationId) return;
-    const el = rowRefs.current.get(focusedConversationId);
-    if (el) el.scrollIntoView({ block: 'nearest' });
-  }, [focusedConversationId, sorted.length]);
 
   const handleRefresh = useCallback(async () => {
     setFetching(true);
@@ -298,34 +223,6 @@ export function InboxView() {
     void refetch();
   }, [refetch, setUnreadCount]);
 
-  const handleBackToList = useCallback(() => {
-    navigation.openDock(DockPointer.forInbox());
-  }, [navigation]);
-
-  // Mark the focused conversation's latest message as read on entering the reader.
-  useEffect(() => {
-    if (!focusedConversationId) return;
-    void (async () => {
-      try {
-        const result = await openInboxMessage(focusedConversationId);
-        if (result?.task_id) {
-          // no-op — we already navigated into the reader; this just primes the bundle.
-        }
-      } catch {
-        /* non-fatal */
-      }
-    })();
-  }, [focusedConversationId]);
-
-  // Reader mode
-  if (focusedConversationId) {
-    return (
-      <ConversationReader
-        conversationId={focusedConversationId}
-        onBack={handleBackToList}
-      />
-    );
-  }
 
   // List mode
   return (
@@ -391,7 +288,7 @@ export function InboxView() {
             <ConversationListRow
               key={conv.id ?? ''}
               conv={conv}
-              isFocused={!!focusedConversationId && conv.id === focusedConversationId}
+              isFocused={false}
               onArchive={handleArchive}
               onToggleRead={handleToggleRead}
               refSetter={(el) => {
