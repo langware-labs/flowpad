@@ -53,9 +53,7 @@ export function ConversationToolbar({
     openOrStartRef.current = openOrStart;
   }, [openOrStart]);
   const { navigation } = useDockNavigation();
-  const localProjectId = (task.metadata as Record<string, unknown> | undefined)?.project_id as
-    | string
-    | undefined;
+  const localProjectId = task.project_id ?? undefined;
 
   // Live-load the Project / Task entities for EntityLabel display. Both are
   // optional — the label still renders the id as a fallback name when the
@@ -85,9 +83,7 @@ export function ConversationToolbar({
 
   const showTaskLabel = !!task.id;
   const claudeTooltip = isStartLabel ? 'Start Claude Code session' : 'Open Claude Code';
-  const sharedProcessId = (task.metadata as Record<string, unknown> | undefined)?.shared_process_id as
-    | string
-    | undefined;
+  const sharedProcessId = task.shared_process_id ?? undefined;
   const showSharedTerminal = !!sharedProcessId;
 
   const handleOpenShared = async () => {
@@ -137,8 +133,8 @@ export function ConversationToolbar({
           type="button"
           onClick={() => {
             const action = () => {
-              const meta = (task.metadata as Record<string, unknown> | undefined) ?? {};
-              const projId = (meta.project_id as string | undefined) ?? localProjectId;
+              // Re-read fresh from the task in case the picker just stamped it.
+              const projId = task.project_id ?? localProjectId;
               if (!projId) return;
               navigation.openDock(DockPointer.forProject(projId, { conversationId }));
             };

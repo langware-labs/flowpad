@@ -27,6 +27,7 @@ from flow_sdk.utils.validation import UUID_PATTERN
 # ---------------------------------------------------------------------------
 
 FLOWPAD_CLOUD_URL = "https://app.flowpad.ai"
+API_PREFIX = "/api/v1"
 
 # ---------------------------------------------------------------------------
 # Path getters — call-time, via InstanceSettings (single source of truth).

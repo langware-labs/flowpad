@@ -30,7 +30,9 @@ _FM_FIELDS = {"type", "id", "text", "instruction", "context", "attachment",
 
 _TASK_FIELDS = {"type", "id", "title", "description", "status", "task_type",
                 "priority", "spec_id", "shared_by_id", "conversation_id",
-                "metadata", "due_at", "start_date"}
+                "metadata", "due_at", "start_date",
+                "project_id", "spec_type", "my_process_id",
+                "shared_process_id", "remote_project_id", "remote_project_name"}
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
@@ -310,7 +312,6 @@ async def unpack_bundle(
 
         conversation_id: str | None = None
         task_id: str = ""
-        bundle_project_id: str | None = None
         if attachment_dir.exists():
             for entry_dir in sorted(attachment_dir.iterdir(), key=_entry_sort_key):
                 if not entry_dir.is_dir():
@@ -335,14 +336,13 @@ async def unpack_bundle(
                         bundle_sender_name = (task_data.get("metadata") or {}).get("sender_name") or None
                         if bundle_sender_email:
                             await User.get_or_create_by_email(bundle_sender_email, name=bundle_sender_name)
-                        # Resolve project_id from task's project_root (deterministic uuid5)
-                        bundle_project_root = (task_data.get("metadata") or {}).get("project_root") or ""
-                        if bundle_project_root and bundle_project_id is None:
-                            try:
-                                from flow_sdk.builtin.project import Project
-                                bundle_project_id = Project.allocate_id({"fs_storage_mount_path": bundle_project_root})
-                            except Exception:
-                                bundle_project_id = None
+                        # Note: we do NOT compute a deterministic Project uuid
+                        # from the sender's `project_root` here. That path is
+                        # the sender's local filesystem and means nothing on
+                        # the receiver's machine — we'd just stamp a uuid that
+                        # 404s when anyone tries to load the Project. Receiver
+                        # picks via the mapping dialog; the picker stamps both
+                        # task.project_id and conversation.project_id.
                         existing_task = await Task.get_one({"id": task_id})
                         # Patch sender_email into existing task metadata if the bundle has it
                         # and it was missing (e.g. task imported before sender_email was added)
@@ -352,27 +352,10 @@ async def unpack_bundle(
                                 existing_task.metadata = {**(existing_task.metadata or {}), "sender_email": bundle_sender_email}
                                 await existing_task.save(owner_typeid)
                         if existing_task is None or overwrite:
-                            # Merge metadata: keep agentic_* keys from existing task so
-                            # session resume still works after re-upload.
-                            bundle_meta: dict = task_data.get("metadata") or {}
-                            # Rename sender-side identity so it doesn't collide with the
-                            # receiver's own local project_id / project_root once mapping is set.
-                            if "project_id" in bundle_meta:
-                                bundle_meta["remote_project_id"] = bundle_meta.pop("project_id")
-                            if "project_name" in bundle_meta:
-                                bundle_meta["remote_project_name"] = bundle_meta.pop("project_name")
+                            bundle_meta: dict = dict(task_data.get("metadata") or {})
                             bundle_meta.pop("project_root", None)
-                            # my_process_id / shared_process_id are sender-local
-                            # identifiers for AgenticProcess entities that don't exist
-                            # on the receiver's machine. Each user materializes their
-                            # own process through the Start Claude Code flow.
-                            bundle_meta.pop("my_process_id", None)
-                            bundle_meta.pop("shared_process_id", None)
-                            bundle_meta.pop("sender_session_id", None)
-                            if existing_task and existing_task.metadata:
-                                existing_meta = dict(existing_task.metadata)
-                                agentic_keys = {k: v for k, v in existing_meta.items() if k.startswith("agentic_")}
-                                bundle_meta = {**bundle_meta, **agentic_keys}
+                            sender_project_id = task_data.get("project_id") or None
+                            sender_project_name = (task_data.get("metadata") or {}).get("project_name") or None
                             task = Task.model_validate({
                                 "id": task_id,
                                 "title": task_data.get("title", ""),
@@ -381,6 +364,9 @@ async def unpack_bundle(
                                 "conversation_id": task_data.get("conversation_id"),
                                 "metadata": bundle_meta or None,
                                 "status": task_data.get("status", "to_do"),
+                                "spec_type": task_data.get("spec_type") or None,
+                                "remote_project_id": sender_project_id,
+                                "remote_project_name": sender_project_name,
                             })
                             await task.save(owner_typeid)
 
@@ -412,7 +398,7 @@ async def unpack_bundle(
                             conversation_id=entry_id,
                             owner_typeid=owner_typeid,
                             notify=False,
-                            project_id=bundle_project_id,
+                            project_id=None,
                         )
                         if conv:
                             conversation_id = conv.id
