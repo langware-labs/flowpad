@@ -35,7 +35,7 @@ export function TasksViewer() {
     }
   }, [pointer]);
 
-  const { data: existingTask } = useEntity<Task>(taskTypeId ?? null, {
+  const { data: existingTask, isLoading } = useEntity<Task>(taskTypeId ?? null, {
     enabled: !!taskTypeId,
   });
 
@@ -107,6 +107,12 @@ export function TasksViewer() {
     await dataManager.query(new QueryRequest({ type: Task.type, scope }), true);
     navigation.goBack();
   }, [existingTask, project?.typeId, navigation]);
+
+  // Wait for the task to load before deciding which layout to show — avoids
+  // flashing the empty edit form before switching to SharedTaskView or the populated form.
+  if (taskTypeId && (isLoading || !existingTask)) {
+    return <div className="flex h-full items-center justify-center text-muted-foreground">Loading…</div>;
+  }
 
   // Shared tasks (sent via notification) show the SharedTaskView instead of the edit form
   if (existingTask?.spec_id) {

@@ -1,17 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, ArrowLeft, CheckSquare, RefreshCw } from 'lucide-react';
-import { Conversation, FlowMessage, Project, QueryRequest, Task, TypeId } from '@sdk';
+import { Archive, CheckSquare, RefreshCw } from 'lucide-react';
+import { Conversation, FlowMessage, QueryRequest, Task, TypeId } from '@sdk';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import {
   fetchInboxFromHub,
   updateMessage,
   bulkUpdateMessages,
-  openInboxMessage,
 } from './inbox-api';
 
 // ── Time formatter (Gmail-style) ────────────────────────────────────────────
@@ -58,6 +56,16 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, refSett
     [latest?.message_id],
   );
   const { data: latestMessage } = useEntity<FlowMessage>(latestTypeId);
+
+  // Hide archived rows: "Archive all" flips is_archived on every FlowMessage,
+  // so when the latest message is archived we treat the conversation as
+  // archived too. Without this the row keeps rendering and looks unchanged.
+  if (latestMessage?.is_archived) return null;
+  // Hide rows whose latest FlowMessage couldn't be loaded — usually means the
+  // bundle hasn't been pulled yet (we'd just render an empty "Unknown" row
+  // and 404 in the network tab). The auto inbox-fetch on mount will pull the
+  // bundle and the row will materialise on the next entity update.
+  if (latest && !latestMessage) return null;
 
   const sender = latestMessage?.sender_name?.trim() || 'Unknown';
   const count = pointers.length;
@@ -126,139 +134,14 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, refSett
   );
 }
 
-// ── Reader: a single thread, oldest-first ───────────────────────────────────
-
-interface ConversationReaderProps {
-  conversationId: string;
-  focusedMessageId: string | null;
-  onBack: () => void;
-  onArchive: (messageId: string) => void;
-  onToggleRead: (messageId: string, isRead: boolean) => void;
-}
-
-function ConversationReader({ conversationId, focusedMessageId, onBack, onArchive, onToggleRead }: ConversationReaderProps) {
-  const convTypeId = useMemo(() => new TypeId(Conversation.type, conversationId), [conversationId]);
-  const { data: conv } = useEntity<Conversation>(convTypeId);
-  const taskTypeId = useMemo(
-    () => (conv?.task_id ? new TypeId(Task.type, conv.task_id) : null),
-    [conv?.task_id],
-  );
-  const { data: task } = useEntity<Task>(taskTypeId);
-  const projectTypeId = useMemo(
-    () => (conv?.project_id ? new TypeId(Project.type, conv.project_id) : null),
-    [conv?.project_id],
-  );
-  const { data: project } = useEntity<Project>(projectTypeId);
-
-  const pointers = conv?.conversationMessageIds ?? [];
-  const subject = task?.title?.trim() || 'Conversation';
-
-  return (
-    <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5">
-        <button
-          type="button"
-          onClick={onBack}
-          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          title="Back to inbox"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <span className="truncate text-sm font-semibold">{subject}</span>
-        {project?.name && (
-          <span className="shrink-0 rounded-md border border-primary/30 bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-            {project.name}
-          </span>
-        )}
-      </div>
-      <div className="flex-1 overflow-y-auto">
-        {pointers.length === 0 ? (
-          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
-            No messages
-          </div>
-        ) : (
-          pointers.map((p) => (
-            <ReaderMessage
-              key={p.message_id}
-              messageId={p.message_id}
-              isFocused={focusedMessageId === p.message_id}
-              onArchive={onArchive}
-              onToggleRead={onToggleRead}
-            />
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
-interface ReaderMessageProps {
-  messageId: string;
-  isFocused: boolean;
-  onArchive: (messageId: string) => void;
-  onToggleRead: (messageId: string, isRead: boolean) => void;
-}
-
-function ReaderMessage({ messageId, isFocused, onArchive, onToggleRead }: ReaderMessageProps) {
-  const typeId = useMemo(() => new TypeId(FlowMessage.type, messageId), [messageId]);
-  const { data: fm } = useEntity<FlowMessage>(typeId);
-  if (!fm || fm.is_archived) return null;
-
-  const sender = fm.sender_name?.trim() || 'Unknown';
-  const time = formatGmailTime(fm.created_date);
-  const ago = formatTimeAgo(fm.created_date);
-  const isUnread = !fm.is_read;
-
-  return (
-    <div
-      data-testid="reader-message"
-      data-message-id={fm.id}
-      data-focused={isFocused ? 'true' : 'false'}
-      className={`group border-b border-border/40 px-4 py-3 ${isFocused ? 'bg-primary/5' : ''}`}
-    >
-      <div className="flex items-baseline justify-between gap-2">
-        <span className={`text-sm ${isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}`}>
-          {sender}
-        </span>
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {time}
-          {ago && <span className="ml-1.5 text-muted-foreground/70">· {ago}</span>}
-        </span>
-      </div>
-      <div className="mt-1 whitespace-pre-wrap text-sm text-foreground/90">{fm.text}</div>
-      <div
-        className="mt-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          className="rounded p-1 hover:bg-muted"
-          title={isUnread ? 'Mark read' : 'Mark unread'}
-          onClick={() => fm.id && onToggleRead(fm.id, isUnread)}
-        >
-          <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
-        </button>
-        <button
-          className="rounded p-1 hover:bg-destructive/10"
-          title="Archive"
-          onClick={() => fm.id && onArchive(fm.id)}
-        >
-          <Archive className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ── InboxView ───────────────────────────────────────────────────────────────
 
 export function InboxView() {
   const [fetching, setFetching] = useState(false);
+  const [visibleCount, setVisibleCount] = useState<number | null>(null);
   const rowRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const { navigation, currentDock } = useDockNavigation();
   const { setUnreadCount } = useInboxStore();
-
-  const focusedConversationId = currentDock?.options?.conversation ?? null;
-  const focusedMessageId = currentDock?.options?.message ?? null;
 
   const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
   const { data: conversations = [], refetch, isLoading } = useEntitiesQuery<Conversation>(request);
@@ -273,28 +156,40 @@ export function InboxView() {
     return list;
   }, [conversations]);
 
-  // Keep the unread badge in sync with the legacy inbox-list (still authoritative).
+  // Keep the unread badge in sync AND compute the visible-conversation count
+  // from the same source (`listInboxMessages` already filters out archived
+  // FlowMessages server-side). The header count needs to reflect what the
+  // user actually sees: after "Archive all" the conversation entities still
+  // exist locally but every row hides itself, so we can't use sorted.length.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         const { listInboxMessages } = await import('./inbox-api');
         const msgs = await listInboxMessages();
-        if (!cancelled) setUnreadCount(msgs.filter((m) => !m.is_read).length);
+        if (cancelled) return;
+        setUnreadCount(msgs.filter((m) => !m.is_read).length);
+        const visibleConvs = new Set(
+          msgs.map((m) => m.conversation_id).filter((id): id is string => !!id),
+        );
+        setVisibleCount(visibleConvs.size);
       } catch {
-        // non-fatal
+        // non-fatal — leave visibleCount as-is.
       }
     })();
     return () => { cancelled = true; };
   }, [setUnreadCount, conversations.length]);
 
-  // When the URL focuses a conversation in list mode (we're in reader instead),
-  // make sure the row is visible if the user navigates back.
+  // On inbox mount: pull any pending bundles from the hub so conversations
+  // whose pointer-list references not-yet-materialised FlowMessages don't
+  // 404 in the rendered rows. Fire-and-forget — the entity-update channel
+  // will refresh rows once the FMs land locally.
   useEffect(() => {
-    if (!focusedConversationId) return;
-    const el = rowRefs.current.get(focusedConversationId);
-    if (el) el.scrollIntoView({ block: 'nearest' });
-  }, [focusedConversationId, sorted.length]);
+    void fetchInboxFromHub().then(() => refetch()).catch(() => {});
+    // Run once per mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
 
   const handleRefresh = useCallback(async () => {
     setFetching(true);
@@ -328,37 +223,6 @@ export function InboxView() {
     void refetch();
   }, [refetch, setUnreadCount]);
 
-  const handleBackToList = useCallback(() => {
-    navigation.openDock(DockPointer.forInbox());
-  }, [navigation]);
-
-  // Mark the focused conversation's latest message as read on entering the reader.
-  useEffect(() => {
-    if (!focusedConversationId) return;
-    void (async () => {
-      try {
-        const result = await openInboxMessage(focusedConversationId);
-        if (result?.task_id) {
-          // no-op — we already navigated into the reader; this just primes the bundle.
-        }
-      } catch {
-        /* non-fatal */
-      }
-    })();
-  }, [focusedConversationId]);
-
-  // Reader mode
-  if (focusedConversationId) {
-    return (
-      <ConversationReader
-        conversationId={focusedConversationId}
-        focusedMessageId={focusedMessageId}
-        onBack={handleBackToList}
-        onArchive={handleArchive}
-        onToggleRead={handleToggleRead}
-      />
-    );
-  }
 
   // List mode
   return (
@@ -366,9 +230,11 @@ export function InboxView() {
       <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold">Inbox</span>
-          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-            {sorted.length}
-          </span>
+          {visibleCount !== null && visibleCount > 0 && (
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              {visibleCount}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1">
           <Button
@@ -376,7 +242,7 @@ export function InboxView() {
             size="sm"
             className="h-7 text-xs"
             onClick={() => void handleMarkAllRead()}
-            disabled={isLoading || sorted.length === 0}
+            disabled={isLoading || (visibleCount ?? 0) === 0}
           >
             Mark all read
           </Button>
@@ -385,7 +251,7 @@ export function InboxView() {
             size="sm"
             className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
             onClick={() => void handleArchiveAll()}
-            disabled={isLoading || sorted.length === 0}
+            disabled={isLoading || (visibleCount ?? 0) === 0}
           >
             Archive all
           </Button>
@@ -407,7 +273,7 @@ export function InboxView() {
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">Loading…</div>
         )}
 
-        {!isLoading && sorted.length === 0 && (
+        {!isLoading && (visibleCount ?? sorted.length) === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <span className="text-sm">No conversations</span>
             <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
@@ -422,7 +288,7 @@ export function InboxView() {
             <ConversationListRow
               key={conv.id ?? ''}
               conv={conv}
-              isFocused={!!focusedConversationId && conv.id === focusedConversationId}
+              isFocused={false}
               onArchive={handleArchive}
               onToggleRead={handleToggleRead}
               refSetter={(el) => {

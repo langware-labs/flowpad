@@ -68,6 +68,10 @@ router = APIRouter()
 
 DESKTOP_LABEL = "--user-type--.desktop"
 
+# Marks a user whose `name` was set manually via the UI — bootstrap will not
+# overwrite it from `git config user.name` on subsequent server starts.
+NAME_OVERRIDE_LABEL = "--user--.name-overridden"
+
 # Domain for default desktop user email
 DESKTOP_EMAIL_DOMAIN = "desktop.local"
 
@@ -638,7 +642,15 @@ async def get_or_create_local_user() -> User:
             logging.info(f"Desktop user {desktop_user.id} has no email, setting default: {default_email}")
             desktop_user.email = default_email
             await desktop_user.save()
-        logging.info(f"Desktop user already exists: {desktop_user.id} ({desktop_user.email})")
+        # Refresh name from git config user.name unless the user manually overrode it
+        manually_overridden = NAME_OVERRIDE_LABEL in (desktop_user.labels or [])
+        git_name = await asyncio.to_thread(get_name)
+        if not manually_overridden and git_name and desktop_user.name != git_name:
+            old_name = desktop_user.name
+            desktop_user.name = git_name
+            await desktop_user.save()
+            logging.info(f"Updated desktop user {desktop_user.id} name: {old_name} -> {git_name}")
+        logging.info(f"Desktop user already exists: {desktop_user.id} ({desktop_user.email}, {desktop_user.name})")
         return desktop_user
 
     # Also check by uname for backward compatibility with pre-migration entities
@@ -648,20 +660,23 @@ async def get_or_create_local_user() -> User:
         if DESKTOP_LABEL not in (existing_by_uname.labels or []):
             existing_by_uname.add_label(DESKTOP_LABEL)
             await existing_by_uname.save()
-        # Update email/name: always prefer git config user.name over auto-derived names
+        # Update email/name: prefer git config user.name unless manually overridden
         email = await asyncio.to_thread(get_email) or get_default_desktop_email()
         git_name = await asyncio.to_thread(get_name)
         name_from_email = email.split("@")[0].replace(".", " ").title()
-        needs_update = (
-            not existing_by_uname.email
-            or existing_by_uname.name == "Local Desktop User"
+        manually_overridden = NAME_OVERRIDE_LABEL in (existing_by_uname.labels or [])
+        needs_email_update = not existing_by_uname.email
+        needs_name_update = not manually_overridden and (
+            existing_by_uname.name == "Local Desktop User"
             or (git_name and existing_by_uname.name != git_name)
         )
-        if needs_update:
-            existing_by_uname.email = email
-            existing_by_uname.name = git_name or name_from_email
+        if needs_email_update or needs_name_update:
+            if needs_email_update:
+                existing_by_uname.email = email
+            if needs_name_update:
+                existing_by_uname.name = git_name or name_from_email
             await existing_by_uname.save()
-            logging.info(f"Updated @local user with email: {email}, name: {existing_by_uname.name}")
+            logging.info(f"Updated @local user with email: {existing_by_uname.email}, name: {existing_by_uname.name}")
         return existing_by_uname
 
     # Create new desktop user

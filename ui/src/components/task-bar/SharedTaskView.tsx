@@ -5,13 +5,11 @@
  * Replaces the sliding TaskDetailPanel for spec_id tasks.
  */
 
-import { useState } from 'react';
-import { ArrowLeft, MessageSquare } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { Spec, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ExpansionRequest } from '@sdk/FlowSync/query';
-import { ConversationView } from '@src/components/conversation';
-import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
+import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
 
 interface SharedTaskViewProps {
   task: Task;
@@ -19,8 +17,6 @@ interface SharedTaskViewProps {
 }
 
 export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
-  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
-
   const blobExpansion = new ExpansionRequest({ expand: ['blobs'] });
 
   const taskMeta = task.metadata as Record<string, unknown> | undefined;
@@ -74,28 +70,18 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
         </section>
 
         {/* Conversation */}
-        <section>
-          <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            <MessageSquare className="h-3.5 w-3.5" />
-            Conversation
-          </h3>
+        <section className="-mx-4 flex flex-col">
           {task.conversation_id ? (
-            <ConversationView
-              conversationId={task.conversation_id}
+            <ConversationPanel
               task={task}
+              conversationId={task.conversation_id}
               senderName={senderName}
-              onChooseProject={() => setProjectPickerOpen(true)}
             />
           ) : (
-            <p className="text-xs italic text-muted-foreground/60">No conversation yet.</p>
+            <p className="px-4 text-xs italic text-muted-foreground/60">No conversation yet.</p>
           )}
         </section>
       </div>
-
-      <OpenProjectComponent
-        open={projectPickerOpen}
-        onOpenChange={setProjectPickerOpen}
-      />
     </div>
   );
 }

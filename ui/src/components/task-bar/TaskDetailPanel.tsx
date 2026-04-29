@@ -3,7 +3,7 @@
  * Read-only display; editing happens in the full dock view.
  */
 
-import { ArrowLeft, ExternalLink, FileText, MessageSquare } from 'lucide-react';
+import { ArrowLeft, ExternalLink, FileText } from 'lucide-react';
 import { Spec, Task, TypeId, User } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ExpansionRequest } from '@sdk/FlowSync/query';
@@ -11,7 +11,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { getPriorityColor, PRIORITY_CONFIG } from './constants';
 import { getAnalysisPath, getTaskTypeLabel, openAnalysisReport } from './task-utils';
-import { ConversationView } from '@src/components/conversation/ConversationView';
+import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
 
 interface TaskDetailPanelProps {
   task: Task;
@@ -150,18 +150,11 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
 
             {/* Conversation thread */}
             {task.conversation_id && (
-              <div>
-                <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                  <MessageSquare className="h-3.5 w-3.5" />
-                  Conversation
-                </span>
-                <div className="mt-1">
-                  <ConversationView
-                    conversationId={task.conversation_id}
-                    task={task}
-                  />
-                </div>
-              </div>
+              <ConversationPanel
+                task={task}
+                conversationId={task.conversation_id}
+                variant="compact"
+              />
             )}
           </>
         )}
