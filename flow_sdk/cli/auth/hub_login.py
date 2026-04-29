@@ -72,7 +72,7 @@ def is_logged_in() -> bool:
     return bool(get_user())
 
 
-async def _validate_api_key_async(api_key: str) -> dict:
+async def validate_api_key_async(api_key: str) -> dict:
     """
     Async implementation of API key validation.
 
@@ -125,13 +125,13 @@ def validate_api_key(api_key: str) -> dict:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             # No running loop, safe to use asyncio.run()
-            user_data = asyncio.run(_validate_api_key_async(api_key))
+            user_data = asyncio.run(validate_api_key_async(api_key))
         else:
             # We're in an async context, can't use asyncio.run() or run_until_complete()
             # Create a new thread to run the async code
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(asyncio.run, _validate_api_key_async(api_key))
+                future = executor.submit(asyncio.run, validate_api_key_async(api_key))
                 user_data = future.result()
 
         return user_data
