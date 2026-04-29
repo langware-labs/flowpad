@@ -1,7 +1,8 @@
-import { useCallback, useMemo } from 'react';
-import { Conversation, TypeId } from '@sdk';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { Conversation, dataManager, FlowMessage, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
+import { openInboxMessage } from '@src/components/inbox-view/inbox-api';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { MessageComposer } from './MessageComposer';
 import { useApproveAndExecute } from './useApproveAndExecute';
@@ -26,6 +27,37 @@ export function ConversationView({
   );
 
   const pointers = conversation?.conversationMessageIds ?? [];
+
+  // Backfill missing FlowMessage entities
+  const requestedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (pointers.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      for (const ptr of pointers) {
+        if (cancelled) return;
+        if (requestedRef.current.has(ptr.message_id)) continue;
+        const local = await dataManager
+          .getByTypeId<FlowMessage>(new TypeId(FlowMessage.type, ptr.message_id))
+          .catch(() => null);
+        if (local) continue;
+        requestedRef.current.add(ptr.message_id);
+        try {
+          await openInboxMessage(ptr.message_id);
+        } catch {
+          // Drop from the set so a future render can retry once the user
+          // refreshes; avoid hammering the hub on transient failures.
+          requestedRef.current.delete(ptr.message_id);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // We deliberately key on the joined pointer list (not `pointers` identity)
+    // so brand-new replies trigger a fetch but identical re-renders don't.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pointers.map((p) => p.message_id).join(',')]);
 
   // Approve & Execute is task-bound. Pass an inert task to the hook when no
   // task is present so we can keep the call unconditional, then suppress the

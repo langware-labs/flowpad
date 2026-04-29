@@ -553,7 +553,9 @@ async def handle_inbox_open(fm_id: str) -> ApiResponse:
         except Exception:
             pass
 
-    if task_id and attachment_filename and not await Task.get_one({"id": task_id}):
+    needs_task_bundle = bool(task_id) and not await Task.get_one({"id": task_id})
+    needs_fm_bundle = local_fm is None
+    if attachment_filename and (needs_task_bundle or needs_fm_bundle):
         await _download_and_unpack_bundle(fm_id, attachment_filename)
 
     return ApiSuccessResponse(data={"task_id": task_id, "conversation_id": conv_id})

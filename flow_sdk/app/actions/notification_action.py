@@ -46,7 +46,7 @@ from flow_sdk.discovery.notify import send_resource_sync
 from flow_sdk.fs_store import SyncOperation
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse, ApiResponse
 from flow_sdk.utils.git import find_project_root, git_add_commit_push, git_current_branch, git_pull, git_remote_url, git_repo_full_name, repo_id
-from flow_sdk.utils.hub import hub_base_url, hub_get, hub_post, hub_put
+from flow_sdk.utils.hub import HubError, hub_base_url, hub_get, hub_post, hub_put
 from flow_sdk.builtin.bookmark import Bookmark
 
 logger = logging.getLogger(__name__)
@@ -197,12 +197,16 @@ async def _create_spec_and_task(
     task = await task.save(someone_typeid)
 
     # Register task on hub so the recipient can load it via the hub graph API.
-    await hub_post(BuiltinEntityType.TASK, {
-        "id": task.id,
-        "title": task_title,
-        "task_type": task.task_type,
-        "status": task.status,
-    })
+    # Best-effort: a hub failure here shouldn't abort the local share-task flow.
+    try:
+        await hub_post(BuiltinEntityType.TASK, {
+            "id": task.id,
+            "title": task_title,
+            "task_type": task.task_type,
+            "status": task.status,
+        })
+    except HubError as e:
+        logger.warning("[notification_action] hub task register failed (non-fatal): %s", e)
 
     return spec, task
 
@@ -409,31 +413,46 @@ async def _send_hub_notification(
     Returns (hub_flow_message_id, email_error).
     """
     hub_configured = bool(hub_base_url())
+    if not hub_configured:
+        return None, None
+
     flow_message_id = str(uuid.uuid4())
     task_meta = task.metadata or {}
-    hub_data = await hub_post(BuiltinEntityType.FLOW_MESSAGE, {
-        "flow_message_id": flow_message_id,
-        "recipient_email": recipient_email,
-        "sender_id": sender_id,
-        "sender_name": sender_name,
-        "task_id": task.id,
-        "task_title": task_title,
-        "spec_id": spec.id,
-        "spec_title": spec.title,
-        "spec_content": spec.content or None,
-        "spec_type": spec.spec_type,
-        "message": message,
-        "project_url": project_url,
-        "repo_id": repo_id_val,
-        "branch": branch,
-        "spec_file_path": spec_file_path,
-        "project_id": task_meta.get("project_id") or None,
-        "project_name": task_meta.get("project_name") or None,
-    }, action="send")
-    hub_flow_message_id: Optional[str] = (hub_data or {}).get("flow_message_id")
+    hub_flow_message_id: Optional[str] = None
     email_error: Optional[str] = None
-    if hub_configured and not hub_flow_message_id:
-        email_error = f"Email to {recipient_email} could not be sent — the notification service did not confirm delivery."
+    try:
+        hub_data = await hub_post(BuiltinEntityType.FLOW_MESSAGE, {
+            "flow_message_id": flow_message_id,
+            "recipient_email": recipient_email,
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+            "task_id": task.id,
+            "task_title": task_title,
+            "spec_id": spec.id,
+            "spec_title": spec.title,
+            "spec_content": spec.content or None,
+            "spec_type": spec.spec_type,
+            "message": message,
+            "project_url": project_url,
+            "repo_id": repo_id_val,
+            "branch": branch,
+            "spec_file_path": spec_file_path,
+            "project_id": task_meta.get("project_id") or None,
+            "project_name": task_meta.get("project_name") or None,
+        }, action="send")
+    except HubError as e:
+        # Hub returned non-2xx (e.g. 401 unauthorized) or transport error.
+        email_error = f"hub call failed ({e.status_code}): {e.reason}" if e.status_code else f"could not reach hub: {e.reason}"
+        return None, email_error
+
+    hub_flow_message_id = (hub_data or {}).get("flow_message_id")
+    # The hub returns 200 even when the SMTP send itself fails — in that case
+    # it sets data.email_error so we can surface the real reason.
+    hub_email_error = (hub_data or {}).get("email_error") if hub_data else None
+    if hub_email_error:
+        email_error = str(hub_email_error)
+    elif not hub_flow_message_id:
+        email_error = "the notification service did not confirm delivery."
 
     if hub_flow_message_id and fm:
         await _upload_bundle_to_hub(hub_flow_message_id, fm, task_title)
@@ -495,18 +514,29 @@ async def _save_failure_bookmark(
     recipient_email: Optional[str],
     notification_id: str,
     someone_typeid: str,
+    reason: Optional[str],
 ) -> None:
-    """Save a bookmark so the user sees the delivery failure in the activity panel."""
+    """Save a bookmark so the user sees the delivery failure in the activity panel.
+
+    `reason` is the specific failure cause reported by the hub (auth error,
+    SMTP rejection, etc.). It is included verbatim so the user can act on it.
+    """
+    detail = (reason or "").strip() or "no reason reported by the notification service."
+    content = (
+        f"Task was created but the email to {recipient_email} could not be sent. "
+        f"Reason: {detail}"
+    )
     failure_bookmark = Bookmark.model_validate({
         "bookmark_type": "notification_failed",
         "title": f"Email not sent: {task_title}",
-        "content": f"Task was created but the notification email to {recipient_email} could not be confirmed. You may want to follow up manually.",
+        "content": content,
         "source": "notification",
         "data": {
             "task_id": task_id,
             "recipient_email": recipient_email,
             "task_title": task_title,
             "notification_id": notification_id,
+            "reason": detail,
         },
         "status": "open",
     })
@@ -650,6 +680,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
             recipient_email=recipient_email,
             notification_id=notification.id,
             someone_typeid=someone_typeid,
+            reason=email_error,
         )
 
     base = hub_base_url()
