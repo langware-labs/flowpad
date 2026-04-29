@@ -21,7 +21,6 @@ import { DockPointer } from '@src/navigation';
 import { redirect } from 'react-router';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
 import { fetchShellsAndProcesses, loadShell, resolveDefaultTab, ShellLoadError } from './load-shell';
-import { emptyRecoverySkips, type ShellRecoverySkips } from './shell-recovery';
 
 function recoveryUrl(projectId: string, roomId: string | null): string {
   return roomId
@@ -45,10 +44,7 @@ async function tagShellWithRoom(shell: Shell, roomId: string): Promise<void> {
   }
 }
 
-export async function loadProjectRoute(
-  pointer: string | undefined,
-  _recoverySkips: ShellRecoverySkips = emptyRecoverySkips(),
-): Promise<void> {
+export async function loadProjectRoute(pointer: string | undefined): Promise<void> {
   const { projectId, roomId, tabTypeId } = DockPointer.parseProjectPointer(pointer);
   if (!projectId) {
     // No project id in URL — page renders its empty state; nothing to load.

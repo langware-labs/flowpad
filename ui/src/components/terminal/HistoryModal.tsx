@@ -1,5 +1,5 @@
 import { AgenticProcess, QueryFilter, QueryRequest } from '@sdk';
-import type { IDockPointer } from '@sdk';
+import type { IDockPointer, ClaudeSessionRecordData } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
@@ -8,6 +8,52 @@ import React, { useEffect, useMemo, useState } from 'react';
 
 const LIMIT = 10;
 const HISTORY_FETCH = 20;
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function basename(path: string | null | undefined): string {
+  if (!path) return '';
+  const trimmed = path.replace(/[\\/]+$/, '');
+  const idx = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
+function shortId(id: string): string {
+  return id.slice(0, 6);
+}
+
+/** Pick the best human-readable label from the available session/history fields. */
+function pickLabel(opts: {
+  sessionName?: string | null;
+  slug?: string | null;
+  display?: string | null;
+  lastUserMessage?: string | null;
+  cwd?: string | null;
+  sessionId: string;
+}): string {
+  const candidates = [opts.sessionName, opts.slug, opts.display, opts.lastUserMessage];
+  for (const c of candidates) {
+    const v = (c ?? '').trim();
+    if (v && !UUID_RE.test(v) && v !== opts.sessionId) {
+      return v.length > 80 ? `${v.slice(0, 80)}…` : v;
+    }
+  }
+  const proj = basename(opts.cwd);
+  return proj ? `${proj} · ${shortId(opts.sessionId)}` : shortId(opts.sessionId);
+}
+
+function buildSubline(opts: {
+  cwd?: string | null;
+  branch?: string | null;
+  messageCount?: number | null;
+}): string {
+  const parts: string[] = [];
+  const proj = basename(opts.cwd);
+  if (proj) parts.push(proj);
+  if (opts.branch) parts.push(opts.branch);
+  if (opts.messageCount && opts.messageCount > 0) parts.push(`${opts.messageCount} msgs`);
+  return parts.join(' · ');
+}
 
 function timeAgo(date: Date | string | number | undefined | null): string {
   if (!date) return '—';
@@ -25,8 +71,31 @@ function timeAgo(date: Date | string | number | undefined | null): string {
 export interface RecentItem {
   id: string;
   name: string;
+  subline: string;
   time: Date;
   dockPointer: IDockPointer;
+}
+
+interface SessionMeta {
+  sessionName?: string | null;
+  slug?: string | null;
+  display?: string | null;
+  lastUserMessage?: string | null;
+  cwd?: string | null;
+  branch?: string | null;
+  messageCount?: number | null;
+}
+
+function metaFromSession(s: ClaudeSessionRecordData | undefined): SessionMeta {
+  if (!s) return {};
+  return {
+    sessionName: s.name,
+    slug: s.slug,
+    lastUserMessage: s.last_user_message,
+    cwd: s.cwd,
+    branch: s.git_branch,
+    messageCount: s.message_count,
+  };
 }
 
 const processQuery = new QueryRequest({
@@ -49,6 +118,20 @@ export function useRecentSessions(enabled: boolean = true): RecentItem[] {
 
   const [historyItems, setHistoryItems] = useState<RecentItem[]>([]);
 
+  // Per-session metadata harvested from history entries (ships `_session` with `include=claude_session`).
+  const sessionMetaMap = useMemo(() => {
+    const m = new Map<string, SessionMeta>();
+    for (const entry of historyEntries) {
+      if (!entry.session_id) continue;
+      const fromSession = metaFromSession(entry._session);
+      m.set(entry.session_id, {
+        ...fromSession,
+        display: entry.display || entry.name || fromSession.display,
+      });
+    }
+    return m;
+  }, [historyEntries]);
+
   useEffect(() => {
     if (!enabled || historyEntries.length === 0) {
       setHistoryItems([]);
@@ -62,9 +145,11 @@ export function useRecentSessions(enabled: boolean = true): RecentItem[] {
         try {
           const p = await AgenticProcess.fromClaudeSession(entry.session_id);
           if (!cancelled && p) {
+            const meta = sessionMetaMap.get(entry.session_id) ?? {};
             resolved.push({
               id: entry.session_id,
-              name: entry.name || entry.display || entry.session_id,
+              name: pickLabel({ ...meta, sessionId: entry.session_id }),
+              subline: buildSubline(meta),
               time: new Date(entry.timestamp_ms),
               dockPointer: p.dockPointer,
             });
@@ -78,21 +163,23 @@ export function useRecentSessions(enabled: boolean = true): RecentItem[] {
     return () => {
       cancelled = true;
     };
-  }, [enabled, historyEntries]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [enabled, historyEntries, sessionMetaMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return useMemo(() => {
-    // Both sources use session_id as the canonical key so dedup works across types.
-    // Build a display-text lookup from history so process entries can fall back to prompt text.
-    const historyDisplayMap = new Map(historyItems.map((h) => [h.id, h.name]));
-
     const processItems: RecentItem[] = processes
       .filter((p) => p.session_id != null)
-      .map((p) => ({
-        id: p.session_id!,
-        name: p.name || historyDisplayMap.get(p.session_id!) || p.session_id!,
-        time: new Date(p.updated_date ?? 0),
-        dockPointer: p.dockPointer,
-      }));
+      .map((p) => {
+        const sid = p.session_id!;
+        const meta = sessionMetaMap.get(sid) ?? {};
+        const sessionName = (p.name && p.name !== sid ? p.name : null) ?? meta.sessionName ?? null;
+        return {
+          id: sid,
+          name: pickLabel({ ...meta, sessionName, sessionId: sid }),
+          subline: buildSubline(meta),
+          time: new Date(p.updated_date ?? 0),
+          dockPointer: p.dockPointer,
+        };
+      });
 
     // Merge, sort, then deduplicate by id (prefer the first/latest occurrence).
     const seen = new Set<string>();
@@ -104,7 +191,7 @@ export function useRecentSessions(enabled: boolean = true): RecentItem[] {
         return true;
       })
       .slice(0, LIMIT);
-  }, [processes, historyItems]);
+  }, [processes, historyItems, sessionMetaMap]);
 }
 
 interface HistoryModalProps {
@@ -133,7 +220,12 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                   onClick={() => onSelect(item)}
                 >
                   <ClaudeIcon className="h-3.5 w-3.5 shrink-0 text-orange-500" />
-                  <span className="min-w-0 flex-1 truncate font-medium">{item.name}</span>
+                  <span className="flex min-w-0 flex-1 flex-col overflow-hidden">
+                    <span className="truncate font-medium">{item.name}</span>
+                    {item.subline ? (
+                      <span className="truncate text-xs text-muted-foreground">{item.subline}</span>
+                    ) : null}
+                  </span>
                   <span className="ml-2 shrink-0 text-xs text-muted-foreground">{timeAgo(item.time)}</span>
                 </button>
               </li>

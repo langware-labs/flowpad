@@ -1219,6 +1219,31 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
+   * Re-attach this process to a Project derived from its `workdir`.
+   *
+   * Calls the `recover-project` backend action which walks 3 phases (existing
+   * exact-match → ~/.claude/projects materialization → fresh entity), repoints
+   * `self.project_id`, saves on the server, and returns the recovered Project.
+   * This method drops the recovered entity into the local `dataManager` cache
+   * and updates `this.project_id` (no save — backend already saved).
+   *
+   * Used by the route loader on a 404 from the project context fetch.
+   */
+  async recoverProject(): Promise<import('../entities/project').Project> {
+    const { Project } = await import('../entities/project');
+    const action = new ActionInfo('recover-project', AgenticProcess.type, this.id, 'POST');
+    const response = await dataManager.callAction<void, { project: unknown }>(action);
+    if (!response?.project) {
+      throw new Error('recover-project returned no project entity');
+    }
+    const project = dataManager.updateEntityFromJson<import('../entities/project').Project>(
+      response.project as Record<string, unknown>,
+    );
+    this.project_id = project.id;
+    return project;
+  }
+
+  /**
    * Permanent teardown: kill worker + delete shell entity.
    * Use for "close tab" — shell is gone after this call.
    */

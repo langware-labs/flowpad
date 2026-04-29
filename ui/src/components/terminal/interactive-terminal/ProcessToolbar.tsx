@@ -549,15 +549,25 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
   const startDisplay = useTimeDisplay(sessionStartTime);
   const lastDisplay = useTimeDisplay(lastMessageTime);
 
-  // Use ClaudeCliCommand for the display string
-  const parts = ['claude'];
-  if (permMode === 'bypassPermissions') parts.push('--dangerously-skip-permissions');
-  if (chrome) parts.push('--chrome');
-  if (debug) parts.push('--debug');
-  if (worktree) parts.push('--worktree');
-  parts.push('--session-id', process.session_id || '?');
-  if (model && model !== '(default)') parts.push('--model', model);
-  const command = parts.join(' ');
+  // Build a copy-paste-into-terminal-and-run command. The session is already
+  // running, so the right flag is `--resume <uuid>` (not `--session-id`, which
+  // is for first-time session creation with a chosen UUID — and would error if
+  // the session already exists). Prefix with `cd <workdir>` so the command is
+  // self-contained.
+  const claudeParts = ['claude'];
+  if (permMode === 'bypassPermissions') claudeParts.push('--dangerously-skip-permissions');
+  if (chrome) claudeParts.push('--chrome');
+  if (debug) claudeParts.push('--debug');
+  if (worktree) claudeParts.push('--worktree');
+  claudeParts.push('--resume', process.session_id || '?');
+  if (model && model !== '(default)') claudeParts.push('--model', model);
+  const claudeCmd = claudeParts.join(' ');
+  // Single-quote the path so spaces/metachars are safe; escape any embedded ' as '\''.
+  const quoted = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
+  const command =
+    workdir && workdir !== '(not set)'
+      ? `cd ${quoted(workdir)} && ${claudeCmd}`
+      : claudeCmd;
 
   const rows: [string, string][] = [
     ['Process ID', process.id || 'none'],

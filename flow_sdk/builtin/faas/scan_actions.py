@@ -423,6 +423,7 @@ class ScanActionsMixin:
 
             # Resolve workdir + project + project_encoded_name from ClaudeSessionRecord
             project_encoded_name = None
+            session_name: str | None = None
             try:
                 from flow_sdk.builtin.project import Project
                 from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
@@ -432,6 +433,9 @@ class ScanActionsMixin:
                     if session_rec.cwd and not workdir:
                         workdir = session_rec.cwd
                     project_encoded_name = getattr(session_rec, "project_encoded_name", None)
+                    rec_name = getattr(session_rec, "name", None) or ""
+                    if rec_name and rec_name != session_id:
+                        session_name = rec_name
                 if workdir and not project_id:
                     projects = await Project.get_all()
                     best, best_len = None, 0
@@ -459,6 +463,7 @@ class ScanActionsMixin:
                 context_data=context_data,
                 project_id=project_id or None,
                 project_encoded_name=project_encoded_name or None,
+                **({"name": session_name} if session_name else {}),
             )
             await process.save(owner=owner)
 

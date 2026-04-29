@@ -34,6 +34,7 @@ export class PtySyncSession {
   private readonly _scrollbackLines: number;
   private readonly _seed: number;
   private _segments: PtySegment[] = [];
+  private _notifyScheduled = false;
 
   constructor(config?: PtySyncConfig) {
     this._scrollbackLines = config?.scrollbackLines ?? 10000;
@@ -294,9 +295,35 @@ export class PtySyncSession {
   // ── Private ───────────────────────────────────────────────────────────
 
   private _bump(): void {
+    // Snapshot and version update synchronously so callers reading
+    // getSnapshot() in the same tick see fresh state.
     this._version++;
     this._snapshot = this._buildSnapshot();
-    this._notify();
+
+    // Coalesce listener notifications to one-per-frame. PTY chunk replay can
+    // call _bump() many times in rapid succession (each chunk + each xterm
+    // flush callback); without coalescing, every bump fires every
+    // useSyncExternalStore subscriber synchronously, producing a render storm
+    // that trips React's nested-update guard via the radix Slot ref-churn
+    // pattern. With rAF coalescing the storm collapses to ≤60 renders/sec
+    // regardless of chunk rate.
+    //
+    // Underlying radix bug (open):
+    //   https://github.com/radix-ui/primitives/issues/3799
+    //   https://github.com/radix-ui/primitives/issues/3675
+    //   https://github.com/radix-ui/primitives/pull/3835 (proposed memo fix, not merged)
+    if (this._notifyScheduled) return;
+    this._notifyScheduled = true;
+    const fire = () => {
+      this._notifyScheduled = false;
+      this._notify();
+    };
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(fire);
+    } else {
+      // Non-DOM environments (tests, SSR): fall back to microtask.
+      queueMicrotask(fire);
+    }
   }
 
   private _buildSnapshot(): PtySyncSnapshot {
