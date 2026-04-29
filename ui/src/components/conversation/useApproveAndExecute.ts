@@ -110,14 +110,14 @@ export function useApproveAndExecute({ task }: UseApproveAndExecuteOptions): Use
     }
     const sharedProcessId = taskMeta.shared_process_id as string | undefined;
 
-    // Subsequent calls — reuse the cached fork if alive, otherwise resume it.
+    // Subsequent Approve & Execute on the same task. Always re-resolve the
+    // AgenticProcess from the DB and re-check liveness — the in-memory cache
+    // held by the conversation tab can be stale, and the cached PTY client
+    // can be silently dropped while the user was in the shell tab. The bug
+    // we hit ("second approve just resumes the session without running the
+    // new prompt") was the fast-path executeInstruction firing into a closed
+    // PTY: navigation succeeded, the write went nowhere.
     if (sharedProcessId) {
-      const cached = taskApprovalCache.get(taskId);
-      if (cached) {
-        await cached.executeInstruction(promptText, { sync: false });
-        navigation.openInBrowserTab(cached.dockPointer);
-        return;
-      }
       const existing = await dataManager
         .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, sharedProcessId))
         .catch(() => null);
@@ -126,17 +126,30 @@ export function useApproveAndExecute({ task }: UseApproveAndExecuteOptions): Use
           && existing.status !== ProcessStatus.FAILED
           && existing.status !== ProcessStatus.STOPPING;
         if (isAlive) {
+          // Reattach + inject in one call. start({ instruction }) handles both
+          // "PTY still connected" and "PTY client was dropped between turns",
+          // unlike executeInstruction which silently no-ops on a closed PTY.
           await existing.start({ instruction: promptText });
           taskApprovalCache.set(taskId, existing);
           navigation.openInBrowserTab(existing.dockPointer);
           return;
         }
         if (existing.session_id) {
+          // Worker stopped after the previous turn — spawn-resume the same
+          // session (no forkSession) and bake the new prompt into the first
+          // message of the resumed worker.
           const { process: resumed } = await AgenticProcess.spawn(
             { workdir, resumeSessionId: existing.session_id },
             { instruction: promptText, visible: true },
           );
           taskApprovalCache.set(taskId, resumed);
+          // spawn returns a new AgenticProcess entity — track it so subsequent
+          // approves resolve the right id from task metadata.
+          const t = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId));
+          if (t) {
+            t.metadata = { ...(t.metadata ?? {}), shared_process_id: resumed.id };
+            await t.save();
+          }
           navigation.openInBrowserTab(resumed.dockPointer);
           return;
         }
