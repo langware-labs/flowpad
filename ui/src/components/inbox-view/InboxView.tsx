@@ -53,7 +53,7 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, refSett
   const pointers = conv.conversationMessageIds ?? [];
   const latest = pointers[pointers.length - 1];
   const latestTypeId = useMemo(
-    () => (latest ? new TypeId(FlowMessage.type, latest.message_id) : null),
+    () => (latest?.message_id ? new TypeId(FlowMessage.type, latest.message_id) : null),
     [latest?.message_id],
   );
   const { data: latestMessage } = useEntity<FlowMessage>(latestTypeId);

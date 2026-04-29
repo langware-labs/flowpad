@@ -165,9 +165,9 @@ export function useProjectMappingGate(task: ITask | null | undefined) {
         return;
       }
       continuationRef.current = continuation;
-      setOpen(true);
+      if (mappingLoaded) setOpen(true);
     },
-    [hasMapping],
+    [hasMapping, mappingLoaded],
   );
 
   // Watch for the mapping flipping from unset → set while a continuation is
@@ -183,6 +183,16 @@ export function useProjectMappingGate(task: ITask | null | undefined) {
     }, 0);
     return () => window.clearTimeout(handle);
   }, [hasMapping]);
+
+  // If the mapping table finishes loading and we *still* have no mapping
+  // for this remote project, only then commit to the picker — the user has
+  // a pending action that genuinely needs a fresh choice.
+  useEffect(() => {
+    if (!mappingLoaded) return;
+    if (hasMapping) return;
+    if (!continuationRef.current) return;
+    setOpen(true);
+  }, [mappingLoaded, hasMapping]);
 
   const dialogProps = {
     open,
