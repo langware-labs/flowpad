@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from flow_sdk.api.api_types.identifier import is_valid_identifier
 from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.actions.action_registry import is_action
+from flow_sdk.config import API_PREFIX
 from flow_sdk.schema.entity_factory import type_registry
 
 def is_entity_type(segment):
@@ -35,7 +36,7 @@ def strip_host_from_url(url: str) -> str:
 class APIRequest(BaseModel):
     _raw_api_path: Optional[str] = None
 
-    api_prefix: ClassVar[str] = "/api/v1"
+    api_prefix: ClassVar[str] = API_PREFIX
     graph_prefix: ClassVar[str] = "/graph"
     method: Optional[str] = "GET"
     scope: List[TypeId] = []
