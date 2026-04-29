@@ -23,7 +23,7 @@ function fileAttachmentUrl(messageId: string, vfsPath: string): string {
 interface FlowMessageBubbleProps {
   messageId: string;
   timestamp: string;
-  task: ITask;
+  task?: ITask | null;
   onApproveAndExecute?: (messageId: string, attachmentIndex: number) => void;
 }
 
@@ -57,10 +57,16 @@ export function FlowMessageBubble({
   const isCurrentUser = !!(fm.sender_id && localUser?.id && fm.sender_id === localUser.id);
   const displayName = overrideName ?? (fm.sender_name || (isCurrentUser ? (localUser?.name || 'You') : 'Unknown'));
 
-  const role =
-    fm.sender_id && task.shared_by_id && fm.sender_id === task.shared_by_id
+  // When task is present, role tracks the original task initiator (sender) vs
+  // recipient. For project-scoped conversations (no task), use the local user
+  // as the "sender" perspective.
+  const role: 'sender' | 'recipient' = task
+    ? fm.sender_id && task.shared_by_id && fm.sender_id === task.shared_by_id
       ? 'sender'
-      : 'recipient';
+      : 'recipient'
+    : isCurrentUser
+    ? 'sender'
+    : 'recipient';
 
   const message: ConversationMessage = {
     role,

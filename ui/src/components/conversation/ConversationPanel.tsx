@@ -7,7 +7,8 @@ import { SpecSidePane } from './SpecSidePane';
 import { useProjectMappingGate } from './useProjectMappingGate';
 
 interface ConversationPanelProps {
-  task: ITask;
+  /** Optional. Project-scoped conversations have no task. */
+  task?: ITask | null;
   conversationId: string;
   /** Optional sender label for messages whose `sender_name` field is missing. */
   senderName?: string;
@@ -44,7 +45,10 @@ export function ConversationPanel({
   className,
 }: ConversationPanelProps) {
   const [showSpec, setShowSpec] = useState(false);
-  const { ensureMapped, dialogProps: mappingDialogProps } = useProjectMappingGate(task);
+  // Project-scoped conversations skip the project-mapping gate entirely.
+  const mappingGate = useProjectMappingGate(task ?? undefined);
+  const ensureMapped = task ? mappingGate.ensureMapped : undefined;
+  const mappingDialogProps = mappingGate.dialogProps;
 
   const headerWrapper =
     variant === 'compact'
@@ -57,13 +61,15 @@ export function ConversationPanel({
       {(headerLabel !== null || ensureMapped) && (
         <div className={headerWrapper}>
           {headerLabel !== null && <span>{headerLabel}</span>}
-          <ConversationToolbar
-            task={task}
-            conversationId={conversationId}
-            senderName={senderName}
-            onShowTask={() => setShowSpec(true)}
-            ensureMapped={ensureMapped}
-          />
+          {task && (
+            <ConversationToolbar
+              task={task}
+              conversationId={conversationId}
+              senderName={senderName}
+              onShowTask={() => setShowSpec(true)}
+              ensureMapped={ensureMapped}
+            />
+          )}
         </div>
       )}
       <div className={bodyWrapper}>
@@ -75,12 +81,14 @@ export function ConversationPanel({
         />
       </div>
 
-      <SpecSidePane
-        open={showSpec}
-        onClose={() => setShowSpec(false)}
-        specId={task.spec_id}
-      />
-      <ProjectMappingDialog {...mappingDialogProps} />
+      {task && (
+        <SpecSidePane
+          open={showSpec}
+          onClose={() => setShowSpec(false)}
+          specId={task.spec_id}
+        />
+      )}
+      {task && <ProjectMappingDialog {...mappingDialogProps} />}
     </div>
   );
 }

@@ -31,8 +31,8 @@ import { useToast } from '@src/hooks/use-toast';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityProgressModal } from '@src/components/search-index/ActivityProgressModal';
 import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
-import { JoinRoomDialog } from '@src/components/join-room-dialog/JoinRoomDialog';
-import { JoinExistingRoomDialog } from '@src/components/join-room-dialog/JoinExistingRoomDialog';
+import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
+import { JoinConversationDialog } from '@src/components/join-room-dialog/JoinConversationDialog';
 import { useLoginRequired } from '@src/hooks/use-login-required';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { Button } from '@src/components/ui/button';
@@ -207,16 +207,16 @@ export function HomeLanding() {
   const firstName = user?.name?.split(' ')[0] || 'there';
 
   const { checkLoginAndProceed, requiresLogin, showLoginDialog, closeLoginDialog } = useLoginRequired();
-  const [showJoinRoom, setShowJoinRoom] = useState(false);
-  const [showJoinExisting, setShowJoinExisting] = useState(false);
+  const [showNewConversation, setShowNewConversation] = useState(false);
+  const [showJoinConversation, setShowJoinConversation] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState('');
-  const handleStartCollaborationRoom = () => {
+  const handleStartConversation = () => {
     if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
-    setShowJoinRoom(true);
+    setShowNewConversation(true);
   };
-  const handleJoinRoom = () => {
+  const handleJoinConversation = () => {
     if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
-    setShowJoinExisting(true);
+    setShowJoinConversation(true);
   };
 
   // Inbox state
@@ -269,59 +269,6 @@ export function HomeLanding() {
   // Get paths from desktop_info
   const paths = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths, []);
 
-  const handleStartCollaboration = useCallback(
-    async (hostName: string, prompt: string, roomName?: string) => {
-      if (!currentProject?.typeId) {
-        toast({
-          title: 'Project Required',
-          description: 'Please select or create a project first.',
-          variant: 'destructive',
-        });
-        return;
-      }
-      const trimmedPrompt = prompt.trim();
-      const finalName = roomName?.trim() ? roomName.trim() : undefined;
-      try {
-        const { CollaborationRoom, TypeId } = await import('@sdk');
-        const projectIdStr = currentProject.typeId.id;
-        if (trimmedPrompt) {
-          const workdir =
-            currentProject.fs_storage_mount_path || currentProject.name || paths?.workspace || undefined;
-          const agenticProcess = await claudeSessionManager.createAndStartSession(
-            { workdir },
-            { instruction: trimmedPrompt },
-          );
-          const room = await agenticProcess.createCollaborationRoom(hostName, {
-            name: finalName ?? null,
-          });
-          setDraftPrompt('');
-          navigation.openDock(
-            DockPointer.forProject(projectIdStr, {
-              roomId: room.id,
-              tab: new TypeId('agentic_process', agenticProcess.id),
-            }),
-          );
-        } else {
-          const room = await CollaborationRoom.create({
-            projectId: projectIdStr,
-            hostName,
-            name: finalName ?? null,
-          });
-          navigation.openDock(
-            DockPointer.forProject(projectIdStr, { roomId: room.id }),
-          );
-        }
-      } catch (error) {
-        console.error('[HomeLanding] Failed to start collaboration room:', error);
-        toast({
-          title: 'Could not start room',
-          description: String((error as Error).message ?? error),
-          variant: 'destructive',
-        });
-      }
-    },
-    [currentProject, navigation, paths?.workspace, toast],
-  );
   const apiUrl = useMemo(() => {
     // Derive API URL from the current window location or use default
     const port = '9007';
@@ -668,16 +615,16 @@ export function HomeLanding() {
                   type="button"
                   variant="outline"
                   className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white transition-colors shadow-sm"
-                  onClick={handleJoinRoom}
+                  onClick={handleJoinConversation}
                 >
-                  Join room
+                  Join conversation
                 </Button>
                 <Button
                   type="button"
                   className="bg-green-600 text-white hover:bg-green-700 transition-colors shadow-sm"
-                  onClick={handleStartCollaborationRoom}
+                  onClick={handleStartConversation}
                 >
-                  Start collaboration room
+                  Start conversation
                 </Button>
               </div>
             </div>
@@ -808,18 +755,13 @@ export function HomeLanding() {
         }}
       />
 
-      <JoinRoomDialog
-        open={showJoinRoom}
-        onClose={() => setShowJoinRoom(false)}
-        hostName={user?.name ?? undefined}
-        draftPrompt={draftPrompt}
-        onStart={(hostName, prompt, roomName) =>
-          handleStartCollaboration(hostName, prompt, roomName)
-        }
+      <NewConversationDialog
+        open={showNewConversation}
+        onClose={() => setShowNewConversation(false)}
       />
-      <JoinExistingRoomDialog
-        open={showJoinExisting}
-        onClose={() => setShowJoinExisting(false)}
+      <JoinConversationDialog
+        open={showJoinConversation}
+        onClose={() => setShowJoinConversation(false)}
         defaultName={user?.name ?? undefined}
       />
       <LoginDialog open={showLoginDialog} onOpenChange={closeLoginDialog} />
