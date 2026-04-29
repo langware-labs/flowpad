@@ -1,15 +1,9 @@
 import { useState, type ReactNode } from 'react';
 import { Pencil } from 'lucide-react';
-import {
-  AgenticProcess,
-  dataManager,
-  type FlowMessage,
-  TypeId,
-} from '@sdk';
+import type { FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import { AttachmentType } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { MessageActions } from './MessageActions';
 import { PromptApprovalRow } from './PromptApprovalRow';
 import { useLocalUser } from './useLocalUser';
@@ -57,12 +51,14 @@ export function MessageBubble({
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const { localUser } = useLocalUser();
-  const { navigation } = useDockNavigation();
 
   const isFromOther = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id !== localUser.id);
   // Show the prompt row for ANY message that has a PROMPT attachment so the
-  // sender sees the same preview the receiver does. The Approve & Execute
-  // button is only wired when it's the other user's still-unapproved prompt.
+  // sender sees the same preview the receiver does. Approve & Execute is
+  // wired only when it's the other user's still-unapproved prompt — once
+  // every PROMPT on the message is approved, the button disappears (each
+  // approve flips approved_by; backend uses approve_all=true so all of a
+  // message's prompts flip together).
   const promptAttachments = (flowMessage?.attachment ?? []).filter(
     (a) => a.attachment_type === AttachmentType.PROMPT,
   );
@@ -70,27 +66,8 @@ export function MessageBubble({
     (a) => a.attachment_type === AttachmentType.PROMPT && !a.approved_by,
   );
   const hasUnapprovedPrompt = firstUnapprovedPromptIdx >= 0;
-  const hasApprovedPrompt = promptAttachments.some((a) => !!a.approved_by);
   const showPromptRow = promptAttachments.length > 0;
   const canApprovePrompt = isFromOther && hasUnapprovedPrompt && !!onApproveAndExecute;
-
-  const sharedProcessId = (task?.metadata as Record<string, unknown> | undefined)?.shared_process_id as
-    | string
-    | undefined;
-  const canOpenShared = hasApprovedPrompt && !!sharedProcessId;
-
-  const handleOpenShared = async () => {
-    if (!sharedProcessId) return;
-    const proc = await dataManager
-      .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, sharedProcessId))
-      .catch(() => null);
-    if (!proc) return;
-    // Open in the secondary "flowpad-shell" browser tab — keeps the
-    // conversation view in place and groups all conversation-spawned Claude
-    // sessions (Open Claude Code, Approve & Execute, Open Shared Terminal)
-    // into the same shared terminal tab.
-    navigation.openInBrowserTab(proc.dockPointer);
-  };
 
   const startEdit = () => {
     setEditValue(senderName);
@@ -156,7 +133,6 @@ export function MessageBubble({
             attachments={promptAttachments}
             messageId={flowMessageId}
             onApprove={canApprovePrompt ? () => onApproveAndExecute!(firstUnapprovedPromptIdx) : undefined}
-            onOpenShared={canOpenShared ? () => void handleOpenShared() : undefined}
           />
         )}
         {footer}

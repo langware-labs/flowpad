@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Conversation, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
@@ -26,26 +26,6 @@ export function ConversationView({
   );
 
   const pointers = conversation?.conversationMessageIds ?? [];
-
-  const [approvedSet, setApprovedSet] = useState<Set<string>>(() => new Set());
-  const reportApproved = useCallback((messageId: string, hasApproved: boolean) => {
-    setApprovedSet((prev) => {
-      const isIn = prev.has(messageId);
-      if (hasApproved && isIn) return prev;
-      if (!hasApproved && !isIn) return prev;
-      const next = new Set(prev);
-      if (hasApproved) next.add(messageId);
-      else next.delete(messageId);
-      return next;
-    });
-  }, []);
-
-  const lastApprovedMessageId = useMemo(() => {
-    for (let i = pointers.length - 1; i >= 0; i -= 1) {
-      if (approvedSet.has(pointers[i].message_id)) return pointers[i].message_id;
-    }
-    return null;
-  }, [pointers, approvedSet]);
 
   // Approve & Execute is task-bound. Pass an inert task to the hook when no
   // task is present so we can keep the call unconditional, then suppress the
@@ -78,8 +58,6 @@ export function ConversationView({
               messageId={ptr.message_id}
               timestamp={ptr.timestamp}
               task={task}
-              isLastApprovedPrompt={ptr.message_id === lastApprovedMessageId}
-              onApprovedPromptChange={reportApproved}
               onApproveAndExecute={task ? runApprove : undefined}
             />
           ))}

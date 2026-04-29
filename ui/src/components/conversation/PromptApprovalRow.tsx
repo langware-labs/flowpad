@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Paperclip, Pencil, Sparkles } from 'lucide-react';
 import type { Attachment } from '@sdk/entities/flow-message';
-import { ActionInfo } from '@sdk/models/ActionInfo';
 import {
   Dialog,
   DialogContent,
@@ -9,17 +8,15 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@src/components/ui/dialog';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
+import { fileAttachmentUrl } from './attachment-url';
 
 interface PromptApprovalRowProps {
   /** Every PROMPT attachment on the message — the row splits inline text from prompt files. */
   attachments: Attachment[];
   /** FlowMessage id — required so prompt-file chips can build a download URL. Omit for the composer preview where files aren't uploaded yet. */
   messageId?: string;
-  /** Show the Approve & Execute CTA (initiator, prompt unapproved). */
+  /** Show the Approve & Execute CTA (initiator, prompt unapproved). Disappears once approved. */
   onApprove?: () => void;
-  /** Show "Open Shared Terminal" CTA (prompt already approved + shared_process_id exists). */
-  onOpenShared?: () => void;
   /** Show an Edit CTA (sender, message not sent yet — composer preview). */
   onEdit?: () => void;
 }
@@ -43,17 +40,10 @@ function truncateMiddle(name: string, limit: number): string {
   return name.slice(0, limit - 1) + '…';
 }
 
-function fileAttachmentUrl(messageId: string, vfsPath: string): string {
-  const action = new ActionInfo('fs', 'flow_message', messageId, 'GET');
-  action.subpath = `download/${vfsPath}`;
-  return action.fullActionUrl;
-}
-
 export function PromptApprovalRow({
   attachments,
   messageId,
   onApprove,
-  onOpenShared,
   onEdit,
 }: PromptApprovalRowProps) {
   const inlineAttachments = useMemo(
@@ -178,17 +168,7 @@ export function PromptApprovalRow({
           Approve &amp; Execute
         </button>
       )}
-      {!onApprove && onOpenShared && (
-        <button
-          type="button"
-          onClick={onOpenShared}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-orange-500/40 bg-orange-500/10 px-2.5 py-1 text-xs font-medium text-orange-700 transition-colors hover:bg-orange-500/20 dark:text-orange-300"
-        >
-          <ClaudeIcon className="h-3 w-3" />
-          Open Shared Terminal
-        </button>
-      )}
-      {!onApprove && !onOpenShared && onEdit && (
+      {!onApprove && onEdit && (
         <button
           type="button"
           onClick={onEdit}
