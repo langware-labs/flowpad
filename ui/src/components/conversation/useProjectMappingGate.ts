@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { dataManager, Project, TypeId } from '@sdk';
 import type { ITask } from '@sdk/entities/task';
-import { applyProjectToTask } from './apply-project-choice';
+import { useContext } from '@src/hooks/useContext';
+import { applyProjectToTask, persistRemoteToLocalMapping } from './apply-project-choice';
 import { useProjectMapping } from './useProjectMapping';
 
 /**
@@ -28,9 +29,11 @@ import { useProjectMapping } from './useProjectMapping';
  */
 export function useProjectMappingGate(task: ITask | null | undefined) {
   const { mapping, loaded: mappingLoaded } = useProjectMapping();
+  const ctx = useContext();
   const [open, setOpen] = useState(false);
   const continuationRef = useRef<(() => void | Promise<void>) | null>(null);
   const autoApplyAttemptedRef = useRef<Set<string>>(new Set());
+  const autoMapAttemptedRef = useRef<Set<string>>(new Set());
 
   const taskMeta = (task?.metadata as Record<string, unknown> | undefined) ?? {};
   const remoteProjectId = task?.remote_project_id ?? undefined;
@@ -95,6 +98,65 @@ export function useProjectMappingGate(task: ITask | null | undefined) {
       }
     })();
   }, [projectRoot, mappingLoaded, remoteProjectId, mappedLocalId, taskId, mapping]);
+
+  // Safety net: regardless of how the user picked the active project (toolbar
+  // gate, footer "Select Project" pill, project switcher in any other view),
+  // when the user *changes* the active project while this task is in view and
+  // the task is still unmapped, persist the mapping and stamp the task. We
+  // only react to a change (initialActiveRef captured on mount) — the footer's
+  // pre-existing default project must not be auto-adopted as the mapping for
+  // an unrelated remote_project_id.
+  const activeProjectId = ctx.project?.id ?? null;
+  const initialActiveRef = useRef<{ taskId: string; activeProjectId: string | null } | null>(null);
+  useEffect(() => {
+    if (!mappingLoaded) return;
+    if (!remoteProjectId || !taskId) return;
+    // Capture the active project at the moment this task first becomes
+    // observable to the gate. Any subsequent change (or change-from-null) is
+    // treated as a user pick.
+    if (!initialActiveRef.current || initialActiveRef.current.taskId !== taskId) {
+      initialActiveRef.current = { taskId, activeProjectId };
+      return;
+    }
+    if (initialActiveRef.current.activeProjectId === activeProjectId) return;
+    if (!activeProjectId) return;
+    // Already mapped to this project — nothing to persist.
+    if (mapping[remoteProjectId] === activeProjectId) return;
+    const key = `${taskId}:${remoteProjectId}:${activeProjectId}`;
+    if (autoMapAttemptedRef.current.has(key)) return;
+    autoMapAttemptedRef.current.add(key);
+
+    void (async () => {
+      // eslint-disable-next-line no-console
+      console.log('[project-mapping] auto-persist firing', {
+        taskId,
+        remoteProjectId,
+        activeProjectId,
+        existingMapping: mapping[remoteProjectId] ?? null,
+      });
+      try {
+        const project = await dataManager
+          .getByTypeId<Project>(new TypeId(Project.type, activeProjectId))
+          .catch(() => null);
+        if (!project) {
+          // eslint-disable-next-line no-console
+          console.warn('[project-mapping] auto-persist: active project not found', activeProjectId);
+          return;
+        }
+        await applyProjectToTask(taskId, project);
+        await persistRemoteToLocalMapping(remoteProjectId, project.id ?? null);
+        // eslint-disable-next-line no-console
+        console.log('[project-mapping] auto-persist: stamped + mapped', {
+          taskId,
+          remoteProjectId,
+          localProjectId: project.id,
+        });
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('[project-mapping] auto-persist failed', err);
+      }
+    })();
+  }, [mappingLoaded, remoteProjectId, taskId, activeProjectId, mapping]);
 
   const ensureMapped = useCallback(
     (continuation: () => void | Promise<void>) => {
