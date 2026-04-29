@@ -1,5 +1,5 @@
 import { Conversation, dataManager, Project, Task, TypeId } from '@sdk';
-import { ActionInfo } from '@sdk/models/ActionInfo';
+import { writeProjectMapping } from './useProjectMapping';
 
 /**
  * Stamp a chosen Project onto a Task and its Conversation. Idempotent —
@@ -57,9 +57,7 @@ export async function persistRemoteToLocalMapping(
 ): Promise<void> {
   if (!remoteProjectId || !localProjectId) return;
   try {
-    const action = new ActionInfo('set-project-mapping', null, null, 'POST');
-    action.bodyParameters = { remote_project_id: remoteProjectId, local_project_id: localProjectId };
-    await dataManager.callAction(action);
+    await writeProjectMapping(remoteProjectId, localProjectId);
   } catch {
     // non-fatal — the user can re-pick later if it didn't stick.
   }
