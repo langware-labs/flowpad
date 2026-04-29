@@ -7,6 +7,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
+import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
 import {
   fetchInboxFromHub,
   updateMessage,
@@ -126,17 +127,14 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, refSett
   );
 }
 
-// ── Reader: a single thread, oldest-first ───────────────────────────────────
+// ── Reader: a single thread rendered with the shared ConversationPanel ─────
 
 interface ConversationReaderProps {
   conversationId: string;
-  focusedMessageId: string | null;
   onBack: () => void;
-  onArchive: (messageId: string) => void;
-  onToggleRead: (messageId: string, isRead: boolean) => void;
 }
 
-function ConversationReader({ conversationId, focusedMessageId, onBack, onArchive, onToggleRead }: ConversationReaderProps) {
+function ConversationReader({ conversationId, onBack }: ConversationReaderProps) {
   const convTypeId = useMemo(() => new TypeId(Conversation.type, conversationId), [conversationId]);
   const { data: conv } = useEntity<Conversation>(convTypeId);
   const taskTypeId = useMemo(
@@ -150,8 +148,12 @@ function ConversationReader({ conversationId, focusedMessageId, onBack, onArchiv
   );
   const { data: project } = useEntity<Project>(projectTypeId);
 
-  const pointers = conv?.conversationMessageIds ?? [];
   const subject = task?.title?.trim() || 'Conversation';
+  const senderName = (task?.metadata as Record<string, unknown> | undefined)?.sender_name as
+    | string
+    | undefined
+    || task?.shared_by_id
+    || undefined;
 
   return (
     <div className="flex h-full flex-col">
@@ -172,78 +174,17 @@ function ConversationReader({ conversationId, focusedMessageId, onBack, onArchiv
         )}
       </div>
       <div className="flex-1 overflow-y-auto">
-        {pointers.length === 0 ? (
+        {!task ? (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
-            No messages
+            Loading…
           </div>
         ) : (
-          pointers.map((p) => (
-            <ReaderMessage
-              key={p.message_id}
-              messageId={p.message_id}
-              isFocused={focusedMessageId === p.message_id}
-              onArchive={onArchive}
-              onToggleRead={onToggleRead}
-            />
-          ))
+          <ConversationPanel
+            task={task}
+            conversationId={conversationId}
+            senderName={senderName}
+          />
         )}
-      </div>
-    </div>
-  );
-}
-
-interface ReaderMessageProps {
-  messageId: string;
-  isFocused: boolean;
-  onArchive: (messageId: string) => void;
-  onToggleRead: (messageId: string, isRead: boolean) => void;
-}
-
-function ReaderMessage({ messageId, isFocused, onArchive, onToggleRead }: ReaderMessageProps) {
-  const typeId = useMemo(() => new TypeId(FlowMessage.type, messageId), [messageId]);
-  const { data: fm } = useEntity<FlowMessage>(typeId);
-  if (!fm || fm.is_archived) return null;
-
-  const sender = fm.sender_name?.trim() || 'Unknown';
-  const time = formatGmailTime(fm.created_date);
-  const ago = formatTimeAgo(fm.created_date);
-  const isUnread = !fm.is_read;
-
-  return (
-    <div
-      data-testid="reader-message"
-      data-message-id={fm.id}
-      data-focused={isFocused ? 'true' : 'false'}
-      className={`group border-b border-border/40 px-4 py-3 ${isFocused ? 'bg-primary/5' : ''}`}
-    >
-      <div className="flex items-baseline justify-between gap-2">
-        <span className={`text-sm ${isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}`}>
-          {sender}
-        </span>
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {time}
-          {ago && <span className="ml-1.5 text-muted-foreground/70">· {ago}</span>}
-        </span>
-      </div>
-      <div className="mt-1 whitespace-pre-wrap text-sm text-foreground/90">{fm.text}</div>
-      <div
-        className="mt-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          className="rounded p-1 hover:bg-muted"
-          title={isUnread ? 'Mark read' : 'Mark unread'}
-          onClick={() => fm.id && onToggleRead(fm.id, isUnread)}
-        >
-          <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
-        </button>
-        <button
-          className="rounded p-1 hover:bg-destructive/10"
-          title="Archive"
-          onClick={() => fm.id && onArchive(fm.id)}
-        >
-          <Archive className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-        </button>
       </div>
     </div>
   );
@@ -258,7 +199,6 @@ export function InboxView() {
   const { setUnreadCount } = useInboxStore();
 
   const focusedConversationId = currentDock?.options?.conversation ?? null;
-  const focusedMessageId = currentDock?.options?.message ?? null;
 
   const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
   const { data: conversations = [], refetch, isLoading } = useEntitiesQuery<Conversation>(request);
@@ -352,10 +292,7 @@ export function InboxView() {
     return (
       <ConversationReader
         conversationId={focusedConversationId}
-        focusedMessageId={focusedMessageId}
         onBack={handleBackToList}
-        onArchive={handleArchive}
-        onToggleRead={handleToggleRead}
       />
     );
   }

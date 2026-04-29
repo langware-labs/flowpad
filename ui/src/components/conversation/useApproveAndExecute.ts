@@ -115,7 +115,7 @@ export function useApproveAndExecute({ task }: UseApproveAndExecuteOptions): Use
       const cached = taskApprovalCache.get(taskId);
       if (cached) {
         await cached.executeInstruction(promptText, { sync: false });
-        navigation.openDock(cached.dockPointer);
+        navigation.openInBrowserTab(cached.dockPointer);
         return;
       }
       const existing = await dataManager
@@ -128,7 +128,7 @@ export function useApproveAndExecute({ task }: UseApproveAndExecuteOptions): Use
         if (isAlive) {
           await existing.start({ instruction: promptText });
           taskApprovalCache.set(taskId, existing);
-          navigation.openDock(existing.dockPointer);
+          navigation.openInBrowserTab(existing.dockPointer);
           return;
         }
         if (existing.session_id) {
@@ -137,7 +137,7 @@ export function useApproveAndExecute({ task }: UseApproveAndExecuteOptions): Use
             { instruction: promptText, visible: true },
           );
           taskApprovalCache.set(taskId, resumed);
-          navigation.openDock(resumed.dockPointer);
+          navigation.openInBrowserTab(resumed.dockPointer);
           return;
         }
       }
@@ -161,7 +161,7 @@ export function useApproveAndExecute({ task }: UseApproveAndExecuteOptions): Use
       t.metadata = { ...(t.metadata ?? {}), shared_process_id: forked.id };
       await t.save();
     }
-    navigation.openDock(forked.dockPointer);
+    navigation.openInBrowserTab(forked.dockPointer);
   };
 
   return { approveAndExecute };

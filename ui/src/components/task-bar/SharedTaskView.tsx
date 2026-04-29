@@ -5,16 +5,11 @@
  * Replaces the sliding TaskDetailPanel for spec_id tasks.
  */
 
-import { useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { Spec, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ExpansionRequest } from '@sdk/FlowSync/query';
-import { ConversationView } from '@src/components/conversation';
-import { ConversationToolbar } from '@src/components/conversation/ConversationToolbar';
-import { SpecSidePane } from '@src/components/conversation/SpecSidePane';
-import { ProjectMappingDialog } from '@src/components/conversation/ProjectMappingDialog';
-import { useProjectMappingGate } from '@src/components/conversation/useProjectMappingGate';
+import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
 
 interface SharedTaskViewProps {
   task: Task;
@@ -23,8 +18,6 @@ interface SharedTaskViewProps {
 
 export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
   const blobExpansion = new ExpansionRequest({ expand: ['blobs'] });
-  const [showSpec, setShowSpec] = useState(false);
-  const { ensureMapped, dialogProps: mappingDialogProps } = useProjectMappingGate(task);
 
   const taskMeta = task.metadata as Record<string, unknown> | undefined;
   const senderName = taskMeta?.sender_name as string | undefined
@@ -78,40 +71,17 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
 
         {/* Conversation */}
         <section className="-mx-4 flex flex-col">
-          <div className="flex h-9 flex-shrink-0 items-center gap-2 border-y border-border px-4 text-xs font-medium text-muted-foreground">
-            <span>Conversation</span>
-            {task.conversation_id && (
-              <ConversationToolbar
-                task={task}
-                conversationId={task.conversation_id}
-                senderName={senderName}
-                onShowTask={() => setShowSpec(true)}
-                ensureMapped={ensureMapped}
-              />
-            )}
-          </div>
-          <div className="px-4 pt-3">
-            {task.conversation_id ? (
-              <ConversationView
-                conversationId={task.conversation_id}
-                task={task}
-                senderName={senderName}
-                ensureMapped={ensureMapped}
-              />
-            ) : (
-              <p className="text-xs italic text-muted-foreground/60">No conversation yet.</p>
-            )}
-          </div>
+          {task.conversation_id ? (
+            <ConversationPanel
+              task={task}
+              conversationId={task.conversation_id}
+              senderName={senderName}
+            />
+          ) : (
+            <p className="px-4 text-xs italic text-muted-foreground/60">No conversation yet.</p>
+          )}
         </section>
       </div>
-
-      <SpecSidePane
-        open={showSpec}
-        onClose={() => setShowSpec(false)}
-        specId={task.spec_id}
-      />
-
-      <ProjectMappingDialog {...mappingDialogProps} />
     </div>
   );
 }

@@ -82,9 +82,11 @@ export function MessageBubble({
       .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, sharedProcessId))
       .catch(() => null);
     if (!proc) return;
-    // Open in the SAME browser tab — replaces the conversation view with the
-    // shared terminal. The user wants this in-place, not in a secondary window.
-    navigation.openDock(proc.dockPointer);
+    // Open in the secondary "flowpad-shell" browser tab — keeps the
+    // conversation view in place and groups all conversation-spawned Claude
+    // sessions (Open Claude Code, Approve & Execute, Open Shared Terminal)
+    // into the same shared terminal tab.
+    navigation.openInBrowserTab(proc.dockPointer);
   };
 
   const startEdit = () => {

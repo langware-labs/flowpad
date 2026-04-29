@@ -18,7 +18,6 @@ import { useProjectMapping } from './useProjectMapping';
  * ```
  */
 export function useProjectMappingGate(task: ITask) {
-  const { mapping, loaded } = useProjectMapping();
   const [open, setOpen] = useState(false);
   const continuationRef = useRef<(() => void | Promise<void>) | null>(null);
 
@@ -26,14 +25,13 @@ export function useProjectMappingGate(task: ITask) {
   const remoteProjectId = taskMeta.remote_project_id as string | undefined;
   const remoteProjectName = (taskMeta.remote_project_name as string | undefined) ?? '';
   const projectRoot = taskMeta.project_root as string | undefined;
-  // Mapped if: the task already has its own project_root stamped (sender's
-  // path, OR a previously-resolved receiver mapping), OR there's no remote
-  // project to map (purely-local task), OR the in-memory mapping table has
-  // a hit for the remote_project_id.
-  const hasMapping =
-    !!projectRoot
-    || !remoteProjectId
-    || (loaded && !!mapping[remoteProjectId]);
+  // The only signal that matters for "can we run a Claude session for this
+  // task" is whether the task has a concrete project_root stamped on it.
+  // Looking at the in-memory mapping table or assuming-mapped-when-no-remote-id
+  // both produced false-positives where the gate skipped the dialog and the
+  // action then bailed for missing workdir. Project_root is the source of
+  // truth; everything else is a hint.
+  const hasMapping = !!projectRoot;
 
   const ensureMapped = useCallback(
     (continuation: () => void | Promise<void>) => {
