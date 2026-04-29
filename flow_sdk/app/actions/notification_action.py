@@ -171,18 +171,9 @@ async def _create_spec_and_task(
         "sender_name": sender_name,
         "sender_email": sender_email,
         "recipient_email": recipient_email or "",
-        "spec_type": spec_type,
     }
     if team_space_id:
         task_meta["team_space_id"] = team_space_id
-    if project_id:
-        task_meta["project_id"] = project_id
-    if sender_process_id:
-        # Sender's clean AgenticProcess for this conversation. Stamping it here
-        # means the per-message "Open Claude Code" chip is wired immediately on
-        # the sender side, no Start step required. Receiver-side materialisation
-        # explicitly strips this so each user has their own.
-        task_meta["my_process_id"] = sender_process_id
     if project_name:
         task_meta["project_name"] = project_name
     if project_root:
@@ -192,6 +183,9 @@ async def _create_spec_and_task(
         "spec_id": spec.id,
         "shared_by_id": sender_id,
         "metadata": task_meta,
+        "project_id": project_id,
+        "spec_type": spec_type,
+        "my_process_id": sender_process_id,
     })
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
@@ -340,9 +334,9 @@ async def _write_task_to_git(
             "created_at": datetime.now(UTC).isoformat(),
             "repo_id": repo_id_val,
             "branch": branch_at_write,
-            "project_id": task_meta.get("project_id") or "",
+            "project_id": task.project_id or "",
             "project_name": task_meta.get("project_name") or "",
-            "spec_type": task_meta.get("spec_type") or "",
+            "spec_type": task.spec_type or "",
         }, indent=2, default=str),
         encoding="utf-8",
     )
@@ -440,7 +434,7 @@ async def _send_hub_notification(
             "repo_id": repo_id_val,
             "branch": branch,
             "spec_file_path": spec_file_path,
-            "project_id": task_meta.get("project_id") or None,
+            "project_id": task.project_id or None,
             "project_name": task_meta.get("project_name") or None,
         }, action="send")
     except HubError as e:
