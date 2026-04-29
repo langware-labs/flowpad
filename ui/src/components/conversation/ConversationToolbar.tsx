@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import { FileText } from 'lucide-react';
+import { ExternalLink, FileText } from 'lucide-react';
 import { Conversation, dataManager, FlowMessage, TypeId } from '@sdk';
 import { AttachmentType } from '@sdk/entities/flow-message';
 import { ActionInfo } from '@sdk/models/ActionInfo';
 import type { ITask } from '@sdk/entities/task';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useMyProcess } from './useMyProcess';
 
 interface TranscriptInfo {
@@ -23,7 +25,12 @@ interface ConversationToolbarProps {
   task: ITask;
   conversationId: string;
   senderName?: string;
-  onShowTask: () => void;
+  /**
+   * Optional override for the "Open Task" button. When omitted (default),
+   * the button navigates to `/dock/tasks/<taskId>/conversation/<convId>` —
+   * the canonical anchor for this task + conversation pair.
+   */
+  onShowTask?: () => void;
   /** Wraps any action that needs a `cwd`/project. When unmapped, the parent will pop the mapping dialog and resume the action after the user picks. */
   ensureMapped?: (continuation: () => void | Promise<void>) => void;
 }
@@ -42,6 +49,10 @@ export function ConversationToolbar({
 }: ConversationToolbarProps) {
   const [transcript, setTranscript] = useState<TranscriptInfo | null>(null);
   const { isStartLabel, busy, openOrStart } = useMyProcess({ task, conversationId, senderName });
+  const { navigation } = useDockNavigation();
+  const localProjectId = (task.metadata as Record<string, unknown> | undefined)?.project_id as
+    | string
+    | undefined;
 
   // Find the first conversation.jsonl FILE attachment across all messages.
   useEffect(() => {
@@ -78,18 +89,50 @@ export function ConversationToolbar({
   const showOpenTask = !!task.spec_id;
   const claudeTooltip = isStartLabel ? 'Start Claude Code session' : 'Open Claude Code';
 
+  const handleOpenTask = () => {
+    if (onShowTask) {
+      onShowTask();
+      return;
+    }
+    if (!task.id) return;
+    // Canonical URL: /dock/tasks/<taskId>/conversation/<convId>
+    navigation.openDock(DockPointer.forTasks(task.id, { conversationId }));
+  };
+
   return (
     <div className="flex items-center gap-1">
       {showOpenTask && (
         <button
           type="button"
-          onClick={onShowTask}
+          onClick={handleOpenTask}
           className="inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <FileText className="h-3 w-3" />
           Open Task
         </button>
       )}
+
+      <button
+        type="button"
+        onClick={() => {
+          const action = () => {
+            // After mapping (or if already mapped), pick the freshest project_id
+            // off task.metadata — `localProjectId` from the closure may be stale
+            // immediately after the mapping dialog confirms.
+            const meta = (task.metadata as Record<string, unknown> | undefined) ?? {};
+            const projId = (meta.project_id as string | undefined) ?? localProjectId;
+            if (!projId) return;
+            navigation.openDock(DockPointer.forProject(projId, { conversationId }));
+          };
+          if (ensureMapped) ensureMapped(action);
+          else if (localProjectId) action();
+        }}
+        title="Open this conversation under the local project"
+        className="inline-flex h-6 items-center gap-1 rounded px-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      >
+        <ExternalLink className="h-3 w-3" />
+        Open in Project
+      </button>
 
       {transcript && (
         <a

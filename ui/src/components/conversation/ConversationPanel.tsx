@@ -1,9 +1,7 @@
-import { useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import { ConversationToolbar } from './ConversationToolbar';
 import { ConversationView } from './ConversationView';
 import { ProjectMappingDialog } from './ProjectMappingDialog';
-import { SpecSidePane } from './SpecSidePane';
 import { useProjectMappingGate } from './useProjectMappingGate';
 
 interface ConversationPanelProps {
@@ -31,9 +29,12 @@ interface ConversationPanelProps {
  *   [ "Conversation" header  +  ConversationToolbar (Open Task / Transcript / CC) ]
  *   [ ConversationView (avatars, bubbles, prompt rows, composer) ]
  *
- * Owns its own SpecSidePane and ProjectMappingDialog so callers don't have
- * to plumb either one. Drop the panel anywhere a task-bound conversation
- * needs to render — task views, the inbox reader, embedded panels.
+ * Owns its own ProjectMappingDialog so callers don't have to plumb it. The
+ * "Open Task" button in the toolbar navigates to
+ * `/dock/tasks/<taskId>/conversation/<convId>` — a canonical URL anchor for
+ * the task + conversation pair. Drop the panel anywhere a task-bound
+ * conversation needs to render — task views, the inbox reader, embedded
+ * panels.
  */
 export function ConversationPanel({
   task,
@@ -43,7 +44,6 @@ export function ConversationPanel({
   variant = 'default',
   className,
 }: ConversationPanelProps) {
-  const [showSpec, setShowSpec] = useState(false);
   const { ensureMapped, dialogProps: mappingDialogProps } = useProjectMappingGate(task);
 
   const headerWrapper =
@@ -61,7 +61,6 @@ export function ConversationPanel({
             task={task}
             conversationId={conversationId}
             senderName={senderName}
-            onShowTask={() => setShowSpec(true)}
             ensureMapped={ensureMapped}
           />
         </div>
@@ -75,11 +74,6 @@ export function ConversationPanel({
         />
       </div>
 
-      <SpecSidePane
-        open={showSpec}
-        onClose={() => setShowSpec(false)}
-        specId={task.spec_id}
-      />
       <ProjectMappingDialog {...mappingDialogProps} />
     </div>
   );

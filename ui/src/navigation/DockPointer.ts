@@ -476,11 +476,24 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Create dock pointer for tasks view
+   * Create dock pointer for tasks view.
    * @param taskId - Optional task ID to view/edit
+   * @param options.conversationId - Optional conversation id to canonicalise
+   *   into the URL — produces `/dock/tasks/<taskId>/conversation/<convId>`.
+   *   The task view itself only renders the task; the segment is purely a
+   *   canonical anchor (so deep-links from the email / inbox can carry both).
    */
-  static forTasks(taskId?: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.TASKS, taskId, undefined, layout);
+  static forTasks(
+    taskId?: string,
+    options?: { conversationId?: string; layout?: Layout },
+  ): DockPointer {
+    const layout = options?.layout ?? Layout.DOCK;
+    const pointer = taskId
+      ? options?.conversationId
+        ? `${taskId}/conversation/${options.conversationId}`
+        : taskId
+      : undefined;
+    return new DockPointer(ViewType.TASKS, pointer, undefined, layout);
   }
 
   /**
