@@ -53,14 +53,14 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
 
   /**
    * Deep-link to the dedicated conversation view at `/dock/conversation/<id>`.
-   * Project-scoped conversations still nest into the project tab so the
-   * collaboration UI keeps its split layout, but standalone conversations
-   * (inbox / shared-task) all land on the same conversation viewer.
+   *
+   * The previous "project-nested" form (`/dock/project/<projectId>/conversation/<id>`)
+   * broke for cross-user conversations: the receiver doesn't have the sender's
+   * Project entity locally, so the project loader 404s before the route
+   * renders. The standalone form resolves the task + project from the
+   * conversation itself and works on both sides.
    */
   override get dockPointer(): DockPointerData {
-    if (this.project_id && this.id) {
-      return new DockPointerData(ViewType.PROJECT, `${this.project_id}/conversation/${this.id}`);
-    }
     if (this.id) {
       return new DockPointerData(ViewType.CONVERSATION, this.id);
     }
