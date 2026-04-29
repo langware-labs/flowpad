@@ -6,7 +6,6 @@ import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchB
 import { NotificationFeed } from '@src/components/notification-feed';
 import { type ProjectResourceListItem } from '@src/components/project-resource-list';
 import { ProjectActivityStrip, RecentConversationsStrip, BookmarkColumn } from '@src/components/project-activity-strip';
-import { WorkflowStrip } from '@src/components/workflows-view/WorkflowStrip';
 import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
 import { MiniDesktop } from '@src/components/quick-create';
 import { SessionInput } from '@src/components/session-input/session-input';
@@ -581,14 +580,14 @@ export function HomeLanding() {
       <div className="flex min-h-0 flex-1 gap-6 px-4 pb-4">
         {/* Left column: Inbox header + Bookmarks */}
         <div className="w-72 shrink-0 flex flex-col gap-2">
-          {/* Inbox icon row */}
-          <div className="flex items-center justify-between px-1">
+          {/* Inbox icon row — same box model as the Recent conversations strip header so both columns share an invisible top line */}
+          <div className="flex h-9 items-center justify-between rounded-lg border border-transparent px-3">
             <button
-              className="flex items-center gap-1.5 rounded-md px-1 py-1 text-sm font-medium hover:bg-accent transition-colors"
+              className="flex items-center gap-1.5 rounded-md py-1 text-xs font-medium hover:bg-accent transition-colors"
               onClick={() => navigation.openTab(ViewType.INBOX)}
             >
               <div className="relative">
-                <Inbox className="h-4 w-4 text-muted-foreground" />
+                <Inbox className="h-3.5 w-3.5 text-muted-foreground" />
                 {unreadCount > 0 && (
                   <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-destructive px-0.5 text-[8px] font-bold leading-none text-destructive-foreground">
                     {unreadCount > 99 ? '99+' : unreadCount}
@@ -597,19 +596,18 @@ export function HomeLanding() {
               </div>
               <span className="text-muted-foreground hover:text-foreground transition-colors">Inbox</span>
               {unreadCount > 0 && (
-                <span className="text-xs text-muted-foreground">({unreadCount})</span>
+                <span className="text-muted-foreground">({unreadCount})</span>
               )}
             </button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
+            <button
+              type="button"
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
               onClick={() => void handleInboxRefresh()}
               disabled={inboxRefreshing}
               title="Fetch new messages from hub"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${inboxRefreshing ? 'animate-spin' : ''}`} />
-            </Button>
+            </button>
           </div>
 
           <BookmarkColumn
@@ -772,9 +770,8 @@ export function HomeLanding() {
           </div>
         </div>
 
-        {/* Right column: Workflows strip + Recent conversations */}
+        {/* Right column: Recent conversations */}
         <div className="w-72 shrink-0 flex flex-col gap-2">
-          <WorkflowStrip />
           <RecentConversationsStrip />
         </div>
 
