@@ -75,16 +75,21 @@ class DbSettingsResult(BaseModel):
 # Path helpers
 # ---------------------------------------------------------------------------
 
-DEFAULT_DB_PATH = str(Path.home() / ".flow" / "db" / "flowpad_db")
+def _default_db_path() -> str:
+    from flow_sdk.instance_settings import get_instance_settings
+    return str(get_instance_settings().db_path)
 
 
 def get_db_path() -> Path:
-    db_path_str = os.environ.get("SQLITE_DATABASE_PATH")
-    if not db_path_str:
-        db_folder = Path.home() / ".flow" / "db"
-        db_folder.mkdir(parents=True, exist_ok=True)
-        db_path_str = str(db_folder / "flowpad_db")
-    return Path(db_path_str)
+    """Per-instance SQLite database path (call-time, via InstanceSettings).
+
+    InstanceSettings reads the SQLITE_DATABASE_PATH env var inside `from_env()`;
+    we never read the env here directly.
+    """
+    from flow_sdk.instance_settings import get_instance_settings
+    settings = get_instance_settings()
+    settings.db_dir.mkdir(parents=True, exist_ok=True)
+    return Path(settings.db_path)
 
 
 def get_backup_folder() -> Path:
@@ -430,7 +435,7 @@ async def get_database_stats() -> DatabaseStatsResult:
 def get_db_settings() -> DbSettingsResult:
     return DbSettingsResult(
         db_path=str(get_db_path()),
-        default_path=DEFAULT_DB_PATH,
+        default_path=_default_db_path(),
     )
 
 
@@ -447,7 +452,7 @@ async def set_db_path(new_path: str) -> DbSettingsResult:
 
     await reinit_db(expanded)
     logger.info(f"Database switched to: {expanded}")
-    return DbSettingsResult(db_path=expanded, default_path=DEFAULT_DB_PATH)
+    return DbSettingsResult(db_path=expanded, default_path=_default_db_path())
 
 
 # ---------------------------------------------------------------------------
@@ -455,11 +460,12 @@ async def set_db_path(new_path: str) -> DbSettingsResult:
 # ---------------------------------------------------------------------------
 
 
-def get_scan_info() -> dict:
-    """Return current index status — reads SchemaRegistry in-memory log cache, no DB query."""
+async def get_scan_info() -> dict:
+    """Return current index status. Reads JSONL bookkeeping + queries the DB
+    for live entity counts (single chokepoint via SchemaRegistry.get_index_status)."""
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-    status = SchemaRegistry.get_index_status()
+    status = await SchemaRegistry.get_index_status()
     total_indexed = sum(t.entity_count for t in status.per_type)
     return {
         "total_indexed": total_indexed,

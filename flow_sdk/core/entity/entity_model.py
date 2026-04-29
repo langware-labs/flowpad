@@ -27,7 +27,7 @@ except ImportError:
                 return func
             return decorator
 
-from pydantic import Field, SerializationInfo, SerializeAsAny, ValidationError, model_serializer
+from pydantic import Field, SerializationInfo, SerializeAsAny, TypeAdapter, ValidationError, model_serializer
 
 from flow_sdk.config import StorageProvider
 from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
@@ -172,8 +172,12 @@ class Entity(DBEntity):
             entity.type = record_type
             all_updates = {**data, **record_domain}
             for k, v in all_updates.items():
-                if k not in ("id",) and hasattr(entity, k):
-                    setattr(entity, k, v)
+                if k in ("id",) or not hasattr(entity, k):
+                    continue
+                field = entity.__class__.model_fields.get(k)
+                if field is not None:
+                    v = TypeAdapter(field.annotation).validate_python(v)
+                setattr(entity, k, v)
 
         # Propagate PropertyRecord values to matching entity fields
         already_set = set(data.keys()) | set(record_domain.keys())
@@ -285,12 +289,13 @@ class Entity(DBEntity):
         """Resolve filesystem scope root from request_context.
 
         Project context (POST /api/v1/graph/project/<id>/<type>) →
-        ``project.fs_storage_mount_path``. Otherwise → ``Path.home()``.
+        ``project.fs_storage_mount_path``. Otherwise → per-instance user_home.
 
         Single source of truth for scope, called once per save(); per-type
         ``store()`` overrides must not duplicate this logic.
         """
         from pathlib import Path
+        from flow_sdk.instance_settings import get_instance_settings
         from flow_sdk.request_context.methods import get_current_request_info
         request_info = get_current_request_info()
         if (
@@ -305,7 +310,7 @@ class Entity(DBEntity):
             mount = getattr(proj, "fs_storage_mount_path", None) if proj is not None else None
             if mount:
                 return Path(mount)
-        return Path.home()
+        return get_instance_settings().user_home
 
     async def check_and_refresh_record(self) -> bool:
         """If the asset is newer than the DB row, re-sync. Returns True if refresh happened."""

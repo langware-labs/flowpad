@@ -6,7 +6,7 @@ from ..settings import (
     get_legacy_settings,
 )
 from ..utils import (
-    CLAUDE_HOME,
+    _claude_home,
     count_lines,
     get_file_mtime,
     load_json,
@@ -15,7 +15,7 @@ from ..utils import (
 
 def get_history_stats() -> dict:
     """Get file change history stats."""
-    history_dir = CLAUDE_HOME / "file-history"
+    history_dir = _claude_home() / "file-history"
     if not history_dir.exists():
         return {"total_files": 0, "total_changes": 0}
 
@@ -33,7 +33,7 @@ def get_history_stats() -> dict:
 def get_ide_connections() -> list[dict]:
     """Get IDE connection files from ~/.claude/ide/."""
     connections = []
-    ide_dir = CLAUDE_HOME / "ide"
+    ide_dir = _claude_home() / "ide"
     if not ide_dir.exists():
         return connections
 

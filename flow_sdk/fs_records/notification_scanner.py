@@ -121,6 +121,9 @@ async def _process_manifest(
     conversation_id = data.get("conversation_id")
     manifest_branch = data.get("branch") or ""
     manifest_repo_id = data.get("repo_id") or ""
+    remote_project_id = data.get("project_id") or ""
+    remote_project_name = data.get("project_name") or ""
+    spec_type_meta = data.get("spec_type") or ""
 
     # Don't import tasks that were created by the local user (sender)
     if sender_id == local_user_id:
@@ -142,12 +145,21 @@ async def _process_manifest(
     from flow_sdk.utils.git import git_remote_url
     project_url = git_remote_url(str(project_root))
 
+    # --- Resolve project_id from project_root via deterministic id ---
+    from flow_sdk.builtin.project import Project
+    resolved_project_id: str | None = None
+    try:
+        resolved_project_id = Project.allocate_id({"fs_storage_mount_path": str(project_root)})
+    except Exception as e:
+        logger.warning(f"notification_scanner: project_id resolution failed: {e}")
+
     # --- Create Conversation entity + record ---
     conv = await _create_conversation_from_disk(
         task_dir=task_dir,
         task_id=task_id,
         conversation_id=conversation_id,
         owner_typeid=owner_typeid,
+        project_id=resolved_project_id,
     )
 
     # --- Create Task entity ---
@@ -164,6 +176,9 @@ async def _process_manifest(
             "branch": manifest_branch,
             "sender_name": sender_name,
             "sender_email": data.get("sender_email") or "",
+            "remote_project_id": remote_project_id,
+            "remote_project_name": remote_project_name,
+            "spec_type": spec_type_meta,
         },
     })
     task = await task.save(owner_typeid)
@@ -221,6 +236,7 @@ async def _create_conversation_from_disk(
     conversation_id: str | None,
     owner_typeid,
     notify: bool = True,
+    project_id: str | None = None,
 ) -> Conversation | None:
     """Create a Conversation entity from conversation.jsonl on disk (recipient side).
 
@@ -249,6 +265,7 @@ async def _create_conversation_from_disk(
 
     conv = Conversation.model_validate({
         "task_id": task_id,
+        "project_id": project_id,
         "data_path": str(jsonl_path),
         "message_count": len(pointers),
         "message_ids": json.dumps(pointers) if pointers else None,
@@ -301,6 +318,14 @@ async def _sync_conversation(task: Task, task_dir: Path) -> None:
     conv.message_ids = new_message_ids
     conv.message_count = len(pointers)
     await conv.save(owner_typeid)
+
+    try:
+        import asyncio as _asyncio
+        from flow_sdk.app.actions.flow_message_action import handle_inbox_fetch
+        if owner_typeid is not None:
+            _asyncio.ensure_future(handle_inbox_fetch(str(owner_typeid)))
+    except Exception as e:
+        logger.warning(f"notification_scanner: schedule inbox-fetch failed (non-fatal): {e}")
 
     try:
         send_resource_sync(

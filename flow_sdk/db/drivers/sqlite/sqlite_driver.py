@@ -42,10 +42,10 @@ from dataclasses import dataclass
 
 from .connection import (
     DEVELOPMENT,
-    SQLITE_DATABASE_PATH,
     Base,
     EntitySchema,
     RelationshipSchema,
+    get_database_path,
     get_database_url,
     install_pragmas_and_immediate,
 )
@@ -279,7 +279,7 @@ class SQLiteDBDriver(DBDriver):
     def __init__(self, cfg: Optional[DBConfig] = None):
         if not cfg:
             cfg = DBConfig()
-            cfg.database = SQLITE_DATABASE_PATH
+            cfg.database = get_database_path()
         super().__init__(cfg)
         self.engine: Optional[AsyncEngine] = None
         self.session_factory: Optional[async_sessionmaker] = None
@@ -293,21 +293,18 @@ class SQLiteDBDriver(DBDriver):
         if self.engine is not None:
             return
         from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy.pool import NullPool
 
         db_path = self.config.database or ":memory:"
         url = get_database_url(db_path)
-        # Default AsyncAdaptedQueuePool (since SQLAlchemy 2.0.38) — keeps a
-        # small bounded set of warm aiosqlite connections so per-operation
-        # connection setup (~10ms each with NullPool) doesn't dominate
-        # batch indexer paths that touch hundreds of records.
-        self.engine = create_async_engine(
-            url,
-            echo=False,
-            pool_size=5,
-            max_overflow=10,
-            pool_pre_ping=True,
-            pool_recycle=1800,
-        )
+        # NullPool: every operation opens a fresh aiosqlite connection
+        # and closes it deterministically on session.close(). Shared with
+        # AsyncAdaptedQueuePool we leaked connections to GC under the
+        # test scaffolding's between-test cache invalidation. Per-op
+        # connection setup is ~10ms which is fine for a desktop app
+        # that already amortizes via the indexer's shared `session()`
+        # context (single connection across hundreds of records).
+        self.engine = create_async_engine(url, echo=False, poolclass=NullPool)
         install_pragmas_and_immediate(self.engine)
 
         # Create tables

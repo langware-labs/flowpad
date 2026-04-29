@@ -6,6 +6,7 @@ import { TooltipProvider } from '@src/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster as Sonner } from 'sonner';
 import { Toaster } from '@src/components/ui/toaster';
+import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { useEffect, useRef, useState } from 'react';
 import { DesktopSetupModal, DESKTOP_SETUP_REASON_AUTH_FAILURE } from '@src/components/desktop-setup-modal';
 import SecretApprovalDialog from '@src/components/secret-approval-dialog';
@@ -200,6 +201,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
       <TooltipProvider>
         <Toaster />
         <Sonner />
+        <CleanupModal />
         <GlobalEvents />
         <DesktopSetupModalHandler />
         <SecretApprovalDialog />

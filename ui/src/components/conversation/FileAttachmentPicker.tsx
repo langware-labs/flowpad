@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react';
+import { useId, useState } from 'react';
 import { Paperclip, X, File } from 'lucide-react';
 import { cn } from '@src/lib/utils';
+import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_LABEL } from './constants';
 
 interface FileAttachmentPickerProps {
   files: File[];
@@ -9,16 +10,31 @@ interface FileAttachmentPickerProps {
 }
 
 export function FileAttachmentPicker({ files, onChange, disabled }: FileAttachmentPickerProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputId = useId();
   const [dragging, setDragging] = useState(false);
+  const [rejected, setRejected] = useState<string | null>(null);
 
   const addFiles = (incoming: FileList | null) => {
     if (!incoming) return;
     const next = [...files];
+    const tooBig: string[] = [];
     for (const f of Array.from(incoming)) {
+      if (f.size > MAX_FILE_SIZE_BYTES) {
+        tooBig.push(f.name);
+        continue;
+      }
       if (!next.some((x) => x.name === f.name && x.size === f.size)) {
         next.push(f);
       }
+    }
+    if (tooBig.length > 0) {
+      setRejected(
+        tooBig.length === 1
+          ? `"${tooBig[0]}" is over ${MAX_FILE_SIZE_LABEL} and was not attached.`
+          : `${tooBig.length} files over ${MAX_FILE_SIZE_LABEL} were not attached: ${tooBig.join(', ')}.`,
+      );
+    } else {
+      setRejected(null);
     }
     onChange(next);
   };
@@ -42,12 +58,15 @@ export function FileAttachmentPicker({ files, onChange, disabled }: FileAttachme
 
   return (
     <div className="space-y-1.5">
-      {/* Drop zone / picker button */}
-      <div
+      {/* Drop zone is a <label htmlFor> so a real native click on the
+          hidden file input opens the OS picker reliably — even inside a
+          Radix Dialog portal where a synthetic onClick on a div sometimes
+          doesn't propagate down to inputRef.current.click(). */}
+      <label
+        htmlFor={inputId}
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onDrop={onDrop}
-        onClick={() => !disabled && inputRef.current?.click()}
         className={cn(
           'flex cursor-pointer items-center gap-2 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground transition-colors',
           dragging
@@ -57,18 +76,22 @@ export function FileAttachmentPicker({ files, onChange, disabled }: FileAttachme
         )}
       >
         <Paperclip className="h-3.5 w-3.5 shrink-0" />
-        <span>{dragging ? 'Drop files here' : 'Attach files — drag & drop or click to browse'}</span>
-      </div>
+        <span>
+          {dragging ? 'Drop files here' : `Attach files — drag & drop or click to browse (max ${MAX_FILE_SIZE_LABEL})`}
+        </span>
+      </label>
 
       <input
-        ref={inputRef}
+        id={inputId}
         type="file"
         multiple
-        className="hidden"
+        className="sr-only"
         disabled={disabled}
         onChange={(e) => addFiles(e.target.files)}
         onClick={(e) => ((e.target as HTMLInputElement).value = '')}
       />
+
+      {rejected && <p className="text-[11px] text-destructive">{rejected}</p>}
 
       {/* File list */}
       {files.length > 0 && (
@@ -86,12 +109,15 @@ export function FileAttachmentPicker({ files, onChange, disabled }: FileAttachme
                 {f.size < 1024
                   ? `${f.size} B`
                   : f.size < 1024 * 1024
-                  ? `${(f.size / 1024).toFixed(1)} KB`
-                  : `${(f.size / (1024 * 1024)).toFixed(1)} MB`}
+                    ? `${(f.size / 1024).toFixed(1)} KB`
+                    : `${(f.size / (1024 * 1024)).toFixed(1)} MB`}
               </span>
               <button
                 type="button"
-                onClick={(e) => { e.stopPropagation(); remove(i); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  remove(i);
+                }}
                 disabled={disabled}
                 className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive disabled:pointer-events-none"
               >

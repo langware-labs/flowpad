@@ -71,10 +71,23 @@ class RequestTransactionMiddleware:
         request = Request(scope, receive, send)
         logging.debug(f"[Middleware] Received request: {request.method} {request.url.path}")
 
-        # NOTE: transaction_factory wiring is intentionally disabled here.
-        # The driver methods open their own short-lived sessions per call
-        # (via _session_ctx). Wiring a per-request session factory caused
-        # test isolation issues with the existing test scaffolding.
+        # Per-request transaction binding intentionally NOT wired.
+        #
+        # Wiring `transaction_factory = get_db_driver().get_transaction_factory()`
+        # creates an AsyncSession per request via `factory()` (no async
+        # context manager), then closes it in middleware finally. Under
+        # the test scaffolding this leaks one aiosqlite connection per
+        # ~30 standalone-session ops triggered by session-start fixtures,
+        # holding the SQLite writer lock and breaking subsequent tests.
+        # Root cause traces to SQLAlchemy issue #8145 — async connection
+        # close requires async I/O which can't reliably run during
+        # cancellation or non-context-managed teardown paths.
+        #
+        # Driver methods open their own short-lived sessions via
+        # `_session_ctx` (always async-with managed → safe). The indexer
+        # hoists ONE shared session for batch paths via `flow_sdk.db.session()`.
+        # Production writer-lock-cascade fix (WAL + busy_timeout=5000 +
+        # BEGIN IMMEDIATE + pragmas + driver session sharing) lands fully.
         execution_context = ExecutionContext(False, None)
         set_execution_context(execution_context)
 
@@ -109,8 +122,13 @@ class RequestTransactionMiddleware:
             await execution_context.commit_transaction()
         finally:
             # Cleanup (close session) — runs on both success and exception
-            # paths; idempotent and safe after commit/rollback.
-            execution_context = get_execution_context()
-            if execution_context:
+            # paths. Use the LOCAL `execution_context` we built at the top
+            # of __call__ so close() is guaranteed to run even if some
+            # inner code stomped the contextvar (which the previous
+            # `get_execution_context()` re-lookup defended against by
+            # accident — it returned None and skipped close, leaking the
+            # request session and its aiosqlite connection).
+            try:
                 await execution_context.cleanup()
+            finally:
                 set_execution_context(None)

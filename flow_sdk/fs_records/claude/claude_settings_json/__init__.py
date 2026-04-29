@@ -22,6 +22,7 @@ from typing import Any
 
 from flow_sdk.fs_store import Record, RecordRef, RecordType
 from flow_sdk.fs_store.json_file_record_store import JsonFileRecordStore
+from flow_sdk.instance_settings import get_instance_settings
 
 from .base import ClaudeSettingsJsonFsRecord
 from .permissions import ClaudePermissionsFsRecord
@@ -149,7 +150,7 @@ class ClaudeSettingsJsonRecordList(JsonFileRecordStore):
     @classmethod
     def user_default(cls) -> ClaudeSettingsJsonRecordList:
         """Create a record list backed by the default ~/.claude/settings.json."""
-        return cls(source_file=Path.home() / ".claude" / "settings.json")
+        return cls(source_file=get_instance_settings().claude_settings_json_path)
 
     @classmethod
     def for_project(cls, project_dir: str | Path) -> ClaudeSettingsJsonRecordList:

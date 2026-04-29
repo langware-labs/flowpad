@@ -65,7 +65,33 @@ export function StatusBar({ className = '' }: StatusBarProps) {
     setIsProjectModalOpen(true);
   }, []);
 
-  if (!project) return null;
+  // No active project. Render a red "Select Project" pill that pops the same
+  // OpenProjectComponent the Switch Project button uses. Null project is now
+  // a real (transient) state — entities like a freshly-opened cross-machine
+  // conversation can leave context.project null until the user picks one.
+  if (!project) {
+    return (
+      <>
+        <div className={`flex items-center gap-2 ${className}`}>
+          <button
+            type="button"
+            onClick={openProjectModal}
+            className="inline-flex h-6 items-center gap-1 rounded-full border border-red-500/50 bg-red-500/10 px-2.5 text-[11px] font-medium text-red-700 transition-colors hover:bg-red-500/20 dark:text-red-300"
+            title="No project selected — pick one to enable project-scoped actions"
+          >
+            <ArrowLeftRight className="h-3 w-3 shrink-0" />
+            Select Project
+          </button>
+          <IndexingIndicator />
+        </div>
+        <OpenProjectComponent
+          open={isProjectModalOpen}
+          onOpenChange={setIsProjectModalOpen}
+          onProjectChanged={() => void refetchProjects()}
+        />
+      </>
+    );
+  }
 
   const rootTooltip = 'Current project is on root folder, this is not recommended';
   const glowStyle: React.CSSProperties = isRoot

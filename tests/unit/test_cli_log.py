@@ -32,10 +32,10 @@ from flow_sdk.cli.cli_log import (
 @pytest.fixture(autouse=True)
 def _patch_paths(tmp_path, monkeypatch):
     """Redirect all cli_log I/O to tmp_path."""
-    monkeypatch.setattr(cli_log, "CLI_LOG_DIR", tmp_path)
-    monkeypatch.setattr(cli_log, "CLI_LOG_FILE", tmp_path / "cli.log.jsonl")
+    monkeypatch.setattr(cli_log, "_cli_log_dir", lambda: tmp_path)
+    monkeypatch.setattr(cli_log, "_cli_log_file", lambda: tmp_path / "cli.log.jsonl")
     # Redirect fs_records root so get/save use tmp_path
-    monkeypatch.setattr(record_mod, "_DEFAULT_RECORDS_ROOT", tmp_path / "records")
+    monkeypatch.setattr(record_mod, "get_default_records_root", lambda: tmp_path / "records")
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +109,7 @@ class TestEnforceCap:
         for i in range(50):
             write_entry(CliLogRecord(workdir="/w", command=["flow", str(i)], exit_code=0))
 
-        lines = cli_log.CLI_LOG_FILE.read_text().strip().split("\n")
+        lines = cli_log._cli_log_file().read_text().strip().split("\n")
         assert len(lines) == 50
 
     def test_at_threshold_triggers_trim(self):
@@ -118,7 +118,7 @@ class TestEnforceCap:
         for i in range(MAX_ENTRIES):
             write_entry(CliLogRecord(workdir="/w", command=["flow", str(i)], exit_code=0))
 
-        lines = cli_log.CLI_LOG_FILE.read_text().strip().split("\n")
+        lines = cli_log._cli_log_file().read_text().strip().split("\n")
         expected = MAX_ENTRIES - DROP_COUNT
         assert len(lines) == expected
 
@@ -131,7 +131,7 @@ class TestEnforceCap:
         for i in range(810):
             write_entry(CliLogRecord(workdir="/w", command=["flow", str(i)], exit_code=0))
 
-        lines = cli_log.CLI_LOG_FILE.read_text().strip().split("\n")
+        lines = cli_log._cli_log_file().read_text().strip().split("\n")
         # After 800 entries: trim at 800 -> 500 lines. 800-809 -> 510 lines total.
         assert len(lines) == MAX_ENTRIES - DROP_COUNT + 10  # 510
 
