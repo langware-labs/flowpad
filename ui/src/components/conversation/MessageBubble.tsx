@@ -63,18 +63,21 @@ export function MessageBubble({
   // Show the prompt row for ANY message that has a PROMPT attachment so the
   // sender sees the same preview the receiver does. The Approve & Execute
   // button is only wired when it's the other user's still-unapproved prompt.
-  const promptIdx = (flowMessage?.attachment ?? []).findIndex(
+  const promptAttachments = (flowMessage?.attachment ?? []).filter(
     (a) => a.attachment_type === AttachmentType.PROMPT,
   );
-  const promptAttachment = promptIdx >= 0 ? flowMessage?.attachment?.[promptIdx] : undefined;
-  const showPromptRow = !!promptAttachment;
-  const canApprovePrompt =
-    isFromOther && !!promptAttachment && !promptAttachment.approved_by && !!onApproveAndExecute;
+  const firstUnapprovedPromptIdx = (flowMessage?.attachment ?? []).findIndex(
+    (a) => a.attachment_type === AttachmentType.PROMPT && !a.approved_by,
+  );
+  const hasUnapprovedPrompt = firstUnapprovedPromptIdx >= 0;
+  const hasApprovedPrompt = promptAttachments.some((a) => !!a.approved_by);
+  const showPromptRow = promptAttachments.length > 0;
+  const canApprovePrompt = isFromOther && hasUnapprovedPrompt && !!onApproveAndExecute;
 
   const sharedProcessId = (task?.metadata as Record<string, unknown> | undefined)?.shared_process_id as
     | string
     | undefined;
-  const canOpenShared = !!promptAttachment && !!promptAttachment.approved_by && !!sharedProcessId;
+  const canOpenShared = hasApprovedPrompt && !!sharedProcessId;
 
   const handleOpenShared = async () => {
     if (!sharedProcessId) return;
@@ -148,10 +151,11 @@ export function MessageBubble({
             {message.content}
           </div>
         )}
-        {showPromptRow && promptAttachment && (
+        {showPromptRow && (
           <PromptApprovalRow
-            attachment={promptAttachment}
-            onApprove={canApprovePrompt ? () => onApproveAndExecute!(promptIdx) : undefined}
+            attachments={promptAttachments}
+            messageId={flowMessageId}
+            onApprove={canApprovePrompt ? () => onApproveAndExecute!(firstUnapprovedPromptIdx) : undefined}
             onOpenShared={canOpenShared ? () => void handleOpenShared() : undefined}
           />
         )}

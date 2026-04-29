@@ -46,17 +46,19 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
     else setLocalPrompt(p);
   };
 
-  const queuedPromptAsAttachment: Attachment | null = useMemo(() => {
-    if (!activePrompt) return null;
-    const text =
-      activePrompt.text ||
-      (activePrompt.files.length > 0
-        ? `(${activePrompt.files.length} prompt file${activePrompt.files.length === 1 ? '' : 's'})`
-        : '');
-    return {
-      attachment_type: AttachmentType.PROMPT,
-      data: text,
-    };
+  // Synthesise PROMPT-shaped attachments for the queued prompt so the preview
+  // chip uses the same PromptApprovalRow component the message bubbles use.
+  // One attachment per inline text + one per attached file (data="prompt/<name>").
+  const queuedPromptAttachments: Attachment[] = useMemo(() => {
+    if (!activePrompt) return [];
+    const list: Attachment[] = [];
+    if (activePrompt.text) {
+      list.push({ attachment_type: AttachmentType.PROMPT, data: activePrompt.text });
+    }
+    for (const f of activePrompt.files) {
+      list.push({ attachment_type: AttachmentType.PROMPT, data: `prompt/${f.name}` });
+    }
+    return list;
   }, [activePrompt]);
 
   const isDisabled = disabled || sending;
@@ -206,12 +208,7 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
       {canAddPrompt && activePrompt && (
         <div className="flex items-start gap-1">
           <div className="min-w-0 flex-1">
-            <PromptApprovalRow attachment={queuedPromptAsAttachment!} onEdit={() => setShowPromptDialog(true)} />
-            {activePrompt.files.length > 0 && (
-              <div className="ml-1 mt-0.5 text-[11px] text-muted-foreground">
-                {activePrompt.files.length} prompt file{activePrompt.files.length === 1 ? '' : 's'} attached
-              </div>
-            )}
+            <PromptApprovalRow attachments={queuedPromptAttachments} onEdit={() => setShowPromptDialog(true)} />
           </div>
           <button
             type="button"
