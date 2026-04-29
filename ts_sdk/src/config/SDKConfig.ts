@@ -1,5 +1,7 @@
 import { ISDKConfig } from './types';
 
+export const API_PREFIX = '/api/v1';
+
 export class SDKConfig implements ISDKConfig {
   api_protocol: string;
   api_host: string;
@@ -38,13 +40,13 @@ export class SDKConfig implements ISDKConfig {
   }
 
   get serverUrl(): string {
-    return `${this.apiUrl}/api/v1`;
+    return `${this.apiUrl}${API_PREFIX}`;
   }
 
   get wsUrl(): string {
     const wsProtocol = this.api_protocol === 'https' ? 'wss' : 'ws';
     const portSuffix = this.needsPortInUrl() ? `:${this.api_port}` : '';
-    return `${wsProtocol}://${this.api_host}${portSuffix}/api/v1/connect/ws`;
+    return `${wsProtocol}://${this.api_host}${portSuffix}${API_PREFIX}/connect/ws`;
   }
 
   get isDevelopment(): boolean {

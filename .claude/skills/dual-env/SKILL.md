@@ -66,7 +66,7 @@ Create/verify `.env.local` in `flow-cli-prod/`:
 LOCAL_SERVER_PORT=9007
 VITE_PORT=4097
 HTTP_REPORT_ENDPOINT=http://localhost:9007
-API_BASE_URL=http://localhost:9007/api/v1
+FLOWPAD_HUB_URL=http://localhost:9007
 ```
 
 Start the production server:
@@ -88,7 +88,7 @@ LOCAL_SERVER_PORT=9008
 VITE_PORT=4098
 VITE_API_URL=http://localhost:9008
 HTTP_REPORT_ENDPOINT=http://localhost:9008
-API_BASE_URL=http://localhost:9008/api/v1
+FLOWPAD_HUB_URL=http://localhost:9008
 ```
 
 Start the dev backend (from PyCharm or terminal):

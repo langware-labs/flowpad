@@ -123,7 +123,7 @@ export function MessageBubble({
           {time && <span className="text-[10px] text-muted-foreground">{time}</span>}
           <MessageActions flowMessageId={flowMessageId} />
         </div>
-        {message.content && message.content !== '(proposed prompt)' && (
+        {message.content && message.content !== "Please run the prompt that I'm sending you" && (
           <div className={`text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
             {message.content}
           </div>

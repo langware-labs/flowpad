@@ -33,6 +33,7 @@ import { ActivityProgressModal } from '@src/components/search-index/ActivityProg
 import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import { JoinConversationDialog } from '@src/components/join-room-dialog/JoinConversationDialog';
+import { CommunityAssistanceDialog } from '@src/components/community-assistance-dialog/CommunityAssistanceDialog';
 import { useLoginRequired } from '@src/hooks/use-login-required';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { Button } from '@src/components/ui/button';
@@ -43,7 +44,7 @@ import type React from 'react';
 import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
-import { Loader2, PackageSearch, X, CheckCircle2, Hammer, Inbox, RefreshCw } from 'lucide-react';
+import { Loader2, PackageSearch, X, CheckCircle2, Hammer, Inbox, RefreshCw, Users } from 'lucide-react';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { listInboxMessages, fetchInboxFromHub } from '@src/components/inbox-view/inbox-api';
 import { ViewType } from '@src/types/ViewType';
@@ -209,6 +210,7 @@ export function HomeLanding() {
   const { checkLoginAndProceed, requiresLogin, showLoginDialog, closeLoginDialog } = useLoginRequired();
   const [showNewConversation, setShowNewConversation] = useState(false);
   const [showJoinConversation, setShowJoinConversation] = useState(false);
+  const [showCommunityAssistance, setShowCommunityAssistance] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState('');
   const handleStartConversation = () => {
     if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
@@ -610,22 +612,32 @@ export function HomeLanding() {
                 onChange={setDraftPrompt}
                 onSubmit={(msg) => void handleSessionSubmit(msg)}
               />
-              <div className="flex gap-2">
-                <Button
+              <div className="flex w-full items-center justify-between gap-2">
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white transition-colors shadow-sm"
+                    onClick={handleJoinConversation}
+                  >
+                    Join conversation
+                  </Button>
+                  <Button
+                    type="button"
+                    className="bg-green-600 text-white hover:bg-green-700 transition-colors shadow-sm"
+                    onClick={handleStartConversation}
+                  >
+                    Start conversation
+                  </Button>
+                </div>
+                <button
                   type="button"
-                  variant="outline"
-                  className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white transition-colors shadow-sm"
-                  onClick={handleJoinConversation}
+                  className="inline-flex h-6 items-center gap-1 rounded-full border border-violet-600/60 bg-transparent px-2.5 text-xs font-medium text-violet-600 transition-colors hover:bg-violet-50 dark:border-violet-400/60 dark:text-violet-400 dark:hover:bg-violet-950/40"
+                  onClick={() => setShowCommunityAssistance(true)}
                 >
-                  Join conversation
-                </Button>
-                <Button
-                  type="button"
-                  className="bg-green-600 text-white hover:bg-green-700 transition-colors shadow-sm"
-                  onClick={handleStartConversation}
-                >
-                  Start conversation
-                </Button>
+                  <Users className="h-3 w-3" />
+                  Community assistance
+                </button>
               </div>
             </div>
 
@@ -763,6 +775,10 @@ export function HomeLanding() {
         open={showJoinConversation}
         onClose={() => setShowJoinConversation(false)}
         defaultName={user?.name ?? undefined}
+      />
+      <CommunityAssistanceDialog
+        open={showCommunityAssistance}
+        onClose={() => setShowCommunityAssistance(false)}
       />
       <LoginDialog open={showLoginDialog} onOpenChange={closeLoginDialog} />
 

@@ -24,6 +24,8 @@ import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
 import { loadShellRoute, resolveDefaultTab } from './load-shell';
 import { loadProjectRoute } from './load-project';
+import { loadConversationRoute } from './load-conversation';
+import { loadTasksRoute } from './load-tasks';
 import { describeProcessStartError } from './load-process';
 
 // Re-exports kept for existing consumers (unit tests import from here).
@@ -138,6 +140,16 @@ export async function loadAgentApp(args: LoaderArgs) {
     if (viewType === ViewType.PROJECT) {
       await loadProjectRoute(pointer || undefined);
       t.time('loadProjectRoute');
+    }
+
+    if (viewType === ViewType.CONVERSATION) {
+      await loadConversationRoute(pointer || undefined);
+      t.time('loadConversationRoute');
+    }
+
+    if (viewType === ViewType.TASKS) {
+      await loadTasksRoute(pointer || undefined);
+      t.time('loadTasksRoute');
     }
 
     if (viewType === ViewType.TRIGGERS) {

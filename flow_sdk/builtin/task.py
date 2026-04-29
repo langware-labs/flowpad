@@ -45,4 +45,10 @@ class Task(Entity):
     spec_id: Optional[str] = APIField(None)
     shared_by_id: Optional[str] = APIField(None)
     conversation_id: Optional[str] = APIField(None)
+    project_id: Optional[str] = APIField(None)
+    spec_type: Optional[str] = APIField(None)
+    my_process_id: Optional[str] = APIField(None)
+    shared_process_id: Optional[str] = APIField(None)
+    remote_project_id: Optional[str] = APIField(None)
+    remote_project_name: Optional[str] = APIField(None)
     _api_visible: ClassVar[bool] = True

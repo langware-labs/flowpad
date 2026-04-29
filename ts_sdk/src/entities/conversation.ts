@@ -80,12 +80,15 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
 export interface CreateProjectConversationParams {
   project_id: string;
   participants: ConversationParticipant[];
+  /** Optional display name. Backend falls back to a participants summary when absent. */
+  title?: string;
 }
 
 export interface CreateProjectConversationResult {
   conversation_id: string;
   project_id: string;
   participants: ConversationParticipant[];
+  name?: string | null;
 }
 
 export async function createProjectConversation(

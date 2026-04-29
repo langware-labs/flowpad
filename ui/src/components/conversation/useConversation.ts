@@ -7,9 +7,10 @@ export interface UseConversationResult {
   task: Task | null | undefined;
   /**
    * Local Project the task is bound to (sender's source project, OR the
-   * project the receiver mapped to via ProjectMappingDialog). Resolved from
-   * `task.metadata.project_id`. `undefined` while loading; `null` when the
-   * task hasn't been mapped to a local project yet (receiver pre-mapping).
+   * project the receiver mapped to via OpenProjectComponent). Resolved from
+   * `task.project_id` (top-level field; was under `task.metadata.project_id`
+   * before the promotion). `undefined` while loading; `null` when the task
+   * hasn't been mapped to a local project yet (receiver pre-mapping).
    */
   project: Project | null | undefined;
   /** Sender label derived from task metadata, falling back to shared_by_id. */
@@ -25,10 +26,10 @@ export interface UseConversationResult {
  * re-implementing the same useEntity dance.
  *
  * Project semantics:
- * - User 1 (sender): `task.metadata.project_id` is stamped at send time from
+ * - User 1 (sender): `task.project_id` is stamped at send time from
  *   `_resolve_local_project_identity(project_root)`.
- * - User 2 (receiver): unset until `ProjectMappingDialog` writes it on first
- *   click of a Claude Code action. Until then `project` is `null`.
+ * - User 2 (receiver): unset until `OpenProjectComponent` writes it on the
+ *   first project-requiring action. Until then `project` is `null`.
  */
 export function useConversation(conversationId: string | null | undefined): UseConversationResult {
   const convTypeId = useMemo(
@@ -43,9 +44,7 @@ export function useConversation(conversationId: string | null | undefined): UseC
   );
   const { data: task } = useEntity<Task>(taskTypeId);
 
-  const projectId = (task?.metadata as Record<string, unknown> | undefined)?.project_id as
-    | string
-    | undefined;
+  const projectId = task?.project_id ?? undefined;
   const projectTypeId = useMemo(
     () => (projectId ? new TypeId(Project.type, projectId) : null),
     [projectId],

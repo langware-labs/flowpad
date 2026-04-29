@@ -73,7 +73,7 @@ export function useApproveAndExecute({ task }: UseApproveAndExecuteOptions): Use
     if (!taskId || !messageId) return;
 
     const taskMeta = (task.metadata as Record<string, unknown> | undefined) ?? {};
-    const myProcessId = taskMeta.my_process_id as string | undefined;
+    const myProcessId = task.my_process_id ?? undefined;
     if (!myProcessId) {
       toast.warning('Start Claude Code session first', {
         description: 'Click "Start Claude Code session" before approving prompts so we know which session to fork.',
@@ -108,7 +108,7 @@ export function useApproveAndExecute({ task }: UseApproveAndExecuteOptions): Use
       toast.warning('Map this conversation to a local project first.');
       return;
     }
-    const sharedProcessId = taskMeta.shared_process_id as string | undefined;
+    const sharedProcessId = task.shared_process_id ?? undefined;
 
     // Subsequent Approve & Execute on the same task. Always re-resolve the
     // AgenticProcess from the DB and re-check liveness — the in-memory cache
@@ -147,7 +147,7 @@ export function useApproveAndExecute({ task }: UseApproveAndExecuteOptions): Use
           // approves resolve the right id from task metadata.
           const t = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId));
           if (t) {
-            t.metadata = { ...(t.metadata ?? {}), shared_process_id: resumed.id };
+            t.shared_process_id = resumed.id;
             await t.save();
           }
           navigation.openInBrowserTab(resumed.dockPointer);
@@ -171,7 +171,7 @@ export function useApproveAndExecute({ task }: UseApproveAndExecuteOptions): Use
     taskApprovalCache.set(taskId, forked);
     const t = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId));
     if (t) {
-      t.metadata = { ...(t.metadata ?? {}), shared_process_id: forked.id };
+      t.shared_process_id = forked.id;
       await t.save();
     }
     navigation.openInBrowserTab(forked.dockPointer);

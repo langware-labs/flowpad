@@ -14,13 +14,7 @@ interface Props {
   onOpenTab?: (tab: RoomTab) => void;
 }
 
-function deriveTitle(conv: Conversation): string {
-  const parts = (conv.participants ?? [])
-    .map((p) => (typeof p?.name === 'string' && p.name.trim()) || (typeof p?.email === 'string' && p.email))
-    .filter((s): s is string => !!s);
-  if (parts.length > 0) return parts.join(', ');
-  return 'Conversation';
-}
+import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 
 /**
  * Conversations category — lists Conversation entities scoped to the current
@@ -53,7 +47,7 @@ export function ConversationsCategory({ projectId, onOpenTab }: Props) {
   return (
     <ul className="flex flex-col gap-0.5">
       {items.map((c) => {
-        const title = deriveTitle(c);
+        const title = deriveConversationTitle(c);
         return (
           <li
             key={c.id}
