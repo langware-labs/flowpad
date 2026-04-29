@@ -8,7 +8,8 @@ import { useApproveAndExecute } from './useApproveAndExecute';
 
 interface ConversationViewProps {
   conversationId: string;
-  task: ITask;
+  /** Optional. Task-bound conversations (inbound .flowmsg) pass it; project-scoped do not. */
+  task?: ITask | null;
   senderName?: string;
   /** Wraps any action that needs a `cwd`/project. Provided by the parent (SharedTaskView / TaskDetailPanel). */
   ensureMapped?: (continuation: () => void | Promise<void>) => void;
@@ -46,10 +47,15 @@ export function ConversationView({
     return null;
   }, [pointers, approvedSet]);
 
-  const { approveAndExecute } = useApproveAndExecute({ task });
+  // Approve & Execute is task-bound. Pass an inert task to the hook when no
+  // task is present so we can keep the call unconditional, then suppress the
+  // approve action below.
+  const inertTask = useMemo(() => ({ id: '', metadata: {} }) as ITask, []);
+  const { approveAndExecute } = useApproveAndExecute({ task: task ?? inertTask });
 
   const runApprove = useCallback(
     (messageId: string, idx: number) => {
+      if (!task) return;
       const action = async () => {
         await approveAndExecute(messageId, idx);
         void refetch();
@@ -57,7 +63,7 @@ export function ConversationView({
       if (ensureMapped) ensureMapped(action);
       else void action();
     },
-    [approveAndExecute, refetch, ensureMapped],
+    [approveAndExecute, refetch, ensureMapped, task],
   );
 
   return (
@@ -74,13 +80,17 @@ export function ConversationView({
               task={task}
               isLastApprovedPrompt={ptr.message_id === lastApprovedMessageId}
               onApprovedPromptChange={reportApproved}
-              onApproveAndExecute={runApprove}
+              onApproveAndExecute={task ? runApprove : undefined}
             />
           ))}
         </div>
       )}
 
-      <MessageComposer task={task} onSent={() => void refetch()} />
+      <MessageComposer
+        task={task}
+        conversationId={conversationId}
+        onSent={() => void refetch()}
+      />
     </div>
   );
 }

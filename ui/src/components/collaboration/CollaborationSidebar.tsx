@@ -1,16 +1,16 @@
-import { ChevronDown, ChevronRight, FileText, ListChecks, Sparkles, Users } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileText, ListChecks, MessageSquare, Sparkles } from 'lucide-react';
 import { useState } from 'react';
-import { RoomsCategory } from './sidebar/RoomsCategory';
+import { ConversationsCategory } from './sidebar/ConversationsCategory';
 import { DocsCategory } from './sidebar/DocsCategory';
 import { NewDocButton } from './sidebar/NewDocButton';
 import { PlansCategory } from './sidebar/PlansCategory';
 import { SkillsCategory } from './sidebar/SkillsCategory';
 import type { RoomTab } from './RoomTabs';
 
-type CategoryKey = 'rooms' | 'docs' | 'plans' | 'skills';
+type CategoryKey = 'conversations' | 'docs' | 'plans' | 'skills';
 
-const CATEGORIES: Array<{ key: CategoryKey; label: string; icon: typeof Users }> = [
-  { key: 'rooms', label: 'Rooms', icon: Users },
+const CATEGORIES: Array<{ key: CategoryKey; label: string; icon: typeof MessageSquare }> = [
+  { key: 'conversations', label: 'Conversations', icon: MessageSquare },
   { key: 'docs', label: 'Docs', icon: FileText },
   { key: 'plans', label: 'Plans', icon: ListChecks },
   { key: 'skills', label: 'Skills', icon: Sparkles },
@@ -28,7 +28,7 @@ interface Props {
 
 export function CollaborationSidebar({ projectId, onOpenTab }: Props) {
   const [expanded, setExpanded] = useState<Record<CategoryKey, boolean>>({
-    rooms: true,
+    conversations: true,
     docs: true,
     plans: false,
     skills: true,
@@ -58,7 +58,9 @@ export function CollaborationSidebar({ projectId, onOpenTab }: Props) {
             </div>
             {open && (
               <div className="ml-2">
-                {key === 'rooms' && <RoomsCategory projectId={projectId} />}
+                {key === 'conversations' && (
+                  <ConversationsCategory projectId={projectId} onOpenTab={onOpenTab} />
+                )}
                 {key === 'docs' && (
                   <DocsCategory projectId={projectId} onOpenTab={onOpenTab} />
                 )}

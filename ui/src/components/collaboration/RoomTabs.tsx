@@ -2,7 +2,8 @@ import { FSRef } from '@sdk';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownEditor';
 import { SkillAssetEditor } from '@src/components/assets/editor/skill/SkillAssetEditor';
-import { ConversationTabContent } from './ConversationTabContent';
+import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
+import { useConversation } from '@src/components/conversation/useConversation';
 import { FileText, MessageSquare, Sparkles, X } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 
@@ -128,10 +129,30 @@ function RoomTabContent({ tab }: { tab: RoomTab }) {
     case 'skill':
       return <SkillTabContent assetRef={tab.asset_ref} />;
     case 'conversation':
-      return <ConversationTabContent conversationId={tab.asset_ref} />;
+      return <ConversationTab conversationId={tab.asset_ref} />;
     default:
       return <div className="p-4 text-sm text-muted-foreground">Unsupported tab type.</div>;
   }
+}
+
+function ConversationTab({ conversationId }: { conversationId: string }) {
+  // Resolve task (if any) so the canonical ConversationPanel can render the
+  // task-bound features for inbound conversations and degrade gracefully for
+  // project-scoped ones.
+  const { task, senderName, taskMissing } = useConversation(conversationId);
+  if (taskMissing) {
+    return <div className="p-4 text-sm text-muted-foreground">Loading task context…</div>;
+  }
+  return (
+    <div className="h-full overflow-y-auto">
+      <ConversationPanel
+        task={task ?? null}
+        conversationId={conversationId}
+        senderName={senderName}
+        headerLabel={null}
+      />
+    </div>
+  );
 }
 
 function MarkdownTabContent({ assetRef }: { assetRef: string }) {

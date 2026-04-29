@@ -10,7 +10,10 @@ import { PromptApprovalRow } from './PromptApprovalRow';
 import { useLocalUser } from './useLocalUser';
 
 interface MessageComposerProps {
-  task: ITask;
+  /** Task-bound: triggers hub push + git commit on send. Project-scoped sends omit it. */
+  task?: ITask | null;
+  /** Project-scoped conversation id (used when no task is present). */
+  conversationId?: string;
   disabled?: boolean;
   onSent?: () => void;
   /** Optional queued prompt provided by per-message Add-prompt chips. */
@@ -25,7 +28,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueuedPromptChange }: MessageComposerProps) {
+export function MessageComposer({ task, conversationId, disabled, onSent, queuedPrompt, onQueuedPromptChange }: MessageComposerProps) {
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
@@ -36,9 +39,10 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { localUser } = useLocalUser();
   // The initiator approves prompts (they own my_process_id and the fork);
-  // recipients propose them. So Add prompt is recipient-only.
-  const isInitiator = !!(localUser?.id && task.shared_by_id && task.shared_by_id === localUser.id);
-  const canAddPrompt = !isInitiator;
+  // recipients propose them. So Add prompt is recipient-only — and only
+  // exists at all when there's a Task. Project-scoped conversations hide it.
+  const isInitiator = !!(task && localUser?.id && task.shared_by_id && task.shared_by_id === localUser.id);
+  const canAddPrompt = !!task && !isInitiator;
 
   const activePrompt = queuedPrompt ?? localPrompt;
   const setActivePrompt = (p: QueuedPrompt | null) => {
@@ -107,7 +111,12 @@ export function MessageComposer({ task, disabled, onSent, queuedPrompt, onQueued
             promptFiles: effectivePrompt.files.length > 0 ? effectivePrompt.files : undefined,
           }
         : undefined;
-      await sendReply(task, trimmed, files.length > 0 ? files : undefined, extras);
+      await sendReply(
+        { task, conversationId },
+        trimmed,
+        files.length > 0 ? files : undefined,
+        extras,
+      );
       setText('');
       setFiles([]);
       setActivePrompt(null);

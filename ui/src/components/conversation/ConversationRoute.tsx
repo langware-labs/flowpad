@@ -38,7 +38,10 @@ export function ConversationRoute({ conversationId }: ConversationRouteProps) {
     );
   }
 
-  if (taskMissing || !task) {
+  // Task is optional: project-scoped conversations don't have one. Only block
+  // on "loading task" when the conversation references a task that hasn't
+  // materialised locally yet.
+  if (taskMissing) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
         Loading task context…
@@ -46,7 +49,7 @@ export function ConversationRoute({ conversationId }: ConversationRouteProps) {
     );
   }
 
-  const subject = task.title?.trim() || 'Conversation';
+  const subject = task?.title?.trim() || 'Conversation';
 
   return (
     <div className="flex h-full flex-col">

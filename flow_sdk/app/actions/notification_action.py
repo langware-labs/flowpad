@@ -674,7 +674,7 @@ async def _find_task_conversation(task: Task) -> Optional[Conversation]:
 
 def _build_reply_flow_message(
     *,
-    task_id: str,
+    task_id: Optional[str],
     conv_id: str,
     message: str,
     sender_id: Optional[str],
@@ -682,30 +682,35 @@ def _build_reply_flow_message(
 ) -> "FlowMessage":
     """Build (but do not save) the FlowMessage entity for a conversation reply.
 
-    The caller is responsible for attaching any uploaded files and then saving.
-    Building before saving means there is only ever one save, so the frontend
-    entity cache always receives the final version with FILE attachments included.
+    `task_id` is omitted from context/attachments when None — project-scoped
+    conversations have no Task. The caller is responsible for attaching any
+    uploaded files and then saving.
     """
     from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
     from flow_sdk.fs_store.type_id import TypeId
 
+    context: list = []
+    if task_id:
+        context.append(TypeId(type=BuiltinEntityType.TASK.value, id=task_id))
+    context.append(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv_id))
+
     reply_fm = FlowMessage.model_validate({
         "text": message,
-        "context": [
-            TypeId(type=BuiltinEntityType.TASK.value, id=task_id),
-            TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv_id),
-        ],
+        "context": context,
         "attachment": [],
         "sender_id": sender_id,
         "sender_name": sender_name,
         "conversation_id": conv_id,
     })
     reply_fm.id = FlowMessage.allocate_id(reply_fm.model_dump())
-    reply_fm.attachment = [
-        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.TASK.value, id=task_id))),
+    attachments: list[Attachment] = []
+    if task_id:
+        attachments.append(Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.TASK.value, id=task_id))))
+    attachments.extend([
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv_id))),
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=reply_fm.id))),
-    ]
+    ])
+    reply_fm.attachment = attachments
     return reply_fm
 
 
@@ -783,16 +788,27 @@ async def _attach_uploaded_files(reply_fm: "FlowMessage", uploaded_files: list) 
 async def _append_message_to_conversation(
     *,
     conv: Conversation,
-    task_id: str,
+    task_id: Optional[str],
     fm_id: str,
     someone_typeid: str,
 ) -> Conversation:
-    """Write pointer to conversation.jsonl and update message_ids / message_count on the entity."""
+    """Write pointer to conversation.jsonl and update message_ids / message_count on the entity.
+
+    Parent record is the Task when `task_id` is set, else the Project (project-scoped
+    conversations created via `conversation-create`).
+    """
     from flow_sdk.fs_records.conversation_record import ConversationRecord
+    from flow_sdk.fs_store.record_types import RecordType
 
     reply_ts = datetime.now(UTC).isoformat()
     if conv.data_path:
-        rec = ConversationRecord.from_jsonl(Path(conv.data_path), task_id, conv.id)
+        if task_id:
+            rec = ConversationRecord.from_jsonl(Path(conv.data_path), task_id, conv.id)
+        else:
+            parent_id = conv.project_id or ""
+            rec = ConversationRecord.from_jsonl(
+                Path(conv.data_path), parent_id, conv.id, parent_type=RecordType.PROJECT
+            )
         rec.append_message_pointer(fm_id, reply_ts)
     existing_ids: list = []
     if conv.message_ids:
@@ -864,16 +880,21 @@ def _notify_ui_conversation_updated(conv_id: str, task_id: str, fm_id: str) -> N
 
 
 async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResponse:
-    """Append a reply to an existing task's Conversation entity and conversation.jsonl."""
+    """Append a reply to a Conversation.
+
+    Accepts EITHER `task_id` (legacy task-bound path: hub push + git commit) OR
+    `conversation_id` (project-scoped conversations: local-only — no hub, no git).
+    """
     task_id = (body.get("task_id") or "").strip()
+    conversation_id = (body.get("conversation_id") or "").strip()
     message = (body.get("message") or "").strip()
     prompt_text_preview = (body.get("prompt_text") or "").strip()
     prompt_files_preview = body.get("prompt_files") or []
     if not isinstance(prompt_files_preview, list):
         prompt_files_preview = [prompt_files_preview]
 
-    if not task_id:
-        return ApiFailResponse(message="task_id is required")
+    if not task_id and not conversation_id:
+        return ApiFailResponse(message="task_id or conversation_id is required")
     if not message and not prompt_text_preview and not prompt_files_preview:
         return ApiFailResponse(message="message or prompt is required")
     if not message:
@@ -881,21 +902,28 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         # non-empty text body) keeps working for prompt-only sends.
         message = "(proposed prompt)"
 
-    task = await Task.get_one({"id": task_id})
-    if not task:
-        return ApiFailResponse(message=f"Task not found: {task_id}")
-
-    conv = await _find_task_conversation(task)
-    if not conv:
-        return ApiFailResponse(message=f"No conversation found for task {task_id}")
+    task: Optional[Task] = None
+    if task_id:
+        task = await Task.get_one({"id": task_id})
+        if not task:
+            return ApiFailResponse(message=f"Task not found: {task_id}")
+        conv = await _find_task_conversation(task)
+        if not conv:
+            return ApiFailResponse(message=f"No conversation found for task {task_id}")
+    else:
+        conv = await Conversation.get_one({"id": conversation_id})
+        if not conv:
+            return ApiFailResponse(message=f"Conversation not found: {conversation_id}")
 
     local_user = await User.get_one({"uname": "local"})
     sender_id: Optional[str] = local_user.id if local_user else None
     body_sender_name = (body.get("sender_name") or "").strip()
     sender_name: str = body_sender_name or ((local_user.name or local_user.email or "") if local_user else "")
 
+    effective_task_id: Optional[str] = task.id if task else None
+
     reply_fm = _build_reply_flow_message(
-        task_id=task_id,
+        task_id=effective_task_id,
         conv_id=conv.id,
         message=message,
         sender_id=sender_id,
@@ -921,34 +949,36 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     # Append pointer BEFORE packing the bundle so conversation.jsonl is up-to-date in the zip
     conv = await _append_message_to_conversation(
         conv=conv,
-        task_id=task_id,
+        task_id=effective_task_id,
         fm_id=reply_fm.id,
         someone_typeid=someone_typeid,
     )
 
-    recipient_email = _resolve_reply_recipient_email(task, local_user.id if local_user else "")
-    await _send_reply_to_hub(
-        reply_fm=reply_fm,
-        task=task,
-        task_id=task_id,
-        message=message,
-        sender_id=sender_id,
-        sender_name=sender_name,
-        recipient_email=recipient_email,
-    )
-
-    _notify_ui_conversation_updated(conv.id, task_id, reply_fm.id)
-
-    project_root_str = (task.metadata or {}).get("project_root")
-    if project_root_str:
-        await git_add_commit_push(
-            Path(project_root_str),
-            ["tasks"],
-            f"chore: update conversation for task '{task.title}'",
+    if task:
+        recipient_email = _resolve_reply_recipient_email(task, local_user.id if local_user else "")
+        await _send_reply_to_hub(
+            reply_fm=reply_fm,
+            task=task,
+            task_id=task.id,
+            message=message,
+            sender_id=sender_id,
+            sender_name=sender_name,
+            recipient_email=recipient_email,
         )
 
+    _notify_ui_conversation_updated(conv.id, effective_task_id or "", reply_fm.id)
+
+    if task:
+        project_root_str = (task.metadata or {}).get("project_root")
+        if project_root_str:
+            await git_add_commit_push(
+                Path(project_root_str),
+                ["tasks"],
+                f"chore: update conversation for task '{task.title}'",
+            )
+
     return ApiSuccessResponse(data={
-        "task_id": task_id,
+        "task_id": effective_task_id or "",
         "conversation_id": conv.id,
         "message_count": conv.message_count,
         "flow_message_id": reply_fm.id,

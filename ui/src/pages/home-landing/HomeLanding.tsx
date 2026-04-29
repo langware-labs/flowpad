@@ -6,7 +6,6 @@ import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchB
 import { NotificationFeed } from '@src/components/notification-feed';
 import { type ProjectResourceListItem } from '@src/components/project-resource-list';
 import { ProjectActivityStrip, RecentConversationsStrip, BookmarkColumn } from '@src/components/project-activity-strip';
-import { WorkflowStrip } from '@src/components/workflows-view/WorkflowStrip';
 import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
 import { MiniDesktop } from '@src/components/quick-create';
 import { SessionInput } from '@src/components/session-input/session-input';
@@ -32,8 +31,8 @@ import { useToast } from '@src/hooks/use-toast';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityProgressModal } from '@src/components/search-index/ActivityProgressModal';
 import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
-import { JoinRoomDialog } from '@src/components/join-room-dialog/JoinRoomDialog';
-import { JoinExistingRoomDialog } from '@src/components/join-room-dialog/JoinExistingRoomDialog';
+import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
+import { JoinConversationDialog } from '@src/components/join-room-dialog/JoinConversationDialog';
 import { useLoginRequired } from '@src/hooks/use-login-required';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { Button } from '@src/components/ui/button';
@@ -208,16 +207,16 @@ export function HomeLanding() {
   const firstName = user?.name?.split(' ')[0] || 'there';
 
   const { checkLoginAndProceed, requiresLogin, showLoginDialog, closeLoginDialog } = useLoginRequired();
-  const [showJoinRoom, setShowJoinRoom] = useState(false);
-  const [showJoinExisting, setShowJoinExisting] = useState(false);
+  const [showNewConversation, setShowNewConversation] = useState(false);
+  const [showJoinConversation, setShowJoinConversation] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState('');
-  const handleStartCollaborationRoom = () => {
+  const handleStartConversation = () => {
     if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
-    setShowJoinRoom(true);
+    setShowNewConversation(true);
   };
-  const handleJoinRoom = () => {
+  const handleJoinConversation = () => {
     if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
-    setShowJoinExisting(true);
+    setShowJoinConversation(true);
   };
 
   // Inbox state
@@ -270,59 +269,6 @@ export function HomeLanding() {
   // Get paths from desktop_info
   const paths = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths, []);
 
-  const handleStartCollaboration = useCallback(
-    async (hostName: string, prompt: string, roomName?: string) => {
-      if (!currentProject?.typeId) {
-        toast({
-          title: 'Project Required',
-          description: 'Please select or create a project first.',
-          variant: 'destructive',
-        });
-        return;
-      }
-      const trimmedPrompt = prompt.trim();
-      const finalName = roomName?.trim() ? roomName.trim() : undefined;
-      try {
-        const { CollaborationRoom, TypeId } = await import('@sdk');
-        const projectIdStr = currentProject.typeId.id;
-        if (trimmedPrompt) {
-          const workdir =
-            currentProject.fs_storage_mount_path || currentProject.name || paths?.workspace || undefined;
-          const agenticProcess = await claudeSessionManager.createAndStartSession(
-            { workdir },
-            { instruction: trimmedPrompt },
-          );
-          const room = await agenticProcess.createCollaborationRoom(hostName, {
-            name: finalName ?? null,
-          });
-          setDraftPrompt('');
-          navigation.openDock(
-            DockPointer.forProject(projectIdStr, {
-              roomId: room.id,
-              tab: new TypeId('agentic_process', agenticProcess.id),
-            }),
-          );
-        } else {
-          const room = await CollaborationRoom.create({
-            projectId: projectIdStr,
-            hostName,
-            name: finalName ?? null,
-          });
-          navigation.openDock(
-            DockPointer.forProject(projectIdStr, { roomId: room.id }),
-          );
-        }
-      } catch (error) {
-        console.error('[HomeLanding] Failed to start collaboration room:', error);
-        toast({
-          title: 'Could not start room',
-          description: String((error as Error).message ?? error),
-          variant: 'destructive',
-        });
-      }
-    },
-    [currentProject, navigation, paths?.workspace, toast],
-  );
   const apiUrl = useMemo(() => {
     // Derive API URL from the current window location or use default
     const port = '9007';
@@ -598,14 +544,14 @@ export function HomeLanding() {
       <div className="flex min-h-0 flex-1 gap-6 px-4 pb-4">
         {/* Left column: Inbox header + Bookmarks */}
         <div className="w-72 shrink-0 flex flex-col gap-2">
-          {/* Inbox icon row */}
-          <div className="flex items-center justify-between px-1">
+          {/* Inbox icon row — same box model as the Recent conversations strip header so both columns share an invisible top line */}
+          <div className="flex h-9 items-center justify-between rounded-lg border border-transparent px-3">
             <button
-              className="flex items-center gap-1.5 rounded-md px-1 py-1 text-sm font-medium hover:bg-accent transition-colors"
+              className="flex items-center gap-1.5 rounded-md py-1 text-xs font-medium hover:bg-accent transition-colors"
               onClick={() => navigation.openTab(ViewType.INBOX)}
             >
               <div className="relative">
-                <Inbox className="h-4 w-4 text-muted-foreground" />
+                <Inbox className="h-3.5 w-3.5 text-muted-foreground" />
                 {unreadCount > 0 && (
                   <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-destructive px-0.5 text-[8px] font-bold leading-none text-destructive-foreground">
                     {unreadCount > 99 ? '99+' : unreadCount}
@@ -614,19 +560,18 @@ export function HomeLanding() {
               </div>
               <span className="text-muted-foreground hover:text-foreground transition-colors">Inbox</span>
               {unreadCount > 0 && (
-                <span className="text-xs text-muted-foreground">({unreadCount})</span>
+                <span className="text-muted-foreground">({unreadCount})</span>
               )}
             </button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
+            <button
+              type="button"
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
               onClick={() => void handleInboxRefresh()}
               disabled={inboxRefreshing}
               title="Fetch new messages from hub"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${inboxRefreshing ? 'animate-spin' : ''}`} />
-            </Button>
+            </button>
           </div>
 
           <BookmarkColumn
@@ -670,16 +615,16 @@ export function HomeLanding() {
                   type="button"
                   variant="outline"
                   className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white transition-colors shadow-sm"
-                  onClick={handleJoinRoom}
+                  onClick={handleJoinConversation}
                 >
-                  Join room
+                  Join conversation
                 </Button>
                 <Button
                   type="button"
                   className="bg-green-600 text-white hover:bg-green-700 transition-colors shadow-sm"
-                  onClick={handleStartCollaborationRoom}
+                  onClick={handleStartConversation}
                 >
-                  Start collaboration room
+                  Start conversation
                 </Button>
               </div>
             </div>
@@ -789,9 +734,8 @@ export function HomeLanding() {
           </div>
         </div>
 
-        {/* Right column: Workflows strip + Recent conversations */}
+        {/* Right column: Recent conversations */}
         <div className="w-72 shrink-0 flex flex-col gap-2">
-          <WorkflowStrip />
           <RecentConversationsStrip />
         </div>
 
@@ -811,18 +755,13 @@ export function HomeLanding() {
         }}
       />
 
-      <JoinRoomDialog
-        open={showJoinRoom}
-        onClose={() => setShowJoinRoom(false)}
-        hostName={user?.name ?? undefined}
-        draftPrompt={draftPrompt}
-        onStart={(hostName, prompt, roomName) =>
-          handleStartCollaboration(hostName, prompt, roomName)
-        }
+      <NewConversationDialog
+        open={showNewConversation}
+        onClose={() => setShowNewConversation(false)}
       />
-      <JoinExistingRoomDialog
-        open={showJoinExisting}
-        onClose={() => setShowJoinExisting(false)}
+      <JoinConversationDialog
+        open={showJoinConversation}
+        onClose={() => setShowJoinConversation(false)}
         defaultName={user?.name ?? undefined}
       />
       <LoginDialog open={showLoginDialog} onOpenChange={closeLoginDialog} />
