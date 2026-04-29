@@ -1,13 +1,9 @@
+import { useMemo } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ConversationPanel } from './ConversationPanel';
 import { useConversation } from './useConversation';
-
-interface ConversationRouteProps {
-  /** Conversation id from the dock URL (`/dock/conversation/:id`). */
-  conversationId: string | null;
-}
 
 /**
  * Top-level renderer for the `/dock/conversation/<id>` route.
@@ -15,9 +11,27 @@ interface ConversationRouteProps {
  * Loads the Conversation + parent Task and embeds the same `ConversationPanel`
  * that task views use, with a thin header (back arrow + subject). Drop-in
  * landing target for inbox clicks and the email "view task" deep-link.
+ *
+ * Self-contained pointer resolution — matches the convention used by every
+ * other dock tab (TasksViewer, LensViewer, SessionViewer, …): read
+ * `currentDock` directly, parse the pointer's first segment as the entity id,
+ * and treat anything else as "no entity". Safe against the all-tabs-mounted
+ * issue where a hidden tab would otherwise see another route's pointer.
  */
-export function ConversationRoute({ conversationId }: ConversationRouteProps) {
-  const { navigation } = useDockNavigation();
+export function ConversationRoute() {
+  const { navigation, currentDock } = useDockNavigation();
+
+  // Take only the first path segment as the conversation id. Hidden tabs see
+  // pointers from whatever route is currently active (e.g. project's
+  // `<projId>/conversation/<convId>`); we ignore everything past the first
+  // slash so we never feed a multi-segment string into useConversation.
+  const conversationId = useMemo(() => {
+    const pointer = currentDock?.pointer;
+    if (!pointer) return null;
+    const head = pointer.split('/')[0];
+    return head || null;
+  }, [currentDock?.pointer]);
+
   const { conversation, task, senderName, taskMissing } = useConversation(conversationId);
 
   const goBack = () => navigation.openDock(DockPointer.forInbox());

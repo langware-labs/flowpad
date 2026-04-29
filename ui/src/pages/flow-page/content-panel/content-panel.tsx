@@ -531,7 +531,7 @@ export function ContentPanel() {
             value={ViewType.CONVERSATION}
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
           >
-            <ConversationRoute conversationId={currentDock?.pointer ?? null} />
+            <ConversationRoute />
           </TabsContent>
         </div>
       </Tabs>
