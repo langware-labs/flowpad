@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { FileText } from 'lucide-react';
 import { AgenticProcess, Conversation, dataManager, Project, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -43,6 +43,15 @@ export function ConversationToolbar({
 }: ConversationToolbarProps) {
   const [transcript, setTranscript] = useState<ConversationTranscriptInfo | null>(null);
   const { isStartLabel, busy, openOrStart } = useMyProcess({ task, conversationId, senderName });
+  // Keep a ref pointing at the *latest* openOrStart so an action stored on
+  // the project-mapping gate's continuation reads the freshest task.metadata
+  // (and not whatever was current at click time). Without this, the cont
+  // captured before the user picks a project still calls the pre-mapping
+  // openOrStart and ends up with project_root undefined.
+  const openOrStartRef = useRef(openOrStart);
+  useEffect(() => {
+    openOrStartRef.current = openOrStart;
+  }, [openOrStart]);
   const { navigation } = useDockNavigation();
   const localProjectId = (task.metadata as Record<string, unknown> | undefined)?.project_id as
     | string
@@ -179,7 +188,9 @@ export function ConversationToolbar({
             <button
               type="button"
               onClick={() => {
-                const action = () => openOrStart();
+                // Read the latest openOrStart at call time via the ref so a
+                // post-mapping continuation runs against fresh task.metadata.
+                const action = () => openOrStartRef.current();
                 if (ensureMapped) ensureMapped(action);
                 else void action();
               }}

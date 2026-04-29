@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 
 /**
@@ -7,13 +7,14 @@ import type { ITask } from '@sdk/entities/task';
  * time an action actually needs the project; once the user picks one, the
  * action automatically resumes.
  *
- * The dialog itself is `OpenProjectComponent` (the same component the footer's
- * Switch Project button uses) — see #10–14 in the design discussion. We pass
- * it the optional `taskId` + `remoteProjectId` so it stamps task metadata and
- * writes the per-machine remote→local mapping when relevant.
+ * The gate watches `task.metadata.project_root` for the transition from
+ * unset → set: whenever a continuation is pending and that flips, the
+ * continuation runs and the dialog closes. Driving it off observed state
+ * (rather than the dialog's `onPicked` callback firing) means it works
+ * regardless of which picker component is mounted and what its callback
+ * timing happens to be.
  *
- * Usage from the parent (SharedTaskView / TaskDetailPanel):
- *
+ * Usage:
  * ```tsx
  * const gate = useProjectMappingGate(task);
  * // mount: <OpenProjectComponent {...gate.dialogProps} />
@@ -42,23 +43,34 @@ export function useProjectMappingGate(task: ITask | null | undefined) {
     [hasMapping],
   );
 
+  // Watch for the mapping flipping from unset → set while a continuation is
+  // pending. Defer one tick so React state (the picker's setCurrentProject,
+  // task entity refresh) finishes committing before the action runs.
+  useEffect(() => {
+    if (!hasMapping || !continuationRef.current) return;
+    const cont = continuationRef.current;
+    continuationRef.current = null;
+    setOpen(false);
+    const handle = window.setTimeout(() => {
+      void cont();
+    }, 0);
+    return () => window.clearTimeout(handle);
+  }, [hasMapping]);
+
   const dialogProps = {
     open,
     onOpenChange: (next: boolean) => {
       setOpen(next);
-      if (!next) continuationRef.current = null;
+      // Treat a manual close (no mapping written) as a cancel — drop the
+      // pending continuation so it doesn't fire on some unrelated future
+      // mapping change. The successful-pick path closes the dialog from
+      // inside the effect above, by which point the ref is already null.
+      if (!next && !hasMapping) continuationRef.current = null;
     },
     taskId: task?.id ?? undefined,
     remoteProjectId: remoteProjectId ?? null,
     remoteProjectName,
     trigger: (remoteProjectId ? 'map' : 'gate') as 'map' | 'gate',
-    onPicked: async () => {
-      // setCurrentProjectContext already wrote project_id/project_root to the
-      // task before we get here; defer one tick so React state catches up.
-      const cont = continuationRef.current;
-      continuationRef.current = null;
-      if (cont) await new Promise<void>((resolve) => setTimeout(() => { resolve(); }, 0)).then(() => cont());
-    },
   };
 
   return { ensureMapped, dialogProps };
