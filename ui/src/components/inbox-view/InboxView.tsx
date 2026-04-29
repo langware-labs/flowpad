@@ -60,6 +60,16 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, refSett
   );
   const { data: latestMessage } = useEntity<FlowMessage>(latestTypeId);
 
+  // Hide archived rows: "Archive all" flips is_archived on every FlowMessage,
+  // so when the latest message is archived we treat the conversation as
+  // archived too. Without this the row keeps rendering and looks unchanged.
+  if (latestMessage?.is_archived) return null;
+  // Hide rows whose latest FlowMessage couldn't be loaded — usually means the
+  // bundle hasn't been pulled yet (we'd just render an empty "Unknown" row
+  // and 404 in the network tab). The auto inbox-fetch on mount will pull the
+  // bundle and the row will materialise on the next entity update.
+  if (latest && !latestMessage) return null;
+
   const sender = latestMessage?.sender_name?.trim() || 'Unknown';
   const count = pointers.length;
   const subject = task?.title?.trim() || 'Conversation';
@@ -194,6 +204,7 @@ function ConversationReader({ conversationId, onBack }: ConversationReaderProps)
 
 export function InboxView() {
   const [fetching, setFetching] = useState(false);
+  const [visibleCount, setVisibleCount] = useState<number | null>(null);
   const rowRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const { navigation, currentDock } = useDockNavigation();
   const { setUnreadCount } = useInboxStore();
@@ -213,20 +224,39 @@ export function InboxView() {
     return list;
   }, [conversations]);
 
-  // Keep the unread badge in sync with the legacy inbox-list (still authoritative).
+  // Keep the unread badge in sync AND compute the visible-conversation count
+  // from the same source (`listInboxMessages` already filters out archived
+  // FlowMessages server-side). The header count needs to reflect what the
+  // user actually sees: after "Archive all" the conversation entities still
+  // exist locally but every row hides itself, so we can't use sorted.length.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         const { listInboxMessages } = await import('./inbox-api');
         const msgs = await listInboxMessages();
-        if (!cancelled) setUnreadCount(msgs.filter((m) => !m.is_read).length);
+        if (cancelled) return;
+        setUnreadCount(msgs.filter((m) => !m.is_read).length);
+        const visibleConvs = new Set(
+          msgs.map((m) => m.conversation_id).filter((id): id is string => !!id),
+        );
+        setVisibleCount(visibleConvs.size);
       } catch {
-        // non-fatal
+        // non-fatal — leave visibleCount as-is.
       }
     })();
     return () => { cancelled = true; };
   }, [setUnreadCount, conversations.length]);
+
+  // On inbox mount: pull any pending bundles from the hub so conversations
+  // whose pointer-list references not-yet-materialised FlowMessages don't
+  // 404 in the rendered rows. Fire-and-forget — the entity-update channel
+  // will refresh rows once the FMs land locally.
+  useEffect(() => {
+    void fetchInboxFromHub().then(() => refetch()).catch(() => {});
+    // Run once per mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // When the URL focuses a conversation in list mode (we're in reader instead),
   // make sure the row is visible if the user navigates back.
@@ -303,9 +333,11 @@ export function InboxView() {
       <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold">Inbox</span>
-          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-            {sorted.length}
-          </span>
+          {visibleCount !== null && visibleCount > 0 && (
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+              {visibleCount}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1">
           <Button
@@ -313,7 +345,7 @@ export function InboxView() {
             size="sm"
             className="h-7 text-xs"
             onClick={() => void handleMarkAllRead()}
-            disabled={isLoading || sorted.length === 0}
+            disabled={isLoading || (visibleCount ?? 0) === 0}
           >
             Mark all read
           </Button>
@@ -322,7 +354,7 @@ export function InboxView() {
             size="sm"
             className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
             onClick={() => void handleArchiveAll()}
-            disabled={isLoading || sorted.length === 0}
+            disabled={isLoading || (visibleCount ?? 0) === 0}
           >
             Archive all
           </Button>
@@ -344,7 +376,7 @@ export function InboxView() {
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">Loading…</div>
         )}
 
-        {!isLoading && sorted.length === 0 && (
+        {!isLoading && (visibleCount ?? sorted.length) === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <span className="text-sm">No conversations</span>
             <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
