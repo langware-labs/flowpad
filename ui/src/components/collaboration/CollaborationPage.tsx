@@ -1,5 +1,6 @@
 import {
   CollaborationRoom,
+  Conversation,
   getOrCreateLocalMemberId,
   Project,
   TypeId,
@@ -8,13 +9,12 @@ import {
 import { useEntity } from '@src/hooks/entity-hooks/useEntity';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@src/components/ui/resizable';
 import { Button } from '@src/components/ui/button';
+import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { Users } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ProjectViewHeader } from './ProjectViewHeader';
 import { CollaborationSidebar } from './CollaborationSidebar';
-import { CollaborationChat } from './CollaborationChat';
 import { RoomTabs, type RoomTab } from './RoomTabs';
 import { RoomHeader } from './RoomHeader';
 import { StartRoomDialog } from './StartRoomDialog';
@@ -162,17 +162,60 @@ export function CollaborationPage() {
     setActiveRoomTabKey(tab.key);
   }, []);
 
-  // Open a conversation tab when the URL pointer carries `/conversation/<id>`.
+  // Load the deep-linked conversation so we can name the tab after the
+  // conversation entity (e.g. Community Assistance sets `name` to the first
+  // message). When the entity hasn't loaded yet we open with the derived
+  // fallback ("Conversation <short-id>"), then patch the title once it does.
+  const pointerConvTypeId = useMemo(
+    () => (pointerConversationId ? new TypeId(Conversation.type, pointerConversationId) : null),
+    [pointerConversationId],
+  );
+  const { data: pointerConv } = useEntity<Conversation>(pointerConvTypeId);
+
   useEffect(() => {
     if (!pointerConversationId) return;
     const key = `conv-${pointerConversationId}`;
     handleOpenRoomTab({
       key,
       type: 'conversation',
-      title: 'Conversation',
+      title: deriveConversationTitle(pointerConv ?? ({ id: pointerConversationId } as Conversation)),
       asset_ref: pointerConversationId,
     });
-  }, [pointerConversationId, handleOpenRoomTab]);
+  }, [pointerConversationId, pointerConv, handleOpenRoomTab]);
+
+  // Patch the tab title when the conversation entity finally resolves a name.
+  useEffect(() => {
+    if (!pointerConversationId || !pointerConv) return;
+    const key = `conv-${pointerConversationId}`;
+    const nextTitle = deriveConversationTitle(pointerConv);
+    setRoomTabs((prev) =>
+      prev.map((t) => (t.key === key && t.title !== nextTitle ? { ...t, title: nextTitle } : t)),
+    );
+  }, [pointerConversationId, pointerConv]);
+
+  const handleRenameRoomTab = useCallback((key: string, newTitle: string) => {
+    setRoomTabs((prev) => prev.map((t) => (t.key === key ? { ...t, title: newTitle } : t)));
+    // Persist rename to the underlying entity, when applicable. Tab types that
+    // aren't first-class entities (e.g. markdown files) only update locally.
+    setRoomTabs((prev) => {
+      const tab = prev.find((t) => t.key === key);
+      if (!tab) return prev;
+      if (tab.type === 'conversation') {
+        void (async () => {
+          try {
+            const conv = await Conversation.getById<Conversation>(tab.asset_ref);
+            if (conv) {
+              conv.name = newTitle;
+              await conv.save();
+            }
+          } catch (err) {
+            console.warn('[CollaborationPage] failed to persist conversation rename', err);
+          }
+        })();
+      }
+      return prev;
+    });
+  }, []);
 
   const handleCloseRoomTab = useCallback((key: string) => {
     setRoomTabs((prev) => {
@@ -208,21 +251,14 @@ export function CollaborationPage() {
             />
           )}
           <div className="min-h-0 flex-1">
-            <ResizablePanelGroup direction="vertical">
-              <ResizablePanel defaultSize={70} minSize={20}>
-                <RoomTabs
-                  tabs={roomTabs}
-                  activeKey={activeRoomTabKey}
-                  onActivate={setActiveRoomTabKey}
-                  onClose={handleCloseRoomTab}
-                  className="h-full"
-                />
-              </ResizablePanel>
-              <ResizableHandle />
-              <ResizablePanel defaultSize={30} minSize={20}>
-                <CollaborationChat />
-              </ResizablePanel>
-            </ResizablePanelGroup>
+            <RoomTabs
+              tabs={roomTabs}
+              activeKey={activeRoomTabKey}
+              onActivate={setActiveRoomTabKey}
+              onClose={handleCloseRoomTab}
+              onRename={handleRenameRoomTab}
+              className="h-full"
+            />
           </div>
         </div>
       </div>

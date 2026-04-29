@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ExternalLink, FileText, FolderOpen, MessageSquare } from 'lucide-react';
+import { ExternalLink, FileText, FolderOpen, MessageSquare, Sparkles } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { TypeId } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -38,10 +38,20 @@ interface EntityLabelProps {
   size?: 'chip' | 'inline';
 }
 
-const DEFAULT_ICON_BY_TYPE: Record<string, LucideIcon> = {
+/**
+ * Per-entity-type icon registry. Re-used by surfaces that render entities
+ * (chips, tab strips). Add new entry types here as they appear.
+ *
+ * `skill` and `markdown` are tab content kinds, not entities, but they
+ * render in the same tab strip — keeping them here means the strip and any
+ * entity chip stay visually consistent.
+ */
+export const ICON_BY_TYPE: Record<string, LucideIcon> = {
   project: FolderOpen,
   task: FileText,
   conversation: MessageSquare,
+  skill: Sparkles,
+  markdown: FileText,
 };
 
 /**
@@ -85,7 +95,7 @@ function resolveTypeAndId(entity: EntityLabelEntity): { type: string; id: string
 export function EntityLabel({ entity, inside, onClick, title, size = 'chip' }: EntityLabelProps) {
   const { navigation } = useDockNavigation();
   const resolved = resolveTypeAndId(entity);
-  const Icon = entity.icon ?? (resolved ? DEFAULT_ICON_BY_TYPE[resolved.type] : undefined) ?? ExternalLink;
+  const Icon = entity.icon ?? (resolved ? ICON_BY_TYPE[resolved.type] : undefined) ?? ExternalLink;
   const label = entity.name ?? (resolved?.id ?? '(unnamed)');
   const typeStyle = (resolved && STYLE_BY_TYPE[resolved.type]) ?? DEFAULT_STYLE;
   // "Open in project" / "Open in task" — uses the entity's *type*, not its
