@@ -65,7 +65,12 @@ export function ProjectMappingDialog({
     setBusy(true);
     setError(null);
     try {
-      await setMapping(remoteProjectId, proj.id);
+      // Only persist a remote→local mapping when we actually have a remote
+      // project_id to key it under. For tasks that arrived without one, we
+      // still want to set project_root on the task itself.
+      if (remoteProjectId) {
+        await setMapping(remoteProjectId, proj.id);
+      }
       const task = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId)).catch(() => null);
       if (task) {
         task.metadata = {
@@ -89,11 +94,17 @@ export function ProjectMappingDialog({
     <Dialog open={open} onOpenChange={(o) => { if (!o && !busy) onClose(); }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Map remote project</DialogTitle>
+          <DialogTitle>{remoteProjectId ? 'Map remote project' : 'Pick a project'}</DialogTitle>
           <DialogDescription>
-            This task came from a project on another machine
-            {remoteProjectName ? <> called <span className="font-medium text-foreground">{remoteProjectName}</span></> : null}.
-            Pick a local project folder to map it to. The mapping is remembered for future messages.
+            {remoteProjectId ? (
+              <>
+                This task came from a project on another machine
+                {remoteProjectName ? <> called <span className="font-medium text-foreground">{remoteProjectName}</span></> : null}.
+                Pick a local project folder to map it to. The mapping is remembered for future messages.
+              </>
+            ) : (
+              <>Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions on this task.</>
+            )}
           </DialogDescription>
         </DialogHeader>
 

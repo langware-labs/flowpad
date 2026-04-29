@@ -166,10 +166,10 @@ export function useMyProcess({ task, conversationId, senderName }: UseMyProcessO
               t.metadata = { ...(t.metadata ?? {}), my_process_id: resumed.id };
               await t.save();
             }
-            navigation.openDock(resumed.dockPointer);
+            navigation.openInBrowserTab(resumed.dockPointer);
             return;
           }
-          navigation.openDock(existing.dockPointer);
+          navigation.openInBrowserTab(existing.dockPointer);
           return;
         }
       }
@@ -188,7 +188,7 @@ export function useMyProcess({ task, conversationId, senderName }: UseMyProcessO
         t.metadata = { ...(t.metadata ?? {}), my_process_id: spawned.id };
         await t.save();
       }
-      navigation.openDock(spawned.dockPointer);
+      navigation.openInBrowserTab(spawned.dockPointer);
     } catch (err) {
       console.error('[useMyProcess] openOrStart failed:', err);
     } finally {
