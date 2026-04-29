@@ -17,11 +17,11 @@ import { useProjectMapping } from './useProjectMapping';
  * // pass down: gate.ensureMapped(continuation)
  * ```
  */
-export function useProjectMappingGate(task: ITask) {
+export function useProjectMappingGate(task: ITask | null | undefined) {
   const [open, setOpen] = useState(false);
   const continuationRef = useRef<(() => void | Promise<void>) | null>(null);
 
-  const taskMeta = (task.metadata as Record<string, unknown> | undefined) ?? {};
+  const taskMeta = (task?.metadata as Record<string, unknown> | undefined) ?? {};
   const remoteProjectId = taskMeta.remote_project_id as string | undefined;
   const remoteProjectName = (taskMeta.remote_project_name as string | undefined) ?? '';
   const projectRoot = taskMeta.project_root as string | undefined;
@@ -53,7 +53,7 @@ export function useProjectMappingGate(task: ITask) {
     },
     remoteProjectId: remoteProjectId ?? '',
     remoteProjectName,
-    taskId: task.id ?? '',
+    taskId: task?.id ?? '',
     onMapped: () => {
       setOpen(false);
       const cont = continuationRef.current;
