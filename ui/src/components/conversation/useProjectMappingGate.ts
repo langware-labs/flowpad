@@ -44,6 +44,21 @@ export function useProjectMappingGate(task: ITask | null | undefined) {
   // second case into the first as soon as the table is loaded.
   const hasMapping = !!projectRoot || !!mappedLocalId;
 
+  // Unconditional state trace — fires every time the relevant inputs change.
+  // Lets us see at a glance which guard is short-circuiting the auto-apply.
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log('[project-mapping] gate state', {
+      taskId,
+      projectRoot: projectRoot ?? null,
+      remoteProjectId: remoteProjectId ?? null,
+      mappingLoaded,
+      mapping,
+      mappedLocalId: mappedLocalId ?? null,
+      hasMapping,
+    });
+  }, [taskId, projectRoot, remoteProjectId, mappingLoaded, mapping, mappedLocalId, hasMapping]);
+
   // Auto-apply the saved mapping when it exists for this remote project but
   // the task hasn't been stamped yet. Runs once per task; further changes
   // require explicit user action.
@@ -55,11 +70,8 @@ export function useProjectMappingGate(task: ITask | null | undefined) {
     autoApplyAttemptedRef.current.add(taskId);
 
     void (async () => {
-      // Helpful trace — log on the receiver side when we catch a routable
-      // mapping that the bundle didn't apply itself. Surfaces "did the
-      // mapping table actually persist?" debugging without a UI prompt.
       // eslint-disable-next-line no-console
-      console.log('[project-mapping] auto-apply', {
+      console.log('[project-mapping] auto-apply firing', {
         taskId,
         remoteProjectId,
         mappedLocalId,
@@ -75,6 +87,8 @@ export function useProjectMappingGate(task: ITask | null | undefined) {
           return;
         }
         await applyProjectToTask(taskId, project);
+        // eslint-disable-next-line no-console
+        console.log('[project-mapping] auto-apply: stamped task', { taskId, project_id: project.id });
       } catch (err) {
         // eslint-disable-next-line no-console
         console.warn('[project-mapping] auto-apply failed', err);
