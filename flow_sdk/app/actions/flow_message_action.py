@@ -330,8 +330,6 @@ async def handle_create_project_conversation(
     project = await Project.get_one({"id": project_id})
     if not project:
         return ApiFailResponse(message=f"Project not found: {project_id}", status_code=404)
-    if not project.fs_storage_mount_path:
-        return ApiFailResponse(message="Project has no fs_storage_mount_path")
 
     resolved: list[dict] = []
     for p in participants or []:
@@ -341,9 +339,6 @@ async def handle_create_project_conversation(
         name = (p.get("name") or "").strip() or None
         user = await User.get_or_create_by_email(email, name=name)
         resolved.append({"user_id": user.id, "email": user.email, "name": user.name})
-
-    slug_seed = "-".join(p["email"].split("@")[0] for p in resolved) or "conversation"
-    slug = _meaningful_name(slug_seed)
 
     derived_name = (title or "").strip() or (
         ", ".join(p.get("name") or p.get("email") for p in resolved if p.get("email")) or None
@@ -358,9 +353,11 @@ async def handle_create_project_conversation(
     })
     conv.id = Conversation.allocate_id(conv.model_dump())
 
-    conv_dir = Path(project.fs_storage_mount_path) / "conversations" / f"{slug}-{conv.id[:8]}"
-    conv_dir.mkdir(parents=True, exist_ok=True)
-    jsonl_path = conv_dir / "conversation.jsonl"
+    # Standard records-data location (same convention as ShellRecord et al).
+    # Project linkage is logical via parent_ref/attach_child below; the data
+    # file itself doesn't need to live inside the project mount.
+    jsonl_path = ConversationRecord.default_jsonl_path(conv.id)
+    jsonl_path.parent.mkdir(parents=True, exist_ok=True)
     jsonl_path.touch()
 
     conv.data_path = str(jsonl_path)

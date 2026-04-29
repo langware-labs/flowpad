@@ -748,6 +748,8 @@ export function HomeLanding() {
 
         {/* Right column: Recent conversations */}
         <div className="w-72 shrink-0 flex flex-col gap-2">
+          {/* Invisible spacer mirroring the left column's Inbox row so Recent conversations aligns with Todos */}
+          <div aria-hidden className="h-9 shrink-0" />
           <RecentConversationsStrip />
         </div>
 
