@@ -3,6 +3,7 @@ import { AgenticProcess, FlowElementTypes } from '@sdk';
 import type { FlowData } from '@sdk';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { AskForAssistanceDialog } from './AskForAssistanceDialog';
+import { getCachedTabName, getSessionDisplayName } from './sessionTabUtils';
 
 // Bootstrap person-raised-hand icon (same as SendToExpertButton)
 const PersonRaisedHandIcon: React.FC<{ className?: string; size?: number }> = ({ className, size = 14 }) => (
@@ -64,20 +65,6 @@ function extractSessionText(
   return parts.join('');
 }
 
-function getSessionTitle(process: AgenticProcess | null | undefined): string {
-  if (process?.context_data && typeof process.context_data === 'object') {
-    const displayName = (process.context_data as Record<string, unknown>).display_name;
-    if (typeof displayName === 'string' && displayName.trim().length > 0) {
-      return displayName.trim();
-    }
-  }
-  if (process?.instruction_content) {
-    const trimmed = process.instruction_content.replace(/<!--.*?-->/g, '').trim();
-    if (trimmed.length > 0) return trimmed.substring(0, 60);
-  }
-  return 'Session';
-}
-
 interface AskForAssistanceButtonProps {
   process: AgenticProcess;
 }
@@ -96,7 +83,8 @@ export function AskForAssistanceButton({ process }: AskForAssistanceButtonProps)
         await entity.loadHistory({ force: true });
       }
       const items: readonly FlowData[] = (entity?.flowDataStream?.items as readonly FlowData[]) ?? [];
-      setSessionTitle(getSessionTitle(process));
+      const tabName = getCachedTabName(process.id ?? '');
+      setSessionTitle(tabName ?? getSessionDisplayName(process, 'Session'));
       setSessionContent(extractSessionText(items, process));
       setDialogOpen(true);
     } finally {
@@ -125,6 +113,8 @@ export function AskForAssistanceButton({ process }: AskForAssistanceButtonProps)
         onClose={() => setDialogOpen(false)}
         sessionTitle={sessionTitle}
         sessionContent={sessionContent}
+        processId={process.id}
+        projectPath={(process as any).workdir as string | undefined}
       />
     </>
   );

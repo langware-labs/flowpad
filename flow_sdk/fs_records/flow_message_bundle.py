@@ -310,6 +310,7 @@ async def unpack_bundle(
 
         conversation_id: str | None = None
         task_id: str = ""
+        bundle_project_id: str | None = None
         if attachment_dir.exists():
             for entry_dir in sorted(attachment_dir.iterdir(), key=_entry_sort_key):
                 if not entry_dir.is_dir():
@@ -329,6 +330,19 @@ async def unpack_bundle(
                     if manifest_file.exists():
                         task_data = json.loads(manifest_file.read_text(encoding="utf-8"))
                         task_id = task_data.get("id") or entry_id
+                        # Materialize the sender as a local User (contact list).
+                        bundle_sender_email = (task_data.get("metadata") or {}).get("sender_email") or ""
+                        bundle_sender_name = (task_data.get("metadata") or {}).get("sender_name") or None
+                        if bundle_sender_email:
+                            await User.get_or_create_by_email(bundle_sender_email, name=bundle_sender_name)
+                        # Resolve project_id from task's project_root (deterministic uuid5)
+                        bundle_project_root = (task_data.get("metadata") or {}).get("project_root") or ""
+                        if bundle_project_root and bundle_project_id is None:
+                            try:
+                                from flow_sdk.builtin.project import Project
+                                bundle_project_id = Project.allocate_id({"fs_storage_mount_path": bundle_project_root})
+                            except Exception:
+                                bundle_project_id = None
                         existing_task = await Task.get_one({"id": task_id})
                         # Patch sender_email into existing task metadata if the bundle has it
                         # and it was missing (e.g. task imported before sender_email was added)
@@ -341,6 +355,20 @@ async def unpack_bundle(
                             # Merge metadata: keep agentic_* keys from existing task so
                             # session resume still works after re-upload.
                             bundle_meta: dict = task_data.get("metadata") or {}
+                            # Rename sender-side identity so it doesn't collide with the
+                            # receiver's own local project_id / project_root once mapping is set.
+                            if "project_id" in bundle_meta:
+                                bundle_meta["remote_project_id"] = bundle_meta.pop("project_id")
+                            if "project_name" in bundle_meta:
+                                bundle_meta["remote_project_name"] = bundle_meta.pop("project_name")
+                            bundle_meta.pop("project_root", None)
+                            # my_process_id / shared_process_id are sender-local
+                            # identifiers for AgenticProcess entities that don't exist
+                            # on the receiver's machine. Each user materializes their
+                            # own process through the Start Claude Code flow.
+                            bundle_meta.pop("my_process_id", None)
+                            bundle_meta.pop("shared_process_id", None)
+                            bundle_meta.pop("sender_session_id", None)
                             if existing_task and existing_task.metadata:
                                 existing_meta = dict(existing_task.metadata)
                                 agentic_keys = {k: v for k, v in existing_meta.items() if k.startswith("agentic_")}
@@ -366,11 +394,11 @@ async def unpack_bundle(
                         # Copy conversation.jsonl to a permanent location before the
                         # temp dir is cleaned up — _create_conversation_from_disk
                         # stores data_path pointing at task_dir, so it must survive.
-                        from flow_sdk.config import FLOW_HOME
+                        from flow_sdk.instance_settings import get_instance_settings
                         import re as _re
                         task_obj = await Task.get_one({"id": task_id_for_conv}) if task_id_for_conv else None
                         task_title_slug = _re.sub(r"[^a-z0-9]+", "-", (task_obj.title or "task").lower()).strip("-")[:60] if task_obj else "task"
-                        perm_task_dir = FLOW_HOME / "tasks" / f"{task_title_slug}-{(task_id_for_conv or entry_id)[:8]}"
+                        perm_task_dir = get_instance_settings().tasks_dir / f"{task_title_slug}-{(task_id_for_conv or entry_id)[:8]}"
                         perm_task_dir.mkdir(parents=True, exist_ok=True)
                         perm_jsonl = perm_task_dir / "conversation.jsonl"
                         _merge_conversation_jsonl(jsonl_file, perm_jsonl)
@@ -384,6 +412,7 @@ async def unpack_bundle(
                             conversation_id=entry_id,
                             owner_typeid=owner_typeid,
                             notify=False,
+                            project_id=bundle_project_id,
                         )
                         if conv:
                             conversation_id = conv.id
@@ -414,6 +443,9 @@ async def unpack_bundle(
 
         top_fm_id = msg_data.get("id") or FlowMessage.allocate_id(msg_data)
         _rewrite_file_attachments(msg_data, tmp_root, top_fm_id)
+        # Backfill conversation_id from bundle context if sender bundle predates the field
+        if not msg_data.get("conversation_id") and conversation_id:
+            msg_data["conversation_id"] = conversation_id
         top_fm = FlowMessage.model_validate(msg_data)
         top_fm.id = top_fm_id
         top_fm = await top_fm.save(owner_typeid)

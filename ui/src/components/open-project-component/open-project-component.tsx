@@ -9,6 +9,10 @@ import {
   QueryRequest,
 } from '@sdk';
 import apiClient from '@sdk/client';
+import {
+  applyProjectToTask,
+  persistRemoteToLocalMapping,
+} from '@src/components/conversation/apply-project-choice';
 import { useProject } from '@sdk/react/hooks';
 import { useDevMode } from '@src/contexts/dev-mode-context';
 import { Button } from '@src/components/ui/button';
@@ -286,6 +290,10 @@ interface ProjectSelectDialogProps {
   showSystem: boolean;
   onShowSystemChange: (next: boolean) => void;
   devMode: boolean;
+  /** Adapts the dialog title + description to the trigger context. */
+  trigger?: 'switch' | 'map' | 'gate';
+  /** Optional remote-project label shown in the description for 'map' trigger. */
+  remoteProjectName?: string;
 }
 
 function ProjectSelectDialog({
@@ -304,13 +312,29 @@ function ProjectSelectDialog({
   showSystem,
   onShowSystemChange,
   devMode,
+  trigger = 'switch',
+  remoteProjectName,
 }: ProjectSelectDialogProps) {
+  const title =
+    trigger === 'map'
+      ? 'Map remote project'
+      : trigger === 'gate'
+      ? 'Pick a project'
+      : 'Projects';
+  const description =
+    trigger === 'map'
+      ? remoteProjectName
+        ? `This conversation came from a project called "${remoteProjectName}" on another machine. Pick the local project folder it should map to.`
+        : 'This conversation came from a project on another machine. Pick the local project folder it should map to.'
+      : trigger === 'gate'
+      ? "Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions."
+      : 'Select a project or open a new folder.';
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Projects</DialogTitle>
-          <DialogDescription>Select a project or open a new folder.</DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 overflow-y-auto pr-1">
@@ -474,9 +498,35 @@ interface OpenProjectComponentProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onProjectChanged?: () => void;
+  /** When set, the picked project is also stamped onto this task's metadata
+   *  (project_id / project_name / project_root) so subsequent task-bound
+   *  actions know which folder to use. */
+  taskId?: string;
+  /** When set + non-empty, a remote→local entry is written to the per-machine
+   *  mapping table so future messages from the same remote project auto-route
+   *  to the picked local one. */
+  remoteProjectId?: string | null;
+  /** Optional remote-project label, shown in the description for the 'map' trigger. */
+  remoteProjectName?: string;
+  /** Hint that adapts the dialog copy to the surrounding flow:
+   *  'switch' (default — footer), 'map' (we have a remote project to record),
+   *  'gate' (action needs a project to proceed). */
+  trigger?: 'switch' | 'map' | 'gate';
+  /** Called after the project has been picked + side-effects applied. The
+   *  gate uses this to resume the action that opened the dialog. */
+  onPicked?: (project: Project) => void | Promise<void>;
 }
 
-export function OpenProjectComponent({ open, onOpenChange, onProjectChanged }: OpenProjectComponentProps) {
+export function OpenProjectComponent({
+  open,
+  onOpenChange,
+  onProjectChanged,
+  taskId,
+  remoteProjectId,
+  remoteProjectName,
+  trigger,
+  onPicked,
+}: OpenProjectComponentProps) {
   const { project: currentProject } = useProject();
   const { toast } = useToast();
   const { projects: scanProjects, isLoading: isLoadingScanProjects } = useClaudeProjectList({ enabled: open });
@@ -605,9 +655,20 @@ export function OpenProjectComponent({ open, onOpenChange, onProjectChanged }: O
       await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, project.typeId);
       await dataContext.refreshProject();
       dataContext.setWorkdir(project.fs_storage_mount_path ?? null);
+
+      // Optional side-effects when the dialog was opened via the gate /
+      // mapping flow. Both are no-ops in the plain footer-switch case.
+      if (taskId) await applyProjectToTask(taskId, project);
+      if (remoteProjectId) await persistRemoteToLocalMapping(remoteProjectId, project.id ?? null);
+
       onProjectChanged?.();
+      try {
+        await onPicked?.(project);
+      } catch {
+        // continuation errors shouldn't break the picker
+      }
     },
-    [onProjectChanged],
+    [onProjectChanged, taskId, remoteProjectId, onPicked],
   );
 
   const ensureProjectAndSetContext = useCallback(
@@ -715,6 +776,8 @@ export function OpenProjectComponent({ open, onOpenChange, onProjectChanged }: O
         showSystem={showSystem}
         onShowSystemChange={handleShowSystemChange}
         devMode={devMode}
+        trigger={trigger ?? (remoteProjectId ? 'map' : taskId ? 'gate' : 'switch')}
+        remoteProjectName={remoteProjectName}
       />
       <NewProjectDialog
         open={open && showCreate}

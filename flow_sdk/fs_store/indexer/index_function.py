@@ -9,11 +9,27 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
+from enum import Enum
 from typing import Any, Awaitable, Callable, Protocol
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
+
+
+class OrphanAction(str, Enum):
+    """How index() should handle orphan rows (DB rows whose source is gone).
+
+    INDEX  — keep the DB row + keep the on-disk fs_record. Status quo / safest.
+    IGNORE — remove the DB row, keep the on-disk fs_record (acts as tombstone).
+    DELETE — remove both the DB row AND the on-disk fs_record dir.
+
+    All three modes count orphans in the report. INDEX is a no-op effect-wise
+    but still surfaces the count so callers can see drift.
+    """
+
+    INDEX = "index"
+    IGNORE = "ignore"
+    DELETE = "delete"
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,6 +38,7 @@ class ProgressEvent:
     stage: str                   # "scan_start" | "type_complete" | "scan_end"
                                  # | "index_start" | "index_end"
                                  # | "type_start" | "type_progress"
+                                 # | "type_orphans"
     record_type: RecordType | None = None
     count: int = 0
     total_bytes: int = 0
@@ -30,6 +47,10 @@ class ProgressEvent:
     duration_ms: float = 0.0
     sub_done: int = 0
     sub_total: int = 0
+    # Orphan stats — only populated on stage="type_orphans".
+    orphans_found: int = 0
+    orphans_db_removed: int = 0
+    orphans_disk_removed: int = 0
 
 
 ProgressCallback = Callable[[ProgressEvent], Awaitable[None]]
@@ -57,6 +78,12 @@ class IndexerOptions:
     # project_id. Stamped onto the root FSRef by the handler; reflected onto
     # records via `from_fsref` reading `ref.project_id`.
     project_id: str | None = None
+    # Orphan handling: what to do with DB rows that no longer have a source on
+    # disk. Default INDEX is the historical behavior (do nothing, just count).
+    # IGNORE removes the DB row only; DELETE removes both DB row + fs_record dir.
+    # Orphan detection is automatic — happens after the main index loop using
+    # the freshness-check `valid_map` we already preload (no extra DB query).
+    orphan_action: OrphanAction = OrphanAction.INDEX
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +93,12 @@ class PerTypeIndexResult:
     errors: int
     duration_ms: float
     skipped: int = 0
-    skipped: int = 0
+    # Orphan stats. orphans_found is detected regardless of action; the
+    # *_removed fields are non-zero only for IGNORE (db) / DELETE (both).
+    orphans_found: int = 0
+    orphans_db_removed: int = 0
+    orphans_disk_removed: int = 0
+    orphan_ids: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -75,6 +107,9 @@ class IndexResult:
     total_indexed: int = 0
     total_errors: int = 0
     duration_ms: float = 0.0
+    total_orphans_found: int = 0
+    total_orphans_db_removed: int = 0
+    total_orphans_disk_removed: int = 0
 
 
 class IndexerFunc(Protocol):
@@ -98,7 +133,7 @@ async def _load_updated_map(driver: Any, type_name: str) -> dict[str, float]:
 
     from sqlalchemy import text
 
-    async with await driver._get_session() as session:
+    async with driver._session_ctx() as session:
         result = await session.execute(
             text("SELECT id, updated_date FROM entities WHERE type = :t"),
             {"t": type_name},
@@ -133,10 +168,8 @@ async def _load_updated_map(driver: Any, type_name: str) -> dict[str, float]:
 class FSIndexer:
     def __init__(
         self,
-        state_dir: Path,
         roots: list[FSRef] | None = None,
     ) -> None:
-        self._state_dir: Path = state_dir
         self._roots: list[FSRef] = list(roots) if roots is not None else []
         self._functions: dict[RecordType, list[IndexerFunc]] = {}
 
@@ -187,7 +220,7 @@ class FSIndexer:
 
         # Imports localized to break cycles
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
-        from flow_sdk.db import get_db_driver
+        from flow_sdk.db import get_db_driver, session as _db_session
 
         # Bulk-preload {id: updated_date_ts} per type — one DB query each.
         # Used for the skip-fresh check: if an asset's mtime is <= the DB
@@ -206,6 +239,10 @@ class FSIndexer:
             per_type_totals[ref.record_type] = per_type_totals.get(ref.record_type, 0) + 1
 
         per_type_counts: dict[RecordType, dict[str, float]] = {}
+        # Per-type set of entity ids we touched in this run (parsed or skipped-fresh).
+        # Anything in valid_map[type] - seen_ids[type] is an orphan: a DB row whose
+        # source no longer exists on disk.
+        seen_ids: dict[RecordType, set[str]] = {}
         fts_batch: list = []
         current_rt: RecordType | None = None
         seen_progress_at: dict[RecordType, float] = {}
@@ -238,78 +275,170 @@ class FSIndexer:
                 sub_total=per_type_totals.get(rt, 0),
             ))
 
-        for ref in targets:
-            if ref.record_type is None:
-                continue
-            info = SchemaRegistry.get(str(ref.record_type))
-            if info is None or info.record_cls is None:
-                continue
-            if not hasattr(info.record_cls, "from_fsref"):
-                continue
-
-            # On type-boundary transitions emit ``type_progress`` (NOT type_complete) —
-            # DFS interleaves types, so the same type can re-appear later. Final
-            # type_complete events fire post-loop, once per unique type.
-            if ref.record_type != current_rt:
-                current_rt = ref.record_type
-                if on_progress is not None and current_rt not in seen_progress_at:
-                    await on_progress(ProgressEvent(
-                        stage="type_start",
-                        record_type=current_rt,
-                        sub_done=0,
-                        sub_total=per_type_totals.get(current_rt, 0),
-                    ))
-
-            acc = per_type_counts.setdefault(
-                ref.record_type, {"indexed": 0, "errors": 0, "duration_ms": 0.0, "skipped": 0}
-            )
-
-            # Per-type cap: once we've indexed `limit_per_type` records of this
-            # type, skip further refs of the same type.
-            if opts.limit_per_type is not None and acc["indexed"] >= opts.limit_per_type:
-                continue
-
-            # Skip-fresh: in-memory dict lookup, one stat(), no parse.
-            # Bypassed when `opts.force` is set (hard refresh).
-            rt_name = str(ref.record_type)
-            last_ts = valid_map.get(rt_name, {}).get(info.record_cls.getId(ref))
-            if not opts.force and last_ts is not None:
-                asset_ts = info.record_cls.asset_hash_for_ref(ref)
-                if asset_ts and asset_ts <= last_ts:
-                    acc["skipped"] += 1
-                    # Throttled sub_progress even for skips.
-                    now = time.perf_counter()
-                    if now - seen_progress_at.get(ref.record_type, 0.0) >= _PROGRESS_THROTTLE_S:
-                        seen_progress_at[ref.record_type] = now
-                        await _emit_sub_progress(ref.record_type)
+        # Hoist a single DB session over the entire per-record loop + FTS
+        # flush. The driver's `_session_ctx` contextvar handshake makes
+        # every nested call (sync_to_db → Entity.from_record → driver.save,
+        # wiki.index → AsyncLinkStore, fts_upsert) reuse this one session,
+        # so we pay connection setup ONCE for the whole batch instead of
+        # per record. Critical for paths that touch hundreds of records
+        # (e.g. ~/.claude/skills/ scan).
+        async with _db_session():
+            for ref in targets:
+                if ref.record_type is None:
+                    continue
+                info = SchemaRegistry.get(str(ref.record_type))
+                if info is None or info.record_cls is None:
+                    continue
+                if not hasattr(info.record_cls, "from_fsref"):
                     continue
 
-            t_start = time.perf_counter()
-            try:
-                records = await info.record_cls.from_fsref(ref)
-                for rec in records:
-                    await rec.sync_to_db(fts_batch=fts_batch, notify=False)
-                acc["indexed"] += len(records)
-            except Exception:
-                acc["errors"] += 1
-            acc["duration_ms"] += (time.perf_counter() - t_start) * 1000
+                # On type-boundary transitions emit ``type_progress`` (NOT type_complete) —
+                # DFS interleaves types, so the same type can re-appear later. Final
+                # type_complete events fire post-loop, once per unique type.
+                if ref.record_type != current_rt:
+                    current_rt = ref.record_type
+                    if on_progress is not None and current_rt not in seen_progress_at:
+                        await on_progress(ProgressEvent(
+                            stage="type_start",
+                            record_type=current_rt,
+                            sub_done=0,
+                            sub_total=per_type_totals.get(current_rt, 0),
+                        ))
 
-            # Throttled sub_progress during a type.
-            now = time.perf_counter()
-            if now - seen_progress_at.get(ref.record_type, 0.0) >= _PROGRESS_THROTTLE_S:
-                seen_progress_at[ref.record_type] = now
-                await _emit_sub_progress(ref.record_type)
+                acc = per_type_counts.setdefault(
+                    ref.record_type, {"indexed": 0, "errors": 0, "duration_ms": 0.0, "skipped": 0}
+                )
+
+                # Per-type cap: once we've indexed `limit_per_type` records of this
+                # type, skip further refs of the same type.
+                if opts.limit_per_type is not None and acc["indexed"] >= opts.limit_per_type:
+                    continue
+
+                # Track this id as "seen" before any skip/index decision so the
+                # orphan check post-loop won't false-positive a fresh-skip as missing.
+                ref_id = info.record_cls.getId(ref)
+                if ref_id:
+                    seen_ids.setdefault(ref.record_type, set()).add(ref_id)
+
+                # Skip-fresh: in-memory dict lookup, one stat(), no parse.
+                # Bypassed when `opts.force` is set (hard refresh).
+                rt_name = str(ref.record_type)
+                last_ts = valid_map.get(rt_name, {}).get(ref_id)
+                if not opts.force and last_ts is not None:
+                    asset_ts = info.record_cls.asset_hash_for_ref(ref)
+                    if asset_ts and asset_ts <= last_ts:
+                        acc["skipped"] += 1
+                        # Throttled sub_progress even for skips.
+                        now = time.perf_counter()
+                        if now - seen_progress_at.get(ref.record_type, 0.0) >= _PROGRESS_THROTTLE_S:
+                            seen_progress_at[ref.record_type] = now
+                            await _emit_sub_progress(ref.record_type)
+                        continue
+
+                t_start = time.perf_counter()
+                try:
+                    records = await info.record_cls.from_fsref(ref)
+                    for rec in records:
+                        await rec.sync_to_db(fts_batch=fts_batch, notify=False)
+                        # Reflect any actually-saved id back into seen_ids in case
+                        # from_fsref returns multiple records (rare) or a different id.
+                        rec_id = getattr(rec, "id", None)
+                        if rec_id:
+                            seen_ids.setdefault(ref.record_type, set()).add(str(rec_id))
+                    acc["indexed"] += len(records)
+                except Exception:
+                    acc["errors"] += 1
+                acc["duration_ms"] += (time.perf_counter() - t_start) * 1000
+
+                # Throttled sub_progress during a type.
+                now = time.perf_counter()
+                if now - seen_progress_at.get(ref.record_type, 0.0) >= _PROGRESS_THROTTLE_S:
+                    seen_progress_at[ref.record_type] = now
+                    await _emit_sub_progress(ref.record_type)
+
+            # Batch FTS commit — still inside the shared session.
+            if fts_batch:
+                driver = get_db_driver()
+                if hasattr(driver, "fts_upsert"):
+                    await driver.fts_upsert(fts_batch)
+
+            # ----- Orphan handling -----
+            # DEFINITION: a record is orphan iff its source (Layer 1, e.g.
+            # ~/.claude/skills/<name>/SKILL.md) does not exist. The orphan
+            # condition is independent of which materializations remain — DB
+            # row only, fs_record dir only, or both. We detect by looking at
+            # BOTH known materializations and asking the same question for each:
+            # was this id seen during the scan (meaning Layer 1 still exists)?
+            #
+            #   orphan_ids = (records_dir_ids | db_row_ids) - seen_ids
+            #
+            # Project-scoped runs (opts.project_id != None) are skipped because
+            # both valid_map and the records-dir walk are global, but seen_ids
+            # only covers refs from the project subtree.
+            orphan_records: dict[RecordType, list[str]] = {}
+            orphan_id_sources: dict[RecordType, dict[str, dict[str, bool]]] = {}
+            if opts.project_id is None:
+                orphan_filter_types = self._resolve_orphan_filter_types(
+                    opts.types, valid_map
+                )
+                # Map type → set of ids found by walking the records dir on disk.
+                disk_ids_per_type = self._discover_records_dir_ids(orphan_filter_types)
+
+                for type_name in orphan_filter_types:
+                    try:
+                        rt = RecordType(type_name)
+                    except ValueError:
+                        continue
+
+                    db_ids = set(valid_map.get(type_name, {}).keys())
+                    disk_ids = disk_ids_per_type.get(type_name, set())
+                    all_ids = db_ids | disk_ids
+
+                    seen = seen_ids.get(rt, set())
+                    missing = sorted(all_ids - seen)
+                    if not missing:
+                        continue
+
+                    orphan_records[rt] = missing
+                    orphan_id_sources[rt] = {
+                        eid: {
+                            "in_db": eid in db_ids,
+                            "on_disk": eid in disk_ids,
+                        }
+                        for eid in missing
+                    }
+
+            for rt, ids in orphan_records.items():
+                acc = per_type_counts.setdefault(
+                    rt, {"indexed": 0, "errors": 0, "duration_ms": 0.0, "skipped": 0}
+                )
+                acc["orphans_found"] = len(ids)
+                acc["orphan_ids"] = list(ids)
+                db_removed = 0
+                disk_removed = 0
+
+                if opts.orphan_action != OrphanAction.INDEX:
+                    db_removed, disk_removed = await self._apply_orphan_action(
+                        rt, ids, opts.orphan_action,
+                        id_sources=orphan_id_sources.get(rt, {}),
+                    )
+
+                acc["orphans_db_removed"] = db_removed
+                acc["orphans_disk_removed"] = disk_removed
+
+                if on_progress is not None:
+                    await on_progress(ProgressEvent(
+                        stage="type_orphans",
+                        record_type=rt,
+                        orphans_found=len(ids),
+                        orphans_db_removed=db_removed,
+                        orphans_disk_removed=disk_removed,
+                    ))
 
         # Emit one type_complete per unique type at the end (DFS interleaves
         # mean we can't know a type is "done" mid-loop without a second pass).
         for rt in per_type_counts.keys():
             await _emit_type_complete(rt)
-
-        # Batch FTS commit
-        if fts_batch:
-            driver = get_db_driver()
-            if hasattr(driver, "fts_upsert"):
-                await driver.fts_upsert(fts_batch)
 
         # Build per-type result (events already emitted inline above).
         per_type: dict[RecordType, PerTypeIndexResult] = {}
@@ -320,6 +449,10 @@ class FSIndexer:
                 errors=int(acc["errors"]),
                 duration_ms=round(acc["duration_ms"], 2),
                 skipped=int(acc.get("skipped", 0)),
+                orphans_found=int(acc.get("orphans_found", 0)),
+                orphans_db_removed=int(acc.get("orphans_db_removed", 0)),
+                orphans_disk_removed=int(acc.get("orphans_disk_removed", 0)),
+                orphan_ids=tuple(acc.get("orphan_ids", []) or []),
             )
 
         duration = (time.perf_counter() - t0) * 1000
@@ -337,7 +470,187 @@ class FSIndexer:
             total_indexed=sum(p.indexed for p in per_type.values()),
             total_errors=sum(p.errors for p in per_type.values()),
             duration_ms=duration,
+            total_orphans_found=sum(p.orphans_found for p in per_type.values()),
+            total_orphans_db_removed=sum(p.orphans_db_removed for p in per_type.values()),
+            total_orphans_disk_removed=sum(p.orphans_disk_removed for p in per_type.values()),
         )
+
+    @staticmethod
+    def _resolve_orphan_filter_types(
+        types: list[RecordType] | None, valid_map: dict[str, dict[str, float]],
+    ) -> set[str]:
+        """Decide which type names to check for orphans on this run.
+
+        - If the caller passed ``types``, restrict to those.
+        - Otherwise check every type that either has DB rows OR has a records
+          dir on disk — caller didn't filter so we sweep everything we can see.
+        """
+        if types:
+            return {str(t) for t in types}
+
+        # Union of "types with DB rows" and "types with a records dir on disk"
+        # so we never miss a records-dir orphan just because no DB row exists.
+        from flow_sdk.fs_store.record import get_default_records_root  # noqa: PLC0415
+
+        result: set[str] = set(valid_map.keys())
+        records_root = get_default_records_root()
+        try:
+            for child in records_root.iterdir():
+                if child.is_dir():
+                    result.add(child.name)
+        except (FileNotFoundError, OSError):
+            pass
+        return result
+
+    @staticmethod
+    def _discover_records_dir_ids(type_names: set[str]) -> dict[str, set[str]]:
+        """Walk ``<records_root>/<type>/`` for each type and return ``{type → {id}}``.
+
+        IDs come from parsing the directory stem (``<type>-@<id>``). Folders
+        that don't match the stem pattern are skipped — they aren't records.
+        """
+        from flow_sdk.fs_store.record import (  # noqa: PLC0415
+            get_default_records_root,
+            parse_record_stem,
+        )
+
+        out: dict[str, set[str]] = {}
+        records_root = get_default_records_root()
+        for type_name in type_names:
+            type_dir = records_root / type_name
+            if not type_dir.is_dir():
+                continue
+            ids: set[str] = set()
+            try:
+                for entry in type_dir.iterdir():
+                    if not entry.is_dir():
+                        continue
+                    try:
+                        parsed_type, parsed_id = parse_record_stem(entry.name)
+                    except ValueError:
+                        continue
+                    if parsed_type != type_name:
+                        continue
+                    ids.add(parsed_id)
+            except (FileNotFoundError, OSError):
+                continue
+            if ids:
+                out[type_name] = ids
+        return out
+
+    async def _apply_orphan_action(
+        self,
+        rt: RecordType,
+        ids: list[str],
+        action: OrphanAction,
+        *,
+        id_sources: dict[str, dict[str, bool]] | None = None,
+    ) -> tuple[int, int]:
+        """Apply IGNORE / DELETE to a list of orphan ids of a single type.
+
+        Returns ``(db_removed, disk_removed)``. INDEX never reaches this method.
+
+        Action semantics (orphan = source missing, layers may be partial):
+
+        - IGNORE: remove the DB row + FTS entry if present. Disk dir untouched.
+        - DELETE: remove DB row + FTS entry if present, AND rmtree the records
+          dir at ``records_root/<type>/<stem>/`` if present.
+
+        Cleanup chain for a DB-side orphan goes through ``Entity.delete()`` so
+        the orphan removal benefits from the same downstream invalidation a
+        normal API delete would: entity cache, auth cache, uname cache, wiki
+        edges. Without this, ~1000 orphan ids would leave their wiki backlinks
+        and cache references in place until the next natural eviction.
+
+        For records-dir-only orphans (no DB row), we still issue a best-effort
+        ``wiki.delete_for_id`` because wiki edges can outlive an entity row
+        that was deleted previously without proper cleanup.
+
+        ``id_sources`` (optional) maps each id to ``{"in_db": bool, "on_disk":
+        bool}``. When omitted we attempt every removal — driver returns False
+        harmlessly for missing rows.
+
+        Failures are tolerated per-id so a single bad row doesn't abort the sweep.
+        """
+        if not ids:
+            return 0, 0
+
+        # Lazy imports keep this module a leaf in import topology.
+        from flow_sdk.db import get_db_driver  # noqa: PLC0415
+        from flow_sdk.fs_store.record import (  # noqa: PLC0415
+            get_default_records_root,
+            record_stem,
+        )
+
+        driver = get_db_driver()
+        type_name = str(rt)
+        db_removed = 0
+        disk_removed = 0
+
+        for eid in ids:
+            sources = (id_sources or {}).get(eid, {"in_db": True, "on_disk": True})
+            in_db = sources.get("in_db", True)
+            on_disk = sources.get("on_disk", True)
+
+            # Best-effort wiki edge cleanup — idempotent, runs for every orphan
+            # regardless of whether the DB row currently exists. Stale edges
+            # pointing at a previously-deleted id would otherwise persist.
+            try:
+                from flow_sdk import wiki  # noqa: PLC0415
+                await wiki.delete_for_id(type_name, eid)
+            except Exception:
+                pass
+
+            if in_db:
+                cleaned = False
+                # Preferred path: load the Entity, call entity.delete(). This
+                # cascades through the standard caches the same way an API
+                # delete would.
+                try:
+                    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+                    from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+
+                    entity = await Entity.get_one(QueryFilter.parse({"id": eid}))
+                    if entity is not None:
+                        if hasattr(driver, "fts_delete"):
+                            try:
+                                await driver.fts_delete(eid)
+                            except Exception:
+                                pass
+                        await entity.delete()
+                        db_removed += 1
+                        cleaned = True
+                except Exception:
+                    pass
+
+                # Fallback: row didn't load (already gone, or no Entity class
+                # registered for this type). Fall through to a raw driver delete
+                # so the bulk sweep still makes progress.
+                if not cleaned:
+                    try:
+                        if hasattr(driver, "fts_delete"):
+                            try:
+                                await driver.fts_delete(eid)
+                            except Exception:
+                                pass
+                        if await driver.delete_by_id(eid, type_name):
+                            db_removed += 1
+                    except Exception:
+                        pass
+
+            if action == OrphanAction.DELETE and on_disk:
+                try:
+                    rec_dir = (
+                        get_default_records_root() / type_name / record_stem(type_name, eid)
+                    )
+                    if rec_dir.exists():
+                        import shutil  # noqa: PLC0415
+                        shutil.rmtree(rec_dir, ignore_errors=True)
+                        disk_removed += 1
+                except Exception:
+                    pass
+
+        return db_removed, disk_removed
 
     async def scan(
         self, opts: IndexerOptions | None = None

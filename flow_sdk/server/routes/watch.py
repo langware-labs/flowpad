@@ -18,6 +18,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from flow_sdk.instance_settings import get_instance_settings
+
 router = APIRouter()
 
 
@@ -36,7 +38,7 @@ async def watch_transcript(websocket: WebSocket, project_dir: str) -> None:
     try:
         from watchfiles import awatch
 
-        watch_path = Path.home() / ".claude" / "projects" / project_dir
+        watch_path = get_instance_settings().claude_projects_dir / project_dir
         watch_path.mkdir(parents=True, exist_ok=True)
 
         async for changes in awatch(str(watch_path), debounce=200):

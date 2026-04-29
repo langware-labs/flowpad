@@ -46,7 +46,7 @@ from flow_sdk.discovery.notify import send_resource_sync
 from flow_sdk.fs_store import SyncOperation
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse, ApiResponse
 from flow_sdk.utils.git import find_project_root, git_add_commit_push, git_current_branch, git_pull, git_remote_url, git_repo_full_name, repo_id
-from flow_sdk.utils.hub import hub_base_url, hub_get, hub_post, hub_put
+from flow_sdk.utils.hub import HubError, hub_base_url, hub_get, hub_post, hub_put
 from flow_sdk.builtin.bookmark import Bookmark
 
 logger = logging.getLogger(__name__)
@@ -66,6 +66,27 @@ def _meaningful_name(title: str) -> str:
     """Convert a title to a filesystem-safe directory name (no random IDs)."""
     name = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
     return name[:60] or "untitled"
+
+
+async def _resolve_local_project_identity(
+    project_root: Optional[Path],
+) -> tuple[Optional[str], Optional[str]]:
+    """Look up the local Project entity matching `project_root` and return (id, name).
+
+    Returns (None, None) when there is no project_root or no matching Project.
+    The project's uuid `id` becomes the cross-user `project_id` carried in
+    manifest.json and the hub payload, so the recipient can map it locally.
+    """
+    if not project_root:
+        return None, None
+    try:
+        from flow_sdk.builtin.project import Project
+        proj = await Project.get_one({"fs_storage_mount_path": str(project_root)})
+        if proj:
+            return (proj.id or None), (proj.name or Path(project_root).name)
+    except Exception as e:
+        logger.warning("[notification_action] _resolve_local_project_identity failed: %s", e)
+    return None, Path(project_root).name
 
 
 async def _create_conversation_entity(
@@ -112,7 +133,8 @@ async def _resolve_recipient(recipient_id: str) -> tuple[Optional[str], str]:
     if recipient_user:
         return recipient_user.email, recipient_user.id
     if "@" in recipient_id:
-        return recipient_id, recipient_id
+        recipient_user = await User.get_or_create_by_email(recipient_id)
+        return recipient_user.email, recipient_user.id
     raise ValueError(f"Recipient not found: {recipient_id}")
 
 
@@ -129,6 +151,10 @@ async def _create_spec_and_task(
     recipient_email: Optional[str],
     team_space_id: Optional[str],
     someone_typeid: str,
+    project_id: Optional[str] = None,
+    project_name: Optional[str] = None,
+    project_root: Optional[str] = None,
+    sender_process_id: Optional[str] = None,
 ) -> tuple[Spec, Task]:
     """Create Spec + Task entities locally and register the task on the hub."""
     spec = Spec.model_validate({
@@ -145,9 +171,22 @@ async def _create_spec_and_task(
         "sender_name": sender_name,
         "sender_email": sender_email,
         "recipient_email": recipient_email or "",
+        "spec_type": spec_type,
     }
     if team_space_id:
         task_meta["team_space_id"] = team_space_id
+    if project_id:
+        task_meta["project_id"] = project_id
+    if sender_process_id:
+        # Sender's clean AgenticProcess for this conversation. Stamping it here
+        # means the per-message "Open Claude Code" chip is wired immediately on
+        # the sender side, no Start step required. Receiver-side materialisation
+        # explicitly strips this so each user has their own.
+        task_meta["my_process_id"] = sender_process_id
+    if project_name:
+        task_meta["project_name"] = project_name
+    if project_root:
+        task_meta["project_root"] = project_root
     task = Task.model_validate({
         "title": task_title,
         "spec_id": spec.id,
@@ -158,12 +197,16 @@ async def _create_spec_and_task(
     task = await task.save(someone_typeid)
 
     # Register task on hub so the recipient can load it via the hub graph API.
-    await hub_post(BuiltinEntityType.TASK, {
-        "id": task.id,
-        "title": task_title,
-        "task_type": task.task_type,
-        "status": task.status,
-    })
+    # Best-effort: a hub failure here shouldn't abort the local share-task flow.
+    try:
+        await hub_post(BuiltinEntityType.TASK, {
+            "id": task.id,
+            "title": task_title,
+            "task_type": task.task_type,
+            "status": task.status,
+        })
+    except HubError as e:
+        logger.warning("[notification_action] hub task register failed (non-fatal): %s", e)
 
     return spec, task
 
@@ -204,6 +247,7 @@ async def _create_conversation_and_fm(
         "sender_name": sender_name,
         "receiver_address": recipient_email,
         "receiver_address_type": "email",
+        "conversation_id": conv.id,
     })
     fm.id = FlowMessage.allocate_id(fm.model_dump())
     fm.attachment = [
@@ -283,6 +327,7 @@ async def _write_task_to_git(
     )
 
     branch_at_write = git_current_branch(project_root)
+    task_meta = task.metadata or {}
     (task_dir / "manifest.json").write_text(
         _json.dumps({
             "task_id": task.id,
@@ -295,6 +340,9 @@ async def _write_task_to_git(
             "created_at": datetime.now(UTC).isoformat(),
             "repo_id": repo_id_val,
             "branch": branch_at_write,
+            "project_id": task_meta.get("project_id") or "",
+            "project_name": task_meta.get("project_name") or "",
+            "spec_type": task_meta.get("spec_type") or "",
         }, indent=2, default=str),
         encoding="utf-8",
     )
@@ -318,9 +366,9 @@ async def _create_local_conversation_and_fm(
     Used when there is no project_root — ensures a .flowmsg bundle can still
     be packed and uploaded to the hub so the recipient can materialise the task.
     """
-    from flow_sdk.config import FLOW_HOME
+    from flow_sdk.instance_settings import get_instance_settings
 
-    task_dir = FLOW_HOME / "tasks" / f"{_meaningful_name(task_title)}-{task.id[:8]}"
+    task_dir = get_instance_settings().tasks_dir / f"{_meaningful_name(task_title)}-{task.id[:8]}"
     task_dir.mkdir(parents=True, exist_ok=True)
 
     return await _create_conversation_and_fm(
@@ -365,28 +413,46 @@ async def _send_hub_notification(
     Returns (hub_flow_message_id, email_error).
     """
     hub_configured = bool(hub_base_url())
+    if not hub_configured:
+        return None, None
+
     flow_message_id = str(uuid.uuid4())
-    hub_data = await hub_post(BuiltinEntityType.FLOW_MESSAGE, {
-        "flow_message_id": flow_message_id,
-        "recipient_email": recipient_email,
-        "sender_id": sender_id,
-        "sender_name": sender_name,
-        "task_id": task.id,
-        "task_title": task_title,
-        "spec_id": spec.id,
-        "spec_title": spec.title,
-        "spec_content": spec.content or None,
-        "spec_type": spec.spec_type,
-        "message": message,
-        "project_url": project_url,
-        "repo_id": repo_id_val,
-        "branch": branch,
-        "spec_file_path": spec_file_path,
-    }, action="send")
-    hub_flow_message_id: Optional[str] = (hub_data or {}).get("flow_message_id")
+    task_meta = task.metadata or {}
+    hub_flow_message_id: Optional[str] = None
     email_error: Optional[str] = None
-    if hub_configured and not hub_flow_message_id:
-        email_error = f"Email to {recipient_email} could not be sent — the notification service did not confirm delivery."
+    try:
+        hub_data = await hub_post(BuiltinEntityType.FLOW_MESSAGE, {
+            "flow_message_id": flow_message_id,
+            "recipient_email": recipient_email,
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+            "task_id": task.id,
+            "task_title": task_title,
+            "spec_id": spec.id,
+            "spec_title": spec.title,
+            "spec_content": spec.content or None,
+            "spec_type": spec.spec_type,
+            "message": message,
+            "project_url": project_url,
+            "repo_id": repo_id_val,
+            "branch": branch,
+            "spec_file_path": spec_file_path,
+            "project_id": task_meta.get("project_id") or None,
+            "project_name": task_meta.get("project_name") or None,
+        }, action="send")
+    except HubError as e:
+        # Hub returned non-2xx (e.g. 401 unauthorized) or transport error.
+        email_error = f"hub call failed ({e.status_code}): {e.reason}" if e.status_code else f"could not reach hub: {e.reason}"
+        return None, email_error
+
+    hub_flow_message_id = (hub_data or {}).get("flow_message_id")
+    # The hub returns 200 even when the SMTP send itself fails — in that case
+    # it sets data.email_error so we can surface the real reason.
+    hub_email_error = (hub_data or {}).get("email_error") if hub_data else None
+    if hub_email_error:
+        email_error = str(hub_email_error)
+    elif not hub_flow_message_id:
+        email_error = "the notification service did not confirm delivery."
 
     if hub_flow_message_id and fm:
         await _upload_bundle_to_hub(hub_flow_message_id, fm, task_title)
@@ -448,18 +514,29 @@ async def _save_failure_bookmark(
     recipient_email: Optional[str],
     notification_id: str,
     someone_typeid: str,
+    reason: Optional[str],
 ) -> None:
-    """Save a bookmark so the user sees the delivery failure in the activity panel."""
+    """Save a bookmark so the user sees the delivery failure in the activity panel.
+
+    `reason` is the specific failure cause reported by the hub (auth error,
+    SMTP rejection, etc.). It is included verbatim so the user can act on it.
+    """
+    detail = (reason or "").strip() or "no reason reported by the notification service."
+    content = (
+        f"Task was created but the email to {recipient_email} could not be sent. "
+        f"Reason: {detail}"
+    )
     failure_bookmark = Bookmark.model_validate({
         "bookmark_type": "notification_failed",
         "title": f"Email not sent: {task_title}",
-        "content": f"Task was created but the notification email to {recipient_email} could not be confirmed. You may want to follow up manually.",
+        "content": content,
         "source": "notification",
         "data": {
             "task_id": task_id,
             "recipient_email": recipient_email,
             "task_title": task_title,
             "notification_id": notification_id,
+            "reason": detail,
         },
         "status": "open",
     })
@@ -477,6 +554,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     plan_id = (body.get("plan_id") or "").strip() or None
     project_path = (body.get("project_path") or "").strip() or None
     team_space_id = (body.get("team_space_id") or "").strip() or None
+    sender_process_id = (body.get("sender_process_id") or "").strip() or None
 
     if not recipient_id:
         return ApiFailResponse(message="recipient_id is required")
@@ -499,6 +577,8 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     repo_full_name = git_repo_full_name(project_root) if project_root else ""
     repo_id_val = repo_id(repo_full_name) if repo_full_name else ""
 
+    project_id_val, project_name_val = await _resolve_local_project_identity(project_root)
+
     spec, task = await _create_spec_and_task(
         spec_title=spec_title,
         spec_content=spec_content,
@@ -511,6 +591,10 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         recipient_email=recipient_email,
         team_space_id=team_space_id,
         someone_typeid=someone_typeid,
+        project_id=project_id_val,
+        project_name=project_name_val,
+        project_root=str(project_root) if project_root else None,
+        sender_process_id=sender_process_id,
     )
 
     uploaded_files = body.get("files") or []
@@ -596,6 +680,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
             recipient_email=recipient_email,
             notification_id=notification.id,
             someone_typeid=someone_typeid,
+            reason=email_error,
         )
 
     base = hub_base_url()
@@ -620,7 +705,7 @@ async def _find_task_conversation(task: Task) -> Optional[Conversation]:
 
 def _build_reply_flow_message(
     *,
-    task_id: str,
+    task_id: Optional[str],
     conv_id: str,
     message: str,
     sender_id: Optional[str],
@@ -628,30 +713,76 @@ def _build_reply_flow_message(
 ) -> "FlowMessage":
     """Build (but do not save) the FlowMessage entity for a conversation reply.
 
-    The caller is responsible for attaching any uploaded files and then saving.
-    Building before saving means there is only ever one save, so the frontend
-    entity cache always receives the final version with FILE attachments included.
+    `task_id` is omitted from context/attachments when None — project-scoped
+    conversations have no Task. The caller is responsible for attaching any
+    uploaded files and then saving.
     """
     from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
     from flow_sdk.fs_store.type_id import TypeId
 
+    context: list = []
+    if task_id:
+        context.append(TypeId(type=BuiltinEntityType.TASK.value, id=task_id))
+    context.append(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv_id))
+
     reply_fm = FlowMessage.model_validate({
         "text": message,
-        "context": [
-            TypeId(type=BuiltinEntityType.TASK.value, id=task_id),
-            TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv_id),
-        ],
+        "context": context,
         "attachment": [],
         "sender_id": sender_id,
         "sender_name": sender_name,
+        "conversation_id": conv_id,
     })
     reply_fm.id = FlowMessage.allocate_id(reply_fm.model_dump())
-    reply_fm.attachment = [
-        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.TASK.value, id=task_id))),
+    attachments: list[Attachment] = []
+    if task_id:
+        attachments.append(Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.TASK.value, id=task_id))))
+    attachments.extend([
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv_id))),
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=reply_fm.id))),
-    ]
+    ])
+    reply_fm.attachment = attachments
     return reply_fm
+
+
+async def _attach_prompt(
+    reply_fm: "FlowMessage",
+    proposer_id: Optional[str],
+    prompt_text: str,
+    prompt_files: list,
+) -> None:
+    """Append a PROMPT attachment to the FlowMessage.
+
+    `prompt_text` (if non-empty) is stored inline in `data`. Each file in
+    `prompt_files` is written to the entity VFS at `prompt/{filename}` and
+    appended as a separate PROMPT attachment whose `data` is that VFS subpath.
+    """
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType
+    from flow_sdk.storage import get_entity_embedded_storage
+
+    new_atts: list = list(reply_fm.attachment or [])
+    if prompt_text:
+        new_atts.append(Attachment(
+            attachment_type=AttachmentType.PROMPT,
+            data=prompt_text,
+            proposer_id=proposer_id,
+        ))
+    if prompt_files:
+        storage = get_entity_embedded_storage(reply_fm.typeid)
+        for uf in prompt_files:
+            if not hasattr(uf, "read"):
+                continue
+            filename = getattr(uf, "filename", None) or "prompt.txt"
+            vfs_subpath = f"prompt/{filename}"
+            local_path = Path(storage.get_storage_path(vfs_subpath))
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            local_path.write_bytes(await uf.read())
+            new_atts.append(Attachment(
+                attachment_type=AttachmentType.PROMPT,
+                data=vfs_subpath,
+                proposer_id=proposer_id,
+            ))
+    reply_fm.attachment = new_atts
 
 
 async def _attach_uploaded_files(reply_fm: "FlowMessage", uploaded_files: list) -> None:
@@ -688,16 +819,27 @@ async def _attach_uploaded_files(reply_fm: "FlowMessage", uploaded_files: list) 
 async def _append_message_to_conversation(
     *,
     conv: Conversation,
-    task_id: str,
+    task_id: Optional[str],
     fm_id: str,
     someone_typeid: str,
 ) -> Conversation:
-    """Write pointer to conversation.jsonl and update message_ids / message_count on the entity."""
+    """Write pointer to conversation.jsonl and update message_ids / message_count on the entity.
+
+    Parent record is the Task when `task_id` is set, else the Project (project-scoped
+    conversations created via `conversation-create`).
+    """
     from flow_sdk.fs_records.conversation_record import ConversationRecord
+    from flow_sdk.fs_store.record_types import RecordType
 
     reply_ts = datetime.now(UTC).isoformat()
     if conv.data_path:
-        rec = ConversationRecord.from_jsonl(Path(conv.data_path), task_id, conv.id)
+        if task_id:
+            rec = ConversationRecord.from_jsonl(Path(conv.data_path), task_id, conv.id)
+        else:
+            parent_id = conv.project_id or ""
+            rec = ConversationRecord.from_jsonl(
+                Path(conv.data_path), parent_id, conv.id, parent_type=RecordType.PROJECT
+            )
         rec.append_message_pointer(fm_id, reply_ts)
     existing_ids: list = []
     if conv.message_ids:
@@ -769,30 +911,50 @@ def _notify_ui_conversation_updated(conv_id: str, task_id: str, fm_id: str) -> N
 
 
 async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResponse:
-    """Append a reply to an existing task's Conversation entity and conversation.jsonl."""
+    """Append a reply to a Conversation.
+
+    Accepts EITHER `task_id` (legacy task-bound path: hub push + git commit) OR
+    `conversation_id` (project-scoped conversations: local-only — no hub, no git).
+    """
     task_id = (body.get("task_id") or "").strip()
+    conversation_id = (body.get("conversation_id") or "").strip()
     message = (body.get("message") or "").strip()
+    prompt_text_preview = (body.get("prompt_text") or "").strip()
+    prompt_files_preview = body.get("prompt_files") or []
+    if not isinstance(prompt_files_preview, list):
+        prompt_files_preview = [prompt_files_preview]
 
-    if not task_id:
-        return ApiFailResponse(message="task_id is required")
+    if not task_id and not conversation_id:
+        return ApiFailResponse(message="task_id or conversation_id is required")
+    if not message and not prompt_text_preview and not prompt_files_preview:
+        return ApiFailResponse(message="message or prompt is required")
     if not message:
-        return ApiFailResponse(message="message is required")
+        # Synthesize a placeholder so the rest of the pipeline (which assumes a
+        # non-empty text body) keeps working for prompt-only sends.
+        message = "(proposed prompt)"
 
-    task = await Task.get_one({"id": task_id})
-    if not task:
-        return ApiFailResponse(message=f"Task not found: {task_id}")
-
-    conv = await _find_task_conversation(task)
-    if not conv:
-        return ApiFailResponse(message=f"No conversation found for task {task_id}")
+    task: Optional[Task] = None
+    if task_id:
+        task = await Task.get_one({"id": task_id})
+        if not task:
+            return ApiFailResponse(message=f"Task not found: {task_id}")
+        conv = await _find_task_conversation(task)
+        if not conv:
+            return ApiFailResponse(message=f"No conversation found for task {task_id}")
+    else:
+        conv = await Conversation.get_one({"id": conversation_id})
+        if not conv:
+            return ApiFailResponse(message=f"Conversation not found: {conversation_id}")
 
     local_user = await User.get_one({"uname": "local"})
     sender_id: Optional[str] = local_user.id if local_user else None
     body_sender_name = (body.get("sender_name") or "").strip()
     sender_name: str = body_sender_name or ((local_user.name or local_user.email or "") if local_user else "")
 
+    effective_task_id: Optional[str] = task.id if task else None
+
     reply_fm = _build_reply_flow_message(
-        task_id=task_id,
+        task_id=effective_task_id,
         conv_id=conv.id,
         message=message,
         sender_id=sender_id,
@@ -804,39 +966,50 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         uploaded_files = [uploaded_files]
     if uploaded_files:
         await _attach_uploaded_files(reply_fm, uploaded_files)
+
+    # Optional PROMPT attachment: inline text and/or uploaded file(s).
+    prompt_text = (body.get("prompt_text") or "").strip()
+    prompt_files = body.get("prompt_files") or []
+    if not isinstance(prompt_files, list):
+        prompt_files = [prompt_files]
+    if prompt_text or prompt_files:
+        await _attach_prompt(reply_fm, sender_id, prompt_text, prompt_files)
+
     reply_fm = await reply_fm.save(someone_typeid)
 
     # Append pointer BEFORE packing the bundle so conversation.jsonl is up-to-date in the zip
     conv = await _append_message_to_conversation(
         conv=conv,
-        task_id=task_id,
+        task_id=effective_task_id,
         fm_id=reply_fm.id,
         someone_typeid=someone_typeid,
     )
 
-    recipient_email = _resolve_reply_recipient_email(task, local_user.id if local_user else "")
-    await _send_reply_to_hub(
-        reply_fm=reply_fm,
-        task=task,
-        task_id=task_id,
-        message=message,
-        sender_id=sender_id,
-        sender_name=sender_name,
-        recipient_email=recipient_email,
-    )
-
-    _notify_ui_conversation_updated(conv.id, task_id, reply_fm.id)
-
-    project_root_str = (task.metadata or {}).get("project_root")
-    if project_root_str:
-        await git_add_commit_push(
-            Path(project_root_str),
-            ["tasks"],
-            f"chore: update conversation for task '{task.title}'",
+    if task:
+        recipient_email = _resolve_reply_recipient_email(task, local_user.id if local_user else "")
+        await _send_reply_to_hub(
+            reply_fm=reply_fm,
+            task=task,
+            task_id=task.id,
+            message=message,
+            sender_id=sender_id,
+            sender_name=sender_name,
+            recipient_email=recipient_email,
         )
 
+    _notify_ui_conversation_updated(conv.id, effective_task_id or "", reply_fm.id)
+
+    if task:
+        project_root_str = (task.metadata or {}).get("project_root")
+        if project_root_str:
+            await git_add_commit_push(
+                Path(project_root_str),
+                ["tasks"],
+                f"chore: update conversation for task '{task.title}'",
+            )
+
     return ApiSuccessResponse(data={
-        "task_id": task_id,
+        "task_id": effective_task_id or "",
         "conversation_id": conv.id,
         "message_count": conv.message_count,
         "flow_message_id": reply_fm.id,
@@ -906,7 +1079,13 @@ async def refresh_notifications() -> ApiResponse:
 
 @action.post(action_name="update-local-user-name", types=None)
 async def update_local_user_name() -> ApiResponse:
-    """Update the local user's display name."""
+    """Update the local user's display name and mark it as manually overridden.
+
+    The override label tells bootstrap not to clobber this name from
+    `git config user.name` on future server starts.
+    """
+    from flow_sdk.server.routes.bootstrap import NAME_OVERRIDE_LABEL
+
     request_info = get_current_request_info()
     if not request_info:
         return ApiFailResponse(message="No request info found")
@@ -918,8 +1097,132 @@ async def update_local_user_name() -> ApiResponse:
     if not local_user:
         return ApiFailResponse(message="Local user not found")
     local_user.name = new_name
+    if NAME_OVERRIDE_LABEL not in (local_user.labels or []):
+        local_user.add_label(NAME_OVERRIDE_LABEL)
     await local_user.save()
     return ApiSuccessResponse(data={"name": new_name})
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Project mapping (per-machine: remote_project_id → local_project_id)
+# Stored as a JSON file under InstanceSettings.flow_home so the mapping
+# survives restarts and is independent of the User entity (which has no
+# settings field today).
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def _project_mapping_path() -> Path:
+    from flow_sdk.instance_settings import get_instance_settings
+    return get_instance_settings().flow_home / "project_mapping.json"
+
+
+def _load_project_mapping() -> dict:
+    p = _project_mapping_path()
+    if not p.exists():
+        return {}
+    try:
+        return _json.loads(p.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+
+
+def _save_project_mapping(mapping: dict) -> None:
+    p = _project_mapping_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(_json.dumps(mapping, indent=2), encoding="utf-8")
+
+
+@action.get(action_name="get-project-mapping", types=None)
+async def get_project_mapping() -> ApiResponse:
+    """Return the per-machine remote→local project mapping dict."""
+    return ApiSuccessResponse(data={"mapping": _load_project_mapping()})
+
+
+@action.post(action_name="set-project-mapping", types=None)
+async def set_project_mapping() -> ApiResponse:
+    """Set the local project that a remote project_id maps to.
+
+    Body: { remote_project_id: str, local_project_id: str }
+    The mapping is keyed by remote_project_id; subsequent messages bound to
+    the same remote project route silently to the chosen local project.
+    """
+    request_info = get_current_request_info()
+    if not request_info:
+        return ApiFailResponse(message="No request info found")
+    body = await request_info.get_post_data() or {}
+    remote_id = (body.get("remote_project_id") or "").strip()
+    local_id = (body.get("local_project_id") or "").strip()
+    if not remote_id or not local_id:
+        return ApiFailResponse(message="remote_project_id and local_project_id are required")
+    mapping = _load_project_mapping()
+    mapping[remote_id] = local_id
+    _save_project_mapping(mapping)
+    return ApiSuccessResponse(data={"mapping": mapping})
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# PROMPT attachment lifecycle
+# ────────────────────────────────────────────────────────────────────────────
+
+
+@action.post(action_name="approve-prompt", types=["flow_message"])
+async def approve_prompt() -> ApiResponse:
+    """Mark PROMPT attachments on a FlowMessage as approved by the current user.
+
+    The frontend then runs the prompt in a forked Claude session.
+    Body: { attachment_index?: number, approve_all?: bool }
+      - With approve_all=True (default for the conversation flow): every PROMPT
+        attachment on the message flips to approved in one shot, so the typed
+        text and any attached prompt files all execute as a single Claude turn.
+      - Without approve_all: only the targeted attachment_index (or the first
+        unapproved PROMPT) is approved.
+    """
+    from flow_sdk.builtin.flow_message import AttachmentType, FlowMessage as FM
+
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        return ApiFailResponse(message="No request info found")
+    fm_id = str(request_info.target_entity_typeid.id)
+    fm = await FM.get_one({"id": fm_id})
+    if not fm:
+        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}")
+
+    body = await request_info.get_post_data() or {}
+    idx = body.get("attachment_index")
+    approve_all = bool(body.get("approve_all"))
+    local_user = await User.get_one({"uname": "local"})
+    approver_id = local_user.id if local_user else None
+
+    new_atts = list(fm.attachment or [])
+
+    if approve_all:
+        approved_indices: list[int] = []
+        for i, a in enumerate(new_atts):
+            if a.attachment_type == AttachmentType.PROMPT and not a.approved_by:
+                new_atts[i] = a.model_copy(update={"approved_by": approver_id})
+                approved_indices.append(i)
+        if not approved_indices:
+            return ApiFailResponse(message="No unapproved PROMPT attachment found on this message")
+        fm.attachment = new_atts
+        await fm.save(request_info.someone_typeid or "")
+        return ApiSuccessResponse(data={"attachment_indices": approved_indices, "approved_by": approver_id})
+
+    target_idx: Optional[int] = None
+    if isinstance(idx, int) and 0 <= idx < len(new_atts):
+        if new_atts[idx].attachment_type == AttachmentType.PROMPT:
+            target_idx = idx
+    if target_idx is None:
+        for i, a in enumerate(new_atts):
+            if a.attachment_type == AttachmentType.PROMPT and not a.approved_by:
+                target_idx = i
+                break
+    if target_idx is None:
+        return ApiFailResponse(message="No unapproved PROMPT attachment found on this message")
+
+    new_atts[target_idx] = new_atts[target_idx].model_copy(update={"approved_by": approver_id})
+    fm.attachment = new_atts
+    await fm.save(request_info.someone_typeid or "")
+    return ApiSuccessResponse(data={"attachment_index": target_idx, "approved_by": approver_id})
 
 
 @action.get(action_name="open", types=["notification"])

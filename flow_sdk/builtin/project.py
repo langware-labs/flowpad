@@ -143,6 +143,64 @@ class Project(Entity):
             return rid
         return str(uuid.uuid4())
 
+    @classmethod
+    async def recover_by_path(cls, path: str) -> "Project | None":
+        """Recover (or materialize) a Project for ``path`` in three phases.
+
+        Used by ``AgenticProcess.recover_project_action`` to resurrect orphaned
+        processes whose ``project_id`` references a deleted project. ``path`` is
+        typically ``AgenticProcess.workdir``.
+
+        Phase 1 — exact-match an existing Project by ``fs_storage_mount_path``.
+        Phase 2 — materialize from ``~/.claude/projects/<encoded>/`` if Claude Code
+                  knows the dir, via ``ClaudeProjectFsRecord._from_claude_dir`` +
+                  ``sync_to_db`` (which calls ``Entity.from_record``).
+        Phase 3 — construct a fresh Project from the path; ``Project.allocate_id``
+                  yields a deterministic uuid5.
+
+        Returns ``None`` only when ``path`` is empty/falsy.
+        """
+        if not path:
+            return None
+
+        # Phase 1: existing Project at this exact mount path.
+        existing = await cls.get_all()
+        for proj in existing:
+            if proj.fs_storage_mount_path and proj.fs_storage_mount_path == path:
+                return proj
+
+        # Phase 2: Claude Code's project directory at ~/.claude/projects/<encoded>/.
+        # Note: ClaudeProjectFsRecord.id is uuid5("project:<encoded>"), but the
+        # Project entity Entity.from_record materializes uses the path-based
+        # uuid5("project:<mount_path>") via Project.allocate_id. So we look up
+        # the materialized entity by mount path, not by record id.
+        from flow_sdk.fs_records.claude.claude_project import (
+            ClaudeProjectFsRecord,
+            _claude_projects_dir,
+        )
+        encoded = path.replace("/", "-")
+        claude_dir = _claude_projects_dir() / encoded
+        if claude_dir.is_dir() and ClaudeProjectFsRecord._is_valid_project_dir(claude_dir):
+            try:
+                rec = ClaudeProjectFsRecord._from_claude_dir(claude_dir)
+                await rec.sync_to_db(notify=False)
+                # Re-query for the materialized Project entity by mount path.
+                materialized = await cls.get_all()
+                for p in materialized:
+                    if p.fs_storage_mount_path == path:
+                        return p
+            except Exception as e:
+                logging.warning(f"Project.recover_by_path: phase 2 failed for {path}: {e}")
+
+        # Phase 3: construct a fresh Project from the path.
+        proj = cls.model_validate({
+            "fs_storage_mount_path": path,
+            "name": os.path.basename(path.rstrip(os.sep)) or path,
+        })
+        proj.id = cls.allocate_id(proj.model_dump())
+        await proj.save()
+        return proj
+
     @property
     def project_encoded_name(self) -> str | None:
         """Encoded project path used to locate transcript files."""

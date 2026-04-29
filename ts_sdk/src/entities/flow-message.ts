@@ -12,14 +12,19 @@ export enum AttachmentType {
   FILE = 'file',
   REPO = 'repo',
   URL = 'url',
+  PROMPT = 'prompt',
 }
 
 export interface Attachment {
   attachment_type: AttachmentType;
-  /** TypeId string ("type-id"), relative file path, repo path, or URL */
+  /** TypeId string ("type-id"), relative file path, repo path, URL, or — for PROMPT — inline text or "prompt/<filename>" VFS subpath. */
   data: string;
-  /** Absolute filesystem path — populated server-side for FILE attachments, null for others. */
+  /** Absolute filesystem path — populated server-side for FILE / PROMPT-file attachments, null for others. */
   local_path?: string | null;
+  /** PROMPT attachments only: the user who suggested the prompt. */
+  proposer_id?: string | null;
+  /** PROMPT attachments only: set when the other party approves. */
+  approved_by?: string | null;
 }
 
 export interface IFlowMessage extends IEntity {
@@ -34,6 +39,8 @@ export interface IFlowMessage extends IEntity {
   receiver_address_type?: string | null;
   /** User-given filename of the uploaded .flowmsg zip stored via fs/upload, e.g. "my-share.flowmsg". Null when no file was uploaded. */
   attachment_filename?: string | null;
+  /** ID of the parent Conversation; null on legacy messages predating the field. */
+  conversation_id?: string | null;
   is_read?: boolean;
   is_archived?: boolean;
 }
@@ -49,6 +56,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   receiver_address?: string | null;
   receiver_address_type?: string | null;
   attachment_filename?: string | null;
+  conversation_id?: string | null;
   is_read?: boolean;
   is_archived?: boolean;
   static type: string = 'flow_message';
@@ -64,6 +72,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.receiver_address = entity.receiver_address;
     this.receiver_address_type = entity.receiver_address_type;
     this.attachment_filename = entity.attachment_filename;
+    this.conversation_id = entity.conversation_id;
     this.is_read = entity.is_read ?? false;
     this.is_archived = entity.is_archived ?? false;
   }

@@ -119,7 +119,7 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
       context_data: { project_id: dataContext.project?.id },
       workdir,
       visible: false,
-      target_typeid_str: resolvedWorkflow.typeId.toString(),
+      target_vfs_path: resolvedWorkflow.typeId.toString(),
     }).save([resolvedWorkflow.typeId]);
 
     void process.prompt(instruction);
@@ -212,7 +212,7 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
   return (
     <>
       <MarkdownEditor
-        fsRef={fsRef}
+        fsRef={resolvedWorkflow.doc ?? fsRef}
         chatTarget={resolvedWorkflow.typeId.toString()}
         toolbar={toolbar}
         extraSideTabs={[runsTab]}

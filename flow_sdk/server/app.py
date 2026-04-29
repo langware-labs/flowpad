@@ -59,25 +59,25 @@ from .routes import (
 
 async def _on_server_startup():
     """Write server.json for discovery by hooks/CLI and start cron scheduler."""
-    from flow_sdk.config import DEV_SERVER_JSON_PATH, SERVER_JSON_PATH, _is_dev_mode, set_server_info
-    from flow_sdk.db.drivers.sqlite.connection import SQLITE_DATABASE_PATH
+    from flow_sdk.config import set_server_info
+    from flow_sdk.db.drivers.sqlite.connection import get_database_path
+    from flow_sdk.instance_settings import get_instance_settings
 
-    print(f"  Database path: {SQLITE_DATABASE_PATH}")
+    settings = get_instance_settings()
+    print(f"  Database path: {get_database_path()}")
 
     if os.environ.get("FLOWPAD_SKIP_LOCK", "").lower() == "true":
         return
 
-    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
     set_server_info(
         {
-            "port": port,
+            "port": settings.port,
             "server_pid": os.getpid(),
             "webhook_path": "/api/v1/webhook/listen",
             "health_path": "/api/v1/health/status",
         }
     )
-    json_path = DEV_SERVER_JSON_PATH if _is_dev_mode() else SERVER_JSON_PATH
-    print(f"  server.json:   {json_path}")
+    print(f"  server.json:   {settings.server_json_path}")
 
     from flow_sdk.fs_records.old_record_cleanup import run_old_record_cleanup
 

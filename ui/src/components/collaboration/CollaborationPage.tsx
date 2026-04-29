@@ -79,11 +79,11 @@ export function CollaborationPage() {
   const { currentDock } = useDockNavigation();
 
   const isActiveView = currentDock?.viewType === ViewType.PROJECT;
-  const { projectId, roomId } = useMemo(
+  const { projectId, roomId, conversationId: pointerConversationId } = useMemo(
     () =>
       isActiveView
         ? DockPointer.parseProjectPointer(currentDock?.pointer)
-        : { projectId: null, roomId: null },
+        : { projectId: null, roomId: null, conversationId: null },
     [isActiveView, currentDock?.pointer],
   );
 
@@ -161,6 +161,18 @@ export function CollaborationPage() {
     setRoomTabs((prev) => (prev.some((t) => t.key === tab.key) ? prev : [...prev, tab]));
     setActiveRoomTabKey(tab.key);
   }, []);
+
+  // Open a conversation tab when the URL pointer carries `/conversation/<id>`.
+  useEffect(() => {
+    if (!pointerConversationId) return;
+    const key = `conv-${pointerConversationId}`;
+    handleOpenRoomTab({
+      key,
+      type: 'conversation',
+      title: 'Conversation',
+      asset_ref: pointerConversationId,
+    });
+  }, [pointerConversationId, handleOpenRoomTab]);
 
   const handleCloseRoomTab = useCallback((key: string) => {
     setRoomTabs((prev) => {

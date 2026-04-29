@@ -1,4 +1,4 @@
-import { Archive, CheckSquare } from 'lucide-react';
+import { Archive, CheckSquare, Paperclip } from 'lucide-react';
 import type { InboxMessage } from './inbox-api';
 
 interface InboxMessageRowProps {
@@ -9,7 +9,6 @@ interface InboxMessageRowProps {
 }
 
 export function InboxMessageRow({ message, onArchive, onToggleRead, onClick }: InboxMessageRowProps) {
-  const typeIdAttachments = message.attachment.filter((a) => a.attachment_type === 'type_id');
   const fileAttachments = message.attachment.filter((a) => a.attachment_type === 'file');
 
   const formattedDate = message.created_date
@@ -40,18 +39,14 @@ export function InboxMessageRow({ message, onArchive, onToggleRead, onClick }: I
       <p className="line-clamp-2 text-xs text-muted-foreground">{message.text}</p>
 
       {/* Attachments preview */}
-      {(typeIdAttachments.length > 0 || fileAttachments.length > 0) && (
+      {fileAttachments.length > 0 && (
         <div className="mt-0.5 flex flex-wrap gap-1">
-          {typeIdAttachments.map((a) => (
-            <span key={a.data} className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              {a.data}
-            </span>
-          ))}
           {fileAttachments.map((a) => (
             <span
               key={a.data}
-              className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+              className="inline-flex items-center gap-1 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
             >
+              <Paperclip className="h-2.5 w-2.5" />
               {a.data.split('/').pop()}
             </span>
           ))}

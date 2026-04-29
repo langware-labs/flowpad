@@ -14,6 +14,7 @@ from typing import ClassVar, Iterator
 import os
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.instance_settings import get_instance_settings
 
 
 def _plan_search_dirs() -> list[Path]:
@@ -32,7 +33,7 @@ def _plan_search_dirs() -> list[Path]:
             seen.add(rp)
             dirs.append(p)
 
-    _add(Path.home() / ".claude" / "plans")
+    _add(get_instance_settings().claude_plans_dir)
 
     from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
     for real in iter_claude_project_paths():

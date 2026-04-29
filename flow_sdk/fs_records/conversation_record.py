@@ -151,7 +151,14 @@ class ConversationRecord(Record):
         return " ".join(m.get("content", "") for m in msgs)
 
     @classmethod
-    def from_jsonl(cls, jsonl_path: Path, task_id: str, record_id: str) -> "ConversationRecord":
+    def from_jsonl(
+        cls,
+        jsonl_path: Path,
+        parent_id: str,
+        record_id: str,
+        *,
+        parent_type: str = RecordType.TASK,
+    ) -> "ConversationRecord":
         """Construct a ConversationRecord from a jsonl file path.
 
         Passes parent_ref and data_ref as constructor kwargs so that
@@ -164,15 +171,17 @@ class ConversationRecord(Record):
             path=str(jsonl_path),
             format="jsonl",
         )
-        parent_ref = RecordRef(id=task_id, type=RecordType.TASK)
+        parent_ref = RecordRef(id=parent_id, type=parent_type)
 
-        rec = cls(
-            id=record_id,
-            task_id=task_id,
-            data_path=str(jsonl_path),
-            name=f"conversation-{task_id[:8]}",
-            data_ref=data_ref,
-            parent_ref=parent_ref,
-        )
+        kwargs: dict = {
+            "id": record_id,
+            "data_path": str(jsonl_path),
+            "name": f"conversation-{parent_id[:8]}",
+            "data_ref": data_ref,
+            "parent_ref": parent_ref,
+        }
+        if parent_type == RecordType.TASK:
+            kwargs["task_id"] = parent_id
+        rec = cls(**kwargs)
         object.__setattr__(rec, "_asset_ref", FSRef(str(jsonl_path)))
         return rec

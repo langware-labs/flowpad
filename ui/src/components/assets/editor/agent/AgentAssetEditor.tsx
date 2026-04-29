@@ -10,32 +10,41 @@ interface AgentAssetEditorProps {
 }
 
 /**
- * Agent files use a vertical layout: the markdown body on top and an
- * `EntityChatPanel` pinned to the bottom for talking to the agent. The doc's
- * side drawer drops its Chat tab (`disableChat`) so we don't mount two
- * chats against the same target — a race on lazy `AgenticProcess` creation.
- * On first send, `loadEmbeddedAgent` registers this .md as the embedded
- * agent so the CLI worker gets the `--agents` flag.
+ * Agent files render two distinct chat surfaces, keyed on different
+ * `target_vfs_path` values so they own separate AgenticProcess rows:
+ *
+ *   - Side drawer "chat with the doc" — generic, no agent embed,
+ *     keyed on `fsRef.vpath` (the file's compute-node-rooted VFS path).
+ *     Same surface every other doc gets.
+ *   - Bottom "talk with the agent" — keyed on the agent entity's
+ *     typeId; first send calls `loadEmbeddedAgent` so subsequent turns
+ *     adopt the agent persona (see compose_prompt single-agent branch).
  */
 export function AgentAssetEditor({ fsRef }: AgentAssetEditorProps) {
   const { entity: agent } = useEntityByPath<Agent>(Agent.type, fsRef);
-  const sourcePath = fsRef.path;
+  // Prefer the entity-derived doc (built from agent.asset_ref) once the entity
+  // resolves. Falls back to the URL-derived fsRef while loading. Both resolve
+  // to the same file post mount-path fix, but the entity-derived ref is the
+  // explicit source of truth.
+  const editorRef = agent?.doc ?? fsRef;
+  const sourcePath = agent?.asset_ref ?? fsRef.path;
   const embedAgent = useCallback(
     async (proc: AgenticProcess) => {
       await proc.loadEmbeddedAgent(sourcePath);
     },
     [sourcePath],
   );
-  const target = agent ? agent.typeId.toString() : null;
+  const docTarget = fsRef.vpath;
+  const agentTarget = agent ? agent.typeId.toString() : null;
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1">
-        <MarkdownEditor fsRef={fsRef} chatTarget={target} disableChat />
+        <MarkdownEditor fsRef={editorRef} chatTarget={docTarget} />
       </div>
-      {target && (
+      {agentTarget && (
         <div className="h-[300px] flex-shrink-0 border-t" data-testid="agent-bottom-chat">
           <EntityChatPanel
-            target={target}
+            target={agentTarget}
             onProcessCreated={embedAgent}
             className="h-full"
           />

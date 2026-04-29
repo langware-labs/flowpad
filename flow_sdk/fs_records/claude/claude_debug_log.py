@@ -24,6 +24,7 @@ from typing import Any, ClassVar, Iterator
 from flow_sdk._compat import Self
 
 from flow_sdk.fs_store import PropertyRecord, Record, RecordType
+from flow_sdk.instance_settings import get_instance_settings
 
 # --- Compiled patterns (module-level, compiled once) ---
 
@@ -165,7 +166,7 @@ def _find_transcript(session_id: str) -> str:
     Scans ``~/.claude/projects/*/`` for ``{session_id}.jsonl``.
     Returns the full path as a string, or empty string if not found.
     """
-    projects_dir = Path.home() / ".claude" / "projects"
+    projects_dir = get_instance_settings().claude_projects_dir
     if not projects_dir.is_dir():
         return ""
     fname = f"{session_id}.jsonl"
@@ -240,8 +241,7 @@ class ClaudeSessionDebugLogRecord(Record):
     @classmethod
     def debug_dir(cls) -> Path:
         """Return the platform-appropriate debug log directory."""
-        home = Path.home()
-        d = home / ".claude" / "debug"
+        d = get_instance_settings().claude_home / "debug"
         if d.is_dir():
             return d
         # Windows AppData fallback

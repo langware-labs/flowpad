@@ -11,7 +11,8 @@ import { useContext } from '@sdk/react/hooks';
 import { sendNotification } from '@sdk/entities/notifications';
 import { createTaskBundle, DeliveryMode } from '@sdk/entities/flow-message';
 import { ActionInfo } from '@sdk/models/ActionInfo';
-import { oauthService, OAUTH_PROVIDERS } from '@sdk';
+import { AgenticProcess, dataManager, oauthService, OAUTH_PROVIDERS, TypeId } from '@sdk';
+import { loadOptionalTranscript } from '@src/components/conversation/transcript-attachment';
 import { toast } from 'sonner';
 import { Mail, Download, Github, Pencil } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -41,6 +42,10 @@ interface AskForAssistanceDialogProps {
   onClose: () => void;
   sessionTitle: string;
   sessionContent: string;
+  /** Active AgenticProcess id — stamped onto the sender's task as my_process_id, and resolved internally to a session_id when the transcript checkbox is on. */
+  processId?: string;
+  /** Project / cwd of the active session — used by ClaudeSessionRecord.discover for O(1) lookup. */
+  projectPath?: string;
 }
 
 export function AskForAssistanceDialog({
@@ -48,6 +53,8 @@ export function AskForAssistanceDialog({
   onClose,
   sessionTitle,
   sessionContent,
+  processId,
+  projectPath,
 }: AskForAssistanceDialogProps) {
   const { cloudLoginAvailable } = useContext();
   const { localUser, updateName } = useLocalUser();
@@ -64,6 +71,7 @@ export function AskForAssistanceDialog({
   const [success, setSuccess] = useState(false);
   const [gitError, setGitError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
+  const [attachTranscript, setAttachTranscript] = useState(true);
 
   useEffect(() => {
     if (open) {
@@ -77,6 +85,7 @@ export function AskForAssistanceDialog({
       setGitError(null);
       setEmailError(null);
       setEditingName(false);
+      setAttachTranscript(true);
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -94,6 +103,16 @@ export function AskForAssistanceDialog({
     setBusy(true);
     setError(null);
     try {
+      // Resolve the AgenticProcess to grab its session_id for transcript discovery.
+      const proc = processId
+        ? await dataManager.getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, processId)).catch(() => null)
+        : null;
+      const sessionId = proc?.session_id ?? undefined;
+      const filesWithTranscript = await loadOptionalTranscript(files, {
+        attach: attachTranscript,
+        sessionId,
+        projectPath,
+      });
       const result = await sendNotification({
         recipient_id: recipientId.trim(),
         spec_title: title.trim(),
@@ -103,9 +122,12 @@ export function AskForAssistanceDialog({
         task_id: null,
         message: message.trim() || null,
         plan_id: null,
-        project_path: null,
+        project_path: projectPath ?? null,
         sender_name: senderName.trim() || null,
-        files: files.length > 0 ? files : undefined,
+        files: filesWithTranscript.length > 0 ? filesWithTranscript : undefined,
+        // Stamp the sender's AgenticProcess id so their per-message "Open Claude
+        // Code" chip is wired immediately, no Start step required.
+        sender_process_id: processId ?? null,
       });
       if (result.git_error) {
         setGitError(result.git_error);
@@ -296,6 +318,18 @@ export function AskForAssistanceDialog({
                 className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               />
               <FileAttachmentPicker files={files} onChange={setFiles} disabled={busy} />
+              {processId && (
+                <label className="flex items-center gap-2 pt-1 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={attachTranscript}
+                    onChange={(e) => setAttachTranscript(e.target.checked)}
+                    disabled={busy}
+                    className="h-3.5 w-3.5 rounded border-input"
+                  />
+                  Attach my Claude Code transcript
+                </label>
+              )}
             </div>
 
             {error && <p className="text-xs text-destructive">{error}</p>}
