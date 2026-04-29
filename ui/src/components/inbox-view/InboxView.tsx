@@ -81,7 +81,7 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, refSett
     // project-nested form that Conversation.dockPointer falls into when
     // project_id is set. The receiver's local DB doesn't have the sender's
     // Project entity, so the project-loader 404s; the standalone route
-    // resolves the task + project via task.metadata.project_id instead and
+    // resolves the task + project via task.project_id instead and
     // tolerates the receiver's pre-mapping state.
     if (!conv.id) return;
     navigation.openDock(DockPointer.forConversation(conv.id));

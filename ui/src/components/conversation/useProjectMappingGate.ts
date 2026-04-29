@@ -33,8 +33,8 @@ export function useProjectMappingGate(task: ITask | null | undefined) {
   const autoApplyAttemptedRef = useRef<Set<string>>(new Set());
 
   const taskMeta = (task?.metadata as Record<string, unknown> | undefined) ?? {};
-  const remoteProjectId = taskMeta.remote_project_id as string | undefined;
-  const remoteProjectName = (taskMeta.remote_project_name as string | undefined) ?? '';
+  const remoteProjectId = task?.remote_project_id ?? undefined;
+  const remoteProjectName = task?.remote_project_name ?? '';
   const projectRoot = taskMeta.project_root as string | undefined;
   const taskId = task?.id ?? '';
 
