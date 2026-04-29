@@ -9,17 +9,34 @@ export interface SendReplyExtras {
   promptFiles?: File[];
 }
 
+export interface SendReplyTarget {
+  /** Task-bound reply (legacy; triggers hub push + git commit). */
+  task?: ITask | null;
+  /** Project-scoped conversation reply (local-only). */
+  conversationId?: string | null;
+}
+
 export async function sendReply(
-  task: ITask,
+  target: SendReplyTarget | ITask,
   message: string,
   files?: File[],
   extras?: SendReplyExtras,
 ): Promise<void> {
+  // Back-compat: callers that pass a Task directly still work.
+  const t: SendReplyTarget =
+    target && typeof target === 'object' && ('task' in target || 'conversationId' in target)
+      ? (target as SendReplyTarget)
+      : { task: target as ITask };
+
+  const taskId = t.task?.id ?? null;
+  const conversationId = t.conversationId ?? null;
+
   const action = new ActionInfo('append-conversation', 'notification', null, 'POST');
   const hasFiles = (files && files.length > 0) || (extras?.promptFiles && extras.promptFiles.length > 0);
   if (hasFiles) {
     const form = new FormData();
-    form.append('task_id', task.id ?? '');
+    if (taskId) form.append('task_id', taskId);
+    if (conversationId) form.append('conversation_id', conversationId);
     form.append('message', message);
     if (extras?.promptText) form.append('prompt_text', extras.promptText);
     for (const file of files ?? []) {
@@ -30,7 +47,11 @@ export async function sendReply(
     }
     action.bodyParameters = form;
   } else {
-    action.bodyParameters = { task_id: task.id, message, ...(extras?.promptText ? { prompt_text: extras.promptText } : {}) };
+    const body: Record<string, string> = { message };
+    if (taskId) body.task_id = taskId;
+    if (conversationId) body.conversation_id = conversationId;
+    if (extras?.promptText) body.prompt_text = extras.promptText;
+    action.bodyParameters = body;
   }
   await dataManager.callAction(action);
 }

@@ -5,7 +5,8 @@ import { ProjectMappingDialog } from './ProjectMappingDialog';
 import { useProjectMappingGate } from './useProjectMappingGate';
 
 interface ConversationPanelProps {
-  task: ITask;
+  /** Optional. Project-scoped conversations have no task. */
+  task?: ITask | null;
   conversationId: string;
   /** Optional sender label for messages whose `sender_name` field is missing. */
   senderName?: string;
@@ -44,7 +45,11 @@ export function ConversationPanel({
   variant = 'default',
   className,
 }: ConversationPanelProps) {
-  const { ensureMapped, dialogProps: mappingDialogProps } = useProjectMappingGate(task);
+  const [showSpec, setShowSpec] = useState(false);
+  // Project-scoped conversations skip the project-mapping gate entirely.
+  const mappingGate = useProjectMappingGate(task ?? undefined);
+  const ensureMapped = task ? mappingGate.ensureMapped : undefined;
+  const mappingDialogProps = mappingGate.dialogProps;
 
   const headerWrapper =
     variant === 'compact'
@@ -57,12 +62,13 @@ export function ConversationPanel({
       {(headerLabel !== null || ensureMapped) && (
         <div className={headerWrapper}>
           {headerLabel !== null && <span>{headerLabel}</span>}
-          <ConversationToolbar
-            task={task}
-            conversationId={conversationId}
-            senderName={senderName}
-            ensureMapped={ensureMapped}
-          />
+          {task && (
+            <ConversationToolbar
+              task={task}
+              conversationId={conversationId}
+              senderName={senderName}
+              ensureMapped={ensureMapped}
+          />)}
         </div>
       )}
       <div className={bodyWrapper}>
@@ -74,7 +80,14 @@ export function ConversationPanel({
         />
       </div>
 
-      <ProjectMappingDialog {...mappingDialogProps} />
+      {task && (
+        <SpecSidePane
+          open={showSpec}
+          onClose={() => setShowSpec(false)}
+          specId={task.spec_id}
+        />
+      )}
+      {task && <ProjectMappingDialog {...mappingDialogProps} />}
     </div>
   );
 }
