@@ -2,6 +2,8 @@ import * as Sentry from '@sentry/browser';
 import { runInAction } from 'mobx';
 import { config } from '../config';
 import { dataContext, isTypeId, TypeId } from '../FlowSync';
+import { secretsService } from './secrets-service';
+import { secretApprovalGate } from './secretApprovalGate';
 
 export type BootstrapErrorType = 'config' | 'network' | 'server';
 
@@ -61,10 +63,33 @@ class Navigator {
     });
   }
 
-  navigateToLogin(loginCallbackUrl: string = window.location.href, connection?: string) {
+  async navigateToLogin(loginCallbackUrl: string = window.location.href, connection?: string): Promise<void> {
+    if (!(await this.ensureSecretsEnabled())) return;
     void dataContext.setActiveEntityTypeId(null);
     const url = this.getLoginWithCallbackUrl(loginCallbackUrl, connection);
     document.location.href = url;
+  }
+
+  private async ensureSecretsEnabled(): Promise<boolean> {
+    try {
+      const initial = await secretsService.isEnabled();
+      if (initial?.enabled) return true;
+    } catch {
+      // If the probe fails (offline, server down) fall through to the dialog;
+      // the dialog's own enable() call will surface the same error.
+    }
+
+    const approved = await secretApprovalGate.request();
+    if (!approved) return false;
+
+    // The dialog already called secretsService.enable(); re-verify before
+    // redirecting in case the OS denied the prompt despite the in-app approval.
+    try {
+      const verified = await secretsService.isEnabled();
+      return Boolean(verified?.enabled);
+    } catch {
+      return false;
+    }
   }
 
   navigateToLogout(returnToUrl: string = window.location.origin) {

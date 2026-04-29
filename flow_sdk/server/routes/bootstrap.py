@@ -507,7 +507,7 @@ async def validate_cloud_token(token: Optional[str] = None) -> bool:
 async def is_cloud_login_available() -> bool:
     """Check if cloud login is available by checking stored credentials."""
     try:
-        from flow_sdk.cli.auth import is_logged_in
+        from flow_sdk.cli.auth.hub_login import is_logged_in
         return await asyncio.to_thread(is_logged_in)
     except Exception:
         return False
