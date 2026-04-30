@@ -30,6 +30,27 @@ function ensureLoaded(): Promise<ProjectMapping> {
   return _loading;
 }
 
+/**
+ * Module-level mapping write — usable from anywhere (apply-project-choice,
+ * the gate's auto-persist effect). Keeps the shared in-memory cache in sync
+ * so other subscribers (e.g. the gate hook) see the new mapping immediately
+ * without waiting for a re-fetch.
+ */
+export async function writeProjectMapping(
+  remoteProjectId: string,
+  localProjectId: string,
+): Promise<ProjectMapping> {
+  const action = new ActionInfo('set-project-mapping', null, null, 'POST');
+  action.bodyParameters = { remote_project_id: remoteProjectId, local_project_id: localProjectId };
+  const res = await dataManager.callAction<
+    { remote_project_id: string; local_project_id: string },
+    { mapping: ProjectMapping }
+  >(action);
+  _cache = res?.mapping ?? { ...(_cache ?? {}), [remoteProjectId]: localProjectId };
+  notify();
+  return _cache;
+}
+
 export function useProjectMapping(): {
   mapping: ProjectMapping;
   loaded: boolean;
@@ -45,11 +66,7 @@ export function useProjectMapping(): {
   }, []);
 
   const setMapping = useCallback(async (remoteProjectId: string, localProjectId: string) => {
-    const action = new ActionInfo('set-project-mapping', null, null, 'POST');
-    action.bodyParameters = { remote_project_id: remoteProjectId, local_project_id: localProjectId };
-    const res = await dataManager.callAction<{ remote_project_id: string; local_project_id: string }, { mapping: ProjectMapping }>(action);
-    _cache = res?.mapping ?? { ..._cache, [remoteProjectId]: localProjectId };
-    notify();
+    await writeProjectMapping(remoteProjectId, localProjectId);
   }, []);
 
   return { mapping, loaded, setMapping };

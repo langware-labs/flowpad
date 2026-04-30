@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 import httpx
 from pydantic import BaseModel, Field
 
-from flow_sdk.config import FLOWPAD_CLOUD_URL
+from flow_sdk.config import API_PREFIX, FLOWPAD_CLOUD_URL, default_service_config
 
 
 class ApiConfig(BaseModel):
@@ -22,8 +22,9 @@ class ApiConfig(BaseModel):
         login_url: Optional[str] = None,
         logout_url: Optional[str] = None,
     ):
+        hub_url = default_service_config.flowpad_hub_url or FLOWPAD_CLOUD_URL
         super().__init__(
-            api_base_url=api_base_url or os.environ.get("API_BASE_URL", f"{FLOWPAD_CLOUD_URL}/api/v1"),
+            api_base_url=api_base_url or f"{hub_url.rstrip('/')}{API_PREFIX}",
             login_url=login_url or os.environ.get("LOGIN_URL", "/login?target_path={redirect_url}"),
             logout_url=logout_url or os.environ.get("LOGOUT_URL", "/logout?returnTo={return_url}"),
         )

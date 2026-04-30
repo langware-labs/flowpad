@@ -1,15 +1,16 @@
-import { dataManager, Project, Task, TypeId } from '@sdk';
-import { ActionInfo } from '@sdk/models/ActionInfo';
+import { Conversation, dataManager, Project, Task, TypeId } from '@sdk';
+import { writeProjectMapping } from './useProjectMapping';
 
 /**
- * Stamp a chosen Project onto a Task's metadata so subsequent task-bound
- * actions (Start Claude Code, Approve & Execute, Open in Project) read the
- * right cwd. Idempotent — calling repeatedly with the same project just
- * rewrites the same fields.
+ * Stamp a chosen Project onto a Task and its Conversation. Idempotent —
+ * calling repeatedly with the same project just rewrites the same fields.
  *
- * Returns true when the task was updated, false when the task entity could
- * not be loaded (in which case the project is still set in context, the
- * caller's responsibility to handle the missing task).
+ * Writes:
+ *   - `task.project_id`     (top-level, was `task.metadata.project_id`)
+ *   - `task.metadata.project_name` / `project_root`  (annotations)
+ *   - `conversation.project_id` (top-level on Conversation)
+ *
+ * Returns true when at least the task was updated.
  */
 export async function applyProjectToTask(taskId: string, project: Project): Promise<boolean> {
   if (!taskId) return false;
@@ -18,13 +19,26 @@ export async function applyProjectToTask(taskId: string, project: Project): Prom
       .getByTypeId<Task>(new TypeId(Task.type, taskId))
       .catch(() => null);
     if (!task) return false;
+    task.project_id = project.id ?? null;
     task.metadata = {
       ...(task.metadata ?? {}),
-      project_id: project.id,
       project_name: project.name ?? '',
       project_root: project.fs_storage_mount_path ?? '',
     };
     await task.save();
+
+    // Also stamp the conversation when the task points at one. Keeps the
+    // RecentConversationsStrip / project-scoped views in sync without
+    // requiring a separate "set conversation project" step.
+    if (task.conversation_id) {
+      const conv = await dataManager
+        .getByTypeId<Conversation>(new TypeId(Conversation.type, task.conversation_id))
+        .catch(() => null);
+      if (conv && conv.project_id !== project.id) {
+        conv.project_id = project.id ?? null;
+        await conv.save();
+      }
+    }
     return true;
   } catch {
     return false;
@@ -43,9 +57,7 @@ export async function persistRemoteToLocalMapping(
 ): Promise<void> {
   if (!remoteProjectId || !localProjectId) return;
   try {
-    const action = new ActionInfo('set-project-mapping', null, null, 'POST');
-    action.bodyParameters = { remote_project_id: remoteProjectId, local_project_id: localProjectId };
-    await dataManager.callAction(action);
+    await writeProjectMapping(remoteProjectId, localProjectId);
   } catch {
     // non-fatal — the user can re-pick later if it didn't stick.
   }

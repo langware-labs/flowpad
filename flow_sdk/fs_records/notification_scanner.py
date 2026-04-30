@@ -145,21 +145,17 @@ async def _process_manifest(
     from flow_sdk.utils.git import git_remote_url
     project_url = git_remote_url(str(project_root))
 
-    # --- Resolve project_id from project_root via deterministic id ---
-    from flow_sdk.builtin.project import Project
-    resolved_project_id: str | None = None
-    try:
-        resolved_project_id = Project.allocate_id({"fs_storage_mount_path": str(project_root)})
-    except Exception as e:
-        logger.warning(f"notification_scanner: project_id resolution failed: {e}")
-
-    # --- Create Conversation entity + record ---
+    # Conversation.project_id is intentionally left null on receive; the
+    # picker stamps it (alongside task.project_id) when the user maps. Older
+    # code computed a deterministic uuid5 from `project_root` here, which
+    # produced ids that 404'd because no Project entity actually existed at
+    # that uuid.
     conv = await _create_conversation_from_disk(
         task_dir=task_dir,
         task_id=task_id,
         conversation_id=conversation_id,
         owner_typeid=owner_typeid,
-        project_id=resolved_project_id,
+        project_id=None,
     )
 
     # --- Create Task entity ---
@@ -176,10 +172,10 @@ async def _process_manifest(
             "branch": manifest_branch,
             "sender_name": sender_name,
             "sender_email": data.get("sender_email") or "",
-            "remote_project_id": remote_project_id,
-            "remote_project_name": remote_project_name,
-            "spec_type": spec_type_meta,
         },
+        "remote_project_id": remote_project_id,
+        "remote_project_name": remote_project_name,
+        "spec_type": spec_type_meta,
     })
     task = await task.save(owner_typeid)
 

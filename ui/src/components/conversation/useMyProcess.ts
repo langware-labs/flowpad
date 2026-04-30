@@ -4,7 +4,6 @@ import {
   Conversation,
   dataManager,
   FlowMessage,
-  ProcessStatus,
   Spec,
   Task,
   TypeId,
@@ -22,7 +21,7 @@ interface UseMyProcessOptions {
 }
 
 interface UseMyProcessResult {
-  /** Stored on task.metadata.my_process_id; presence flips the chip label. */
+  /** Stored on task.my_process_id; presence flips the chip label. */
   myProcessId: string | undefined;
   /** True until the user has started a Claude Code session for this conversation. */
   isStartLabel: boolean;
@@ -78,8 +77,7 @@ async function buildReceiverContextPrompt(
       ).catch(() => null)
     : null;
 
-  const taskMeta = (task.metadata as Record<string, unknown> | undefined) ?? {};
-  const effectiveSpecType = (taskMeta.spec_type as string | undefined) ?? spec?.spec_type ?? 'plan';
+  const effectiveSpecType = task.spec_type ?? spec?.spec_type ?? 'plan';
   const isSession = effectiveSpecType === 'session';
 
   const specTitle = spec?.title ?? task.title ?? 'Untitled';
@@ -126,7 +124,7 @@ export function useMyProcess({ task, conversationId, senderName }: UseMyProcessO
 
   const taskId = task.id ?? '';
   const taskMeta = (task.metadata as Record<string, unknown> | undefined) ?? {};
-  const myProcessId = taskMeta.my_process_id as string | undefined;
+  const myProcessId = task.my_process_id ?? undefined;
   const isInitiator = !!(localUser?.id && task.shared_by_id && task.shared_by_id === localUser.id);
   // Workdir must come from the task's own mapped project. We deliberately do
   // NOT fall back to the global active project (`dataContext.project`) — that
@@ -146,29 +144,12 @@ export function useMyProcess({ task, conversationId, senderName }: UseMyProcessO
     }
     setBusy(true);
     try {
-      // Open path: process already exists for this task. Reattach if dead, then navigate.
       if (myProcessId) {
         const existing = await dataManager.getByTypeId<AgenticProcess>(
           new TypeId(AgenticProcess.type, myProcessId),
         ).catch(() => null);
         if (existing) {
-          const isAlive = existing.status !== ProcessStatus.STOPPED
-            && existing.status !== ProcessStatus.FAILED
-            && existing.status !== ProcessStatus.STOPPING;
-          if (!isAlive && existing.session_id) {
-            // Resume into a fresh worker without injecting any new instruction.
-            const { process: resumed } = await AgenticProcess.spawn(
-              { workdir, resumeSessionId: existing.session_id },
-              { visible: true },
-            );
-            const t = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId));
-            if (t) {
-              t.metadata = { ...(t.metadata ?? {}), my_process_id: resumed.id };
-              await t.save();
-            }
-            navigation.openInBrowserTab(resumed.dockPointer);
-            return;
-          }
+          await existing.start();
           navigation.openInBrowserTab(existing.dockPointer);
           return;
         }
@@ -185,7 +166,7 @@ export function useMyProcess({ task, conversationId, senderName }: UseMyProcessO
       );
       const t = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId));
       if (t) {
-        t.metadata = { ...(t.metadata ?? {}), my_process_id: spawned.id };
+        t.my_process_id = spawned.id;
         await t.save();
       }
       navigation.openInBrowserTab(spawned.dockPointer);

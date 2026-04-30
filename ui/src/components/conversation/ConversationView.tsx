@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Conversation, dataManager, FlowMessage, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
@@ -28,8 +28,13 @@ export function ConversationView({
 
   const pointers = conversation?.conversationMessageIds ?? [];
 
-  // Backfill missing FlowMessage entities
+  // Backfill missing FlowMessage entities. `backfilledIds` tracks ids whose
+  // bundle finished unpacking — adding an id flips the bubble's React key,
+  // forcing a one-shot remount so its `useEntity` re-fetches. Without this,
+  // a bubble that 404'd on first mount (FM not yet materialized) would never
+  // re-attempt and stay stuck on "Loading message…".
   const requestedRef = useRef<Set<string>>(new Set());
+  const [backfilledIds, setBackfilledIds] = useState<ReadonlySet<string>>(() => new Set());
   useEffect(() => {
     if (pointers.length === 0) return;
     let cancelled = false;
@@ -37,13 +42,19 @@ export function ConversationView({
       for (const ptr of pointers) {
         if (cancelled) return;
         if (requestedRef.current.has(ptr.message_id)) continue;
-        const local = await dataManager
-          .getByTypeId<FlowMessage>(new TypeId(FlowMessage.type, ptr.message_id))
-          .catch(() => null);
+        const fmTypeId = new TypeId(FlowMessage.type, ptr.message_id);
+        const local = await dataManager.getByTypeId<FlowMessage>(fmTypeId).catch(() => null);
         if (local) continue;
         requestedRef.current.add(ptr.message_id);
         try {
           await openInboxMessage(ptr.message_id);
+          if (cancelled) return;
+          setBackfilledIds((prev) => {
+            if (prev.has(ptr.message_id)) return prev;
+            const next = new Set(prev);
+            next.add(ptr.message_id);
+            return next;
+          });
         } catch {
           // Drop from the set so a future render can retry once the user
           // refreshes; avoid hammering the hub on transient failures.
@@ -86,7 +97,7 @@ export function ConversationView({
         <div className="flex flex-col gap-3">
           {pointers.map((ptr) => (
             <FlowMessageBubble
-              key={ptr.message_id}
+              key={backfilledIds.has(ptr.message_id) ? `${ptr.message_id}:resolved` : ptr.message_id}
               messageId={ptr.message_id}
               timestamp={ptr.timestamp}
               task={task}
