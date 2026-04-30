@@ -179,22 +179,16 @@ async def _create_spec_and_task(
         spec = await spec.save(someone_typeid)
         spec_id = spec.id
 
-    task_meta: dict = {
-        "sender_name": sender_name,
-        "sender_email": sender_email,
-        "recipient_email": recipient_email or "",
-    }
-    if team_space_id:
-        task_meta["team_space_id"] = team_space_id
-    if project_name:
-        task_meta["project_name"] = project_name
-    if project_root:
-        task_meta["project_root"] = project_root
     task = Task.model_validate({
         "title": task_title,
         "spec_id": spec_id,
         "shared_by_id": sender_id,
-        "metadata": task_meta,
+        "sender_name": sender_name,
+        "sender_email": sender_email,
+        "recipient_email": recipient_email or "",
+        "team_space_id": team_space_id or None,
+        "project_name": project_name or None,
+        "project_root": project_root or None,
         "project_id": project_id,
         "spec_type": spec_type,
         "my_process_id": sender_process_id,
@@ -339,7 +333,6 @@ async def _write_task_to_git(
     )
 
     branch_at_write = git_current_branch(project_root)
-    task_meta = task.metadata or {}
     (task_dir / "manifest.json").write_text(
         _json.dumps({
             "task_id": task.id,
@@ -353,7 +346,7 @@ async def _write_task_to_git(
             "repo_id": repo_id_val,
             "branch": branch_at_write,
             "project_id": task.project_id or "",
-            "project_name": task_meta.get("project_name") or "",
+            "project_name": task.project_name or "",
             "spec_type": task.spec_type or "",
         }, indent=2, default=str),
         encoding="utf-8",
@@ -432,7 +425,6 @@ async def _send_hub_notification(
     # the same key, so a receiver missing this message can call
     # `inbox-open(message_id)` and the hub answers without any hub_id mapping.
     flow_message_id = fm.id if fm else str(uuid.uuid4())
-    task_meta = task.metadata or {}
     hub_flow_message_id: Optional[str] = None
     email_error: Optional[str] = None
     try:
@@ -453,7 +445,7 @@ async def _send_hub_notification(
             "branch": branch,
             "spec_file_path": spec_file_path,
             "project_id": task.project_id or None,
-            "project_name": task_meta.get("project_name") or None,
+            "project_name": task.project_name or None,
         }, action="send")
     except HubError as e:
         # Hub returned non-2xx (e.g. 401 unauthorized) or transport error.
@@ -880,10 +872,9 @@ def _resolve_reply_recipient_email(task: Task, local_user_id: str) -> str:
 
     Direction: if I am the original sender → deliver to recipient; otherwise → deliver to sender.
     """
-    task_meta = task.metadata or {}
     if task.shared_by_id and task.shared_by_id == local_user_id:
-        return task_meta.get("recipient_email") or ""
-    return task_meta.get("sender_email") or ""
+        return task.recipient_email or ""
+    return task.sender_email or ""
 
 
 async def _send_reply_to_hub(
@@ -1039,7 +1030,7 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     _notify_ui_conversation_updated(conv.id, effective_task_id or "", reply_fm.id)
 
     if task:
-        project_root_str = (task.metadata or {}).get("project_root")
+        project_root_str = task.project_root
         if project_root_str:
             await git_add_commit_push(
                 Path(project_root_str),

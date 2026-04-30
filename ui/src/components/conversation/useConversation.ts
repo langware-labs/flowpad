@@ -8,12 +8,11 @@ export interface UseConversationResult {
   /**
    * Local Project the task is bound to (sender's source project, OR the
    * project the receiver mapped to via OpenProjectComponent). Resolved from
-   * `task.project_id` (top-level field; was under `task.metadata.project_id`
-   * before the promotion). `undefined` while loading; `null` when the task
+   * `task.project_id`. `undefined` while loading; `null` when the task
    * hasn't been mapped to a local project yet (receiver pre-mapping).
    */
   project: Project | null | undefined;
-  /** Sender label derived from task metadata, falling back to shared_by_id. */
+  /** Sender label derived from `task.sender_name`, falling back to shared_by_id. */
   senderName?: string;
   /** Conversation entity is loaded but its task entity isn't materialised locally yet. */
   taskMissing: boolean;
@@ -52,7 +51,7 @@ export function useConversation(conversationId: string | null | undefined): UseC
   const { data: project } = useEntity<Project>(projectTypeId);
 
   const senderName =
-    (task?.metadata as Record<string, unknown> | undefined)?.sender_name as string | undefined ||
+    task?.sender_name ||
     task?.shared_by_id ||
     undefined;
 

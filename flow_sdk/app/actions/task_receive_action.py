@@ -44,12 +44,11 @@ async def find_project_for_task() -> ApiResponse:
         task = await _get_task(task_id)
 
         body = await request_info.get_post_data() or {}
-        meta = (task.metadata or {}) if task else {}
 
-        # Use task metadata if available, fall back to body params (deep-link before scanner has run)
-        project_url = meta.get("project_url") or (body.get("project_url") or "").strip()
-        manifest_repo_id = meta.get("repo_id") or (body.get("repo_id") or "").strip()
-        branch = meta.get("branch") or (body.get("branch") or "").strip()
+        # Use task fields if available, fall back to body params (deep-link before scanner has run)
+        project_url = (task.project_url if task else None) or (body.get("project_url") or "").strip()
+        manifest_repo_id = (task.repo_id if task else None) or (body.get("repo_id") or "").strip()
+        branch = (task.branch if task else None) or (body.get("branch") or "").strip()
 
         from flow_sdk.utils.git import (
             find_local_repo_for_url,
@@ -119,14 +118,13 @@ async def pull_for_task() -> ApiResponse:
         task = await _get_task(task_id)
 
         body = await request_info.get_post_data() or {}
-        meta = (task.metadata or {}) if task else {}
-        branch = meta.get("branch") or (body.get("branch") or "").strip()
-        project_url = meta.get("project_url") or (body.get("project_url") or "").strip()
+        branch = (task.branch if task else None) or (body.get("branch") or "").strip()
+        project_url = (task.project_url if task else None) or (body.get("project_url") or "").strip()
 
-        # Determine local_path: from body override, then metadata, then URL lookup
+        # Determine local_path: from body override, then task field, then URL lookup
         local_path: str | None = (body.get("local_path") or "").strip() or None
         if not local_path:
-            local_path = meta.get("project_root") or None
+            local_path = (task.project_root if task else None) or None
         if not local_path and project_url:
             from flow_sdk.utils.git import find_local_repo_for_url
             local_path = find_local_repo_for_url(project_url)
@@ -185,9 +183,8 @@ async def clone_for_task() -> ApiResponse:
         if not target_dir:
             return ApiFailResponse(message="target_dir is required")
 
-        meta = (task.metadata or {}) if task else {}
-        project_url = meta.get("project_url") or (body.get("project_url") or "").strip()
-        branch = meta.get("branch") or (body.get("branch") or "").strip()
+        project_url = (task.project_url if task else None) or (body.get("project_url") or "").strip()
+        branch = (task.branch if task else None) or (body.get("branch") or "").strip()
 
         if not project_url:
             return ApiFailResponse(message="No project URL found for this task")

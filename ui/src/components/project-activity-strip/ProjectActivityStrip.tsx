@@ -341,7 +341,7 @@ export function ProjectActivityStrip({
     };
 
     for (const t of learningTasks) {
-      const sid = t.metadata?.sessionId;
+      const sid = t.session_id;
       if (typeof sid !== 'string') continue;
 
       if (isClassificationTask(t)) upsert(classMap, sid, t);

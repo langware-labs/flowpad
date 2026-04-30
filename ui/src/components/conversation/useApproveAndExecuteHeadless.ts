@@ -30,8 +30,7 @@ export function useApproveAndExecuteHeadless({ task }: UseApproveAndExecuteHeadl
   const approveAndExecute = async (messageId: string, attachmentIndex: number) => {
     if (!task.id || !messageId) return;
 
-    const taskMeta = (task.metadata as Record<string, unknown> | undefined) ?? {};
-    const workdir = taskMeta.project_root as string | undefined;
+    const workdir = task.project_root ?? undefined;
     if (!workdir) {
       toast.warning('Map this conversation to a local project first.');
       return;

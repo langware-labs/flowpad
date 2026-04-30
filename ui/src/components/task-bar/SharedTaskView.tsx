@@ -27,8 +27,7 @@ interface SharedTaskViewProps {
 export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
   const blobExpansion = new ExpansionRequest({ expand: ['blobs'] });
 
-  const taskMeta = task.metadata as Record<string, unknown> | undefined;
-  const senderName = taskMeta?.sender_name as string | undefined
+  const senderName = task.sender_name
     || task.shared_by_id
     || 'Unknown';
 

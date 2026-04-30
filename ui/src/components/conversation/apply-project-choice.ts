@@ -6,8 +6,8 @@ import { writeProjectMapping } from './useProjectMapping';
  * calling repeatedly with the same project just rewrites the same fields.
  *
  * Writes:
- *   - `task.project_id`     (top-level, was `task.metadata.project_id`)
- *   - `task.metadata.project_name` / `project_root`  (annotations)
+ *   - `task.project_id` (FK)
+ *   - `task.project_name` / `task.project_root` (annotations)
  *   - `conversation.project_id` (top-level on Conversation)
  *
  * Returns true when at least the task was updated.
@@ -20,11 +20,8 @@ export async function applyProjectToTask(taskId: string, project: Project): Prom
       .catch(() => null);
     if (!task) return false;
     task.project_id = project.id ?? null;
-    task.metadata = {
-      ...(task.metadata ?? {}),
-      project_name: project.name ?? '',
-      project_root: project.fs_storage_mount_path ?? '',
-    };
+    task.project_name = project.name ?? '';
+    task.project_root = project.fs_storage_mount_path ?? '';
     await task.save();
 
     // Also stamp the conversation when the task points at one. Keeps the

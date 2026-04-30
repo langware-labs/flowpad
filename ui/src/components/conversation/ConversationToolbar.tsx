@@ -44,7 +44,7 @@ export function ConversationToolbar({
   const [transcript, setTranscript] = useState<ConversationTranscriptInfo | null>(null);
   const { isStartLabel, busy, openOrStart } = useMyProcess({ task, conversationId, senderName });
   // Keep a ref pointing at the *latest* openOrStart so an action stored on
-  // the project-mapping gate's continuation reads the freshest task.metadata
+  // the project-mapping gate's continuation reads the freshest task fields
   // (and not whatever was current at click time). Without this, the cont
   // captured before the user picks a project still calls the pre-mapping
   // openOrStart and ends up with project_root undefined.
@@ -185,7 +185,7 @@ export function ConversationToolbar({
               type="button"
               onClick={() => {
                 // Read the latest openOrStart at call time via the ref so a
-                // post-mapping continuation runs against fresh task.metadata.
+                // post-mapping continuation runs against fresh task fields.
                 const action = () => openOrStartRef.current();
                 if (ensureMapped) ensureMapped(action);
                 else void action();

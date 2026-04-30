@@ -38,22 +38,26 @@ export function ConversationView({
   const pointers = conversation?.conversationMessageIds ?? [];
 
   // Local-only drafts attached to this conversation. Filtered to the local
-  // user so a counterparty's stray draft never renders here.
-  const draftsRequest = useMemo(
-    () => new QueryRequest({
+  // user so a counterparty's stray draft never renders here. Match is built
+  // as an explicit $AND/$EQ tree — the SDK's multi-key plain-object shorthand
+  // doesn't recursively wrap operands, which makes real-time validate() crash.
+  const draftsRequest = useMemo(() => {
+    const eqClauses: Array<{ op: string; operands: unknown[] }> = [
+      { op: '$EQ', operands: ['conversation_id', conversationId] },
+      { op: '$EQ', operands: ['is_draft', true] },
+    ];
+    if (localUser?.id) {
+      eqClauses.push({ op: '$EQ', operands: ['sender_id', localUser.id] });
+    }
+    return new QueryRequest({
       type: FlowMessage.type,
       scope: [],
       name: `drafts:${conversationId}`,
       query: new QueryFilter({
-        match: {
-          conversation_id: conversationId,
-          is_draft: true,
-          ...(localUser?.id ? { sender_id: localUser.id } : {}),
-        } as Record<string, unknown>,
+        match: { op: '$AND', operands: eqClauses } as Record<string, unknown>,
       }),
-    }),
-    [conversationId, localUser?.id],
-  );
+    });
+  }, [conversationId, localUser?.id]);
   const { data: draftMessages = [] } = useEntitiesQuery<FlowMessage>(draftsRequest, {
     enabled: !!conversationId,
   });

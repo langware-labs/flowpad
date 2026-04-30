@@ -102,7 +102,7 @@ async def handle_create_task_bundle(
         "title": task_title,
         "spec_id": spec.id,
         "shared_by_id": sender_id,
-        "metadata": {"team_space_id": team_space_id} if team_space_id else None,
+        "team_space_id": team_space_id or None,
     })
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
@@ -693,7 +693,7 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     _notify_ui_conversation_updated(conv.id, task.id if task else "", fm.id)
 
     if task:
-        project_root_str = (task.metadata or {}).get("project_root")
+        project_root_str = task.project_root
         if project_root_str:
             await git_add_commit_push(
                 Path(project_root_str),
