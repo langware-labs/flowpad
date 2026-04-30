@@ -4,7 +4,6 @@ import {
   Conversation,
   dataManager,
   FlowMessage,
-  ProcessStatus,
   Spec,
   Task,
   TypeId,
@@ -145,29 +144,12 @@ export function useMyProcess({ task, conversationId, senderName }: UseMyProcessO
     }
     setBusy(true);
     try {
-      // Open path: process already exists for this task. Reattach if dead, then navigate.
       if (myProcessId) {
         const existing = await dataManager.getByTypeId<AgenticProcess>(
           new TypeId(AgenticProcess.type, myProcessId),
         ).catch(() => null);
         if (existing) {
-          const isAlive = existing.status !== ProcessStatus.STOPPED
-            && existing.status !== ProcessStatus.FAILED
-            && existing.status !== ProcessStatus.STOPPING;
-          if (!isAlive && existing.session_id) {
-            // Resume into a fresh worker without injecting any new instruction.
-            const { process: resumed } = await AgenticProcess.spawn(
-              { workdir, resumeSessionId: existing.session_id },
-              { visible: true },
-            );
-            const t = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId));
-            if (t) {
-              t.my_process_id = resumed.id;
-              await t.save();
-            }
-            navigation.openInBrowserTab(resumed.dockPointer);
-            return;
-          }
+          await existing.start();
           navigation.openInBrowserTab(existing.dockPointer);
           return;
         }
