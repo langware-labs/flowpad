@@ -3,7 +3,22 @@ import type { OutputChunk } from '../../pty-sync/types.js';
 import { dataContext } from '../../FlowSync/context';
 
 export type PtyOutputListener = (data: string, seq?: number) => void;
+export type PtyLineListener = (line: string) => void;
+export type PtyTrigger = { pattern: RegExp; onMatch: (line: string, match: RegExpMatchArray) => void };
 export type PtyConnectionStatus = 'idle' | 'connecting' | 'live' | 'restarting' | 'closed';
+
+/** Strip CSI/SGR escape sequences so regex matchers see plain text.
+ *
+ * Matches the most common ANSI control sequences emitted by terminal
+ * applications: CSI (`ESC [ ... letter`), OSC (`ESC ] ... BEL/ST`), and
+ * single-character escapes. Not exhaustive — bracketed paste mode and
+ * unusual DCS sequences may slip through — but covers >99% of real PTY
+ * output Claude Code / shell prompts produce.
+ */
+const ANSI_RE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/g;
+function stripAnsi(s: string): string {
+  return s.replace(ANSI_RE, '');
+}
 
 export class PtyConnection {
   shellId: string;
@@ -21,6 +36,15 @@ export class PtyConnection {
 
   /** Live output listeners — only notified after isReady. */
   private readonly _listeners = new Set<PtyOutputListener>();
+
+  /** Line listeners — fed by every chunk (including replay). ANSI-stripped. */
+  private readonly _lineListeners = new Set<PtyLineListener>();
+
+  /** Active triggers — pattern + onMatch. Wrapped over the line stream. */
+  private readonly _triggers = new Set<PtyTrigger>();
+
+  /** Pending raw text not yet terminated by \n. Fed into the line stream. */
+  private _lineBuffer = '';
 
   /** onReady subscribers — fired once when replay completes + live stream opens. */
   private readonly _readyListeners = new Set<() => void>();
@@ -121,6 +145,9 @@ export class PtyConnection {
     if (seq !== undefined) {
       this.chunks.set(seq, { seq, data: bytes, timestamp: timestamp_ms ?? Date.now() });
     }
+    // Feed line listeners regardless of replay state — triggers must fire
+    // for replayed output too so reload-time pattern detection works.
+    this._feedLineBuffer(decoded);
     // Only fire live listeners after replay phase is complete.
     // Gate on _replayDone only (not isLive) so unit tests work without a WS.
     if (this._replayDone) {
@@ -129,6 +156,56 @@ export class PtyConnection {
       }
     }
     return decoded;
+  }
+
+  // ── Line stream ───────────────────────────────────────────────────────────
+
+  /**
+   * Subscribe to ANSI-stripped lines. Fires on every \n found in the raw
+   * stream — replayed chunks included. Trailing partial line (no newline)
+   * is buffered until the next chunk arrives.
+   *
+   * Returns an unsubscribe function.
+   */
+  onLine(fn: PtyLineListener): () => void {
+    this._lineListeners.add(fn);
+    return () => this._lineListeners.delete(fn);
+  }
+
+  /**
+   * Register a regex trigger over the line stream. ``onMatch`` fires
+   * with the matched line and the regex match groups.
+   *
+   * Returns an unsubscribe function.
+   */
+  addTrigger(trigger: PtyTrigger): () => void {
+    this._triggers.add(trigger);
+    return () => this._triggers.delete(trigger);
+  }
+
+  private _feedLineBuffer(decoded: string): void {
+    this._lineBuffer += decoded;
+    let nl = this._lineBuffer.indexOf('\n');
+    while (nl !== -1) {
+      // Slice off the line (keep trailing CR off if present).
+      let line = this._lineBuffer.slice(0, nl);
+      if (line.endsWith('\r')) line = line.slice(0, -1);
+      this._lineBuffer = this._lineBuffer.slice(nl + 1);
+      this._emitLine(stripAnsi(line));
+      nl = this._lineBuffer.indexOf('\n');
+    }
+  }
+
+  private _emitLine(line: string): void {
+    for (const fn of this._lineListeners) {
+      try { fn(line); } catch (e) { console.error('[PtyConnection] line listener error:', e); }
+    }
+    for (const trig of this._triggers) {
+      const m = line.match(trig.pattern);
+      if (m) {
+        try { trig.onMatch(line, m); } catch (e) { console.error('[PtyConnection] trigger error:', e); }
+      }
+    }
   }
 
   // ── Event subscriptions (xterm interface) ─────────────────────────────────
@@ -339,13 +416,17 @@ export class PtyConnection {
   clear(): void {
     this.chunks.clear();
     this.lastSeq = 0;
+    this._lineBuffer = '';
   }
 
   dispose(): void {
     this._listeners.clear();
     this._readyListeners.clear();
     this._disconnectListeners.clear();
+    this._lineListeners.clear();
+    this._triggers.clear();
     this.chunks.clear();
+    this._lineBuffer = '';
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────

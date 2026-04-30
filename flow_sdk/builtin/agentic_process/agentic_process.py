@@ -280,6 +280,14 @@ class AgenticProcess(Entity):
         ),
     )
     worker_type: WorkerType | None = APIField(default=None)
+    plan_path: str | None = APIField(
+        default=None,
+        description=(
+            "Absolute path to the latest plan markdown produced by this process, "
+            "or null if none yet. Persists across reloads so the 'Open Plan' UI "
+            "affordance survives a refresh without re-running the line trigger."
+        ),
+    )
 
     # ── Construction ──────────────────────────────────────────────────────────
 
@@ -1079,6 +1087,68 @@ class AgenticProcess(Entity):
             return ApiSuccessResponse(data={"ok": True})
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} update-plan error: {e}")
+            return ApiFailResponse(message=str(e))
+
+    @action.post(action_name="get-plan")
+    async def get_plan(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Return the latest plan as an indexed Markdown record.
+
+        Resolution order for the plan file:
+          1. ``self.plan_path`` if already set (from a prior call or trigger).
+          2. Latest ``ExitPlanMode`` ``planFilePath`` from the session JSONL,
+             via the transcript analyzer. Persisted onto ``plan_path`` so
+             subsequent calls (and reloads) skip the scan.
+          3. Otherwise — no plan yet.
+
+        On success: builds a ``MarkdownRecord`` from the file, indexes it via
+        ``sync_to_db()``, and returns ``{"markdown": rec.meta_dict(),
+        "plan_path": <path>}``. On any race where the file isn't yet flushed,
+        retries once after 100ms before giving up.
+        """
+        plan_file_path = self.plan_path or ""
+
+        # Discover via transcript when we don't already know the path.
+        if not plan_file_path and self.session_id:
+            try:
+                from flow_sdk.transcript_analyzer import AgentTranscript
+                from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+
+                session_rec = ClaudeSessionRecord.get(self.session_id)
+                jsonl = getattr(session_rec, "jsonl_path", None) if session_rec else None
+                if jsonl:
+                    transcript = AgentTranscript("claude", Path(jsonl))
+                    latest = transcript.latest_tool_use("ExitPlanMode")
+                    if latest is not None:
+                        plan_file_path = (latest.tool_input or {}).get("planFilePath", "") or ""
+                        if plan_file_path:
+                            self.plan_path = plan_file_path
+                            try:
+                                await self.save()
+                            except Exception:
+                                logger.debug(
+                                    "AgenticProcess %s get-plan: save plan_path failed", self.id, exc_info=True
+                                )
+            except Exception:
+                logger.debug("AgenticProcess %s get-plan: transcript scan failed", self.id, exc_info=True)
+
+        if not plan_file_path:
+            return ApiSuccessResponse(data={"markdown": None, "plan_path": None})
+
+        path = Path(plan_file_path)
+        if not path.exists():
+            # Race protection: Claude may have just written the path; brief wait + recheck.
+            await asyncio.sleep(0.1)
+            if not path.exists():
+                return ApiSuccessResponse(data={"markdown": None, "plan_path": plan_file_path})
+
+        try:
+            from flow_sdk.fs_records.markdown_record import MarkdownRecord
+
+            rec = MarkdownRecord.from_file(path)
+            await rec.sync_to_db()
+            return ApiSuccessResponse(data={"markdown": rec.meta_dict(), "plan_path": plan_file_path})
+        except Exception as e:
+            logger.exception("AgenticProcess %s get-plan error: %s", self.id, e)
             return ApiFailResponse(message=str(e))
 
     # ── State ─────────────────────────────────────────────────────────────────

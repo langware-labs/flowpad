@@ -30,6 +30,35 @@ _ENV_VAR_TO_TYPE = (
 )
 
 
+def lookup_project_id_by_uname(uname: str) -> str | None:
+    """Sync sqlite read of a project entity's id by uname.
+
+    `default_roots()` is sync but the entity API is async; reading via the
+    sqlite file directly avoids needing an event loop here. Returns None if
+    the project hasn't been created yet, or on any DB-access error.
+    """
+    import sqlite3
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    db_path = get_instance_settings().db_path
+    if not db_path:
+        return None
+    try:
+        conn = sqlite3.connect(str(db_path))
+    except sqlite3.Error:
+        return None
+    try:
+        cur = conn.execute(
+            "SELECT id FROM entities WHERE type='project' AND uname=? LIMIT 1",
+            (uname,),
+        )
+        row = cur.fetchone()
+        return row[0] if row else None
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+
+
 def default_roots() -> list[FSRef]:
     """Return the three canonical roots plus any env-supplied extras.
 
@@ -52,14 +81,22 @@ def default_roots() -> list[FSRef]:
     ]
 
     try:
-        from flow_sdk.config import flowpad_assistant_project_root
+        from flow_sdk.config import (
+            FLOWPAD_ASSISTANT_PROJECT_UNAME,
+            flowpad_assistant_project_root,
+        )
         system_root = flowpad_assistant_project_root()
         if system_root.is_dir():
+            # Use the project's stored id (may be uuid5 or legacy uuid4) so
+            # children stamped via FSRef parent-chain inheritance match the
+            # entity DocsCategory queries against.
+            system_pid = lookup_project_id_by_uname(FLOWPAD_ASSISTANT_PROJECT_UNAME)
             roots.append(
                 FSRef(
                     system_root,
                     record_type=RecordType.SYSTEM_ROOT,
                     scope="system",
+                    project_id=system_pid,
                 )
             )
     except Exception:

@@ -104,6 +104,11 @@ class AgenticContext(BaseModel):
     # Claude's ``--effort``); ignored elsewhere.
     effort: str | None = None
 
+    # Extra directories to mount via the worker's add-dir mechanism (currently
+    # Claude's ``--add-dir``). Drivers populate this from process configuration
+    # so print-mode workers see the same skill/agent surface as PTY-mode runs.
+    add_dirs: list[str] = Field(default_factory=list)
+
     @model_validator(mode="after")
     def set_defaults(self) -> "AgenticContext":
         if self.workdir is None:

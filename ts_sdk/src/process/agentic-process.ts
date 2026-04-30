@@ -121,6 +121,17 @@ export interface IAgenticProcess extends IEntity {
   output_folder?: FSRefJson | null;
   /** `<exe_folder>/assets/` — materialised embedded agents / skills. */
   assets_folder?: FSRefJson | null;
+  /**
+   * Absolute path to the latest plan markdown produced by this process,
+   * or null if the process has not produced a plan yet.
+   *
+   * Populated either by the line-trigger pipeline (when the path appears
+   * in PTY output) or by the server-side ``get-plan`` action when it
+   * resolves the path from the transcript JSONL. Persists across reloads
+   * so the "Open Plan" UI affordance survives a refresh without needing
+   * the trigger to re-fire.
+   */
+  plan_path?: string | null;
 }
 
 /**
@@ -541,6 +552,98 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return entity?.ptyConnection;
   }
 
+  // ── Line / trigger event surface ──────────────────────────────────────────
+
+  /** Track the bridges we've registered against the shell so we don't double-bridge. */
+  private _shellLineBridgeUnsub?: () => void;
+  private _activePlanTriggerUnsub?: () => void;
+
+  /**
+   * Bridge line events from the attached Shell into this process so callers
+   * can use ``process.on('line', fn)`` interchangeably with ``shell.onLine(fn)``.
+   * Idempotent — re-bridging cleans up the previous link.
+   */
+  private async _ensureShellLineBridge(): Promise<void> {
+    const sh = await this.shell();
+    if (!sh) return;
+    this._shellLineBridgeUnsub?.();
+    this._shellLineBridgeUnsub = sh.onLine((line) => {
+      this.emit('line', line);
+    });
+  }
+
+  /**
+   * Subscribe to ANSI-stripped output lines. Wires up the shell bridge on
+   * first use so ``process.on('line', ...)`` works even before the shell is
+   * fully attached. Returns an unsubscribe function.
+   */
+  onLine(handler: (line: string) => void): () => void {
+    void this._ensureShellLineBridge();
+    return this.on('line', handler);
+  }
+
+  /**
+   * Subscribe to plan-detection events.
+   *
+   * Registers a regex trigger over the shell's line stream looking for
+   * ``plan*.md`` mentions. When the regex matches:
+   *
+   * - With ``validate: false`` (default), ``handler`` is called with the
+   *   matched line.
+   * - With ``validate: true``, the process calls ``getPlan()`` and passes
+   *   the resolved ``Markdown`` entity (or ``null`` if resolution failed)
+   *   to ``handler``.
+   *
+   * Returns an unsubscribe function. The trigger only fires while the
+   * subscription is alive; the persisted ``plan_path`` field is updated
+   * server-side regardless of subscriptions when ``getPlan()`` runs.
+   */
+  onPlan<T = string | null>(
+    options: { validate?: boolean },
+    handler: (payload: T) => void,
+  ): () => void {
+    const validate = options.validate ?? false;
+    let unsubShell: (() => void) | undefined;
+    void (async () => {
+      const sh = await this.shell();
+      if (!sh) return;
+      const pattern = /plan[\w-]*\.md/i;
+      unsubShell = sh.addTrigger({
+        pattern,
+        onMatch: async (line) => {
+          if (validate) {
+            const md = await this.getPlan();
+            handler(md as unknown as T);
+          } else {
+            handler(line as unknown as T);
+          }
+        },
+      });
+    })();
+    return () => unsubShell?.();
+  }
+
+  /**
+   * Fetch the plan as a Markdown entity.
+   *
+   * Server-side resolves the plan file path from ``plan_path`` (preferred)
+   * or by scanning the transcript for the latest ``ExitPlanMode.planFilePath``,
+   * reads the file, builds a saved+indexed ``Markdown`` entity, and returns
+   * it. Returns ``null`` if no plan has been produced yet.
+   */
+  async getPlan(): Promise<import('../entities/markdown.js').Markdown | null> {
+    const actionInfo = new ActionInfo('get-plan', AgenticProcess.type, this.id, 'POST');
+    const response = await dataManager.callAction<
+      unknown,
+      { markdown?: Record<string, unknown> | null; plan_path?: string | null }
+    >(actionInfo);
+    if (response?.plan_path !== undefined) this.plan_path = response.plan_path ?? null;
+    if (!response?.markdown) return null;
+    return dataManager.updateEntityFromJson<import('../entities/markdown').Markdown>(
+      response.markdown as Record<string, unknown>,
+    );
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
 
   /** Internal references (not serialized) */
@@ -576,7 +679,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.input_folder = entity.input_folder ? FSRef.fromJson(entity.input_folder) : null;
     this.output_folder = entity.output_folder ? FSRef.fromJson(entity.output_folder) : null;
     this.assets_folder = entity.assets_folder ? FSRef.fromJson(entity.assets_folder) : null;
+    this.plan_path = entity.plan_path ?? null;
   }
+
+  // ── Field declarations (populated by constructor / wire data) ──────────────
+
+  plan_path: string | null = null;
 
   /**
    * Get the instruction file (if set locally)

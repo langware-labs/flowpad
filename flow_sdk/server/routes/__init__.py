@@ -21,6 +21,7 @@ from .project import router as project_router
 from .compute_register import compute_register_router
 from .debug import router as debug_router
 from .navigate import router as navigate_router
+from .agent_records import router as agent_records_router
 
 __all__ = [
     "bootstrap_router",
@@ -44,4 +45,5 @@ __all__ = [
     "compute_register_router",
     "debug_router",
     "navigate_router",
+    "agent_records_router",
 ]

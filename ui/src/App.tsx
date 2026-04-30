@@ -12,6 +12,7 @@ import { DesktopSetupModal, DESKTOP_SETUP_REASON_AUTH_FAILURE } from '@src/compo
 import { initNotificationListener } from '@src/store/use-notification-store';
 import { SnifferProvider } from '@src/contexts/SnifferContext';
 import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
+import { useBrowserContextReporter } from '@src/hooks/use-browser-context-reporter';
 import { useUiCommandListener } from '@src/hooks/use-ui-command-listener';
 
 const queryClient = new QueryClient({
@@ -152,6 +153,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
   const GlobalEvents = () => {
     void useGlobalEvents();
     usePresenceReporter();
+    useBrowserContextReporter();
     useUiCommandListener();
     return null;
   };

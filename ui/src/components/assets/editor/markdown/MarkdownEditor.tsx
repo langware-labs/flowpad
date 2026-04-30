@@ -147,9 +147,17 @@ function MarkdownEditorContent({
   }, [sourcePath]);
 
   const handleLinkClick = useCallback((href: string) => {
+    // /dock/assets/wiki/<name> → keep the URL at the wiki form; the
+    // wiki route view (WikiResolveView) does the name resolution.
+    const wikiMatch = href.match(/\/dock\/assets\/wiki\/([^?#]+)/);
+    if (wikiMatch) {
+      const name = decodeURIComponent(wikiMatch[1]).replace(/\.md$/i, '');
+      navigation.openDock(DockPointer.forWiki(name));
+      return;
+    }
+
     const dir = sourcePath.slice(0, sourcePath.lastIndexOf('/'));
     const resolvedPath = href.startsWith('/') ? href : `${dir}/${href}`;
-    // Preserve the current asset type (e.g. "claude_memory") for sibling files
     const assetType = currentDock?.pointer?.split('/')?.[1] ?? 'claude_memory';
     navigation.openDock(DockPointer.forAssetEditor(assetType, resolvedPath));
   }, [sourcePath, currentDock, navigation]);

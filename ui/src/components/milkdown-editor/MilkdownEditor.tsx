@@ -55,6 +55,29 @@ function stripHtmlComments(content: string): string {
   return content.replace(/<!--[\s\S]*?-->/g, '');
 }
 
+// Round-trippable wikilink ↔ markdown-link transform. Milkdown's CommonMark
+// preset doesn't recognize `[[..]]`, so we rewrite it to the markdown URL
+// form on the way in (clickable), and reverse on the way out (preserves
+// `[[..]]` in the source file).
+const _WIKILINK_DISPLAY_RE = /(?<!\\)\[\[([^\[\]\n|#^]+)(?:\|([^\[\]\n]+))?\]\]/g;
+const _DOCK_WIKI_HREF_RE = /\[([^\]\n]+)\]\(\/dock\/assets\/wiki\/([^)\s#]+)\)/g;
+
+function wikilinksToMdLinks(md: string): string {
+  return md.replace(_WIKILINK_DISPLAY_RE, (_match, target: string, alias: string | undefined) => {
+    const t = target.trim();
+    const display = (alias ?? t).trim();
+    return `[${display}](/dock/assets/wiki/${encodeURIComponent(t)})`;
+  });
+}
+
+function mdLinksToWikilinks(md: string): string {
+  return md.replace(_DOCK_WIKI_HREF_RE, (_match, text: string, encoded: string) => {
+    const target = decodeURIComponent(encoded);
+    if (text === target) return `[[${target}]]`;
+    return `[[${target}|${text}]]`;
+  });
+}
+
 /**
  * Modes the Milkdown WYSIWYG renderer understands.
  * Raw-markdown ('markdown') is rendered by a separate Monaco pane in wrappers,
@@ -526,8 +549,12 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
     if (editorRef) editorRef.current = e;
   };
 
-  // Strip HTML comments for display in WYSIWYG mode
-  const displayContent = useMemo(() => stripHtmlComments(content), [content]);
+  // Strip HTML comments + rewrite [[wikilinks]] → markdown-link form so
+  // CommonMark renders them as clickable anchors. Reverse on save.
+  const displayContent = useMemo(
+    () => wikilinksToMdLinks(stripHtmlComments(content)),
+    [content],
+  );
   const initialContentRef = useRef(displayContent);
   // Track the last markdown we emitted via onChange so we can tell user edits
   // apart from external content changes (e.g. file rewritten on disk).
@@ -556,8 +583,11 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
           const lctx = ctx.get(listenerCtx);
           if (onChange) {
             lctx.markdownUpdated((_, markdown) => {
+              // Track Milkdown's emit verbatim for change detection vs
+              // displayContent (also markdown-link form). Reverse the
+              // transform only on the way out to onChange.
               lastEmittedRef.current = markdown;
-              onChange(markdown);
+              onChange(mdLinksToWikilinks(markdown));
             });
           }
           if (onActiveStateChange || onSelectionRectChange) {
@@ -691,9 +721,12 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
     }
   }, [cancelHide, scheduleHide, editorMode]);
 
-  // View mode: intercept anchor clicks and open immediately (wiki-style).
+  // Intercept anchor clicks across all modes — wiki/internal hrefs (e.g.
+  // /dock/assets/wiki/...) are SPA routes the browser can't resolve on its
+  // own; default-navigation would land on a 404. ProseMirror's mousedown
+  // already placed the caret by the time click fires, so editing isn't
+  // broken; editing the link itself still goes through the hover popup.
   const handleContainerClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (editorMode !== 'view') return;
     const anchor = (e.target as HTMLElement).closest('a') as HTMLElement | null;
     if (!anchor) return;
     const href = anchor.getAttribute('href');
@@ -705,7 +738,7 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
     } else {
       onLinkClick?.(href);
     }
-  }, [editorMode, onLinkClick]);
+  }, [onLinkClick]);
 
   const handleOpenLink = useCallback((href: string) => {
     setLinkPopup(null);

@@ -145,6 +145,9 @@ export class Shell extends APIEntity<Shell> implements IShell {
     // (shell.on('status', ...)) keep working during the migration to ptyConnection.
     this.ptyConnection.onReady(() => this.emit('status', 'connected'));
     this.ptyConnection.onDisconnect(() => this.emit('status', 'disconnected'));
+    // Re-emit lines as a Shell-level event so consumers can use either
+    // shell.onLine(fn) or shell.on('line', fn) interchangeably.
+    this.ptyConnection.onLine((line) => this.emit('line', line));
     // Re-apply entity data after class field initializers.
     Object.assign(this, entity);
     // Keep PtyConnection IDs in sync after Object.assign potentially sets them.
@@ -221,6 +224,27 @@ export class Shell extends APIEntity<Shell> implements IShell {
   onOutput(fn: import('../services/shell/ptyConnection.js').PtyOutputListener): (() => void) | undefined {
     if (!this.ptyConnection.replayDone) return undefined;
     return this.ptyConnection.onOutput(fn);
+  }
+
+  /**
+   * Subscribe to ANSI-stripped output lines. Fires for every \n in the
+   * stream, replayed chunks included. Use this for live pattern detection
+   * over terminal output.
+   *
+   * Also re-emits as a `line` event on this Shell — callers can use
+   * `shell.on('line', fn)` interchangeably.
+   */
+  onLine(fn: import('../services/shell/ptyConnection.js').PtyLineListener): () => void {
+    return this.ptyConnection.onLine(fn);
+  }
+
+  /**
+   * Register a regex trigger over the line stream. ``onMatch`` fires with
+   * the matched line and the regex match. Pattern is tested against
+   * already-ANSI-stripped lines.
+   */
+  addTrigger(trigger: import('../services/shell/ptyConnection.js').PtyTrigger): () => void {
+    return this.ptyConnection.addTrigger(trigger);
   }
 
   // ── Shell start (backend HTTP + PTY attach) ───────────────────────────────
