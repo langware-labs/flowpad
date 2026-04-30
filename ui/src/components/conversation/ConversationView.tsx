@@ -28,7 +28,7 @@ export function ConversationView({
   task,
   senderName: _senderName,
   ensureMapped,
-  mode = ConversationMode.PTY,
+  mode = ConversationMode.HEADLESS,
 }: ConversationViewProps) {
   const { data: conversation, refetch } = useEntity<Conversation>(
     new TypeId(Conversation.type, conversationId),
