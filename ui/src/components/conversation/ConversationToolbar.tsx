@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useMyProcess } from './useMyProcess';
-import { EntityLabel } from './EntityLabel';
+import { EntityChip } from './EntityChip';
 import { fileAttachmentUrl } from './attachment-url';
 import {
   findConversationTranscript,
@@ -55,7 +55,7 @@ export function ConversationToolbar({
   const { navigation } = useDockNavigation();
   const localProjectId = task.project_id ?? undefined;
 
-  // Live-load the Project / Task entities for EntityLabel display. Both are
+  // Live-load the Project / Task entities for EntityChip display. Both are
   // optional — the label still renders the id as a fallback name when the
   // entity isn't loaded yet.
   const { data: project } = useEntity<Project>(
@@ -98,7 +98,7 @@ export function ConversationToolbar({
   return (
     <div className="flex items-center gap-1">
       {showTaskLabel && taskEntity && (
-        <EntityLabel
+        <EntityChip
           entity={{
             typeId: new TypeId(Task.type, task.id ?? ''),
             type: Task.type,
@@ -112,13 +112,13 @@ export function ConversationToolbar({
       )}
 
       {/* Project chip — once a project is mapped we render the standard
-          EntityLabel; otherwise a passive dashed "Pick project…" chip lets
+          EntityChip; otherwise a passive dashed "Pick project…" chip lets
           the user set one up *before* they actually need it. Either chip is
           a preparation affordance, not an urgent prompt — when an action
           *requires* a project (Open Claude Code, Approve & Execute, Open in
           Project, etc.) the gate pops the picker dialog via ensureMapped. */}
       {project ? (
-        <EntityLabel
+        <EntityChip
           entity={{
             typeId: new TypeId(Project.type, project.id ?? ''),
             type: Project.type,

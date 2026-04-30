@@ -1,16 +1,16 @@
 import { useMemo } from 'react';
-import { ExternalLink, FileText, FolderOpen, MessageSquare, Sparkles } from 'lucide-react';
+import { ExternalLink, FileText, FolderOpen, MessageSquare, Sparkles, Wand2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { TypeId } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 /**
- * Minimal shape we need to render an entity as a clickable label. Covers the
- * common cases (Project, Task, Conversation) without forcing the caller to
- * import the full entity type.
+ * Minimal shape we need to render an entity as a clickable chip. Covers the
+ * common cases (Project, Task, Conversation, Prompt) without forcing the
+ * caller to import the full entity type.
  */
-export interface EntityLabelEntity {
+export interface EntityChipEntity {
   /** TypeId or string like `project-<id>`. */
   typeId?: TypeId | { type: string; id: string } | null;
   /** Convenience — when typeId isn't handy, pass type/id explicitly. */
@@ -22,9 +22,9 @@ export interface EntityLabelEntity {
   icon?: LucideIcon;
 }
 
-interface EntityLabelProps {
+interface EntityChipProps {
   /** The entity to render (the "A" in /dock/A/<id>/B/<id>). */
-  entity: EntityLabelEntity;
+  entity: EntityChipEntity;
   /**
    * The entity this chip is being shown *inside* (the "B" in /dock/A/<id>/B/<id>).
    * When omitted, clicks navigate to the bare /dock/<A>/<id> URL.
@@ -50,7 +50,8 @@ export const ICON_BY_TYPE: Record<string, LucideIcon> = {
   project: FolderOpen,
   task: FileText,
   conversation: MessageSquare,
-  skill: Sparkles,
+  prompt: Sparkles,
+  skill: Wand2,
   markdown: FileText,
 };
 
@@ -66,11 +67,13 @@ const STYLE_BY_TYPE: Record<string, string> = {
     'border border-violet-500/40 bg-violet-500/10 text-violet-700 hover:bg-violet-500/20 dark:text-violet-300',
   conversation:
     'border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300',
+  prompt:
+    'border border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300',
 };
 const DEFAULT_STYLE =
   'border border-border bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground';
 
-function resolveTypeAndId(entity: EntityLabelEntity): { type: string; id: string } | null {
+function resolveTypeAndId(entity: EntityChipEntity): { type: string; id: string } | null {
   if (entity.typeId) {
     if (typeof (entity.typeId as TypeId).toString === 'function' && 'type' in (entity.typeId as TypeId)) {
       const tid = entity.typeId as TypeId;
@@ -80,23 +83,28 @@ function resolveTypeAndId(entity: EntityLabelEntity): { type: string; id: string
     if (raw.type && raw.id) return { type: raw.type, id: raw.id };
   }
   if (entity.type && entity.id) return { type: entity.type, id: String(entity.id) };
+  // Type without id is fine for "decorative" chips (Approve & Execute, prompt
+  // preview) — they get the type's icon + style but no navigation target.
+  if (entity.type) return { type: entity.type, id: '' };
   return null;
 }
 
 /**
- * Generic clickable chip that renders any entity (Project, Task, …) as a
- * pill with an icon + name. Clicking it navigates to the canonical
+ * Generic clickable chip that renders any entity (Project, Task, Prompt, …)
+ * as a pill with an icon + name. Clicking it navigates to the canonical
  * "this entity inside the surrounding entity" dock URL — e.g. an
- * `<EntityLabel entity={project} inside={conversation} />` rendered inside
+ * `<EntityChip entity={project} inside={conversation} />` rendered inside
  * a Conversation view jumps to `/dock/project/<id>/conversation/<id>`.
  *
- * When `inside` is omitted it falls back to the bare entity URL.
+ * When `inside` is omitted it falls back to the bare entity URL. When the
+ * entity has no id (decorative use, e.g. an "Approve & Execute" prompt
+ * chip) the chip looks the same but only fires `onClick`.
  */
-export function EntityLabel({ entity, inside, onClick, title, size = 'chip' }: EntityLabelProps) {
+export function EntityChip({ entity, inside, onClick, title, size = 'chip' }: EntityChipProps) {
   const { navigation } = useDockNavigation();
   const resolved = resolveTypeAndId(entity);
   const Icon = entity.icon ?? (resolved ? ICON_BY_TYPE[resolved.type] : undefined) ?? ExternalLink;
-  const label = entity.name ?? (resolved?.id ?? '(unnamed)');
+  const label = entity.name ?? (resolved?.id || '(unnamed)');
   const typeStyle = (resolved && STYLE_BY_TYPE[resolved.type]) ?? DEFAULT_STYLE;
   // "Open in project" / "Open in task" — uses the entity's *type*, not its
   // display name, so the tooltip stays predictable across all chips of the
@@ -109,8 +117,8 @@ export function EntityLabel({ entity, inside, onClick, title, size = 'chip' }: E
         onClick();
         return;
       }
-      if (!resolved) return;
-      const pointer = buildDockPointer(resolved, inside);
+      if (!resolved || !resolved.id) return;
+      const pointer = buildDockPointer(resolved as { type: string; id: string }, inside);
       if (pointer) navigation.openDock(pointer);
     };
   }, [onClick, resolved, inside, navigation]);
@@ -135,7 +143,7 @@ export function EntityLabel({ entity, inside, onClick, title, size = 'chip' }: E
 
 /**
  * Map an entity-type pair to the right DockPointer factory.
- * Centralised here so `EntityLabel` itself stays declarative.
+ * Centralised here so `EntityChip` itself stays declarative.
  */
 function buildDockPointer(
   resolved: { type: string; id: string },
