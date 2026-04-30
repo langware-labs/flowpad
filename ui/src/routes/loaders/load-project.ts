@@ -10,6 +10,8 @@
 
 import {
   CollaborationRoom,
+  ContextEntitiesEnum,
+  dataContext,
   dataManager,
   Project,
   type Shell,
@@ -21,6 +23,7 @@ import { DockPointer } from '@src/navigation';
 import { redirect } from 'react-router';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
 import { fetchShellsAndProcesses, loadShell, resolveDefaultTab, ShellLoadError } from './load-shell';
+import { loadConversation } from './load-conversation';
 
 function recoveryUrl(projectId: string, roomId: string | null): string {
   return roomId
@@ -45,7 +48,14 @@ async function tagShellWithRoom(shell: Shell, roomId: string): Promise<void> {
 }
 
 export async function loadProjectRoute(pointer: string | undefined): Promise<void> {
-  const { projectId, roomId, tabTypeId } = DockPointer.parseProjectPointer(pointer);
+  const parsed = DockPointer.parseProjectPointer(pointer) as {
+    projectId: string | null;
+    roomId: string | null;
+    tabTypeId: TypeId | null;
+    conversationId?: string | null;
+  };
+  const { projectId, roomId, tabTypeId } = parsed;
+  const conversationId = parsed.conversationId ?? null;
   if (!projectId) {
     // No project id in URL — page renders its empty state; nothing to load.
     return;
@@ -53,11 +63,28 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
 
   // Prefetch project + room into the entity cache so the page's `useEntity`
   // calls hit immediately (no render blank → re-render).
+  let project: Project | null = null;
   try {
-    await dataManager.getByTypeId(new TypeId(Project.type, projectId));
+    project = await dataManager.getByTypeId<Project>(new TypeId(Project.type, projectId));
   } catch {
     // Missing project — let the page's own fallback (Loading… / EmptyState) handle it.
     return;
+  }
+
+  await dataContext.setContextEntityTypeId(
+    ContextEntitiesEnum.CurrentProjectTypeId,
+    new TypeId(Project.type, projectId),
+  );
+  if (project?.fs_storage_mount_path) {
+    dataContext.setWorkdir(project.fs_storage_mount_path);
+  }
+
+  if (conversationId) {
+    try {
+      await loadConversation(conversationId);
+    } catch {
+    }
+    await dataContext.setActiveEntityTypeId(new TypeId(Project.type, projectId));
   }
 
   if (roomId) {

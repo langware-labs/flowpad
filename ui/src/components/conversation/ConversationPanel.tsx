@@ -3,7 +3,6 @@ import { OpenProjectComponent } from '@src/components/open-project-component/ope
 import { ConversationToolbar } from './ConversationToolbar';
 import { ConversationView } from './ConversationView';
 import { useProjectMappingGate } from './useProjectMappingGate';
-import { useSyncContextProject } from './useSyncContextProject';
 
 interface ConversationPanelProps {
   /** Optional. Project-scoped conversations have no task. */
@@ -32,9 +31,10 @@ interface ConversationPanelProps {
  *   [ ConversationView (avatars, bubbles, prompt rows, composer) ]
  *
  * Owns its own project-picker dialog (the same `OpenProjectComponent` the
- * footer uses) so callers don't have to plumb it. Also pushes the task's
- * mapped project into the global active-project context — the conversation
- * is the "dictating entity" while it's mounted; the footer follows.
+ * footer uses) so callers don't have to plumb it. The active-project context
+ * is set by the route loaders (`load-conversation`, `load-tasks`,
+ * `load-project`) before this component renders — no need for a runtime
+ * sync hook here.
  *
  * The "Open Task" button in the toolbar navigates to
  * `/dock/tasks/<taskId>/conversation/<convId>` — a canonical URL anchor for
@@ -50,11 +50,6 @@ export function ConversationPanel({
   variant = 'default',
   className,
 }: ConversationPanelProps) {
-  // Sync the active context project to the task's mapped project (or null
-  // when no project is set). The conversation is the "dictating entity"
-  // while mounted — the footer follows.
-  useSyncContextProject(task ?? null);
-
   // Project-scoped conversations skip the project-mapping gate entirely.
   const mappingGate = useProjectMappingGate(task ?? undefined);
   const ensureMapped = task ? mappingGate.ensureMapped : undefined;

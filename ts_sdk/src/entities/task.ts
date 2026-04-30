@@ -24,6 +24,18 @@ export interface ITask extends IEntity {
   spec_id?: string | null;
   shared_by_id?: string | null;
   conversation_id?: string | null;
+  /** Local Project FK — receiver picks via the mapping dialog; sender's own project at send time. */
+  project_id?: string | null;
+  /** Cached `Spec.spec_type` so receivers don't need the Spec loaded to know "session" vs "plan". */
+  spec_type?: string | null;
+  /** Local AgenticProcess for this conversation (the user's clean Claude Code session). */
+  my_process_id?: string | null;
+  /** Forked AgenticProcess that runs *approved* incoming prompts. Initiator-only. */
+  shared_process_id?: string | null;
+  /** Cross-machine identity of the *sender's* project. Used as the key in the per-machine mapping table. */
+  remote_project_id?: string | null;
+  /** Display name of the sender's project (for the mapping dialog copy). */
+  remote_project_name?: string | null;
 }
 
 @registerEntity
@@ -48,6 +60,12 @@ export class Task extends APIEntity<Task> implements ITask {
   spec_id?: string | null;
   shared_by_id?: string | null;
   conversation_id?: string | null;
+  project_id?: string | null;
+  spec_type?: string | null;
+  my_process_id?: string | null;
+  shared_process_id?: string | null;
+  remote_project_id?: string | null;
+  remote_project_name?: string | null;
   static type: string = 'task';
 
   constructor(entity: Partial<ITask> = {}) {
@@ -72,6 +90,12 @@ export class Task extends APIEntity<Task> implements ITask {
     this.spec_id = entity.spec_id;
     this.shared_by_id = entity.shared_by_id;
     this.conversation_id = entity.conversation_id;
+    this.project_id = entity.project_id;
+    this.spec_type = entity.spec_type;
+    this.my_process_id = entity.my_process_id;
+    this.shared_process_id = entity.shared_process_id;
+    this.remote_project_id = entity.remote_project_id;
+    this.remote_project_name = entity.remote_project_name;
   }
 
   override get searchDockPointer(): DockPointerData {
