@@ -623,6 +623,7 @@ class ServiceConfig(BaseSettings):
     load_plugins: bool = False
     deep_testing: bool = False
     manual_testing: bool = False
+    load_flowpad_assistant: bool = True
 
     # Paths
     public_static_paths: list[str] = [

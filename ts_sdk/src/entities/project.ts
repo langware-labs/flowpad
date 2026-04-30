@@ -69,6 +69,12 @@ export class Project extends APIEntity<Project> {
     this.members = (entity.members as ProjectMember[] | undefined) ?? [];
   }
 
+  // Land on the project's collaboration/home view at /dock/project/<id>
+  // instead of the generic /dock/home/<typeid> fallback APIEntity provides.
+  override get dockPointer(): DockPointerData {
+    return new DockPointerData(ViewType.PROJECT, this.identifier);
+  }
+
   get searchDockPointer(): DockPointerData {
     return new DockPointerData(ViewType.ASSETS, 'list/all', {
       scope: 'project',

@@ -97,6 +97,11 @@ class ClaudeCliOptions(WorkerCLIOptions):
 
         if self.permission_mode == "bypassPermissions":
             args.append("--dangerously-skip-permissions")
+        elif self.permission_mode in ("plan", "default", "acceptEdits"):
+            # Claude Code's session-level permission/plan modes — passed
+            # through to the CLI verbatim. ``plan`` is required for the
+            # model to be allowed to call ``ExitPlanMode``.
+            args.append(f"--permission-mode {shlex.quote(self.permission_mode)}")
         if self.chrome:
             args.append("--chrome")
         if self.debug:
@@ -201,6 +206,9 @@ class ClaudeCliOptions(WorkerCLIOptions):
 
         if self.permission_mode == "bypassPermissions":
             argv.append("--dangerously-skip-permissions")
+        elif self.permission_mode in ("plan", "default", "acceptEdits"):
+            # Session-level permission/plan modes — pass-through to CLI.
+            argv.extend(["--permission-mode", self.permission_mode])
         if self.chrome:
             argv.append("--chrome")
         if self.debug:
@@ -230,11 +238,14 @@ class ClaudeCliOptions(WorkerCLIOptions):
         if self.print_mode:
             argv.append("-p")
 
-        if instruction:
-            argv.extend(["--", instruction])
-
+        # ``--add-dir`` must come BEFORE the ``--`` instruction separator —
+        # the Claude CLI only registers skills/agents from a mounted directory
+        # when the flag is parsed as a flag, not as a positional after ``--``.
         for d in self.add_dirs:
             argv.extend(["--add-dir", d])
+
+        if instruction:
+            argv.extend(["--", instruction])
 
         return argv, dict(self.env_vars)
 

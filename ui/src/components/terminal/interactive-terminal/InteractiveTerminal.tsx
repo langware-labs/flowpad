@@ -452,19 +452,39 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const showAnnotationGutter = !!process?.session_id && colVis.annotations;
   const reserveAnnotationSpace = colVis.annotations;
 
-  const lastPlanAnnotation = useMemo(() => {
-    const plans = sessionAnnotations.filter((a) => a.labels?.includes('plan:'));
-    if (plans.length === 0) return null;
-    return plans.reduce((latest, a) =>
-      String(a.created_date ?? '') > String(latest.created_date ?? '') ? a : latest,
-    );
-  }, [sessionAnnotations]);
+  // Single source of truth: the entity's persisted ``plan_path``.
+  // listen.py's ExitPlanMode hook + the PTY-trigger getPlan() flow both
+  // write to the same field and broadcast the entity-update over WS, so
+  // the button flips on within ms of plan detection from any source.
+  const hasPlan = !!process?.plan_path;
 
   const handleOpenLastPlan = useCallback(() => {
-    if (!lastPlanAnnotation || !agenticProcessTypeId) return;
-    const filePath = (lastPlanAnnotation.data as Record<string, unknown>)?.file_path as string | undefined;
-    if (filePath) navigation.openPlan(agenticProcessTypeId, filePath);
-  }, [lastPlanAnnotation, agenticProcessTypeId, navigation]);
+    if (!agenticProcessTypeId || !process?.plan_path) return;
+    navigation.openPlan(agenticProcessTypeId, process.plan_path);
+  }, [process?.plan_path, agenticProcessTypeId, navigation]);
+
+  // On mount (and whenever the process identity changes), proactively call
+  // getPlan() once so the button restores after a reload — the line trigger
+  // only fires for live new output, but ``plan_path`` survives persistence.
+  useEffect(() => {
+    if (!process || process.plan_path) return;
+    void process.getPlan();
+    // We intentionally only react to the process identity changing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [process?.id]);
+
+  // Live plan-detection: when a `plan*.md` line appears in PTY output,
+  // ask the backend to resolve and persist the path. Validate=true so
+  // the handler receives the Markdown entity once it's saved + indexed.
+  useEffect(() => {
+    if (!process) return;
+    const unsub = process.onPlan({ validate: true }, () => {
+      // No-op — the trigger fires getPlan() server-side which saves
+      // plan_path on the entity; the next entity-update over WS makes
+      // ``hasPlan`` flip to true automatically.
+    });
+    return unsub;
+  }, [process]);
 
   const mergedPrompts = useMemo<PromptEntry[]>(() => {
     const annotationPrompts: PromptEntry[] = rawAnnotationElements
@@ -1394,7 +1414,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
               dispatchSideTab({ type: 'toggle', tab });
             }
           }}
-          hasLastPlan={!!lastPlanAnnotation}
+          hasLastPlan={hasPlan}
           onOpenLastPlan={handleOpenLastPlan}
         />
       )}
