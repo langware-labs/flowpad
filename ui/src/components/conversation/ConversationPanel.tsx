@@ -2,6 +2,7 @@ import type { ITask } from '@sdk/entities/task';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { ConversationToolbar } from './ConversationToolbar';
 import { ConversationView } from './ConversationView';
+import { ConversationMode } from './conversation-mode';
 import { useProjectMappingGate } from './useProjectMappingGate';
 
 interface ConversationPanelProps {
@@ -20,6 +21,8 @@ interface ConversationPanelProps {
    * `default` matches the SharedTaskView layout.
    */
   variant?: 'default' | 'compact';
+  /** Approve & Execute backend; forwarded to ConversationView. */
+  mode?: ConversationMode;
   className?: string;
 }
 
@@ -48,6 +51,7 @@ export function ConversationPanel({
   senderName,
   headerLabel = 'Conversation',
   variant = 'default',
+  mode,
   className,
 }: ConversationPanelProps) {
   // Project-scoped conversations skip the project-mapping gate entirely.
@@ -81,6 +85,7 @@ export function ConversationPanel({
           task={task}
           senderName={senderName}
           ensureMapped={ensureMapped}
+          mode={mode}
         />
       </div>
 

@@ -628,6 +628,104 @@ async def inbox_update() -> ApiResponse:
         return ApiFailResponse(message=f"Update failed: {str(e)}")
 
 
+async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
+    """Promote a draft FlowMessage to a real reply.
+
+    1. Validate `is_draft=True`.
+    2. Append a pointer to `<task-dir>/conversation.jsonl` and bump
+       `Conversation.message_ids` / `message_count`.
+    3. Flip `is_draft=False`; save.
+    4. POST to hub + upload bundle (best-effort).
+    5. Git-commit the conversation pointer change when the task lives in a
+       project repo (mirrors the original-reply path in
+       `notification_action.handle_append_conversation`).
+    """
+    from flow_sdk.app.actions.notification_action import (
+        _append_message_to_conversation,
+        _find_task_conversation,
+        _notify_ui_conversation_updated,
+        _resolve_reply_recipient_email,
+        _send_reply_to_hub,
+    )
+    from flow_sdk.utils.git import git_add_commit_push
+
+    fm = await FlowMessage.get_one({"id": fm_id})
+    if not fm:
+        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
+    if not fm.is_draft:
+        return ApiFailResponse(message="FlowMessage is not a draft")
+    if not fm.conversation_id:
+        return ApiFailResponse(message="Draft has no conversation_id")
+
+    conv = await Conversation.get_one({"id": fm.conversation_id})
+    if not conv:
+        return ApiFailResponse(message=f"Conversation not found: {fm.conversation_id}")
+
+    task: Optional[Task] = None
+    if conv.task_id:
+        task = await Task.get_one({"id": conv.task_id})
+
+    conv = await _append_message_to_conversation(
+        conv=conv,
+        task_id=task.id if task else None,
+        fm_id=fm.id,
+        someone_typeid=someone_typeid,
+    )
+
+    fm.is_draft = False
+    fm = await fm.save(someone_typeid)
+
+    if task:
+        local_user = await User.get_one({"uname": "local"})
+        sender_id = local_user.id if local_user else fm.sender_id
+        sender_name = fm.sender_name or ((local_user.name or local_user.email or "") if local_user else "")
+        recipient_email = _resolve_reply_recipient_email(task, local_user.id if local_user else "")
+        await _send_reply_to_hub(
+            reply_fm=fm,
+            task=task,
+            task_id=task.id,
+            message=fm.text or "",
+            sender_id=sender_id,
+            sender_name=sender_name,
+            recipient_email=recipient_email,
+        )
+
+    _notify_ui_conversation_updated(conv.id, task.id if task else "", fm.id)
+
+    if task:
+        project_root_str = (task.metadata or {}).get("project_root")
+        if project_root_str:
+            await git_add_commit_push(
+                Path(project_root_str),
+                ["tasks"],
+                f"chore: update conversation for task '{task.title}'",
+            )
+
+    return ApiSuccessResponse(data={
+        "flow_message_id": fm.id,
+        "conversation_id": conv.id,
+        "message_count": conv.message_count,
+    })
+
+
+@action.post(action_name="send-draft", types=[BuiltinEntityType.FLOW_MESSAGE.value])
+async def send_draft() -> ApiResponse:
+    """Promote a draft FlowMessage to a real reply (jsonl pointer + hub push)."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found")
+        if not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        return await handle_send_draft(
+            fm_id=str(request_info.target_entity_typeid.id),
+            someone_typeid=request_info.someone_typeid,
+        )
+    except Exception as e:
+        logger.error("[flow_message_action] send-draft error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Send draft failed: {str(e)}")
+
+
 async def handle_inbox_bulk_update(patch: dict, someone_typeid: str) -> ApiResponse:
     """Apply is_read / is_archived patch to all FlowMessages."""
     from flow_sdk.db.drivers.query import QueryFilter

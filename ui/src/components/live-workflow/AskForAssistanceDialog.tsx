@@ -113,6 +113,22 @@ export function AskForAssistanceDialog({
         sessionId,
         projectPath,
       });
+
+      // Scenario C: pre-fork the live session into an invisible AgenticProcess
+      // so the recipient's Approve & Execute reuses the existing fork (which
+      // inherits all the conversational context the sender built before
+      // sharing) instead of spawning a fresh process. Best-effort — fork
+      // failure shouldn't block the share.
+      let forkedProcessId: string | null = null;
+      if (proc) {
+        try {
+          const forked = await proc.fork(false);
+          forkedProcessId = forked.id ?? null;
+        } catch (forkErr) {
+          console.warn('[AskForAssistanceDialog] pre-fork failed (non-fatal):', forkErr);
+        }
+      }
+
       const result = await sendNotification({
         recipient_id: recipientId.trim(),
         spec_title: title.trim(),
@@ -128,6 +144,7 @@ export function AskForAssistanceDialog({
         // Stamp the sender's AgenticProcess id so their per-message "Open Claude
         // Code" chip is wired immediately, no Start step required.
         sender_process_id: processId ?? null,
+        forked_process_id: forkedProcessId,
       });
       if (result.git_error) {
         setGitError(result.git_error);

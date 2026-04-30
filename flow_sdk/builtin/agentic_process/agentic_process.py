@@ -246,9 +246,9 @@ class AgenticProcess(Entity):
         default=None,
         description="CollaborationRoom this process was spawned in, if any",
     )
-    target_typeid_str: str | None = APIField(
+    target_vfs_path: str | None = APIField(
         default=None,
-        description='Serialized TypeId ("type-id") of the entity this process is attached to (trigger, markdown, …).',
+        description='VFS path this process is keyed to. Either a serialized TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats.',
     )
     exe_folder: FSRef | None = APIField(
         default=None,
