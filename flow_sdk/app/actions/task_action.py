@@ -165,12 +165,15 @@ async def _run_turn_and_capture(
         session_id=None if is_resume else process.session_id,
     )
 
+    cli_cfg_with_prompt = dict(process.cli_config or {})
+    cli_cfg_with_prompt["last_prompt"] = prompt_text
+    process.cli_config = cli_cfg_with_prompt
     if process.status != ProcessStatus.RUNNING.value:
         process.status = ProcessStatus.RUNNING.value
-        try:
-            await process.save(someone_typeid)
-        except Exception:
-            logger.debug("[run-headless] lifecycle save failed", exc_info=True)
+    try:
+        await process.save(someone_typeid)
+    except Exception:
+        logger.debug("[run-headless] lifecycle save failed", exc_info=True)
 
     worker = ClaudeCLIStreamWorker()
     _PROMPT_WORKERS[process.id] = worker

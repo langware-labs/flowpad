@@ -6,6 +6,22 @@ import { FolderOpen } from 'lucide-react';
 import { AgenticProcess } from '@sdk';
 import type { ProcessEntry } from './workflow-run-store';
 
+/** Truncate a prompt to ~40 chars on a word boundary, with ellipsis. */
+function truncatePrompt(text: string, max = 40): string {
+  const trimmed = text.trim().replace(/\s+/g, ' ');
+  if (trimmed.length <= max) return trimmed;
+  const cut = trimmed.slice(0, max);
+  const lastSpace = cut.lastIndexOf(' ');
+  return `${lastSpace > 10 ? cut.slice(0, lastSpace) : cut}…`;
+}
+
+/** Prefer the prompt that drove the run; fall back to "Run N". */
+function runLabel(entry: ProcessEntry, n: number): string {
+  const prompt = (entry.process.cli_config as Record<string, unknown> | undefined)?.last_prompt;
+  if (typeof prompt === 'string' && prompt.trim()) return truncatePrompt(prompt);
+  return `Run ${n}`;
+}
+
 interface WorkflowRunsPanelProps {
   entries: ProcessEntry[];
   currentEntry: ProcessEntry | null;
@@ -29,7 +45,7 @@ export function WorkflowRunsPanel({ entries, currentEntry, computeNodeId }: Work
         <WorkflowRunItem
           key={entry.process.id}
           entry={entry}
-          label={`Run ${entries.length - idx}`}
+          label={runLabel(entry, entries.length - idx)}
           isCurrent={currentEntry?.process.id === entry.process.id}
           computeNodeId={computeNodeId}
         />

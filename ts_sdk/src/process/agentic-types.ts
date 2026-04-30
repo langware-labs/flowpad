@@ -226,7 +226,9 @@ export function getDisplayStatus(p: StatusBearingProcess): ProcessStatus | Worke
   const status = resolveStatus(p);
   if (status === undefined) return undefined;
   if (isProcessRunning(status)) {
-    return resolveWorkerStatus(p) ?? status;
+    const worker = resolveWorkerStatus(p);
+    if (worker !== undefined && worker !== WorkerStatus.UNKNOWN) return worker;
+    return status;
   }
   return status;
 }
