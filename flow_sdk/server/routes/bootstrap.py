@@ -510,11 +510,47 @@ async def validate_cloud_token(token: Optional[str] = None) -> bool:
 
 
 async def is_cloud_login_available() -> bool:
-    """Check if cloud login is available by checking stored credentials."""
+    """Check if cloud login is available.
+
+    Validates the stored API key against the Flowpad cloud (real HTTP call).
+    To avoid triggering a macOS keychain prompt at startup for unrecognized
+    binaries, we gate the keychain read on the non-prompting sentinel probe
+    (``is_secrets_enabled``). If the user has not yet approved keychain
+    access, we treat them as logged-out and the UI's SecretApprovalDialog
+    will prompt before any subsequent login attempt.
+
+    Returns False on any failure (no sentinel, no key, network error, invalid
+    token). Logout cleanup is the caller's responsibility — bootstrap only
+    reports the current validity.
+    """
+    api_key = None
     try:
-        from flow_sdk.cli.auth import is_logged_in
-        return await asyncio.to_thread(is_logged_in)
+        from flow_sdk.cli.auth.hub_login import validate_api_key_async, get_api_key
+        from flow_sdk.cli.auth.secrets import is_secrets_enabled
+
+        # Non-prompting probe: skip keychain read entirely if user hasn't approved.
+        if not await asyncio.to_thread(is_secrets_enabled):
+            return False
+
+        api_key = await asyncio.to_thread(get_api_key)
+        if not api_key:
+            return False
+
+        # Real cloud validation — succeeds only when the token is still valid.
+        await validate_api_key_async(api_key)
+        return True
     except Exception:
+        # Stored token failed validation (expired, revoked, network error). When
+        # we definitely had a key, drop it from the keychain and clear the user
+        # record so the UI reflects logged-out state without further round-trips.
+        if api_key:
+            try:
+                from flow_sdk.cli.app_config import set_user
+                from flow_sdk.cli.auth.hub_login import delete_api_key
+                await asyncio.to_thread(delete_api_key)
+                set_user({})
+            except Exception:
+                pass
         return False
 
 

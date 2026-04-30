@@ -113,7 +113,7 @@ async def post_login(
     try:
         # Import here to avoid circular dependency
         from flow_sdk.cli.app_config import set_user
-        from flow_sdk.cli.auth import set_api_key, validate_api_key
+        from flow_sdk.cli.auth.hub_login import set_api_key, validate_api_key
 
         if not flowpad_api_key:
             raise ValueError("No API key provided. Expected 'flowpad-api-key' parameter.")
@@ -198,7 +198,7 @@ async def auth_status():
     """Check if user is logged in."""
     try:
         from flow_sdk.cli.app_config import get_user
-        from flow_sdk.cli.auth import is_logged_in
+        from flow_sdk.cli.auth.hub_login import is_logged_in
 
         logged_in = is_logged_in()
         user_info = get_user() if logged_in else None
@@ -210,9 +210,9 @@ async def auth_status():
 
 
 def _clear_local_credentials():
-    """Clear the locally stored API key and user info."""
+    """Clear the locally stored API key, user info, and secrets-enable sentinel."""
     from flow_sdk.cli.app_config import set_user
-    from flow_sdk.cli.auth import delete_api_key
+    from flow_sdk.cli.auth.hub_login import delete_api_key
     from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
 
     delete_api_key()

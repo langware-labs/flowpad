@@ -1,4 +1,6 @@
 export * from './system-tools-service';
+export * from './secrets-service';
+export * from './secretApprovalGate';
 export * from './membershipService';
 export * from './navigationService';
 export * from './funcService';

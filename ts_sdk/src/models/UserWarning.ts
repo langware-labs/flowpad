@@ -51,6 +51,7 @@ export const WARNING_IDS = {
   CLOUD_DISCONNECTED: 'cloud-disconnected',
   NO_COMPUTE_NODE: 'no-compute-node',
   SNIFFER_NOT_FOUND: 'sniffer-not-found',
+  SECRETS_NOT_ENABLED: 'secrets-not-enabled',
 } as const;
 
 /**
@@ -100,6 +101,22 @@ export function createNoComputeNodeWarning(): UserWarning {
     message: 'No Compute Node',
     description: 'No compute environment is available. Shell and code execution are disabled.',
     targetView: ViewType.MACHINE,
+  };
+}
+
+/**
+ * Create a warning shown when the OS keychain access for app-secrets has
+ * not been approved yet. Clicking it opens the SecretApprovalDialog via
+ * `secretApprovalGate.request()`.
+ */
+export function createSecretsNotEnabledWarning(): UserWarning {
+  return {
+    id: WARNING_IDS.SECRETS_NOT_ENABLED,
+    icon: 'Key',
+    color: 'yellow',
+    message: 'Keychain access not enabled',
+    description: 'Approve OS keychain access so Flowpad can store login tokens and app secrets.',
+    targetView: ViewType.AI_CONFIG,
   };
 }
 

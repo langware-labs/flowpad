@@ -560,7 +560,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.post(action_name="search-cloud-errors")
     async def search_cloud_errors_action(self) -> ApiResponse:
         """Proxy error fingerprint search to the Flowpad cloud, then apply results to local records."""
-        from flow_sdk.cli.auth import get_api_key as get_flowpad_api_key
+        from flow_sdk.cli.auth.hub_login import get_api_key as get_flowpad_api_key
         from flow_sdk.client import ApiConfig, FlowpadClient
 
         request_info = get_current_request_info()

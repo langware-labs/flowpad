@@ -1,4 +1,5 @@
 export * from './annotation';
+export * from './app_secret';
 export * from './agent';
 export * from './AgentConfig';
 export * from './api_key';
