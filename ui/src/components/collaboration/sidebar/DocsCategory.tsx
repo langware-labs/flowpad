@@ -1,7 +1,8 @@
 import { ChevronRight, FileText, Folder } from 'lucide-react';
 import { useMemo, useEffect, useState } from 'react';
-import { Markdown, Project, QueryRequest, TypeId } from '@sdk';
-import { useEntity, useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { config, Project, TypeId } from '@sdk';
+import { useEntity } from '@src/hooks/entity-hooks';
+import { useQuery } from '@tanstack/react-query';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import type { RoomTab } from '../RoomTabs';
@@ -31,12 +32,9 @@ interface DocTreeNode {
   files: DocRow[];
 }
 
-const docsQuery = new QueryRequest({
-  type: Markdown.type,
-  scope: [],
-  name: 'DocsCategory:markdown',
-  query: null,
-});
+// Direct fetch (with `include_system=true`) instead of useEntitiesQuery,
+// because the QueryRequest path doesn't expose the system-records flag the
+// graph route honors. Mirrors SkillsCategory.tsx.
 
 function newNode(name: string): DocTreeNode {
   return { name, folders: new Map(), files: [] };
@@ -153,7 +151,17 @@ export function DocsCategory({ projectId, onOpenTab }: Props) {
     setIncludeSystem(isSystemProject);
   }, [isSystemProject]);
 
-  const { data: rows = [], isLoading } = useEntitiesQuery<DocRow>(docsQuery);
+  const { data: rows = [], isLoading } = useQuery<DocRow[]>({
+    queryKey: ['docs-include-system'],
+    queryFn: async () => {
+      const url = `${config.SERVER_URL}${config.API_PREFIXES.graph}/markdown?include_system=true&limit=5000`;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`Failed to load docs: ${resp.status}`);
+      const body = await resp.json();
+      return (body.data ?? []) as DocRow[];
+    },
+    staleTime: 30_000,
+  });
 
   const filtered = useMemo(() => {
     if (!projectId) return [];

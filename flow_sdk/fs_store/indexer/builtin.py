@@ -97,7 +97,7 @@ def build_default_indexer() -> FSIndexer:
     # SYSTEM_ROOT (flowpad_assistant) expanders
     idx.add_function(RecordType.SYSTEM_ROOT, skill_fn)
     idx.add_function(RecordType.SYSTEM_ROOT, agent_fn)
-    idx.add_function(RecordType.SYSTEM_ROOT, markdown_flat_fn)
+    idx.add_function(RecordType.SYSTEM_ROOT, project_folder_walker_fn)
 
     # CWD_ROOT expanders
     idx.add_function(RecordType.CWD_ROOT, claude_plan_fn)

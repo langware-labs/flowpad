@@ -4,16 +4,17 @@ Two functions, split by registration scope:
 
   markdown_flat_fn
       rglob <root>/.claude/docs/**/*.md.
-      Register on USER_HOME_FOLDER, SYSTEM_ROOT — these are huge trees
-      (~/, the system project root) where unrestricted ``docs/`` discovery
-      would pick up unrelated dirs from venvs, npm packages, etc.
+      Register on USER_HOME_FOLDER only — ``~/`` is a huge tree where
+      unrestricted ``docs/`` discovery would pick up unrelated dirs from
+      venvs, npm packages, etc. The narrow ``.claude/docs`` prefix keeps
+      home-dir scanning bounded.
 
   markdown_in_folder_fn
-      Per-FOLDER predicate emitter. Receives FOLDER refs from
+      Per-FOLDER emitter. Receives FOLDER refs from
       ``project_folder_walker_fn`` (which already pruned via gitignore +
-      _WALK_IGNORED) and emits ``*.md`` direct children of folders that
-      match: name == "docs" OR has a "docs" ancestor up to the project
-      root. Register on FOLDER.
+      _WALK_IGNORED) and emits the direct ``*.md`` children of every
+      walked folder. Register on FOLDER. Gitignore is the only filter —
+      every ``.md`` in a project (or system project) is indexed.
 
 Together with the folder walker this collapses the old per-type rglob
 into one walk per project — adding new file types (txt, csv) is a single
@@ -53,39 +54,37 @@ async def markdown_flat_fn(
     return out
 
 
-def _has_docs_ancestor(folder: Path, walk_root: Path) -> bool:
-    """True if ``folder`` itself is named 'docs', or any ancestor up to
-    (and including) walk_root is. Used to gate per-FOLDER markdown emission.
-    """
+# Folders whose .md children are claimed by typed indexers (skill_fn, agent_fn,
+# workflow_fn, command_fn). Skip emission to avoid double-indexing a SKILL.md
+# as both SKILL and MARKDOWN.
+_TYPED_RECORD_DIRS: frozenset[str] = frozenset({
+    "skills", "agents", "workflows", "commands",
+})
+
+
+def _has_typed_ancestor(folder: Path) -> bool:
+    """True if ``folder`` itself or any ancestor is a typed-record dir."""
     p = folder
     while True:
-        if p.name == "docs":
+        if p.name in _TYPED_RECORD_DIRS:
             return True
-        if p == walk_root or p.parent == p:
+        if p.parent == p:
             return False
         p = p.parent
-
-
-def _find_walk_root(folder_ref: FSRef) -> Path | None:
-    """Walk up the FSRef parent chain to the project/cwd root."""
-    cur = folder_ref
-    while cur._parent is not None:
-        if cur._parent.record_type in (
-            RecordType.REAL_PROJECT_CWD, RecordType.CWD_ROOT,
-        ):
-            return Path(cur._parent.path)
-        cur = cur._parent
-    return None
 
 
 async def markdown_in_folder_fn(
     nodes: list[FSRef], opts: IndexerOptions,
 ) -> list[FSRef]:
-    """For each FOLDER under a docs ancestor, emit its direct ``*.md`` children.
+    """For each walked FOLDER, emit its direct ``*.md`` children.
 
-    The walker already descended every subdirectory and filtered via gitignore;
-    this function only emits — no glob recursion needed (use ``glob`` not
-    ``rglob``).
+    The walker already descended every subdirectory and filtered via
+    gitignore + ``_WALK_IGNORED``; this function only emits — no glob
+    recursion needed (use ``glob`` not ``rglob``).
+
+    Folders under typed-record dirs (``skills/``, ``agents/``, ``workflows/``,
+    ``commands/``) are skipped so SKILL.md / agent .md / workflow .md aren't
+    double-indexed as MARKDOWN.
     """
     out: list[FSRef] = []
     seen: set[str] = set()
@@ -93,10 +92,7 @@ async def markdown_in_folder_fn(
         if node.record_type != RecordType.FOLDER:
             continue
         folder_path = Path(node.path)
-        walk_root = _find_walk_root(node)
-        if walk_root is None:
-            continue
-        if not _has_docs_ancestor(folder_path, walk_root):
+        if _has_typed_ancestor(folder_path):
             continue
         try:
             entries = sorted(folder_path.glob("*.md"))

@@ -9,7 +9,7 @@ project_id=...)``. Validates:
   - FOLDER is transient (no record_cls, never persisted);
   - markdown is discovered via the FOLDER → markdown_in_folder_fn fan-out;
   - markdown count **exactly equals** the disk-walk under the same predicate
-    (gitignore + _WALK_IGNORED + docs-ancestor);
+    (gitignore + _WALK_IGNORED + not-typed-record-dir);
   - hardcoded ``_WALK_IGNORED`` (.git, node_modules, .venv) is pruned;
   - .claude/ is force-included even if gitignored;
   - ``project_id`` flows from IndexerOptions / root FSRef onto every emitted
@@ -30,7 +30,7 @@ from flow_sdk.fs_store.indexer import (
     IndexerOptions,
     build_default_indexer,
 )
-from flow_sdk.fs_store.indexer.functions.markdown import _has_docs_ancestor
+from flow_sdk.fs_store.indexer.functions.markdown import _has_typed_ancestor
 from flow_sdk.fs_store.indexer.gitignore import (
     is_ignored,
     load_gitignore_stack,
@@ -48,18 +48,20 @@ def _expected_markdown_paths(root: Path) -> set[Path]:
     """Independent disk walk that mirrors the indexer's filtering rules.
 
     Walks the tree applying the same gitignore + _WALK_IGNORED + .claude
-    force-include rules used by ``project_folder_walker_fn``, then filters
-    to ``*.md`` files in directories whose name is "docs" or has a "docs"
-    ancestor up to the root — same predicate as ``markdown_in_folder_fn``.
+    force-include rules used by ``project_folder_walker_fn``, then emits
+    every ``*.md`` direct child of every walked folder, **except** folders
+    under a typed-record dir (``skills/``, ``agents/``, ``workflows/``,
+    ``commands/``) whose ``.md`` files are claimed by typed indexers —
+    same predicate as ``markdown_in_folder_fn``.
     """
     expected: set[Path] = set()
     stack = load_gitignore_stack(root)
 
     def walk(d: Path, push_count: int) -> None:
-        # Emit *.md from this directory if it matches the docs-ancestor
-        # predicate. The walker also visits the root itself, so the
-        # predicate is evaluated for every directory we descend into.
-        if _has_docs_ancestor(d, root):
+        # Emit *.md from this directory unless it sits under a typed-record
+        # dir. The walker visits the root too, so the predicate runs on
+        # every descended directory.
+        if not _has_typed_ancestor(d):
             try:
                 for md in d.glob("*.md"):
                     if md.is_file():
@@ -92,7 +94,7 @@ def _expected_markdown_paths(root: Path) -> set[Path]:
 async def test_folder_walker_on_flowpad_oss(tmp_path: Path, capsys) -> None:
     """Run scan() over flowpad-oss, report timing, assert exact MD count and
     project_id propagation."""
-    indexer = build_default_indexer(state_dir=tmp_path / "idx_state")
+    indexer = build_default_indexer()
 
     test_pid = "test-pid-flowpad-oss"
     custom_roots = (

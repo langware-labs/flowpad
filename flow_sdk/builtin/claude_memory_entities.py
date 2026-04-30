@@ -31,6 +31,10 @@ class Markdown(Entity):
     # These power the Obsidian-style Wiki folder tree in the UI.
     parent_path: str = APIField(default="")
     vault_root: str = APIField(default="")
+    # project_id stamped at index time (inherited from the project/system root
+    # FSRef). DocsCategory.tsx scopes its tree by this; without it system docs
+    # never show up in the project sidebar.
+    project_id: str | None = APIField(default=None)
     _api_visible: ClassVar[bool] = True
 
 

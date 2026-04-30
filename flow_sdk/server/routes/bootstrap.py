@@ -1062,6 +1062,51 @@ async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list
     return ensured
 
 
+async def _ensure_welcome_favorite(user: User) -> None:
+    """One-shot onboarding: drop a favorite bookmark to the Welcome markdown
+    onto the user's home view the first time the server boots.
+
+    Idempotent via ``user.onboarded``. If the Welcome markdown isn't indexed
+    yet (indexer is async), retry a few times; if still not found, leave
+    ``onboarded`` False so the next bootstrap retries.
+    """
+    if getattr(user, "onboarded", False):
+        return
+
+    from flow_sdk.builtin.bookmark import Bookmark, BookmarkType  # noqa: PLC0415
+    from flow_sdk.builtin.claude_memory_entities import Docs  # noqa: PLC0415
+
+    welcome = None
+    for _ in range(5):
+        candidates = await Docs.get_all({"name": "Welcome"})
+        if candidates:
+            welcome = candidates[0]
+            break
+        await asyncio.sleep(0.5)
+    if welcome is None:
+        logging.info("[bootstrap] Welcome markdown not yet indexed; skipping favorite seed for now")
+        return
+
+    favorite = Bookmark(
+        bookmark_type=BookmarkType.FAVORITE.value,
+        title="Welcome",
+        source="onboarding",
+        data={
+            "entity_type": "markdown",
+            "entity_id": str(welcome.typeid),
+            "icon": "BookOpen",
+            # The favorite click handler reads asset_ref from data.nav and
+            # routes directly, bypassing a name-resolution hop on click.
+            "nav": {"asset_ref": welcome.asset_ref or ""},
+        },
+    )
+    await favorite.save(owner=user)
+
+    user.onboarded = True
+    await user.save()
+    logging.info(f"[bootstrap] Seeded Welcome favorite for user {user.typeid}")
+
+
 # ---------------------------------------------------------------------------
 # File system setup (migrated from desktop_loader.py:init_desktop_entities)
 # ---------------------------------------------------------------------------
@@ -1238,6 +1283,11 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         except Exception as e:
             logging.warning(f"[bootstrap] Failed to ensure system projects (non-fatal): {e}")
         _t.time("ensure_system_projects")
+        try:
+            await _ensure_welcome_favorite(user)
+        except Exception as e:
+            logging.warning(f"[bootstrap] Failed to seed Welcome favorite (non-fatal): {e}")
+        _t.time("ensure_welcome_favorite")
         workspace = await get_or_create_local_workspace(desktop_user=user)
         _t.time("get_or_create_local_workspace")
         compute_node = await get_or_create_local_compute_node(local_project=project, desktop_user=user)

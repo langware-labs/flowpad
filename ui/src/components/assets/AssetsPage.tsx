@@ -1,4 +1,5 @@
 import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/AssetEditorRouter';
+import { WikiResolveView } from '@src/components/assets/editor/WikiResolveView';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { getDescriptor } from '@src/components/quick-create';
 import { useToast } from '@src/hooks/use-toast';
@@ -42,32 +43,32 @@ import '@src/components/assets/columns/claudeRulesColumns';
 import '@src/components/assets/filters/taskFilters';
 
 interface ParsedAssetPointer {
-  mode: 'editor' | 'list' | 'folder' | null;
+  mode: 'editor' | 'list' | 'folder' | 'wiki' | null;
   typeName: string | null;
   /** Only set when mode === 'folder'. */
   folderTypeid: string | null;
   /** Only set when mode === 'folder'. VFS relPath under the typeid. */
   folderRelPath: string | null;
+  /** Only set when mode === 'wiki'. Decoded link target name. */
+  wikiName: string | null;
 }
 
 function parseAssetPointer(pointer: string | undefined): ParsedAssetPointer {
-  if (!pointer) return { mode: null, typeName: null, folderTypeid: null, folderRelPath: null };
+  const empty: ParsedAssetPointer = {
+    mode: null, typeName: null, folderTypeid: null, folderRelPath: null, wikiName: null,
+  };
+  if (!pointer) return empty;
   if (pointer.startsWith('editor/')) {
-    // Preserve legacy behavior: typeName isn't surfaced in editor mode today.
-    return { mode: 'editor', typeName: null, folderTypeid: null, folderRelPath: null };
+    return { ...empty, mode: 'editor' };
   }
   if (pointer.startsWith('list/')) {
-    return {
-      mode: 'list',
-      typeName: pointer.slice('list/'.length) || null,
-      folderTypeid: null,
-      folderRelPath: null,
-    };
+    return { ...empty, mode: 'list', typeName: pointer.slice('list/'.length) || null };
   }
   if (pointer.startsWith('folder/')) {
     const folder = DockPointer.parseAssetFolderPointer(pointer);
     if (folder) {
       return {
+        ...empty,
         mode: 'folder',
         typeName: folder.typeName,
         folderTypeid: folder.typeid,
@@ -75,7 +76,13 @@ function parseAssetPointer(pointer: string | undefined): ParsedAssetPointer {
       };
     }
   }
-  return { mode: null, typeName: null, folderTypeid: null, folderRelPath: null };
+  if (pointer.startsWith('wiki/')) {
+    const raw = pointer.slice('wiki/'.length);
+    let name = raw;
+    try { name = decodeURIComponent(raw); } catch { /* keep raw */ }
+    return { ...empty, mode: 'wiki', typeName: 'markdown', wikiName: name || null };
+  }
+  return empty;
 }
 
 /** Given a parsed folder pointer and a list of vaults, return the absolute
@@ -228,9 +235,11 @@ export function AssetsPage() {
     typeName: selectedType,
     folderTypeid,
     folderRelPath,
+    wikiName,
   } = parseAssetPointer(currentDock?.pointer);
   const isEditorMode = mode === 'editor';
   const isFolderMode = mode === 'folder';
+  const isWikiMode = mode === 'wiki';
 
   const visibleTypes = useMemo(
     () => allTypes.filter((t) => !HIDDEN_TYPES.has(t.type_name)),
@@ -407,7 +416,9 @@ export function AssetsPage() {
 
         {/* Main content: editor when in editor mode, list view otherwise */}
         <div className="min-w-0 flex-1">
-          {isEditorMode && currentDock?.pointer ? (
+          {isWikiMode && wikiName ? (
+            <WikiResolveView name={wikiName} />
+          ) : isEditorMode && currentDock?.pointer ? (
             <AssetEditorRouter pointer={currentDock.pointer} />
           ) : isFolderMode ? (
             <div className="flex h-full flex-col">
