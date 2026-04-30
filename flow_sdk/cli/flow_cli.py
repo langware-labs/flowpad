@@ -937,6 +937,15 @@ app.add_typer(compute_app, name="compute")
 from flow_sdk.cli.commands.navigate_cmd import navigate_app
 app.add_typer(navigate_app, name="navigate")
 
+from flow_sdk.cli.commands.context_cmd import context_app
+app.add_typer(context_app, name="context")
+
+from flow_sdk.cli.commands.schema_cmd import schema_app
+app.add_typer(schema_app, name="schema")
+
+from flow_sdk.cli.commands.record_cmd import record_app
+app.add_typer(record_app, name="record")
+
 
 @log_app.callback(invoke_without_command=True)
 def log_show(

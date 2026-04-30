@@ -185,6 +185,16 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create dock pointer for a wiki link by name. Resolves to a markdown record
+   * at view time; the URL stays at the name form (rename-resilient).
+   * Pointer format: "wiki/<encoded name>"
+   * URL: /dock/assets/wiki/<encoded name>
+   */
+  static forWiki(name: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.ASSETS, `wiki/${encodeURIComponent(name)}`, undefined, layout);
+  }
+
+  /**
    * Create dock pointer for an asset list filtered to a specific type.
    * Pointer format: "list/<typeName>"
    * URL: /dock/assets/list/<typeName>

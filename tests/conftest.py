@@ -102,6 +102,20 @@ async def initialize_test_db(tmp_path_factory):
     _test_db_initialized = True
 
     await driver.open()
+
+    # Force-rebind the LazyDBDriver caches on DBEntity / DBRelationship to this
+    # test driver. Order-of-fixture hazard: an earlier session-autouse fixture
+    # (e.g. clean_claude_temp_projects) can hit `cls._db` before this fixture
+    # runs, which freezes the descriptor onto whichever driver was in
+    # `_driver_instances` at that time. Overwriting `_driver_instances` here
+    # is not enough — once LazyDBDriver has set the attribute on the owning
+    # class, subsequent accesses bypass the registry. Re-assigning here keeps
+    # entity queries pointed at the schema this fixture just created.
+    from flow_sdk.db.db_entity import DBEntity
+    from flow_sdk.db.db_relationship import DBRelationship
+    DBEntity._db = driver
+    DBRelationship._db = driver
+
     yield driver
 
     # Cleanup: close the driver to stop aiosqlite worker threads

@@ -20,7 +20,12 @@ from pydantic import BaseModel
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.type_id import TypeId
 
-from .websocket import get_active_connection, send_personal_message
+from .websocket import (
+    get_active_connection,
+    get_active_connection_info,
+    get_connection_infos,
+    send_personal_message,
+)
 
 router = APIRouter()
 
@@ -108,4 +113,40 @@ async def navigate_entity(req: NavigateEntityRequest):
         "connection_id": connection_id,
         "type": typeid.type,
         "id": typeid.id,
+    }
+
+
+@router.get("/api/v1/agent/context")
+async def get_browser_context(connection_id: Optional[str] = None):
+    """Return the UI's data-context snapshot for a connection.
+
+    Default target: the active connection (same selection rule as
+    ``/agent/navigate/entity``). When ``connection_id`` is supplied,
+    return that exact connection's context — or 404 if it isn't open.
+
+    Response:
+        {ok: true, connection_id, context: { CurrentProjectTypeId: "...", ... }}
+    """
+    if connection_id:
+        info = get_connection_infos().get(connection_id)
+        if info is None:
+            return _error(
+                404,
+                "CONNECTION_NOT_FOUND",
+                f"Connection not found: {connection_id}",
+            )
+        return {
+            "ok": True,
+            "connection_id": connection_id,
+            "context": dict(info.browser_context or {}),
+        }
+
+    active = get_active_connection_info()
+    if active is None:
+        return _error(409, "NO_ACTIVE_TAB", "No active tab")
+    cid, info = active
+    return {
+        "ok": True,
+        "connection_id": cid,
+        "context": dict(info.browser_context or {}),
     }

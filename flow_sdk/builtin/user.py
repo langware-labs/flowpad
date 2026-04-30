@@ -37,6 +37,7 @@ class User(Entity):
     picture: str | None = APIField(None)
     email: str | None = APIField(None)
     last_login: datetime | None = APIField(None)
+    onboarded: bool = APIField(default=False)
     salt_: str | None = None
     hashed_password_: str | None = None
     _api_visible: ClassVar[bool] = True
