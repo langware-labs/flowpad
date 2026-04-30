@@ -14,7 +14,7 @@ import { useContext } from '@sdk/react/hooks';
 import { sendNotification } from '@sdk/entities/notifications';
 import { createTaskBundle, DeliveryMode } from '@sdk/entities/flow-message';
 import { ActionInfo } from '@sdk/models/ActionInfo';
-import { oauthService, OAUTH_PROVIDERS, type ConversationParticipant } from '@sdk';
+import { AgenticProcess, dataManager, oauthService, OAUTH_PROVIDERS, TypeId, type ConversationParticipant } from '@sdk';
 import { toast } from 'sonner';
 import { Mail, Download, Github, Pencil } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -55,6 +55,8 @@ interface SendPlanNotificationDialogProps {
   planFilePath: string;
   planContent: string;
   workdir?: string | null;
+  /** Active AgenticProcess id where the plan was authored — stamped onto the sender's task as my_process_id, then pre-forked so the recipient inherits its conversational context. */
+  processId?: string;
 }
 
 export function SendPlanNotificationDialog({
@@ -63,6 +65,7 @@ export function SendPlanNotificationDialog({
   workdir,
   planFilePath,
   planContent,
+  processId,
 }: SendPlanNotificationDialogProps) {
   const ctx = useContext();
   const { cloudLoginAvailable } = ctx;
@@ -112,6 +115,22 @@ export function SendPlanNotificationDialog({
     setBusy(true);
     setError(null);
     try {
+      // Mirror Scenario C: stamp the sender's process id and pre-fork it so
+      // the recipient's headless runs (e.g. "Request status") resume from the
+      // session that authored the plan instead of spawning fresh context.
+      const proc = processId
+        ? await dataManager.getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, processId)).catch(() => null)
+        : null;
+      let forkedProcessId: string | null = null;
+      if (proc) {
+        try {
+          const forked = await proc.fork(false);
+          forkedProcessId = forked.id ?? null;
+        } catch (forkErr) {
+          console.warn('[SendPlanNotificationDialog] pre-fork failed (non-fatal):', forkErr);
+        }
+      }
+
       const result = await sendNotification({
         recipient_id: recipientId,
         spec_title: specTitle.trim(),
@@ -124,6 +143,8 @@ export function SendPlanNotificationDialog({
         project_path: workdir ?? null,
         sender_name: senderName.trim() || null,
         files: files.length > 0 ? files : undefined,
+        sender_process_id: processId ?? null,
+        forked_process_id: forkedProcessId,
       });
       if (result.git_error) {
         setGitError(result.git_error);
