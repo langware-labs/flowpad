@@ -56,8 +56,8 @@ async def test_post_login_returns_success_html(client):
     user_info = {"id": "user_abc123", "name": "Test User", "email": "test@example.com"}
 
     with (
-        patch("flow_sdk.cli.auth.validate_api_key", return_value=user_info),
-        patch("flow_sdk.cli.auth.set_api_key"),
+        patch("flow_sdk.cli.auth.hub_login.validate_api_key", return_value=user_info),
+        patch("flow_sdk.cli.auth.hub_login.set_api_key"),
         patch("flow_sdk.cli.app_config.set_user"),
     ):
         response = await client.get(f"/post_login?flowpad-api-key={TEST_API_KEY}")
@@ -74,8 +74,8 @@ async def test_post_login_full_flow(client):
     user_info = {"id": "user_abc123", "name": "Test User", "email": "test@example.com"}
 
     with (
-        patch("flow_sdk.cli.auth.validate_api_key", return_value=user_info),
-        patch("flow_sdk.cli.auth.set_api_key"),
+        patch("flow_sdk.cli.auth.hub_login.validate_api_key", return_value=user_info),
+        patch("flow_sdk.cli.auth.hub_login.set_api_key"),
         patch("flow_sdk.cli.app_config.set_user"),
     ):
         state.login_result = None
@@ -96,7 +96,7 @@ async def test_auth_status_logged_in(client):
     user_info = {"id": "user_abc123", "name": "Test User", "email": "test@example.com"}
 
     with (
-        patch("flow_sdk.cli.auth.is_logged_in", return_value=True),
+        patch("flow_sdk.cli.auth.hub_login.is_logged_in", return_value=True),
         patch("flow_sdk.cli.app_config.get_user", return_value=user_info),
     ):
         response = await client.get("/api/v1/auth/status")
@@ -110,7 +110,7 @@ async def test_auth_status_logged_in(client):
 @pytest.mark.asyncio
 async def test_auth_status_logged_out(client):
     """GET /api/auth/status returns logged_in=False when no credentials."""
-    with patch("flow_sdk.cli.auth.is_logged_in", return_value=False):
+    with patch("flow_sdk.cli.auth.hub_login.is_logged_in", return_value=False):
         response = await client.get("/api/v1/auth/status")
 
     assert response.status_code == 200
@@ -150,7 +150,7 @@ async def test_post_login_missing_key_returns_error(client):
 @pytest.mark.asyncio
 async def test_post_login_invalid_key_returns_error(client):
     """GET /post_login with a key that fails validation should return 400 error HTML."""
-    with patch("flow_sdk.cli.auth.validate_api_key", side_effect=Exception("Invalid API key")):
+    with patch("flow_sdk.cli.auth.hub_login.validate_api_key", side_effect=Exception("Invalid API key")):
         response = await client.get(f"/post_login?flowpad-api-key={TEST_API_KEY}")
 
     assert response.status_code == 400
@@ -167,8 +167,8 @@ async def test_post_login_invalidates_bootstrap_cache(client):
     bootstrap_mod._bootstrap_cache = {"some": "stale_data"}
 
     with (
-        patch("flow_sdk.cli.auth.validate_api_key", return_value=user_info),
-        patch("flow_sdk.cli.auth.set_api_key"),
+        patch("flow_sdk.cli.auth.hub_login.validate_api_key", return_value=user_info),
+        patch("flow_sdk.cli.auth.hub_login.set_api_key"),
         patch("flow_sdk.cli.app_config.set_user"),
     ):
         response = await client.get(f"/post_login?flowpad-api-key={TEST_API_KEY}")
@@ -189,8 +189,8 @@ async def test_post_login_broadcasts_oauth_message(client):
         broadcast_calls.append(json.loads(message))
 
     with (
-        patch("flow_sdk.cli.auth.validate_api_key", return_value=user_info),
-        patch("flow_sdk.cli.auth.set_api_key"),
+        patch("flow_sdk.cli.auth.hub_login.validate_api_key", return_value=user_info),
+        patch("flow_sdk.cli.auth.hub_login.set_api_key"),
         patch("flow_sdk.cli.app_config.set_user"),
         patch("flow_sdk.server.routes.websocket.broadcast", side_effect=mock_broadcast),
     ):
@@ -242,7 +242,7 @@ async def test_flowpad_cloud_disconnect(client):
     bootstrap_mod._bootstrap_cache = {"some": "cached_data"}
 
     with (
-        patch("flow_sdk.cli.auth.delete_api_key"),
+        patch("flow_sdk.cli.auth.hub_login.delete_api_key"),
         patch("flow_sdk.cli.app_config.set_user"),
     ):
         response = await client.get("/api/v1/graph/oauth/flowpad_cloud/disconnect")

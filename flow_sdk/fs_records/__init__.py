@@ -16,6 +16,7 @@ from .agent_status import is_terminal as is_worker_terminal
 from .artifact import Artifact as Artifact
 from .markdown_record import MarkdownRecord as MarkdownRecord
 from .annotation_record import AnnotationRecord as AnnotationRecord
+from .app_secret import AppSecretRecord as AppSecretRecord
 from .bookmark import BookmarkRecord as BookmarkRecord
 from .comment_record import CommentRecord as CommentRecord
 from .claude import (  # noqa: F401 — trigger type_registry auto-registration

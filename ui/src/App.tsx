@@ -9,6 +9,7 @@ import { Toaster } from '@src/components/ui/toaster';
 import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { useEffect, useRef, useState } from 'react';
 import { DesktopSetupModal, DESKTOP_SETUP_REASON_AUTH_FAILURE } from '@src/components/desktop-setup-modal';
+import SecretApprovalDialog from '@src/components/secret-approval-dialog';
 import { initNotificationListener } from '@src/store/use-notification-store';
 import { SnifferProvider } from '@src/contexts/SnifferContext';
 import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
@@ -203,6 +204,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <CleanupModal />
         <GlobalEvents />
         <DesktopSetupModalHandler />
+        <SecretApprovalDialog />
         <SnifferProvider>
           {children}
         </SnifferProvider>

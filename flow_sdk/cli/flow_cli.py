@@ -9,7 +9,7 @@ import typer
 from typing_extensions import Annotated
 
 from flow_sdk._version import __version__
-from flow_sdk.cli.auth import delete_api_key, is_logged_in, set_api_key
+from flow_sdk.cli.auth.hub_login import delete_api_key, is_logged_in, set_api_key
 from flow_sdk.cli.cli_command import CLICommand
 from flow_sdk.cli.cli_context import ClaudeScope, CLIContext
 from flow_sdk.cli.commands.prompt_cmd import run_prompt_command
@@ -423,7 +423,7 @@ def auth_login(
     if api_key:
         # Direct API key login
         from flow_sdk.cli.app_config import set_user
-        from flow_sdk.cli.auth import validate_api_key
+        from flow_sdk.cli.auth.hub_login import validate_api_key
 
         try:
             user_info = validate_api_key(api_key)
