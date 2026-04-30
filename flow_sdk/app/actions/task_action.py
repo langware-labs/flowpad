@@ -33,18 +33,23 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 logger = logging.getLogger(__name__)
 
 
-_ALIVE_PROCESS_STATUSES: frozenset[str] = frozenset({
+_REUSABLE_PROCESS_STATUSES: frozenset[str] = frozenset({
     ProcessStatus.NEW.value,
     ProcessStatus.STARTING.value,
     ProcessStatus.RUNNING.value,
+    # STOPPED is reusable too — between headless turns we mark the process
+    # STOPPED in the run finally block so opening it in a PTY later won't get
+    # "session already in use", but the same entity should still be reused for
+    # the next headless turn (Scenario C continuity). Skip FAILED.
+    ProcessStatus.STOPPED.value,
 })
 
 
 async def _resolve_or_spawn_process(task: Task, someone_typeid: str, workdir: str) -> AgenticProcess:
-    """Reuse `task.shared_process_id` when alive, otherwise spawn a fresh headless process."""
+    """Reuse `task.shared_process_id` when reusable, otherwise spawn a fresh headless process."""
     if task.shared_process_id:
         existing = await AgenticProcess.get_one({"id": task.shared_process_id})
-        if existing and existing.status in _ALIVE_PROCESS_STATUSES:
+        if existing and existing.status in _REUSABLE_PROCESS_STATUSES:
             return existing
 
     project_id: Optional[str] = task.project_id
@@ -170,6 +175,7 @@ async def _run_turn_and_capture(
     worker = ClaudeCLIStreamWorker()
     _PROMPT_WORKERS[process.id] = worker
     captured: list = []
+    errored = False
     try:
         async for fd in worker.execute(prompt=prompt_text, context=context):
             captured.append(fd)
@@ -185,14 +191,32 @@ async def _run_turn_and_capture(
             except Exception:
                 logger.debug("[run-headless] emit_flow_data failed", exc_info=True)
     except Exception:
+        errored = True
         logger.exception("[run-headless] worker error")
-        return
     finally:
         _PROMPT_WORKERS.pop(process.id, None)
+        # Headless turn is over. Land the process in a terminal status and
+        # rewrite cli_config so opening it in a PTY later resumes the saved
+        # session interactively, instead of re-running the print-mode
+        # invocation (which fails with "session already in use").
+        process.status = ProcessStatus.FAILED.value if errored else ProcessStatus.STOPPED.value
+        cli_cfg_next = dict(process.cli_config or {})
+        cli_cfg_next.pop("print_mode", None)
+        cli_cfg_next.pop("output_format", None)
+        if process.session_id:
+            cli_cfg_next["resume"] = True
+        process.cli_config = cli_cfg_next
+        try:
+            await process.save(someone_typeid)
+        except Exception:
+            logger.debug("[run-headless] terminal save failed", exc_info=True)
         try:
             await process.notify_updated()
         except Exception:
             logger.debug("[run-headless] terminal notify_updated failed", exc_info=True)
+
+    if errored:
+        return
 
     text = _extract_assistant_text(captured)
     if not text:

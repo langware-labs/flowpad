@@ -33,8 +33,10 @@ export function buildConversationItems(
   drafts: readonly FlowMessage[],
   backfilledIds: ReadonlySet<string>,
 ): ConversationItem[] {
+  const pointerIds = new Set<string>();
   const items: ConversationItem[] = [];
   for (const ptr of pointers) {
+    pointerIds.add(ptr.message_id);
     items.push({
       kind: ConversationItemKind.POINTER,
       key: backfilledIds.has(ptr.message_id) ? `${ptr.message_id}:resolved` : ptr.message_id,
@@ -44,6 +46,7 @@ export function buildConversationItems(
     });
   }
   for (const draft of drafts) {
+    if (draft.id && pointerIds.has(draft.id)) continue;
     items.push({
       kind: ConversationItemKind.DRAFT,
       key: `draft:${draft.id ?? ''}`,
