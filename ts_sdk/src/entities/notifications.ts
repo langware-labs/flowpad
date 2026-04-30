@@ -71,6 +71,8 @@ export interface SendNotificationParams {
   files?: File[];
   /** Sender's clean AgenticProcess id — stamped on the *sender's* task as task.metadata.my_process_id so the per-message Open chip is wired immediately. Receiver-side materialisation strips it. */
   sender_process_id?: string | null;
+  /** Pre-forked AgenticProcess id (Scenario C). Stamped on the new Task as `shared_process_id` so the recipient's first Approve & Execute reuses the existing fork instead of spawning a fresh process. */
+  forked_process_id?: string | null;
 }
 
 export async function sendNotification(params: SendNotificationParams): Promise<{ git_error?: string | null; sent?: boolean; email_error?: string | null }> {

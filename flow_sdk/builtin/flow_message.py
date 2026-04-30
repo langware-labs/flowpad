@@ -57,6 +57,7 @@ class FlowMessage(Entity):
     conversation_id: Optional[str] = APIField(None, description="ID of the parent Conversation, or None for legacy messages")
     is_read: bool = APIField(default=False)
     is_archived: bool = APIField(default=False)
+    is_draft: bool = APIField(default=False)
     _api_visible: ClassVar[bool] = True
 
     @model_serializer(mode="wrap")
