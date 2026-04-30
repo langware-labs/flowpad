@@ -51,6 +51,8 @@ from flow_sdk.builtin.bookmark import Bookmark
 
 logger = logging.getLogger(__name__)
 
+PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT = "Please run the following prompt:"
+
 
 def _unique_dir_name(base_name: str, parent: Path) -> str:
     """Return a directory name that doesn't already exist under parent."""
@@ -954,8 +956,9 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         return ApiFailResponse(message="message or prompt is required")
     if not message:
         # Synthesize a placeholder so the rest of the pipeline (which assumes a
-        # non-empty text body) keeps working for prompt-only sends.
-        message = "(proposed prompt)"
+        # non-empty text body) keeps working for prompt-only sends. The
+        # frontend suppresses the body when it matches this exact constant.
+        message = PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT
 
     task: Optional[Task] = None
     if task_id:
