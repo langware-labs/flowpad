@@ -23,9 +23,9 @@ export function useAnalysisTaskProgress(task: Task | null): AnalysisTaskProgress
 
   const processId =
     task && (task.task_type === TaskType.ANALYSIS || task.task_type === TaskType.CLASSIFICATION || isActionTask(task))
-      ? (task.metadata?.processId as string | undefined)
+      ? (task.process_id ?? undefined)
       : undefined;
-  const analysisPath = (task?.metadata?.analysisPath as string | undefined) ?? null;
+  const analysisPath = task?.analysis_path ?? null;
 
   // Reconnect to the AgenticProcess when processId changes.
   // Watch the process for WebSocket state updates so we detect completion.

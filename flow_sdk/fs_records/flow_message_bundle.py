@@ -30,9 +30,20 @@ _FM_FIELDS = {"type", "id", "text", "instruction", "context", "attachment",
 
 _TASK_FIELDS = {"type", "id", "title", "description", "status", "task_type",
                 "priority", "spec_id", "shared_by_id", "conversation_id",
-                "metadata", "due_at", "start_date",
+                "due_at", "start_date",
                 "project_id", "spec_type", "my_process_id",
-                "shared_process_id", "remote_project_id", "remote_project_name"}
+                "shared_process_id", "remote_project_id", "remote_project_name",
+                "active_form", "analysis_json_path", "analysis_path", "artifacts",
+                "branch", "classification_category", "classification_command",
+                "classification_path", "classification_title", "command",
+                "completed_at", "error_fingerprint", "folder_name", "output_dir",
+                "process_id", "project_name", "project_url",
+                "recipient_email", "repo_id", "result_uname", "sender_email",
+                "sender_name", "session_id", "skill_name", "skill_path",
+                "skill_scope", "task_type_label", "team_space_id",
+                "worker_session_id"}
+# `project_root` is intentionally excluded — it's the sender's local filesystem
+# path and means nothing on the receiver's machine.
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
@@ -332,8 +343,8 @@ async def unpack_bundle(
                         task_data = json.loads(manifest_file.read_text(encoding="utf-8"))
                         task_id = task_data.get("id") or entry_id
                         # Materialize the sender as a local User (contact list).
-                        bundle_sender_email = (task_data.get("metadata") or {}).get("sender_email") or ""
-                        bundle_sender_name = (task_data.get("metadata") or {}).get("sender_name") or None
+                        bundle_sender_email = task_data.get("sender_email") or ""
+                        bundle_sender_name = task_data.get("sender_name") or None
                         if bundle_sender_email:
                             await User.get_or_create_by_email(bundle_sender_email, name=bundle_sender_name)
                         # Note: we do NOT compute a deterministic Project uuid
@@ -344,30 +355,28 @@ async def unpack_bundle(
                         # picks via the mapping dialog; the picker stamps both
                         # task.project_id and conversation.project_id.
                         existing_task = await Task.get_one({"id": task_id})
-                        # Patch sender_email into existing task metadata if the bundle has it
+                        # Patch sender_email into the existing task if the bundle has it
                         # and it was missing (e.g. task imported before sender_email was added)
                         if existing_task and not overwrite:
-                            bundle_sender_email = (task_data.get("metadata") or {}).get("sender_email") or ""
-                            if bundle_sender_email and not (existing_task.metadata or {}).get("sender_email"):
-                                existing_task.metadata = {**(existing_task.metadata or {}), "sender_email": bundle_sender_email}
+                            bundle_sender_email = task_data.get("sender_email") or ""
+                            if bundle_sender_email and not existing_task.sender_email:
+                                existing_task.sender_email = bundle_sender_email
                                 await existing_task.save(owner_typeid)
                         if existing_task is None or overwrite:
-                            bundle_meta: dict = dict(task_data.get("metadata") or {})
-                            bundle_meta.pop("project_root", None)
                             sender_project_id = task_data.get("project_id") or None
-                            sender_project_name = (task_data.get("metadata") or {}).get("project_name") or None
-                            task = Task.model_validate({
+                            sender_project_name = task_data.get("project_name") or None
+                            # Strip the sender's project_root — meaningless on the receiver.
+                            task_payload = {k: v for k, v in task_data.items() if k != "project_root"}
+                            task_payload.update({
                                 "id": task_id,
                                 "title": task_data.get("title", ""),
-                                "spec_id": task_data.get("spec_id"),
-                                "shared_by_id": task_data.get("shared_by_id"),
-                                "conversation_id": task_data.get("conversation_id"),
-                                "metadata": bundle_meta or None,
                                 "status": task_data.get("status", "to_do"),
                                 "spec_type": task_data.get("spec_type") or None,
                                 "remote_project_id": sender_project_id,
                                 "remote_project_name": sender_project_name,
+                                "project_id": None,
                             })
+                            task = Task.model_validate(task_payload)
                             await task.save(owner_typeid)
 
                 elif entry_type == BuiltinEntityType.CONVERSATION.value:

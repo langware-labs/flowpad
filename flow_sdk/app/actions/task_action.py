@@ -220,11 +220,10 @@ async def handle_run_headless(task_id: str, prompt_text: str, someone_typeid: st
     if not task:
         return ApiFailResponse(message=f"Task not found: {task_id}")
 
-    task_meta = task.metadata or {}
-    workdir = (task_meta.get("project_root") or "").strip()
+    workdir = (task.project_root or "").strip()
     if not workdir:
         return ApiFailResponse(
-            message="task has no project_root in metadata — map it to a local project first"
+            message="task has no project_root — map it to a local project first"
         )
 
     local_user = await User.get_one({"uname": "local"})

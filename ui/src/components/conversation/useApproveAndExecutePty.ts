@@ -34,7 +34,6 @@ export function useApproveAndExecutePty({ task }: UseApproveAndExecutePtyOptions
     const taskId = task.id ?? '';
     if (!taskId || !messageId) return;
 
-    const taskMeta = (task.metadata as Record<string, unknown> | undefined) ?? {};
     const myProcessId = task.my_process_id ?? undefined;
     if (!myProcessId) {
       toast.warning('Start Claude Code session first', {
@@ -55,7 +54,7 @@ export function useApproveAndExecutePty({ task }: UseApproveAndExecutePtyOptions
     // Workdir must come from the task's own mapped project — never from the
     // global active project. The mapping gate guarantees project_root is set
     // by the time we get here.
-    const workdir = taskMeta.project_root as string | undefined;
+    const workdir = task.project_root ?? undefined;
     if (!workdir) {
       toast.warning('Map this conversation to a local project first.');
       return;

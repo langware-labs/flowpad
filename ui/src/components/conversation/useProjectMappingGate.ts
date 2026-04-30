@@ -12,15 +12,15 @@ import { useProjectMapping } from './useProjectMapping';
  * action automatically resumes.
  *
  * Three layers of resolution:
- *   1. `task.metadata.project_root` already set → mapped, no dialog.
- *   2. `task.metadata.project_root` missing but the per-machine mapping table
+ *   1. `task.project_root` already set → mapped, no dialog.
+ *   2. `task.project_root` missing but the per-machine mapping table
  *      has an entry for this task's `remote_project_id` → silently fetch the
  *      local Project and stamp the task. No dialog. This is what makes a
  *      *second* message from the same remote project route automatically
  *      after the receiver picked once.
  *   3. Neither — open the picker the next time an action needs a project.
  *
- * The gate watches `task.metadata.project_root` for the unset → set transition;
+ * The gate watches `task.project_root` for the unset → set transition;
  * whenever a continuation is pending and that flips, the continuation runs and
  * the dialog closes. Driving it off observed state (rather than the picker's
  * `onPicked` callback firing) means it works regardless of which picker
@@ -35,10 +35,9 @@ export function useProjectMappingGate(task: ITask | null | undefined) {
   const autoApplyAttemptedRef = useRef<Set<string>>(new Set());
   const autoMapAttemptedRef = useRef<Set<string>>(new Set());
 
-  const taskMeta = (task?.metadata as Record<string, unknown> | undefined) ?? {};
   const remoteProjectId = task?.remote_project_id ?? undefined;
   const remoteProjectName = task?.remote_project_name ?? '';
-  const projectRoot = taskMeta.project_root as string | undefined;
+  const projectRoot = task?.project_root ?? undefined;
   const taskId = task?.id ?? '';
 
   const mappedLocalId = remoteProjectId ? mapping[remoteProjectId] : undefined;

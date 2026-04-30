@@ -5,7 +5,7 @@ import { type ClassificationInfo, getClassificationInfo } from '@src/components/
 /**
  * Hook that resolves the classification result for a classification task.
  *
- * First checks task metadata (fast path). If not present, reads the
+ * First checks the task fields (fast path). If not present, reads the
  * classification.json file via fsManager (reliable path — same file
  * the Bookmarks tab links to). Tries the file read regardless of task status
  * since the file may exist even if the task is stuck in_progress.
@@ -13,13 +13,13 @@ import { type ClassificationInfo, getClassificationInfo } from '@src/components/
 export function useClassificationResult(task: Task | null): ClassificationInfo | null {
   const [fileResult, setFileResult] = useState<ClassificationInfo | null>(null);
 
-  // Fast path: metadata already has the fields
+  // Fast path: task already has the fields
   const metaResult = task ? getClassificationInfo(task) : null;
 
-  // Derive path: explicit classificationPath, or output_dir + '/classification.json'
+  // Derive path: explicit classification_path, or output_dir + '/classification.json'
   const classificationPath =
-    (task?.metadata?.classificationPath as string | undefined) ??
-    (task?.metadata?.output_dir ? `${(task.metadata.output_dir as string).replace(/\\/g, '/')}/classification.json` : null) ??
+    task?.classification_path ??
+    (task?.output_dir ? `${task.output_dir.replace(/\\/g, '/')}/classification.json` : null) ??
     null;
   const needsFileRead = !metaResult && !!classificationPath;
 
