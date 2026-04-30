@@ -23,6 +23,7 @@ from pydantic import SerializationInfo, model_serializer
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.app.actions.listen import set_plan_auto_approve
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.builtin.agentic_process.cli_drivers import (
     AgenticContext as _AgenticContext,
     WorkerDriver,
@@ -231,8 +232,18 @@ class AgenticProcess(Entity):
 
     instruction_content: str | None = APIField(default=None)
     asset_ref: str | None = APIField(default=None)
-    context: dict[str, Any] = APIField(default_factory=dict)
     context_data: dict[str, Any] = APIField(default_factory=dict)
+    context_entities: list[TypeId] = APIField(
+        default_factory=list,
+        description=(
+            "TypeIds of entities this process is contextually about — task, "
+            "conversation, spec, project, etc. Populated when the process is "
+            "invoked from a conversation (FlowMessage TYPE_ID attachments) and "
+            "copied across on fork. Project_id, when resolved later, is "
+            "appended in place. Surfaced by the UI to show what the process "
+            "is working on."
+        ),
+    )
     cli_config: dict[str, Any] = APIField(default_factory=dict)
     workdir: str | None = APIField(default=None)
     favorite_index: int | None = APIField(default=None)
@@ -584,6 +595,33 @@ class AgenticProcess(Entity):
             return exit_result
         return await self.start()
 
+    def add_context_entities(self, *type_ids: "TypeId | None") -> bool:
+        """Append TypeIds to ``context_entities``, deduped by (type, id). In-place.
+
+        Returns True iff at least one new ref was added — the caller can use
+        this to decide whether a save is warranted.
+        """
+        refs = list(self.context_entities or [])
+        seen = {(r.type, r.id) for r in refs}
+        added = False
+        for tid in type_ids:
+            if tid is None:
+                continue
+            key = (tid.type, tid.id)
+            if key in seen:
+                continue
+            refs.append(tid)
+            seen.add(key)
+            added = True
+        if added:
+            self.context_entities = refs
+        return added
+
+    def _bind_project_id(self, project_id: str) -> None:
+        """Set ``project_id`` and append the matching Project TypeId to ``context_entities``."""
+        self.project_id = project_id
+        self.add_context_entities(TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id))
+
     @action.post(action_name="recover-project")
     async def recover_project_action(self) -> ApiSuccessResponse | ApiFailResponse:
         """Re-attach this process to a Project derived from its ``workdir``.
@@ -600,7 +638,7 @@ class AgenticProcess(Entity):
             project = await Project.recover_by_path(self.workdir)
             if not project:
                 return ApiFailResponse(message=f"Could not recover a project for {self.workdir}")
-            self.project_id = project.id
+            self._bind_project_id(project.id)
             await self.save()
             return ApiSuccessResponse(data={"project": project.model_dump(mode="json")})
         except Exception as e:
@@ -625,6 +663,7 @@ class AgenticProcess(Entity):
                 session_id=self.session_id,
                 workdir=self.workdir,
                 visible=visible,
+                context_entities=list(self.context_entities or []),
             )
             await new_proc.save(owner)
             return ApiSuccessResponse(data={"id": new_proc.id, "type": new_proc.type})
@@ -1565,11 +1604,11 @@ class AgenticProcess(Entity):
 
         if not self.project_id:
             if self.context_data.get("project_id"):
-                self.project_id = self.context_data["project_id"]
+                self._bind_project_id(self.context_data["project_id"])
             else:
                 ancestor = await Project.get_ancestor(self.typeid)
                 if ancestor:
-                    self.project_id = ancestor.id
+                    self._bind_project_id(ancestor.id)
 
         # Fall back to @local project when no ancestor project is found
         if not self.project_id:
@@ -1578,7 +1617,7 @@ class AgenticProcess(Entity):
                 raise RuntimeError(
                     "No project found for agentic process and no @local project available"
                 )
-            self.project_id = local_project.id
+            self._bind_project_id(local_project.id)
 
         if self.project_id and (not self.workdir or not self.project_encoded_name):
             project = await Project.get_by_id(self.project_id)

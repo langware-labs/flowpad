@@ -4,7 +4,7 @@ import { Conversation, FlowMessage, QueryRequest, Task, TypeId } from '@sdk';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { resolveConversationDockPointer } from '@src/navigation/conversation-route-resolver';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import {
@@ -77,14 +77,14 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, refSett
   const isUnread = latestMessage ? !latestMessage.is_read : false;
 
   const handleClick = () => {
-    // Always open the standalone /dock/conversation/<id> route — never the
-    // project-nested form that Conversation.dockPointer falls into when
-    // project_id is set. The receiver's local DB doesn't have the sender's
-    // Project entity, so the project-loader 404s; the standalone route
-    // resolves the task + project via task.project_id instead and
-    // tolerates the receiver's pre-mapping state.
     if (!conv.id) return;
-    navigation.openDock(DockPointer.forConversation(conv.id));
+    navigation.openDock(
+      resolveConversationDockPointer({
+        conversationId: conv.id,
+        taskId: conv.task_id ?? null,
+        projectId: conv.project_id ?? null,
+      }),
+    );
   };
 
   return (

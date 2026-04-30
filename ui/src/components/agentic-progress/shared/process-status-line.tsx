@@ -70,7 +70,12 @@ export function ProcessStatusLine({
   const styles = sizeStyles[size];
 
   const status = process.status as ProcessStatus | undefined;
-  const canResume = !!process.session_id && status === ProcessStatus.STOPPED;
+  // STOPPED → click triggers start() with --resume.
+  // STARTING is the brief window between click and PTY-attached; treat it as
+  // already-opening so the cursor doesn't flash to "not-allowed" mid-transition.
+  const canResume =
+    !!process.session_id &&
+    (status === ProcessStatus.STOPPED || status === ProcessStatus.STARTING);
   const canOpenTerminal = ready || canResume;
 
   const iconSpinning =
@@ -91,10 +96,12 @@ export function ProcessStatusLine({
         className={cn(styles.icon, colorClass, iconSpinning && 'animate-spin', 'shrink-0')}
         aria-hidden
       />
-      <span className={cn(styles.text, colorClass, 'font-medium truncate')}>{label}</span>
+      <span className={cn(styles.text, colorClass, 'font-medium shrink-0')}>{label}</span>
 
       {secondary && (
-        <span className={cn(styles.secondary, 'truncate text-muted-foreground')}>{secondary}</span>
+        <span className={cn(styles.secondary, 'min-w-0 flex-1 truncate text-muted-foreground')}>
+          {secondary}
+        </span>
       )}
       {elapsed && (
         <span className={cn(styles.secondary, 'ml-auto shrink-0 text-muted-foreground tabular-nums')}>
