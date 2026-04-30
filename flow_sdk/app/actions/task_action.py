@@ -45,19 +45,44 @@ _REUSABLE_PROCESS_STATUSES: frozenset[str] = frozenset({
 })
 
 
+def _task_context_typeids(task: Task, project_id: Optional[str]) -> list[TypeId]:
+    """Build the [task, conversation, spec, project] TypeId list a process should
+    carry as ``context_entities`` when it's invoked from this task's conversation.
+
+    Skips slots the task hasn't filled yet (e.g. no spec on a "request" task,
+    no project until mapping). Project comes last so it stays appendable when
+    project mapping happens after spawn.
+    """
+    refs: list[TypeId] = [TypeId(type=BuiltinEntityType.TASK.value, id=task.id)]
+    if task.conversation_id:
+        refs.append(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=task.conversation_id))
+    if task.spec_id:
+        refs.append(TypeId(type=BuiltinEntityType.SPEC.value, id=task.spec_id))
+    if project_id:
+        refs.append(TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id))
+    return refs
+
+
 async def _resolve_or_spawn_process(task: Task, someone_typeid: str, workdir: str) -> AgenticProcess:
     """Reuse `task.shared_process_id` when reusable, otherwise spawn a fresh headless process."""
-    if task.shared_process_id:
-        existing = await AgenticProcess.get_one({"id": task.shared_process_id})
-        if existing and existing.status in _REUSABLE_PROCESS_STATUSES:
-            return existing
-
     project_id: Optional[str] = task.project_id
     if not project_id:
         from flow_sdk.builtin.project import Project
         project = await Project.recover_by_path(workdir)
         if project:
             project_id = project.id
+
+    if task.shared_process_id:
+        existing = await AgenticProcess.get_one({"id": task.shared_process_id})
+        if existing and existing.status in _REUSABLE_PROCESS_STATUSES:
+            # Reused process — keep its existing context but make sure this
+            # turn's task/conversation/spec/project are all in the list.
+            if existing.add_context_entities(*_task_context_typeids(task, project_id)):
+                try:
+                    await existing.save(someone_typeid)
+                except Exception:
+                    logger.debug("[run-headless] reuse context_entities save failed", exc_info=True)
+            return existing
 
     cli_opts = ClaudeCliOptions(
         print_mode=True,
@@ -71,6 +96,7 @@ async def _resolve_or_spawn_process(task: Task, someone_typeid: str, workdir: st
         visible=False,
         project_id=project_id or None,
         target_vfs_path=str(TypeId(type=BuiltinEntityType.TASK.value, id=task.id)),
+        context_entities=_task_context_typeids(task, project_id),
     )
     await process.save(someone_typeid)
     return process

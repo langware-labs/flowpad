@@ -98,7 +98,7 @@ function WorkflowRunItem({
         <Button
           variant="ghost"
           size="icon"
-          className="h-5 w-5 flex-shrink-0 opacity-0 group-hover:opacity-100"
+          className="h-5 w-5 flex-shrink-0"
           title="Open output folder"
           onClick={() => void handleOpenFolder()}
         >

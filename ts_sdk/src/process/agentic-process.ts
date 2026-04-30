@@ -81,8 +81,8 @@ export interface IAgenticProcess extends IEntity {
   instruction_content?: string;
   asset_ref?: string;
   workdir?: string | null;
-  context?: Record<string, unknown>;
   context_data?: Record<string, unknown>;
+  context_entities?: TypeId[];
   favorite_index?: number | null;
   readonly status?: ProcessStatus;
   readonly worker_status?: WorkerStatus;
@@ -426,11 +426,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Source VFS path of the executed file */
   asset_ref?: string;
 
-  /** Serialized execution context */
-  context?: Record<string, unknown>;
-
   /** Persisted context data for session restoration */
   context_data?: Record<string, unknown>;
+
+  /** TypeIds of entities this process is contextually about (task / conversation / spec / project / …). */
+  context_entities?: TypeId[];
 
   /** Optional pinning index for tab ordering */
   favorite_index?: number | null;
