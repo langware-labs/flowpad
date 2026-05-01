@@ -1206,6 +1206,8 @@ async def get_desktop_info() -> LmInfo:
 
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
     """
+    from flow_sdk.cloud_client import ApiConfig
+
     llm_providers = detect_available_llm_providers()
     installed_agents = await asyncio.to_thread(get_installed_agents)
     cloud_login_available = await is_cloud_login_available()
@@ -1217,6 +1219,7 @@ async def get_desktop_info() -> LmInfo:
         llm_providers=llm_providers,
         installed_agents=installed_agents,
         cloud_login_available=cloud_login_available,
+        cloud_url=ApiConfig.from_env().api_base_url,
         paths=app_paths,
         # Legacy fields for backward compatibility (deprecated)
         home=get_vfs_home_path(),

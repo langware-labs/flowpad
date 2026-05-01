@@ -50,6 +50,8 @@ export interface LmInfo {
   installed_agents: string[];
   /** Whether cloud login is available (valid cloud token exists) */
   cloud_login_available: boolean;
+  /** Cloud (FLOWPAD_HUB_URL) base URL — shown in login button tooltip */
+  cloud_url?: string | null;
   /** Application paths - all absolute, ready to use */
   paths?: AppPaths;
   /** @deprecated Use paths.home instead - Filesystem root (/ on Unix, C:\ on Windows) */

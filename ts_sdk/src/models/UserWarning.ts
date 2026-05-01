@@ -49,6 +49,7 @@ export const WARNING_IDS = {
   LLM_NOT_CONFIGURED: 'llm-not-configured',
   LLM_DISCONNECTED: 'llm-disconnected',
   CLOUD_DISCONNECTED: 'cloud-disconnected',
+  CLOUD_LOGIN_FAILED: 'cloud-login-failed',
   NO_COMPUTE_NODE: 'no-compute-node',
   SNIFFER_NOT_FOUND: 'sniffer-not-found',
   SECRETS_NOT_ENABLED: 'secrets-not-enabled',
@@ -81,12 +82,27 @@ export function createCloudDisconnectedWarning(): UserWarning {
     targetView: ViewType.CONNECTIONS,
     onClick: async () => {
       try {
-        const { oauthService, OAUTH_PROVIDERS } = await import('../services/oauth/oauth-service');
-        await oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
+        const { cloudManager } = await import('../services/cloud_login');
+        await cloudManager.login();
       } catch (e) {
-        console.error('[Cloud Login] Failed to get login URL:', e);
+        console.error('[Cloud Login] Failed:', e);
       }
     },
+  };
+}
+
+/**
+ * Create a warning for a failed cloud login attempt (rejected creds, timeout, network).
+ * The description carries the cloud-side error message.
+ */
+export function createCloudLoginFailedWarning(description: string): UserWarning {
+  return {
+    id: WARNING_IDS.CLOUD_LOGIN_FAILED,
+    icon: 'CloudOff',
+    color: 'red',
+    message: 'Cloud Login Failed',
+    description,
+    targetView: ViewType.CONNECTIONS,
   };
 }
 

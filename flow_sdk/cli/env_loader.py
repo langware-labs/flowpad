@@ -5,8 +5,7 @@ Loads environment variables from .env.local file using python-dotenv.
 """
 
 import os
-from pathlib import Path
-from urllib.parse import quote
+
 from dotenv import load_dotenv, find_dotenv
 
 
@@ -29,61 +28,3 @@ def cli_init():
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
     get_instance_settings()
-
-
-def get_login_url(redirect_url: str) -> str:
-    """
-    Get the login URL with the redirect URL properly formatted.
-
-    Derives the API base URL from FLOWPAD_HUB_URL (+ API_PREFIX), combines it
-    with LOGIN_URL, and replaces {redirect_url} with the URL-encoded redirect URL.
-
-    Args:
-        redirect_url: The redirect URL to include in the login URL
-
-    Returns:
-        The formatted login URL with the redirect URL encoded
-
-    Example:
-        If FLOWPAD_HUB_URL = "http://localhost:8000"
-        and LOGIN_URL = "/login?target_path={redirect_url}"
-        and redirect_url = "http://127.0.0.1:9006/post_login"
-        Returns: "http://localhost:8000/login?target_path=http%3A%2F%2F127.0.0.1%3A9006%2Fpost_login"
-    """
-    from flow_sdk.client import ApiConfig
-
-    # Create config from environment
-    config = ApiConfig.from_env()
-
-    # Get the full login URL template
-    login_url_template = config.get_full_login_url()
-
-    # URL encode the redirect URL
-    encoded_redirect = quote(redirect_url, safe='')
-
-    # Replace {redirect_url} placeholder with the encoded redirect URL
-    login_url = login_url_template.replace("{redirect_url}", encoded_redirect)
-
-    return login_url
-
-
-def get_logout_url(return_url: str) -> str:
-    """
-    Get the cloud logout URL with the return URL properly formatted.
-
-    Derives the API base URL from FLOWPAD_HUB_URL (+ API_PREFIX), combines it
-    with LOGOUT_URL, and replaces {return_url} with the URL-encoded return URL.
-
-    Args:
-        return_url: The URL to return to after logout (e.g. the local /post_logout endpoint)
-
-    Returns:
-        The formatted logout URL
-    """
-    from flow_sdk.client import ApiConfig
-
-    config = ApiConfig.from_env()
-    logout_url_template = config.get_full_logout_url()
-
-    encoded_return = quote(return_url, safe='')
-    return logout_url_template.replace("{return_url}", encoded_return)

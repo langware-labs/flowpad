@@ -85,7 +85,7 @@ async def validate_api_key_async(api_key: str) -> dict:
     Raises:
         Exception: If API key is invalid or validation fails
     """
-    from flow_sdk.client import FlowpadClient, ApiConfig
+    from flow_sdk.cloud_client import FlowpadClient, ApiConfig
 
     # Create API config from environment
     config = ApiConfig.from_env()

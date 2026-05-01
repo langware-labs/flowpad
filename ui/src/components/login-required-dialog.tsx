@@ -1,4 +1,4 @@
-import { navigator } from '@sdk';
+import { cloudManager } from '@sdk';
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '@src/components/ui/alert-dialog';
 import { Button } from '@src/components/ui/button';
 import { AlertDialogFooter } from '@src/components/ui/alert-dialog';
@@ -70,15 +70,11 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ open, onOpenChange, variant =
   const config = VARIANT_CONFIG[variant];
   const Icon = config.icon;
 
-  const handleGoogleLogin = () => {
-    trackEvent({ event: 'login_clicked', event_source: `${config.eventSource}_google` });
-    navigator.navigateToLogin(window.location.href, 'google-oauth2');
+  const handleLogin = (source: string) => () => {
+    trackEvent({ event: 'login_clicked', event_source: `${config.eventSource}_${source}` });
+    void cloudManager.login();
   };
-
-  const handleEmailLogin = () => {
-    trackEvent({ event: 'login_clicked', event_source: `${config.eventSource}_email` });
-    navigator.navigateToLogin();
-  };
+  const tooltip = cloudManager.cloudUrl ? `Logging in to ${cloudManager.cloudUrl}` : undefined;
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -104,12 +100,12 @@ const LoginDialog: React.FC<LoginDialogProps> = ({ open, onOpenChange, variant =
         </AlertDialogHeader>
 
         <AlertDialogFooter className="flex-col items-stretch gap-2 space-x-0 sm:flex-col sm:space-x-0">
-          <Button onClick={handleGoogleLogin} className="w-full justify-center border border-primary">
+          <Button onClick={handleLogin('google')} title={tooltip} className="w-full justify-center border border-primary">
             <GoogleIcon />
             <span className="ml-2">Continue with Google</span>
           </Button>
 
-          <Button variant="outline" onClick={handleEmailLogin} className="w-full justify-center">
+          <Button variant="outline" onClick={handleLogin('email')} title={tooltip} className="w-full justify-center">
             <Mail className="h-5 w-5" />
             <span className="ml-2">Continue with Email</span>
           </Button>
