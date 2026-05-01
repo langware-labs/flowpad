@@ -46,11 +46,8 @@ async def test_basic_indexer_dfs_discovers_projects_and_sessions(
     sess_a2.write_text("{}\n")
     sess_b1.write_text("{}\n")
 
-    state_dir: Path = tmp_path / "indexer_state"
-
     # Act
     indexer: FSIndexer = FSIndexer(
-        state_dir=state_dir,
         roots=[FSRef(home, record_type=RecordType.USER_HOME_FOLDER)],
     )
     indexer.add_function(RecordType.USER_HOME_FOLDER, claude_projects_fn)

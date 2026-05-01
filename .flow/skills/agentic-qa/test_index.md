@@ -1,18 +1,29 @@
 # Test Index
 
-> Last updated: 2026-04-04T19:20:00Z
+> Last updated: 2026-05-01T00:00:00Z
 > Scope: .md scenarios only. .md.ts-only files without a .md spec are not counted.
 
-## agentic-process (2 scenarios)
+## agentic-process (12 scenarios)
 | Scenario | Playwright | Fast Path | Skip |
 |----------|------------|-----------|------|
+| conversation_view_three_spawn_branches.md | no | no | - |
+| embedded_close_preserves_process.md | no | no | - |
+| fork_action_from_search_dock.md | no | no | - |
 | new_claude_session_no_console_errors.md | yes | no | - |
+| observability_surfaces.md | no | no | - |
+| open_shell_from_process_workdir.md | no | no | - |
+| process_restart_and_cli_flags.md | no | no | - |
 | process_terminal_shell_tab_navigates_url.md | yes | no | - |
+| processtoolbar_fork.md | no | no | - |
+| resume_session_from_recent.md | no | no | - |
+| session_info_popover.md | no | no | - |
+| worktree_lifecycle.md | no | no | - |
 
-## assets (1 scenario)
+## assets (2 scenarios)
 | Scenario | Playwright | Fast Path | Skip |
 |----------|------------|-----------|------|
 | assets_list_mode.md | no | no | - |
+| wiki_folder_tree.md | yes | no | - |
 
 ## chat (14 scenarios)
 | Scenario | Playwright | Fast Path | Skip |
@@ -21,6 +32,7 @@
 | chat_refresh_persistence.md | yes | no | - |
 | chat_tab_switching.md | yes | no | - |
 | closing_a_chat_produces_console_error_401.md | no | no | - |
+| doc_chat_per_type.md | no | no | - |
 | landing_to_new_chat.md | yes | no | - |
 | new_session_is_not_opened.md | no | no | - |
 | new_sessions_always_opened_with_session_1_header.md | no | no | - |
@@ -36,7 +48,15 @@
 |----------|------------|-----------|------|
 | cli_log_viewer.md | no | yes | - |
 
-## editor (11 scenarios)
+## collaboration (4 scenarios)
+| Scenario | Playwright | Fast Path | Skip |
+|----------|------------|-----------|------|
+| collaboration_room_add_process.md | no | no | - |
+| flowpad_assistant_docs_panel.md | no | no | - |
+| project_room_new_doc.md | no | no | - |
+| project_row_opens_collab_space.md | no | no | - |
+
+## editor (13 scenarios)
 | Scenario | Playwright | Fast Path | Skip |
 |----------|------------|-----------|------|
 | ami_creating_a_folder_crashes_desktop_app_agent_id_is_missin.md | no | no | - |
@@ -48,6 +68,8 @@
 | execute_flow_error_theme_vs_dark_not_found_you_may_need_to_l.md | no | no | - |
 | files_tab_download_directory_does_nothing.md | no | no | - |
 | files_tab_shows_local_c_as_root_and_doesnt_show_the_temp_wor.md | no | no | - |
+| milkdown_no_wiki_back_button.md | no | no | - |
+| milkdown_selection_toolbar.md | no | no | - |
 | new_prompt_save_indefinitely.md | no | no | - |
 | uploading_a_file_doesnt_show_up_in_the_side_bar.md | no | no | - |
 
@@ -62,11 +84,13 @@
 | refreshing_any_tab_other_than_main_app_error_404_agent_id_mi.md | no | no | - |
 | usage_cost_failed_to_fetch_cost_overview.md | no | no | - |
 
-## search (5 scenarios)
+## search (7 scenarios)
 | Scenario | Playwright | Fast Path | Skip |
 |----------|------------|-----------|------|
-| record_search_from_home.md | no | no | - |
-| record_search_view.md | no | yes | - |
+| rebuild_index_ui.md | no | no | - |
+| record_search_from_home.md | yes | no | - |
+| record_search_view.md | yes | yes | - |
+| scan_records_viewer.md | yes | no | - |
 | search_bar.md | yes | no | - |
 | search_limit_param.md | yes | no | - |
 | search_scan_info_stats.md | yes | no | - |
@@ -120,9 +144,21 @@
 | terminal_scroll_sync.md | yes | no | - |
 | terminal_tab_rename.md | yes | no | - |
 | time_gutter_and_prompt_annotations.md | no | no | - |
+| visible_process_still_pty.md | no | no | - |
 | web_app_artifact_not_created_when_prompted.md | yes | no | live-claude |
 | when_claude_runs_in_shell_and_is_thinking_not_all_the_output.md | yes | no | live-claude |
 
+## triggers (1 scenario)
+| Scenario | Playwright | Fast Path | Skip |
+|----------|------------|-----------|------|
+| trigger_process_target_typeid_str.md | no | no | - |
+
+## workflow (2 scenarios)
+| Scenario | Playwright | Fast Path | Skip |
+|----------|------------|-----------|------|
+| workflow_entity_create.md | no | no | - |
+| workflow_run_button.md | no | no | - |
+
 ## Notes
-- triggers/ and memo-panel/ have .md.ts Playwright files but no .md spec files — not counted
-- Total: 78 scenarios across 11 categories
+- Total: 100 scenarios across 14 categories
+- memo-panel/ has only .md.ts files; not counted

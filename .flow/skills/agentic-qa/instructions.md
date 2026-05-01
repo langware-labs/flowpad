@@ -11,6 +11,51 @@
 
 ## Learnings
 
+### 2026-05-01 — Full QA cycle, Phases 1-7
+
+**Real production bug — `flow_sdk/fs_records/claude/claude_debug_log.py:256`**
+`debug_dir()` had `return home / ".claude" / "debug"` — `home` was undefined. Fixed to `Path.home() / ".claude" / "debug"`. Surfaced by 3 ERRORs in `tests/unit/test_debug_log_real_scan.py`.
+
+**Test-rot from refactors — `from`-import binding traps**
+`flow_sdk.fs_store.record.set_default_records_data_root(path)` mutates the module-level lambda but modules that did `from flow_sdk.fs_store.record import get_default_records_data_root` keep their own binding. Fix: in test fixtures also `monkeypatch.setattr(flow_sdk.fs_records.shell_record, "get_default_records_data_root", lambda: path)`.
+
+**InstanceSettings test mode redirects every claude path**
+Tests that used `mock.patch("pathlib.Path.home", return_value=tmp_path)` and wrote to `~/.claude/projects/...` failed because production reads `get_instance_settings().claude_home / claude_projects_dir / user_home`, which point inside the `flowpad-test-<pid>` sandbox. Fix: write to `get_instance_settings().claude_projects_dir` instead, or `monkeypatch.setattr(<module>, "get_instance_settings", lambda: fake_settings)`.
+
+**Test pollution / order-dependency in `tests/api/`**
+11 tests in Phase 2 (`test_entity_record_*`, `test_project_record_sync`, `test_search_parent_path`) failed when run with the full `tests/api/` suite but pass when run in isolation or in smaller groups (verified via `--lf`). Some earlier test mutates DB / FTS state these tests depend on. Worth bisecting later.
+
+**Removed/changed APIs in SchemaRegistry, FSIndexer, AgentRecord**
+- `SchemaRegistry.SCHEMA_DIR` constant → `_schema_dir()` function
+- `SchemaRegistry.get_last_global_index_at()` removed (derived from per-type `max(last_indexed_at)`)
+- `SchemaRegistry.append_index()` no longer writes the global `index_log.jsonl` — per-type only
+- `SchemaRegistry.get_index_status()` is now async
+- `SchemaRegistry.register()` no longer writes `type_info.json` to disk (despite header docstring still listing it)
+- `FSIndexer.__init__()` no longer accepts `state_dir` kwarg
+- `AgentRecord.save()` no longer writes `.md` companion (body owned by user at `asset_ref`)
+- `flow_sdk.fs_records._claude_projects._CLAUDE_PROJECTS` constant → `_claude_projects_dir()` function
+- `flow_sdk.discovery.flowpad_discovery.SERVER_JSON_PATH` constant → `_server_json_path()` function
+
+**`bookmark` is no longer a default-indexed type**
+Per `_BUILTIN_DEFAULT_TYPES` comment: runtime-only types (BOOKMARK, ANNOTATION, AGENTIC_PROCESS, RECORD_ERROR, CLAUDE_ERROR) are written to the DB by `Record.save` and intentionally excluded from default-index list.
+
+**`tests/api/test_agentic_process_resume_after_restart.py` write-to-real-home bug**
+Test wrote fake JSONL to `Path.home() / ".claude" / "projects" / "test-resume-bug"` but production's `ClaudeSessionRecord.get` reads from `get_instance_settings().claude_projects_dir` (the test sandbox). Fixed to write into `get_instance_settings().claude_projects_dir`.
+
+**Phase 3 long-tests known failures (pre-existing on this run)**
+- `test_agentic_process_classify_with_agent[codex]`: codex response missing `category` field — likely codex output schema drift
+- `test_prompt_annotation_created_and_visible`: 30s timeout — flaky / e2e timing
+- `test_index_all_returns_total`: empty sandbox returns 0 indexed entries (same root cause as the seeded-data unit-test skips)
+
+**Phase 6 known failure**
+`tests/react/shell_stress.test.ts` "5 shells concurrently" — `getPtyChunks().length > 0` failed for at least one shell. Concurrency / timing.
+
+**Phase 7 known failure**
+`tests/long_tests/system_skills.test.ts` — `session_analysis` system skill not discoverable via `claude --add-dir`. Either skill was removed/renamed or `--add-dir` plumbing changed.
+
+**Test-generated skills leak into user's `~/.claude/skills`**
+Phase 5 (vitest API) and Phase 7 (vitest long) created skills like `fast-scan-<ts>-N`, `interleave-<ts>-N`, `per-type-i-<ts>-N`, `wiki-skill-<ts>` and they persisted across runs. Test cleanup is not deleting them. Visible side effect: the available-skills list pollutes between test runs.
+
 ### 2026-04-21 — PTY-less AgenticProcess.prompt streaming regression cycle
 
 **`add_process` on CollaborationRoom accepts bogus agentic_process_id (real bug)**
