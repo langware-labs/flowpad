@@ -33,8 +33,14 @@ def _compute_node_id(bootstrap_resp) -> str:
 
 
 def _make_fake_jsonl(session_id: str) -> Path:
-    """Write a minimal Claude JSONL transcript so _find_resumable_session finds it."""
-    projects_dir = Path.home() / ".claude" / "projects" / "test-resume-bug"
+    """Write a minimal Claude JSONL transcript so _find_resumable_session finds it.
+
+    Writes under the test instance's claude_projects_dir (sandbox), not the
+    user's real ~/.claude — InstanceSettings test mode redirects every
+    claude-path lookup, so the real home would never be read.
+    """
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    projects_dir = get_instance_settings().claude_projects_dir / "test-resume-bug"
     projects_dir.mkdir(parents=True, exist_ok=True)
     path = projects_dir / f"{session_id}.jsonl"
     entries = [

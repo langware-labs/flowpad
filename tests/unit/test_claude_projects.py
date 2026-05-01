@@ -96,7 +96,8 @@ def test_yields_real_path_from_jsonl(tmp_path: Path, monkeypatch: pytest.MonkeyP
     _make_project_dir(projects_root, "-Users-foo-my-project", real_cwd=str(real_dir))
 
     monkeypatch.setattr(
-        "flow_sdk.fs_records._claude_projects._CLAUDE_PROJECTS", projects_root
+        "flow_sdk.fs_records._claude_projects._claude_projects_dir",
+        lambda: projects_root,
     )
     result = list(iter_claude_project_paths(include_temp=True))
     assert result == [real_dir]
@@ -118,7 +119,8 @@ def test_falls_back_to_decode_when_no_jsonl(tmp_path: Path, monkeypatch: pytest.
     _make_project_dir(projects_root, encoded, real_cwd=None)  # no JSONL
 
     monkeypatch.setattr(
-        "flow_sdk.fs_records._claude_projects._CLAUDE_PROJECTS", projects_root
+        "flow_sdk.fs_records._claude_projects._claude_projects_dir",
+        lambda: projects_root,
     )
     # Patch _real_path_from_jsonl to return None (simulate empty project dir)
     monkeypatch.setattr(
@@ -128,8 +130,8 @@ def test_falls_back_to_decode_when_no_jsonl(tmp_path: Path, monkeypatch: pytest.
     # Neutralize the `/` / `$HOME` safety filter so the decode fallback is
     # what the assertion measures.
     monkeypatch.setattr(
-        "flow_sdk.fs_records._claude_projects._INVALID_PROJECT_ROOTS",
-        set(),
+        "flow_sdk.fs_records._claude_projects._invalid_project_roots",
+        lambda: set(),
     )
     result = list(iter_claude_project_paths())
     assert result == [real_dir]
@@ -144,7 +146,8 @@ def test_deduplicates_same_real_path(tmp_path: Path, monkeypatch: pytest.MonkeyP
     _make_project_dir(projects_root, "-b", real_cwd=str(real_dir))
 
     monkeypatch.setattr(
-        "flow_sdk.fs_records._claude_projects._CLAUDE_PROJECTS", projects_root
+        "flow_sdk.fs_records._claude_projects._claude_projects_dir",
+        lambda: projects_root,
     )
     result = list(iter_claude_project_paths(include_temp=True))
     assert len(result) == 1
@@ -159,7 +162,8 @@ def test_skips_nonexistent_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     )  # path does not exist
 
     monkeypatch.setattr(
-        "flow_sdk.fs_records._claude_projects._CLAUDE_PROJECTS", projects_root
+        "flow_sdk.fs_records._claude_projects._claude_projects_dir",
+        lambda: projects_root,
     )
     result = list(iter_claude_project_paths())
     assert result == []
@@ -178,7 +182,8 @@ def test_hyphenated_project_name_resolved_correctly(
     )
 
     monkeypatch.setattr(
-        "flow_sdk.fs_records._claude_projects._CLAUDE_PROJECTS", projects_root
+        "flow_sdk.fs_records._claude_projects._claude_projects_dir",
+        lambda: projects_root,
     )
     result = list(iter_claude_project_paths(include_temp=True))
     assert result == [real_dir]
@@ -190,7 +195,8 @@ def test_empty_projects_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     projects_root.mkdir(parents=True)
 
     monkeypatch.setattr(
-        "flow_sdk.fs_records._claude_projects._CLAUDE_PROJECTS", projects_root
+        "flow_sdk.fs_records._claude_projects._claude_projects_dir",
+        lambda: projects_root,
     )
     assert list(iter_claude_project_paths()) == []
 
@@ -198,7 +204,7 @@ def test_empty_projects_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 def test_missing_projects_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Returns empty list when ~/.claude/projects doesn't exist."""
     monkeypatch.setattr(
-        "flow_sdk.fs_records._claude_projects._CLAUDE_PROJECTS",
-        tmp_path / "nonexistent",
+        "flow_sdk.fs_records._claude_projects._claude_projects_dir",
+        lambda: tmp_path / "nonexistent",
     )
     assert list(iter_claude_project_paths()) == []

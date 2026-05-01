@@ -9,11 +9,11 @@ from unittest.mock import MagicMock, patch
 from flow_sdk.discovery.flowpad_discovery import (
     HOUR_IN_SECONDS,
     MAX_FAILURES_PER_HOUR,
-    SERVER_JSON_PATH,
     FlowpadDiscoveryResult,
     FlowpadServerInfo,
     FlowpadStatus,
     _ServerState,
+    _server_json_path,
 )
 
 
@@ -47,7 +47,7 @@ class TestServerStateCache(unittest.TestCase):
     """Tests for _ServerState caching behavior."""
 
     def setUp(self):
-        self.state = _ServerState(SERVER_JSON_PATH)
+        self.state = _ServerState(_server_json_path())
 
     def test_cache_returns_same_result_when_port_file_unchanged(self):
         """Cache should return same result if port file hasn't changed."""
@@ -110,7 +110,7 @@ class TestRateLimiting(unittest.TestCase):
     """Tests for rate limiting behavior."""
 
     def setUp(self):
-        self.state = _ServerState(SERVER_JSON_PATH)
+        self.state = _ServerState(_server_json_path())
 
     def test_not_rate_limited_initially(self):
         """Should not be rate limited with no failures."""
@@ -178,7 +178,7 @@ class TestServerSimulation(unittest.TestCase):
     """Tests simulating server running/not running scenarios."""
 
     def setUp(self):
-        self.state = _ServerState(SERVER_JSON_PATH)
+        self.state = _ServerState(_server_json_path())
 
     def test_server_running(self):
         """Simulate server is running."""
@@ -270,7 +270,7 @@ class TestIntegration(unittest.TestCase):
 
     def test_full_cycle_server_down_then_up(self):
         """Test full cycle: server down, rate limit, server up, notifications resume."""
-        state = _ServerState(SERVER_JSON_PATH)
+        state = _ServerState(_server_json_path())
         mock_stat = MagicMock()
         mock_stat.st_mtime = 1000.0
         state._path = MagicMock()

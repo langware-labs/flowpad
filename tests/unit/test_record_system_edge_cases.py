@@ -304,10 +304,11 @@ class TestNoData:
         finally:
             set_default_records_root(old)
 
-    def test_get_index_status_never_indexed(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_get_index_status_never_indexed(self, tmp_path):
         """get_index_status() returns never_indexed=True when no log files exist."""
-        with patch("flow_sdk.fs_store.schema_registry.SCHEMA_DIR", tmp_path):
-            status = SchemaRecord.get_index_status()
+        with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
+            status = await SchemaRecord.get_index_status()
         assert status.never_indexed is True
         assert status.last_indexed_at is None
         assert status.stale is False

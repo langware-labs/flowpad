@@ -1157,16 +1157,22 @@ class TestPluginDiscovery:
 
         return claude_home, install_path
 
-    def test_plugin_hooks_discovered(self, tmp_path):
+    def test_plugin_hooks_discovered(self, tmp_path, monkeypatch):
         claude_home, install_path = self._setup_plugin(tmp_path)
-        with mock.patch("pathlib.Path.home", return_value=tmp_path):
-            records = _parse_hooks_from_plugins()
+        # Production code reads claude_home via get_instance_settings(); patch
+        # the module-level reference inside claude_hook_record.
+        import flow_sdk.fs_records.claude.claude_hook_record as _hook_mod
+        fake = type("S", (), {"claude_home": claude_home, "user_home": tmp_path})()
+        monkeypatch.setattr(_hook_mod, "get_instance_settings", lambda: fake)
+        records = _parse_hooks_from_plugins()
         assert len(records) == 2
 
-    def test_plugin_root_resolved(self, tmp_path):
+    def test_plugin_root_resolved(self, tmp_path, monkeypatch):
         claude_home, install_path = self._setup_plugin(tmp_path)
-        with mock.patch("pathlib.Path.home", return_value=tmp_path):
-            records = _parse_hooks_from_plugins()
+        import flow_sdk.fs_records.claude.claude_hook_record as _hook_mod
+        fake = type("S", (), {"claude_home": claude_home, "user_home": tmp_path})()
+        monkeypatch.setattr(_hook_mod, "get_instance_settings", lambda: fake)
+        records = _parse_hooks_from_plugins()
 
         pre = [r for r in records if r.event_type == "PreToolUse"][0]
         post = [r for r in records if r.event_type == "PostToolUse"][0]
@@ -1226,7 +1232,7 @@ class TestLegacyDiscovery:
     def _scope_value(scope):
         return scope.value if hasattr(scope, "value") else str(scope)
 
-    def test_legacy_claude_json(self, tmp_path):
+    def test_legacy_claude_json(self, tmp_path, monkeypatch):
         """Hooks from ~/.claude.json are discovered with 'legacy' scope."""
         # Create ~/.claude.json with hooks
         legacy = tmp_path / ".claude.json"
@@ -1240,6 +1246,14 @@ class TestLegacyDiscovery:
 
         # Create empty ~/.claude/ so _default_search_paths doesn't fail
         (tmp_path / ".claude").mkdir()
+
+        # Patch get_instance_settings inside claude_hook_record so user_home /
+        # claude_home resolve to tmp_path during discovery.
+        import flow_sdk.fs_records.claude.claude_hook_record as _hook_mod
+        fake = type(
+            "S", (), {"claude_home": tmp_path / ".claude", "user_home": tmp_path}
+        )()
+        monkeypatch.setattr(_hook_mod, "get_instance_settings", lambda: fake)
 
         with mock.patch("pathlib.Path.home", return_value=tmp_path):
             rl = ClaudeHookRecordList()
