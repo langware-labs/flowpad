@@ -6,11 +6,12 @@ Tests for authentication and keystore functionality.
 import pytest
 from flow_sdk.cli.app_config import clear_user, set_user
 from flow_sdk.cli.auth.hub_login import (
+    SERVICE_NAME,
+    _api_key_name,
     set_api_key,
     get_api_key,
     delete_api_key,
     is_logged_in,
-    AuthConstants
 )
 
 
@@ -58,19 +59,18 @@ def test_auth_keystore():
 
 def test_auth_constants():
     """
-    Test that auth constants are properly defined.
+    Verify the keyring service constant + per-instance username pattern:
+    prod stays at the legacy ``flowpad_api_key`` (zero migration); other
+    instances suffix with ``:<instance_name>``.
     """
-    assert AuthConstants.SERVICE_NAME.value == "Flowpad.ai.app_secrets", \
-        f"Expected SERVICE_NAME='Flowpad.ai.app_secrets', got '{AuthConstants.SERVICE_NAME.value}'"
-
-    assert AuthConstants.API_KEY_NAME.value == "flowpad_api_key", \
-        f"Expected API_KEY_NAME='flowpad_api_key', got '{AuthConstants.API_KEY_NAME.value}'"
+    assert SERVICE_NAME == "Flowpad.ai.app_secrets"
+    # Test instance: under the test fixture, instance_name is "test"
+    assert _api_key_name() == "flowpad_api_key:test", \
+        f"Expected per-instance suffix for test, got '{_api_key_name()}'"
 
     print("✓ Auth constants verified:")
-    print(f"  - SERVICE_NAME: {AuthConstants.SERVICE_NAME.value}")
-    print(f"  - API_KEY_NAME: {AuthConstants.API_KEY_NAME.value}")
-
-    print("\n✅ Auth constants are correct")
+    print(f"  - SERVICE_NAME: {SERVICE_NAME}")
+    print(f"  - api_key_name (test instance): {_api_key_name()}")
 
 
 def test_delete_nonexistent_key():
