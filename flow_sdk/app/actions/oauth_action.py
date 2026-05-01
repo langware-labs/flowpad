@@ -159,24 +159,15 @@ async def _handle_status(provider: str) -> ApiResponse:
 
 async def _handle_flowpad_cloud_disconnect() -> ApiResponse:
     """Handle flowpad_cloud disconnect: clear local credentials and return the cloud logout URL."""
-    import os
+    from flow_sdk.cli.auth.cloud_login import clear_cloud_credentials
+    from flow_sdk.cli.auth.cloud_urls import get_logout_url
+    from flow_sdk.instance_settings import get_instance_settings
 
-    from flow_sdk.cli.app_config import set_user
-    from flow_sdk.cli.auth.hub_login import delete_api_key
-    from flow_sdk.cli.env_loader import get_logout_url
-    from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
-    from flow_sdk.server import state as server_state
+    clear_cloud_credentials()
 
-    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
-    post_logout_url = f"http://127.0.0.1:{port}/post_logout"
+    port = get_instance_settings().port
+    post_logout_url = f"http://127.0.0.1:{port}/api/v1/cloud/logout_callback"
     cloud_logout_url = get_logout_url(post_logout_url)
-
-    delete_api_key()
-    set_user({})
-    server_state.login_result = None
-    server_state.login_received.clear()
-    invalidate_bootstrap_cache()
-
     return ApiSuccessResponse(data={"remaining_attachment_count": 0, "browser_url": cloud_logout_url})
 
 
@@ -203,19 +194,21 @@ async def _get_flowpad_cloud_oauth_auth() -> ApiResponse:
     """Generate Flowpad cloud login URL."""
     import os
 
-    from flow_sdk.cli.env_loader import get_login_url
+    from flow_sdk.cli.auth.cloud_urls import get_login_url
+    from flow_sdk.instance_settings import get_instance_settings
 
-    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
     public_url = os.environ.get("FLOWPAD_DOCKER_PUBLIC_URL", "").strip()
-    callback_url = f"{public_url}/post_login" if public_url else f"http://127.0.0.1:{port}/post_login"
-
-    auth_url = get_login_url(callback_url)
+    callback_path = "/api/v1/cloud/login_callback"
+    if public_url:
+        callback_url = f"{public_url}{callback_path}"
+    else:
+        callback_url = f"http://127.0.0.1:{get_instance_settings().port}{callback_path}"
 
     return ApiSuccessResponse(
         data=OauthClientRequestInfo(
             provider=OAuthProvider.FLOWPAD_CLOUD,
-            auth_url=auth_url,
-            # Fixed ID — must match the oauth_request_id broadcast by /post_login
+            auth_url=get_login_url(callback_url),
+            # Fixed ID — must match the oauth_request_id broadcast by _finalize_login
             oauth_request_id=OAuthProvider.FLOWPAD_CLOUD,
         )
     )

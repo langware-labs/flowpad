@@ -13,7 +13,7 @@ import { navigator } from './services/navigationService';
 import * as Sentry from '@sentry/browser';
 import { ContextEntitiesEnum } from './FlowSync/context';
 import { getContextEntityFromLocalStorage } from './FlowSync/context-local-storage';
-import { OAuthEventType, OAUTH_PROVIDERS } from './services/oauth/oauth-service';
+import { cloudManager } from './services/cloud_login';
 import { ConnectionManager } from './websocket';
 
 declare global {
@@ -42,22 +42,9 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       // Store bootstrap info in dataContext for UI access (e.g., desktop_info)
       dataContext.bootstrapInfo = bootstrapInfo;
 
-      // Load cloud user lazily — fire-and-forget, must not block page load
-      if (dataContext.cloudLoginAvailable) {
-        void dataContext.loadCloudUser();
-      }
-
-      // Reload on cloud login and logout completion (works for both browser popup and Electron external browser)
-      dataManager.on(OAuthEventType.OAUTH_FLOW_COMPLETE, async (msg: { provider: string }) => {
-        if (msg.provider === OAUTH_PROVIDERS.FLOWPAD_CLOUD) {
-          const callback = (window as any).__postCloudLoginCallback as (() => Promise<void>) | undefined;
-          if (callback) {
-            (window as any).__postCloudLoginCallback = undefined;
-            try { await callback(); } catch (e) { console.error('[postLogin] callback failed', e); }
-          }
-          window.location.reload();
-        }
-      });
+      // Seed cloudManager from bootstrap; it owns isLoggedIn / currentUser / cloudUrl
+      // and listens to oauth WS events for the lifetime of the app.
+      void cloudManager.bootstrap(bootstrapInfo.desktop_info);
 
       // Load schemas (pass empty array if null to prevent re-fetching)
       await dataManager.loadSchemas(bootstrapInfo.schemas || []);

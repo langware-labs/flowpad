@@ -52,7 +52,7 @@ class CLIContext:
         Returns:
             ApiConfig instance
         """
-        from flow_sdk.client import ApiConfig
+        from flow_sdk.cloud_client import ApiConfig
 
         # Create config from environment
         return ApiConfig()

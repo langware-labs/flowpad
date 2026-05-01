@@ -1,7 +1,7 @@
 import uuid
 from enum import Enum
 from flow_sdk._compat import StrEnum
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -110,6 +110,8 @@ class OAuthMessage(BaseMessage):
     message_type: str = WSMessageType.OAUTH_MSG.value
     oauth_request_id: str
     status: OAuthMessageStatus
+    message: Optional[str] = None
+    user: Optional[Dict[str, Any]] = None
 
 
 class EntityMessage(BaseMessage):

@@ -3,6 +3,7 @@ export * from './secrets-service';
 export * from './secretApprovalGate';
 export * from './membershipService';
 export * from './navigationService';
+export * from './cloud_login';
 export * from './funcService';
 export * from './authService';
 export * from './jobService';

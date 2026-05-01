@@ -43,6 +43,7 @@ class LmInfo(BaseModel):
     llm_providers: List[str] = []
     installed_agents: List[str] = []  # List of agent names (e.g., "Claude Code", "Cursor")
     cloud_login_available: bool = False  # Whether cloud login is available
+    cloud_url: Optional[str] = None  # FLOWPAD_HUB_URL — shown in login button tooltip
     # Application paths - all VFS-relative, ready to use
     paths: Optional[AppPaths] = None
     # Legacy desktop paths (deprecated - use paths instead)

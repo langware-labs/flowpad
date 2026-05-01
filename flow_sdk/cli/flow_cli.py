@@ -436,40 +436,37 @@ def auth_login(
             typer.echo(f"✗ Login failed: {e}", err=True)
             raise typer.Exit(1)
     else:
-        # Browser-based login flow
-        import webbrowser
+        # Cloud login chokepoint — decides env-mode vs browser-mode internally.
+        import asyncio
 
-        from flow_sdk.cli.env_loader import get_login_url
+        from flow_sdk.cli.auth.cloud_login import cloud_login
         from flow_sdk.server.app import wait_for_post_login
 
-        port = _discover_port()
-
-        # Build the callback URL
-        callback_url = f"http://127.0.0.1:{port}/post_login"
-
-        # Get the formatted login URL with the callback URL
-        full_login_url = get_login_url(callback_url)
-
-        typer.echo("\n🌊 Opening browser for Flowpad login...")
-        typer.echo(f"Callback URL: {callback_url}")
-        typer.echo(f"Full Login URL: {full_login_url}\n")
-
-        # Open browser
-        webbrowser.open(full_login_url)
-
-        # Wait for the login callback
-        result = wait_for_post_login()
-
-        if result.get("success"):
-            typer.echo("\n✓ Successfully logged in to Flowpad")
-            typer.echo("✓ API key stored securely in system keyring")
-            if "user" in result:
-                typer.echo(f"✓ User ID: {result['user'].get('id')}")
-        else:
-            typer.echo(f"\n✗ Login failed: {result.get('message', 'Unknown error')}", err=True)
-            if "error" in result:
-                typer.echo(f"  Error: {result['error']}", err=True)
+        typer.echo("\n🌊 Logging in to Flowpad...")
+        try:
+            launch = asyncio.run(cloud_login())
+        except Exception as e:
+            typer.echo(f"\n✗ Login failed: {e}", err=True)
             raise typer.Exit(1)
+
+        if launch["status"] == "logged_in":
+            typer.echo("✓ Successfully logged in to Flowpad")
+            typer.echo("✓ API key stored securely in system keyring")
+            typer.echo(f"✓ User ID: {launch['user'].get('id')}")
+        else:
+            # Browser-mode: cloud_login opened the system browser; wait for the callback.
+            typer.echo(f"Opened browser: {launch['url']}\n")
+            result = wait_for_post_login()
+            if result.get("success"):
+                typer.echo("\n✓ Successfully logged in to Flowpad")
+                typer.echo("✓ API key stored securely in system keyring")
+                if "user" in result:
+                    typer.echo(f"✓ User ID: {result['user'].get('id')}")
+            else:
+                typer.echo(f"\n✗ Login failed: {result.get('message', 'Unknown error')}", err=True)
+                if "error" in result:
+                    typer.echo(f"  Error: {result['error']}", err=True)
+                raise typer.Exit(1)
 
 
 @auth_app.command("logout")
@@ -509,8 +506,8 @@ def auth_test(delay: Annotated[int, typer.Option(help="Delay in seconds before a
     port = _discover_port()
 
     # Build the test login URL with callback and delay
-    callback_url = f"http://127.0.0.1:{port}/post_login"
-    test_login_url = f"http://127.0.0.1:{port}/test_login?callback={callback_url}&delay={delay}"
+    callback_url = f"http://127.0.0.1:{port}/api/v1/cloud/login_callback"
+    test_login_url = f"http://127.0.0.1:{port}/api/v1/cloud/test_login?callback={callback_url}&delay={delay}"
 
     typer.echo(f"\n🧪 Opening test login page with {delay} second delay...")
     typer.echo(f"Test URL: {test_login_url}\n")
