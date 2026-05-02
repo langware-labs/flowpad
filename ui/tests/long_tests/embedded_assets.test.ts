@@ -77,13 +77,23 @@ You are a test agent.
     await proc.embeddedAssets.attach(agentRef);
     expect(proc.embeddedAssets.list().map((r) => r.toString())).toEqual([agentRef]);
 
-    // Read server-side to confirm persistence
-    const refreshed = await dataManager.getByTypeId<AgenticProcess>(proc.typeId);
+    // Read server-side to confirm persistence. Server appends the assets dir
+    // to ``additional_dirs`` and pushes the update via WebSocket; the cached
+    // entity reflects it once that WS message lands. Under suite load that
+    // can take a beat — poll briefly instead of asserting on a single snapshot
+    // so the test isn't racing a fan-out we can't observe directly.
+    const deadline = Date.now() + 5000;
+    let refreshed: AgenticProcess | null = null;
+    while (Date.now() < deadline) {
+      refreshed = await dataManager.getByTypeId<AgenticProcess>(proc.typeId);
+      if ((refreshed?.additional_dirs ?? []).some((d) => d.endsWith('/assets'))) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
     const refreshedRefs = (refreshed?.embedded_asset_refs ?? []).map((r) => r.toString());
     expect(refreshedRefs).toEqual([agentRef]);
     expect(
       (refreshed?.additional_dirs ?? []).some((d) => d.endsWith('/assets')),
-      'additional_dirs should contain the assets path after attach',
+      `additional_dirs should contain the assets path after attach (got: ${JSON.stringify(refreshed?.additional_dirs)})`,
     ).toBe(true);
 
     // Detach

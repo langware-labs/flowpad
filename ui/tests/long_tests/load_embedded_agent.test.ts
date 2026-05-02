@@ -73,11 +73,21 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
 
     await proc.loadEmbeddedAgent(agentFilePath);
 
-    // Fetch fresh from server to confirm persistence
-    const refreshed = await dataManager.getByTypeId<AgenticProcess>(proc.typeId);
+    // Fetch fresh from server to confirm persistence. Backend persists
+    // agents_json then pushes the updated cli_config via WebSocket; the
+    // cached entity reflects it once that WS message lands. Under suite
+    // load that can take a beat — poll briefly so the test isn't racing
+    // a fan-out we can't observe directly.
+    const deadline = Date.now() + 5000;
+    let refreshed: AgenticProcess | null = null;
+    let agentsJson: Record<string, unknown> | undefined;
+    while (Date.now() < deadline) {
+      refreshed = await dataManager.getByTypeId<AgenticProcess>(proc.typeId);
+      agentsJson = (refreshed?.cli_config as any)?.agents_json as Record<string, unknown> | undefined;
+      if (agentsJson && Object.keys(agentsJson).includes('pong-agent')) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
     expect(refreshed, 'Process not found in dataManager after loadEmbeddedAgent').not.toBeNull();
-
-    const agentsJson = (refreshed!.cli_config as any)?.agents_json as Record<string, unknown> | undefined;
     expect(agentsJson, 'cli_config.agents_json should be set after loadEmbeddedAgent').toBeDefined();
     expect(
       Object.keys(agentsJson!),
