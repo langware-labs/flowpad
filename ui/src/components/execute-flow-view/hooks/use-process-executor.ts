@@ -1,6 +1,8 @@
 import {
   Agent,
   connectionManager,
+  ContextEntitiesEnum,
+  dataContext,
   InstructionStatus,
   Project,
   WorkflowStatus,

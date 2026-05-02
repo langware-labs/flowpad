@@ -104,6 +104,17 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return this.uname ? `@${this.uname}` : this.id;
   }
 
+  /**
+   * Human-readable label for this entity. Defaults to ``name`` (when the
+   * subclass declares one) or ``id``. Subclasses can override for custom
+   * formatting (e.g. Project/Skill capitalize, Workflow strips a prefix).
+   * UI surfaces should prefer this over raw ``typeid`` when listing entities.
+   */
+  get displayName(): string {
+    const name = (this as unknown as { name?: string }).name;
+    return (name && name.trim()) || this.id || '';
+  }
+
   get expand(): EntityExpansion | undefined {
     return this._expand;
   }
