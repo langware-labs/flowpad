@@ -1,8 +1,9 @@
-"""
-Assets route for the local server.
+"""Assets route — type catalog and folder-prefix entity lookup.
 
-Provides asset-types endpoint for the Asset system.
-Tree and backlinks endpoints removed (Asset entity removed).
+Endpoints:
+- ``GET /api/v1/assets/types``    — registered user-asset entity types.
+- ``GET /api/v1/assets/by-path``  — entities whose ``asset_ref`` lives under
+  one or more folders. Thin wrapper over ``Entity.assets_by_path``.
 """
 
 from pathlib import Path
@@ -117,20 +118,13 @@ async def list_entities_by_path(
     """
     from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions  # noqa: PLC0415
 
-    if not folder:
-        return JSONResponse(
-            content={"status": "FAIL", "error": "folder query parameter is required"},
-            status_code=400,
-        )
-
     entities = await Entity.assets_by_path(PathQueryOptions(
         search_dirs=list(folder),
         types=list(record_type) if record_type else None,
+        include_system=include_system,
         limit=limit,
         offset=offset,
     ))
-    if not include_system:
-        entities = [e for e in entities if not getattr(e, "system", False)]
 
     return JSONResponse(content={"status": "SUCCESS", "data": {
         "search_dirs": list(folder),
