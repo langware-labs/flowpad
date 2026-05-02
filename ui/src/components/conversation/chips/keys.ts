@@ -23,13 +23,21 @@ export const ChipKey = {
   forTypeId: (typeId: TypeId) => `${typeId.type}:${typeId.id}`,
 } as const;
 
-/** Chips that ``TaskChips`` would render given its inputs. */
+/**
+ * Chips that ``TaskChips`` would render given its inputs. Derived from
+ * ``task.contextEntities`` (the unified getter — direct projection +
+ * private array) so it stays in sync as projections change. Plus the
+ * task self-header key.
+ */
 export function taskChipKeys(task: Task | null | undefined): Set<string> {
   const keys = new Set<string>();
   if (!task) return keys;
-  if (task.project_id) keys.add(ChipKey.project(task.project_id));
-  const specId = task.firstContextOfType?.('spec')?.id;
-  if (specId) keys.add(ChipKey.spec(specId));
+  if (task.id) keys.add(ChipKey.task(task.id));
+  for (const tid of task.contextEntities ?? []) {
+    keys.add(ChipKey.forTypeId(tid));
+  }
+  // The process button has its own dedup key (keyed on the parent task)
+  // so MessageChips can suppress a future "open Claude" chip if added.
   if (task.id) keys.add(ChipKey.process(task.id));
   return keys;
 }

@@ -138,6 +138,11 @@ export function EntityChip({ entity, inside, onClick, title, size = 'chip' }: En
 /**
  * Map an entity-type pair to the right DockPointer factory.
  * Centralised here so `EntityChip` itself stays declarative.
+ *
+ * For unknown entity types, falls back to a generic
+ * ``/dock/<type>/<id>`` pointer via ``DockPointer.fromUrl``. The dock
+ * router validates and 404s gracefully if there is no matching view —
+ * silent no-ops on click are worse than a visible "unknown view" page.
  */
 function buildDockPointer(
   resolved: { type: string; id: string },
@@ -150,8 +155,18 @@ function buildDockPointer(
       return DockPointer.forTasks(resolved.id, inside?.type === 'conversation' ? { conversationId: inside.id } : undefined);
     case 'spec':
       return DockPointer.forSpec(resolved.id);
+    case 'conversation':
+      return DockPointer.forConversation(resolved.id);
     default:
-      return null;
+      try {
+        return DockPointer.fromUrl(resolved.type, resolved.id);
+      } catch {
+        // The view-type registry rejected this type. Log so the
+        // misconfiguration is visible during development; return null so
+        // the click is a no-op rather than throwing into the React tree.
+        console.warn(`[EntityChip] no dock target for type=${resolved.type}`);
+        return null;
+      }
   }
 }
 

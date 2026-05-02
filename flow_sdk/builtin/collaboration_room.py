@@ -152,14 +152,10 @@ class CollaborationRoom(Entity):
         if not process_id:
             return ApiFailResponse(message="agentic_process_id is required")
         added = await self.add_process(process_id)
-        # Return both shapes for one transition: ``context_entities`` is the
-        # canonical new payload; ``agentic_process_ids`` is a convenience
-        # mirror for any caller still reading the old field name.
         return ApiSuccessResponse(
             data={
                 "ok": added,
                 "context_entities": [str(t) for t in self.context_entities],
-                "agentic_process_ids": self.agentic_process_ids,
             }
         )
 
