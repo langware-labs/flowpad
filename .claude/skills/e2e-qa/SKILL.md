@@ -126,16 +126,21 @@ TeamCreate(team_name="e2e-qa-analyze") # for analyze mode
 ### Spawning Teammates
 
 **qa-tester** (up to 3 for run mode; 1 for debug/validate):
+
+> **Tab ownership is mandatory.** Each qa-tester owns a private browser tab for the lifetime of the run — see ``agents/qa-tester.md`` "One tab per tester — never share". Without it, parallel testers race on the same DOM and corrupt each other's snapshots/clicks. The spawn prompt below makes the tester create + bind its own tab before claiming any task.
+
 ```
 Task(
   subagent_type="general-purpose",
   team_name="e2e-qa-cycle",
   name="qa-tester-1",  # qa-tester-2, qa-tester-3
-  prompt="You are a qa-tester teammate on the e2e-qa-cycle team.
+  prompt="You are a qa-tester teammate on the e2e-qa-cycle team. Your name is qa-tester-1.
     Read your full instructions at .claude/skills/e2e-qa/agents/qa-tester.md.
     Environment: APP_URL=http://localhost:${VITE_PORT}, API_URL=http://localhost:${LOCAL_SERVER_PORT}
     Output dir: <output-dir>/<timestamp>/
-    Check TaskList and claim available 'Run:' or 'Validate:' tasks. Work through them until none remain.",
+    BEFORE claiming any task: create your own browser tab (mcp__debugMcp__browser_tabs new, or tabs_create_mcp) and record the id as MY_TAB_ID. Every browser_* call you make must operate on MY_TAB_ID — never share another tester's tab.
+    Check TaskList and claim available 'Run:' or 'Validate:' tasks. Work through them until none remain.
+    On shutdown_request, close MY_TAB_ID before exiting.",
   run_in_background=true
 )
 ```

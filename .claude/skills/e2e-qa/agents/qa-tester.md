@@ -170,11 +170,23 @@ cd ui && VITE_PORT=4097 npx playwright test \
 
 ## Browser Step Execution
 
-For each browser step, map the leading verb to an action:
+### One tab per tester — never share
+
+Each qa-tester teammate **owns its own browser tab** for the lifetime of the run. Multiple testers driving the same tab races on `browser_snapshot` / `browser_click` and corrupts each other's state. Before claiming the first task:
+
+1. Call `mcp__debugMcp__browser_tabs(list)` (or the chrome equivalent) to enumerate existing MCP tabs.
+2. If you have not yet bound a tab to your name, create one: `mcp__claude-in-chrome__tabs_create_mcp` (chrome) or `browser_tabs(action="new")` (debugMcp). Record the returned tab id in your scratchpad as `MY_TAB_ID`.
+3. Every subsequent `browser_*` call must include that tab id. Never call `browser_navigate(url)` without first selecting `MY_TAB_ID` — `browser_tabs(action="select", index=MY_TAB_ID)` if needed.
+4. Do **not** reuse another tester's tab even if it looks idle. If you can't create a fresh tab, surface this to the manager via `SendMessage` and wait — do not pick a stranger's tab.
+5. On shutdown_request, close `MY_TAB_ID` so the next run starts clean.
+
+If a step description says "open a new tab" as part of the user flow under test, that is a *scenario tab* — separate from your `MY_TAB_ID`. Track it locally; close it before moving to the next scenario so your owned tab remains the one with `MY_TAB_ID`.
+
+For each browser step, map the leading verb to an action (all calls below operate on `MY_TAB_ID`):
 
 ### navigate
 ```
-browser_navigate(url)
+browser_navigate(url)   # on MY_TAB_ID
 ```
 
 ### click
