@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
-import { ExternalLink, FileCheck2, FileText, FolderOpen, MessageSquare, Sparkles } from 'lucide-react';
+import { ExternalLink, FileCheck2, FileText, FolderOpen, MessageSquare, Sparkles, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { TypeId } from '@sdk';
+import { APIEntity, TypeId } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
@@ -51,6 +52,7 @@ export const ICON_BY_TYPE: Record<string, LucideIcon> = {
   task: FileText,
   conversation: MessageSquare,
   spec: FileCheck2,
+  user: User,
   skill: Sparkles,
   markdown: FileText,
 };
@@ -151,4 +153,38 @@ function buildDockPointer(
     default:
       return null;
   }
+}
+
+interface ContextEntityChipProps {
+  /** TypeId from an entity's ``contextEntities`` list. */
+  typeId: TypeId;
+  inside?: { type: string; id: string };
+  onClick?: () => void;
+  title?: string;
+  size?: 'chip' | 'inline';
+}
+
+/**
+ * Renders one entry from an entity's dynamic ``contextEntities`` list as an
+ * ``EntityChip`` — looks up the target entity to populate the chip's display
+ * name (``title`` for Spec/Plan, ``name`` for Project/User, etc.), then
+ * delegates rendering. This is the data-driven counterpart to ``EntityChip``:
+ * callers iterating ``entity.contextEntities`` use this wrapper instead of
+ * hand-constructing each chip.
+ */
+export function ContextEntityChip({ typeId, inside, onClick, title, size }: ContextEntityChipProps) {
+  const { data } = useEntity<APIEntity<any>>(typeId);
+  const resolvedName =
+    (data as any)?.title ??
+    (data as any)?.name ??
+    typeId.id.slice(0, 8);
+  return (
+    <EntityChip
+      entity={{ typeId, type: typeId.type, id: typeId.id, name: resolvedName }}
+      inside={inside}
+      onClick={onClick}
+      title={title}
+      size={size}
+    />
+  );
 }
