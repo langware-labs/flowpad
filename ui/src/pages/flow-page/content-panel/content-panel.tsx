@@ -29,6 +29,7 @@ import { CollaborationPage } from '@src/components/collaboration';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
 import { InboxView } from '@src/components/inbox-view/InboxView';
 import { ConversationRoute } from '@src/components/conversation';
+import { SpecRoute } from '@src/pages/spec/SpecRoute';
 import { TriggersView } from '@src/components/triggers-view';
 import { SurveyView } from '@src/components/survey/SurveyView';
 import { TabbedTerminal, useStandardTabNav } from '@src/components/terminal';
@@ -532,6 +533,13 @@ export function ContentPanel() {
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
           >
             <ConversationRoute />
+          </TabsContent>
+
+          <TabsContent
+            value={ViewType.SPEC}
+            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
+          >
+            <SpecRoute />
           </TabsContent>
         </div>
       </Tabs>

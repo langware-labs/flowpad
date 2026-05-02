@@ -310,4 +310,10 @@ export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
+  [ViewType.SPEC]: {
+    title: 'Spec',
+    iconName: 'FileText',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+  },
 };

@@ -23,7 +23,7 @@ export {
   getDisplayStatus,
   getWorkerMode,
 } from './agentic-types';
-export type { ParsedUIUri, UIComponentPayload, StatusBearingProcess } from './agentic-types';
+export type { ParsedUIUri, ProcessIconKey, UIComponentPayload, StatusBearingProcess } from './agentic-types';
 
 export { AgenticProcess } from './agentic-process';
 export type { IAgenticProcess, ProcessState, ExecuteOptions, SpawnResult } from './agentic-process';
