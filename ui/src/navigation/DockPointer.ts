@@ -167,11 +167,16 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Create dock pointer for skills viewer
-   * @param skillName - Optional skill name to view/edit
+   * Create dock pointer for the skill editor / list under the Assets browser.
+   * The standalone Skills view was removed; this helper now routes into the
+   * Assets editor (when a name is given) or the Assets list of skills.
+   * @param skillName - Optional skill name / vfs path to open in the editor
    */
   static forSkills(skillName?: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.SKILLS, skillName, undefined, layout);
+    if (skillName) {
+      return DockPointer.forAssetEditor('skill', skillName, layout);
+    }
+    return DockPointer.forAssetList('skill', undefined, layout);
   }
 
   /**

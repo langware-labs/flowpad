@@ -210,7 +210,9 @@ export function initNotificationListener(): () => void {
           }
         } else if (eventName === 'started_generating_skill' && context?.skill_name) {
           useNotificationStore.getState().addNotification({
-            category: ViewType.SKILLS,
+            // Skills view was removed; categorise skill-generation notifications
+            // under the Assets browser where skills now live.
+            category: ViewType.ASSETS,
             title: `Generating: ${context.skill_name}`,
             navigationPath: context.session_id
               ? `/dock/${ViewType.SHELL}/${context.session_id}`

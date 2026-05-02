@@ -48,7 +48,7 @@ test.describe('Chat Input Controls', () => {
     await gotoShell(page);
 
     // The "+" plus button is the always-present tab-opener affordance.
-    // Inline opener buttons (opener-inline-claude, open-terminal-tab-button)
+    // Inline opener buttons (opener-inline-claude, opener-plus-button)
     // only render once the user has pinned that opener.
     const plus = page.getByTestId('opener-plus-button');
     await expect(plus).toBeVisible({ timeout: 5_000 });
