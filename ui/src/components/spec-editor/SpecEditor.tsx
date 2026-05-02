@@ -319,7 +319,7 @@ const PlanFileEditor: React.FC = () => {
  * content lives on the entity record itself).
  */
 const SpecEntityEditor: React.FC = () => {
-  const { currentDock } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
   const specId = useMemo(() => {
     const head = currentDock?.pointer?.split('/')[0];
     return head || null;
@@ -331,9 +331,6 @@ const SpecEntityEditor: React.FC = () => {
   );
   const { data: spec } = useEntity<Spec>(specTypeId);
 
-  // Track local edits separately from the entity to avoid every keystroke
-  // round-tripping through the entity store. We sync down on first load, and
-  // up on save.
   const [localContent, setLocalContent] = useState<string | null>(null);
   useEffect(() => {
     if (spec?.content != null && localContent == null) setLocalContent(spec.content);
@@ -348,6 +345,8 @@ const SpecEntityEditor: React.FC = () => {
     }
   };
   const handleContentChange = useCallback((v: string) => onChangeRef.current(v), []);
+
+  const [showShareDialog, setShowShareDialog] = useState(false);
 
   if (!specId) {
     return (
@@ -365,18 +364,59 @@ const SpecEntityEditor: React.FC = () => {
   }
 
   const chatTarget = specTypeId?.toString() ?? null;
+  // SendPlanNotificationDialog keys off the file path for the title fallback
+  // and the .flowmsg filename. A spec entity has no file, so we synthesise
+  // one from its title — title-derived names are still meaningful to humans.
+  const syntheticPath = `${(spec.title ?? 'spec').replace(/[^a-zA-Z0-9-_ ]/g, '').trim() || 'spec'}.md`;
 
   return (
-    <div className="flex h-full flex-col">
-      <EditorWithSidePanel chatTarget={chatTarget}>
-        <div className="plan-milkdown-editor h-full overflow-auto">
-          <MilkdownEditor
-            content={localContent ?? ''}
-            onChange={handleContentChange}
-            editorMode="editor"
-          />
+    <div className="relative flex h-full flex-col">
+      {/* Top action bar — same shape as PlanFileEditor's, with only the
+          buttons that apply to a Spec record (no filePath / no AgenticProcess
+          means Execute Plan / Update Plan / Bookmark are skipped). */}
+      <div className="border-b border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowShareDialog(true)}
+            title="Package this spec as a task and share it with someone"
+          >
+            <Send className="mr-2 h-4 w-4" />
+            Share as Task
+          </Button>
+
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => navigation.openDock(DockPointer.forInbox())}
+            title="Go back to inbox"
+          >
+            <X className="mr-2 h-4 w-4" />
+            Cancel
+          </Button>
         </div>
-      </EditorWithSidePanel>
+      </div>
+
+      <SendPlanNotificationDialog
+        open={showShareDialog}
+        onClose={() => setShowShareDialog(false)}
+        planFilePath={syntheticPath}
+        planContent={localContent ?? spec.content ?? ''}
+        workdir={null}
+      />
+
+      <div className="min-h-0 flex-1">
+        <EditorWithSidePanel chatTarget={chatTarget}>
+          <div className="plan-milkdown-editor h-full overflow-auto">
+            <MilkdownEditor
+              content={localContent ?? ''}
+              onChange={handleContentChange}
+              editorMode="editor"
+            />
+          </div>
+        </EditorWithSidePanel>
+      </div>
     </div>
   );
 };
