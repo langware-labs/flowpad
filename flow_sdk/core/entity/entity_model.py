@@ -27,13 +27,16 @@ except ImportError:
                 return func
             return decorator
 
+from dataclasses import dataclass, field
+from pathlib import Path
+
 from pydantic import Field, SerializationInfo, SerializeAsAny, TypeAdapter, ValidationError, model_serializer
 
 from flow_sdk.config import StorageProvider
 from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
-from flow_sdk.db.drivers.query import OrderType, QueryFilter
+from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, QueryOp
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 import flow_sdk.service_log as service_log
@@ -44,6 +47,23 @@ from .blob_index_entity_model import BLOB_INDEX_VFS_PATH, BlobIndexEntity
 from .entity_env.env_types import EntityEnvVars, EnvVar, EnvVarType
 
 EntityType = TypeVar("EntityType", bound="Entity")
+
+
+@dataclass
+class PathQueryOptions:
+    """Filter options for ``Entity.assets_by_path``.
+
+    - ``search_dirs``: one or more absolute folder paths; results are the
+      union of entities whose ``asset_ref`` is a strict descendant of any.
+    - ``types``: limit to these entity types. ``None`` means *all registered
+      types* (most rows have empty ``asset_ref`` and are excluded by the
+      range filter anyway).
+    """
+
+    search_dirs: List[str | Path]
+    types: List[str] | None = None
+    limit: int = 200
+    offset: int = 0
 
 
 class Entity(DBEntity):
@@ -105,6 +125,62 @@ class Entity(DBEntity):
         if not hasattr(driver, "browse_by_type"):
             return []
         return await driver.browse_by_type(entity_type=record_type, limit=limit, status=status)
+
+    @classmethod
+    async def assets_by_path(cls, opts: PathQueryOptions) -> list["Entity"]:
+        """Return entities whose ``asset_ref`` is a strict descendant of any
+        folder in ``opts.search_dirs``.
+
+        Pushdown: each search dir becomes a half-open lex range
+        ``asset_ref >= "<dir>/" AND asset_ref < "<dir>0"`` against
+        ``json_extract(data, '$.asset_ref')`` (`/` is `0x2F`, next codepoint
+        is `0`). Multiple dirs are OR'd. The query is dispatched per type
+        because the SQL driver mandates a type filter — when ``opts.types``
+        is None, every registered type is queried. Results are union'd,
+        sorted by ``asset_ref``, then paged.
+        """
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+        if not opts.search_dirs:
+            return []
+
+        folder_terms: list[ExpressionNode] = []
+        for d in opts.search_dirs:
+            f = canonical_posix_path(d).rstrip("/")
+            if not f:
+                continue
+            folder_terms.append(ExpressionNode(
+                op=QueryOp.AND,
+                operands=[
+                    ExpressionNode(op=QueryOp.GE, operands=["asset_ref", f + "/"]),
+                    ExpressionNode(op=QueryOp.LT, operands=["asset_ref", f + "0"]),
+                ],
+            ))
+        if not folder_terms:
+            return []
+
+        folder_expr: ExpressionNode = (
+            folder_terms[0] if len(folder_terms) == 1
+            else ExpressionNode(op=QueryOp.OR, operands=folder_terms)
+        )
+
+        types_to_query = opts.types if opts.types else list(SchemaRegistry.get_all_types())
+
+        results: list[Entity] = []
+        for type_name in types_to_query:
+            qf = QueryFilter(type=type_name, match=folder_expr)
+            qf.order_by = {"asset_ref": "asc"}
+            try:
+                results.extend(await cls.get_all(qf))
+            except Exception:
+                # A registered type may not have any rows or the entity class
+                # may be unreachable in this build — skip it rather than fail
+                # the whole query.
+                continue
+
+        results.sort(key=lambda e: getattr(e, "asset_ref", "") or "")
+        end = opts.offset + opts.limit if opts.limit else None
+        return results[opts.offset:end]
 
     @classmethod
     def allocate_id(cls, data: dict) -> str:
@@ -641,7 +717,8 @@ class Entity(DBEntity):
         ar = rec.compute_asset_ref(scope_root, self)
         if ar is None or getattr(ar, "_path", None) is None:
             return
-        path_str = str(ar._path)
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+        path_str = canonical_posix_path(ar._path)
         if hasattr(self, "asset_ref"):
             self.asset_ref = path_str
         # parent_path lets DocsCategory / PlansCategory filter the markdown
