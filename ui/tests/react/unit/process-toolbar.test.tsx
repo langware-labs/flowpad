@@ -1,4 +1,4 @@
-import { AgenticProcess } from '@sdk';
+import { AgenticProcess, TypeId } from '@sdk';
 import { render, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,6 +17,7 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 function makeProcess(overrides: Partial<AgenticProcess> = {}): AgenticProcess {
   return {
     id: 'proc-1',
+    typeId: new TypeId('agentic_process', 'proc-1'),
     session_id: 'session-1',
     pty_pid: 'pty-1',
     workdir: '/home/user/project',

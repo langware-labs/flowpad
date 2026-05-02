@@ -1,4 +1,4 @@
-import { remarkPlanNote, transformPlanNoteChildren } from '@/components/spec-editor/plan-note-plugin';
+import { remarkPlanNote, transformPlanNoteChildren } from '@src/components/spec-editor/plan-note-plugin';
 import type { MarkdownNode } from '@milkdown/transformer';
 import { describe, expect, it } from 'vitest';
 
