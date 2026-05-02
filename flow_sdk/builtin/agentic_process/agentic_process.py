@@ -13,6 +13,8 @@ import asyncio
 import json
 import logging
 import time
+from dataclasses import asdict, dataclass
+from enum import Enum
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
@@ -48,6 +50,40 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.shell import Shell
 
 logger = logging.getLogger(__name__)
+
+
+# ── Asset descriptors ──────────────────────────────────────────────────────────
+# Read-side surface for ``AgenticProcess.get_asset_descriptors`` — see plan
+# "AgenticProcess.get_assets() — unified read-side asset view". The descriptors
+# unify the scattered fields (``embedded_asset_refs``, ``embedded_agent_ids``,
+# ``cli_config.agents_json``, ``additional_dirs``) plus path-discovered assets
+# under user/project/workdir into one list the UI can consume.
+
+class AssetSource(str, Enum):
+    EMBEDDED = "embedded"              # materialized via embedded_asset_refs
+    INLINE = "inline"                  # cli_config.agents_json / embedded_agent_ids — no file
+    PROJECT_DIR = "project_dir"        # under project.fs_storage_mount_path
+    USER_DIR = "user_dir"              # under user_home
+    WORKDIR = "workdir"                # process workdir if distinct from project/user
+    ADDITIONAL_DIR = "additional_dir"  # additional_dirs entries (excl. auto-appended assets dir)
+
+
+@dataclass
+class AssetDescriptor:
+    """Single asset row visible to an AgenticProcess.
+
+    A given source asset may appear multiple times in the list — once per
+    distinct source (e.g. EMBEDDED + USER_DIR for the same skill).
+    """
+    typeid: str               # serialized TypeId, e.g. "skill-<uuid>"
+    source: AssetSource
+    posix_path: str | None    # canonical POSIX path; None for INLINE
+
+
+# Types treated as executable agent inputs by the asset-management UI.
+# Markdown / spec / plan / claude_rules etc. are intentionally excluded —
+# they're documentation, not things the agent runs.
+EXECUTABLE_ASSET_TYPES: list[str] = ["skill", "agent"]
 
 
 # ── prompt-action transient state (per-process locks + live workers) ─────────
@@ -1357,6 +1393,208 @@ class AgenticProcess(Entity):
         """Return the current embedded_asset_refs as serialized TypeId strings."""
         refs = [str(r) for r in (self.embedded_asset_refs or [])]
         return ApiSuccessResponse(data={"refs": refs})
+
+    # ── Asset descriptors (read-only unified view) ────────────────────────────
+
+    async def get_asset_descriptors(self) -> list[AssetDescriptor]:
+        """Return a unified list of assets visible to this process.
+
+        Composed from three sources of truth:
+          1. EMBEDDED   — ``self.embedded_asset_refs`` + computed materialized path.
+          2. INLINE     — ``cli_config.agents_json`` (or ``embedded_agent_ids``
+                           fallback). No file → ``posix_path=None``.
+          3. Path-scan  — one ``Entity.assets_by_path()`` over the union of
+                           user/project/workdir/additional_dirs, filtered to
+                           ``EXECUTABLE_ASSET_TYPES`` and attributed to the
+                           longest-prefix source.
+
+        Duplicates across sources are intentional — the same source skill may
+        appear as both EMBEDDED (materialized into the process) and USER_DIR
+        (still globally available).
+        """
+        from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+        descriptors: list[AssetDescriptor] = []
+        seen_embedded: set[str] = set()
+
+        assets_dir = await self._assets_dir_path()
+
+        # 1. EMBEDDED
+        for ref in self.embedded_asset_refs or []:
+            mat_path = await self._materialized_path_for(ref, assets_dir)
+            descriptors.append(AssetDescriptor(
+                typeid=str(ref),
+                source=AssetSource.EMBEDDED,
+                posix_path=canonical_posix_path(mat_path) if mat_path else None,
+            ))
+            seen_embedded.add(str(ref))
+
+        # 2. INLINE (don't double-count anything already EMBEDDED)
+        for tid in self._iter_inline_agent_typeids():
+            if tid in seen_embedded:
+                continue
+            descriptors.append(AssetDescriptor(
+                typeid=tid,
+                source=AssetSource.INLINE,
+                posix_path=None,
+            ))
+
+        # 3. Path-discovered
+        sources = await self._collect_source_dirs(assets_dir)
+        if sources:
+            entities = await Entity.assets_by_path(PathQueryOptions(
+                search_dirs=[s[0] for s in sources],
+                types=list(EXECUTABLE_ASSET_TYPES),
+                limit=10000,
+            ))
+            ranked = sorted(sources, key=lambda s: -len(s[0]))
+            for ent in entities:
+                ar_raw = getattr(ent, "asset_ref", None) or ""
+                if not ar_raw:
+                    continue
+                ar = canonical_posix_path(ar_raw)
+                src = next(
+                    (s for path, s in ranked if ar == path or ar.startswith(path + "/")),
+                    None,
+                )
+                if src is None:
+                    continue
+                descriptors.append(AssetDescriptor(
+                    typeid=f"{ent.type or ent.get_type()}-{ent.id}",
+                    source=src,
+                    posix_path=ar,
+                ))
+
+        return descriptors
+
+    async def _collect_source_dirs(
+        self, assets_dir: "Path"
+    ) -> list[tuple[str, AssetSource]]:
+        """Return distinct (canonical_posix_path, source) pairs to scan.
+
+        Smart-scan rules:
+          - user_home is always included.
+          - project mount path is included if the process has a project_id.
+          - workdir is included only when it's outside both user_home and
+            project_dir (otherwise it would be a noisy duplicate).
+          - additional_dirs are included except the auto-appended assets dir.
+          - Final list is deduped on canonical path.
+        """
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+        from flow_sdk.instance_settings import get_instance_settings
+
+        pairs: list[tuple[str, AssetSource]] = []
+        seen: set[str] = set()
+
+        def _add(p: "str | Path | None", source: AssetSource) -> None:
+            if not p:
+                return
+            try:
+                key = canonical_posix_path(p)
+            except (OSError, ValueError):
+                return
+            if not key or key in seen:
+                return
+            seen.add(key)
+            pairs.append((key, source))
+
+        _add(get_instance_settings().user_home, AssetSource.USER_DIR)
+
+        project_dir: str | None = None
+        if self.project_id:
+            try:
+                from flow_sdk.builtin.project import Project
+                proj = await Project.get_by_id(self.project_id)
+                project_dir = getattr(proj, "fs_storage_mount_path", None) if proj else None
+            except Exception:
+                project_dir = None
+        _add(project_dir, AssetSource.PROJECT_DIR)
+
+        # WORKDIR — only if outside the previously-added paths.
+        wd = getattr(self, "workdir", None)
+        if wd:
+            try:
+                wd_key = canonical_posix_path(wd)
+                if wd_key and wd_key not in seen and not any(
+                    wd_key == k or wd_key.startswith(k + "/") for k in seen
+                ):
+                    pairs.append((wd_key, AssetSource.WORKDIR))
+                    seen.add(wd_key)
+            except (OSError, ValueError):
+                pass
+
+        # ADDITIONAL_DIR — exclude the auto-appended assets dir.
+        try:
+            assets_key = canonical_posix_path(assets_dir)
+        except (OSError, ValueError):
+            assets_key = ""
+        for d in self.additional_dirs or []:
+            try:
+                key = canonical_posix_path(d)
+            except (OSError, ValueError):
+                continue
+            if not key or key == assets_key or key in seen:
+                continue
+            seen.add(key)
+            pairs.append((key, AssetSource.ADDITIONAL_DIR))
+
+        return pairs
+
+    async def _materialized_path_for(
+        self, ref: TypeId, assets_dir: "Path"
+    ) -> "Path | None":
+        """Compute the on-disk path of a materialized embedded asset.
+
+        Mirrors the layout written by ``_materialize_entity``:
+          - ``agent`` → ``<assets_dir>/.claude/agents/<name>.md``
+          - ``skill`` → ``<assets_dir>/.claude/skills/<name>``
+
+        TODO: when ``Record.materialize_into`` (tier 1 alignment) lands, swap
+        this for ``record.materialize_into(assets_dir).path`` so the layout is
+        owned by the record subclass instead of duplicated here.
+        """
+        try:
+            if ref.type == "agent":
+                from flow_sdk.fs_records.agent_record import AgentRecord
+                rec = AgentRecord.get(ref.id) or AgentRecord.load_agent(ref.id)
+                if rec is None:
+                    return None
+                name = rec.name or ref.id
+                return assets_dir / ".claude" / "agents" / f"{name}.md"
+            if ref.type == "skill":
+                from flow_sdk.fs_records.skill_record import SkillRecord
+                rec = SkillRecord.get(ref.id)
+                if rec is None:
+                    return None
+                name = rec.name or ref.id
+                return assets_dir / ".claude" / "skills" / name
+        except Exception:
+            return None
+        return None
+
+    def _iter_inline_agent_typeids(self) -> list[str]:
+        """Yield ``agent-<id-or-name>`` strings for inline-attached agents.
+
+        Primary source: keys of ``cli_config.agents_json``. These are agent
+        names (or ids) injected via ``--agents`` at session launch.
+        Fallback: ``embedded_agent_ids`` when ``cli_config.agents_json`` is
+        absent or empty.
+        """
+        cfg = self.cli_config or {}
+        agents_json = cfg.get("agents_json") or {}
+        if isinstance(agents_json, dict) and agents_json:
+            return [f"agent-{k}" for k in agents_json.keys()]
+        return [f"agent-{name}" for name in (self.embedded_agent_ids or [])]
+
+    @action.get(action_name="get-assets")
+    async def get_assets_action(self) -> "ApiSuccessResponse":
+        """HTTP wrapper around ``get_asset_descriptors``."""
+        items = await self.get_asset_descriptors()
+        return ApiSuccessResponse(data={"assets": [
+            {"typeid": d.typeid, "source": d.source.value, "posix_path": d.posix_path}
+            for d in items
+        ]})
 
     @action.get(action_name="get-history")
     async def get_history_action(self) -> "ApiSuccessResponse":
