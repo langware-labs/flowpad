@@ -35,3 +35,25 @@ export const ASSET_SOURCE_LABEL: Record<AssetSource, string> = {
   workdir: 'workdir',
   additional_dir: 'additional',
 };
+
+/**
+ * Sources whose underlying file/state lives outside this AgenticProcess —
+ * editing the entity from this process would propagate elsewhere (other
+ * processes, the project, the user globally), so the row is "read-only"
+ * from this process's perspective. To get an editable copy, attach the
+ * asset (which materializes an EMBEDDED row).
+ *
+ * Writable sources are the complement: ``embedded`` (private materialized
+ * copy in the process's own assets dir) and ``inline`` (lives in this
+ * process's ``cli_config``).
+ */
+export const READONLY_ASSET_SOURCES: readonly AssetSource[] = [
+  'project_dir',
+  'user_dir',
+  'workdir',
+  'additional_dir',
+];
+
+export function isReadOnlySource(source: AssetSource): boolean {
+  return READONLY_ASSET_SOURCES.includes(source);
+}

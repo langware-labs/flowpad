@@ -17,6 +17,8 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.agentic_process import (
     AssetDescriptor,
     AssetSource,
+    READONLY_ASSET_SOURCES,
+    is_readonly_source,
 )
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.project import Project
@@ -381,3 +383,58 @@ async def test_remove_dir_drops_descriptors(tree):
     proc.workdir = None
     descs4 = await proc.get_asset_descriptors()
     assert _by_source(descs4, AssetSource.WORKDIR) == []
+
+
+# ── Read-only policy ─────────────────────────────────────────────────────────
+
+
+def test_is_readonly_source_partition():
+    """is_readonly_source agrees with the documented policy for every member.
+
+    Writable iff the source state lives inside this AgenticProcess (an
+    EMBEDDED materialized copy or an INLINE cli_config key). Everything
+    else is read-only — editing the entity propagates beyond this process.
+    """
+    expected = {
+        AssetSource.EMBEDDED: False,
+        AssetSource.INLINE: False,
+        AssetSource.PROJECT_DIR: True,
+        AssetSource.USER_DIR: True,
+        AssetSource.WORKDIR: True,
+        AssetSource.ADDITIONAL_DIR: True,
+    }
+    # Every enum member is covered (no missing keys → guards drift).
+    assert set(expected) == set(AssetSource)
+    for source, want in expected.items():
+        assert is_readonly_source(source) is want, source
+
+    # READONLY_ASSET_SOURCES exactly equals the True set above.
+    assert READONLY_ASSET_SOURCES == frozenset(s for s, ro in expected.items() if ro)
+
+
+@pytest.mark.asyncio
+async def test_get_asset_descriptors_read_only_partition(tree, monkeypatch):
+    """Every descriptor returned by get_asset_descriptors() agrees with
+    is_readonly_source — no surprise/dynamic mismatches between actual
+    source-attribution and the policy helper."""
+    monkeypatch.setenv("FLOWPAD_TEST_SANDBOX", str(tree["user_home"]))
+    proc = _make_proc()
+    proc.workdir = str(tree["workdir_outside"])
+    proc.additional_dirs = [str(tree["extra_dir"])]
+    proc.embedded_asset_refs = [tree["ents"]["u_skill_user"].typeid]
+    proc.cli_config = {"agents_json": {"inline_x": {"description": "y"}}}
+
+    descs = await proc.get_asset_descriptors()
+    sources_seen = {d.source for d in descs}
+    # Sanity: this fixture exercises every source at least once.
+    assert sources_seen >= {
+        AssetSource.EMBEDDED,
+        AssetSource.INLINE,
+        AssetSource.USER_DIR,
+        AssetSource.WORKDIR,
+        AssetSource.ADDITIONAL_DIR,
+    }
+    for d in descs:
+        # Writable iff EMBEDDED or INLINE; everything else read-only.
+        expected_ro = d.source not in {AssetSource.EMBEDDED, AssetSource.INLINE}
+        assert is_readonly_source(d.source) is expected_ro, d

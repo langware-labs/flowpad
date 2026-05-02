@@ -1,14 +1,14 @@
 /**
  * ProcessToolbar — icon-only toolbar for a running AgenticProcess.
  *
- * Flags (Chrome, Full Trust, Debug) are consolidated into a CLI Options dropdown.
- * Column visibility + Trace filters are consolidated into a Columns & Trace dropdown.
+ * Flags (Chrome, Full Trust, Debug) live in the CLI Options dropdown and write
+ * straight to the entity. Column visibility + Trace filters live in Columns & Trace.
  *
- * Changing CLI flags requires stopping and restarting the PTY session,
- * surfaced via RestartRequiredOverlay.
+ * Restart awareness is backend-driven: any worker-relevant change flips
+ * `process.restart_required` and the top-left Restart button glows.
  */
 
-import { AgenticProcess, type Shell } from '@sdk';
+import { AgenticProcess, dataManager, type Shell } from '@sdk';
 import { hasWorkerStarted, ProcessStatus, WorkerStatus } from '@sdk/process/agentic-types.js';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
@@ -26,10 +26,9 @@ import {
   DropdownMenuLabel,
 } from '@src/components/ui/dropdown-menu';
 import { BugPlay, ExternalLink, Filter, GitFork, Info, RotateCcw, ScrollText, SlidersHorizontal, SquareTerminal, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useToast } from '@src/hooks/use-toast';
 import { ToastAction } from '@src/components/ui/toast';
-import { RestartRequiredOverlay } from './RestartRequiredOverlay';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { PTYViewer } from './pty-viewer';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
@@ -55,6 +54,18 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const { navigation } = useDockNavigation();
   const [showPtyViewer, setShowPtyViewer] = useState(false);
 
+  // Force re-render whenever any field on the process entity changes. Backend
+  // mutates the entity in place via castAndDeepAssign, so without an explicit
+  // subscription React stays unaware of fields like `restart_required` that
+  // aren't already shadowed by local component state. Use dataManager.subscribe
+  // directly with initialFetch=false — APIEntity.subscribe() forces initialFetch
+  // which would re-invoke the snapshot during subscription and cause an update loop.
+  useSyncExternalStore(
+    useCallback((cb) => dataManager.subscribe(process.typeId, cb, false), [process]),
+    () => process.restart_required,
+    () => process.restart_required,
+  );
+
   const hasSession = !!process.session_id;
   const workerStatus = process.workerStatus;
   // started: PTY is alive RIGHT NOW (gates Restart, CLI flag toggles, Apply)
@@ -72,20 +83,21 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const currentDanger = _cliOpts.permission_mode === 'bypassPermissions';
   const currentDebug = _cliOpts.debug;
 
-  // Local pending state
-  const [pendingChrome, setPendingChrome] = useState(currentChrome);
-  const [pendingDanger, setPendingDanger] = useState(currentDanger);
-  const [pendingDebug, setPendingDebug] = useState(currentDebug);
-  const [isApplying, setIsApplying] = useState(false);
   const [isForking, setIsForking] = useState(false);
   const [isRestarting, setIsRestarting] = useState(false);
 
-  // Reset pending when entity updates
-  useEffect(() => {
-    setPendingChrome(currentChrome);
-    setPendingDanger(currentDanger);
-    setPendingDebug(currentDebug);
-  }, [currentChrome, currentDanger, currentDebug]);
+  const persistCliFlags = useCallback(
+    async (overrides: { chrome?: boolean; danger?: boolean; debug?: boolean }) => {
+      if (!canToggle) return;
+      const cli = process.cliOptions;
+      if (overrides.chrome !== undefined) cli.chrome = overrides.chrome;
+      if (overrides.danger !== undefined) cli.permission_mode = overrides.danger ? 'bypassPermissions' : 'askUser';
+      if (overrides.debug !== undefined) cli.debug = overrides.debug;
+      process.cliOptions = cli;
+      await process.save();
+    },
+    [process, canToggle],
+  );
 
   // Toast when API_TIMEOUT detected — auto-dismisses if status recovers
   const { toast, dismiss } = useToast();
@@ -115,30 +127,6 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
     }
   }, [process.workerStatus]);
 
-  const hasPendingChanges =
-    pendingChrome !== currentChrome || pendingDanger !== currentDanger || pendingDebug !== currentDebug;
-
-  const handleApply = async () => {
-    setIsApplying(true);
-    try {
-      const updatedCli = process.cliOptions;
-      updatedCli.chrome = pendingChrome;
-      updatedCli.permission_mode = pendingDanger ? 'bypassPermissions' : 'askUser';
-      updatedCli.debug = pendingDebug;
-      process.cliOptions = updatedCli;
-      await process.save();
-      await process.restart();
-    } finally {
-      setIsApplying(false);
-    }
-  };
-
-  const handleCancelChanges = () => {
-    setPendingChrome(currentChrome);
-    setPendingDanger(currentDanger);
-    setPendingDebug(currentDebug);
-  };
-
   const handleFork = async () => {
     if (isForking) return;
     setIsForking(true);
@@ -160,7 +148,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
     }
   };
 
-  const anyCliActive = pendingChrome || pendingDanger || pendingDebug;
+  const anyCliActive = currentChrome || currentDanger || currentDebug;
   const anyTimeFieldActive = traceFilters.time || traceFilters.index || traceFilters.line || traceFilters.absLine || traceFilters.debugTime || traceFilters.refTime;
   const anyColActive = !colVis.trace || !colVis.time || !colVis.annotations || anyTimeFieldActive;
 
@@ -184,25 +172,25 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-72">
             <RichCheckboxItem
-              checked={pendingChrome}
+              checked={currentChrome}
               disabled={!canToggle}
-              onCheckedChange={(v) => canToggle && setPendingChrome(v)}
+              onCheckedChange={(v) => void persistCliFlags({ chrome: v })}
               label="Chrome browser"
               description="Enable browser automation via Chrome (--chrome)"
               docsUrl="https://docs.anthropic.com/en/docs/claude-code/cli-reference"
             />
             <RichCheckboxItem
-              checked={pendingDanger}
+              checked={currentDanger}
               disabled={!canToggle}
-              onCheckedChange={(v) => canToggle && setPendingDanger(v)}
+              onCheckedChange={(v) => void persistCliFlags({ danger: v })}
               label="Full Trust"
               description="Skip all permission prompts (--dangerously-skip-permissions)"
               docsUrl="https://docs.anthropic.com/en/docs/claude-code/settings"
             />
             <RichCheckboxItem
-              checked={pendingDebug}
+              checked={currentDebug}
               disabled={!canToggle}
-              onCheckedChange={(v) => canToggle && setPendingDebug(v)}
+              onCheckedChange={(v) => void persistCliFlags({ debug: v })}
               label="Debug logging"
               description="Verbose debug output (--debug)"
               docsUrl="https://docs.anthropic.com/en/docs/claude-code/cli-reference"
@@ -302,6 +290,36 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
           </DropdownMenuContent>
         </DropdownMenu>
 
+        {/* Restart — top-left, glows when backend signals process.restart_required */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex" style={(!started || isRestarting) ? { pointerEvents: 'auto' } : undefined}>
+              <button
+                data-testid="process-toolbar-restart"
+                data-restart-required={process.restart_required ? 'true' : 'false'}
+                className={`inline-flex h-7 w-7 items-center justify-center rounded transition-colors
+                  ${(!started || isRestarting) ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}
+                  ${process.restart_required && started
+                    ? 'animate-pulse bg-amber-500/20 text-amber-500 ring-2 ring-amber-500/60 shadow-[0_0_12px_rgba(245,158,11,0.55)] hover:bg-amber-500/30 dark:text-amber-400'
+                    : 'text-muted-foreground hover:bg-accent'}
+                `}
+                disabled={!started || isRestarting}
+                onClick={() => void handleRestart()}
+                aria-pressed={process.restart_required}
+                aria-label="Restart session"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="text-xs">
+            {isRestarting ? 'Restarting…'
+              : !started ? 'Session is not running'
+              : process.restart_required ? 'Restart required — config changed since start'
+              : 'Restart session'}
+          </TooltipContent>
+        </Tooltip>
+
         {/* Spacer */}
         <div className="flex-1" />
 
@@ -347,19 +365,6 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
         {/* Open in Worktree — next to Fork, hidden in embedded mode */}
         {!embedded && <OpenInWorktreeButton process={process} />}
 
-        {/* Restart */}
-        <IconToggleButton
-          icon={<RotateCcw className="h-3.5 w-3.5" />}
-          active={false}
-          tooltip={
-            isRestarting ? 'Restarting…'
-            : started ? 'Restart session'
-            : 'Session is not running'
-          }
-          disabled={!started || isRestarting}
-          onClick={() => void handleRestart()}
-        />
-
         {/* Session Info */}
         {hasSession && <SessionInfoPopover process={process} sessionStartTime={sessionStartTime} lastMessageTime={lastMessageTime} />}
 
@@ -397,15 +402,6 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
         )}
 
       </div>
-
-      {/* Restart overlay — positioned by parent's relative container over terminal content */}
-      {hasPendingChanges && canToggle && (
-        <RestartRequiredOverlay
-          onRestart={() => void handleApply()}
-          onCancel={handleCancelChanges}
-          isRestarting={isApplying}
-        />
-      )}
 
       <PTYViewer open={showPtyViewer} onClose={() => setShowPtyViewer(false)} shell={shell ?? null} />
     </TooltipProvider>

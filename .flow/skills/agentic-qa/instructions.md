@@ -133,3 +133,15 @@ There is no `tests/manual_regression/playwright.config.ts`. Each category has it
 
 **Terminal tests need gotoShell() helper — data-terminal-id is not reliable**
 The `data-terminal-id` selector from older chat scenarios is unreliable. Use `[data-testid="terminal-panels"]` and `[data-testid="terminal-panel"][data-active="true"] .xterm-rows` for terminal readiness checks. These are used in `helpers.ts:gotoShell()`.
+
+**Singleton lock collides between flowpad-oss (9008) + flowpad-app (9007) — 2026-05-02**
+Both backends write the same `~/.flow/server.json` lockfile regardless of port. Starting one while the other is up logs `[singleton] Server already running (pid=…) — exiting` and the new instance dies silently. Workaround for QA: kill the wrong-port backend before launching the target one (`kill $(lsof -ti :<other-port>)`). True fix would be per-instance lockfile naming based on port, out of scope for this cycle.
+
+**`uv run` resolves venv from cwd — must `cd` first — 2026-05-02**
+Running `uv run -m flow_sdk.server.run` from flowpad-oss cwd uses `flowpad-oss/.venv` AND reads `flowpad-oss/.env.local` (port 9008). To launch the prod backend (port 9007), `cd /Users/shlom/Documents/dev/flowpad-app && uv run ...` must be the same shell invocation (`&&` chains in the subshell).
+
+**Backend log scan catches migration drift — 2026-05-02**
+After any field-rename / field-drop migration, grep `/tmp/flow-prod.log` for `no attribute|AttributeError` to catch missed call sites that the type-check might have skipped (e.g. server-side python that the TS type system never sees). Caught one regression in `notification_scanner.py:287` reading `task.conversation_id` post-drop this cycle.
+
+**FlowMessage.conversation_id is direct, not in context_entities — by design — 2026-05-02**
+The `context_entities` consolidation kept FlowMessage.conversation_id as a standalone field because the message structurally threads on it. When validating round-trips, don't flag it as "legacy field present" — that's the correct shape per the classification rule "qualifier-or-structural-meaning ⇒ direct field stays".
