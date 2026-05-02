@@ -1,4 +1,4 @@
-import type { Task } from '@sdk';
+import type { Task, TypeId } from '@sdk';
 import type { ConversationTranscriptInfo } from '../find-conversation-transcript';
 
 /**
@@ -19,6 +19,8 @@ export const ChipKey = {
   transcript: (vfsPath?: string | null) => `transcript:${vfsPath ?? ''}`,
   sharedTerminal: (processId?: string | null) => `shared-terminal:${processId ?? ''}`,
   download: (messageId?: string | null) => `download:${messageId ?? ''}`,
+  /** Generic key for any context-entity TypeId (``<type>:<id>``). */
+  forTypeId: (typeId: TypeId) => `${typeId.type}:${typeId.id}`,
 } as const;
 
 /** Chips that ``TaskChips`` would render given its inputs. */
