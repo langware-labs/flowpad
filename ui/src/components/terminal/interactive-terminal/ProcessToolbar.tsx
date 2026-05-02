@@ -13,6 +13,7 @@ import { hasWorkerStarted, ProcessStatus, WorkerStatus } from '@sdk/process/agen
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
 import { AskForAssistanceButton } from '@src/components/live-workflow/AskForAssistanceButton';
+import { AssetManagerButton } from '@src/components/asset-manager';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import {
@@ -303,6 +304,9 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
 
         {/* Spacer */}
         <div className="flex-1" />
+
+        {/* Reusable asset manager — same component the chat side panel uses. */}
+        <AssetManagerButton process={process} />
 
         {/* Commit & Merge — worktree sessions only, prominent, left of Open Terminal */}
         {!embedded && (

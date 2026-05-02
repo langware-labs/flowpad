@@ -306,6 +306,14 @@ class AgenticProcess(Entity):
     sidecar_shell_id: str | None = APIField(default=None)
     visible: bool = APIField(default=False, description="Whether this process is visible in the tabs view")
     queue: dict | None = APIField(default=None)
+    target_vfs_path: str | None = APIField(
+        default=None,
+        description=(
+            "VFS path the process is keyed to (e.g. an entity TypeId string "
+            "'markdown-<uuid>' or a '<typeid>/<sub_path>' form). Frontend "
+            "chat panel queries processes by this field; persisted opaquely."
+        ),
+    )
     additional_dirs: list[str] = APIField(default_factory=list, description="Extra directories passed to Claude via --add-dir")
     embedded_agent_ids: list[str] = APIField(default_factory=list, description="Agent ids injected via --agents at session launch")
     embedded_asset_refs: list[TypeId] = APIField(
