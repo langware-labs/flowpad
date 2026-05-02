@@ -79,13 +79,13 @@ def _label_for_vault(p: Path, home: Path) -> str:
 
 @router.get("/api/v1/assets/types")
 async def get_asset_types():
-    """Return all record types marked as user_asset=True."""
+    """Return all record types marked as browseable=True."""
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     types = [{"type_name": "project", "label": "Projects", "icon": None, "creatable": False}]
     for type_name in SchemaRegistry.get_all_types():
         ti = SchemaRegistry.get(type_name)
-        if ti and ti.user_asset:
+        if ti and ti.browseable:
             entry: dict = {
                 "type_name": ti.type_name,
                 "label": ti.type_name.replace("_", " ").title(),

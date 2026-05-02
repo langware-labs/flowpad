@@ -34,7 +34,7 @@ Returns:
     "index_fields": ["description", "objective"],
     "defaults": {},
     "creatable": true,
-    "user_asset": true,
+    "browseable": true,
     "json_schema": { "...pydantic-derived..." },
     "creation": {
       "location": "<project_cwd>/tasks/<safe-title>/manifest.json",

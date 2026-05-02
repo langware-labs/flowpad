@@ -147,7 +147,7 @@ Response:
 GET /api/v1/assets/types
 ```
 
-Returns all record types with `user_asset=True` in their `TypeInfo`, plus a hardcoded `project` entry at the top. Used by the `AssetTypeSidebar` to enumerate browsable types.
+Returns all record types with `browseable=True` in their `TypeInfo`, plus a hardcoded `project` entry at the top. Used by the `AssetTypeSidebar` to enumerate browsable types.
 
 ```json
 {
@@ -162,7 +162,7 @@ Returns all record types with `user_asset=True` in their `TypeInfo`, plus a hard
 }
 ```
 
-To mark a Record type as user-browsable, set `_user_asset: ClassVar[bool] = True` on the class. Currently set on: `AssetRecord`, `BookmarkRecord`, `SkillRecord`, `AgentRecord`, `WorkflowRecord`, `TaskResource`.
+To surface a Record type in the user-facing browser, set `_browseable: ClassVar[bool] = True` on the class. Currently set on: `SkillRecord`, `AgentRecord`, `WorkflowRecord`, `MarkdownRecord`, `SpecRecord`, `TaskRecord`, `AppSecretRecord`, `CommentRecord`, `BookmarkRecord`, `AnnotationRecord`, `ClaudeRulesRecord`, `ClaudeMemoryRecord`, `ClaudeMdFsRecord`, `ClaudePlanRecord`. Note: this flag is about UI visibility — it does **not** mean the record is an agent-consumable asset (see `_main_subdir` for that).
 
 ### Reindex (all indexable types)
 

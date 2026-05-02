@@ -14,7 +14,7 @@ class BookmarkRecord(Record):
     # Runtime-created via Record.save (not FS-scannable). Excluded from
     # the indexer's default set — entities still flow into the DB normally.
     _indexed_by_default: ClassVar[bool] = False
-    _user_asset: ClassVar[bool] = True
+    _browseable: ClassVar[bool] = True
     index_fields: ClassVar[list[str]] = ["tags", "summary"]
 
     def __init__(self, **kwargs: Any):
