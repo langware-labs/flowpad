@@ -246,10 +246,19 @@ function AssetRow({
   const onChipClick = useCallback(() => {
     if (!id) return;
     try {
-      // Read-only sources open in viewer mode (?readOnly=1). The assets editor
-      // route honors this query param to disable save affordances.
-      const sub = readOnly ? `editor/${type}/${id}?readOnly=1` : `editor/${type}/${id}`;
-      navigation.openDock(new DockPointer('assets' as never, sub));
+      // Read-only sources open in viewer mode (readOnly=1). The assets editor
+      // route honors this query param to disable save affordances. The query
+      // string is passed via the DockPointer ``options`` argument so it
+      // serializes as a real `?readOnly=1` query string — embedding it in
+      // the pointer (path) string would URL-encode the `?` to `%3F` and
+      // produce a malformed path the backend can't parse.
+      navigation.openDock(
+        new DockPointer(
+          'assets' as never,
+          `editor/${type}/${id}`,
+          readOnly ? { readOnly: '1' } : undefined,
+        ),
+      );
     } catch {
       // ignore navigation errors
     }

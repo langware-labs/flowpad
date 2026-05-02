@@ -44,6 +44,19 @@ export function useProcessAssets(
   const [isLoading, setIsLoading] = useState<boolean>(enabled);
   const tickRef = useRef(0);
 
+  // Stash the latest agents/skills in refs so refresh can read them without
+  // appearing in its deps. ``useEntitiesQuery`` returns a fresh ``[]`` default
+  // every render when disabled — including those arrays in ``refresh``'s deps
+  // would invalidate ``refresh``'s identity on every parent re-render and
+  // (paired with ``useEffect([refresh])``) stampede ``getAssets()`` at the
+  // backend on a 30+ Hz loop.
+  const agentsRef = useRef(agents);
+  const skillsRef = useRef(skills);
+  useEffect(() => {
+    agentsRef.current = agents;
+    skillsRef.current = skills;
+  }, [agents, skills]);
+
   const refresh = useCallback(async () => {
     if (!enabled) return;
     const tick = ++tickRef.current;
@@ -55,12 +68,12 @@ export function useProcessAssets(
         if (tickRef.current === tick) setDescriptors(result);
       } else {
         const synthetic: AssetDescriptor[] = [
-          ...agents.map<AssetDescriptor>((a) => ({
+          ...agentsRef.current.map<AssetDescriptor>((a) => ({
             typeid: `agent-${a.id}`,
             source: 'user_dir',
             posix_path: (a as { asset_ref?: string }).asset_ref ?? null,
           })),
-          ...skills.map<AssetDescriptor>((s) => ({
+          ...skillsRef.current.map<AssetDescriptor>((s) => ({
             typeid: `skill-${s.id}`,
             source: 'user_dir',
             posix_path: (s as { asset_ref?: string }).asset_ref ?? null,
@@ -74,8 +87,12 @@ export function useProcessAssets(
     } finally {
       if (tickRef.current === tick) setIsLoading(false);
     }
-  }, [process, agents, skills, enabled]);
+  }, [process, enabled]);
 
+  // Re-fetch when the process identity changes (or the hook becomes enabled).
+  // Synthetic-mode (process === null) re-renders pick up updated agents/skills
+  // via the refs above; an explicit ``refresh()`` call (e.g. from popover
+  // open) flushes them into ``descriptors``.
   useEffect(() => {
     void refresh();
   }, [refresh]);
