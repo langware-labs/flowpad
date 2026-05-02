@@ -75,6 +75,22 @@ class Entity(DBEntity):
     tags: List[str] = APIField(default_factory=list)
     system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
 
+    # Generic context-entity references — the unified container for "what
+    # other entities is this one contextually related to." Persists as a list
+    # of TypeIds. Direct fields (``project_id``, ``assignee``, etc.) stay on
+    # the entity for indexing/business logic; ``context_entities`` holds the
+    # purely-pointer references that previously lived as one-off fields like
+    # ``task.spec_id`` / ``conversation.task_id`` / ``flow_message.context``.
+    # Mutate via ``add_context_entity`` / ``remove_context_entity``.
+    context_entities: list[TypeId] = APIField(
+        default_factory=list,
+        description=(
+            "Pointers to other entities that contextually relate to this one. "
+            "Used by EntityChips to render lineage. Frontend writes go through "
+            "addContextEntity / removeContextEntity only."
+        ),
+    )
+
     # Display name — overridden with required `str` on many subclasses
     name: str | None = APIField(default=None, description="Display name")
     _icon: ClassVar[str | None] = None
@@ -906,6 +922,46 @@ class Entity(DBEntity):
     def get_labels(self) -> List[str]:
         """Get all labels for the entity."""
         return self.labels or []
+
+    # ── context_entities surface ─────────────────────────────────────────
+    #
+    # Mirrors the TS APIEntity API. ``context_entities`` is the persisted
+    # list of TypeId references; the dynamic ``context_entities_full``
+    # property merges in per-entity-projected direct fields. Subclasses
+    # override ``_direct_fields_as_typeids`` to surface fields like
+    # ``project_id`` / ``assignee`` for chip rendering.
+
+    def _direct_fields_as_typeids(self) -> List[TypeId]:
+        """Per-subclass projection of direct fields into the chip context.
+        Default: nothing. Override on entities that want their own fields
+        (e.g. project_id) to appear in the merged context list.
+        """
+        return []
+
+    @property
+    def context_entities_full(self) -> List[TypeId]:
+        """Direct-field projection + persisted ``context_entities``."""
+        return [*self._direct_fields_as_typeids(), *self.context_entities]
+
+    def add_context_entity(self, type_id: TypeId) -> None:
+        """Append a context entity (idempotent)."""
+        if any(t == type_id for t in self.context_entities):
+            return
+        self.context_entities = [*self.context_entities, type_id]
+
+    def remove_context_entity(self, type_id: TypeId) -> bool:
+        """Remove a context entity. Returns True if removed."""
+        before = len(self.context_entities)
+        self.context_entities = [t for t in self.context_entities if t != type_id]
+        return len(self.context_entities) < before
+
+    def context_of_type(self, type_name: str) -> List[TypeId]:
+        """All context entries of the given entity type."""
+        return [t for t in self.context_entities_full if t.type == type_name]
+
+    def first_context_of_type(self, type_name: str) -> TypeId | None:
+        """First context entry of the given entity type, or None."""
+        return next((t for t in self.context_entities_full if t.type == type_name), None)
 
     def get_env_table(self) -> "EntityEnvVars":
         if not self.env_vars:

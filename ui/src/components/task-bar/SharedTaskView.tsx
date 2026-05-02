@@ -24,10 +24,12 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
     || task.shared_by_id
     || 'Unknown';
 
+  const specTypeId = task.firstContextOfType?.('spec') ?? null;
   const { data: spec } = useEntity<Spec>(
-    task.spec_id ? new TypeId(Spec.type, task.spec_id) : null,
+    specTypeId,
     { query: blobExpansion },
   );
+  const conversationTypeId = task.firstContextOfType?.('conversation') ?? null;
 
   return (
     <div className="flex h-full w-full flex-col bg-card">
@@ -71,10 +73,10 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
 
         {/* Conversation */}
         <section className="-mx-4 flex flex-col">
-          {task.conversation_id ? (
+          {conversationTypeId ? (
             <ConversationPanel
               task={task}
-              conversationId={task.conversation_id}
+              conversationId={conversationTypeId.id}
               senderName={senderName}
             />
           ) : (

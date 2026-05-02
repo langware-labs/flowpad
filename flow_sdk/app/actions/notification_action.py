@@ -157,13 +157,16 @@ async def _create_spec_and_task(
     sender_process_id: Optional[str] = None,
 ) -> tuple[Spec, Task]:
     """Create Spec + Task entities locally and register the task on the hub."""
-    spec = Spec.model_validate({
+    spec_payload: dict = {
         "title": spec_title,
         "content": spec_content,
         "spec_type": spec_type,
-        "plan_id": plan_id,
         "author_id": sender_id,
-    })
+    }
+    if plan_id:
+        # plan_id consolidated into ``context_entities``.
+        spec_payload["context_entities"] = [f"plan-{plan_id}"]
+    spec = Spec.model_validate(spec_payload)
     spec.id = Spec.allocate_id(spec.model_dump())
     spec = await spec.save(someone_typeid)
 
@@ -180,12 +183,13 @@ async def _create_spec_and_task(
         task_meta["project_root"] = project_root
     task = Task.model_validate({
         "title": task_title,
-        "spec_id": spec.id,
         "shared_by_id": sender_id,
         "metadata": task_meta,
         "project_id": project_id,
         "spec_type": spec_type,
         "my_process_id": sender_process_id,
+        # spec_id consolidated into ``context_entities``.
+        "context_entities": [f"spec-{spec.id}"],
     })
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
@@ -226,7 +230,7 @@ async def _create_conversation_and_fm(
     from flow_sdk.fs_store.type_id import TypeId
 
     conv = await _create_conversation_entity(task, task_dir / "conversation.jsonl", someone_typeid)
-    task.conversation_id = conv.id
+    task.add_context_entity(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))
     task = await task.save(someone_typeid)
 
     fm_context = [
@@ -235,7 +239,7 @@ async def _create_conversation_and_fm(
     ]
     fm = FlowMessage.model_validate({
         "text": message or f"Task shared: {task.title}",
-        "context": fm_context,
+        "context_entities": fm_context,
         "attachment": [],
         "sender_id": sender_id,
         "sender_name": sender_name,
@@ -496,7 +500,7 @@ async def _save_local_notification(
         "message": message,
         "metadata": {
             "project_url": project_url,
-            "spec_id": task.spec_id,
+            "spec_id": (task.first_context_of_type("spec").id if task.first_context_of_type("spec") else None),
             "sender_name": sender_name,
         },
     })
@@ -693,11 +697,13 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
 
 
 async def _find_task_conversation(task: Task) -> Optional[Conversation]:
-    """Look up the Conversation for a task — by task_id first, then by task.conversation_id."""
-    conv = await Conversation.get_one({"task_id": task.id})
-    if not conv and task.conversation_id:
-        conv = await Conversation.get_one({"id": task.conversation_id})
-    return conv
+    """Look up the Conversation for a task via its context_entities."""
+    conv_typeid = task.first_context_of_type(BuiltinEntityType.CONVERSATION.value)
+    if conv_typeid:
+        conv = await Conversation.get_one({"id": conv_typeid.id})
+        if conv:
+            return conv
+    return None
 
 
 def _build_reply_flow_message(

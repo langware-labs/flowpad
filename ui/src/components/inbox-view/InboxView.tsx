@@ -44,8 +44,8 @@ interface ConversationListRowProps {
 function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, refSetter }: ConversationListRowProps) {
   const { navigation } = useDockNavigation();
   const taskTypeId = useMemo(
-    () => (conv.task_id ? new TypeId(Task.type, conv.task_id) : null),
-    [conv.task_id],
+    () => conv.firstContextOfType?.('task') ?? null,
+    [conv],
   );
   const { data: task } = useEntity<Task>(taskTypeId);
 

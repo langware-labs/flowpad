@@ -118,7 +118,7 @@ export function TasksViewer() {
   }
 
   // Shared tasks (sent via notification) show the SharedTaskView instead of the edit form
-  if (existingTask?.spec_id) {
+  if (existingTask?.firstContextOfType?.('spec')) {
     return <SharedTaskView task={existingTask} onClose={() => navigation.goBack()} />;
   }
 

@@ -1,12 +1,12 @@
 import { useMemo } from 'react';
-import type { ITask } from '@sdk/entities/task';
+import type { Task } from '@sdk';
 import { TaskChips } from './chips/TaskChips';
 import { ConversationChips } from './chips/ConversationChips';
 import { ChipsExcludeProvider } from './chips/ChipsExcludeContext';
 import { taskChipKeys } from './chips/keys';
 
 interface ConversationToolbarProps {
-  task: ITask;
+  task: Task;
   conversationId: string;
   senderName?: string;
   /**

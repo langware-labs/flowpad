@@ -25,14 +25,15 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store import SyncOperation
 from flow_sdk.fs_store.type_id import TypeId
 
-_FM_FIELDS = {"type", "id", "text", "instruction", "context", "attachment",
+_FM_FIELDS = {"type", "id", "text", "instruction", "context_entities", "attachment",
               "sender_id", "sender_name", "receiver_address", "receiver_address_type"}
 
 _TASK_FIELDS = {"type", "id", "title", "description", "status", "task_type",
-                "priority", "spec_id", "shared_by_id", "conversation_id",
+                "priority", "shared_by_id",
                 "metadata", "due_at", "start_date",
                 "project_id", "spec_type", "my_process_id",
-                "shared_process_id", "remote_project_id", "remote_project_name"}
+                "shared_process_id", "remote_project_id", "remote_project_name",
+                "context_entities"}
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
@@ -374,7 +375,7 @@ async def unpack_bundle(
                     jsonl_file = entry_dir / "conversation.jsonl"
                     if jsonl_file.exists():
                         task_id_for_conv = next(
-                            (TypeId(c).id for c in msg_data.get("context", []) if TypeId(c).type == BuiltinEntityType.TASK.value),
+                            (TypeId(c).id for c in msg_data.get("context_entities", []) if TypeId(c).type == BuiltinEntityType.TASK.value),
                             None,
                         ) or task_id
                         # Copy conversation.jsonl to a permanent location before the
@@ -429,7 +430,7 @@ async def unpack_bundle(
 
         top_fm_id = msg_data.get("id") or FlowMessage.allocate_id(msg_data)
         _rewrite_file_attachments(msg_data, tmp_root, top_fm_id)
-        # Backfill conversation_id from bundle context if sender bundle predates the field
+        # Backfill conversation_id from bundle context_entities if sender bundle predates the field
         if not msg_data.get("conversation_id") and conversation_id:
             msg_data["conversation_id"] = conversation_id
         top_fm = FlowMessage.model_validate(msg_data)
@@ -438,7 +439,7 @@ async def unpack_bundle(
 
         # 6. Append pointer to target conversation (only if not already present)
         target_conv_id = conversation_id or next(
-            (c.id for c in top_fm.context if c.type == BuiltinEntityType.CONVERSATION.value),
+            (c.id for c in top_fm.context_entities if c.type == BuiltinEntityType.CONVERSATION.value),
             None,
         )
         if target_conv_id:
@@ -450,7 +451,7 @@ async def unpack_bundle(
                 if top_fm.id not in _existing:
                     rec = ConversationRecord.from_jsonl(
                         _jsonl_path,
-                        next((c.id for c in top_fm.context if c.type == BuiltinEntityType.TASK.value), ""),
+                        next((c.id for c in top_fm.context_entities if c.type == BuiltinEntityType.TASK.value), ""),
                         target_conv_id,
                     )
                     rec.append_message_pointer(top_fm.id, datetime.now(UTC).isoformat())
@@ -460,7 +461,7 @@ async def unpack_bundle(
         # conversation and try to load an FM that hasn't been persisted yet.
         try:
             task_id_for_sync = next(
-                (c.id for c in top_fm.context if c.type == BuiltinEntityType.TASK.value),
+                (c.id for c in top_fm.context_entities if c.type == BuiltinEntityType.TASK.value),
                 top_fm.id,
             )
             send_resource_sync(

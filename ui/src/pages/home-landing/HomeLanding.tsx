@@ -120,8 +120,9 @@ export function HomeLanding() {
               const task = await dataManager
                 .getByTypeId<import('@sdk').Task>(new TypeId(Task.type, taskId))
                 .catch(() => null);
-              if (task?.conversation_id) {
-                navigation.openDock(DockPointer.forConversation(task.conversation_id));
+              const convTypeId = task?.firstContextOfType?.('conversation');
+              if (convTypeId) {
+                navigation.openDock(DockPointer.forConversation(convTypeId.id));
                 return;
               }
             } catch {
