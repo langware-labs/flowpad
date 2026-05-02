@@ -678,6 +678,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       const pattern = /plan[\w-]*\.md/i;
       unsubShell = sh.addTrigger({
         pattern,
+        label: 'plan-detection',
         onMatch: async (line) => {
           if (validate) {
             const md = await this.getPlan();

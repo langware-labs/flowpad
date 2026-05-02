@@ -14,6 +14,24 @@ from flow_sdk.request_context.execution_context import (
 )
 
 
+# Per-process cache for the @local user. The local user is created once at
+# server startup (get_or_create_local_user) and never mutated by app code,
+# so we resolve it once and skip the per-request BEGIN IMMEDIATE that was
+# racing the indexer's writer lock and producing 500s on the request.
+_LOCAL_USER_CACHE = None
+
+
+async def _get_local_user_cached():
+    global _LOCAL_USER_CACHE
+    if _LOCAL_USER_CACHE is not None:
+        return _LOCAL_USER_CACHE
+    from flow_sdk.builtin.user import User
+    user = await User.get_one({"uname": "local"})
+    if user is not None:
+        _LOCAL_USER_CACHE = user
+    return user
+
+
 class RequestTransactionMiddleware:
     """Pure ASGI middleware that sets up ExecutionContext for each request.
 
@@ -27,12 +45,13 @@ class RequestTransactionMiddleware:
     async def _setup_local_auth(self, req_info):
         """Set up auth for local minihub - allow all requests for the @local user."""
         from flow_sdk.request_context.auth_info import AuthResult
-        from flow_sdk.builtin.user import User
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-        # Get or set the local user
+        # Get or set the local user from the per-process cache (see
+        # _get_local_user_cached above). This skips a BEGIN IMMEDIATE per
+        # request that was racing the indexer's writer lock.
         if not req_info.user:
-            local_user = await User.get_one({"uname": "local"})
+            local_user = await _get_local_user_cached()
             if local_user:
                 req_info.user = local_user
 
@@ -86,7 +105,7 @@ class RequestTransactionMiddleware:
         # Driver methods open their own short-lived sessions via
         # `_session_ctx` (always async-with managed → safe). The indexer
         # hoists ONE shared session for batch paths via `flow_sdk.db.session()`.
-        # Production writer-lock-cascade fix (WAL + busy_timeout=5000 +
+        # Production writer-lock-cascade fix (WAL + busy_timeout=15000 +
         # BEGIN IMMEDIATE + pragmas + driver session sharing) lands fully.
         execution_context = ExecutionContext(False, None)
         set_execution_context(execution_context)

@@ -64,12 +64,13 @@ async def setup_rest_context(connection_id: str, message_json: dict) -> Executio
     # Set up local auth (allow all for minihub)
     req_info = get_current_request_info()
     if req_info:
-        from flow_sdk.builtin.user import User
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        from flow_sdk.server.middleware.request_transaction_middleware import _get_local_user_cached
 
-        # Get or set the local user
+        # Get or set the local user from the per-process cache. Same hot path
+        # as the HTTP middleware (see request_transaction_middleware.py).
         try:
-            local_user = await User.get_one({"uname": "local"})
+            local_user = await _get_local_user_cached()
             if local_user:
                 req_info.user = local_user
         except Exception as e:

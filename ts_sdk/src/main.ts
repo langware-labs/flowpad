@@ -12,7 +12,7 @@ import { navigator } from './services/navigationService';
 // import { authService } from './services/authService';
 import * as Sentry from '@sentry/browser';
 import { ContextEntitiesEnum } from './FlowSync/context';
-import { getContextEntityFromLocalStorage } from './FlowSync/context-local-storage';
+import { getContextEntityFromLocalStorage, setContextEntityToLocalStorage } from './FlowSync/context-local-storage';
 import { cloudManager } from './services/cloud_login';
 import { ConnectionManager } from './websocket';
 
@@ -61,10 +61,19 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentVisitorTypeId, visitor.typeId);
       }
 
-      // Set default compute node from bootstrap before project — so refreshProject() skips the fetch
+      // Set default compute node from bootstrap before project — so refreshProject() skips the fetch.
+      // Compute_node ids are minted per-process by get_or_create_local_compute_node and rotate
+      // every time the dev DB is recreated (/tmp/flowpad_dev.db). Evict any persisted
+      // CurrentComputeNodeTypeId that doesn't match the bootstrap-issued id BEFORE the new id
+      // is applied, so callers that read localStorage directly don't issue requests against
+      // a dead UUID.
       if (bootstrapInfo.default_compute_node) {
         const computeNode = new ComputeNode(bootstrapInfo.default_compute_node as any);
         computeNode.markAsExpanded();
+        const persistedTypeId = getContextEntityFromLocalStorage(ContextEntitiesEnum.CurrentComputeNodeTypeId);
+        if (persistedTypeId && !persistedTypeId.equals(computeNode.typeId)) {
+          setContextEntityToLocalStorage(ContextEntitiesEnum.CurrentComputeNodeTypeId, null);
+        }
         await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentComputeNodeTypeId, computeNode.typeId);
       }
 
