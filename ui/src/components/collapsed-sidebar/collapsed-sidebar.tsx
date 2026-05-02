@@ -40,7 +40,7 @@ const mainNavItems = [
   { title: 'Inbox', icon: Inbox, viewType: ViewType.INBOX },
   { title: 'Shell', icon: Terminal, viewType: ViewType.SHELL },
   // { title: 'Execute Flow', icon: PlaySquare, viewType: ViewType.EXECUTE_FLOW },
-  { title: 'Wiki', icon: BookOpen, viewType: ViewType.ASSETS },
+  { title: 'Assets', icon: BookOpen, viewType: ViewType.ASSETS },
   { title: 'Triggers', icon: Zap, viewType: ViewType.TRIGGERS },
 ] as const;
 

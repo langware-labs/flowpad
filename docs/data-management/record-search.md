@@ -147,7 +147,7 @@ Response:
 GET /api/v1/assets/types
 ```
 
-Returns all record types with `browseable=True` in their `TypeInfo`, plus a hardcoded `project` entry at the top. Used by the `AssetTypeSidebar` to enumerate browsable types.
+Returns all record types with `browseable=True` in their `TypeInfo`, plus a hardcoded `project` entry at the top. Consumed by the `BrowseableTree` component (fed by the `assetTypeRoot` adapter at `ui/src/components/browseable-tree/adapters/assetTypeRoot.tsx`) to render the type list in the Assets surface.
 
 ```json
 {
