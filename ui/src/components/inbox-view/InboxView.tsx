@@ -70,7 +70,7 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, refSett
 
   const sender = latestMessage?.sender_name?.trim() || 'Unknown';
   const count = pointers.length;
-  const subject = task?.title?.trim() || 'Conversation';
+  const subject = task?.displayName ?? 'Conversation';
   const snippet = latestMessage?.text?.replace(/\s+/g, ' ').trim() ?? '';
   const time = formatGmailTime(conv.updated_date);
   const ago = formatTimeAgo(conv.updated_date);

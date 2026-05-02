@@ -10,7 +10,7 @@ interface FavoriteStarProps extends FavoriteRef {
 
 /**
  * Generic star toggle. Drop into any entity row/card:
- *   <FavoriteStar entityType="project" entityId={p.id} title={p.name} />
+ *   <FavoriteStar entityType="project" entityId={p.id} title={p.displayName} />
  *
  * Click fills the star and persists a Bookmark(bookmark_type='favorite').
  * Clicking a filled star hard-deletes the bookmark record.

@@ -1,6 +1,6 @@
 import { ChevronRight, FileText, Folder } from 'lucide-react';
 import { useMemo, useEffect, useState } from 'react';
-import { config, Project, TypeId } from '@sdk';
+import { config, Markdown, Project, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useQuery } from '@tanstack/react-query';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -13,15 +13,6 @@ interface Props {
   onOpenTab?: (tab: RoomTab) => void;
 }
 
-interface DocRow {
-  id: string;
-  name?: string;
-  asset_ref?: string;
-  parent_path?: string;
-  scope?: string;
-  project_id?: string;
-}
-
 /** Tree node derived from the flat doc rows. Folders are synthesized from
  *  segments of `parent_path` relative to the project mount. */
 interface DocTreeNode {
@@ -29,7 +20,7 @@ interface DocTreeNode {
   /** Children folders, keyed by name. */
   folders: Map<string, DocTreeNode>;
   /** Files directly in this folder. */
-  files: DocRow[];
+  files: Markdown[];
 }
 
 // Direct fetch (with `include_system=true`) instead of useEntitiesQuery,
@@ -45,7 +36,7 @@ function newNode(name: string): DocTreeNode {
  * relative to `mountAbsPrefix` (e.g. `<mount>`); the resulting path segments
  * become folder nodes ("/.claude/docs", ".claude/docs/sub", etc.).
  */
-function buildTree(rows: DocRow[], mountAbsPrefix: string): DocTreeNode {
+function buildTree(rows: Markdown[], mountAbsPrefix: string): DocTreeNode {
   const root = newNode('');
   for (const r of rows) {
     const parent = (r.parent_path ?? '').replace(/\/+$/, '');
@@ -73,7 +64,7 @@ function FolderRow({
 }: {
   node: DocTreeNode;
   depth: number;
-  onOpen: (d: DocRow) => void;
+  onOpen: (d: Markdown) => void;
 }) {
   // Auto-expand at the root and the first level (`.claude/docs`); deeper
   // folders start collapsed so the menu doesn't explode on big trees.
@@ -119,7 +110,7 @@ function FolderRow({
               >
                 <FileText className="h-3.5 w-3.5 flex-shrink-0" />
                 <span className="truncate">
-                  {typeof d.name === 'string' && d.name ? d.name : 'Untitled'}
+                  {d.displayName}
                 </span>
               </div>
             ))}
@@ -151,14 +142,15 @@ export function DocsCategory({ projectId, onOpenTab }: Props) {
     setIncludeSystem(isSystemProject);
   }, [isSystemProject]);
 
-  const { data: rows = [], isLoading } = useQuery<DocRow[]>({
+  const { data: rows = [], isLoading } = useQuery<Markdown[]>({
     queryKey: ['docs-include-system'],
     queryFn: async () => {
       const url = `${config.SERVER_URL}${config.API_PREFIXES.graph}/markdown?include_system=true&limit=5000`;
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`Failed to load docs: ${resp.status}`);
       const body = await resp.json();
-      return (body.data ?? []) as DocRow[];
+      const records = (body.data ?? []) as Partial<Markdown>[];
+      return records.map((row) => new Markdown(row));
     },
     staleTime: 30_000,
   });
@@ -178,13 +170,13 @@ export function DocsCategory({ projectId, onOpenTab }: Props) {
     return buildTree(filtered, mount);
   }, [filtered, project?.fs_storage_mount_path]);
 
-  const openDoc = (d: DocRow) => {
+  const openDoc = (d: Markdown) => {
     if (!d.asset_ref) return;
     if (onOpenTab) {
       onOpenTab({
         key: `markdown:${d.id}`,
         type: 'markdown',
-        title: typeof d.name === 'string' && d.name ? d.name : 'Untitled',
+        title: d.displayName,
         asset_ref: d.asset_ref,
       });
     } else {

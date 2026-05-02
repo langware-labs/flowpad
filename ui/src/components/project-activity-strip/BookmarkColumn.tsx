@@ -347,7 +347,7 @@ export function BookmarkColumn({
         open={!!pendingDeleteBookmark}
         onOpenChange={(open) => !open && setPendingDeleteBookmark(null)}
         title="Delete bookmark?"
-        description={`This will permanently delete "${pendingDeleteBookmark?.title || 'Untitled bookmark'}". This cannot be undone.`}
+        description={`This will permanently delete "${pendingDeleteBookmark?.displayName ?? ''}". This cannot be undone.`}
         confirmLabel="Delete"
         variant="destructive"
         onConfirm={() => {

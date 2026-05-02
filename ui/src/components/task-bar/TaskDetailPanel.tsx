@@ -52,7 +52,7 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
         >
           <ArrowLeft className="h-3.5 w-3.5" />
         </button>
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{task.title || 'Untitled'}</span>
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{task.displayName}</span>
       </div>
 
       {/* Fields */}

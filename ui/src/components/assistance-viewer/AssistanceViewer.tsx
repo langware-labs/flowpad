@@ -77,7 +77,7 @@ export function AssistanceViewer() {
                   onClick={() => handleTaskClick(task.typeId)}
                 >
                   <CardHeader className="p-3">
-                    <CardTitle className="line-clamp-2 text-sm font-medium">{task.title}</CardTitle>
+                    <CardTitle className="line-clamp-2 text-sm font-medium">{task.displayName}</CardTitle>
                     {task.status && (
                       <CardDescription className="text-xs">
                         <span

@@ -1,8 +1,11 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AgenticProcess,
   ASSET_SOURCE_LABEL,
+  dataManager,
   isReadOnlySource,
+  isTypeId,
+  TypeId,
   type AssetDescriptor,
   type AssetSource,
 } from '@sdk';
@@ -62,6 +65,30 @@ export function AssetManagerPopover({
   const { descriptors, refresh } = useProcessAssets(process, { enabled: open });
   const { types: assetTypes } = useAssetTypes();
 
+  // Pre-fetch every descriptor's entity into the dataManager cache so the
+  // chip text resolves to ``entity.displayName`` (typeid → real name) on
+  // first render. ``getByTypeIdFromCache`` is sync and returns null for
+  // entities not yet loaded; fetching them populates the cache and bumps
+  // ``entityVersion`` to trigger a re-render that picks up the resolved
+  // display labels. Without this, freshly-discovered entities show their
+  // raw ``<type>-<uuid>`` typeid until something else loads them.
+  const [entityVersion, setEntityVersion] = useState(0);
+  useEffect(() => {
+    if (!descriptors.length) return;
+    const missing = descriptors
+      .filter((d) => isTypeId(d.typeid))
+      .map((d) => new TypeId(d.typeid))
+      .filter((t) => !dataManager.getByTypeIdFromCache(t));
+    if (!missing.length) return;
+    let cancelled = false;
+    void Promise.all(
+      missing.map((t) => dataManager.getByTypeId(t).catch(() => null)),
+    ).then(() => {
+      if (!cancelled) setEntityVersion((v) => v + 1);
+    });
+    return () => { cancelled = true; };
+  }, [descriptors]);
+
   const iconForType = useCallback(
     (typeName: string): LucideIcon => {
       const ti = assetTypes.find((t: AssetTypeInfo) => t.type_name === typeName);
@@ -78,7 +105,11 @@ export function AssetManagerPopover({
 
   // Group descriptors by typeid for the "list" mode — but show one row per
   // (typeid, source) pair so duplicate sources are explicitly visible.
+  // ``entityVersion`` participates in the deps so newly-loaded entities
+  // trigger a fresh build (the display label is resolved from the cache
+  // inside the row component).
   const rows = useMemo(() => {
+    void entityVersion;
     return [...descriptors].sort((a, b) => {
       // EMBEDDED first, then by source label, then by name suffix.
       const sa = a.source === 'embedded' ? 0 : 1;
@@ -87,7 +118,7 @@ export function AssetManagerPopover({
       if (a.source !== b.source) return a.source.localeCompare(b.source);
       return a.typeid.localeCompare(b.typeid);
     });
-  }, [descriptors]);
+  }, [descriptors, entityVersion]);
 
   // Add-mode entries: anything not currently EMBEDDED. Each row is the
   // "source" copy that the user can attach to the process.
@@ -224,6 +255,21 @@ function _parseTypeid(typeid: string): { type: string; id: string } {
   return { type: typeid.slice(0, dash), id: typeid.slice(dash + 1) };
 }
 
+/**
+ * Resolve a descriptor's typeid string to the cached entity's ``displayName``.
+ * Falls back to the raw typeid when the entity isn't in cache or the typeid
+ * isn't well-formed.
+ */
+function _displayLabelForTypeid(typeid: string): string {
+  if (!isTypeId(typeid)) return typeid;
+  try {
+    const entity = dataManager.getByTypeIdFromCache(new TypeId(typeid));
+    return entity?.displayName ?? typeid;
+  } catch {
+    return typeid;
+  }
+}
+
 interface RowSharedProps {
   descriptor: AssetDescriptor;
   iconForType: (type: string) => LucideIcon;
@@ -242,6 +288,7 @@ function AssetRow({
   const { type, id } = _parseTypeid(descriptor.typeid);
   const Icon = iconForType(type);
   const readOnly = isReadOnlySource(descriptor.source);
+  const label = _displayLabelForTypeid(descriptor.typeid);
 
   const onChipClick = useCallback(() => {
     if (!id) return;
@@ -280,10 +327,10 @@ function AssetRow({
         type="button"
         onClick={onChipClick}
         className="flex min-w-0 flex-1 items-center gap-1.5 rounded border border-border bg-muted/30 px-1.5 py-0.5 text-xs text-foreground hover:bg-muted"
-        title={readOnly ? `View ${descriptor.typeid} (read-only)` : `Open ${descriptor.typeid}`}
+        title={readOnly ? `View ${label} (read-only)` : `Open ${label}`}
       >
         <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-        <span className="min-w-0 truncate">{descriptor.typeid}</span>
+        <span className="min-w-0 truncate">{label}</span>
       </button>
       {readOnly && (
         <Lock
@@ -329,6 +376,7 @@ function AddModeRow({
   const Icon = iconForType(type);
   const readOnly = isReadOnlySource(descriptor.source);
   const lockTooltip = READONLY_TOOLTIP_BY_SOURCE[descriptor.source] ?? 'Read-only source. Attach to get a private editable copy.';
+  const label = _displayLabelForTypeid(descriptor.typeid);
   return (
     <label
       className="flex cursor-pointer items-center gap-2 border-b px-3 py-1.5 text-xs last:border-b-0 hover:bg-muted/50"
@@ -342,7 +390,7 @@ function AddModeRow({
         onChange={() => onToggle(descriptor.typeid)}
       />
       <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1 truncate">{descriptor.typeid}</span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
       {readOnly && (
         <Lock
           className="h-3 w-3 flex-shrink-0 text-muted-foreground"

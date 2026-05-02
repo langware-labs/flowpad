@@ -57,10 +57,14 @@ export class CollaborationRoom
     return out;
   }
 
-  get displayName(): string {
-    if (this.name && this.name.trim()) return this.name;
-    // Backfill display for legacy records that were created before auto-naming
-    // landed. Uses the same "<Host>'s room (Day, HH:MM)" shape as create().
+  /**
+   * When ``name`` is empty (legacy records created before auto-naming),
+   * synthesize ``"<Host>'s room (Day, HH:MM)"`` from ``host_name`` +
+   * ``started_at``. With ``name`` set, return null and let the default chain
+   * use it.
+   */
+  override getDisplayName(): string | null {
+    if (this.name && this.name.trim()) return null;
     const host = this.host_name?.trim() || 'Anonymous';
     const when = this.started_at ? new Date(this.started_at) : new Date();
     if (!Number.isNaN(when.getTime())) {

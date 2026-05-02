@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { dismissSetupModal } from './helpers';
+import { dismissSetupModal, startClaudeSession } from './helpers';
 
 test.describe('Terminal PTY No Duplicates (Claude CLI)', () => {
   test.beforeEach(async ({ page }) => {
@@ -9,9 +9,10 @@ test.describe('Terminal PTY No Duplicates (Claude CLI)', () => {
   test('claude CLI terminal has no duplicated lines or escape artifacts', async ({ page }) => {
     test.setTimeout(90_000);
 
-    // Navigate to a new shell, then click the Start Claude button (same as clicking >_ icon)
+    // Navigate to a new shell, then start a Claude session via the tab-opener menu.
     await page.goto('/dock/shell/new_terminal');
-    await page.locator('[data-testid="start-claude-button"]').click({ timeout: 10_000 });
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
+    await startClaudeSession(page);
 
     // Wait for URL to settle (new_terminal redirects to /dock/shell/agentic_process-<id>)
     await page.waitForURL(/\/dock\/shell\/agentic_process-/, { timeout: 60_000 });

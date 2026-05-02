@@ -107,6 +107,17 @@ export class Artifact extends CodeRef implements IArtifact {
     this.validateStructure();
   }
 
+  /**
+   * Service-style artifacts often have no ``name`` but DO have a ``port`` —
+   * showing ``Port 3000`` is more useful to the user than the default
+   * ``artifact-04…2b`` id-tail. Defers to the chain when ``name`` is set.
+   */
+  override getDisplayName(): string | null {
+    if (this.name && this.name.trim()) return null;
+    if (this.port) return `Port ${this.port}`;
+    return null;
+  }
+
   get typeInfo(): ArtifactTypeInfo {
     const artifactType = this.artifact_type || ArtifactType.FILE;
     return ArtifactTypeMetadata.fromArtifactType(artifactType);

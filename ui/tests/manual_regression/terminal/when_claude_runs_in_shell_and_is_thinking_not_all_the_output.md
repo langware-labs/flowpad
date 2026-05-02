@@ -1,10 +1,10 @@
 test 1: Terminal output remains visible after switching tabs while Claude is running (FLOWPAD-1617)
 - navigate to {APP_URL}/dock/shell/new_terminal
-- wait for terminal to be ready (element with data-terminal-id is visible)
-- click the Start Claude button (data-testid="start-claude-button")
+- wait for terminal to be ready (active terminal panel `[data-testid="terminal-panel"][data-active="true"]` shows xterm)
+- click the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait up to 45 seconds for the Claude CLI banner to appear in the terminal
 - note the current terminal session tab name
-- click the Add terminal tab button (data-testid="add-terminal-tab-button")
+- click the tab-opener "+" (data-testid="opener-plus-button") and pick the "Terminal" row (data-testid="opener-menu-row-terminal")
 - wait 2 seconds for the new tab to be created
 - validate a second terminal tab is now visible
 - click back on the first terminal tab (the one running Claude)

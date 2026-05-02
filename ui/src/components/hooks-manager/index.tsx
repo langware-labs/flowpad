@@ -54,7 +54,7 @@ function TriggerInline({ trigger, onEdit, onDelete, onRefresh }: TriggerInlinePr
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Zap className={`h-4 w-4 ${trigger.enabled ? 'text-yellow-500' : 'text-muted-foreground'}`} />
-          <span className="font-medium">{trigger.name}</span>
+          <span className="font-medium">{activeTrigger.displayName}</span>
           <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">
             Count: {counter}
           </span>
@@ -360,7 +360,7 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
                             className={`h-2 w-2 rounded-full ${hook.enabled ? 'bg-green-500' : 'bg-gray-400'}`}
                           />
                           <div className="flex-1">
-                            <h3 className="font-semibold">{hook.name}</h3>
+                            <h3 className="font-semibold">{hook.displayName}</h3>
                             {hook.description && (
                               <p className="text-sm text-muted-foreground">{hook.description}</p>
                             )}

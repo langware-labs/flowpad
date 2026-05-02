@@ -64,7 +64,6 @@ function FlowItem({ flow, onTerminalClick }: FlowItemProps) {
   const StatusIcon = statusDisplay.icon;
   const isRunning = flow.sendStatus === SendStatus.Running;
   const hasTerminal = !!flow.current_terminal_id;
-  const shortId = flow.id?.slice(0, 8) || 'unknown';
 
   const handleTerminalClick = useCallback(
     (e: React.MouseEvent) => {
@@ -82,7 +81,7 @@ function FlowItem({ flow, onTerminalClick }: FlowItemProps) {
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <GitBranch className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-medium">{flow.title || `Flow ${shortId}`}</p>
+          <p className="truncate text-xs font-medium">{flow.displayName}</p>
           <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
             <span className={cn('flex items-center gap-1', statusDisplay.color)}>
               <StatusIcon className="h-2.5 w-2.5" />

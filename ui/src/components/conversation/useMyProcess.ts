@@ -81,7 +81,7 @@ async function buildReceiverContextPrompt(
   const effectiveSpecType = task.spec_type ?? spec?.spec_type ?? 'plan';
   const isSession = effectiveSpecType === 'session';
 
-  const specTitle = spec?.title ?? task.title ?? 'Untitled';
+  const specTitle = spec?.displayName ?? task.displayName;
   const specContent = spec?.content ?? '';
   const senderLabel = senderName ?? 'Sender';
   const msgLines = messages.map(formatMsg).filter(Boolean).join('\n');
@@ -96,7 +96,7 @@ async function buildReceiverContextPrompt(
   if (specContent) {
     parts.push(isSession ? `Session content:\n\n${specContent}` : `Here is the plan:\n\n${specContent}`);
   } else {
-    parts.push(`Task: ${task.title || 'Untitled'}`);
+    parts.push(`Task: ${task.displayName}`);
   }
 
   if (transcriptPath) {

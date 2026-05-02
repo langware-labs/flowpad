@@ -91,7 +91,7 @@ export function TaskChips({
             typeId: new TypeId(Task.type, task.id ?? ''),
             type: Task.type,
             id: task.id,
-            name: taskEntity.title ?? task.title,
+            name: taskEntity.displayName,
           }}
           inside={conversationContainer}
           onClick={onShowTask}

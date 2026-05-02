@@ -168,7 +168,7 @@ export const ProjectList: React.FC<ProjectListProps> = ({
                                   className="flex cursor-pointer items-center justify-between rounded-md bg-muted p-2 hover:bg-muted/80 hover:shadow-sm"
                                   onClick={(e) => onFlowClick?.(flow, e)}
                                 >
-                                  <span className="truncate text-sm font-medium">{flow.title || 'New Flow'}</span>
+                                  <span className="truncate text-sm font-medium">{flow.displayName}</span>
                                   {flow?.created_date ? (
                                     <div className="text-xs text-muted-foreground">{timeAgo(flow?.created_date)}</div>
                                   ) : null}
