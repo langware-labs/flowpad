@@ -3,6 +3,15 @@ import { AgenticProcess, type AssetDescriptor, type TypeId } from '@sdk';
 import { Boxes } from 'lucide-react';
 import { AssetManagerPopover } from './AssetManagerPopover';
 
+const EMPTY_REFS: string[] = [];
+
+function arraysShallowEqual(a: readonly string[], b: readonly string[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 interface AssetManagerButtonProps {
   /** The process whose assets are managed. Null before first-send. */
   process: AgenticProcess | null;
@@ -29,7 +38,7 @@ interface AssetManagerButtonProps {
  */
 export function AssetManagerButton({
   process,
-  pendingRefs = [],
+  pendingRefs = EMPTY_REFS,
   onAttach,
   onDetach,
   footer,
@@ -40,12 +49,10 @@ export function AssetManagerButton({
   const [attachedRefs, setAttachedRefs] = useState<string[]>([]);
 
   useEffect(() => {
-    if (process) {
-      const refs: TypeId[] = (process.embedded_asset_refs ?? []) as TypeId[];
-      setAttachedRefs(refs.map((r) => r.toString()));
-    } else {
-      setAttachedRefs(pendingRefs);
-    }
+    const next = process
+      ? (((process.embedded_asset_refs ?? []) as TypeId[]).map((r) => r.toString()))
+      : pendingRefs;
+    setAttachedRefs((prev) => (arraysShallowEqual(prev, next) ? prev : next));
   }, [process, process?.embedded_asset_refs, pendingRefs]);
 
   const handleAttach = useCallback(

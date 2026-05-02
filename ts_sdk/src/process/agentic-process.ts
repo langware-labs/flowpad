@@ -116,6 +116,18 @@ export interface IAgenticProcess extends IEntity {
   collaboration_room_id?: string | null;
   /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats (e.g. per-doc chat keyed on the file path). */
   target_vfs_path?: string | null;
+  /**
+   * True when a worker-relevant field changed since the last successful start()
+   * while status==RUNNING. Backend sets this automatically via the save-hook;
+   * external callers may write it directly to signal an out-of-band change.
+   * Cleared only by start() on its success path.
+   */
+  restart_required?: boolean;
+  /**
+   * MD5 of the worker-relevant snapshot captured at the last successful start().
+   * Compared against the current snapshot on every save() to detect drift.
+   */
+  last_started_hash?: string | null;
   /** Root of the per-process execution folder — `<record_dir>/execution/`. */
   exe_folder?: FSRefJson | null;
   /** `<exe_folder>/input/` — instruction/queue inputs. */
@@ -542,6 +554,19 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats (e.g. per-doc chat keyed on the file path). */
   target_vfs_path: string | null = null;
+
+  /**
+   * True when a worker-relevant field changed since the last successful start()
+   * while status==RUNNING. Maintained by the backend save-hook; UI surfaces
+   * this as the "Restart" affordance on the process toolbar.
+   */
+  restart_required: boolean = false;
+
+  /**
+   * MD5 of the worker-relevant snapshot captured at the last successful start().
+   * Compared against the current snapshot on every save() to detect drift.
+   */
+  last_started_hash: string | null = null;
 
   /** Execution folder — `<record_dir>/execution/`. Null until the process has a record on disk. */
   exe_folder: FSRef | null = null;

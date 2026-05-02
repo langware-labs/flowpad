@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   AgenticProcess,
   ASSET_SOURCE_LABEL,
+  isReadOnlySource,
   type AssetDescriptor,
   type AssetSource,
 } from '@sdk';
@@ -16,7 +17,14 @@ import { lucideByName } from '@src/lib/lucide-by-name';
 import { ICON_BY_TYPE } from '@src/components/conversation/EntityChip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { ArrowLeft, Boxes, Plus, X, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, Boxes, Lock, Plus, X, type LucideIcon } from 'lucide-react';
+
+const READONLY_TOOLTIP_BY_SOURCE: Partial<Record<AssetSource, string>> = {
+  project_dir: 'Defined in the project — edits propagate to every process under this project. Attach to get a private editable copy.',
+  user_dir: 'Defined in your user folder — edits propagate to every process you run. Attach to get a private editable copy.',
+  workdir: 'Lives in the agent’s working directory. Attach to get a private editable copy.',
+  additional_dir: 'Lives outside the project — edits propagate everywhere this path is referenced. Attach to get a private editable copy.',
+};
 
 interface AssetManagerPopoverProps {
   /** Process whose assets we are managing. Null before first-send. */
@@ -233,44 +241,58 @@ function AssetRow({
   const { navigation } = useDockNavigation();
   const { type, id } = _parseTypeid(descriptor.typeid);
   const Icon = iconForType(type);
+  const readOnly = isReadOnlySource(descriptor.source);
 
   const onChipClick = useCallback(() => {
     if (!id) return;
-    // Best-effort navigation — open the asset in its dock surface.
     try {
-      navigation.openDock(new DockPointer('assets' as never, `editor/${type}/${id}`));
+      // Read-only sources open in viewer mode (?readOnly=1). The assets editor
+      // route honors this query param to disable save affordances.
+      const sub = readOnly ? `editor/${type}/${id}?readOnly=1` : `editor/${type}/${id}`;
+      navigation.openDock(new DockPointer('assets' as never, sub));
     } catch {
       // ignore navigation errors
     }
-  }, [navigation, type, id]);
+  }, [navigation, type, id, readOnly]);
 
   const sourceLabel = ASSET_SOURCE_LABEL[descriptor.source];
-  const tooltip = descriptor.posix_path
+  const sourceTooltip = descriptor.posix_path
     ? `${sourceLabel}\n${descriptor.posix_path}`
     : `${sourceLabel}\n(no file — inline persona)`;
+  const lockTooltip = READONLY_TOOLTIP_BY_SOURCE[descriptor.source] ?? 'Read-only from this process. Attach to get a private editable copy.';
 
   return (
     <div
       className="flex items-center gap-2 border-b px-3 py-1.5 last:border-b-0"
       data-testid={`asset-manager-row-${descriptor.typeid}-${descriptor.source}`}
+      data-read-only={readOnly ? 'true' : 'false'}
     >
       <button
         type="button"
         onClick={onChipClick}
         className="flex min-w-0 flex-1 items-center gap-1.5 rounded border border-border bg-muted/30 px-1.5 py-0.5 text-xs text-foreground hover:bg-muted"
-        title={`Open ${descriptor.typeid}`}
+        title={readOnly ? `View ${descriptor.typeid} (read-only)` : `Open ${descriptor.typeid}`}
       >
         <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
         <span className="min-w-0 truncate">{descriptor.typeid}</span>
       </button>
+      {readOnly && (
+        <Lock
+          className="h-3 w-3 flex-shrink-0 text-muted-foreground"
+          aria-label="Read-only"
+          data-testid={`asset-manager-readonly-${descriptor.typeid}-${descriptor.source}`}
+        >
+          <title>{lockTooltip}</title>
+        </Lock>
+      )}
       <span
         className="flex-shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground"
-        title={tooltip}
+        title={sourceTooltip}
         data-testid={`asset-manager-source-${descriptor.typeid}-${descriptor.source}`}
       >
         {sourceLabel}
       </span>
-      {attached && (
+      {attached && !readOnly && (
         <button
           type="button"
           className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -296,10 +318,13 @@ function AddModeRow({
 }) {
   const { type } = _parseTypeid(descriptor.typeid);
   const Icon = iconForType(type);
+  const readOnly = isReadOnlySource(descriptor.source);
+  const lockTooltip = READONLY_TOOLTIP_BY_SOURCE[descriptor.source] ?? 'Read-only source. Attach to get a private editable copy.';
   return (
     <label
       className="flex cursor-pointer items-center gap-2 border-b px-3 py-1.5 text-xs last:border-b-0 hover:bg-muted/50"
       data-testid={`asset-manager-add-row-${descriptor.typeid}`}
+      data-read-only={readOnly ? 'true' : 'false'}
     >
       <input
         type="checkbox"
@@ -309,6 +334,15 @@ function AddModeRow({
       />
       <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate">{descriptor.typeid}</span>
+      {readOnly && (
+        <Lock
+          className="h-3 w-3 flex-shrink-0 text-muted-foreground"
+          aria-label="Read-only source"
+          data-testid={`asset-manager-add-readonly-${descriptor.typeid}-${descriptor.source}`}
+        >
+          <title>{lockTooltip}</title>
+        </Lock>
+      )}
       <span
         className="flex-shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground"
         title={ASSET_SOURCE_LABEL[descriptor.source]}

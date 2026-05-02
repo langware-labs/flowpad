@@ -68,6 +68,22 @@ class AssetSource(str, Enum):
     ADDITIONAL_DIR = "additional_dir"  # additional_dirs entries (excl. auto-appended assets dir)
 
 
+# Sources whose underlying file/state lives outside this AgenticProcess —
+# editing the entity propagates elsewhere (other processes, the project,
+# the user globally), so the row is "read-only" from this process's
+# perspective. Attaching materializes an EMBEDDED writable copy.
+READONLY_ASSET_SOURCES: frozenset[AssetSource] = frozenset({
+    AssetSource.PROJECT_DIR,
+    AssetSource.USER_DIR,
+    AssetSource.WORKDIR,
+    AssetSource.ADDITIONAL_DIR,
+})
+
+
+def is_readonly_source(source: AssetSource) -> bool:
+    return source in READONLY_ASSET_SOURCES
+
+
 @dataclass
 class AssetDescriptor:
     """Single asset row visible to an AgenticProcess.
@@ -306,6 +322,22 @@ class AgenticProcess(Entity):
     sidecar_shell_id: str | None = APIField(default=None)
     visible: bool = APIField(default=False, description="Whether this process is visible in the tabs view")
     queue: dict | None = APIField(default=None)
+    restart_required: bool = APIField(
+        default=False,
+        description=(
+            "True iff a worker-relevant field changed since the last successful "
+            "start() while status==RUNNING. UI surfaces this as a 'Restart' affordance. "
+            "Set automatically by the save-hook; can also be set externally via API."
+        ),
+    )
+    last_started_hash: str | None = APIField(
+        default=None,
+        description=(
+            "MD5 of the worker-relevant config fields captured at the last "
+            "successful start(). Compared against the current snapshot on each "
+            "save() to detect drift."
+        ),
+    )
     target_vfs_path: str | None = APIField(
         default=None,
         description=(
@@ -447,6 +479,10 @@ class AgenticProcess(Entity):
         - Idempotent call on live process: Shell.start() detects alive PTY and returns
           without re-spawning.
         """
+        # Suppress the restart-required auto-flag while start() mutates fields
+        # (status, session_id are tracked, but those mutations are not "drift").
+        # Cleared on success after we capture the new snapshot.
+        self._set_start_lifecycle(True)
         try:
             _bench_t0 = time.perf_counter()
             _bench_id = self.id[:8]
@@ -561,6 +597,10 @@ class AgenticProcess(Entity):
                 )
 
             self.status = ProcessStatus.RUNNING.value
+            # Capture snapshot of the freshly-launched config and clear the
+            # restart-required flag — the live worker now matches saved state.
+            self.last_started_hash = self._restart_snapshot()
+            self.restart_required = False
             await self.save()
             _bench("after save#2 (RUNNING)")
 
@@ -577,6 +617,8 @@ class AgenticProcess(Entity):
             self.status = ProcessStatus.FAILED.value
             await self.save()
             return ApiFailResponse(message=str(e))
+        finally:
+            self._set_start_lifecycle(False)
 
     @action.post(action_name="exit")
     async def exit(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -1594,6 +1636,65 @@ class AgenticProcess(Entity):
         if isinstance(agents_json, dict) and agents_json:
             return [f"agent-{k}" for k in agents_json.keys()]
         return [f"agent-{name}" for name in (self.embedded_agent_ids or [])]
+
+    # ── Restart-required tracking ─────────────────────────────────────────────
+
+    def _restart_snapshot(self) -> str:
+        """Stable hash over the worker-relevant subset of fields.
+
+        Mismatch against ``last_started_hash`` (captured at last successful
+        ``start()``) means the live worker is running with stale config —
+        ``restart_required`` flips True via the ``save()`` hook below.
+        """
+        import hashlib
+        import json as _json
+        payload = {
+            "cli_config": self.cli_config or {},
+            "workdir": self.workdir,
+            "additional_dirs": sorted(self.additional_dirs or []),
+            "embedded_asset_refs": sorted(str(r) for r in (self.embedded_asset_refs or [])),
+            "embedded_agent_ids": sorted(self.embedded_agent_ids or []),
+            "worker_type": str(self.worker_type) if self.worker_type else None,
+            "shell_mode": self.shell_mode,
+            "session_id": self.session_id,
+        }
+        return hashlib.md5(
+            _json.dumps(payload, sort_keys=True, default=str).encode()
+        ).hexdigest()
+
+    def _set_start_lifecycle(self, value: bool) -> None:
+        """Mark whether ``start()`` is currently mutating this entity.
+
+        While True the ``save()`` hook skips the auto-flag-flip so intermediate
+        saves inside ``start()`` (status, session_id) don't trip the detector.
+        """
+        object.__getattribute__(self, "__dict__")["_in_start_lifecycle"] = bool(value)
+
+    def _is_in_start_lifecycle(self) -> bool:
+        return bool(
+            object.__getattribute__(self, "__dict__").get("_in_start_lifecycle", False)
+        )
+
+    async def save(self, owner=None, notify: bool = True):
+        """Override to maintain ``restart_required`` automatically.
+
+        On every save, if the process is RUNNING and the worker-relevant
+        snapshot differs from ``last_started_hash``, flip the flag. Skipped
+        during ``start()`` itself (intermediate saves there are bookkeeping,
+        not config drift) — see ``_set_start_lifecycle``.
+
+        External callers can still set ``restart_required`` directly; the
+        hook only flips it ON, never explicitly clears it (clearing happens
+        only on successful ``start()``).
+        """
+        if (
+            not self._is_in_start_lifecycle()
+            and self.status == ProcessStatus.RUNNING.value
+            and self.last_started_hash
+            and self._restart_snapshot() != self.last_started_hash
+        ):
+            self.restart_required = True
+        return await super().save(owner=owner, notify=notify)
 
     @action.get(action_name="get-assets")
     async def get_assets_action(self) -> "ApiSuccessResponse":
