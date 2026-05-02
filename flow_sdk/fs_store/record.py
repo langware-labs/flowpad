@@ -260,8 +260,10 @@ class Record:
     # Subclasses set this to True to be included in the default index.
 
     _indexed_by_default: ClassVar[bool] = False
-    # Subclasses set this to True to mark the type as user-facing (shown in asset browser).
-    _user_asset: ClassVar[bool] = False
+    # Subclasses set this to True to surface the type in the user-facing browser
+    # (the "Assets" UI sidebar). Independent of whether the type is an actual
+    # agent-consumable asset — see record-level `_main_subdir` for that.
+    _browseable: ClassVar[bool] = False
     # Subclasses set this to True to surface the type in quick-create menus.
     _creatable: ClassVar[bool] = False
     # Extra field names concatenated into the embedding text.
@@ -315,7 +317,7 @@ class Record:
                     index_fields=list(getattr(cls, "index_fields", [])),
                     defaults=dict(getattr(cls, "_DATA_DEFAULTS", {})),
                     indexed_by_default=bool(getattr(cls, "_indexed_by_default", False)),
-                    user_asset=bool(getattr(cls, "_user_asset", False)),
+                    browseable=bool(getattr(cls, "_browseable", False)),
                     creatable=bool(getattr(cls, "_creatable", False)),
                     icon=getattr(cls, "_icon", None),
                     parent_type=parent_type,

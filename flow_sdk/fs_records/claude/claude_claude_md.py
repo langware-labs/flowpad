@@ -29,7 +29,7 @@ class ClaudeMdFsRecord(Record):
 
     _record_type: ClassVar[str] = RecordType.CLAUDE_MD
     _indexed_by_default: ClassVar[bool] = True
-    _user_asset: ClassVar[bool] = True
+    _browseable: ClassVar[bool] = True
     _icon: ClassVar[str] = "BookOpen"
     index_fields: ClassVar[list[str]] = ["name"]
 
