@@ -12,7 +12,6 @@ class CommentRecord(Record):
     # Runtime-created via Record.save (not FS-scannable). Excluded from
     # the indexer's default set — entities still flow into the DB normally.
     _indexed_by_default: ClassVar[bool] = False
-    _browseable: ClassVar[bool] = True
     index_fields: ClassVar[list[str]] = []
 
     def __init__(self, **kwargs: Any):

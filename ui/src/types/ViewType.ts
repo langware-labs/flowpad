@@ -287,7 +287,7 @@ export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
     canAddAsTab: true,
   },
   [ViewType.ASSETS]: {
-    title: 'Wiki',
+    title: 'Assets',
     iconName: 'BookOpen',
     tabLocation: 'dedicated',
     canAddAsTab: true,

@@ -12,7 +12,6 @@ class AppSecretRecord(Record):
 
     _record_type: ClassVar[str] = RecordType.APP_SECRET
     _indexed_by_default: ClassVar[bool] = False
-    _browseable: ClassVar[bool] = True
     _creatable: ClassVar[bool] = False
     index_fields: ClassVar[list[str]] = ["name", "description"]
 

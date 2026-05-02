@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 import { AgenticProcess, Agent, Project, QueryRequest, Skill } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { useAssetTypes, type AssetTypeInfo } from '@src/hooks/use-asset-types';
+import { lucideByName } from '@src/lib/lucide-by-name';
 import {
   Popover,
   PopoverContent,
@@ -13,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@src/components/ui/select';
-import { ArrowLeft, Bot, Plus, Settings, Wrench, X, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, Plus, Settings, X, type LucideIcon } from 'lucide-react';
 
 /**
  * A single attachable entity we know how to embed into an AgenticProcess.
@@ -26,11 +28,6 @@ interface AttachableEntry {
   name: string;
   icon: LucideIcon;
 }
-
-const TYPE_ICON: Record<'agent' | 'skill', LucideIcon> = {
-  agent: Bot,
-  skill: Wrench,
-};
 
 interface ChatSettingsPopoverProps {
   /** `agent-<id>` / `skill-<id>` strings — serialized TypeIds. */
@@ -64,21 +61,30 @@ export function ChatSettingsPopover({
   const { data: agents = [] } = useEntitiesQuery<Agent>(agentQuery, { enabled: open });
   const { data: skills = [] } = useEntitiesQuery<Skill>(skillQuery, { enabled: open });
 
+  // Per-type icon name comes from `_icon: ClassVar[str]` on the record class
+  // and is exposed via `GET /api/v1/assets/types`. Resolve the lucide-react
+  // export at render time so this stays in sync with the Assets browser.
+  const { types: assetTypes } = useAssetTypes();
+  const iconForType = useCallback((typeName: string): LucideIcon => {
+    const ti = assetTypes.find((t: AssetTypeInfo) => t.type_name === typeName);
+    return lucideByName(ti?.icon);
+  }, [assetTypes]);
+
   const attachable: AttachableEntry[] = useMemo(() => {
     const fromAgents = agents.map<AttachableEntry>((a) => ({
       ref: `agent-${a.id}`,
       type: 'agent',
       name: a.name ?? a.id!,
-      icon: TYPE_ICON.agent,
+      icon: iconForType('agent'),
     }));
     const fromSkills = skills.map<AttachableEntry>((s) => ({
       ref: `skill-${s.id}`,
       type: 'skill',
       name: s.displayName ?? s.name ?? s.id!,
-      icon: TYPE_ICON.skill,
+      icon: iconForType('skill'),
     }));
     return [...fromAgents, ...fromSkills];
-  }, [agents, skills]);
+  }, [agents, skills, iconForType]);
 
   const byRef = useMemo(() => {
     const m = new Map<string, AttachableEntry>();
@@ -94,9 +100,9 @@ export function ChatSettingsPopover({
       const hit = byRef.get(ref);
       if (hit) return hit;
       const type = (ref.split('-')[0] === 'skill' ? 'skill' : 'agent') as 'agent' | 'skill';
-      return { ref, type, name: ref, icon: TYPE_ICON[type] };
+      return { ref, type, name: ref, icon: iconForType(type) };
     });
-  }, [attachedRefs, byRef]);
+  }, [attachedRefs, byRef, iconForType]);
 
   // Add-mode list: attached first (pinned, checked), then rest filtered by query.
   const addListEntries: AttachableEntry[] = useMemo(() => {

@@ -1,6 +1,6 @@
 # Test Index
 
-> Last updated: 2026-05-01T00:00:00Z
+> Last updated: 2026-05-02T00:00:00Z
 > Scope: .md scenarios only. .md.ts-only files without a .md spec are not counted.
 
 ## agentic-process (12 scenarios)
@@ -55,6 +55,11 @@
 | flowpad_assistant_docs_panel.md | no | no | - |
 | project_room_new_doc.md | no | no | - |
 | project_row_opens_collab_space.md | no | no | - |
+
+## conversation (1 scenario)
+| Scenario | Playwright | Fast Path | Skip |
+|----------|------------|-----------|------|
+| two_instance_hub_conversation.md | no | no | - |
 
 ## editor (13 scenarios)
 | Scenario | Playwright | Fast Path | Skip |
