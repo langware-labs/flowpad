@@ -639,6 +639,12 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
   const onCursorLineChangeRef = useRef(onCursorLineChange);
   onCursorLineChangeRef.current = onCursorLineChange;
   const lastEmittedLineRef = useRef<number | null>(null);
+  // Suppress emissions until the user actually interacts with the editor —
+  // selectionUpdated fires once on mount (Milkdown initializes a default
+  // selection at position 0), and we don't want that to drive the chat badge.
+  // Programmatic caret restoration also marks this true so the badge survives
+  // mode switches.
+  const userInteractedRef = useRef(false);
 
   // Keep ref in sync so editor uses latest content when re-initialized (e.g. after save)
   useEffect(() => {
@@ -673,7 +679,7 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
               onActiveStateChange?.(getActiveState(view.state));
               onSelectionRectChange?.(computeSelectionRect(view));
               const emit = onCursorLineChangeRef.current;
-              if (emit) {
+              if (emit && userInteractedRef.current) {
                 const blockIdx = caretBlockIndex(view);
                 if (blockIdx != null) {
                   const table = blockLinesRef.current;
@@ -751,12 +757,39 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
         const sel = TextSelection.create(doc, Math.min(pos, doc.content.size));
         view.dispatch(view.state.tr.setSelection(sel).scrollIntoView());
         lastEmittedLineRef.current = table[blockIdx];
+        // Treat restoration as interaction so the badge persists across mode swaps.
+        userInteractedRef.current = true;
       });
     } catch {
       // view not ready yet — try again on next render via the same guard
       return;
     }
     restoredRef.current = true;
+  }, [get]);
+
+  // Mark the editor as "user-interacted" on first real input so the chat-line
+  // badge stays hidden until the user clicks/types. mousedown + keydown cover
+  // both pointer and keyboard navigation.
+  useEffect(() => {
+    const editor = get?.();
+    if (!editor) return;
+    const onUser = () => { userInteractedRef.current = true; };
+    let dom: HTMLElement | null = null;
+    try {
+      editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        dom = view.dom as HTMLElement;
+        view.dom.addEventListener('mousedown', onUser);
+        view.dom.addEventListener('keydown', onUser);
+      });
+    } catch {
+      // view not ready yet
+    }
+    return () => {
+      if (!dom) return;
+      dom.removeEventListener('mousedown', onUser);
+      dom.removeEventListener('keydown', onUser);
+    };
   }, [get]);
 
   // Toggle editable on mode change. setProps forces ProseMirror to re-read the

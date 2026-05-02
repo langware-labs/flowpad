@@ -322,12 +322,24 @@ function MonacoMarkdownEditor({
   onCursorLineChangeRef.current = onCursorLineChange;
 
   const handleMount = useCallback<OnMount>((editor) => {
+    // Mark "user has interacted" only when restoring from a known line OR when
+    // the user actually clicks/types. Initial-mount cursor at line 1 with no
+    // restoration must not emit (matches Q3: no badge until first interaction).
+    let userInteracted = false;
     const target = initialLineRef.current;
     if (target != null && target > 0) {
       editor.setPosition({ lineNumber: target, column: 1 });
       editor.revealLineInCenter(target);
+      userInteracted = true;
+    }
+    const dom = editor.getDomNode();
+    if (dom) {
+      const onUser = () => { userInteracted = true; };
+      dom.addEventListener('mousedown', onUser);
+      dom.addEventListener('keydown', onUser);
     }
     editor.onDidChangeCursorPosition((e) => {
+      if (!userInteracted) return;
       onCursorLineChangeRef.current?.(e.position.lineNumber);
     });
   }, []);
