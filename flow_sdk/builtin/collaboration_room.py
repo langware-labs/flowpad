@@ -146,11 +146,28 @@ class CollaborationRoom(Entity):
 
     @action.post(action_name="add_process")
     async def _http_add_process(self) -> ApiResponse:
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
         process_id = body.get("agentic_process_id")
         if not process_id:
             return ApiFailResponse(message="agentic_process_id is required")
+
+        # Format-validate so malformed ids return a structured FAIL instead of
+        # leaking a 500 from TypeId._pydantic_validate.
+        try:
+            process_typeid = TypeId(type="agentic_process", id=process_id)
+        except Exception as exc:
+            return ApiFailResponse(message=f"agentic_process_id is malformed: {exc}")
+
+        # Existence check — silently appending a non-resolving id was the
+        # validation gap the Phase 8 RCA identified (lost during the
+        # context_entities consolidation).
+        process = await AgenticProcess.get_one({"id": process_typeid.id})
+        if process is None:
+            return ApiFailResponse(message=f"AgenticProcess {process_id} not found")
+
         added = await self.add_process(process_id)
         return ApiSuccessResponse(
             data={

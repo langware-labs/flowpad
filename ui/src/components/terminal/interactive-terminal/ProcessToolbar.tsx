@@ -31,6 +31,7 @@ import { useToast } from '@src/hooks/use-toast';
 import { ToastAction } from '@src/components/ui/toast';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { PTYViewer } from './pty-viewer';
+import { PTYEventsViewer } from './pty-events-viewer';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
 
 interface ProcessToolbarProps {
@@ -53,6 +54,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const handleInjectPrompt = useCallback((text: string) => void shell?.sendInput(text + '\r'), [shell]);
   const { navigation } = useDockNavigation();
   const [showPtyViewer, setShowPtyViewer] = useState(false);
+  const [showPtyEventsViewer, setShowPtyEventsViewer] = useState(false);
 
   // Force re-render whenever any field on the process entity changes. Backend
   // mutates the entity in place via castAndDeepAssign, so without an explicit
@@ -287,6 +289,9 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
             <DropdownMenuItem onSelect={() => setShowPtyViewer(true)}>
               <span className="text-amber-400 text-xs font-medium">PTY Viewer</span>
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setShowPtyEventsViewer(true)}>
+              <span className="text-amber-400 text-xs font-medium">PTY Events Viewer</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -404,6 +409,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
       </div>
 
       <PTYViewer open={showPtyViewer} onClose={() => setShowPtyViewer(false)} shell={shell ?? null} />
+      <PTYEventsViewer open={showPtyEventsViewer} onClose={() => setShowPtyEventsViewer(false)} shell={shell ?? null} />
     </TooltipProvider>
   );
 }
