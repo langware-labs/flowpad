@@ -56,12 +56,14 @@ class PathQueryOptions:
     - ``search_dirs``: one or more absolute folder paths; results are the
       union of entities whose ``asset_ref`` is a strict descendant of any.
     - ``types``: limit to these entity types. ``None`` means *all registered
-      types* (most rows have empty ``asset_ref`` and are excluded by the
-      range filter anyway).
+      entity types* (record-only types are skipped — they have no DB rows).
+    - ``include_system``: when False, system-project entities are excluded
+      via SQL (so paging stays correct).
     """
 
     search_dirs: List[str | Path]
     types: List[str] | None = None
+    include_system: bool = True
     limit: int = 200
     offset: int = 0
 
@@ -164,19 +166,28 @@ class Entity(DBEntity):
             else ExpressionNode(op=QueryOp.OR, operands=folder_terms)
         )
 
-        types_to_query = opts.types if opts.types else list(SchemaRegistry.get_all_types())
+        match: ExpressionNode = folder_expr
+        if not opts.include_system:
+            match = ExpressionNode(op=QueryOp.AND, operands=[
+                match,
+                ExpressionNode(op=QueryOp.NE, operands=["system", True]),
+            ])
+
+        types_to_query = opts.types if opts.types else SchemaRegistry.get_all_entity_types()
+
+        # Each per-type query needs at most ``offset + limit`` rows; the global
+        # offset is applied after merge because rows are split across types.
+        per_type_limit = (opts.offset + opts.limit) if opts.limit else None
 
         results: list[Entity] = []
         for type_name in types_to_query:
-            qf = QueryFilter(type=type_name, match=folder_expr)
-            qf.order_by = {"asset_ref": "asc"}
-            try:
-                results.extend(await cls.get_all(qf))
-            except Exception:
-                # A registered type may not have any rows or the entity class
-                # may be unreachable in this build — skip it rather than fail
-                # the whole query.
-                continue
+            qf = QueryFilter(
+                type=type_name,
+                match=match,
+                limit=per_type_limit,
+                order_by={"asset_ref": "asc"},
+            )
+            results.extend(await cls.get_all(qf))
 
         results.sort(key=lambda e: getattr(e, "asset_ref", "") or "")
         end = opts.offset + opts.limit if opts.limit else None
@@ -718,7 +729,7 @@ class Entity(DBEntity):
         if ar is None or getattr(ar, "_path", None) is None:
             return
         from flow_sdk.fs_store.path_utils import canonical_posix_path
-        path_str = canonical_posix_path(ar._path)
+        path_str = canonical_posix_path(ar.path)
         if hasattr(self, "asset_ref"):
             self.asset_ref = path_str
         # parent_path lets DocsCategory / PlansCategory filter the markdown

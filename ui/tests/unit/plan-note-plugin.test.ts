@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { transformPlanNoteChildren, remarkPlanNote } from '@src/components/plan-editor/plan-note-plugin';
+import { remarkPlanNote, transformPlanNoteChildren } from '@/components/spec-editor/plan-note-plugin';
 import type { MarkdownNode } from '@milkdown/transformer';
+import { describe, expect, it } from 'vitest';
 
 /** Helper to build an MDAST text node */
 function text(value: string): MarkdownNode {
@@ -29,13 +29,7 @@ describe('transformPlanNoteChildren', () => {
   });
 
   it('wraps content between <plan-note> and </plan-note> into a planNote node', () => {
-    const input = [
-      text('before '),
-      html('<plan-note>'),
-      text('user note'),
-      html('</plan-note>'),
-      text(' after'),
-    ];
+    const input = [text('before '), html('<plan-note>'), text('user note'), html('</plan-note>'), text(' after')];
     const result = transformPlanNoteChildren(input);
 
     expect(result).toHaveLength(3);
@@ -67,13 +61,7 @@ describe('transformPlanNoteChildren', () => {
 
   it('handles <plan-note> with multiple child nodes', () => {
     const bold: MarkdownNode = { type: 'strong', children: [text('bold')] } as MarkdownNode;
-    const input = [
-      html('<plan-note>'),
-      text('before '),
-      bold,
-      text(' after'),
-      html('</plan-note>'),
-    ];
+    const input = [html('<plan-note>'), text('before '), bold, text(' after'), html('</plan-note>')];
     const result = transformPlanNoteChildren(input);
 
     expect(result).toHaveLength(1);
@@ -85,10 +73,7 @@ describe('transformPlanNoteChildren', () => {
   });
 
   it('handles unclosed <plan-note> gracefully (collects remaining nodes)', () => {
-    const input = [
-      html('<plan-note>'),
-      text('no close tag'),
-    ];
+    const input = [html('<plan-note>'), text('no close tag')];
     const result = transformPlanNoteChildren(input);
 
     expect(result).toHaveLength(1);
@@ -97,10 +82,7 @@ describe('transformPlanNoteChildren', () => {
   });
 
   it('handles empty <plan-note></plan-note>', () => {
-    const input = [
-      html('<plan-note>'),
-      html('</plan-note>'),
-    ];
+    const input = [html('<plan-note>'), html('</plan-note>')];
     const result = transformPlanNoteChildren(input);
 
     expect(result).toHaveLength(1);
@@ -109,12 +91,7 @@ describe('transformPlanNoteChildren', () => {
   });
 
   it('recurses into paragraph children', () => {
-    const para = paragraph(
-      text('text '),
-      html('<plan-note>'),
-      text('note'),
-      html('</plan-note>'),
-    );
+    const para = paragraph(text('text '), html('<plan-note>'), text('note'), html('</plan-note>'));
     const input = [para];
     const result = transformPlanNoteChildren(input);
 
@@ -127,11 +104,7 @@ describe('transformPlanNoteChildren', () => {
   });
 
   it('handles whitespace around tags', () => {
-    const input = [
-      html('  <plan-note>  '),
-      text('trimmed'),
-      html('  </plan-note>  '),
-    ];
+    const input = [html('  <plan-note>  '), text('trimmed'), html('  </plan-note>  ')];
     const result = transformPlanNoteChildren(input);
 
     expect(result).toHaveLength(1);
@@ -140,11 +113,7 @@ describe('transformPlanNoteChildren', () => {
   });
 
   it('does not transform unrelated html nodes', () => {
-    const input = [
-      html('<div>'),
-      text('content'),
-      html('</div>'),
-    ];
+    const input = [html('<div>'), text('content'), html('</div>')];
     const result = transformPlanNoteChildren(input);
 
     // Should pass through unchanged
@@ -160,13 +129,7 @@ describe('remarkPlanNote', () => {
   it('transforms tree root children', () => {
     const tree = {
       type: 'root',
-      children: [
-        paragraph(
-          html('<plan-note>'),
-          text('note'),
-          html('</plan-note>'),
-        ),
-      ],
+      children: [paragraph(html('<plan-note>'), text('note'), html('</plan-note>'))],
     };
 
     const plugin = remarkPlanNote();
@@ -188,9 +151,7 @@ describe('remarkPlanNote', () => {
   it('preserves non-plan-note content in tree', () => {
     const tree = {
       type: 'root',
-      children: [
-        paragraph(text('plain text')),
-      ],
+      children: [paragraph(text('plain text'))],
     };
 
     const plugin = remarkPlanNote();

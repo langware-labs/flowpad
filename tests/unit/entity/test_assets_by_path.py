@@ -17,7 +17,6 @@ from flow_sdk.builtin.skill import Skill
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions
 from flow_sdk.fs_store.path_utils import canonical_posix_path
-from tests.conftest import async_context
 
 
 # ---------- Fixture ----------------------------------------------------------
@@ -57,30 +56,18 @@ async def asset_tree(tmp_path: Path) -> dict:
     # Use uuid suffix so re-runs against a persistent DB don't collide on uname.
     suffix = uuid.uuid4().hex[:8]
 
-    async def _seed(entity: Entity) -> Entity:
-        await entity.save()
-        return entity
-
-    skill_a = await _seed(Skill(
-        id=str(uuid.uuid4()), name=f"skill_a_{suffix}",
-        asset_ref=canonical_posix_path(skill_a_path),
-    ))
-    skill_b = await _seed(Skill(
-        id=str(uuid.uuid4()), name=f"skill_b_{suffix}",
-        asset_ref=canonical_posix_path(skill_b_path),
-    ))
-    agent_x = await _seed(Agent(
-        id=str(uuid.uuid4()), name=f"agent_x_{suffix}",
-        asset_ref=canonical_posix_path(agent_x_path),
-    ))
-    doc_y = await _seed(Docs(
-        id=str(uuid.uuid4()), name=f"doc_y_{suffix}",
-        asset_ref=canonical_posix_path(doc_y_path),
-    ))
-    doc_z = await _seed(Docs(
-        id=str(uuid.uuid4()), name=f"doc_z_{suffix}",
-        asset_ref=canonical_posix_path(doc_z_path),
-    ))
+    skill_a = Skill(id=str(uuid.uuid4()), name=f"skill_a_{suffix}",
+                    asset_ref=canonical_posix_path(skill_a_path))
+    skill_b = Skill(id=str(uuid.uuid4()), name=f"skill_b_{suffix}",
+                    asset_ref=canonical_posix_path(skill_b_path))
+    agent_x = Agent(id=str(uuid.uuid4()), name=f"agent_x_{suffix}",
+                    asset_ref=canonical_posix_path(agent_x_path))
+    doc_y = Docs(id=str(uuid.uuid4()), name=f"doc_y_{suffix}",
+                 asset_ref=canonical_posix_path(doc_y_path))
+    doc_z = Docs(id=str(uuid.uuid4()), name=f"doc_z_{suffix}",
+                 asset_ref=canonical_posix_path(doc_z_path))
+    for e in (skill_a, skill_b, agent_x, doc_y, doc_z):
+        await e.save()
 
     yield {
         "tmp": tmp_path,
