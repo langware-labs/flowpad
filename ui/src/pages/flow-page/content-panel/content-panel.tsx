@@ -534,34 +534,8 @@ export function ContentPanel() {
           >
             <SpecRoute />
           </TabsContent>
-
-          <TabsContent
-            value={ViewType.SKILLS}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <SkillsMovedNotice />
-          </TabsContent>
         </div>
       </Tabs>
-    </div>
-  );
-}
-
-function SkillsMovedNotice() {
-  return (
-    <div className="flex h-full items-center justify-center p-8 text-center">
-      <div className="max-w-md space-y-3">
-        <h2 className="text-lg font-semibold">Skills moved</h2>
-        <p className="text-sm text-muted-foreground">
-          The dedicated Skills view has been folded into the Assets browser.
-        </p>
-        <a
-          href="/dock/assets/list/skill"
-          className="inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-        >
-          Open Skills in Assets
-        </a>
-      </div>
     </div>
   );
 }

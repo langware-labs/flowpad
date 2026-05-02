@@ -180,9 +180,6 @@ export function PTYEventsViewer({ open, onClose, shell }: Props) {
               <button onClick={() => setExpanded((e) => !e)} className="text-muted-foreground hover:text-foreground">
                 {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
               </button>
-              <button onClick={() => { setSelected(null); onClose(); }} className="text-muted-foreground hover:text-foreground">
-                <X className="h-3.5 w-3.5" />
-              </button>
             </div>
           </DialogTitle>
         </DialogHeader>
