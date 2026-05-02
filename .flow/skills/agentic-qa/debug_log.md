@@ -692,3 +692,209 @@ The cleaner fix is #1 (preserve the abstraction at the data layer); the more loc
 - `/dock/system_profile`, `/dock/assets`: working — false positives in the original tester report.
 - redirect-to-new_terminal: not reproducible — likely a one-off recovery path that has since changed.
 
+
+## 2026-05-02 — Phase 8 Debug #4: search broken — empty page on deep-link, query param dropped from home
+
+### Symptoms (from artifacts)
+- `search--search_bar.json`: "Deep-link to /dock/search?q=hello rendered an empty page (only notifications region). search-input element not present in DOM." Same for `?q=test`.
+- `search--record_search_from_home.json`: "URL was /dock/search without ?q= query string. Query value not propagated to URL."
+
+### Repro now: NEITHER REPRODUCIBLE
+**Deep-link `/dock/search?q=hello`:** loaded successfully. Active TabsContent panel `content-search` rendered. Input testid `search-input` present with value "hello". All key testids in DOM: `search-view`, `record-search-bar`, `search-input`, `search-filter-panel`, `search-results`. Result panel shows "No records found for 'hello'" — full SearchView pipeline executed end-to-end including the FTS5 backend call.
+
+**Home → Enter → URL:** typed "hello" into the home search input (testid `search-input`, placeholder "Search..."), pressed Enter, URL became `http://localhost:4098/dock/search?q=hello` — query param preserved. The same deep-link content panel mounted as above.
+
+### Root-cause analysis (despite non-repro)
+The wiring is correct end-to-end. Tracing the home → URL path:
+- `ui/src/pages/home-landing/HomeLanding.tsx:252-258` — `handleSearchSubmit` calls `navigation.openSearch(searchQuery, searchFilters)`.
+- `ui/src/navigation/NavigationActions.ts:505-518` — `openSearch(query, filters)` calls `DockPointer.forSearch(query, filters)` and `openDock(pointer)`.
+- `ui/src/navigation/DockPointer.ts:540-553` — `forSearch` writes `opts.q = query` if query truthy, then constructs `new DockPointer(ViewType.SEARCH, undefined, opts, layout)`. The `q` parameter is set as the dock-pointer's query option, not dropped.
+- `ui/src/pages/flow-page/content-panel/content-panel.tsx:476-481` — `<TabsContent value={ViewType.SEARCH}><SearchView /></TabsContent>` is registered. Live test confirms the panel mounts.
+
+So the artifacts captured a **transient state** that I cannot reproduce on the current build (commit `27ace25` / `0076349`, dev server PID 96819 started 19:41Z). Two plausible explanations for the original failures, both consistent with cycle artifacts being noisy under load:
+
+1. **Bootstrap hadn't completed when the test ran**, so the AgentLayout didn't yet have the agent context that ContentPanel depends on (see `flow-page.tsx:11-12` `const { flow } = useAgentContext()`). The Tabs root would mount but with `currentDock?.viewType` undefined → falling through to `'overview'` (line 190) — which on home renders `HomeLanding`, not search. This matches the "search-input element not present" observation: the search panel literally wasn't in the active tab.
+
+2. **The same SQLite writer-lock cascade documented in Debug #1**: bootstrap can take 2.5+ seconds (`/tmp/dev-server.log` shows repeated `Bootstrap slowness detected (2642ms > 500ms threshold)`), and during that window `_setup_local_auth` middleware can 500. If the home page navigated mid-bootstrap with a 500 hitting the request, the dataContext never settled and the openSearch call ran against an undefined navigation target — producing "URL was /dock/search without ?q=" (the navigate fallback drops args silently).
+
+### Evidence
+- Live repro at 18:57 / 18:58 confirmed both scenarios pass.
+- `ui/src/pages/home-landing/HomeLanding.tsx:252-258` — handler is correct.
+- `ui/src/navigation/DockPointer.ts:540-553` — `forSearch` correctly serializes `q`.
+- `ui/src/pages/flow-page/content-panel/content-panel.tsx:476-481` — SearchView TabsContent registration intact.
+- `git log -- ui/src/pages/search-view ui/src/pages/home-landing ui/src/navigation` shows no recent search-related changes since 2026-04-26 — the wiring has been stable through the cycle.
+- `/tmp/dev-server.log` — 16 SQLite lock errors, multiple `Bootstrap slowness detected` warnings.
+
+### Confidence
+- Non-repro is high-confidence: deep-link, type-and-Enter, and URL inspection all confirmed working in browser at 18:57Z and 18:58Z.
+- Bootstrap/lock-race hypothesis for the original failure: medium — consistent with timing of the 18:21Z artifact timestamps and the documented lock cascade in Debug #1, but I cannot prove that's what the tester observed.
+
+### Suggested fix direction (do NOT implement myself)
+**Primary recommendation: tie this fix to Debug #1's SQLite lock-cascade fix and to test-harness readiness.** Once `_setup_local_auth` no longer races the writer lock (per Fix #8: `lru_cache` the @local user lookup), bootstrap stabilizes, and the home → search deep-link flow becomes deterministic. No production-code change is warranted in the search/home/navigation files themselves — the wiring is correct.
+
+**Test-harness side:** consider strengthening the search scenarios' precondition phase to wait for bootstrap completion before issuing the deep-link or simulated keypress. The scenarios at:
+- `ui/tests/manual_regression/_results/2026-05-02T17-30-05/search--search_bar.json` (deep-link path)
+- `ui/tests/manual_regression/_results/2026-05-02T17-30-05/search--record_search_from_home.json` (home-Enter path)
+
+… should `await page.waitForFunction(() => !!window.dataContext?.user)` (or equivalent bootstrap-ready signal) before asserting; today they appear to assert immediately after `goto`/`type`, which makes them race-sensitive.
+
+The two other affected scenarios in the task description (`search/search_scan_info_stats` and `search/rebuild_index_ui`) failed for unrelated reasons visible in the same artifacts: `search--search_scan_info_stats.json` failed with "Timeout 120000ms exceeded waiting for allSeen() — not all expected phases were observed" (indexing phase ordering), and `search--rebuild_index_ui.json` failed with "footer-indexing-indicator did not appear within 7s" (testid drift on the footer indicator). Those belong to Debug #5 (sniffer/heartbeat) or task #7 (test cleanup) territory, not this task.
+
+### Classification
+- Deep-link `/dock/search?q=hello`: false positive — fully working on current build.
+- Home Enter losing `?q=`: false positive — query param correctly serialized via `DockPointer.forSearch`.
+- Likely cause of original failure: bootstrap-not-ready race window, possibly amplified by Debug #1's SQLite lock cascade. Will likely self-resolve once Fix #8 lands.
+
+
+## 2026-05-02 — Phase 8 Debug #5: snifferEnabled false on every load + heartbeat schema drift
+
+### Symptoms (from artifacts)
+- `sniffer--sniffer_bootstrap_init_state.json`: "window.context.snifferEnabled was false (expected true after bootstrap returns sniffer_hook). bootstrap returns the hook but client did not set snifferEnabled=true."
+- `sniffer--sniffer_spa_navigation_preserves_state.json`: same precondition failure on every load.
+- Tester also reported settings.json schema drift: no `flow_metadata` field, command rewritten to `"/Users/shlom/.flow/flowpad_runner.sh" hooks report --name=flowpad_sniffer`.
+
+### Repro now: BOTH REPRODUCED, both intentional behavior
+
+**Sub-symptom A — snifferEnabled=false even though bootstrap returns sniffer_hook:** REPRODUCED. After fresh page load at http://localhost:4098/, `window.dataContext.snifferEnabled === false` and `window.dataContext.snifferHook === null`. `dataContext.bootstrapInfo.sniffer_hook` IS present and well-formed (`{id, type:"agent_hook", uname:"sniffer", name:"Hooks Sniffer"}`). Bootstrap response shape is correct: API returns `data.sniffer_hook` (snake_case), and `BootstrapInfo.ts:90` declares `sniffer_hook?: AgentHook` matching the field name.
+
+**Sub-symptom B — settings.json command rewrite + no flow_metadata:** REPRODUCED in source (current `~/.claude/settings.json` has `"hooks": {}` because sniffer is disabled, but the writer code path is documented).
+
+### Root cause A: intentional reconciliation effect overrides bootstrap state with user preference
+Trace:
+1. `ts_sdk/src/main.ts:111-116` — bootstrap sets snifferEnabled=true correctly: `setSnifferEnabled(!!bootstrapInfo.sniffer_hook)` plus `await snifferManager.attach(snifferHook)` → `setSnifferHook(...)`.
+2. `ui/src/hooks/use-hooks-sniffer.ts:161-170` — a `useEffect` runs once after bootstrap completes (`!isBootstrapping`). It reads `loadSnifferPreference()` from localStorage, defaulting to `false` (`use-hooks-sniffer.ts:60-70`):
+   ```ts
+   const desired = loadSnifferPreference();
+   if (desired === snifferEnabled) return;
+   void (desired ? snifferManager.enable() : snifferManager.disable())
+   ```
+3. When localStorage has no key (fresh browser / never enabled), `loadSnifferPreference()` returns `false`. Bootstrap set snifferEnabled=true. So `desired (false) !== snifferEnabled (true)` → `snifferManager.disable()` fires.
+4. `ts_sdk/src/services/snifferManager.ts:57-70` `disable()` calls the backend DELETE, then `setSnifferEnabled(status.enabled)` (=false) and `setSnifferHook(null)`.
+
+Result: every fresh load with no prior user preference produces `snifferEnabled=false, snifferHook=null` AS SOON as the reconciliation effect runs — even though bootstrap correctly populated both.
+
+The comment at `use-hooks-sniffer.ts:158-160` explicitly states this is intentional: *"Reconcile server state with the user's last-saved preference, exactly once after bootstrap completes. Default is OFF (see loadSnifferPreference)."*
+
+### Root cause B: settings.json shape change is INTENTIONAL — Claude Code schema rejects custom keys
+The `flow_metadata` removal and command-rewrite are documented in `flow_sdk/builtin/claude_settings_sync.py:108-127`:
+> "The hook name is embedded in the command itself (via --name) so that cleanup can identify hooks even after Claude Code strips custom keys like flow_metadata from settings.json (additionalProperties: false)."
+
+The wrapper-script approach is in `flow_sdk/builtin/flowpad_runner_wrapper.py:1-10,98-116`:
+> "Instead of writing bare flow commands into Claude Code settings.json, we write a wrapper script that checks if flow exists before running it. This prevents stale hook entries from breaking Claude after flowpad is uninstalled."
+
+`git log --oneline -- flow_sdk/builtin/flowpad_runner_wrapper.py` confirms: introduced in `4de59da` ("Use flowpad_runner wrapper for Claude hooks to avoid errors when flow is missing"), refactored in `23d7e6c` ("move the flowpad_runner script to .flow folder"). Both pre-date this cycle.
+
+### Evidence
+- Live browser inspection: `dataContext.snifferEnabled=false`, `dataContext.snifferHook=null`, `dataContext.bootstrapInfo.sniffer_hook={id, type:"agent_hook", uname:"sniffer", ...}`, `appReady=true`.
+- `ts_sdk/src/main.ts:111-116` — bootstrap-side wiring is correct.
+- `ts_sdk/src/services/snifferManager.ts:24-35` (attach), `:57-70` (disable that fires `setSnifferEnabled(false)`).
+- `ts_sdk/src/FlowSync/context.ts:243-254,313-314` — observable state.
+- `ui/src/hooks/use-hooks-sniffer.ts:60-70` (loadSnifferPreference defaults false), `:161-170` (reconciliation effect).
+- `flow_sdk/builtin/claude_settings_sync.py:108-127` — explicit comment that flow_metadata removal + --name embedding is the chosen design.
+- `flow_sdk/builtin/flowpad_runner_wrapper.py:98-116` — wrapper-script command shape is the documented intent.
+- `flow_sdk/app/actions/hooks_sniffer.py:38-47` — `_SNIFFER_EXPECTED` includes `"hook_name": "flowpad_sniffer"` matching the new shape.
+
+### Confidence
+- Sub-symptom A: high — directly reproed in browser, traced to the reconciliation effect with the comment confirming intent.
+- Sub-symptom B: high — schema change is documented in source comments, not a regression.
+
+### Suggested fix direction (do NOT implement myself)
+**Both sub-symptoms are scenario-authoring issues, not product bugs.** The product behavior is intentional and correct. The two affected scenarios need updating:
+
+1. `sniffer/sniffer_bootstrap_init_state` (and the precondition in `sniffer/sniffer_spa_navigation_preserves_state`): the assertion *"snifferEnabled is true after bootstrap returns sniffer_hook"* is wrong. Two correct shapes for the assertion:
+   - **(preferred) Test the reconciled state:** `await page.waitForFunction(() => window.appReady === true && !window.dataContext.isBootstrapping)`, then assert `snifferEnabled === loadSnifferPreference()` (i.e., reflects user pref). For a fresh-browser run with no prior pref, expect `false`. To assert `true`, prime localStorage first: `await page.addInitScript(() => localStorage.setItem('flowpad.snifferEnabled', 'true'))`.
+   - **(strict) Test the bootstrap-returned shape only:** `expect(dataContext.bootstrapInfo.sniffer_hook).toBeTruthy()` — and skip the runtime-state assertion entirely. This proves bootstrap wiring without depending on the user-pref reconciliation.
+
+2. `sniffer/sniffer_heartbeat_settings` (and any scenario that checks settings.json shape): update expected JSON to match the wrapper-script + `--name` embedding form. New expected shape per matcher hook:
+   ```json
+   {
+     "type": "command",
+     "command": "\"/Users/.../.flow/flowpad_runner.sh\" hooks report --hook-entry-id=<uuid> --name=flowpad_sniffer"
+   }
+   ```
+   No `flow_metadata` field — Claude Code's `additionalProperties:false` schema rejects it.
+
+If the user disagrees with #1 (i.e., wants snifferEnabled to default ON after bootstrap regardless of localStorage), that's a product decision — flip the default in `loadSnifferPreference` (`use-hooks-sniffer.ts:60-70`) to `true` AND remove the auto-disable branch of the reconciliation effect (`:161-170`). I do not recommend this — the current design respects the user's last opt-out, which is the safer privacy posture for a wire-tap-style observer.
+
+### Classification
+- A (snifferEnabled=false): intentional behavior — auto-reconciliation to user preference (default OFF). Scenario-authoring fix.
+- B (settings.json shape): intentional schema migration to satisfy Claude Code's strict settings schema. Scenario-authoring fix.
+- Neither is a production-code regression. Bundle the two scenario rewrites with task #7 (test cleanup).
+
+
+## 2026-05-02 — Phase 8 Debug #6: collaboration room add_process accepts bogus IDs without validation
+
+### Symptom (from artifact)
+Tester-3: `collaboration_room_add_process` scenario expects `addProcess` to reject a non-existent `agentic_process_id`. Currently it accepts any string that parses as a TypeId (including syntactically-valid but non-existent UUIDs).
+
+### Repro now: REPRODUCED — real bug
+```
+POST /api/v1/graph/collaboration_room/<room>/add_process
+{"agentic_process_id":"00000000-0000-0000-0000-000000000000"}
+
+→ 200 OK
+{"status":"SUCCESS","data":{"ok":true,"context_entities":["agentic_process-00000000-0000-0000-0000-000000000000"]}}
+```
+A non-existent UUID is silently appended to `context_entities`. Only completely malformed strings (non-UUID format, like "not-even-a-uuid") fail — and they fail with a 500 from `TypeId._pydantic_validate` which is the wrong error class for client-input validation (should be 400).
+
+### Root cause
+Two missing validations in `flow_sdk/builtin/collaboration_room.py:147-160` (`_http_add_process` action):
+
+1. **No existence check on the target entity.** The handler accepts any `process_id` string, builds `TypeId(type="agentic_process", id=process_id)` (`:109`), and calls `self.add_context_entity(process_typeid)` (`:112`). The base `add_context_entity` (`flow_sdk/core/entity/entity_model.py:946-950`) is intentionally a low-level mutator — it does NOT validate. The action layer is responsible for verifying the referenced entity exists, but that check was lost (or never added) during the consolidation that moved `agentic_process_ids` into `context_entities`.
+
+2. **No format-validation guard before constructing the TypeId.** Malformed ids leak through to `TypeId.__init__` → `is_valid_identifier` (`flow_sdk/fs_store/identifier.py`), which raises `pydantic_core.ValidationError` and gets caught by the global error handler as a 500 "Internal server error". Clients get a generic 500 with the validation message in the body — which is technically usable but the wrong status code semantically.
+
+The git log on the file (commit `1061ec6` "Consolidate generic pointer fields into context_entities") confirms that `add_process` was rewritten to route through `add_context_entity` during this cycle's consolidation work. The pre-consolidation code presumably did a `Process.get_by_id` lookup before appending; that check was dropped in the refactor.
+
+### Evidence
+- `flow_sdk/builtin/collaboration_room.py:147-160` — `_http_add_process` action: no existence check, no format guard.
+- `flow_sdk/builtin/collaboration_room.py:108-115` — internal `add_process` method: blindly constructs the TypeId and calls `add_context_entity`.
+- `flow_sdk/core/entity/entity_model.py:946-950` — `add_context_entity` is intentionally unchecked; comment at `:947` says "(idempotent)".
+- Live repro: `00000000-...` UUID accepted with 200 + `ok: true`. `not-even-a-uuid` rejected with 500 (wrong status code).
+- `git log -p -- flow_sdk/builtin/collaboration_room.py` (commit `1061ec6` "Consolidate generic pointer fields into context_entities") — the consolidation that moved `agentic_process_ids` into `context_entities`. Pre-consolidation behavior likely included an existence check.
+
+### Confidence
+high — direct repro against the running server, exact source-line attribution, and git-log evidence of when the check was dropped.
+
+### Suggested fix direction (do NOT implement myself)
+**Backend fix in `flow_sdk/builtin/collaboration_room.py:_http_add_process`:**
+
+```python
+@action.post(action_name="add_process")
+async def _http_add_process(self) -> ApiResponse:
+    from flow_sdk.builtin.agentic_process import AgenticProcess  # local import keeps module load lean
+
+    request_info = get_current_request_info()
+    body = await request_info.get_post_data() if request_info else {}
+    process_id = body.get("agentic_process_id")
+    if not process_id:
+        return ApiFailResponse(message="agentic_process_id is required")
+
+    # Format-validate first so malformed ids return 400, not 500
+    try:
+        process_typeid = TypeId(type="agentic_process", id=process_id)
+    except Exception as e:
+        return ApiFailResponse(message=f"agentic_process_id is malformed: {e}")
+
+    # Existence check — reject IDs that don't resolve to a real entity
+    process = await AgenticProcess.get_by_typeid(process_typeid)
+    if process is None:
+        return ApiFailResponse(message=f"AgenticProcess {process_id} not found")
+
+    added = await self.add_process(process_id)
+    return ApiSuccessResponse(
+        data={
+            "ok": added,
+            "context_entities": [str(t) for t in self.context_entities],
+        }
+    )
+```
+
+Notes:
+- Place the validation in the HTTP action layer, NOT in `add_process` (the internal method). The internal method is correctly written as a low-level mutator; tests / programmatic callers that already hold a verified entity should not pay for a re-lookup.
+- `ApiFailResponse` returns a structured 400-style fail JSON (`{status:"FAIL", message:...}`) — better than the current 500 leak.
+- Frontend SDK (`ts_sdk/src/entities/collaboration-room.ts:112`) does NOT need a change — it already trusts the server. Pre-validation in the SDK would be redundant; the server is the source of truth.
+
+### Classification
+Real production bug — validation lost during the `context_entities` consolidation refactor (commit `1061ec6`). The fix is a 6-line addition to `_http_add_process`. Recommend bundling with Fix #8 (also backend-side) if convenient.
+

@@ -128,7 +128,7 @@ def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
     Pragmas (per-connection, set on every new aiosqlite connection):
       - journal_mode=WAL          readers concurrent with one writer
       - synchronous=NORMAL        safe with WAL, fsync only on checkpoint
-      - busy_timeout=5000         5s wait on writer-lock contention
+      - busy_timeout=15000        15s wait on writer-lock contention
       - temp_store=MEMORY         temp tables in RAM
       - cache_size=-64000         64 MB page cache
       - mmap_size=268435456       256 MB memory-mapped I/O for reads
@@ -147,7 +147,7 @@ def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
         for stmt in (
             "PRAGMA journal_mode=WAL",
             "PRAGMA synchronous=NORMAL",
-            "PRAGMA busy_timeout=5000",
+            "PRAGMA busy_timeout=15000",
             "PRAGMA temp_store=MEMORY",
             "PRAGMA cache_size=-64000",
             "PRAGMA mmap_size=268435456",

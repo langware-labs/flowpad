@@ -1,10 +1,42 @@
-import type { OrphanEntry } from './ptyOrphanBuffer';
-import type { OutputChunk } from '../../pty-sync/types.js';
 import { dataContext } from '../../FlowSync/context';
+import type { OutputChunk } from '../../pty-sync/types.js';
+import type { OrphanEntry } from './ptyOrphanBuffer';
 
 export type PtyOutputListener = (data: string, seq?: number) => void;
 export type PtyLineListener = (line: string) => void;
-export type PtyTrigger = { pattern: RegExp; onMatch: (line: string, match: RegExpMatchArray) => void };
+/**
+ * Pattern watcher registered via ``Shell.addTrigger`` /
+ * ``PtyConnection.addTrigger``. ``onMatch`` fires when an ANSI-stripped PTY
+ * line matches ``pattern``. ``label`` is shown in the PTY Events Viewer; if
+ * absent, the viewer falls back to ``pattern.toString()``.
+ */
+export type PtyEvent = {
+  pattern: RegExp;
+  onMatch: (line: string, match: RegExpMatchArray) => void;
+  label?: string;
+};
+
+/** A single recorded fire of a registered ``PtyEvent`` — buffered in
+ *  ``PtyConnection`` and surfaced in the PTY Events Viewer. */
+export interface PtyEventFire {
+  /** Local uuid for stable React keys. */
+  id: string;
+  /** ``Date.now()`` at fire time. */
+  ts: number;
+  /** ``pattern.toString()`` — the regex literal source. */
+  patternSource: string;
+  /** ``PtyEvent.label`` if set by the caller. */
+  label?: string;
+  /** ANSI-stripped line that matched. */
+  line: string;
+  /** First 8 capture groups (or fewer) from the match — slice protects the buffer. */
+  match: string[];
+  /** True iff the fire happened during the replay phase (pre-attach). */
+  duringReplay: boolean;
+}
+
+export type PtyEventFireListener = (fire: PtyEventFire) => void;
+
 export type PtyConnectionStatus = 'idle' | 'connecting' | 'live' | 'restarting' | 'closed';
 
 /** Strip CSI/SGR escape sequences so regex matchers see plain text.
@@ -41,7 +73,12 @@ export class PtyConnection {
   private readonly _lineListeners = new Set<PtyLineListener>();
 
   /** Active triggers — pattern + onMatch. Wrapped over the line stream. */
-  private readonly _triggers = new Set<PtyTrigger>();
+  private readonly _triggers = new Set<PtyEvent>();
+
+  /** Bounded ring of fire records — surfaced in PTY Events Viewer. */
+  private readonly _eventFires: PtyEventFire[] = [];
+  private readonly _eventFireListeners = new Set<PtyEventFireListener>();
+  private static readonly MAX_EVENT_FIRES = 200;
 
   /** Pending raw text not yet terminated by \n. Fed into the line stream. */
   private _lineBuffer = '';
@@ -152,7 +189,11 @@ export class PtyConnection {
     // Gate on _replayDone only (not isLive) so unit tests work without a WS.
     if (this._replayDone) {
       for (const listener of this._listeners) {
-        try { listener(decoded, seq); } catch (e) { console.error('[PtyConnection] listener error:', e); }
+        try {
+          listener(decoded, seq);
+        } catch (e) {
+          console.error('[PtyConnection] listener error:', e);
+        }
       }
     }
     return decoded;
@@ -178,9 +219,30 @@ export class PtyConnection {
    *
    * Returns an unsubscribe function.
    */
-  addTrigger(trigger: PtyTrigger): () => void {
+  addTrigger(trigger: PtyEvent): () => void {
     this._triggers.add(trigger);
     return () => this._triggers.delete(trigger);
+  }
+
+  /** Number of currently-registered ``PtyEvent`` watchers. */
+  getRegisteredEventCount(): number {
+    return this._triggers.size;
+  }
+
+  /** Snapshot of buffered fire records (oldest first). */
+  getEventFires(): readonly PtyEventFire[] {
+    return this._eventFires;
+  }
+
+  /** Subscribe to new fires. Returns an unsubscribe function. */
+  onEventFire(fn: PtyEventFireListener): () => void {
+    this._eventFireListeners.add(fn);
+    return () => this._eventFireListeners.delete(fn);
+  }
+
+  /** Drop all buffered fires (does not affect listeners or watchers). */
+  clearEventFires(): void {
+    this._eventFires.length = 0;
   }
 
   private _feedLineBuffer(decoded: string): void {
@@ -198,12 +260,47 @@ export class PtyConnection {
 
   private _emitLine(line: string): void {
     for (const fn of this._lineListeners) {
-      try { fn(line); } catch (e) { console.error('[PtyConnection] line listener error:', e); }
+      try {
+        fn(line);
+      } catch (e) {
+        console.error('[PtyConnection] line listener error:', e);
+      }
     }
     for (const trig of this._triggers) {
       const m = line.match(trig.pattern);
       if (m) {
-        try { trig.onMatch(line, m); } catch (e) { console.error('[PtyConnection] trigger error:', e); }
+        try {
+          trig.onMatch(line, m);
+        } catch (e) {
+          console.error('[PtyConnection] trigger error:', e);
+        }
+        this._recordEventFire(trig, line, m);
+      }
+    }
+  }
+
+  private _recordEventFire(trig: PtyEvent, line: string, match: RegExpMatchArray): void {
+    const fire: PtyEventFire = {
+      id:
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `fire-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      ts: Date.now(),
+      patternSource: trig.pattern.toString(),
+      label: trig.label,
+      line,
+      match: Array.from(match).slice(0, 8) as string[],
+      duringReplay: !this._replayDone,
+    };
+    this._eventFires.push(fire);
+    while (this._eventFires.length > PtyConnection.MAX_EVENT_FIRES) {
+      this._eventFires.shift();
+    }
+    for (const fn of this._eventFireListeners) {
+      try {
+        fn(fire);
+      } catch (e) {
+        console.error('[PtyConnection] event-fire listener error:', e);
       }
     }
   }
@@ -412,11 +509,14 @@ export class PtyConnection {
 
   // ── Housekeeping ──────────────────────────────────────────────────────────
 
-  /** Clear chunk buffer and reset seq counter (does NOT reset attach state). */
+  /** Clear chunk buffer and reset seq counter (does NOT reset attach state).
+   *  Also drops the PTY-event fire buffer — fires from a prior PTY pid are
+   *  stale once we re-attach to a fresh pid. */
   clear(): void {
     this.chunks.clear();
     this.lastSeq = 0;
     this._lineBuffer = '';
+    this._eventFires.length = 0;
   }
 
   dispose(): void {
@@ -425,6 +525,8 @@ export class PtyConnection {
     this._disconnectListeners.clear();
     this._lineListeners.clear();
     this._triggers.clear();
+    this._eventFireListeners.clear();
+    this._eventFires.length = 0;
     this.chunks.clear();
     this._lineBuffer = '';
   }
@@ -433,13 +535,21 @@ export class PtyConnection {
 
   private _emitReady(): void {
     for (const fn of this._readyListeners) {
-      try { fn(); } catch (e) { console.error('[PtyConnection] onReady listener error:', e); }
+      try {
+        fn();
+      } catch (e) {
+        console.error('[PtyConnection] onReady listener error:', e);
+      }
     }
   }
 
   private _emitDisconnect(): void {
     for (const fn of this._disconnectListeners) {
-      try { fn(); } catch (e) { console.error('[PtyConnection] onDisconnect listener error:', e); }
+      try {
+        fn();
+      } catch (e) {
+        console.error('[PtyConnection] onDisconnect listener error:', e);
+      }
     }
   }
 
