@@ -5,7 +5,7 @@ import { SkillAssetEditor } from '@src/components/assets/editor/skill/SkillAsset
 import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
 import { useConversation } from '@src/components/conversation/useConversation';
 import { FileText, X } from 'lucide-react';
-import { ICON_BY_TYPE } from '@src/components/conversation/EntityLabel';
+import { ICON_BY_TYPE } from '@src/components/conversation/EntityChip';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /**

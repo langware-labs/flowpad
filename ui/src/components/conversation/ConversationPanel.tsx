@@ -1,8 +1,11 @@
+import { useMemo } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { ConversationToolbar } from './ConversationToolbar';
 import { ConversationView } from './ConversationView';
 import { useProjectMappingGate } from './useProjectMappingGate';
+import { ChipsExcludeProvider } from './chips/ChipsExcludeContext';
+import { taskChipKeys } from './chips/keys';
 
 interface ConversationPanelProps {
   /** Optional. Project-scoped conversations have no task. */
@@ -55,6 +58,10 @@ export function ConversationPanel({
   const ensureMapped = task ? mappingGate.ensureMapped : undefined;
   const mappingDialogProps = mappingGate.dialogProps;
 
+  // Seed the chip-exclude scope with what TaskChips will render so deeper
+  // chip rows (MessageChips) skip duplicates automatically.
+  const taskKeys = useMemo(() => taskChipKeys(task ?? null), [task]);
+
   const headerWrapper =
     variant === 'compact'
       ? 'flex items-center gap-1.5 text-xs font-medium text-muted-foreground'
@@ -76,12 +83,14 @@ export function ConversationPanel({
         </div>
       )}
       <div className={bodyWrapper}>
-        <ConversationView
-          conversationId={conversationId}
-          task={task}
-          senderName={senderName}
-          ensureMapped={ensureMapped}
-        />
+        <ChipsExcludeProvider add={taskKeys}>
+          <ConversationView
+            conversationId={conversationId}
+            task={task}
+            senderName={senderName}
+            ensureMapped={ensureMapped}
+          />
+        </ChipsExcludeProvider>
       </div>
 
       {task && <OpenProjectComponent {...mappingDialogProps} />}
