@@ -1,4 +1,4 @@
-import { SpecEditor } from '@/components/spec-editor/SpecEditor';
+import { SpecEditor } from '@src/components/spec-editor/SpecEditor';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { AIConfigView } from '@src/components/ai-config-view';
 import { ApiKeysView } from '@src/components/api-keys-view/api-keys-view';
