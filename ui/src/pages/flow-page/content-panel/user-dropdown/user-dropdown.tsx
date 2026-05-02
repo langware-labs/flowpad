@@ -102,9 +102,13 @@ const instructionsQueryFilter = new QueryFilter({
   },
 });
 
-function cloudLoginTooltip(loggedIn: boolean): string {
+function cloudLoginTooltip(loggedIn: boolean, email?: string): string {
   const url = cloudManager.cloudUrl;
-  if (loggedIn) return url ? `Logged in to ${url}` : 'Logged in';
+  if (loggedIn) {
+    if (email && url) return `${email} is logged into ${url}`;
+    if (email) return `${email} is logged in`;
+    return url ? `Logged in to ${url}` : 'Logged in';
+  }
   return url ? `Not logged in (${url})` : 'Not logged in';
 }
 
@@ -268,11 +272,12 @@ export function UserDropdown() {
                     data-testid="agent-page-user-avatar"
                   >
                     <AvatarFallback>
-                      {user.name
-                        ?.split(' ')
+                      {(user.name || user.email?.split('@')[0] || '?')
+                        .split(/[\s._-]+/)
                         .map((n: string) => n[0])
                         .join('')
-                        .toUpperCase() || '?'}
+                        .toUpperCase()
+                        .slice(0, 2)}
                     </AvatarFallback>
                   </Avatar>
                   {cloudLoginAvailable && (
@@ -281,7 +286,7 @@ export function UserDropdown() {
                 </div>
                     </DropdownMenuTrigger>
                   </TooltipTrigger>
-                  <TooltipContent side="top">{cloudLoginTooltip(cloudLoginAvailable)}</TooltipContent>
+                  <TooltipContent side="top">{cloudLoginTooltip(cloudLoginAvailable, user?.email)}</TooltipContent>
                   <DropdownMenuContent align="end">
                 {isOwner && agentId && (
                   <>
