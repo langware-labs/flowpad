@@ -15,7 +15,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useLocalUser } from './useLocalUser';
 
 interface UseMyProcessOptions {
-  task: ITask;
+  task: Task;
   conversationId: string;
   senderName?: string;
 }
@@ -37,7 +37,7 @@ interface UseMyProcessResult {
  * just reattach to the existing process with no instruction.
  */
 async function buildReceiverContextPrompt(
-  task: ITask,
+  task: Task,
   conversationId: string,
   senderName: string | undefined,
 ): Promise<string> {
@@ -70,9 +70,10 @@ async function buildReceiverContextPrompt(
     });
   const transcriptPath = transcript ? (transcript.local_path ?? transcript.data) : null;
 
-  const spec = task.spec_id
+  const specTypeId = task.firstContextOfType('spec');
+  const spec = specTypeId
     ? await dataManager.getByTypeId<Spec>(
-        new TypeId(Spec.type, task.spec_id),
+        specTypeId,
         new ExpansionRequest({ expand: ['blobs'] }),
       ).catch(() => null)
     : null;

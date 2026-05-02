@@ -1,4 +1,4 @@
-import type { ITask } from '@sdk/entities/task';
+import type { Task } from '@sdk';
 import type { ConversationTranscriptInfo } from '../find-conversation-transcript';
 
 /**
@@ -22,11 +22,12 @@ export const ChipKey = {
 } as const;
 
 /** Chips that ``TaskChips`` would render given its inputs. */
-export function taskChipKeys(task: ITask | null | undefined): Set<string> {
+export function taskChipKeys(task: Task | null | undefined): Set<string> {
   const keys = new Set<string>();
   if (!task) return keys;
   if (task.project_id) keys.add(ChipKey.project(task.project_id));
-  if (task.spec_id) keys.add(ChipKey.spec(task.spec_id));
+  const specId = task.firstContextOfType?.('spec')?.id;
+  if (specId) keys.add(ChipKey.spec(specId));
   if (task.id) keys.add(ChipKey.process(task.id));
   return keys;
 }

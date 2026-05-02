@@ -2,7 +2,6 @@ import { useEffect, useRef } from 'react';
 import { FileText } from 'lucide-react';
 import { AgenticProcess, Conversation, Project, Spec, Task, TypeId, type ProcessIconKey } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
-import type { ITask } from '@sdk/entities/task';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { pickProcessIcon } from '@src/components/icons/process-icons';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -14,7 +13,8 @@ import { useChipsExclude } from './ChipsExcludeContext';
 import { ChipKey } from './keys';
 
 interface TaskChipsProps {
-  task: ITask;
+  /** Task entity instance (not just ITask) — we call ``firstContextOfType`` on it. */
+  task: Task;
   conversationId: string;
   senderName?: string;
   /** Override for the project chip when no project is mapped — opens the picker. */
@@ -52,9 +52,8 @@ export function TaskChips({
   const { data: taskEntity } = useEntity<Task>(
     task.id ? new TypeId(Task.type, task.id) : null,
   );
-  const { data: spec } = useEntity<Spec>(
-    task.spec_id ? new TypeId(Spec.type, task.spec_id) : null,
-  );
+  const specTypeId = task.firstContextOfType('spec');
+  const { data: spec } = useEntity<Spec>(specTypeId);
   // Live process — used for icon selection so the glyph reflects fresh-vs-restored.
   const { data: process } = useEntity<AgenticProcess>(
     task.my_process_id ? new TypeId(AgenticProcess.type, task.my_process_id) : null,
@@ -64,7 +63,7 @@ export function TaskChips({
 
   const showTaskChip = !!task.id && !exclude.has(ChipKey.task(task.id));
   const showProjectChip = !exclude.has(ChipKey.project(localProjectId));
-  const showSpecChip = !!task.spec_id && !exclude.has(ChipKey.spec(task.spec_id));
+  const showSpecChip = !!specTypeId && !exclude.has(ChipKey.spec(specTypeId.id));
   const showProcessButton = !!task.id && !exclude.has(ChipKey.process(task.id));
 
   // Process button: icon comes from AgenticProcess.icon when we have a live
@@ -123,12 +122,12 @@ export function TaskChips({
         </button>
       ))}
 
-      {showSpecChip && (
+      {showSpecChip && specTypeId && (
         <EntityChip
           entity={{
-            typeId: new TypeId(Spec.type, task.spec_id!),
+            typeId: specTypeId,
             type: Spec.type,
-            id: task.spec_id,
+            id: specTypeId.id,
             name: spec?.title ?? 'Spec',
           }}
           title="Open the spec this task was created from"

@@ -7,8 +7,8 @@ export interface InboxMessage {
   id: string;
   text: string;
   instruction?: string | null;
-  /** TypeId strings e.g. "task-abc123" */
-  context: string[];
+  /** TypeId strings e.g. "task-abc123". Renamed from ``context`` to match the unified ``context_entities`` on the entity. */
+  context_entities: string[];
   attachment: InboxAttachment[];
   sender_id?: string | null;
   sender_name?: string | null;

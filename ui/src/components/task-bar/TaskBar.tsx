@@ -55,7 +55,8 @@ export function TaskBar() {
     // pointer is a task ID like "620ffea5-..." or a typeId like "task-620ffea5-..."
     const rawId = pointer.startsWith('task-') ? pointer.slice(5) : pointer;
     const found = tasks.find((t) => t.id === rawId || t.id === pointer);
-    console.log('[TaskBar] pointer expand:', { rawId, found_spec_id: found?.spec_id, found_id: found?.id, isSharedTask: !!(found?.spec_id) });
+    const foundSpecId = found?.firstContextOfType?.('spec')?.id;
+    console.log('[TaskBar] pointer expand:', { rawId, found_spec_id: foundSpecId, found_id: found?.id, isSharedTask: !!foundSpecId });
     if (found && expandedTask?.id !== found.id) {
       setExpandedTask(found);
     }
@@ -192,8 +193,9 @@ export function TaskBar() {
     [getSelectedTasks, exitBulkMode, bulkReminder],
   );
 
-  const isSharedTask = !!(expandedTask?.spec_id);
-  console.log('[TaskBar] render:', { expandedTask_id: expandedTask?.id, spec_id: expandedTask?.spec_id, isSharedTask });
+  const expandedSpecId = expandedTask?.firstContextOfType?.('spec')?.id;
+  const isSharedTask = !!expandedSpecId;
+  console.log('[TaskBar] render:', { expandedTask_id: expandedTask?.id, spec_id: expandedSpecId, isSharedTask });
   const isSlid = expandedTask != null && !isSharedTask;
   const showBulkSelectButton = filteredTasks.length >= BULK_SELECT_MIN_TASKS;
   const removeLabel = isOnArchivedTab ? 'Delete' : 'Archive';

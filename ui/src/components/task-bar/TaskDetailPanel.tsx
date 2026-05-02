@@ -25,13 +25,15 @@ function displayName(user: User | null | undefined, fallback?: string | null): s
 export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
   const { navigation } = useDockNavigation();
   const blobExpansion = new ExpansionRequest({ expand: ['blobs'] });
-  const isSharedTask = !!task.spec_id;
+  const specTypeId = task.firstContextOfType?.('spec') ?? null;
+  const conversationTypeId = task.firstContextOfType?.('conversation') ?? null;
+  const isSharedTask = !!specTypeId;
 
   const { data: sender } = useEntity<User>(
     task.shared_by_id ? new TypeId(User.type, task.shared_by_id) : null,
   );
   const { data: spec } = useEntity<Spec>(
-    task.spec_id ? new TypeId(Spec.type, task.spec_id) : null,
+    specTypeId,
     { query: blobExpansion },
   );
   const handleOpenFullView = () => {
@@ -149,10 +151,10 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
             )}
 
             {/* Conversation thread */}
-            {task.conversation_id && (
+            {conversationTypeId && (
               <ConversationPanel
                 task={task}
-                conversationId={task.conversation_id}
+                conversationId={conversationTypeId.id}
                 variant="compact"
               />
             )}

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { ITask } from '@sdk/entities/task';
+import type { Task } from '@sdk';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { ConversationToolbar } from './ConversationToolbar';
 import { ConversationView } from './ConversationView';
@@ -9,7 +9,7 @@ import { taskChipKeys } from './chips/keys';
 
 interface ConversationPanelProps {
   /** Optional. Project-scoped conversations have no task. */
-  task?: ITask | null;
+  task?: Task | null;
   conversationId: string;
   /** Optional sender label for messages whose `sender_name` field is missing. */
   senderName?: string;

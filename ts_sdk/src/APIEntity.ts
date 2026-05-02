@@ -53,6 +53,13 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   _dirty: boolean = true;
   _typeId: TypeId | null = null;
   labels?: string[];
+  /**
+   * Generic context-entity references. Private — use ``addContextEntity`` /
+   * ``removeContextEntity`` to mutate. The wire shape is ``string[]`` of
+   * TypeId-formatted entries; we deserialize to ``TypeId[]`` in the
+   * constructor and serialize back via ``toJSON``.
+   */
+  private _context_entities: TypeId[] = [];
   root_vfs_path?: string;
   _isLoaded: boolean = false;
   static nextInstanceIndex: number = 0;
@@ -246,6 +253,16 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     if (entityJson.type && entityJson.type != this.getType()) {
       throw new Error(`Entity type mismatch: ${entityJson.type} != ${this.getType()}`);
     }
+    // Move the wire-shaped ``context_entities`` (string[] / TypeId[] after
+    // deepAssign) into the private storage and drop the public alias so
+    // toJSON's dynamic-property iterator doesn't double-emit it.
+    const fromWire = (this as any).context_entities as Array<unknown> | undefined;
+    if (Array.isArray(fromWire) && fromWire.length > 0) {
+      this._context_entities = fromWire.map((v) =>
+        v instanceof TypeId ? v : new TypeId(String(v)),
+      );
+    }
+    delete (this as any).context_entities;
     const proxy = getProxy(this);
     dataManager.register_new_entity(this.typeId, proxy);
     return proxy;
@@ -299,6 +316,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
       id: this.id,
       type: this.getType(),
       version: this.schema_version,
+      // Persist only the private array — direct fields are emitted as their
+      // own typed fields by the dynamic-property iterator below. The dynamic
+      // ``contextEntities`` getter merges them at read time.
+      context_entities: this._context_entities.map((t) => t.toString()),
     };
 
     // Dynamically add all enumerable properties of the instance
@@ -620,6 +641,65 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    */
   public get_labels(): string[] {
     return [...(this.labels || [])];
+  }
+
+  // ── context_entities surface ──────────────────────────────────────────
+  //
+  // Unified container for "what other entities is this one contextually
+  // related to." See ``IEntity.context_entities``. The persisted slot is the
+  // private ``_context_entities``; the public ``contextEntities`` getter
+  // merges in per-entity-projected direct fields (overridable via
+  // ``_directFieldsAsTypeIds``). Frontend writes go through
+  // ``addContextEntity`` / ``removeContextEntity`` only.
+
+  /**
+   * Per-entity projection of direct fields into the chip-renderable context.
+   * Override in subclasses to surface fields like ``project_id`` or
+   * ``assignee`` as TypeIds. Default: nothing.
+   */
+  protected _directFieldsAsTypeIds(): TypeId[] {
+    return [];
+  }
+
+  /**
+   * Full chip-renderable context: direct-field projection + persisted
+   * ``_context_entities``. Read-only — mutate via the add/remove methods.
+   */
+  public get contextEntities(): TypeId[] {
+    return [...this._directFieldsAsTypeIds(), ...this._context_entities];
+  }
+
+  /**
+   * Append a context entity (idempotent — no-op if the same TypeId is
+   * already present). Sets ``dirty`` and notifies dataManager so observers
+   * re-render.
+   */
+  public addContextEntity(typeId: TypeId): void {
+    if (this._context_entities.some((t) => t.equals(typeId))) return;
+    this._context_entities = [...this._context_entities, typeId];
+    dataManager.notifyPropertyChanged(this.typeId, 'context_entities');
+  }
+
+  /**
+   * Remove a context entity. Returns ``true`` if a matching entry was
+   * removed, ``false`` if none was present.
+   */
+  public removeContextEntity(typeId: TypeId): boolean {
+    const before = this._context_entities.length;
+    this._context_entities = this._context_entities.filter((t) => !t.equals(typeId));
+    if (this._context_entities.length === before) return false;
+    dataManager.notifyPropertyChanged(this.typeId, 'context_entities');
+    return true;
+  }
+
+  /** All context entries of the given type (e.g. ``'spec'``). */
+  public contextOfType(type: string): TypeId[] {
+    return this.contextEntities.filter((t) => t.type === type);
+  }
+
+  /** First context entry of the given type, or ``null``. */
+  public firstContextOfType(type: string): TypeId | null {
+    return this.contextEntities.find((t) => t.type === type) ?? null;
   }
 
   /**
