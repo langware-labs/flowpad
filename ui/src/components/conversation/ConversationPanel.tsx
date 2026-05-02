@@ -1,11 +1,11 @@
 import { useMemo } from 'react';
-import type { Task } from '@sdk';
+import { Conversation, type Task, TypeId } from '@sdk';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { ConversationToolbar } from './ConversationToolbar';
 import { ConversationView } from './ConversationView';
 import { useProjectMappingGate } from './useProjectMappingGate';
 import { ChipsExcludeProvider } from './chips/ChipsExcludeContext';
-import { taskChipKeys } from './chips/keys';
+import { ChipKey, taskChipKeys } from './chips/keys';
 
 interface ConversationPanelProps {
   /** Optional. Project-scoped conversations have no task. */
@@ -61,6 +61,14 @@ export function ConversationPanel({
   // Seed the chip-exclude scope with what TaskChips will render so deeper
   // chip rows (MessageChips) skip duplicates automatically.
   const taskKeys = useMemo(() => taskChipKeys(task ?? null), [task]);
+  // The conversation we are SHOWING is the page subject — never render a
+  // chip for ourselves. Add it to the exclude scope at the toolbar level so
+  // the data-driven TaskChips iteration over ``task.contextEntities`` skips
+  // the matching conversation entry.
+  const selfPageKeys = useMemo(
+    () => new Set([ChipKey.forTypeId(new TypeId(Conversation.type, conversationId))]),
+    [conversationId],
+  );
 
   const headerWrapper =
     variant === 'compact'
@@ -74,12 +82,15 @@ export function ConversationPanel({
         <div className={headerWrapper}>
           {headerLabel !== null && <span>{headerLabel}</span>}
           {task && (
-            <ConversationToolbar
-              task={task}
-              conversationId={conversationId}
-              senderName={senderName}
-              ensureMapped={ensureMapped}
-          />)}
+            <ChipsExcludeProvider add={selfPageKeys}>
+              <ConversationToolbar
+                task={task}
+                conversationId={conversationId}
+                senderName={senderName}
+                ensureMapped={ensureMapped}
+              />
+            </ChipsExcludeProvider>
+          )}
         </div>
       )}
       <div className={bodyWrapper}>
