@@ -209,7 +209,7 @@ function ConversationRow({ conv }: { conv: Conversation }) {
 
   const title = taskTypeId ? `Task ${taskTypeId.id.slice(0, 8)}` : 'Conversation';
   const messageCount = conv.message_count ?? 0;
-  const projectLabel = project?.name ?? null;
+  const projectLabel = project?.displayName ?? null;
   const taskTitle = task?.title?.trim() || null;
   const taskFirstWord = taskTitle ? taskTitle.split(/\s+/)[0] : null;
   const previewText = latestMessage?.text?.trim().split('\n').find((l) => l.trim()) ?? null;

@@ -2,7 +2,7 @@ test 1: Clicking a shell tab from agentic process view updates the URL
 - navigate to /dock/shell/new_terminal
 - wait for shell tab to be ready
 - note the shell session URL (contains shell-<id>)
-- click the Start Claude button (data-testid="start-claude-button")
+- open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for URL to change to /dock/shell/agentic_process-<id> (not -new)
 - wait for the PTY tab to appear in the tab bar (may take up to 30s for startPty to complete)
 - while viewing the agentic process tab, click the original shell tab in the tab bar

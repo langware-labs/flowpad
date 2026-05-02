@@ -27,7 +27,7 @@ export function UserInfo({ user }: UserInfoProps) {
     <div className="flex flex-col gap-4 p-4">
       <div className="flex flex-col gap-1">
         <label className="text-sm font-semibold text-muted-foreground">Name:</label>
-        <div className="text-base">{user.name || 'N/A'}</div>
+        <div className="text-base">{user.displayName}</div>
       </div>
 
       <div className="flex flex-col gap-1">

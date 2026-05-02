@@ -31,8 +31,10 @@ test.describe('Navigate to Shell', () => {
     const xtermRows = page.locator('.xterm-rows').first();
     await expect(xtermRows).toBeAttached();
 
-    // Step 7: validate "+" button is visible (add tab)
-    const addButton = page.locator('[data-testid="open-terminal-tab-button"]');
+    // Step 7: validate the tab-opener "+" button is visible.
+    // open-terminal-tab-button only renders when the terminal opener is pinned;
+    // opener-plus-button is the always-present affordance.
+    const addButton = page.locator('[data-testid="opener-plus-button"]');
     await expect(addButton).toBeVisible();
   });
 });

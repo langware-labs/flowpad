@@ -1,7 +1,7 @@
 test 1: Creating a new Claude session produces no console errors
 - navigate to /dock/shell/new_terminal and wait for shell tab
 - open browser console capture
-- click the Start Claude button (data-testid="start-claude-button")
+- open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for URL to change to /dock/shell/agentic_process-<id>
 - wait 3 seconds for the session to initialise
 - verify no console errors occurred during the flow

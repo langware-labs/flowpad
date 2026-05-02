@@ -189,10 +189,7 @@ interface ContextEntityChipProps {
  */
 export function ContextEntityChip({ typeId, inside, onClick, title, size }: ContextEntityChipProps) {
   const { data } = useEntity<APIEntity<any>>(typeId);
-  const resolvedName =
-    (data as any)?.title ??
-    (data as any)?.name ??
-    typeId.id.slice(0, 8);
+  const resolvedName = data?.displayName ?? typeId.toString();
   return (
     <EntityChip
       entity={{ typeId, type: typeId.type, id: typeId.id, name: resolvedName }}

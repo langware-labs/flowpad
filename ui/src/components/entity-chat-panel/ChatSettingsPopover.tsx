@@ -80,7 +80,7 @@ export function ChatSettingsPopover({
             <SelectContent>
               {projects.map((p) => (
                 <SelectItem key={p.id} value={p.id!}>
-                  {p.displayName ?? p.id}
+                  {p.displayName}
                 </SelectItem>
               ))}
             </SelectContent>

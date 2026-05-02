@@ -1,5 +1,5 @@
 test 1: Annotation gutter is visible in a Claude process terminal
-- navigate to {APP_URL}/dock/shell/new_terminal then click the Start Claude button (data-testid="start-claude-button")
+- navigate to {APP_URL}/dock/shell/new_terminal, then open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for the Claude CLI banner to appear in the terminal (up to 45 seconds)
 - validate the terminal is visible (aria-label="Terminal Input" is present)
 - wait 3 seconds for the annotation gutter to initialize
@@ -8,7 +8,7 @@ test 1: Annotation gutter is visible in a Claude process terminal
 
 test 2: Annotation gutter is not visible in a plain shell terminal
 - navigate to {APP_URL}/dock/shell/new_terminal
-- wait for terminal to be ready (element with data-terminal-id is visible)
+- wait for terminal to be ready (active terminal panel `[data-testid="terminal-panel"][data-active="true"]` shows xterm)
 - validate the terminal input is visible (aria-label="Terminal Input")
 - validate no annotation gutter element is visible (data-testid="annotation-gutter" should not appear in a plain shell)
 

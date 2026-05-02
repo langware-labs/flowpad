@@ -1,5 +1,5 @@
 test 1: Top-left Restart button respawns the PTY
-- navigate to {APP_URL}/dock/shell/new_terminal then click the Start Claude button (data-testid="start-claude-button")
+- navigate to {APP_URL}/dock/shell/new_terminal then open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for Claude CLI banner (up to 45s) and note pty_pid (via Session Info popover -> PTY ID row, or websocket trace)
 - click the Restart icon (RotateCcw, data-testid="process-toolbar-restart") in the top-left of the process toolbar
 - wait for the banner to re-render
@@ -32,7 +32,7 @@ test 3: Glow reflects out-of-band changes (e.g. another surface mutates the enti
 test 4: ProcessToolbar gating (started, hasTranscript)
 - navigate to {APP_URL}/dock/shell/new_terminal and DO NOT click the Start Claude button
 - validate the InteractiveTerminal renders WITHOUT a ProcessToolbar (data-testid="process-toolbar" is absent — plain shells have no AgenticProcess prop)
-- click the Start Claude button (data-testid="start-claude-button")
+- open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for the agentic_process tab and the Claude banner
 - validate the ProcessToolbar is now visible and the Restart button is ENABLED
 - validate the Fork button is DISABLED — tooltip "Send a message first — fork requires conversation history" (no assistant turn yet ⇒ hasTranscript=false)

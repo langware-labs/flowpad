@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { dismissSetupModal, gotoShell } from './helpers';
+import { dismissSetupModal, gotoShell, openTabViaMenu } from './helpers';
 
 /**
  * Shell Tab Title & Switch Regression
@@ -9,7 +9,7 @@ import { dismissSetupModal, gotoShell } from './helpers';
  * 2. Tab titles survive page refresh (persisted via shell.updateDisplay)
  * 3. Tab switching works after refresh (no redirect to first tab)
  *
- * Uses plain shell tabs (open-terminal-tab-button) + double-click rename to avoid
+ * Uses plain shell tabs (opener menu → terminal row) + double-click rename to avoid
  * relying on Claude CLI /rename which may be overwritten on reconnect.
  */
 
@@ -93,8 +93,6 @@ test.describe('Shell Tab Title and Switching', () => {
     // Step 1: Navigate to shell (creates a new terminal, waits for xterm init)
     await gotoShell(page);
 
-    const addTerminalButton = page.locator('[data-testid="open-terminal-tab-button"]');
-
     /** Create a tab, detect it by testid diff, rename it via dispatchEvent('dblclick'). */
     async function createAndRename(newName: string): Promise<string> {
       // Snapshot existing testids before adding
@@ -104,7 +102,7 @@ test.describe('Shell Tab Title and Switching', () => {
         ),
       );
 
-      await addTerminalButton.click();
+      await openTabViaMenu(page, 'terminal');
 
       // Wait for a new tab to appear
       let newTestId = '';

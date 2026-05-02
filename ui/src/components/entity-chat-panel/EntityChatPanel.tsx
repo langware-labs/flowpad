@@ -400,7 +400,7 @@ function ChatHistoryHeader({
                     {ts ? ts.toLocaleString() : 'Unknown time'}
                   </span>
                   <span className="text-[10px] text-muted-foreground">
-                    {p.id?.slice(0, 8)}
+                    {p.displayName}
                     {p.id === activeId ? ' · current' : ''}
                   </span>
                 </DropdownMenuItem>

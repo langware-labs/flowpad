@@ -78,7 +78,7 @@ export function FavoriteTile({ bookmark }: FavoriteTileProps) {
   const { removeFavorite } = useFavorites();
 
   const Icon = resolveIcon(bookmark);
-  const title = bookmark.title || (bookmark.data?.entity_id as string) || 'Favorite';
+  const title = bookmark.displayName;
   const navigable = canNavigateFavorite(bookmark);
 
   const handleClick = useCallback(() => {

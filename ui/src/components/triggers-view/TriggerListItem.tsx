@@ -64,7 +64,7 @@ export function TriggerListItem({ trigger, isSelected, onSelect, onOpenLog, onLo
         <span className={cn('rounded px-1 py-0.5 text-[10px] font-medium', SCOPE_COLORS[trigger.scope || 'user'] ?? SCOPE_COLORS['user'])}>
           {trigger.scope || 'user'}
         </span>
-        <span className="flex-1 truncate font-medium">{trigger.name}</span>
+        <span className="flex-1 truncate font-medium">{trigger.displayName}</span>
 
         <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
           {/* Test button */}

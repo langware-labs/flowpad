@@ -1,19 +1,12 @@
 import { ListChecks } from 'lucide-react';
 import { useMemo } from 'react';
-import { Project, QueryRequest, TypeId } from '@sdk';
+import { Plan, Project, QueryRequest, TypeId } from '@sdk';
 import { useEntity, useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 
 interface Props {
   projectId: string | null;
-}
-
-interface PlanRow {
-  id: string;
-  name?: string;
-  asset_ref?: string;
-  parent_path?: string;
 }
 
 const plansQuery = new QueryRequest({
@@ -37,7 +30,7 @@ export function PlansCategory({ projectId }: Props) {
   );
   const { data: project } = useEntity<Project>(projectTypeId);
 
-  const { data: rows = [], isLoading } = useEntitiesQuery<PlanRow>(plansQuery);
+  const { data: rows = [], isLoading } = useEntitiesQuery<Plan>(plansQuery);
 
   const items = useMemo(() => {
     const mount = project?.fs_storage_mount_path?.replace(/\/+$/, '') ?? '';
@@ -67,7 +60,7 @@ export function PlansCategory({ projectId }: Props) {
           className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <ListChecks className="h-3.5 w-3.5 flex-shrink-0" />
-          <span className="truncate">{typeof p.name === 'string' && p.name ? p.name : 'Untitled'}</span>
+          <span className="truncate">{p.displayName}</span>
         </li>
       ))}
     </ul>

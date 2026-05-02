@@ -41,18 +41,32 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   static type?: string = defaultEntityType;
   static autoLoadExpansions: ExpansionType[] = [];
   static icon: string | null = null;
+  // Shared fields lifted from Python ``DBBaseRecord`` + ``Entity``. All
+  // optional — subclasses populate the ones they care about. ``deepAssign``
+  // in the base constructor copies wire fields onto the instance, so
+  // subclasses no longer need to redeclare or manually assign these.
   id: string;
   uname?: string;
+  name?: string;
+  title?: string;
+  key?: string;
+  namespace?: string;
+  tags?: string[];
   system?: boolean;
   created_by?: string;
   created_date?: Date;
   updated_by?: string;
   updated_date?: Date;
+  created_through?: string;
+  updated_through?: string;
   schema_version?: string;
+  labels?: string[];
+  root_vfs_path?: string;
+  fs_storage_mount_path?: string;
+  visitor_role?: string;
   _expand?: EntityExpansion;
   _dirty: boolean = true;
   _typeId: TypeId | null = null;
-  labels?: string[];
   /**
    * Generic context-entity references. Private — use ``addContextEntity`` /
    * ``removeContextEntity`` to mutate. The wire shape is ``string[]`` of
@@ -60,7 +74,6 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * constructor and serialize back via ``toJSON``.
    */
   private _context_entities: TypeId[] = [];
-  root_vfs_path?: string;
   _isLoaded: boolean = false;
   static nextInstanceIndex: number = 0;
   _instanceIndex: number = APIEntity.nextInstanceIndex++;
@@ -105,14 +118,61 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   }
 
   /**
-   * Human-readable label for this entity. Defaults to ``name`` (when the
-   * subclass declares one) or ``id``. Subclasses can override for custom
-   * formatting (e.g. Project/Skill capitalize, Workflow strips a prefix).
-   * UI surfaces should prefer this over raw ``typeid`` when listing entities.
+   * Human-readable label for this entity. Used at every user-visible name
+   * display site. Composed from ``getDisplayName()`` (subclass override hook,
+   * defaults to ``null``) falling through to ``defaultDisplayName`` (the
+   * universal chain over ``name`` → ``uname`` → ``title`` → ``<type>-<key>``
+   * → ``<type>-<id-tail>``).
+   *
+   * Subclasses customize by overriding ``getDisplayName()``, NOT this getter.
+   * Returning ``null`` from ``getDisplayName`` defers to the default chain.
    */
   get displayName(): string {
-    const name = (this as unknown as { name?: string }).name;
-    return (name && name.trim()) || this.id || '';
+    return this.getDisplayName() ?? this.defaultDisplayName;
+  }
+
+  /**
+   * Subclass override hook. Return a custom display string when the default
+   * chain isn't what the entity wants (e.g. Project's cwd-basename branch,
+   * CollaborationRoom's participant join). Return ``null`` to defer to
+   * ``defaultDisplayName``. Base returns ``null``.
+   */
+  getDisplayName(): string | null {
+    return null;
+  }
+
+  /**
+   * Universal fallback chain. Read in order; first non-empty rung wins.
+   *   1. ``this.name`` if non-empty (after trim)
+   *   2. ``this.uname`` if non-empty
+   *   3. first 2 words of ``this.title`` + ' …' (or just the title if ≤ 2 words)
+   *   4. ``<type>-<key>`` if ``this.key`` is non-empty
+   *   5. ``<type>-<id[0:4]>…<id[-4:]>`` (or ``<type>-<id>`` literal when id < 8 chars)
+   */
+  get defaultDisplayName(): string {
+    const type = (this.constructor as typeof APIEntity).type ?? 'entity';
+
+    // 1. name
+    if (this.name && this.name.trim()) return this.name;
+
+    // 2. uname
+    if (this.uname && this.uname.trim()) return this.uname;
+
+    // 3. title prefix
+    const t = this.title?.trim();
+    if (t) {
+      const words = t.split(/\s+/);
+      const head = words.slice(0, 2).join(' ');
+      return words.length > 2 ? `${head} …` : head;
+    }
+
+    // 4. <type>-<key>
+    if (this.key && this.key.trim()) return `${type}-${this.key}`;
+
+    // 5. <type>-<id-tail>
+    const id = this.id ?? '';
+    if (id.length < 8) return `${type}-${id || '?'}`;
+    return `${type}-${id.slice(0, 4)}…${id.slice(-4)}`;
   }
 
   get expand(): EntityExpansion | undefined {

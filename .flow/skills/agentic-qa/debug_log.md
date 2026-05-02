@@ -510,5 +510,185 @@ Real production bug — entity-instance divergence between
 without requiring a deeper cache-invariant cleanup.
 
 
+## 2026-05-02 — Phase 8 Debug #1: Backend 500s on assets/types, workflow POST, list-projects + cloud/refresh-token "CORS"
 
+### Symptoms (from cycle 2026-05-02T17-30-05 artifacts)
+- `assets--assets_list_mode.json`: `GET /api/v1/assets/types` → HTTP 500 (body "Internal Server Error", plain text)
+- `workflow--workflow_entity_create.json`: `POST /api/v1/graph/workflow/` → HTTP 500 (body "Internal Server Error")
+- `chat--landing_to_new_chat.json`: "project list fetch failed due to CORS error" — landing page projects don't load
+- `chat--return_to_home.json` / `chat--new_session_is_not_opened.json`: "Start new Claude Code session..." input not visible
+
+### Repro now (current dev server, PID 96819, started 2026-05-02 19:41)
+All endpoints return HTTP 200 in fresh repro:
+```
+curl http://localhost:9008/api/v1/assets/types          → 200
+curl -X POST .../api/v1/graph/workflow/ -d '{...}'      → 200
+curl -X POST http://localhost:9008/api/v1/cloud/refresh-token  → 200
+curl http://localhost:9008/api/v1/graph/compute_node/@local/list-projects  → 200
+curl http://localhost:9008/api/v1/graph/compute_node/971394b8-.../list-projects  → 200 (current default_compute_node id)
+curl http://localhost:9008/api/v1/graph/compute_node/30ea3c52-fc1e-45a3-a96d-aa7cd0dffa98/list-projects  → 404 (stale UUID)
+```
+
+### Root cause — three distinct failures, not one
+
+**Failure A: `/api/v1/assets/types` 500 + `POST /api/v1/graph/workflow/` 500 = SQLite writer-lock contention in middleware.**
+The 500s do not originate inside the route handlers. They originate one stack frame earlier, in `RequestTransactionMiddleware._setup_local_auth` (`flow_sdk/server/middleware/request_transaction_middleware.py:35`):
+```
+local_user = await User.get_one({"uname": "local"})
+```
+which on contention produces the canonical traceback (verified in `/tmp/dev-server.log:534-680, 659-770, 3275-3386`):
+```
+sqlite3.OperationalError: database is locked
+[SQL: BEGIN IMMEDIATE]
+```
+16 distinct lock errors recorded across the log; the same trace also breaks `agent_hook.handle_webhook` via `flow_sdk/app/actions/listen.py:942`, and breaks `/fs-records/index-status` (the only routes whose 500 we caught in the log itself, but the lock window is global to the process).
+The `/assets/types` and `/workflow/` 500s the tester captured at 18:21Z are the SAME class of failure — they did not have route-handler bugs at all, they ran during a transient SQLite writer-lock window. The route handlers themselves are clean: `flow_sdk/server/routes/assets.py:81-98` (no DB access, only SchemaRegistry), and `flow_sdk/builtin/workflow.py` save path is exercised every minute by other test traffic with no error.
+
+The lock contention itself comes from concurrent BEGIN IMMEDIATE attempts: per-route handlers AND `_setup_local_auth` middleware AND the indexer all open writes simultaneously. The middleware comment at `request_transaction_middleware.py:74-90` explicitly acknowledges this design tradeoff (per-request transaction binding intentionally NOT wired) and points to "WAL + busy_timeout=5000 + BEGIN IMMEDIATE + pragmas + driver session sharing" as the production fix that's "landed fully" — but evidently the busy_timeout is still being exceeded under indexer + listen + bootstrap concurrency.
+
+**Failure B: `list-projects` 404 = stale `compute_node` UUID baked into a precondition or browser cache.**
+The dev SQLite DB lives at `/tmp/flowpad_dev.db` (`flow_sdk/server/app.py` startup logs). Each time the OS wipes /tmp (or each time the test cycle resets the DB), a NEW compute_node UUID is minted by `get_or_create_local_compute_node` (`flow_sdk/server/routes/bootstrap.py:832-893`). Historical UUIDs:
+- 04-21 cycle: `30ea3c52-fc1e-45a3-a96d-aa7cd0dffa98` (referenced in `_results/2026-04-21T19-02-23/collaboration--collaboration_session_add_process.json:10`, `_results/2026-04-25T23-20-16/cycle-report.json:175`)
+- 04-27 / early 05-02: `9ba5a499-5f2d-4b63-b52e-7bf0103b6d72`
+- current (since 19:41): `971394b8-ee00-41e4-8b19-8274aa9587a6`
+The 05-02 cycle log shows the browser hitting the stale `30ea3c52-...` (`/tmp/dev-server.log:5283`) → 404, then immediately afterwards a fresh request to `9ba5a499-...` (`/tmp/dev-server.log:5478`) → 200. So a stale id is cached in browser localStorage / IndexedDB / a precondition-setup script and is being preferred over the bootstrap-fresh id. The frontend must always use the value from `bootstrap.data.default_compute_node.id` (or the literal alias `@local`), never a cached UUID across server restarts.
+
+**Failure C: "CORS error" on `/api/v1/cloud/refresh-token` = wrong HTTP method (GET) where only POST is mounted.**
+The route exists ONLY as POST: `flow_sdk/server/routes/cloud.py:237-240` `@router.post("/refresh-token")`. CORSMiddleware wraps the response and adds `access-control-allow-origin: http://localhost:4098` headers regardless, so the browser's eventual error message can be misleading ("CORS error" when the underlying status is 404 method-not-allowed). Confirmed:
+```
+curl -i -X POST .../api/v1/cloud/refresh-token  → 200, with CORS header
+curl -i .../api/v1/cloud/refresh-token          → 404 Not Found, but CORS header still present
+```
+If a frontend code path issued a GET to this endpoint (legacy code, sniffer probe, or a misrouted retry), the browser would see "404 + CORS appears OK" and render this as a request failure that visually looks like "CORS-blocked" especially on the Network tab. The dev-server.log shows the live frontend correctly POSTs and gets 200 (`/tmp/dev-server.log:5290, 5441, 5540, 5996, ...` — many entries). So this likely isn't a current bug, just an artifact of a stale or non-app GET probe.
+
+### Evidence
+- `/tmp/dev-server.log:534` — first `/fs-records/index-status` 500, traceback ends in `_setup_local_auth` → `User.get_one` → `database is locked`. 
+- `/tmp/dev-server.log:1115-1212` — same lock chain in `agent_hook.handle_webhook` from `listen.py:942`.
+- `/tmp/dev-server.log:5283` — stale-UUID 404 on list-projects.
+- `flow_sdk/server/middleware/request_transaction_middleware.py:27-63` — middleware path that takes the writer lock for every request.
+- `flow_sdk/server/middleware/request_transaction_middleware.py:74-90` — comment block acknowledging the lock-cascade design tradeoff.
+- `flow_sdk/server/routes/cloud.py:237-240` — refresh-token POST-only registration.
+- `flow_sdk/server/routes/assets.py:81-98` — assets/types route is read-only schema lookup (no DB).
+- `flow_sdk/server/routes/bootstrap.py:832-893` — compute_node id is per-process / per-DB, not stable across restarts.
+
+### Confidence
+- Failure A (lock contention as cause of route-agnostic 500s): high — lock errors are visible 16 times across the same log window the test ran in, on the same process; route handlers themselves are read-only or simple inserts.
+- Failure B (stale UUID): high — the literal stale UUID appears in 04-21/04-25 artifacts AND in the live 05-02 server log getting 404 from the browser.
+- Failure C (refresh-token method mismatch): medium — confirmed POST works and GET 404s with CORS headers, but I have no direct evidence the live frontend ever issues GET; the 05-02 log shows only POST. The "CORS error" wording in the test artifact is a likely browser-mislabeled 404.
+
+### Suggested fix direction (do NOT implement myself)
+- **A — SQLite lock cascade:** raise the SQLite `busy_timeout` from 5000 to 15000ms in `flow_sdk/db/drivers/sqlite/connection.py:_on_begin` or wherever `BEGIN IMMEDIATE` is wired, AND verify that `User.get_one("uname=local")` in `_setup_local_auth` either uses a read-only session (no `BEGIN IMMEDIATE`) or is cached per-process after first hit (the @local user never changes; a process-local `LRU` of 1 is safe). The fastest single-line fix: cache the local-user lookup in a module-level `lru_cache` keyed on uname so subsequent requests skip the DB entirely. Reference fix path: `request_transaction_middleware.py:35`.
+- **B — stale compute_node UUID:** wherever the frontend stores `default_compute_node.id` (DataManager / FlowSync store), invalidate the cached value when bootstrap returns a new id, OR switch all compute_node URL-building to use the literal `@local` alias which the server already resolves via `get_local_entity`. Test scenarios that hardcoded the UUID also need scrubbing. Bootstrap returns the live id at `data.default_compute_node.id` — the FE must always trust that and never persist it.
+- **C — refresh-token method:** if any FE code still issues GET, change to POST. Otherwise no server change required. The "CORS error" wording in the test artifact is misleading and should be updated by the test scenario author to "404 (method not allowed)" — but that's a test-text correction, not a code fix.
+
+### Classification
+A: real production bug (writer-lock cascade under concurrent middleware + indexer + webhook).
+B: real production bug (FE caches a per-restart-ephemeral id across restarts).
+C: probable test-artifact misclassification (no current production GET path observed; method-mismatch only manifests if a stale FE/probe issues GET).
+
+
+## 2026-05-02 — Phase 8 Debug #2: start-claude-button missing at /dock/shell/new_terminal
+
+### Symptoms
+~10 agentic-process / terminal scenarios fail to find `[data-testid="start-claude-button"]` after `page.goto('/dock/shell/new_terminal')` (e.g. `terminal/terminal_pty_no_duplicates.md.ts:14`).
+
+### Repro
+- Navigated to `http://localhost:4098/dock/shell/new_terminal`.
+- URL immediately replaced with `/dock/shell/shell-4f1118e8-becc-4641-ab89-5a5babe0dfa4` (a freshly-created shell).
+- DOM has `terminal-panels` with the new terminal mounted; testids visible include `terminal-tab-bar`, `terminal-tab-end-toolbar`, `opener-inline-claude`, `opener-plus-button`, `tab-shell-...`. No `start-claude-button`.
+
+### Root cause
+`start-claude-button` still exists in code at `ui/src/components/terminal/TabbedTerminal.tsx:921`, but is rendered only inside the empty-state placeholder gated by `visibleSessions.length === 0` (`TabbedTerminal.tsx:911`). The `/dock/shell/new_terminal` route loader (`ui/src/routes/loaders/load-shell.ts:188-204` in `routeNewTerminal`) deterministically creates a fresh `Shell`, calls `await newShell.save(...)`, and `throw replace(\`/dock/shell/\${newShell.dockPointer.pointer}\`)` — i.e., the URL never resolves to "no sessions exist". The empty-state placeholder is therefore unreachable from this URL by design. The empty state is only reachable from `/dock/shell` (no pointer) when `loadNextProcess()` returns `loaded === null` (`load-shell.ts:206-216`), i.e. fresh DB / all shells closed.
+
+The replacement entry-point for "open a new Claude session" is the opener toolbar at `ui/src/components/terminal/openers/TerminalOpenerToolbar.tsx`. The pinned-inline button uses `data-testid="opener-inline-claude"` (`TerminalOpenerToolbar.tsx:101,113`); the menu trigger uses `data-testid="opener-plus-button"` (`:200`). This toolbar was introduced in commit `55b8d9e` (2026-04-19, "Docker compute provider; tab opener toolbar; loader refactor") and refined in `b02474f` (2026-04-26).
+
+### Evidence
+- `ui/src/components/terminal/TabbedTerminal.tsx:911-944` — `start-claude-button` only inside `visibleSessions.length === 0` branch.
+- `ui/src/routes/loaders/load-shell.ts:188-204` — `routeNewTerminal` creates a Shell and `throw replace(...)`s; never falls through to empty state.
+- `ui/src/routes/loaders/load-shell.ts:206-216` — `routeDefaultShell` is the only path that leaves the URL bare and lets `visibleSessions.length === 0` render.
+- `ui/src/components/terminal/openers/TerminalOpenerToolbar.tsx:101,113,200` — replacement testids.
+- `git log --oneline -- ui/src/components/terminal/openers/TerminalOpenerToolbar.tsx` confirms the toolbar landed 2026-04-19 (commit 55b8d9e). All affected scenarios pre-date this and were not updated.
+
+### Confidence
+high — direct repro in browser; URL behavior matches the loader source exactly; testids are present in the live DOM under different selectors that are documented in source.
+
+### Suggested fix direction (do NOT implement myself)
+This is a **scenario-authoring fix** (matches the spirit of task #7), not a production bug. The product behavior is intentional. The 10 affected scenarios should be updated to use the new opener affordance:
+
+- For "click Start Claude on a fresh shell": after `goto('/dock/shell/new_terminal')` (which creates and selects a terminal), click `[data-testid="opener-inline-claude"]` from the end-toolbar (it's pinned by default).
+- If the test specifically wants the empty-state button: navigate to `/dock/shell` (no pointer) and ensure no shells exist (close them first via `[data-testid="close-all-tabs-button"]` which is visible in the toolbar). Then the empty-state `start-claude-button` will render.
+- Alternative product-side band-aid (NOT recommended): add an alias `data-testid="start-claude-button"` to the `opener-inline-claude` button so legacy scenarios still resolve. This couples production testids to deprecated test names and obscures the opener concept; prefer scenario updates.
+
+### Classification
+Test-scenario drift driven by an intentional UX consolidation (opener toolbar replacing empty-state buttons). Not a regression in product code. Recommend bundling this into the same fix as task #7 (test cleanup).
+
+
+## 2026-05-02 — Phase 8 Debug #3: dropped dock routes (skills, system_profile, execute-flow, assets, explorer)
+
+### Per-route findings (all reproed in browser at http://localhost:4098)
+
+| Route | Outcome | Active panels | Console errors |
+|---|---|---|---|
+| `/dock/system_profile` | RENDERS — LiveStatus loads | 1 (`content-system_profile`) | 0 |
+| `/dock/assets` | RENDERS — AssetsPage with sidebar | 1 (`content-assets`) | 0 |
+| `/dock/skills` | EMPTY — Tabs root mounts but no panel matches | 0 | 0 |
+| `/dock/explorer` | CRASHES — DirectoryTree throws, error boundary catches | 0 | 9 (DirectoryTree TypeError) |
+| `/dock/execute-flow` | CRASHES — same DirectoryTree error from ExecuteFlowView | 0 | 5 (DirectoryTree TypeError) |
+| `/dock/explorer` redirecting to `/dock/shell/new_terminal` | NOT REPRODUCED — /dock/explorer stays at the URL (just crashes) | n/a | n/a |
+
+### Root cause A: `/dock/skills` — view never had a `<TabsContent>` registration
+
+`ViewType.SKILLS` is registered in `ui/src/types/ViewType.ts:205-210` (title "Skills", icon "Sparkles", `tabLocation: 'dedicated'`, `canAddAsTab: true`) — so it appears in the registry and can be navigated to. But `ui/src/pages/flow-page/content-panel/content-panel.tsx` has NO `<TabsContent value={ViewType.SKILLS}>` branch (verified by `grep -n "ViewType.SKILLS"` → 0 matches in content-panel.tsx). The full TabsContent list spans lines 217-536 and covers SHELL, EDITOR, WEB_APP, ENVIRONMENT, CONNECTIONS, API_KEYS, AI_CONFIG, HOOKS, ARTIFACTS, DIFF, DOCS, PLAN, ASSISTANCE, MACHINE, EXPLORER, TRIGGERS, CRON, EXECUTE_FLOW, SHOW, HOME, SYSTEM_PROFILE, LENS, SESSION, TASKS, SETTINGS, SEARCH, WORKFLOWS, AGENTIC_PROCESS, ASSETS, PROJECT, INBOX, CONVERSATION, SPEC — but not SKILLS.
+
+The product UX has moved skills under the Assets browser (`/dock/assets/list/skill`, `/dock/assets/editor/skill/...`) — see `ui/src/components/assets/editor/skill/SkillEditor.tsx` and `ui/src/components/assets/editor/skill/skillEditorUtils.tsx`. The ViewType.SKILLS enum still exists for sidebar/registry purposes but has no dedicated render path.
+
+`git log --oneline --all -S "ViewType.SKILLS" -- ui/src` shows the enum was introduced in commit `89726e0` ("Flowpad 0.2.0 — initial open-source release") and `git log -S "SkillsView\|SkillsPage" -- ui` returns nothing — i.e., no dedicated SkillsView component was ever shipped to OSS.
+
+### Root cause B: `/dock/explorer` and `/dock/execute-flow` — DirectoryTree crash from missing `name` field
+
+Both routes mount `DirectoryTree` (Explorer via `ExplorerView` → `SimpleFileManager`; ExecuteFlow via a `ResizablePanelGroup`). Both crash with:
+```
+TypeError: Cannot read properties of undefined (reading 'localeCompare')
+  at useDirectoryTree.ts (sort comparator)
+```
+at two callsites: `ui/src/components/directory-tree/useDirectoryTree.ts:88-93` (loadFolderContents) and `useDirectoryTree.ts:584-589` (getContents).
+
+The comparator does `a.name.localeCompare(b.name)`. The `name` lookup is undefined because the items in `cached.items` are NOT live `FSItem` instances — they're plain-object copies produced by Immer when the store does `state.browseCache.set(cacheKey, entry)` in `ts_sdk/src/stores/fsStore.ts:297-299`. Immer's deep-copy strips class prototypes; `FSItem.name` is a GETTER (`ts_sdk/src/entities/fs_item.ts:70-76` — computed from `this.vfsPath.filename`), and getters do not survive Immer's `produce()`. The plain-object copy retains only the enumerable instance fields written in the constructor: `encoding`, `is_dir`, `size`, `last_modified`, `display_name`, `vfs_abs_path`, `upload_progress`, `symlink_target` (`ts_sdk/src/entities/fs_item.ts:23-31`) — and crucially NOT `name`.
+
+Verified with the live API: `curl http://localhost:9008/api/v1/graph/compute_node/<id>/fs/browse/` returns items with keys `[type, vfs_abs_path, is_dir, size, display_name, last_modified, symlink_target]` — no `name` key. The server NEVER sends `name`; it's always derived client-side. So the moment the items pass through Immer's `set`, the derivation is lost.
+
+The bug only manifests on routes that actively render `DirectoryTree` against a freshly-cached folder. `/dock/assets` doesn't render DirectoryTree (uses `AssetsPage` with a different component) → no crash. `/dock/system_profile` doesn't render DirectoryTree → no crash. `/dock/skills` renders nothing at all → no crash.
+
+### Evidence
+- `ui/src/types/ViewType.ts:205-210` — SKILLS registered.
+- `ui/src/pages/flow-page/content-panel/content-panel.tsx:217-536` — full TabsContent list; no SKILLS branch.
+- `ui/src/components/directory-tree/useDirectoryTree.ts:88-93,584-589` — comparator using `a.name`.
+- `ts_sdk/src/entities/fs_item.ts:70-76` — `name` is a computed getter.
+- `ts_sdk/src/entities/fs_item.ts:22-31` — constructor writes 8 fields, none named `name`.
+- `ts_sdk/src/stores/fsStore.ts:1-2,193-194,297-299` — `immer/middleware` wraps `set`; the `state.browseCache.set(cacheKey, entry)` call goes through `produce()`.
+- `ts_sdk/src/services/fsService.ts:67-91` — `listDirectory` correctly creates `new FSItem(item)` instances; the strip happens later in the store layer.
+- Live API response shape: `compute_node-<id>/home` item is `{type:"fs_item", vfs_abs_path, is_dir, size, display_name, last_modified, symlink_target}`. No `name`.
+
+### Confidence
+- `/dock/skills` empty: high — confirmed by direct grep + live DOM showing zero active tab panels with the skills value.
+- DirectoryTree crash: high — error stack trace matches the source comparator exactly, and the FSItem `name`-as-getter + Immer deep-copy combination is a well-known footgun. Verified that backend payload lacks `name` and that the cache path runs through Immer.
+- `/dock/explorer` redirecting to `/dock/shell/new_terminal` (per task description): cannot reproduce — current behavior is "stay at /dock/explorer, render error boundary, leave content empty". Either the redirect was a one-off misobservation or it has since been removed.
+
+### Suggested fix direction (do NOT implement myself)
+**For `/dock/skills`:** decide product-side first.
+- Option 1 (preferred): the route is dead on purpose — Skills moved under Assets. Update affected scenarios to use `/dock/assets/list/skill`. Optionally add a tiny `<TabsContent value={ViewType.SKILLS}><Navigate to="/dock/assets/list/skill" replace /></TabsContent>` so the URL silently redirects instead of rendering nothing — this preserves any external links.
+- Option 2: build a real SkillsPage and wire `<TabsContent value={ViewType.SKILLS}><SkillsPage /></TabsContent>` in content-panel.tsx. Bigger scope.
+
+**For DirectoryTree crash (the real bug):** stop relying on the stripped getter. Two equivalent one-line fixes:
+1. In `ts_sdk/src/entities/fs_item.ts`, set `this.name` as a real instance property in the constructor (compute it from `vfs_abs_path` once at construction). Then it survives Immer.
+2. In `ui/src/components/directory-tree/useDirectoryTree.ts:92,588`, change the sort to `(a.display_name || a.vfs_abs_path?.split('/').pop() || '').localeCompare(b.display_name || b.vfs_abs_path?.split('/').pop() || '')`. Backend always sends `display_name` (verified) so this is sufficient client-side.
+The cleaner fix is #1 (preserve the abstraction at the data layer); the more localized fix is #2 (no SDK change). Either is acceptable. **Do NOT remove `immer` from fsStore** — it's used elsewhere in the store and the issue is the class-getter pattern, not the middleware.
+
+**For `/dock/explorer` redirect-to-new_terminal claim:** test scenario likely captured a one-off from when the error boundary recovered into a default redirect. Re-test after the DirectoryTree fix lands; the redirect concern probably evaporates.
+
+### Classification
+- `/dock/skills`: intentional product change (Skills moved into Assets) + scenario drift. Either rebuild the dedicated route OR update scenarios. Product call needed.
+- `/dock/explorer`, `/dock/execute-flow`: real production bug — class-getter stripped by Immer in fsStore. One-line fix on either FSItem (instance prop) or the sort comparator (use `display_name`).
+- `/dock/system_profile`, `/dock/assets`: working — false positives in the original tester report.
+- redirect-to-new_terminal: not reproducible — likely a one-off recovery path that has since changed.
 
