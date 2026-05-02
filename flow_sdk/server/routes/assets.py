@@ -6,8 +6,9 @@ Tree and backlinks endpoints removed (Asset entity removed).
 """
 
 from pathlib import Path
+from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
 router = APIRouter()
@@ -94,3 +95,54 @@ async def get_asset_types():
                 entry["vaults"] = _markdown_vaults()
             types.append(entry)
     return JSONResponse(content={"status": "SUCCESS", "data": {"types": types}})
+
+
+@router.get("/api/v1/assets/by-path")
+async def list_entities_by_path(
+    folder: list[str] = Query(
+        ..., description="One or more folder paths; results are union of strict descendants."
+    ),
+    record_type: Optional[list[str]] = Query(
+        default=None, description="Filter to these entity types. Omit for all types."
+    ),
+    limit: int = Query(default=200, ge=1, le=2000),
+    offset: int = Query(default=0, ge=0),
+    include_system: bool = Query(default=False),
+):
+    """List entities whose ``asset_ref`` lives under any of ``folder``.
+
+    Half-open ``[<dir>/, <dir>0)`` lex range against
+    ``json_extract(data, '$.asset_ref')``. The dir itself is **not** included
+    — only strict descendants. Multi-folder = union; multi-type = ``IN``.
+    """
+    from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions  # noqa: PLC0415
+
+    if not folder:
+        return JSONResponse(
+            content={"status": "FAIL", "error": "folder query parameter is required"},
+            status_code=400,
+        )
+
+    entities = await Entity.assets_by_path(PathQueryOptions(
+        search_dirs=list(folder),
+        types=list(record_type) if record_type else None,
+        limit=limit,
+        offset=offset,
+    ))
+    if not include_system:
+        entities = [e for e in entities if not getattr(e, "system", False)]
+
+    return JSONResponse(content={"status": "SUCCESS", "data": {
+        "search_dirs": list(folder),
+        "types": list(record_type) if record_type else None,
+        "entities": [{
+            "id": e.id,
+            "type": e.type or e.get_type(),
+            "name": getattr(e, "name", "") or getattr(e, "uname", "") or "",
+            "asset_ref": getattr(e, "asset_ref", "") or "",
+            "scope": getattr(e, "scope", "") or "",
+            "modified_at": str(getattr(e, "updated_date", "") or ""),
+        } for e in entities],
+        "limit": limit,
+        "offset": offset,
+    }})

@@ -86,6 +86,24 @@ All discovery methods (`Record.discover()`, `Record.discover_one()`, `Record.loa
 
 ---
 
+## Querying entities by folder
+
+Given a directory on disk, `Entity.assets_by_path(PathQueryOptions)` returns
+the entities whose `asset_ref` lives under that directory (descendants at
+any depth). The HTTP wrapper is
+`GET /api/v1/assets/by-path?folder=<abs>&record_type=<type>` —
+both query parameters are repeatable, so you can union multiple folders or
+narrow to multiple types in a single call.
+
+This is the entity-side counterpart to the on-disk layout above: when the
+on-disk tree changes, indexed `asset_ref` values change with it, and the
+folder query stays consistent. The query reads `asset_ref` only and uses a
+half-open lex range — see
+[Record Model § asset_ref and folder queries](record-model.md#asset_ref-and-folder-queries)
+for the storage rule (canonical POSIX) and the SQL pushdown details.
+
+---
+
 ## Claude Code Directories
 
 Claude Code stores its own data under `~/.claude/`. flow-cli reads (and in some cases writes) these directories.
