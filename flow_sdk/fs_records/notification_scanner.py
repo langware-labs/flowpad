@@ -284,10 +284,11 @@ async def _create_conversation_from_disk(
 
 async def _sync_conversation(task: Task, task_dir: Path) -> None:
     """For an already-imported task, sync conversation.jsonl → Conversation entity."""
-    if not task.conversation_id:
+    conv_typeid = task.first_context_of_type("conversation")
+    if not conv_typeid:
         return
 
-    conv = await Conversation.get_one({"id": task.conversation_id})
+    conv = await Conversation.get_one({"id": conv_typeid.id})
     if not conv or not conv.data_path:
         return
 
