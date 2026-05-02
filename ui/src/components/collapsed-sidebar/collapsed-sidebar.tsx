@@ -3,7 +3,6 @@ import { useDevMode } from '@src/contexts/dev-mode-context';
 import { Button } from '@src/components/ui/button';
 import { useNavigationState } from '@src/hooks/use-navigation-state';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
-import { useAuth } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@src/components/ui/sidebar';
@@ -60,7 +59,6 @@ const secondaryNavItems = [
 
 export function CollapsedSidebar() {
   const { navigation, currentDock } = useDockNavigation();
-  const { user } = useAuth();
   // const context = useContext();
   const navigate = useNavigate();
   const { goBack, canGoBack } = useNavigationState();
@@ -205,7 +203,7 @@ export function CollapsedSidebar() {
           </Button>
         )}
         <ThemeToggle />
-        {user && <UserDropdown />}
+        <UserDropdown />
       </div>
     </Sidebar>
   );
