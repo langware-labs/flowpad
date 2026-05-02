@@ -12,7 +12,7 @@
  */
 
 import { AgenticProcess, dataManager } from '@sdk';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -50,6 +50,14 @@ You are a test agent.
       'utf-8',
     );
     agentDir = homeClaude;
+  });
+
+  afterEach(() => {
+    // Test fixture lives under the user's real ~/.claude/agents/ — delete it so
+    // it doesn't pollute every future "what assets does this process see?" view.
+    // Same for the temp workdir under $TMPDIR.
+    try { fs.unlinkSync(agentMdPath); } catch { /* ignore */ }
+    try { fs.rmSync(workdir, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 
   it('attach → list → detach round-trip for an agent by uuid id', async () => {

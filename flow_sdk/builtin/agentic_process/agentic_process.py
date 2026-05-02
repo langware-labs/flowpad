@@ -1648,13 +1648,27 @@ class AgenticProcess(Entity):
         """
         import hashlib
         import json as _json
+        from enum import Enum
+
+        # Normalize enum-typed fields to their .value (a plain str). Different
+        # construction paths (``_scan_create_process`` constructor vs
+        # ``Entity.from_record``) yield ``self.worker_type`` as either a plain
+        # string ``"claude_code"`` or a ``WorkerType.CLAUDE_CODE`` enum instance.
+        # ``str(enum_instance)`` returns the prefixed form (``"WorkerType.CLAUDE_CODE"``)
+        # while ``str(plain_str)`` returns the bare value — different inputs hash
+        # differently, causing spurious post-start ``restart_required=True`` flips
+        # whenever ``check_and_refresh_record`` re-hydrates the entity via
+        # ``from_record`` between ``start()``'s capture and a downstream save.
+        wt = self.worker_type
+        if isinstance(wt, Enum):
+            wt = wt.value
         payload = {
             "cli_config": self.cli_config or {},
             "workdir": self.workdir,
             "additional_dirs": sorted(self.additional_dirs or []),
             "embedded_asset_refs": sorted(str(r) for r in (self.embedded_asset_refs or [])),
             "embedded_agent_ids": sorted(self.embedded_agent_ids or []),
-            "worker_type": str(self.worker_type) if self.worker_type else None,
+            "worker_type": wt if wt else None,
             "shell_mode": self.shell_mode,
             "session_id": self.session_id,
         }
