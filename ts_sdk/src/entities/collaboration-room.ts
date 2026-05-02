@@ -109,33 +109,24 @@ export class CollaborationRoom
     const info = new ActionInfo('add_process', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters = { agentic_process_id: processId };
     // Backend appends the process to context_entities and returns the full
-    // list (in the new shape: TypeId-formatted strings). We rebuild the
-    // local context to mirror — same idempotent pattern as before, but
-    // routed through the unified container.
+    // list as TypeId-formatted strings. Rebuild the local context to mirror.
     const result = await dataManager.callAction<
       { agentic_process_id: string },
-      { ok: boolean; context_entities?: string[]; agentic_process_ids?: string[] }
+      { ok: boolean; context_entities: string[] }
     >(info);
-    if (result?.context_entities && Array.isArray(result.context_entities)) {
-      // Replace the local context with what the backend returned. We do this
-      // by removing all current agentic_process entries, then re-adding from
-      // the response — keeping any non-agentic_process context entries the
-      // backend may have added/preserved.
-      const currentProcs = this.contextOfType('agentic_process');
-      currentProcs.forEach((t) => this.removeContextEntity(t));
-      result.context_entities.forEach((tid) => {
-        try {
-          this.addContextEntity(new TypeId(tid));
-        } catch {
-          // Skip malformed entries.
-        }
-      });
-    } else if (result?.agentic_process_ids && Array.isArray(result.agentic_process_ids)) {
-      // Fallback for in-flight backends still returning the old shape.
-      result.agentic_process_ids.forEach((id) =>
-        this.addContextEntity(new TypeId('agentic_process', id)),
-      );
-    }
+    if (!result?.context_entities || !Array.isArray(result.context_entities)) return;
+    // Replace the local context with what the backend returned: drop the
+    // current agentic_process entries, re-add from the response. Other
+    // (non-process) context entries the backend may have stamped are kept.
+    const currentProcs = this.contextOfType('agentic_process');
+    currentProcs.forEach((t) => this.removeContextEntity(t));
+    result.context_entities.forEach((tid) => {
+      try {
+        this.addContextEntity(new TypeId(tid));
+      } catch {
+        // Skip malformed entries from server.
+      }
+    });
   }
 
   public async end(): Promise<void> {
