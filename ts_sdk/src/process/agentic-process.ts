@@ -18,6 +18,7 @@ import { Shell, ShellStatus } from '../entities/shell';
 import { FlowData, FlowDataSource } from '../flow_processing';
 import { FlowElementTypes } from '../flow_processing/flow-element-types';
 import { ActionInfo } from '../models/ActionInfo';
+import type { AssetDescriptor } from './asset-descriptor';
 import { DockPointerData } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { InstructionFile } from '../models/workflow/InstructionFile';
@@ -1115,6 +1116,22 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const actionInfo = new ActionInfo('load-embedded-agent', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = { asset_ref: sourcePath };
     await dataManager.callAction(actionInfo);
+  }
+
+  /**
+   * Unified read-side view of every asset visible to this process.
+   * Mirrors `flow_sdk.builtin.agentic_process.AgenticProcess.get_asset_descriptors`.
+   *
+   * The same asset may appear multiple times with different `source` values
+   * (e.g. EMBEDDED + USER_DIR for a skill that's both materialized into the
+   * process and globally discoverable).
+   *
+   * Currently filtered to ExecutableAssets (skills + agents).
+   */
+  async getAssets(): Promise<AssetDescriptor[]> {
+    const actionInfo = new ActionInfo('get-assets', AgenticProcess.type, this.id, 'GET');
+    const response = await dataManager.callAction<void, { assets?: AssetDescriptor[] }>(actionInfo);
+    return response?.assets ?? [];
   }
 
   /**
