@@ -1233,9 +1233,16 @@ class AgenticProcess(Entity):
         plan_file_path = self.plan_path or ""
 
         # Discover via transcript when we don't already know the path.
+        # Two transcript variants emit the plan file path:
+        #   1. ``ExitPlanMode`` tool_use (Claude SDK / non-interactive flow) —
+        #      ``tool_input.planFilePath``.
+        #   2. ``plan_mode`` attachment (interactive PTY plan-mode flow) —
+        #      ``payload.attachment.planFilePath`` on a MetaEntry.
+        # Both surface in the JSONL; we check (1) first, fall back to (2).
         if not plan_file_path and self.session_id:
             try:
                 from flow_sdk.transcript_analyzer import AgentTranscript
+                from flow_sdk.transcript_analyzer.entries.meta import MetaEntry
                 from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 
                 session_rec = ClaudeSessionRecord.get(self.session_id)
@@ -1245,14 +1252,23 @@ class AgenticProcess(Entity):
                     latest = transcript.latest_tool_use("ExitPlanMode")
                     if latest is not None:
                         plan_file_path = (latest.tool_input or {}).get("planFilePath", "") or ""
-                        if plan_file_path:
-                            self.plan_path = plan_file_path
-                            try:
-                                await self.save()
-                            except Exception:
-                                logger.debug(
-                                    "AgenticProcess %s get-plan: save plan_path failed", self.id, exc_info=True
-                                )
+                    if not plan_file_path:
+                        for e in reversed(transcript.entries):
+                            if not isinstance(e, MetaEntry) or e.meta_kind != "attachment":
+                                continue
+                            att = (e.payload or {}).get("attachment") or {}
+                            if att.get("type") == "plan_mode":
+                                plan_file_path = str(att.get("planFilePath") or "")
+                                if plan_file_path:
+                                    break
+                    if plan_file_path:
+                        self.plan_path = plan_file_path
+                        try:
+                            await self.save()
+                        except Exception:
+                            logger.debug(
+                                "AgenticProcess %s get-plan: save plan_path failed", self.id, exc_info=True
+                            )
             except Exception:
                 logger.debug("AgenticProcess %s get-plan: transcript scan failed", self.id, exc_info=True)
 
