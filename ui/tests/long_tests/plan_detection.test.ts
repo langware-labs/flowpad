@@ -1,13 +1,22 @@
 /**
- * Plan-detection end-to-end (PTY shell + line triggers + getPlan).
+ * Plan-detection end-to-end (PTY shell + status events + getPlan).
  *
  * Drives a real Claude Code PTY session, prompts it to make a plan, and
  * validates the plan-detection pipeline:
- *   - process.onLine fires while Claude streams text
- *   - process.onPlan({ validate: true }) eventually receives a Markdown
- *     entity (validated by server-side getPlan() call)
- *   - process.plan_path is persisted on the entity
+ *   - process.onLine fires while Claude streams text (live line stream still works)
+ *   - process.getPlan() server-side resolves the plan from the JSONL transcript
+ *     and persists ``plan_path`` on the entity
+ *   - process.plan_path is populated after the plan is created
  *   - the resolved Markdown's .md file mentions "fibonacci"
+ *   - process.onPlan(...) re-registered AFTER the plan exists fires its initial
+ *     check and delivers the Markdown — the refresh-on-mount path
+ *
+ * Note: plan-detection is now refresh-driven via ``process.on('status', ...)``,
+ * not live via PTY-line regex. Mid-session ``status`` does not transition, so
+ * during a live session the handler only fires on initial registration. This
+ * test exercises both: the initial subscription (before plan exists, fires
+ * with null) and a re-subscription after the plan resolves (fires with
+ * Markdown — the refresh-equivalent path).
  *
  * Requires: running backend at LOCAL_SERVER_PORT + Claude Code installed.
  * Timeout: 240s — plan generation involves multiple model round-trips.
@@ -143,17 +152,30 @@ describe('AgenticProcess plan detection — end-to-end', () => {
         expect(body.length, 'plan markdown file should have content').toBeGreaterThan(0);
         expect(body.toLowerCase(), 'plan content should mention fibonacci').toContain('fibonacci');
 
-        // The line-trigger pipeline should have fired for at least the
-        // banner / prompt rendering — log counts so PTY-trigger coverage
-        // is observable, but don't hard-fail since the path may surface
-        // only via the transcript path.
+        // Re-subscribe to ``onPlan`` AFTER the plan exists. This exercises the
+        // refresh-on-mount path: a fresh subscription runs ``check()`` once at
+        // registration time, sees ``status === RUNNING`` and ``plan_path``
+        // already persisted, calls ``getPlan()`` again, and delivers the
+        // Markdown to the handler.
+        const refreshEvents: (Markdown | null)[] = [];
+        const unsubRefresh = proc.onPlan<Markdown | null>({ validate: true }, (md) => {
+          refreshEvents.push(md);
+        });
+        const refreshDeadline = Date.now() + 10_000;
+        while (Date.now() < refreshDeadline && refreshEvents.length === 0) {
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        unsubRefresh();
+        expect(refreshEvents.length, 'fresh onPlan subscription should fire its initial check').toBeGreaterThan(0);
+        expect(refreshEvents[0], 'fresh onPlan subscription should resolve the existing plan').not.toBeNull();
+
         // eslint-disable-next-line no-console
         console.log(
           `[plan_detection] lines captured=${triggerLines.length}, ` +
-            `validated plan events=${planEvents.length}, ` +
-            `nonNullPlanEvents=${planEvents.filter((p) => p != null).length}`,
+            `initial-subscription events=${planEvents.length}, ` +
+            `refresh-subscription events=${refreshEvents.length}`,
         );
-        expect(triggerLines.length, 'expected line trigger to fire at least once during the session').toBeGreaterThan(0);
+        expect(triggerLines.length, 'expected line listener to fire at least once during the session').toBeGreaterThan(0);
       } finally {
         unsubLines();
         unsubPlan();

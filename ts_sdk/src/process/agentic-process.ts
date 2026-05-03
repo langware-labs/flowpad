@@ -653,43 +653,44 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /**
    * Subscribe to plan-detection events.
    *
-   * Registers a regex trigger over the shell's line stream looking for
-   * ``plan*.md`` mentions. When the regex matches:
+   * Refresh-driven via ``process.on('status', ...)`` plus a one-time check
+   * at registration. Runs ``getPlan()`` server-side whenever the process
+   * is in the ``RUNNING`` state — server scans the JSONL transcript for
+   * ``ExitPlanMode.planFilePath`` and persists ``plan_path`` on the entity.
    *
    * - With ``validate: false`` (default), ``handler`` is called with the
-   *   matched line.
-   * - With ``validate: true``, the process calls ``getPlan()`` and passes
-   *   the resolved ``Markdown`` entity (or ``null`` if resolution failed)
-   *   to ``handler``.
+   *   resolved ``plan_path`` string (or ``null``).
+   * - With ``validate: true``, ``handler`` receives the resolved
+   *   ``Markdown`` entity (or ``null`` if no plan exists yet).
    *
-   * Returns an unsubscribe function. The trigger only fires while the
-   * subscription is alive; the persisted ``plan_path`` field is updated
-   * server-side regardless of subscriptions when ``getPlan()`` runs.
+   * NOTE: ``process.status`` does not transition mid-session, so during a
+   * live Claude session the handler only fires on initial registration
+   * (and on any later status transitions, e.g. process restart). To pick
+   * up plans created during a session, the consumer must re-mount /
+   * re-subscribe (page refresh handles this naturally).
+   *
+   * Returns an unsubscribe function.
    */
   onPlan<T = string | null>(
     options: { validate?: boolean },
     handler: (payload: T) => void,
   ): () => void {
     const validate = options.validate ?? false;
-    let unsubShell: (() => void) | undefined;
-    void (async () => {
-      const sh = await this.shell();
-      if (!sh) return;
-      const pattern = /plan[\w-]*\.md/i;
-      unsubShell = sh.addTrigger({
-        pattern,
-        label: 'plan-detection',
-        onMatch: async (line) => {
-          if (validate) {
-            const md = await this.getPlan();
-            handler(md as unknown as T);
-          } else {
-            handler(line as unknown as T);
-          }
-        },
-      });
-    })();
-    return () => unsubShell?.();
+
+    const check = async (): Promise<void> => {
+      if (this.status !== ProcessStatus.RUNNING) return;
+      const md = await this.getPlan();
+      if (validate) {
+        handler(md as unknown as T);
+      } else {
+        handler((this.plan_path ?? null) as unknown as T);
+      }
+    };
+
+    const unsubStatus = this.on('status', () => { void check(); });
+    void check();
+
+    return () => unsubStatus();
   }
 
   /**
@@ -1816,6 +1817,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         oldValue: oldStatus,
         newValue: this.status,
       });
+      // Named transition event — listener signature: (newValue, oldValue) => void.
+      // Note: ``Shell`` also emits ``'status'`` for WS connection state — different
+      // object, benign name overlap.
+      this.emit('status', this.status, oldStatus);
       if (this.status === ProcessStatus.FAILED && !isWorkerTerminal(this.workerStatus)) {
         this._markError(new Error(`Process ended with lifecycle status: ${this.status}`));
       }
