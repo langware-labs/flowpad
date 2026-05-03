@@ -473,17 +473,13 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [process?.id]);
 
-  // Live plan-detection: when a `plan*.md` line appears in PTY output,
-  // ask the backend to resolve and persist the path. Validate=true so
-  // the handler receives the Markdown entity once it's saved + indexed.
+  // Refresh-driven plan-detection: subscribe to status transitions and
+  // run getPlan() once at registration. Server-side resolves the plan
+  // from the JSONL transcript and persists plan_path on the entity; the
+  // next entity-update over WS makes ``hasPlan`` flip to true automatically.
   useEffect(() => {
     if (!process) return;
-    const unsub = process.onPlan({ validate: true }, () => {
-      // No-op — the trigger fires getPlan() server-side which saves
-      // plan_path on the entity; the next entity-update over WS makes
-      // ``hasPlan`` flip to true automatically.
-    });
-    return unsub;
+    return process.onPlan({ validate: true }, () => {});
   }, [process]);
 
   const mergedPrompts = useMemo<PromptEntry[]>(() => {
