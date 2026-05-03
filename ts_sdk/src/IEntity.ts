@@ -30,6 +30,8 @@ export interface IEntity extends Partial<IResource> {
   vfs_orphan?: boolean;
   /** True when this entity belongs to an SDK-shipped system project. Hidden by default. */
   system?: boolean;
+  /** True when this entity has a hub-side counterpart at the same id; refreshable from the hub. */
+  remote?: boolean;
   /**
    * Generic context-entity references. The unified container for "what other
    * entities is this entity contextually related to." On the wire, each entry
