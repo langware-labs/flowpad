@@ -1255,8 +1255,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           >
             {/* Relative container: xterm fills the space with padding for gutters;
                 gutters are absolutely positioned over the padded areas.
-                This prevents any gutter mount/unmount from changing xterm width. */}
-            <div className="relative min-h-0 flex-1">
+                This prevents any gutter mount/unmount from changing xterm width.
+                ``overflow-hidden`` clips gutter rows that overshoot the visible
+                box (TimeGutter etc. render a fixed row count regardless of the
+                container height — without clipping they paint over the footer). */}
+            <div className="relative min-h-0 flex-1 overflow-hidden">
               {/* Wrapper reserves gutter space; xterm fills the content area only */}
               <div
                 className="absolute inset-0 flex"

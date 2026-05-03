@@ -74,6 +74,7 @@ class Entity(DBEntity):
     labels: List[str] | None = APIField(default=None)
     tags: List[str] = APIField(default_factory=list)
     system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
+    remote: bool = APIField(default=False, description="True when this entity has a hub counterpart at the same id; refreshable from the hub")
 
     # Generic context-entity references — the unified container for "what
     # other entities is this one contextually related to." Persists as a list

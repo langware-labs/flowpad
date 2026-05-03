@@ -28,7 +28,7 @@ from flow_sdk.fs_records.flow_message_bundle import FlowMessageExistsError
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse, ApiResponse
 from flow_sdk._compat import UTC
-from flow_sdk.utils.hub import hub_get
+from flow_sdk.utils.hub import hub_get, hub_post, hub_base_url
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ async def handle_create_task_bundle(
     task = Task.model_validate({
         "title": task_title,
         "shared_by_id": sender_id,
-        "metadata": {"team_space_id": team_space_id} if team_space_id else None,
+        "team_space_id": team_space_id or None,
         # spec_id consolidated into ``context_entities``.
         "context_entities": [f"spec-{spec.id}"],
     })
@@ -627,6 +627,104 @@ async def inbox_update() -> ApiResponse:
         return ApiFailResponse(message=f"Update failed: {str(e)}")
 
 
+async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
+    """Promote a draft FlowMessage to a real reply.
+
+    1. Validate `is_draft=True`.
+    2. Append a pointer to `<task-dir>/conversation.jsonl` and bump
+       `Conversation.message_ids` / `message_count`.
+    3. Flip `is_draft=False`; save.
+    4. POST to hub + upload bundle (best-effort).
+    5. Git-commit the conversation pointer change when the task lives in a
+       project repo (mirrors the original-reply path in
+       `notification_action.handle_append_conversation`).
+    """
+    from flow_sdk.app.actions.notification_action import (
+        _append_message_to_conversation,
+        _find_task_conversation,
+        _notify_ui_conversation_updated,
+        _resolve_reply_recipient_email,
+        _send_reply_to_hub,
+    )
+    from flow_sdk.utils.git import git_add_commit_push
+
+    fm = await FlowMessage.get_one({"id": fm_id})
+    if not fm:
+        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
+    if not fm.is_draft:
+        return ApiFailResponse(message="FlowMessage is not a draft")
+    if not fm.conversation_id:
+        return ApiFailResponse(message="Draft has no conversation_id")
+
+    conv = await Conversation.get_one({"id": fm.conversation_id})
+    if not conv:
+        return ApiFailResponse(message=f"Conversation not found: {fm.conversation_id}")
+
+    task: Optional[Task] = None
+    if conv.task_id:
+        task = await Task.get_one({"id": conv.task_id})
+
+    conv = await _append_message_to_conversation(
+        conv=conv,
+        task_id=task.id if task else None,
+        fm_id=fm.id,
+        someone_typeid=someone_typeid,
+    )
+
+    fm.is_draft = False
+    fm = await fm.save(someone_typeid)
+
+    if task:
+        local_user = await User.get_one({"uname": "local"})
+        sender_id = local_user.id if local_user else fm.sender_id
+        sender_name = fm.sender_name or ((local_user.name or local_user.email or "") if local_user else "")
+        recipient_email = _resolve_reply_recipient_email(task, local_user.id if local_user else "")
+        await _send_reply_to_hub(
+            reply_fm=fm,
+            task=task,
+            task_id=task.id,
+            message=fm.text or "",
+            sender_id=sender_id,
+            sender_name=sender_name,
+            recipient_email=recipient_email,
+        )
+
+    _notify_ui_conversation_updated(conv.id, task.id if task else "", fm.id)
+
+    if task:
+        project_root_str = task.project_root
+        if project_root_str:
+            await git_add_commit_push(
+                Path(project_root_str),
+                ["tasks"],
+                f"chore: update conversation for task '{task.title}'",
+            )
+
+    return ApiSuccessResponse(data={
+        "flow_message_id": fm.id,
+        "conversation_id": conv.id,
+        "message_count": conv.message_count,
+    })
+
+
+@action.post(action_name="send-draft", types=[BuiltinEntityType.FLOW_MESSAGE.value])
+async def send_draft() -> ApiResponse:
+    """Promote a draft FlowMessage to a real reply (jsonl pointer + hub push)."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found")
+        if not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        return await handle_send_draft(
+            fm_id=str(request_info.target_entity_typeid.id),
+            someone_typeid=request_info.someone_typeid,
+        )
+    except Exception as e:
+        logger.error("[flow_message_action] send-draft error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Send draft failed: {str(e)}")
+
+
 async def handle_inbox_bulk_update(patch: dict, someone_typeid: str) -> ApiResponse:
     """Apply is_read / is_archived patch to all FlowMessages."""
     from flow_sdk.db.drivers.query import QueryFilter
@@ -659,3 +757,349 @@ async def inbox_bulk_update() -> ApiResponse:
     except Exception as e:
         logger.error("[flow_message_action] inbox-bulk-update error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Bulk update failed: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# Hub-mirrored conversations (Entity.remote=True). Sender, receiver, reply,
+# and invitation-accept paths. These do NOT use the .flowmsg bundle flow —
+# the hub holds a Conversation entity and its FlowMessages, both sides keep
+# a local mirror with the hub-allocated ids.
+# ---------------------------------------------------------------------------
+
+
+async def _materialize_remote_conversation(
+    hub_conv: dict, someone_typeid: str
+) -> Optional["Conversation"]:
+    """Upsert a local Conversation row to mirror the hub-side conversation.
+
+    `hub_conv` is the JSON dict the hub returned (under data, not the entity).
+    """
+    if not hub_conv or not hub_conv.get("id"):
+        return None
+    cid = hub_conv["id"]
+    existing = await Conversation.get_one({"id": cid})
+    if existing:
+        # Update mirror fields. Don't clobber local data_path / message_ids.
+        if hub_conv.get("title") and not existing.name:
+            existing.name = hub_conv["title"]
+        existing.participants = hub_conv.get("participants") or existing.participants
+        existing.remote = True
+        return await existing.save(someone_typeid)
+
+    conv = Conversation.model_validate({
+        "id": cid,
+        "name": hub_conv.get("title") or None,
+        "participants": hub_conv.get("participants") or [],
+        "remote": True,
+        "message_count": 0,
+    })
+    return await conv.save(someone_typeid)
+
+
+async def _materialize_remote_flow_message(
+    hub_fm: dict, conv_id: str, someone_typeid: str
+) -> Optional[FlowMessage]:
+    """Upsert a local FlowMessage row to mirror a hub-side flow_message.
+
+    Also appends a pointer to the parent Conversation's `message_ids`
+    so the existing ConversationView rendering pipeline (which reads
+    `conversation.conversationMessageIds`) picks it up.
+    """
+    if not hub_fm or not hub_fm.get("id"):
+        return None
+    fm_id = hub_fm["id"]
+    existing = await FlowMessage.get_one({"id": fm_id})
+    if existing:
+        existing.remote = True
+        return await existing.save(someone_typeid)
+
+    fm = FlowMessage.model_validate({
+        "id": fm_id,
+        "text": hub_fm.get("text") or "",
+        "sender_id": hub_fm.get("sender_id") or None,
+        "sender_name": hub_fm.get("sender_name") or None,
+        "receiver_address": hub_fm.get("receiver_address") or None,
+        "receiver_address_type": hub_fm.get("receiver_address_type") or None,
+        "conversation_id": conv_id,
+        "remote": True,
+    })
+    saved = await fm.save(someone_typeid)
+
+    # Maintain the conversation's pointer list + count.
+    conv = await Conversation.get_one({"id": conv_id})
+    if conv:
+        ts = hub_fm.get("created_date") or datetime.now(UTC).isoformat()
+        existing_ids: list = []
+        if conv.message_ids:
+            try:
+                existing_ids = _json.loads(conv.message_ids)
+            except Exception:
+                existing_ids = []
+        if not any(p.get("message_id") == fm_id for p in existing_ids):
+            existing_ids.append({"message_id": fm_id, "timestamp": ts})
+            conv.message_ids = _json.dumps(existing_ids)
+            conv.message_count = len(existing_ids)
+            await conv.save(someone_typeid)
+
+    return saved
+
+
+async def _materialize_remote_invitation(
+    hub_inv: dict, someone_typeid: str
+) -> Optional["Invitation"]:
+    """Upsert a local Invitation row to mirror a hub-side invitation."""
+    from flow_sdk.builtin.invitation import Invitation as LocalInvitation
+
+    if not hub_inv or not hub_inv.get("id"):
+        return None
+    inv_id = hub_inv["id"]
+    existing = await LocalInvitation.get_one({"id": inv_id})
+    fields = {
+        "id": inv_id,
+        "recipient_email": hub_inv.get("recipient_email") or "",
+        "accepted": bool(hub_inv.get("accepted") or False),
+        "sent": bool(hub_inv.get("sent") or False),
+        "message": hub_inv.get("message"),
+        "remote": True,
+    }
+    if existing:
+        existing.recipient_email = fields["recipient_email"]
+        existing.accepted = fields["accepted"]
+        existing.sent = fields["sent"]
+        existing.message = fields["message"]
+        existing.remote = True
+        return await existing.save(someone_typeid)
+
+    inv = LocalInvitation.model_validate(fields)
+    return await inv.save(someone_typeid)
+
+
+async def handle_conversation_start_hub(body: dict, someone_typeid: str) -> ApiResponse:
+    """Create a hub-mirrored conversation. Calls hub `conversation/start_direct`
+    and materializes the returned conversation + first FlowMessage locally
+    with `remote=True`.
+    """
+    participants = body.get("participants") or []
+    if not isinstance(participants, list) or not participants:
+        return ApiFailResponse(message="participants required")
+    initial_text = (body.get("initial_text") or body.get("text") or "").strip()
+    title = (body.get("title") or "").strip() or None
+
+    hub_payload = {
+        "participants": participants,
+        "text": initial_text,
+        "title": title,
+    }
+
+    try:
+        from flow_sdk.utils.hub import HubError
+        data = await hub_post(BuiltinEntityType.CONVERSATION, hub_payload, action="start_direct")
+    except HubError as e:
+        return ApiFailResponse(message=f"Hub error ({e.status_code}): {e.reason}")
+
+    if not data:
+        return ApiFailResponse(message="Hub returned no data")
+
+    hub_conv = data.get("conversation") or {}
+    hub_first_fm = data.get("first_message") or None
+    hub_invitations = data.get("invitations") or []
+
+    conv = await _materialize_remote_conversation(hub_conv, someone_typeid)
+    if not conv:
+        return ApiFailResponse(message="Failed to materialize conversation")
+
+    if hub_first_fm:
+        await _materialize_remote_flow_message(hub_first_fm, conv.id, someone_typeid)
+
+    # The sender's local mirror also tracks invitations he created.
+    for inv_meta in hub_invitations:
+        # `inv_meta` is `{id, recipient_email}` from hub start_direct return.
+        await _materialize_remote_invitation(inv_meta, someone_typeid)
+
+    return ApiSuccessResponse(data={
+        "conversation_id": conv.id,
+        "invitations": hub_invitations,
+    })
+
+
+@action.post(action_name="conversation-start-hub", types=None)
+async def conversation_start_hub() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        body = await request_info.get_post_data() or {}
+        return await handle_conversation_start_hub(body, request_info.someone_typeid)
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-start-hub error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
+async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
+    """Pull invitations + conversations from the hub and mirror them locally."""
+    if not hub_base_url():
+        return ApiFailResponse(message="Hub not configured")
+
+    inv_count = 0
+    conv_count = 0
+    fm_count = 0
+
+    # Use the dedicated "list mine" hub action so the recipient sees pending
+    # invitations addressed to their email (default graph list requires a
+    # direct role, which the recipient lacks until they accept).
+    invitations = await hub_get(BuiltinEntityType.INVITATION, action="mine") or []
+    if not isinstance(invitations, list):
+        invitations = []
+    for inv in invitations:
+        try:
+            if await _materialize_remote_invitation(inv, someone_typeid):
+                inv_count += 1
+        except Exception as e:
+            logger.warning("[conversation-sync] invitation upsert failed: %s", e)
+
+    conversations = await hub_get(BuiltinEntityType.CONVERSATION) or []
+    if not isinstance(conversations, list):
+        conversations = []
+    for hub_conv in conversations:
+        try:
+            conv = await _materialize_remote_conversation(hub_conv, someone_typeid)
+            if not conv:
+                continue
+            conv_count += 1
+            msgs = await hub_get(BuiltinEntityType.CONVERSATION, conv.id, "flow_message") or []
+            if isinstance(msgs, list):
+                for m in msgs:
+                    if await _materialize_remote_flow_message(m, conv.id, someone_typeid):
+                        fm_count += 1
+        except Exception as e:
+            logger.warning("[conversation-sync] conv sync failed for %s: %s", hub_conv.get("id"), e)
+
+    return ApiSuccessResponse(data={
+        "invitations": inv_count,
+        "conversations": conv_count,
+        "flow_messages": fm_count,
+    })
+
+
+@action.post(action_name="conversation-sync", types=None)
+async def conversation_sync() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        return await handle_conversation_sync(request_info.someone_typeid)
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-sync error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
+async def handle_conversation_add_remote_message(body: dict, someone_typeid: str) -> ApiResponse:
+    """Add a message to a hub-mirrored conversation: POST hub add_message,
+    materialize the returned FlowMessage locally with remote=True.
+    """
+    conv_id = (body.get("conversation_id") or "").strip()
+    text = (body.get("text") or "").strip()
+    if not conv_id or not text:
+        return ApiFailResponse(message="conversation_id and text required")
+
+    try:
+        from flow_sdk.utils.hub import HubError
+        data = await hub_post(
+            BuiltinEntityType.CONVERSATION, {"text": text}, conv_id, "add_message"
+        )
+    except HubError as e:
+        return ApiFailResponse(message=f"Hub error ({e.status_code}): {e.reason}")
+
+    if not data:
+        return ApiFailResponse(message="Hub returned no data")
+
+    fm = await _materialize_remote_flow_message(data, conv_id, someone_typeid)
+    return ApiSuccessResponse(data={
+        "flow_message_id": fm.id if fm else None,
+        "conversation_id": conv_id,
+    })
+
+
+@action.post(action_name="conversation-add-remote-message", types=None)
+async def conversation_add_remote_message() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        body = await request_info.get_post_data() or {}
+        return await handle_conversation_add_remote_message(body, request_info.someone_typeid)
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-add-remote-message error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
+async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiResponse:
+    """Accept a pending invitation on the hub, then sync conversations to
+    materialize the now-accessible conversation locally.
+    """
+    inv_id = (body.get("invitation_id") or "").strip()
+    if not inv_id:
+        return ApiFailResponse(message="invitation_id required")
+
+    # Hub exposes accept as GET /api/v1/graph/members/accept?invitation-id=X.
+    # We use the same path via hub_get with no entity_type prefix.
+    from flow_sdk.utils.hub import hub_base_url as _hub_base
+    import httpx
+    base = _hub_base()
+    if not base:
+        return ApiFailResponse(message="Hub not configured")
+
+    try:
+        from flow_sdk.cli.auth.hub_login import get_api_key
+        api_key = get_api_key()
+    except Exception:
+        api_key = None
+    if not api_key:
+        return ApiFailResponse(message="Not logged in to hub")
+
+    accept_url = f"{base}/api/v1/graph/members/accept"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                accept_url,
+                params={"invitation-id": inv_id},
+                headers={"Authorization": f"Bearer {api_key}"},
+            )
+        if resp.status_code != 200:
+            return ApiFailResponse(
+                message=f"Accept failed ({resp.status_code}): {resp.text[:200]}"
+            )
+    except Exception as e:
+        return ApiFailResponse(message=f"Accept transport error: {e}")
+
+    # Mark local invitation as accepted (best-effort) before sync.
+    try:
+        from flow_sdk.builtin.invitation import Invitation as LocalInvitation
+        existing = await LocalInvitation.get_one({"id": inv_id})
+        if existing:
+            existing.accepted = True
+            await existing.save(someone_typeid)
+    except Exception as e:
+        logger.warning("[invitation-accept] local update failed: %s", e)
+
+    # Now run sync so the conversation just unlocked appears locally.
+    sync_resp = await handle_conversation_sync(someone_typeid)
+    sync_data = sync_resp.data if hasattr(sync_resp, "data") else {}
+
+    return ApiSuccessResponse(data={
+        "invitation_id": inv_id,
+        "synced": sync_data,
+    })
+
+
+@action.post(action_name="invitation-accept", types=None)
+async def invitation_accept() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        body = await request_info.get_post_data() or {}
+        return await handle_invitation_accept(body, request_info.someone_typeid)
+    except Exception as e:
+        logger.error("[flow_message_action] invitation-accept error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")

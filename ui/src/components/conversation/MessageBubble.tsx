@@ -7,6 +7,7 @@ import type { ITask } from '@sdk/entities/task';
 import { MessageChips } from './chips/MessageChips';
 import { PromptApprovalRow } from './PromptApprovalRow';
 import { useLocalUser } from './useLocalUser';
+import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -123,7 +124,7 @@ export function MessageBubble({
           {time && <span className="text-[10px] text-muted-foreground">{time}</span>}
           <MessageChips flowMessageId={flowMessageId} />
         </div>
-        {message.content && message.content !== "Please run the prompt that I'm sending you" && (
+        {message.content && message.content !== PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT && (
           <div className={`text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
             {message.content}
           </div>

@@ -124,14 +124,13 @@ export function useMyProcess({ task, conversationId, senderName }: UseMyProcessO
   const [busy, setBusy] = useState(false);
 
   const taskId = task.id ?? '';
-  const taskMeta = (task.metadata as Record<string, unknown> | undefined) ?? {};
   const myProcessId = task.my_process_id ?? undefined;
   const isInitiator = !!(localUser?.id && task.shared_by_id && task.shared_by_id === localUser.id);
   // Workdir must come from the task's own mapped project. We deliberately do
   // NOT fall back to the global active project (`dataContext.project`) — that
   // would pick up whatever the footer happens to have selected, which is the
   // exact mistake the mapping dialog exists to prevent.
-  const workdir = taskMeta.project_root as string | undefined;
+  const workdir = task.project_root ?? undefined;
 
   const isStartLabel = !myProcessId;
 
