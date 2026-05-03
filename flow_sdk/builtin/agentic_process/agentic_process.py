@@ -95,6 +95,7 @@ class AssetDescriptor:
     typeid: str               # serialized TypeId, e.g. "skill-<uuid>"
     source: AssetSource
     posix_path: str | None    # canonical POSIX path; None for INLINE
+    source_dir: str | None = None  # matched source dir (path-discovered only); None for EMBEDDED/INLINE
 
 
 # Types treated as executable agent inputs by the asset-management UI.
@@ -109,12 +110,24 @@ EXECUTABLE_ASSET_TYPES: list[str] = ["skill", "agent"]
 _PROMPT_LOCKS: dict[str, asyncio.Lock] = {}
 _PROMPT_WORKERS: dict[str, Any] = {}
 
+# Per-process serialization for the ``open``/``start`` lifecycle so two
+# concurrent refresh-driven calls can't both run recovery on the same process.
+_OPEN_LOCKS: dict[str, asyncio.Lock] = {}
+
 
 def _get_prompt_lock(process_id: str) -> asyncio.Lock:
     lock = _PROMPT_LOCKS.get(process_id)
     if lock is None:
         lock = asyncio.Lock()
         _PROMPT_LOCKS[process_id] = lock
+    return lock
+
+
+def _get_open_lock(process_id: str) -> asyncio.Lock:
+    lock = _OPEN_LOCKS.get(process_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _OPEN_LOCKS[process_id] = lock
     return lock
 
 
@@ -144,6 +157,33 @@ def _write_plan_frontmatter(file_path: str, fields: dict) -> None:
         )
         new_content = f"---\n{lines}\n---\n{content}"
     p.write_text(new_content, encoding="utf-8")
+
+
+async def _index_additional_dir(path: str) -> None:
+    """Run a one-shot indexer scan over ``path`` so its skills/agents become
+    discoverable via ``Entity.assets_by_path``.
+
+    Best-effort and silent: if the path doesn't exist or the indexer raises,
+    we log and continue — adding the dir to ``additional_dirs`` already
+    succeeded.
+    """
+    try:
+        from pathlib import Path as _Path
+        from flow_sdk.fs_store.fs_ref import FSRef
+        from flow_sdk.fs_store.record_types import RecordType
+        from flow_sdk.fs_store.indexer import IndexerOptions, get_shared_indexer
+
+        p = _Path(path)
+        if not p.is_dir():
+            return
+        new_root = FSRef(p, record_type=RecordType.CWD_ROOT, scope="user")
+        # include_temp=True so /tmp / /var/folders paths aren't filtered out —
+        # the user explicitly added this dir, so honor it regardless of location.
+        await get_shared_indexer().index(
+            IndexerOptions(roots=(new_root,), verbose=False, include_temp=True)
+        )
+    except Exception:
+        logger.exception("add_dir: indexing failed for %s", path)
 
 
 async def _index_session_on_close(session_id: str, pty_title: str | None = None) -> None:
@@ -489,11 +529,30 @@ class AgenticProcess(Entity):
           the dead PTY, cleans up, and spawns Claude with --resume.
         - Idempotent call on live process: Shell.start() detects alive PTY and returns
           without re-spawning.
+
+        Body runs under a per-process ``_OPEN_LOCKS`` lock so two concurrent
+        refresh-driven open calls (e.g. two browser tabs) can't both run
+        recovery on the same process and double-spawn Claude.
         """
         # Suppress the restart-required auto-flag while start() mutates fields
         # (status, session_id are tracked, but those mutations are not "drift").
         # Cleared on success after we capture the new snapshot.
         self._set_start_lifecycle(True)
+        try:
+            async with _get_open_lock(self.id):
+                return await self._perform_open(instruction, visible)
+        finally:
+            self._set_start_lifecycle(False)
+
+    async def _perform_open(
+        self,
+        instruction: str | None,
+        visible: bool | None,
+    ) -> ApiSuccessResponse | ApiFailResponse:
+        """Body of ``start``/``open`` — runs while the per-process open lock
+        is held. All lifecycle decisions (reattach vs recover vs fresh) live
+        here; the caller is responsible for the lock and the start-lifecycle
+        flag."""
         try:
             _bench_t0 = time.perf_counter()
             _bench_id = self.id[:8]
@@ -515,14 +574,31 @@ class AgenticProcess(Entity):
                 ProcessStatus.STARTING.value,
                 ProcessStatus.RUNNING.value,
             ) and self.shell_id:
-                if shell is not None and await shell.has_attachable_pty():
+                # Reattach gate: both the PTY session AND the worker PID must be
+                # alive. ``has_attachable_pty()`` only proves the pseudo-terminal
+                # is registered on the compute node — it accepts a PTY whose
+                # Claude child has already exited. Pairing it with
+                # ``worker_alive()`` (psutil-based PID + cmdline match) is what
+                # prevents the "empty terminal after refresh" symptom.
+                if (
+                    shell is not None
+                    and await shell.has_attachable_pty()
+                    and await shell.worker_alive()
+                ):
                     if self.status != ProcessStatus.RUNNING.value:
                         self.status = ProcessStatus.RUNNING.value
                         await self.save()
                     return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=False))
-                if self.status == ProcessStatus.STARTING.value:
-                    await self._drop_stale_shell(shell, reason="starting process is missing an attachable PTY")
-                    shell = None
+                # Gate failed (PTY dead, worker dead, or both). Drop the stale
+                # shell so the relaunch path below sees a clean slate — without
+                # this, ``_get_or_create_shell`` would hand back the same
+                # half-dead shell entity and the new ``claude --resume`` would
+                # collide with the old worker's lingering JSONL session lock.
+                await self._drop_stale_shell(
+                    shell,
+                    reason=f"{self.status} process is missing a fully-alive PTY+worker",
+                )
+                shell = None
 
             await self.get_project()
             _bench("after get_project")
@@ -628,8 +704,6 @@ class AgenticProcess(Entity):
             self.status = ProcessStatus.FAILED.value
             await self.save()
             return ApiFailResponse(message=str(e))
-        finally:
-            self._set_start_lifecycle(False)
 
     @action.post(action_name="exit")
     async def exit(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -1559,16 +1633,18 @@ class AgenticProcess(Entity):
                 if not ar_raw:
                     continue
                 ar = canonical_posix_path(ar_raw)
-                src = next(
-                    (s for path, s in ranked if ar == path or ar.startswith(path + "/")),
+                match = next(
+                    ((path, s) for path, s in ranked if ar == path or ar.startswith(path + "/")),
                     None,
                 )
-                if src is None:
+                if match is None:
                     continue
+                src_dir, src = match
                 descriptors.append(AssetDescriptor(
                     typeid=f"{ent.type or ent.get_type()}-{ent.id}",
                     source=src,
                     posix_path=ar,
+                    source_dir=src_dir,
                 ))
 
         return descriptors
@@ -1770,7 +1846,12 @@ class AgenticProcess(Entity):
         """HTTP wrapper around ``get_asset_descriptors``."""
         items = await self.get_asset_descriptors()
         return ApiSuccessResponse(data={"assets": [
-            {"typeid": d.typeid, "source": d.source.value, "posix_path": d.posix_path}
+            {
+                "typeid": d.typeid,
+                "source": d.source.value,
+                "posix_path": d.posix_path,
+                "source_dir": d.source_dir,
+            }
             for d in items
         ]})
 
@@ -1942,10 +2023,25 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="add-dir")
     async def add_dir(self, path: str) -> "ApiResponse":
-        """Append a directory to additional_dirs (passed to Claude via --add-dir)."""
+        """Append a directory to additional_dirs (passed to Claude via --add-dir).
+
+        Also kicks off a one-shot indexer scan over the new path so any skills
+        / agents living under it become discoverable via ``get_asset_descriptors``
+        without requiring a manual ``flow record index``.
+        """
         from flow_sdk.responses.response import ApiSuccessResponse
         if path not in (self.additional_dirs or []):
             self.additional_dirs = list(self.additional_dirs or []) + [path]
+            await self.save()
+            await _index_additional_dir(path)
+        return ApiSuccessResponse()
+
+    @action.post(action_name="remove-dir")
+    async def remove_dir(self, path: str) -> "ApiResponse":
+        """Remove a directory from additional_dirs. No-op if not present."""
+        from flow_sdk.responses.response import ApiSuccessResponse
+        if path in (self.additional_dirs or []):
+            self.additional_dirs = [d for d in (self.additional_dirs or []) if d != path]
             await self.save()
         return ApiSuccessResponse()
 

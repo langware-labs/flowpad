@@ -413,6 +413,67 @@ def test_is_readonly_source_partition():
 
 
 @pytest.mark.asyncio
+async def test_source_dir_populated_for_path_discovered(tree):
+    """Path-discovered descriptors carry source_dir = the matched root dir.
+
+    EMBEDDED + INLINE descriptors leave source_dir as None — they aren't
+    attributed to any source dir.
+    """
+    from flow_sdk.api.api_types.type_id import TypeId
+    proc = _make_proc(
+        workdir=str(tree["workdir_outside"]),
+        additional_dirs=[str(tree["extra_dir"])],
+        embedded_asset_refs=[tree["ents"]["u_skill_user"].typeid],
+        cli_config={"agents_json": {"inline_x": {"description": "y"}}},
+    )
+    descs = await proc.get_asset_descriptors()
+
+    user_canon = canonical_posix_path(tree["user_home"])
+    workdir_canon = canonical_posix_path(tree["workdir_outside"])
+    extra_canon = canonical_posix_path(tree["extra_dir"])
+
+    by_source = {s: _by_source(descs, s) for s in AssetSource}
+
+    # Each path-discovered descriptor's source_dir matches its source enum.
+    for d in by_source[AssetSource.USER_DIR]:
+        assert d.source_dir == user_canon, d
+    for d in by_source[AssetSource.WORKDIR]:
+        assert d.source_dir == workdir_canon, d
+    for d in by_source[AssetSource.ADDITIONAL_DIR]:
+        assert d.source_dir == extra_canon, d
+
+    # EMBEDDED and INLINE never carry a source_dir.
+    for d in by_source[AssetSource.EMBEDDED] + by_source[AssetSource.INLINE]:
+        assert d.source_dir is None, d
+
+
+@pytest.mark.asyncio
+async def test_remove_dir_action(tree):
+    """`remove_dir` removes a path from additional_dirs; no-op on unknowns."""
+    extra = str(tree["extra_dir"])
+    other = str(tree["workdir_outside"])
+    proc = _make_proc(additional_dirs=[extra, other])
+
+    # Stub out save() so the test doesn't need a writable backing store.
+    saved: list[None] = []
+    async def _fake_save(self):
+        saved.append(None)
+        return self
+    import types
+    proc.save = types.MethodType(_fake_save, proc)
+
+    await proc.remove_dir(extra)
+    assert proc.additional_dirs == [other]
+    assert saved, "save() should run when the dir was actually removed"
+
+    # Idempotent on unknown path: no save, no mutation.
+    saved.clear()
+    await proc.remove_dir("/nonexistent/path")
+    assert proc.additional_dirs == [other]
+    assert not saved, "save() must not run when the dir wasn't present"
+
+
+@pytest.mark.asyncio
 async def test_get_asset_descriptors_read_only_partition(tree, monkeypatch):
     """Every descriptor returned by get_asset_descriptors() agrees with
     is_readonly_source — no surprise/dynamic mismatches between actual

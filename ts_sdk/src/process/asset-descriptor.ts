@@ -21,6 +21,8 @@ export interface AssetDescriptor {
   source: AssetSource;
   /** Canonical POSIX path; null for INLINE. */
   posix_path: string | null;
+  /** Matched source dir for path-discovered assets; null for EMBEDDED/INLINE. */
+  source_dir?: string | null;
 }
 
 /**

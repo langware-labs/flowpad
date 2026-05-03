@@ -335,27 +335,46 @@ class Shell(Entity):
         await self.start()
 
     async def terminate_worker(self) -> None:
-        """Gracefully kill the Claude worker: SIGTERM, wait 3s, SIGKILL if needed.
+        """Gracefully kill the Claude worker and wait for full reap.
+
+        SIGTERM the worker and its descendants, wait up to 3s for the kernel
+        to reap them, then SIGKILL any survivors and wait again. Returns only
+        once every victim is fully reaped — once that holds, any flock-held
+        resources (e.g. Claude's JSONL session lock) are released, so a
+        subsequent ``claude --resume`` won't collide with the dead worker's
+        leftover lock file.
 
         Shell entity and PTY are left alive (status unchanged).
         Uses self.worker_pid set by _launch_worker_process().
         """
-        import signal
-
         pid = self.worker_pid
         if not pid:
             return
         try:
-            os.kill(pid, signal.SIGTERM)
-            deadline = asyncio.get_event_loop().time() + 3.0
-            while asyncio.get_event_loop().time() < deadline:
-                if not psutil.pid_exists(pid):
-                    return
-                await asyncio.sleep(0.1)
-            if psutil.pid_exists(pid):
-                os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass  # already gone
+            proc = psutil.Process(pid)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            return
+        try:
+            children = proc.children(recursive=True)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            children = []
+        victims = [proc, *children]
+
+        for p in victims:
+            try:
+                p.terminate()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+
+        # wait_procs is blocking; offload so we don't stall the event loop.
+        gone, alive = await asyncio.to_thread(psutil.wait_procs, victims, 3.0)
+        if alive:
+            for p in alive:
+                try:
+                    p.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            await asyncio.to_thread(psutil.wait_procs, alive, 2.0)
 
     # ── I/O ───────────────────────────────────────────────────────────────────
 
