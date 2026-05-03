@@ -132,6 +132,47 @@ These are stored as instance attributes, not in `_data`:
 
 ---
 
+## `asset_ref` and folder queries
+
+For Entity types whose Record carries an external content file (skills,
+agents, workflows, markdown docs, …), the entity row stores an `asset_ref`
+field with the absolute path of that file or folder.
+
+**Storage format — canonical POSIX.** Paths are normalised on write via
+`flow_sdk.fs_store.path_utils.canonical_posix_path` =
+`unicodedata.normalize("NFC", Path(p).resolve().as_posix())`. This:
+
+- collapses `\` vs `/` (Windows paths become `C:/Users/...`);
+- canonicalises case on macOS APFS / Windows NTFS via `Path.resolve()`;
+- folds NFD vs NFC differences from macOS APFS filenames.
+
+The conversion runs in `Entity._prepare_for_storage()` at the single write
+site `flow_sdk/core/entity/entity_model.py:644`. Existing rows written
+before this rule was introduced may retain non-canonical values until the
+next save; a one-shot backfill can re-save them.
+
+**Query — `Entity.assets_by_path(PathQueryOptions)`.** Returns entities whose
+`asset_ref` is a strict descendant of any of `opts.search_dirs`, optionally
+narrowed by `opts.types`. Pushdown uses a half-open lex range against
+`json_extract(data, '$.asset_ref')`:
+
+```sql
+asset_ref >= '<dir>/'  AND  asset_ref < '<dir>0'
+```
+
+`/` is `0x2F`; the next codepoint `0` (`0x30`) terminates the range.
+Multiple search dirs are OR'd, types are AND'd via `IN`. The query reads
+`asset_ref` only — `parent_path` and `vault_root` are not consulted.
+
+The dir itself is **not** returned — only strict descendants. Querying for
+`<dir>` where the dir IS an entity's `asset_ref` returns an empty list.
+
+HTTP wrapper: `GET /api/v1/assets/by-path?folder=<abs>&record_type=<type>`
+(both `folder` and `record_type` are repeatable). See
+`flow_sdk/server/routes/assets.py`.
+
+---
+
 ## Constructor Calling Patterns
 
 The `__init__` signature is:

@@ -8,7 +8,7 @@
  */
 
 import { apiClient, ComputeNode, ConnectionManager, GRAPH_API_PREFIX } from '@sdk';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
 const CN_FS_BASE = `${GRAPH_API_PREFIX}/${ComputeNode.type}/@local/fs-records`;
@@ -28,13 +28,21 @@ async function waitForConnection(manager: ConnectionManager) {
   });
 }
 
+// Track every skill created in this suite so afterEach can DELETE them. The
+// dev backend (FLOWPAD_DEV=true) materializes skills under the user's real
+// ``~/.claude/skills/<name>/SKILL.md`` — leaving them behind pollutes every
+// asset-manager popover for every future process. Tests must clean up.
+const _createdSkillIds: string[] = [];
+
 async function createSkill(name: string): Promise<string> {
   const res = await apiClient.post<unknown>(`${CN_FS_BASE}/skill`, {
     name,
     description: `desc for ${name}`,
   });
   const d = (res as any)?.data ?? res;
-  return (d as any).id as string;
+  const id = (d as any).id as string;
+  _createdSkillIds.push(id);
+  return id;
 }
 
 /** Collect progress_report events during an operation and settle for settleMs. */
@@ -72,6 +80,15 @@ describe('progress_report fast tests', () => {
 
   beforeEach(async (context: any) => {
     await apiTestSetup(info, context.task.name);
+  });
+
+  afterEach(async () => {
+    while (_createdSkillIds.length) {
+      const id = _createdSkillIds.pop()!;
+      try {
+        await apiClient.delete(`${CN_FS_BASE}/skill/${id}`);
+      } catch { /* ignore — best effort */ }
+    }
   });
 
   it('aggregate scan emits sub-activity and job-level progress_report events', async () => {

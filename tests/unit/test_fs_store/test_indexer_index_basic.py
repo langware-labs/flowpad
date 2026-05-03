@@ -32,9 +32,8 @@ def _write_fake_session(
     return jsonl
 
 
-def _build_indexer_for_sessions(home: Path, state_dir: Path) -> FSIndexer:
+def _build_indexer_for_sessions(home: Path, state_dir: Path | None = None) -> FSIndexer:
     idx = FSIndexer(
-        state_dir=state_dir,
         roots=[
             FSRef(home, record_type=RecordType.USER_HOME_FOLDER, scope="user"),
         ],

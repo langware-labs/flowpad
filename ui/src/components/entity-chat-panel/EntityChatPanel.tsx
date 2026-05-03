@@ -46,6 +46,11 @@ interface EntityChatPanelProps {
    * is picked up from `useProcessesForTarget`.
    */
   onProcessCreated?: (process: AgenticProcess) => Promise<void> | void;
+  /**
+   * Caret line (1-indexed, on-disk) from the host editor. Rendered as a left-side
+   * "line N" badge in the chat header. Null/undefined hides the badge.
+   */
+  cursorLine?: number | null;
 }
 
 /**
@@ -61,7 +66,7 @@ interface EntityChatPanelProps {
  *     `prompt` action on AgenticProcess; FlowData flows into `process.flowDataStream`
  *     and renders via `useProcessStream`.
  */
-export function EntityChatPanel({ target, className, onProcessCreated }: EntityChatPanelProps) {
+export function EntityChatPanel({ target, className, onProcessCreated, cursorLine }: EntityChatPanelProps) {
   const targetStr = target ?? '';
 
   // 1. Pull all processes attached to this target; sort newest-first for picker + auto-select.
@@ -274,6 +279,7 @@ export function EntityChatPanel({ target, className, onProcessCreated }: EntityC
         activeId={activeProcess?.id ?? null}
         onNewChat={startNewChat}
         onPickChat={selectChat}
+        cursorLine={cursorLine ?? null}
         settingsSlot={
           <ChatSettingsPopover
             attachedRefs={effectiveAttachedRefs}
@@ -325,21 +331,32 @@ function ChatHistoryHeader({
   activeId,
   onNewChat,
   onPickChat,
+  cursorLine,
   settingsSlot,
 }: {
   processes: AgenticProcess[];
   activeId: string | null;
   onNewChat: () => void;
   onPickChat: (id: string) => void;
+  cursorLine: number | null;
   settingsSlot?: React.ReactNode;
 }) {
   const iconBtn =
     'flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
   return (
     <div
-      className="flex flex-shrink-0 items-center justify-end gap-0.5 border-b px-2 py-1"
+      className="flex flex-shrink-0 items-center gap-0.5 border-b px-2 py-1"
       data-testid="entity-chat-header"
     >
+      {cursorLine != null && (
+        <span
+          className="text-[11px] tabular-nums text-muted-foreground"
+          data-testid="entity-chat-line-badge"
+        >
+          line {cursorLine}
+        </span>
+      )}
+      <div className="flex-1" />
       <button
         type="button"
         onClick={onNewChat}
@@ -383,7 +400,7 @@ function ChatHistoryHeader({
                     {ts ? ts.toLocaleString() : 'Unknown time'}
                   </span>
                   <span className="text-[10px] text-muted-foreground">
-                    {p.id?.slice(0, 8)}
+                    {p.displayName}
                     {p.id === activeId ? ' · current' : ''}
                   </span>
                 </DropdownMenuItem>

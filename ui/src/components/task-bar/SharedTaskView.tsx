@@ -31,10 +31,12 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
     || task.shared_by_id
     || 'Unknown';
 
+  const specTypeId = task.firstContextOfType?.('spec') ?? null;
   const { data: spec } = useEntity<Spec>(
-    task.spec_id ? new TypeId(Spec.type, task.spec_id) : null,
+    specTypeId,
     { query: blobExpansion },
   );
+  const conversationTypeId = task.firstContextOfType?.('conversation') ?? null;
 
   const { localUser } = useLocalUser();
   const isAuthor = !!(localUser?.id && task.shared_by_id && localUser.id === task.shared_by_id);
@@ -73,7 +75,7 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
           <ArrowLeft className="h-4 w-4" />
         </button>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-base font-semibold">{task.title || 'Untitled'}</h2>
+          <h2 className="truncate text-base font-semibold">{task.displayName}</h2>
           {senderName && (
             <p className="text-xs text-muted-foreground">From {senderName}</p>
           )}
@@ -115,10 +117,10 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
 
           {/* Conversation */}
           <section className="-mx-4 flex flex-col">
-            {task.conversation_id ? (
+            {conversationTypeId ? (
               <ConversationPanel
                 task={task}
-                conversationId={task.conversation_id}
+                conversationId={conversationTypeId.id}
                 senderName={senderName}
                 mode={ConversationMode.HEADLESS}
               />

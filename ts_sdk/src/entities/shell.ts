@@ -137,14 +137,14 @@ export class Shell extends APIEntity<Shell> implements IShell {
     super(entity as IEntity);
     // Create PtyConnection eagerly — eliminates the secondary orphan buffer path.
     // compute_node_id may not be set yet; PtyConnection guards on empty string.
-    this.ptyConnection = new PtyConnection(
-      (entity as any).id ?? '',
-      (entity as any).compute_node_id ?? '',
-    );
+    this.ptyConnection = new PtyConnection((entity as any).id ?? '', (entity as any).compute_node_id ?? '');
     // Bridge PtyConnection events to Shell's EventEmitter so existing listeners
     // (shell.on('status', ...)) keep working during the migration to ptyConnection.
     this.ptyConnection.onReady(() => this.emit('status', 'connected'));
     this.ptyConnection.onDisconnect(() => this.emit('status', 'disconnected'));
+    // Re-emit lines as a Shell-level event so consumers can use either
+    // shell.onLine(fn) or shell.on('line', fn) interchangeably.
+    this.ptyConnection.onLine((line) => this.emit('line', line));
     // Re-apply entity data after class field initializers.
     Object.assign(this, entity);
     // Keep PtyConnection IDs in sync after Object.assign potentially sets them.
@@ -221,6 +221,44 @@ export class Shell extends APIEntity<Shell> implements IShell {
   onOutput(fn: import('../services/shell/ptyConnection.js').PtyOutputListener): (() => void) | undefined {
     if (!this.ptyConnection.replayDone) return undefined;
     return this.ptyConnection.onOutput(fn);
+  }
+
+  /**
+   * Subscribe to ANSI-stripped output lines. Fires for every \n in the
+   * stream, replayed chunks included. Use this for live pattern detection
+   * over terminal output.
+   *
+   * Also re-emits as a `line` event on this Shell — callers can use
+   * `shell.on('line', fn)` interchangeably.
+   */
+  onLine(fn: import('../services/shell/ptyConnection.js').PtyLineListener): () => void {
+    return this.ptyConnection.onLine(fn);
+  }
+
+  /**
+   * Register a regex trigger over the line stream. ``onMatch`` fires with
+   * the matched line and the regex match. Pattern is tested against
+   * already-ANSI-stripped lines.
+   */
+  addTrigger(trigger: import('../services/shell/ptyConnection.js').PtyEvent): () => void {
+    return this.ptyConnection.addTrigger(trigger);
+  }
+
+  /** Snapshot of recorded PtyEvent fires on this shell's PTY connection. */
+  getPtyEventFires(): readonly import('../services/shell/ptyConnection.js').PtyEventFire[] {
+    return this.ptyConnection.getEventFires();
+  }
+
+  /** Subscribe to new PtyEvent fires. Returns an unsubscribe function. */
+  onPtyEventFire(
+    fn: import('../services/shell/ptyConnection.js').PtyEventFireListener,
+  ): () => void {
+    return this.ptyConnection.onEventFire(fn);
+  }
+
+  /** Number of currently-registered PtyEvent watchers on this shell. */
+  getRegisteredPtyEventCount(): number {
+    return this.ptyConnection.getRegisteredEventCount();
   }
 
   // ── Shell start (backend HTTP + PTY attach) ───────────────────────────────

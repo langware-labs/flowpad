@@ -52,7 +52,7 @@ export function CronEventCard({ event, onEdit, onDeleted, onUpdated }: CronEvent
     <div className="flex flex-col gap-2 rounded-md border p-3 text-sm">
       {/* Header row */}
       <div className="flex items-center gap-2">
-        <span className="font-medium">{event.name}</span>
+        <span className="font-medium">{(event as CronEvent).displayName}</span>
         <Badge variant={event.enabled ? 'default' : 'secondary'} className="text-[10px]">
           {event.enabled ? 'enabled' : 'paused'}
         </Badge>

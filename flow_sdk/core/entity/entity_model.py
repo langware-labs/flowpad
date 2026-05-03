@@ -27,13 +27,16 @@ except ImportError:
                 return func
             return decorator
 
+from dataclasses import dataclass, field
+from pathlib import Path
+
 from pydantic import Field, SerializationInfo, SerializeAsAny, TypeAdapter, ValidationError, model_serializer
 
 from flow_sdk.config import StorageProvider
 from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
-from flow_sdk.db.drivers.query import OrderType, QueryFilter
+from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, QueryOp
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 import flow_sdk.service_log as service_log
@@ -46,12 +49,48 @@ from .entity_env.env_types import EntityEnvVars, EnvVar, EnvVarType
 EntityType = TypeVar("EntityType", bound="Entity")
 
 
+@dataclass
+class PathQueryOptions:
+    """Filter options for ``Entity.assets_by_path``.
+
+    - ``search_dirs``: one or more absolute folder paths; results are the
+      union of entities whose ``asset_ref`` is a strict descendant of any.
+    - ``types``: limit to these entity types. ``None`` means *all registered
+      entity types* (record-only types are skipped — they have no DB rows).
+    - ``include_system``: when False, system-project entities are excluded
+      via SQL (so paging stays correct).
+    """
+
+    search_dirs: List[str | Path]
+    types: List[str] | None = None
+    include_system: bool = True
+    limit: int = 200
+    offset: int = 0
+
+
 class Entity(DBEntity):
     env_vars: SerializeAsAny[EntityEnvVars[EnvVar] | None] = Field(default=None)
     visitor_role: str | None = Field(default=None)
     labels: List[str] | None = APIField(default=None)
     tags: List[str] = APIField(default_factory=list)
     system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
+    remote: bool = APIField(default=False, description="True when this entity has a hub counterpart at the same id; refreshable from the hub")
+
+    # Generic context-entity references — the unified container for "what
+    # other entities is this one contextually related to." Persists as a list
+    # of TypeIds. Direct fields (``project_id``, ``assignee``, etc.) stay on
+    # the entity for indexing/business logic; ``context_entities`` holds the
+    # purely-pointer references that previously lived as one-off fields like
+    # ``task.spec_id`` / ``conversation.task_id`` / ``flow_message.context``.
+    # Mutate via ``add_context_entity`` / ``remove_context_entity``.
+    context_entities: list[TypeId] = APIField(
+        default_factory=list,
+        description=(
+            "Pointers to other entities that contextually relate to this one. "
+            "Used by EntityChips to render lineage. Frontend writes go through "
+            "addContextEntity / removeContextEntity only."
+        ),
+    )
 
     # Display name — overridden with required `str` on many subclasses
     name: str | None = APIField(default=None, description="Display name")
@@ -105,6 +144,71 @@ class Entity(DBEntity):
         if not hasattr(driver, "browse_by_type"):
             return []
         return await driver.browse_by_type(entity_type=record_type, limit=limit, status=status)
+
+    @classmethod
+    async def assets_by_path(cls, opts: PathQueryOptions) -> list["Entity"]:
+        """Return entities whose ``asset_ref`` is a strict descendant of any
+        folder in ``opts.search_dirs``.
+
+        Pushdown: each search dir becomes a half-open lex range
+        ``asset_ref >= "<dir>/" AND asset_ref < "<dir>0"`` against
+        ``json_extract(data, '$.asset_ref')`` (`/` is `0x2F`, next codepoint
+        is `0`). Multiple dirs are OR'd. The query is dispatched per type
+        because the SQL driver mandates a type filter — when ``opts.types``
+        is None, every registered type is queried. Results are union'd,
+        sorted by ``asset_ref``, then paged.
+        """
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+        if not opts.search_dirs:
+            return []
+
+        folder_terms: list[ExpressionNode] = []
+        for d in opts.search_dirs:
+            f = canonical_posix_path(d).rstrip("/")
+            if not f:
+                continue
+            folder_terms.append(ExpressionNode(
+                op=QueryOp.AND,
+                operands=[
+                    ExpressionNode(op=QueryOp.GE, operands=["asset_ref", f + "/"]),
+                    ExpressionNode(op=QueryOp.LT, operands=["asset_ref", f + "0"]),
+                ],
+            ))
+        if not folder_terms:
+            return []
+
+        folder_expr: ExpressionNode = (
+            folder_terms[0] if len(folder_terms) == 1
+            else ExpressionNode(op=QueryOp.OR, operands=folder_terms)
+        )
+
+        match: ExpressionNode = folder_expr
+        if not opts.include_system:
+            match = ExpressionNode(op=QueryOp.AND, operands=[
+                match,
+                ExpressionNode(op=QueryOp.NE, operands=["system", True]),
+            ])
+
+        types_to_query = opts.types if opts.types else SchemaRegistry.get_all_entity_types()
+
+        # Each per-type query needs at most ``offset + limit`` rows; the global
+        # offset is applied after merge because rows are split across types.
+        per_type_limit = (opts.offset + opts.limit) if opts.limit else None
+
+        results: list[Entity] = []
+        for type_name in types_to_query:
+            qf = QueryFilter(
+                type=type_name,
+                match=match,
+                limit=per_type_limit,
+                order_by={"asset_ref": "asc"},
+            )
+            results.extend(await cls.get_all(qf))
+
+        results.sort(key=lambda e: getattr(e, "asset_ref", "") or "")
+        end = opts.offset + opts.limit if opts.limit else None
+        return results[opts.offset:end]
 
     @classmethod
     def allocate_id(cls, data: dict) -> str:
@@ -641,7 +745,8 @@ class Entity(DBEntity):
         ar = rec.compute_asset_ref(scope_root, self)
         if ar is None or getattr(ar, "_path", None) is None:
             return
-        path_str = str(ar._path)
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+        path_str = canonical_posix_path(ar.path)
         if hasattr(self, "asset_ref"):
             self.asset_ref = path_str
         # parent_path lets DocsCategory / PlansCategory filter the markdown
@@ -818,6 +923,46 @@ class Entity(DBEntity):
     def get_labels(self) -> List[str]:
         """Get all labels for the entity."""
         return self.labels or []
+
+    # ── context_entities surface ─────────────────────────────────────────
+    #
+    # Mirrors the TS APIEntity API. ``context_entities`` is the persisted
+    # list of TypeId references; the dynamic ``context_entities_full``
+    # property merges in per-entity-projected direct fields. Subclasses
+    # override ``_direct_fields_as_typeids`` to surface fields like
+    # ``project_id`` / ``assignee`` for chip rendering.
+
+    def _direct_fields_as_typeids(self) -> List[TypeId]:
+        """Per-subclass projection of direct fields into the chip context.
+        Default: nothing. Override on entities that want their own fields
+        (e.g. project_id) to appear in the merged context list.
+        """
+        return []
+
+    @property
+    def context_entities_full(self) -> List[TypeId]:
+        """Direct-field projection + persisted ``context_entities``."""
+        return [*self._direct_fields_as_typeids(), *self.context_entities]
+
+    def add_context_entity(self, type_id: TypeId) -> None:
+        """Append a context entity (idempotent)."""
+        if any(t == type_id for t in self.context_entities):
+            return
+        self.context_entities = [*self.context_entities, type_id]
+
+    def remove_context_entity(self, type_id: TypeId) -> bool:
+        """Remove a context entity. Returns True if removed."""
+        before = len(self.context_entities)
+        self.context_entities = [t for t in self.context_entities if t != type_id]
+        return len(self.context_entities) < before
+
+    def context_of_type(self, type_name: str) -> List[TypeId]:
+        """All context entries of the given entity type."""
+        return [t for t in self.context_entities_full if t.type == type_name]
+
+    def first_context_of_type(self, type_name: str) -> TypeId | None:
+        """First context entry of the given entity type, or None."""
+        return next((t for t in self.context_entities_full if t.type == type_name), None)
 
     def get_env_table(self) -> "EntityEnvVars":
         if not self.env_vars:

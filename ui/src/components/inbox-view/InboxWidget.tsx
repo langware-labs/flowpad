@@ -51,7 +51,7 @@ export function InboxWidget() {
         setUnreadCount(next.filter((m) => !m.is_read).length);
         return next;
       });
-      const taskContext = message.context.find((c) => c.startsWith('task-'));
+      const taskContext = message.context_entities.find((c) => c.startsWith('task-'));
       if (taskContext) {
         navigation.openDock(DockPointer.forTasks(taskContext.replace(/^task-/, '')));
       }

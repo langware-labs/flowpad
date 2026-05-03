@@ -1,12 +1,13 @@
 import type { Editor as MilkdownEditorInstance } from '@milkdown/core';
-import { MilkdownEditorWithSidePanel, type ExtraSideTab } from '@src/components/milkdown-editor/MilkdownEditorWithSidePanel';
+import { EditorWithSidePanel, type ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
+import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
 import { Button } from '@src/components/ui/button';
 import { WikiToolbar } from '@src/components/wiki-toolbar';
 import { useMarkdownContent } from '@src/hooks/use-markdown-content';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { FSRef } from '@sdk';
-import Editor from '@monaco-editor/react';
+import Editor, { type OnMount } from '@monaco-editor/react';
 import { ChevronDown, ChevronRight, Eye, ExternalLink, FileCode, MessageSquareDiff, Pencil, RefreshCw } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -122,6 +123,7 @@ function MarkdownEditorContent({
     fields,
     hasFields,
     body,
+    bodyStartLine,
     setField,
     setBody,
     dirty,
@@ -131,6 +133,17 @@ function MarkdownEditorContent({
   } = useMarkdownContent(fsRef, { autoSave: true, autoSaveMs: 2000 });
 
   const [propsExpanded, setPropsExpanded] = useState(false);
+
+  // On-disk caret line shared across all editor backends. Null means "user has
+  // not clicked yet" — chat header badge is hidden in that case. Persists across
+  // mode switches so caret restores to the same logical position.
+  const [cursorLine, setCursorLine] = useState<number | null>(null);
+  const bodyStartLineRef = useRef(bodyStartLine);
+  bodyStartLineRef.current = bodyStartLine;
+  const handleEditorLineChange = useCallback((bodyLine: number) => {
+    setCursorLine(bodyStartLineRef.current + bodyLine - 1);
+  }, []);
+  const initialBodyLine = cursorLine != null ? cursorLine - bodyStartLine + 1 : null;
 
   const setBodyRef = useRef(setBody);
   setBodyRef.current = setBody;
@@ -147,9 +160,17 @@ function MarkdownEditorContent({
   }, [sourcePath]);
 
   const handleLinkClick = useCallback((href: string) => {
+    // /dock/assets/wiki/<name> → keep the URL at the wiki form; the
+    // wiki route view (WikiResolveView) does the name resolution.
+    const wikiMatch = href.match(/\/dock\/assets\/wiki\/([^?#]+)/);
+    if (wikiMatch) {
+      const name = decodeURIComponent(wikiMatch[1]).replace(/\.md$/i, '');
+      navigation.openDock(DockPointer.forWiki(name));
+      return;
+    }
+
     const dir = sourcePath.slice(0, sourcePath.lastIndexOf('/'));
     const resolvedPath = href.startsWith('/') ? href : `${dir}/${href}`;
-    // Preserve the current asset type (e.g. "claude_memory") for sibling files
     const assetType = currentDock?.pointer?.split('/')?.[1] ?? 'claude_memory';
     navigation.openDock(DockPointer.forAssetEditor(assetType, resolvedPath));
   }, [sourcePath, currentDock, navigation]);
@@ -242,50 +263,99 @@ function MarkdownEditorContent({
         </div>
       )}
 
-      {viewMode === 'markdown' ? (
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <MonacoMarkdownEditor value={body} onChange={handleBodyChange} />
-        </div>
-      ) : (
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <MilkdownEditorWithSidePanel
-            content={body}
-            onChange={handleBodyChange}
-            onLinkClick={handleLinkClick}
-            editorMode={viewMode}
-            chatTarget={chatTarget}
-            extraTabs={extraSideTabs}
-            activeTab={activeSideTab}
-            onActiveTabChange={onActiveSideTabChange}
-            chatOnProcessCreated={chatOnProcessCreated}
-            editorRef={milkdownRef}
-            toolbarRight={
-              viewMode === 'editor' ? (
-                <WikiToolbar editorRef={milkdownRef} sourceTypeId={chatTarget} />
-              ) : undefined
-            }
-          />
-        </div>
-      )}
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <EditorWithSidePanel
+          chatTarget={chatTarget}
+          extraTabs={extraSideTabs}
+          activeTab={activeSideTab}
+          onActiveTabChange={onActiveSideTabChange}
+          chatOnProcessCreated={chatOnProcessCreated}
+          cursorLine={cursorLine}
+        >
+          {viewMode === 'markdown' ? (
+            <MonacoMarkdownEditor
+              value={body}
+              onChange={handleBodyChange}
+              onCursorLineChange={handleEditorLineChange}
+              initialLine={initialBodyLine}
+            />
+          ) : (
+            <MilkdownEditor
+              content={body}
+              onChange={handleBodyChange}
+              onLinkClick={handleLinkClick}
+              editorMode={viewMode}
+              editorRef={milkdownRef}
+              onCursorLineChange={handleEditorLineChange}
+              initialLine={initialBodyLine}
+              toolbarRight={
+                viewMode === 'editor' ? (
+                  <WikiToolbar editorRef={milkdownRef} sourceTypeId={chatTarget} />
+                ) : undefined
+              }
+            />
+          )}
+        </EditorWithSidePanel>
+      </div>
     </div>
   );
 }
 
 // ── Monaco markdown editor ────────────────────────────────────────────────────
 
-function MonacoMarkdownEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+function MonacoMarkdownEditor({
+  value,
+  onChange,
+  onCursorLineChange,
+  initialLine,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onCursorLineChange?: (bodyLine: number) => void;
+  initialLine?: number | null;
+}) {
   const { resolvedTheme } = useTheme();
+  // Capture initialLine at mount via a ref so handleMount can read the latest
+  // value supplied at first render without re-mounting on prop changes.
+  const initialLineRef = useRef(initialLine ?? null);
+  const onCursorLineChangeRef = useRef(onCursorLineChange);
+  onCursorLineChangeRef.current = onCursorLineChange;
+
+  const handleMount = useCallback<OnMount>((editor) => {
+    // Mark "user has interacted" only when restoring from a known line OR when
+    // the user actually clicks/types. Initial-mount cursor at line 1 with no
+    // restoration must not emit (matches Q3: no badge until first interaction).
+    let userInteracted = false;
+    const target = initialLineRef.current;
+    if (target != null && target > 0) {
+      editor.setPosition({ lineNumber: target, column: 1 });
+      editor.revealLineInCenter(target);
+      userInteracted = true;
+    }
+    const dom = editor.getDomNode();
+    if (dom) {
+      const onUser = () => { userInteracted = true; };
+      dom.addEventListener('mousedown', onUser);
+      dom.addEventListener('keydown', onUser);
+    }
+    editor.onDidChangeCursorPosition((e) => {
+      if (!userInteracted) return;
+      onCursorLineChangeRef.current?.(e.position.lineNumber);
+    });
+  }, []);
+
   return (
     <Editor
       height="100%"
       language="markdown"
       value={value}
       onChange={(v) => onChange(v ?? '')}
+      onMount={handleMount}
       theme={resolvedTheme === 'dark' ? 'vs-dark' : 'vs'}
       options={{
         minimap: { enabled: false },
         wordWrap: 'on',
-        lineNumbers: 'off',
+        lineNumbers: 'on',
         folding: false,
         fontSize: 13,
         scrollBeyondLastLine: false,

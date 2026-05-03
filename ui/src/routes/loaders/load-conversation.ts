@@ -55,10 +55,9 @@ export async function loadConversation(conversationId: string): Promise<Conversa
 
   // Parent task — best-effort. Project-scoped conversations don't have one.
   let task: Task | null = null;
-  if (conv.task_id) {
-    task = await dataManager
-      .getByTypeId<Task>(new TypeId(TaskEntity.type, conv.task_id))
-      .catch(() => null);
+  const taskTypeId = conv.firstContextOfType('task');
+  if (taskTypeId) {
+    task = await dataManager.getByTypeId<Task>(taskTypeId).catch(() => null);
   }
 
   const projectId = task?.project_id ?? undefined;

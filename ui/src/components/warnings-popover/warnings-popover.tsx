@@ -6,7 +6,9 @@ import {
   AlertCircle,
   AlertOctagon,
   AlertTriangle,
+  Check,
   CloudOff,
+  Copy,
   Info,
   Key,
   Settings,
@@ -67,20 +69,52 @@ interface WarningItemProps {
 function WarningItem({ warning, onClick }: WarningItemProps) {
   const Icon = iconMap[warning.icon] || AlertTriangle;
   const colors = colorMap[warning.color] || colorMap.yellow;
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(
+    async (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.stopPropagation();
+      const text = warning.description
+        ? `${warning.message}\n${warning.description}`
+        : warning.message;
+      try {
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      } catch {
+        // clipboard write can reject under restrictive permissions; fail silently
+      }
+    },
+    [warning.message, warning.description],
+  );
 
   return (
-    <button
-      onClick={onClick}
-      className={`flex w-full items-start gap-3 rounded-md border p-3 text-left transition-colors hover:bg-accent ${colors.border}`}
+    <div
+      className={`group flex w-full items-start gap-2 rounded-md border p-3 transition-colors hover:bg-accent ${colors.border}`}
     >
-      <div className={`rounded-md p-1.5 ${colors.bg}`}>
-        <Icon className={`h-4 w-4 ${colors.text}`} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">{warning.message}</p>
-        {warning.description && <p className="mt-0.5 text-xs text-muted-foreground">{warning.description}</p>}
-      </div>
-    </button>
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex min-w-0 flex-1 items-start gap-3 text-left"
+      >
+        <div className={`rounded-md p-1.5 ${colors.bg}`}>
+          <Icon className={`h-4 w-4 ${colors.text}`} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium">{warning.message}</p>
+          {warning.description && <p className="mt-0.5 text-xs text-muted-foreground">{warning.description}</p>}
+        </div>
+      </button>
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+        title={copied ? 'Copied!' : 'Copy warning text'}
+        aria-label={copied ? 'Copied' : 'Copy warning text'}
+      >
+        {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+      </button>
+    </div>
   );
 }
 
@@ -132,11 +166,9 @@ export function WarningsPopover() {
           data-testid="warnings-popover-trigger"
         >
           <AlertTriangle className="h-4 w-4" />
-          {warnings.length > 1 && (
-            <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] text-destructive-foreground">
-              {warnings.length}
-            </span>
-          )}
+          <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] text-destructive-foreground">
+            {warnings.length}
+          </span>
         </button>
       </PopoverTrigger>
       <PopoverContent side="top" align="start" className="w-80 p-2">

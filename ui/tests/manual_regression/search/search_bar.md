@@ -1,11 +1,15 @@
+precondition: bootstrap must complete before any deep-link / keypress assertion. Each test below waits for window.appReady === true after navigation; otherwise the SearchView TabsContent isn't mounted yet and the input testid won't be in the DOM.
+
 test 1: Home page has a search bar
 - [browser] navigate to {APP_URL}/
 - [browser] wait for page to load
+- [browser] wait for window.appReady === true (timeout 15s)
 - [browser] validate the element with data-testid="record-search-bar" is visible
 
 test 2: Pressing Enter from home search bar navigates to search view
 - [browser] navigate to {APP_URL}/
 - [browser] wait for page to load
+- [browser] wait for window.appReady === true (timeout 15s)
 - [browser] locate the search input with data-testid="search-input" (first match)
 - [browser] validate the search input is visible
 - [browser] click the search input
@@ -18,6 +22,7 @@ test 2: Pressing Enter from home search bar navigates to search view
 test 3: Navigating to /dock/search?q=hello pre-populates the search input
 - [browser] navigate to {APP_URL}/dock/search?q=hello
 - [browser] wait for page to load
+- [browser] wait for window.appReady === true (timeout 15s)
 - [browser] locate the search input with data-testid="search-input" (first match)
 - [browser] validate the search input is visible
 - [browser] validate the search input has value "hello"
@@ -32,9 +37,11 @@ test 4: Compact home search bar has no Tools button and no filter panel by defau
 test 5: Search view shows a results area
 - [browser] navigate to {APP_URL}/dock/search?q=test
 - [browser] wait for page to load
+- [browser] wait for window.appReady === true (timeout 15s)
 - [browser] validate the element with data-testid="search-results" is visible
 
 test 6: Search view is accessible without a query
 - [browser] navigate to {APP_URL}/dock/search
 - [browser] wait for page to load
+- [browser] wait for window.appReady === true (timeout 15s)
 - [browser] validate the element with data-testid="search-view" is visible

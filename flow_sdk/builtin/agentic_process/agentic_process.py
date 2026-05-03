@@ -13,6 +13,8 @@ import asyncio
 import json
 import logging
 import time
+from dataclasses import asdict, dataclass
+from enum import Enum
 from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
@@ -49,6 +51,56 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.shell import Shell
 
 logger = logging.getLogger(__name__)
+
+
+# ── Asset descriptors ──────────────────────────────────────────────────────────
+# Read-side surface for ``AgenticProcess.get_asset_descriptors`` — see plan
+# "AgenticProcess.get_assets() — unified read-side asset view". The descriptors
+# unify the scattered fields (``embedded_asset_refs``, ``embedded_agent_ids``,
+# ``cli_config.agents_json``, ``additional_dirs``) plus path-discovered assets
+# under user/project/workdir into one list the UI can consume.
+
+class AssetSource(str, Enum):
+    EMBEDDED = "embedded"              # materialized via embedded_asset_refs
+    INLINE = "inline"                  # cli_config.agents_json / embedded_agent_ids — no file
+    PROJECT_DIR = "project_dir"        # under project.fs_storage_mount_path
+    USER_DIR = "user_dir"              # under user_home
+    WORKDIR = "workdir"                # process workdir if distinct from project/user
+    ADDITIONAL_DIR = "additional_dir"  # additional_dirs entries (excl. auto-appended assets dir)
+
+
+# Sources whose underlying file/state lives outside this AgenticProcess —
+# editing the entity propagates elsewhere (other processes, the project,
+# the user globally), so the row is "read-only" from this process's
+# perspective. Attaching materializes an EMBEDDED writable copy.
+READONLY_ASSET_SOURCES: frozenset[AssetSource] = frozenset({
+    AssetSource.PROJECT_DIR,
+    AssetSource.USER_DIR,
+    AssetSource.WORKDIR,
+    AssetSource.ADDITIONAL_DIR,
+})
+
+
+def is_readonly_source(source: AssetSource) -> bool:
+    return source in READONLY_ASSET_SOURCES
+
+
+@dataclass
+class AssetDescriptor:
+    """Single asset row visible to an AgenticProcess.
+
+    A given source asset may appear multiple times in the list — once per
+    distinct source (e.g. EMBEDDED + USER_DIR for the same skill).
+    """
+    typeid: str               # serialized TypeId, e.g. "skill-<uuid>"
+    source: AssetSource
+    posix_path: str | None    # canonical POSIX path; None for INLINE
+
+
+# Types treated as executable agent inputs by the asset-management UI.
+# Markdown / spec / plan / claude_rules etc. are intentionally excluded —
+# they're documentation, not things the agent runs.
+EXECUTABLE_ASSET_TYPES: list[str] = ["skill", "agent"]
 
 
 # ── prompt-action transient state (per-process locks + live workers) ─────────
@@ -281,6 +333,30 @@ class AgenticProcess(Entity):
     sidecar_shell_id: str | None = APIField(default=None)
     visible: bool = APIField(default=False, description="Whether this process is visible in the tabs view")
     queue: dict | None = APIField(default=None)
+    restart_required: bool = APIField(
+        default=False,
+        description=(
+            "True iff a worker-relevant field changed since the last successful "
+            "start() while status==RUNNING. UI surfaces this as a 'Restart' affordance. "
+            "Set automatically by the save-hook; can also be set externally via API."
+        ),
+    )
+    last_started_hash: str | None = APIField(
+        default=None,
+        description=(
+            "MD5 of the worker-relevant config fields captured at the last "
+            "successful start(). Compared against the current snapshot on each "
+            "save() to detect drift."
+        ),
+    )
+    target_vfs_path: str | None = APIField(
+        default=None,
+        description=(
+            "VFS path the process is keyed to (e.g. an entity TypeId string "
+            "'markdown-<uuid>' or a '<typeid>/<sub_path>' form). Frontend "
+            "chat panel queries processes by this field; persisted opaquely."
+        ),
+    )
     additional_dirs: list[str] = APIField(default_factory=list, description="Extra directories passed to Claude via --add-dir")
     embedded_agent_ids: list[str] = APIField(default_factory=list, description="Agent ids injected via --agents at session launch")
     embedded_asset_refs: list[TypeId] = APIField(
@@ -291,6 +367,14 @@ class AgenticProcess(Entity):
         ),
     )
     worker_type: WorkerType | None = APIField(default=None)
+    plan_path: str | None = APIField(
+        default=None,
+        description=(
+            "Absolute path to the latest plan markdown produced by this process, "
+            "or null if none yet. Persists across reloads so the 'Open Plan' UI "
+            "affordance survives a refresh without re-running the line trigger."
+        ),
+    )
 
     # ── Construction ──────────────────────────────────────────────────────────
 
@@ -406,6 +490,10 @@ class AgenticProcess(Entity):
         - Idempotent call on live process: Shell.start() detects alive PTY and returns
           without re-spawning.
         """
+        # Suppress the restart-required auto-flag while start() mutates fields
+        # (status, session_id are tracked, but those mutations are not "drift").
+        # Cleared on success after we capture the new snapshot.
+        self._set_start_lifecycle(True)
         try:
             _bench_t0 = time.perf_counter()
             _bench_id = self.id[:8]
@@ -520,6 +608,10 @@ class AgenticProcess(Entity):
                 )
 
             self.status = ProcessStatus.RUNNING.value
+            # Capture snapshot of the freshly-launched config and clear the
+            # restart-required flag — the live worker now matches saved state.
+            self.last_started_hash = self._restart_snapshot()
+            self.restart_required = False
             await self.save()
             _bench("after save#2 (RUNNING)")
 
@@ -536,6 +628,8 @@ class AgenticProcess(Entity):
             self.status = ProcessStatus.FAILED.value
             await self.save()
             return ApiFailResponse(message=str(e))
+        finally:
+            self._set_start_lifecycle(False)
 
     @action.post(action_name="exit")
     async def exit(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -1120,6 +1214,84 @@ class AgenticProcess(Entity):
             logger.exception(f"AgenticProcess {self.id} update-plan error: {e}")
             return ApiFailResponse(message=str(e))
 
+    @action.post(action_name="get-plan")
+    async def get_plan(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Return the latest plan as an indexed Markdown record.
+
+        Resolution order for the plan file:
+          1. ``self.plan_path`` if already set (from a prior call or trigger).
+          2. Latest ``ExitPlanMode`` ``planFilePath`` from the session JSONL,
+             via the transcript analyzer. Persisted onto ``plan_path`` so
+             subsequent calls (and reloads) skip the scan.
+          3. Otherwise — no plan yet.
+
+        On success: builds a ``MarkdownRecord`` from the file, indexes it via
+        ``sync_to_db()``, and returns ``{"markdown": rec.meta_dict(),
+        "plan_path": <path>}``. On any race where the file isn't yet flushed,
+        retries once after 100ms before giving up.
+        """
+        plan_file_path = self.plan_path or ""
+
+        # Discover via transcript when we don't already know the path.
+        # Two transcript variants emit the plan file path:
+        #   1. ``ExitPlanMode`` tool_use (Claude SDK / non-interactive flow) —
+        #      ``tool_input.planFilePath``.
+        #   2. ``plan_mode`` attachment (interactive PTY plan-mode flow) —
+        #      ``payload.attachment.planFilePath`` on a MetaEntry.
+        # Both surface in the JSONL; we check (1) first, fall back to (2).
+        if not plan_file_path and self.session_id:
+            try:
+                from flow_sdk.transcript_analyzer import AgentTranscript
+                from flow_sdk.transcript_analyzer.entries.meta import MetaEntry
+                from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+
+                session_rec = ClaudeSessionRecord.get(self.session_id)
+                jsonl = getattr(session_rec, "jsonl_path", None) if session_rec else None
+                if jsonl:
+                    transcript = AgentTranscript("claude", Path(jsonl))
+                    latest = transcript.latest_tool_use("ExitPlanMode")
+                    if latest is not None:
+                        plan_file_path = (latest.tool_input or {}).get("planFilePath", "") or ""
+                    if not plan_file_path:
+                        for e in reversed(transcript.entries):
+                            if not isinstance(e, MetaEntry) or e.meta_kind != "attachment":
+                                continue
+                            att = (e.payload or {}).get("attachment") or {}
+                            if att.get("type") == "plan_mode":
+                                plan_file_path = str(att.get("planFilePath") or "")
+                                if plan_file_path:
+                                    break
+                    if plan_file_path:
+                        self.plan_path = plan_file_path
+                        try:
+                            await self.save()
+                        except Exception:
+                            logger.debug(
+                                "AgenticProcess %s get-plan: save plan_path failed", self.id, exc_info=True
+                            )
+            except Exception:
+                logger.debug("AgenticProcess %s get-plan: transcript scan failed", self.id, exc_info=True)
+
+        if not plan_file_path:
+            return ApiSuccessResponse(data={"markdown": None, "plan_path": None})
+
+        path = Path(plan_file_path)
+        if not path.exists():
+            # Race protection: Claude may have just written the path; brief wait + recheck.
+            await asyncio.sleep(0.1)
+            if not path.exists():
+                return ApiSuccessResponse(data={"markdown": None, "plan_path": plan_file_path})
+
+        try:
+            from flow_sdk.fs_records.markdown_record import MarkdownRecord
+
+            rec = MarkdownRecord.from_file(path)
+            await rec.sync_to_db()
+            return ApiSuccessResponse(data={"markdown": rec.meta_dict(), "plan_path": plan_file_path})
+        except Exception as e:
+            logger.exception("AgenticProcess %s get-plan error: %s", self.id, e)
+            return ApiFailResponse(message=str(e))
+
     # ── State ─────────────────────────────────────────────────────────────────
 
     @action.post(action_name="load-embedded-agent")
@@ -1326,6 +1498,281 @@ class AgenticProcess(Entity):
         """Return the current embedded_asset_refs as serialized TypeId strings."""
         refs = [str(r) for r in (self.embedded_asset_refs or [])]
         return ApiSuccessResponse(data={"refs": refs})
+
+    # ── Asset descriptors (read-only unified view) ────────────────────────────
+
+    async def get_asset_descriptors(self) -> list[AssetDescriptor]:
+        """Return a unified list of assets visible to this process.
+
+        Composed from three sources of truth:
+          1. EMBEDDED   — ``self.embedded_asset_refs`` + computed materialized path.
+          2. INLINE     — ``cli_config.agents_json`` (or ``embedded_agent_ids``
+                           fallback). No file → ``posix_path=None``.
+          3. Path-scan  — one ``Entity.assets_by_path()`` over the union of
+                           user/project/workdir/additional_dirs, filtered to
+                           ``EXECUTABLE_ASSET_TYPES`` and attributed to the
+                           longest-prefix source.
+
+        Duplicates across sources are intentional — the same source skill may
+        appear as both EMBEDDED (materialized into the process) and USER_DIR
+        (still globally available).
+        """
+        from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+        descriptors: list[AssetDescriptor] = []
+        seen_embedded: set[str] = set()
+
+        assets_dir = await self._assets_dir_path()
+
+        # 1. EMBEDDED
+        for ref in self.embedded_asset_refs or []:
+            mat_path = await self._materialized_path_for(ref, assets_dir)
+            descriptors.append(AssetDescriptor(
+                typeid=str(ref),
+                source=AssetSource.EMBEDDED,
+                posix_path=canonical_posix_path(mat_path) if mat_path else None,
+            ))
+            seen_embedded.add(str(ref))
+
+        # 2. INLINE (don't double-count anything already EMBEDDED)
+        for tid in self._iter_inline_agent_typeids():
+            if tid in seen_embedded:
+                continue
+            descriptors.append(AssetDescriptor(
+                typeid=tid,
+                source=AssetSource.INLINE,
+                posix_path=None,
+            ))
+
+        # 3. Path-discovered
+        sources = await self._collect_source_dirs(assets_dir)
+        if sources:
+            entities = await Entity.assets_by_path(PathQueryOptions(
+                search_dirs=[s[0] for s in sources],
+                types=list(EXECUTABLE_ASSET_TYPES),
+                limit=10000,
+            ))
+            ranked = sorted(sources, key=lambda s: -len(s[0]))
+            for ent in entities:
+                ar_raw = getattr(ent, "asset_ref", None) or ""
+                if not ar_raw:
+                    continue
+                ar = canonical_posix_path(ar_raw)
+                src = next(
+                    (s for path, s in ranked if ar == path or ar.startswith(path + "/")),
+                    None,
+                )
+                if src is None:
+                    continue
+                descriptors.append(AssetDescriptor(
+                    typeid=f"{ent.type or ent.get_type()}-{ent.id}",
+                    source=src,
+                    posix_path=ar,
+                ))
+
+        return descriptors
+
+    async def _collect_source_dirs(
+        self, assets_dir: "Path"
+    ) -> list[tuple[str, AssetSource]]:
+        """Return distinct (canonical_posix_path, source) pairs to scan.
+
+        Smart-scan rules:
+          - user_home is always included.
+          - project mount path is included if the process has a project_id.
+          - workdir is included only when it's outside both user_home and
+            project_dir (otherwise it would be a noisy duplicate).
+          - additional_dirs are included except the auto-appended assets dir.
+          - Final list is deduped on canonical path.
+        """
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+        from flow_sdk.instance_settings import get_instance_settings
+
+        pairs: list[tuple[str, AssetSource]] = []
+        seen: set[str] = set()
+
+        def _add(p: "str | Path | None", source: AssetSource) -> None:
+            if not p:
+                return
+            try:
+                key = canonical_posix_path(p)
+            except (OSError, ValueError):
+                return
+            if not key or key in seen:
+                return
+            seen.add(key)
+            pairs.append((key, source))
+
+        _add(get_instance_settings().user_home, AssetSource.USER_DIR)
+
+        project_dir: str | None = None
+        if self.project_id:
+            try:
+                from flow_sdk.builtin.project import Project
+                proj = await Project.get_by_id(self.project_id)
+                project_dir = getattr(proj, "fs_storage_mount_path", None) if proj else None
+            except Exception:
+                project_dir = None
+        _add(project_dir, AssetSource.PROJECT_DIR)
+
+        # WORKDIR — only if outside the previously-added paths.
+        wd = getattr(self, "workdir", None)
+        if wd:
+            try:
+                wd_key = canonical_posix_path(wd)
+                if wd_key and wd_key not in seen and not any(
+                    wd_key == k or wd_key.startswith(k + "/") for k in seen
+                ):
+                    pairs.append((wd_key, AssetSource.WORKDIR))
+                    seen.add(wd_key)
+            except (OSError, ValueError):
+                pass
+
+        # ADDITIONAL_DIR — exclude the auto-appended assets dir.
+        try:
+            assets_key = canonical_posix_path(assets_dir)
+        except (OSError, ValueError):
+            assets_key = ""
+        for d in self.additional_dirs or []:
+            try:
+                key = canonical_posix_path(d)
+            except (OSError, ValueError):
+                continue
+            if not key or key == assets_key or key in seen:
+                continue
+            seen.add(key)
+            pairs.append((key, AssetSource.ADDITIONAL_DIR))
+
+        return pairs
+
+    async def _materialized_path_for(
+        self, ref: TypeId, assets_dir: "Path"
+    ) -> "Path | None":
+        """Compute the on-disk path of a materialized embedded asset.
+
+        Mirrors the layout written by ``_materialize_entity``:
+          - ``agent`` → ``<assets_dir>/.claude/agents/<name>.md``
+          - ``skill`` → ``<assets_dir>/.claude/skills/<name>``
+
+        TODO: when ``Record.materialize_into`` (tier 1 alignment) lands, swap
+        this for ``record.materialize_into(assets_dir).path`` so the layout is
+        owned by the record subclass instead of duplicated here.
+        """
+        try:
+            if ref.type == "agent":
+                from flow_sdk.fs_records.agent_record import AgentRecord
+                rec = AgentRecord.get(ref.id) or AgentRecord.load_agent(ref.id)
+                if rec is None:
+                    return None
+                name = rec.name or ref.id
+                return assets_dir / ".claude" / "agents" / f"{name}.md"
+            if ref.type == "skill":
+                from flow_sdk.fs_records.skill_record import SkillRecord
+                rec = SkillRecord.get(ref.id)
+                if rec is None:
+                    return None
+                name = rec.name or ref.id
+                return assets_dir / ".claude" / "skills" / name
+        except Exception:
+            return None
+        return None
+
+    def _iter_inline_agent_typeids(self) -> list[str]:
+        """Yield ``agent-<id-or-name>`` strings for inline-attached agents.
+
+        Primary source: keys of ``cli_config.agents_json``. These are agent
+        names (or ids) injected via ``--agents`` at session launch.
+        Fallback: ``embedded_agent_ids`` when ``cli_config.agents_json`` is
+        absent or empty.
+        """
+        cfg = self.cli_config or {}
+        agents_json = cfg.get("agents_json") or {}
+        if isinstance(agents_json, dict) and agents_json:
+            return [f"agent-{k}" for k in agents_json.keys()]
+        return [f"agent-{name}" for name in (self.embedded_agent_ids or [])]
+
+    # ── Restart-required tracking ─────────────────────────────────────────────
+
+    def _restart_snapshot(self) -> str:
+        """Stable hash over the worker-relevant subset of fields.
+
+        Mismatch against ``last_started_hash`` (captured at last successful
+        ``start()``) means the live worker is running with stale config —
+        ``restart_required`` flips True via the ``save()`` hook below.
+        """
+        import hashlib
+        import json as _json
+        from enum import Enum
+
+        # Normalize enum-typed fields to their .value (a plain str). Different
+        # construction paths (``_scan_create_process`` constructor vs
+        # ``Entity.from_record``) yield ``self.worker_type`` as either a plain
+        # string ``"claude_code"`` or a ``WorkerType.CLAUDE_CODE`` enum instance.
+        # ``str(enum_instance)`` returns the prefixed form (``"WorkerType.CLAUDE_CODE"``)
+        # while ``str(plain_str)`` returns the bare value — different inputs hash
+        # differently, causing spurious post-start ``restart_required=True`` flips
+        # whenever ``check_and_refresh_record`` re-hydrates the entity via
+        # ``from_record`` between ``start()``'s capture and a downstream save.
+        wt = self.worker_type
+        if isinstance(wt, Enum):
+            wt = wt.value
+        payload = {
+            "cli_config": self.cli_config or {},
+            "workdir": self.workdir,
+            "additional_dirs": sorted(self.additional_dirs or []),
+            "embedded_asset_refs": sorted(str(r) for r in (self.embedded_asset_refs or [])),
+            "embedded_agent_ids": sorted(self.embedded_agent_ids or []),
+            "worker_type": wt if wt else None,
+            "shell_mode": self.shell_mode,
+            "session_id": self.session_id,
+        }
+        return hashlib.md5(
+            _json.dumps(payload, sort_keys=True, default=str).encode()
+        ).hexdigest()
+
+    def _set_start_lifecycle(self, value: bool) -> None:
+        """Mark whether ``start()`` is currently mutating this entity.
+
+        While True the ``save()`` hook skips the auto-flag-flip so intermediate
+        saves inside ``start()`` (status, session_id) don't trip the detector.
+        """
+        object.__getattribute__(self, "__dict__")["_in_start_lifecycle"] = bool(value)
+
+    def _is_in_start_lifecycle(self) -> bool:
+        return bool(
+            object.__getattribute__(self, "__dict__").get("_in_start_lifecycle", False)
+        )
+
+    async def save(self, owner=None, notify: bool = True):
+        """Override to maintain ``restart_required`` automatically.
+
+        On every save, if the process is RUNNING and the worker-relevant
+        snapshot differs from ``last_started_hash``, flip the flag. Skipped
+        during ``start()`` itself (intermediate saves there are bookkeeping,
+        not config drift) — see ``_set_start_lifecycle``.
+
+        External callers can still set ``restart_required`` directly; the
+        hook only flips it ON, never explicitly clears it (clearing happens
+        only on successful ``start()``).
+        """
+        if (
+            not self._is_in_start_lifecycle()
+            and self.status == ProcessStatus.RUNNING.value
+            and self.last_started_hash
+            and self._restart_snapshot() != self.last_started_hash
+        ):
+            self.restart_required = True
+        return await super().save(owner=owner, notify=notify)
+
+    @action.get(action_name="get-assets")
+    async def get_assets_action(self) -> "ApiSuccessResponse":
+        """HTTP wrapper around ``get_asset_descriptors``."""
+        items = await self.get_asset_descriptors()
+        return ApiSuccessResponse(data={"assets": [
+            {"typeid": d.typeid, "source": d.source.value, "posix_path": d.posix_path}
+            for d in items
+        ]})
 
     @action.get(action_name="get-history")
     async def get_history_action(self) -> "ApiSuccessResponse":

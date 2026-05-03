@@ -109,6 +109,13 @@ class DataContext extends EventEmitter {
   stateItem = 'flowpad-state';
   persistedState: { [key: string]: TypeId } = {};
 
+  /** Mirror of cloudManager.isLoggedIn — only cloudManager should call setCloudLoggedIn. */
+  _cloudLoggedIn = false;
+  setCloudLoggedIn(v: boolean) {
+    if (this._cloudLoggedIn === v) return;
+    runInAction(() => { this._cloudLoggedIn = v; });
+  }
+
   private _contextEntitiesMap = observable.map<ContextEntitiesEnum, TypeId | null | undefined>([
     [ContextEntitiesEnum.CurrentWorkspaceTypeId, null],
     [ContextEntitiesEnum.CurrentFlowTypeId, null],
@@ -147,10 +154,12 @@ class DataContext extends EventEmitter {
   }
 
   /**
-   * Get whether cloud login is available (valid cloud token exists)
+   * Reactive mirror of cloudManager.isLoggedIn — cloudManager is the SSoT but
+   * pushes its state into ``_cloudLoggedIn`` via ``setCloudLoggedIn`` so mobx
+   * subscribers re-render. Bootstrap value comes from cloudManager too.
    */
   get cloudLoginAvailable(): boolean {
-    return this.bootstrapInfo?.desktop_info?.cloud_login_available ?? false;
+    return this._cloudLoggedIn;
   }
 
   /**
@@ -161,30 +170,11 @@ class DataContext extends EventEmitter {
   }
 
   /**
-   * Fetch cloud user info and set it as the active user in context.
-   * Called fire-and-forget after bootstrap when cloudLoginAvailable is true.
-   */
-  async loadCloudUser(): Promise<void> {
-    try {
-      const data = await apiClient.get<{ logged_in: boolean; user: Record<string, unknown> }>('/auth/status');
-      if (data?.logged_in && data.user) {
-        const cloudUser = new User(data.user);
-        cloudUser.markAsExpanded();
-        await this.setContextEntityTypeId(ContextEntitiesEnum.CurrentUserTypeId, cloudUser.typeId);
-      }
-    } catch {
-      // Non-critical — local user stays in context
-    }
-  }
-
-  /**
-   * Log out from the cloud account via the OAuth disconnect action.
-   * The server clears local credentials and returns the cloud logout URL;
-   * the OAuth service opens it in a browser window (same mechanism as login).
+   * Cloud logout — delegates to cloudManager.
    */
   async cloudLogout(): Promise<void> {
-    const { oauthService, OAUTH_PROVIDERS } = await import('../services/oauth/oauth-service');
-    await oauthService.disconnect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
+    const { cloudManager } = await import('../services/cloud_login');
+    await cloudManager.logout();
   }
 
   /**
@@ -326,6 +316,8 @@ class DataContext extends EventEmitter {
   constructor() {
     super();
     makeObservable(this, {
+      _cloudLoggedIn: observable,
+      cloudLoginAvailable: computed,
       user: computed,
       workspace: computed,
       activeEntity: computed,

@@ -1,14 +1,15 @@
 import { useMemo } from 'react';
-import { ExternalLink, FileText, FolderOpen, MessageSquare, Sparkles, Wand2 } from 'lucide-react';
+import { ExternalLink, FileCheck2, FileText, FolderOpen, MessageSquare, Sparkles, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { TypeId } from '@sdk';
+import { APIEntity, TypeId } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 /**
- * Minimal shape we need to render an entity as a clickable chip. Covers the
- * common cases (Project, Task, Conversation, Prompt) without forcing the
- * caller to import the full entity type.
+ * Minimal shape we need to render an entity as a clickable label. Covers the
+ * common cases (Project, Task, Conversation, Spec) without forcing the caller
+ * to import the full entity type.
  */
 export interface EntityChipEntity {
   /** TypeId or string like `project-<id>`. */
@@ -50,8 +51,9 @@ export const ICON_BY_TYPE: Record<string, LucideIcon> = {
   project: FolderOpen,
   task: FileText,
   conversation: MessageSquare,
-  prompt: Sparkles,
-  skill: Wand2,
+  spec: FileCheck2,
+  user: User,
+  skill: Sparkles,
   markdown: FileText,
 };
 
@@ -67,7 +69,7 @@ const STYLE_BY_TYPE: Record<string, string> = {
     'border border-violet-500/40 bg-violet-500/10 text-violet-700 hover:bg-violet-500/20 dark:text-violet-300',
   conversation:
     'border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300',
-  prompt:
+  spec:
     'border border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300',
 };
 const DEFAULT_STYLE =
@@ -90,8 +92,8 @@ function resolveTypeAndId(entity: EntityChipEntity): { type: string; id: string 
 }
 
 /**
- * Generic clickable chip that renders any entity (Project, Task, Prompt, …)
- * as a pill with an icon + name. Clicking it navigates to the canonical
+ * Generic clickable chip that renders any entity (Project, Task, Spec, …) as
+ * a pill with an icon + name. Clicking it navigates to the canonical
  * "this entity inside the surrounding entity" dock URL — e.g. an
  * `<EntityChip entity={project} inside={conversation} />` rendered inside
  * a Conversation view jumps to `/dock/project/<id>/conversation/<id>`.
@@ -106,9 +108,6 @@ export function EntityChip({ entity, inside, onClick, title, size = 'chip' }: En
   const Icon = entity.icon ?? (resolved ? ICON_BY_TYPE[resolved.type] : undefined) ?? ExternalLink;
   const label = entity.name ?? (resolved?.id || '(unnamed)');
   const typeStyle = (resolved && STYLE_BY_TYPE[resolved.type]) ?? DEFAULT_STYLE;
-  // "Open in project" / "Open in task" — uses the entity's *type*, not its
-  // display name, so the tooltip stays predictable across all chips of the
-  // same kind. Caller can still override via the `title` prop.
   const tooltip = title ?? (resolved ? `Open in ${resolved.type}` : `Open ${label}`);
 
   const handleClick = useMemo(() => {
@@ -144,6 +143,11 @@ export function EntityChip({ entity, inside, onClick, title, size = 'chip' }: En
 /**
  * Map an entity-type pair to the right DockPointer factory.
  * Centralised here so `EntityChip` itself stays declarative.
+ *
+ * For unknown entity types, falls back to a generic
+ * ``/dock/<type>/<id>`` pointer via ``DockPointer.fromUrl``. The dock
+ * router validates and 404s gracefully if there is no matching view —
+ * silent no-ops on click are worse than a visible "unknown view" page.
  */
 function buildDockPointer(
   resolved: { type: string; id: string },
@@ -154,7 +158,50 @@ function buildDockPointer(
       return DockPointer.forProject(resolved.id, inside?.type === 'conversation' ? { conversationId: inside.id } : undefined);
     case 'task':
       return DockPointer.forTasks(resolved.id, inside?.type === 'conversation' ? { conversationId: inside.id } : undefined);
+    case 'spec':
+      return DockPointer.forSpec(resolved.id);
+    case 'conversation':
+      return DockPointer.forConversation(resolved.id);
     default:
-      return null;
+      try {
+        return DockPointer.fromUrl(resolved.type, resolved.id);
+      } catch {
+        // The view-type registry rejected this type. Log so the
+        // misconfiguration is visible during development; return null so
+        // the click is a no-op rather than throwing into the React tree.
+        console.warn(`[EntityChip] no dock target for type=${resolved.type}`);
+        return null;
+      }
   }
+}
+
+interface ContextEntityChipProps {
+  /** TypeId from an entity's ``contextEntities`` list. */
+  typeId: TypeId;
+  inside?: { type: string; id: string };
+  onClick?: () => void;
+  title?: string;
+  size?: 'chip' | 'inline';
+}
+
+/**
+ * Renders one entry from an entity's dynamic ``contextEntities`` list as an
+ * ``EntityChip`` — looks up the target entity to populate the chip's display
+ * name (``title`` for Spec/Plan, ``name`` for Project/User, etc.), then
+ * delegates rendering. This is the data-driven counterpart to ``EntityChip``:
+ * callers iterating ``entity.contextEntities`` use this wrapper instead of
+ * hand-constructing each chip.
+ */
+export function ContextEntityChip({ typeId, inside, onClick, title, size }: ContextEntityChipProps) {
+  const { data } = useEntity<APIEntity<any>>(typeId);
+  const resolvedName = data?.displayName ?? typeId.toString();
+  return (
+    <EntityChip
+      entity={{ typeId, type: typeId.type, id: typeId.id, name: resolvedName }}
+      inside={inside}
+      onClick={onClick}
+      title={title}
+      size={size}
+    />
+  );
 }

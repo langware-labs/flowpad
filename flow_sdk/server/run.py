@@ -115,8 +115,17 @@ except (FileNotFoundError, OSError):
 # Build the per-instance settings singleton now that .env.local is loaded.
 # Anything imported below that touches FLOW_HOME / .flow paths goes through
 # get_instance_settings() and sees the right dev/test/prod resolution.
-from flow_sdk.instance_settings import get_instance_settings  # noqa: E402
+#
+# Drop any stale cache first: ``flow_sdk.config`` constructs
+# ``default_service_config = ServiceConfig()`` at module-load time, whose
+# ``apply_desktop_config`` validator calls ``get_instance_settings()`` before
+# we've had a chance to load .env.local. Without resetting, we'd be locked
+# into prod (FLOWPAD_DEV unset at the early call) — both prod and dev
+# backends would race for the same ``server.lock`` instead of using their
+# distinct ``server.lock`` / ``dev_server.lock`` paths.
+from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings  # noqa: E402
 
+reset_instance_settings()
 get_instance_settings()
 
 # Configuration

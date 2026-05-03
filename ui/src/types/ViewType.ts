@@ -202,12 +202,10 @@ export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
-  [ViewType.SKILLS]: {
-    title: 'Skills',
-    iconName: 'Sparkles',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
-  },
+  // ViewType.SKILLS removed — Skills folded into the Assets browser
+  // (/dock/assets/list/skill). The enum value is retained in the SDK for
+  // back-compat with persisted DockPointers but the registry no longer
+  // surfaces it as a navigable view.
   [ViewType.AI_CONFIG]: {
     title: 'AI Configuration',
     iconName: 'Settings',
@@ -287,7 +285,7 @@ export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
     canAddAsTab: true,
   },
   [ViewType.ASSETS]: {
-    title: 'Wiki',
+    title: 'Assets',
     iconName: 'BookOpen',
     tabLocation: 'dedicated',
     canAddAsTab: true,
@@ -307,6 +305,12 @@ export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
   [ViewType.CONVERSATION]: {
     title: 'Conversation',
     iconName: 'MessageSquare',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+  },
+  [ViewType.SPEC]: {
+    title: 'Spec',
+    iconName: 'FileText',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },

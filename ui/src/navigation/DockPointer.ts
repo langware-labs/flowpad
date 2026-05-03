@@ -167,11 +167,16 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Create dock pointer for skills viewer
-   * @param skillName - Optional skill name to view/edit
+   * Create dock pointer for the skill editor / list under the Assets browser.
+   * The standalone Skills view was removed; this helper now routes into the
+   * Assets editor (when a name is given) or the Assets list of skills.
+   * @param skillName - Optional skill name / vfs path to open in the editor
    */
   static forSkills(skillName?: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.SKILLS, skillName, undefined, layout);
+    if (skillName) {
+      return DockPointer.forAssetEditor('skill', skillName, layout);
+    }
+    return DockPointer.forAssetList('skill', undefined, layout);
   }
 
   /**
@@ -182,6 +187,16 @@ export class DockPointer implements IDockPointer {
    */
   static forAssetEditor(assetType: string, vfsPath: string, layout: Layout = Layout.DOCK): DockPointer {
     return new DockPointer(ViewType.ASSETS, `editor/${assetType}/${vfsPath.replace(/^\//, '')}`, undefined, layout);
+  }
+
+  /**
+   * Create dock pointer for a wiki link by name. Resolves to a markdown record
+   * at view time; the URL stays at the name form (rename-resilient).
+   * Pointer format: "wiki/<encoded name>"
+   * URL: /dock/assets/wiki/<encoded name>
+   */
+  static forWiki(name: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.ASSETS, `wiki/${encodeURIComponent(name)}`, undefined, layout);
   }
 
   /**
@@ -503,6 +518,15 @@ export class DockPointer implements IDockPointer {
    */
   static forConversation(conversationId: string, layout: Layout = Layout.DOCK): DockPointer {
     return new DockPointer(ViewType.CONVERSATION, conversationId, undefined, layout);
+  }
+
+  /**
+   * Create dock pointer for the dedicated spec viewer at
+   * `/dock/spec/<specId>`. Renders the Spec record's metadata and
+   * a link back to the source plan + generated tasks.
+   */
+  static forSpec(specId: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.SPEC, specId, undefined, layout);
   }
 
   /**

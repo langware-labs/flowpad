@@ -150,6 +150,44 @@ class ConversationRecord(Record):
             return None
         return " ".join(m.get("content", "") for m in msgs)
 
+    # ------------------------------------------------------------------
+    # Standard records-data path resolution
+    #
+    # A Conversation is a Record like any other; its data file (the JSONL
+    # pointer index) lives at the canonical
+    # `<records_data_root>/<type>/<type>-@<id>/` location used by every
+    # other record. Callers that don't have a transport-coupled path
+    # (notification share-task / inbound .flowmsg unpack) should always
+    # use these helpers so the on-disk layout stays consistent and
+    # `RecordDataRef.resolve_data_dir()` returns a path that's actually
+    # populated.
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def default_data_dir(cls, record_id: str) -> Path:
+        """Standard records-data dir for a Conversation record by id.
+
+        Resolves to `<get_default_records_data_root()>/conversation/conversation-@<id>/`.
+        Test fixtures that rebind `records_data_dir` automatically relocate
+        because the lookup is dynamic.
+        """
+        if not record_id:
+            raise ValueError("record_id is required")
+        from flow_sdk.fs_store.record import (  # noqa: PLC0415  (lazy to avoid cycle)
+            get_default_records_data_root,
+            record_stem,
+        )
+        return (
+            get_default_records_data_root()
+            / RecordType.CONVERSATION
+            / record_stem(RecordType.CONVERSATION, record_id)
+        )
+
+    @classmethod
+    def default_jsonl_path(cls, record_id: str) -> Path:
+        """Standard `conversation.jsonl` location for a Conversation by id."""
+        return cls.default_data_dir(record_id) / "conversation.jsonl"
+
     @classmethod
     def from_jsonl(
         cls,

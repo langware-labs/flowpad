@@ -25,7 +25,7 @@ class ClaudeMemoryRecord(Record):
 
     _record_type: ClassVar[str] = RecordType.CLAUDE_MEMORY
     _indexed_by_default: ClassVar[bool] = True
-    _user_asset: ClassVar[bool] = True
+    _browseable: ClassVar[bool] = True
     _icon: ClassVar[str] = "Brain"
     index_fields: ClassVar[list[str]] = ["name"]
 

@@ -15,21 +15,15 @@ export class Skill extends APIEntity<Skill> {
   static type: string = 'skill';
   static override icon = 'Sparkles';
 
-  name: string = '';
   description: string = '';
   asset_ref?: string;
   scope?: string;
 
   constructor(entity: Partial<Skill> = {}) {
     super(entity);
-    this.name = entity.name ?? '';
     this.description = entity.description ?? '';
     this.asset_ref = entity.asset_ref;
     this.scope = entity.scope;
-  }
-
-  get displayName(): string {
-    return this.name || 'Untitled Skill';
   }
 
   override get editorDockPointer(): DockPointerData {

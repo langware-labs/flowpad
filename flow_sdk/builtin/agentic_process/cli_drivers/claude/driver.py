@@ -56,17 +56,23 @@ class ClaudeDriver:
         skills / agents are discoverable) plus any ``additional_dirs``;
         registers embedded agents via ``--agents``; sets ``CLAUDE_PROJECT_DIR``
         env from the workdir.
+
+        The Flowpad Assistant mount is gated by ``ServiceConfig.load_flowpad_assistant``
+        — set to ``False`` to keep the SDK-shipped skills/agents out of the session.
         """
-        from flow_sdk.config import flowpad_assistant_project_root
+        from flow_sdk.config import default_service_config, flowpad_assistant_project_root
 
         cmd = ClaudeCliOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
         cmd.workdir = process.workdir
         if cmd.workdir:
             cmd.env_vars.setdefault("CLAUDE_PROJECT_DIR", cmd.workdir)
-        core_dir = str(flowpad_assistant_project_root())
-        extra = [d for d in (process.additional_dirs or []) if d != core_dir]
-        cmd.add_dirs = [core_dir] + extra
+        if default_service_config.load_flowpad_assistant:
+            core_dir = str(flowpad_assistant_project_root())
+            extra = [d for d in (process.additional_dirs or []) if d != core_dir]
+            cmd.add_dirs = [core_dir] + extra
+        else:
+            cmd.add_dirs = list(process.additional_dirs or [])
         agents_json = process.get_agents_json()
         if agents_json:
             cmd.agents_json = agents_json
@@ -120,6 +126,16 @@ class ClaudeDriver:
         # can override via cli_config["model"] / ["effort"].
         parent_model = cli_cfg.get("model") or "sonnet"
         parent_effort = cli_cfg.get("effort")
+        # Mirror the add_dirs gate used by ``cli_options`` (PTY mode) so the
+        # print-mode worker sees the same skill/agent mount surface.
+        from flow_sdk.config import default_service_config, flowpad_assistant_project_root
+        if default_service_config.load_flowpad_assistant:
+            core_dir = str(flowpad_assistant_project_root())
+            extra = [d for d in (process.additional_dirs or []) if d != core_dir]
+            ctx_add_dirs = [core_dir] + extra
+        else:
+            ctx_add_dirs = list(process.additional_dirs or [])
+
         context = AgenticContext(
             workdir=process.workdir,
             env_vars=dict(cli_cfg.get("env_vars") or {}),
@@ -129,6 +145,7 @@ class ClaudeDriver:
             resume_session_id=(fork_source or process.session_id) if (is_resume or fork_source) else None,
             session_id=process.session_id if fork_source else (None if is_resume else process.session_id),
             fork_session=bool(fork_source),
+            add_dirs=ctx_add_dirs,
         )
 
         # Lifecycle: flip to RUNNING before launching the worker.

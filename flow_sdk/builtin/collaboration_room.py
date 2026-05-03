@@ -13,6 +13,7 @@ from typing import Any, ClassVar
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity, action
+from flow_sdk.db.drivers.db_base_record import TypeId
 from flow_sdk.fs_records.collaboration_room_record import CollaborationRoomStatus
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -36,10 +37,10 @@ class CollaborationRoom(Entity):
         default_factory=list,
         description="Participants: [{member_id, name, joined_at, last_seen_at}]",
     )
-    agentic_process_ids: list[str] = APIField(
-        default_factory=list,
-        description="AgenticProcess ids spawned in this room",
-    )
+    # NOTE: agentic_process_ids moved into the unified ``context_entities``
+    # list. Use ``room.context_of_type('agentic_process')`` to read them and
+    # ``room.add_context_entity(TypeId(type='agentic_process', id=...))`` to
+    # append. The ``add_process`` action below routes through that.
     status: str = APIField(default=CollaborationRoomStatus.ACTIVE)
     started_at: str | None = APIField(default=None)
     updated_at: str | None = APIField(default=None)
@@ -105,14 +106,20 @@ class CollaborationRoom(Entity):
         return changed
 
     async def add_process(self, process_id: str) -> bool:
-        procs = list(self.agentic_process_ids or [])
-        if process_id in procs:
+        process_typeid = TypeId(type="agentic_process", id=process_id)
+        if any(t == process_typeid for t in self.context_entities):
             return False
-        procs.append(process_id)
-        self.agentic_process_ids = procs
+        self.add_context_entity(process_typeid)
         self._touch()
         await self.save()
         return True
+
+    @property
+    def agentic_process_ids(self) -> list[str]:
+        """Convenience: list of agentic_process ids in this room's context.
+        Read-only — append via ``add_process`` or ``add_context_entity``.
+        """
+        return [t.id for t in self.context_of_type("agentic_process")]
 
     # ── HTTP actions ──────────────────────────────────────────────────────────
 
@@ -139,13 +146,35 @@ class CollaborationRoom(Entity):
 
     @action.post(action_name="add_process")
     async def _http_add_process(self) -> ApiResponse:
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
         process_id = body.get("agentic_process_id")
         if not process_id:
             return ApiFailResponse(message="agentic_process_id is required")
+
+        # Format-validate so malformed ids return a structured FAIL instead of
+        # leaking a 500 from TypeId._pydantic_validate.
+        try:
+            process_typeid = TypeId(type="agentic_process", id=process_id)
+        except Exception as exc:
+            return ApiFailResponse(message=f"agentic_process_id is malformed: {exc}")
+
+        # Existence check — silently appending a non-resolving id was the
+        # validation gap the Phase 8 RCA identified (lost during the
+        # context_entities consolidation).
+        process = await AgenticProcess.get_one({"id": process_typeid.id})
+        if process is None:
+            return ApiFailResponse(message=f"AgenticProcess {process_id} not found")
+
         added = await self.add_process(process_id)
-        return ApiSuccessResponse(data={"ok": added, "agentic_process_ids": self.agentic_process_ids})
+        return ApiSuccessResponse(
+            data={
+                "ok": added,
+                "context_entities": [str(t) for t in self.context_entities],
+            }
+        )
 
     @action.post(action_name="end")
     async def _http_end(self) -> ApiResponse:

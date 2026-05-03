@@ -85,6 +85,13 @@ class BaseInstanceSettings:
     auth_provider: str = "custom"
     job_runner_type: str = "local"
 
+    # ---- Cloud creds (env-mode auto-login). None when env vars unset. ----
+    cloud_user_email: str | None = None
+    cloud_user_pass: str | None = None
+
+    # ---- Cloud login: max wait for browser-mode callback. Override via CLOUD_LOGIN_TIMEOUT_SECONDS. ----
+    cloud_login_timeout_seconds: float = 300.0
+
     # ---- Process info (filled at boot, optional) ----
     server_pid: int | None = None
 
@@ -136,11 +143,24 @@ class BaseInstanceSettings:
             claude_mcp_json_path=claude_home / "mcp.json",
             claude_settings_json_path=claude_home / "settings.json",
             claude_managed_settings_path=claude_home / "managed-settings.json",
+            cloud_user_email=os.environ.get("FLOWPAD_CLOUD_USER_EMAIL") or None,
+            cloud_user_pass=os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD") or None,
+            cloud_login_timeout_seconds=cls._resolve_login_timeout(),
         )
 
     # -----------------------------------------------------------------
     # Resolver helpers — subclasses can call into these
     # -----------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_login_timeout() -> float:
+        raw = os.environ.get("CLOUD_LOGIN_TIMEOUT_SECONDS")
+        if not raw:
+            return 300.0
+        try:
+            return max(1.0, float(raw))
+        except ValueError:
+            return 300.0
 
     @staticmethod
     def _resolve_flow_home() -> Path:

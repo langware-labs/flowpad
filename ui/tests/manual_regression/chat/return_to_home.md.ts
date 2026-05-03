@@ -29,8 +29,9 @@ test.describe('Return to Home', () => {
     await expect(page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first()).toBeVisible();
     expect(page.url()).toMatch(/\/dock\/home/);
 
-    // validate landing page session input trigger button is ready (new UI: input is hidden behind a button)
-    // Use CSS text filter instead of getByRole to avoid aria-hidden issues from WelcomeModal.
-    await expect(page.locator('button').filter({ hasText: /what would you like to work on today\?/i }).first()).toBeVisible();
+    // Validate the home session input is visible.
+    // Home renders <SessionInput> inline as a textarea with
+    // aria-label="What would you like to work on?".
+    await expect(page.locator('textarea[aria-label="What would you like to work on?"]')).toBeVisible({ timeout: 10_000 });
   });
 });
