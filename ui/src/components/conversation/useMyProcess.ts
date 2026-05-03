@@ -149,7 +149,7 @@ export function useMyProcess({ task, conversationId, senderName }: UseMyProcessO
         ).catch(() => null);
         if (existing) {
           await existing.start();
-          navigation.openInBrowserTab(existing.dockPointer);
+          navigation.openDock(existing.dockPointer);
           return;
         }
       }
@@ -168,7 +168,7 @@ export function useMyProcess({ task, conversationId, senderName }: UseMyProcessO
         t.my_process_id = spawned.id;
         await t.save();
       }
-      navigation.openInBrowserTab(spawned.dockPointer);
+      navigation.openDock(spawned.dockPointer);
     } catch (err) {
       console.error('[useMyProcess] openOrStart failed:', err);
     } finally {

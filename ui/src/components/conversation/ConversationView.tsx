@@ -164,11 +164,13 @@ export function ConversationView({
         </div>
       )}
 
-      <MessageComposer
-        task={task}
-        conversationId={conversationId}
-        onSent={() => void refetch()}
-      />
+      {draftMessages.length === 0 && (
+        <MessageComposer
+          task={task}
+          conversationId={conversationId}
+          onSent={() => void refetch()}
+        />
+      )}
     </div>
   );
 }
