@@ -92,7 +92,7 @@ export function ConversationToolbar({
       .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, sharedProcessId))
       .catch(() => null);
     if (!proc) return;
-    navigation.openInBrowserTab(proc.dockPointer);
+    navigation.openDock(proc.dockPointer);
   };
 
   return (
