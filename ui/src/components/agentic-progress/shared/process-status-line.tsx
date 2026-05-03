@@ -1,4 +1,4 @@
-import { getWorkerMode, isReadyForInput, type StatusBearingProcess, WorkerMode } from '@sdk';
+import { getWorkerMode, isReadyForInput, ProcessStatus, type StatusBearingProcess, WorkerMode } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Terminal } from 'lucide-react';
@@ -69,6 +69,15 @@ export function ProcessStatusLine({
   const mode = getWorkerMode(process);
   const styles = sizeStyles[size];
 
+  const status = process.status as ProcessStatus | undefined;
+  // STOPPED → click triggers start() with --resume.
+  // STARTING is the brief window between click and PTY-attached; treat it as
+  // already-opening so the cursor doesn't flash to "not-allowed" mid-transition.
+  const canResume =
+    !!process.session_id &&
+    (status === ProcessStatus.STOPPED || status === ProcessStatus.STARTING);
+  const canOpenTerminal = ready || canResume;
+
   const iconSpinning =
     label === 'Running' ||
     label === 'Starting' ||
@@ -87,10 +96,12 @@ export function ProcessStatusLine({
         className={cn(styles.icon, colorClass, iconSpinning && 'animate-spin', 'shrink-0')}
         aria-hidden
       />
-      <span className={cn(styles.text, colorClass, 'font-medium truncate')}>{label}</span>
+      <span className={cn(styles.text, colorClass, 'font-medium shrink-0')}>{label}</span>
 
       {secondary && (
-        <span className={cn(styles.secondary, 'truncate text-muted-foreground')}>{secondary}</span>
+        <span className={cn(styles.secondary, 'min-w-0 flex-1 truncate text-muted-foreground')}>
+          {secondary}
+        </span>
       )}
       {elapsed && (
         <span className={cn(styles.secondary, 'ml-auto shrink-0 text-muted-foreground tabular-nums')}>
@@ -104,7 +115,7 @@ export function ProcessStatusLine({
             <TooltipTrigger asChild>
               <button
                 type="button"
-                disabled={!ready}
+                disabled={!canOpenTerminal}
                 onClick={(e) => {
                   e.stopPropagation();
                   onOpenInTerminal();
@@ -118,10 +129,12 @@ export function ProcessStatusLine({
                   !elapsed && 'ml-auto',
                 )}
                 aria-label={
-                  ready
+                  canOpenTerminal
                     ? mode === WorkerMode.Interactive
                       ? 'Focus terminal'
-                      : 'Open in terminal'
+                      : canResume && !ready
+                        ? 'Resume in terminal'
+                        : 'Open in terminal'
                     : `Busy — worker is ${label.toLowerCase()}`
                 }
               >
@@ -129,10 +142,12 @@ export function ProcessStatusLine({
               </button>
             </TooltipTrigger>
             <TooltipContent side="top" className="text-xs">
-              {ready
+              {canOpenTerminal
                 ? mode === WorkerMode.Interactive
                   ? 'Focus terminal'
-                  : 'Open in terminal'
+                  : canResume && !ready
+                    ? 'Resume in terminal'
+                    : 'Open in terminal'
                 : `Busy — worker is ${label.toLowerCase()}`}
             </TooltipContent>
           </Tooltip>

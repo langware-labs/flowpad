@@ -41,7 +41,6 @@ class Task(Entity):
     task_type: str = APIField(TaskType.TASK)
     priority: Optional[str] = APIField(None)
     tags: List[str] = APIField([])
-    metadata: Optional[Dict[str, Any]] = APIField(None)
     shared_by_id: Optional[str] = APIField(None)
     project_id: Optional[str] = APIField(None)
     spec_type: Optional[str] = APIField(None)
@@ -53,6 +52,39 @@ class Task(Entity):
     # ``context_entities`` list on the base ``Entity``. Read via
     # ``task.first_context_of_type('spec')`` / ``task.first_context_of_type('conversation')``;
     # mutate via ``task.add_context_entity(...)`` / ``task.remove_context_entity(...)``.
+
+    # Promoted from former `metadata` blob — first-class fields.
+    active_form: Optional[str] = APIField(None)
+    analysis_json_path: Optional[str] = APIField(None)
+    analysis_path: Optional[str] = APIField(None)
+    artifacts: Optional[List[Any]] = APIField(None)
+    branch: Optional[str] = APIField(None)
+    classification_category: Optional[str] = APIField(None)
+    classification_command: Optional[str] = APIField(None)
+    classification_path: Optional[str] = APIField(None)
+    classification_title: Optional[str] = APIField(None)
+    command: Optional[str] = APIField(None)
+    completed_at: Optional[datetime] = APIField(None)
+    error_fingerprint: Optional[str] = APIField(None)
+    folder_name: Optional[str] = APIField(None)
+    output_dir: Optional[str] = APIField(None)
+    process_id: Optional[str] = APIField(None)
+    project_name: Optional[str] = APIField(None)
+    project_root: Optional[str] = APIField(None)
+    project_url: Optional[str] = APIField(None)
+    recipient_email: Optional[str] = APIField(None)
+    repo_id: Optional[str] = APIField(None)
+    result_uname: Optional[str] = APIField(None)
+    sender_email: Optional[str] = APIField(None)
+    sender_name: Optional[str] = APIField(None)
+    session_id: Optional[str] = APIField(None)
+    skill_name: Optional[str] = APIField(None)
+    skill_path: Optional[str] = APIField(None)
+    skill_scope: Optional[str] = APIField(None)
+    task_type_label: Optional[str] = APIField(None)
+    team_space_id: Optional[str] = APIField(None)
+    worker_session_id: Optional[str] = APIField(None)
+
     _api_visible: ClassVar[bool] = True
 
     def _direct_fields_as_typeids(self) -> List[TypeId]:

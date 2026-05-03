@@ -31,6 +31,7 @@ export * from './collaboration-room';
 export * from './siteconfig';
 export * from './conversation';
 export * from './flow-message';
+export * from './invitation';
 export * from './spec';
 export * from './task';
 export * from './cron-event';

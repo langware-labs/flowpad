@@ -171,4 +171,71 @@ describe('PtyConnection.addTrigger', () => {
 
     expect(matches).toEqual(['plan-x.md']);
   });
+
+  it('catches up on history when registered after replay (synthesized fires flagged duringReplay)', () => {
+    const pc = makePty();
+    // Feed lines BEFORE registering the trigger — simulates the reload race
+    // where InteractiveTerminal's useEffect calls addTrigger after attach()
+    // has already drained replayed chunks through the line buffer. Real chunks
+    // arrive with seq numbers from the server; pass them so they land in the
+    // ``chunks`` map (the catchup source).
+    pc.appendOutput(b64('boring banner line\n'), 1);
+    pc.appendOutput(b64('Wrote plan-alpha.md\n'), 2);
+    pc.appendOutput(b64('another line\n'), 3);
+    pc.appendOutput(b64('finally plan-beta.md too\n'), 4);
+
+    const matches: { line: string; group: string }[] = [];
+    pc.addTrigger({
+      pattern: /plan[\w-]*\.md/i,
+      label: 'late-binding',
+      onMatch: (line, m) => matches.push({ line, group: m[0] }),
+    });
+
+    expect(matches.length).toBe(2);
+    expect(matches[0].group).toBe('plan-alpha.md');
+    expect(matches[1].group).toBe('plan-beta.md');
+
+    const fires = pc.getEventFires();
+    expect(fires.length).toBe(2);
+    expect(fires.every((f) => f.duringReplay)).toBe(true);
+    expect(fires.every((f) => f.label === 'late-binding')).toBe(true);
+  });
+
+  it('catchup does not double-fire on subsequent live chunks', () => {
+    const pc = makePty();
+    pc.appendOutput(b64('plan-alpha.md\n'), 1);
+
+    const matches: string[] = [];
+    pc.addTrigger({
+      pattern: /plan[\w-]*\.md/i,
+      onMatch: (_l, m) => matches.push(m[0]),
+    });
+    expect(matches).toEqual(['plan-alpha.md']);
+
+    pc.appendOutput(b64('plan-beta.md\n'), 2);
+    expect(matches).toEqual(['plan-alpha.md', 'plan-beta.md']);
+  });
+
+  it('catchup is per-trigger — only the new trigger sees history', () => {
+    const pc = makePty();
+    pc.appendOutput(b64('plan-alpha.md\n'), 1);
+
+    const firstMatches: string[] = [];
+    pc.addTrigger({
+      pattern: /plan[\w-]*\.md/i,
+      label: 'first',
+      onMatch: (_l, m) => firstMatches.push(m[0]),
+    });
+    expect(firstMatches).toEqual(['plan-alpha.md']);
+
+    const secondMatches: string[] = [];
+    pc.addTrigger({
+      pattern: /plan[\w-]*\.md/i,
+      label: 'second',
+      onMatch: (_l, m) => secondMatches.push(m[0]),
+    });
+
+    expect(firstMatches).toEqual(['plan-alpha.md']); // unchanged
+    expect(secondMatches).toEqual(['plan-alpha.md']);
+  });
 });

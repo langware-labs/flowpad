@@ -217,11 +217,53 @@ export class PtyConnection {
    * Register a regex trigger over the line stream. ``onMatch`` fires
    * with the matched line and the regex match groups.
    *
+   * If chunks have already arrived (e.g. registration happens after a
+   * tab-reload's replay completes), the new trigger is run against the
+   * accumulated line history so consumers don't lose visibility of
+   * matches that fired pre-registration. Synthesized fires are flagged
+   * ``duringReplay: true`` so the viewer can distinguish catchup hits
+   * from live ones.
+   *
    * Returns an unsubscribe function.
    */
   addTrigger(trigger: PtyEvent): () => void {
     this._triggers.add(trigger);
+    if (this.chunks.size > 0) this._catchupTrigger(trigger);
     return () => this._triggers.delete(trigger);
+  }
+
+  /**
+   * Walk the buffered replay chunks in seq order, decode + ANSI-strip,
+   * split on \n, and run a single trigger against each line. Used by
+   * ``addTrigger`` to retroactively match history when a watcher
+   * registers after replay has already drained chunks through the
+   * line buffer.
+   *
+   * Independent of the live ``_lineBuffer``: this scans the persisted
+   * chunk map without affecting the running stream.
+   */
+  private _catchupTrigger(trigger: PtyEvent): void {
+    let buf = '';
+    const seqs = Array.from(this.chunks.keys()).sort((a, b) => a - b);
+    for (const seq of seqs) {
+      const chunk = this.chunks.get(seq);
+      if (!chunk?.data) continue;
+      buf += this.decoder.decode(chunk.data, { stream: true });
+    }
+    buf += this.decoder.decode();
+    const lines = buf.split('\n');
+    for (const raw of lines) {
+      const line = stripAnsi(raw.endsWith('\r') ? raw.slice(0, -1) : raw);
+      if (!line) continue;
+      const m = line.match(trigger.pattern);
+      if (!m) continue;
+      try {
+        trigger.onMatch(line, m);
+      } catch (e) {
+        console.error('[PtyConnection] catchup trigger error:', e);
+      }
+      this._recordEventFire(trigger, line, m, /*duringReplay*/ true);
+    }
   }
 
   /** Number of currently-registered ``PtyEvent`` watchers. */
@@ -279,7 +321,12 @@ export class PtyConnection {
     }
   }
 
-  private _recordEventFire(trig: PtyEvent, line: string, match: RegExpMatchArray): void {
+  private _recordEventFire(
+    trig: PtyEvent,
+    line: string,
+    match: RegExpMatchArray,
+    duringReplay?: boolean,
+  ): void {
     const fire: PtyEventFire = {
       id:
         typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -290,7 +337,7 @@ export class PtyConnection {
       label: trig.label,
       line,
       match: Array.from(match).slice(0, 8) as string[],
-      duringReplay: !this._replayDone,
+      duringReplay: duringReplay ?? !this._replayDone,
     };
     this._eventFires.push(fire);
     while (this._eventFires.length > PtyConnection.MAX_EVENT_FIRES) {

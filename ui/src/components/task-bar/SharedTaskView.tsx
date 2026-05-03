@@ -5,11 +5,19 @@
  * Replaces the sliding TaskDetailPanel for spec_id tasks.
  */
 
-import { ArrowLeft } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowLeft, Activity } from 'lucide-react';
 import { Spec, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ExpansionRequest } from '@sdk/FlowSync/query';
+import { sendReply } from '@sdk/entities/notifications';
+import { toast } from 'sonner';
 import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
+import { ConversationMode } from '@src/components/conversation/conversation-mode';
+import { useLocalUser } from '@src/components/conversation/useLocalUser';
+import { TaskRunsDrawer } from './TaskRunsDrawer';
+
+const STATUS_REQUEST_PROMPT_TEXT = 'Summarize the task and plan status in 5 lines';
 
 interface SharedTaskViewProps {
   task: Task;
@@ -19,8 +27,7 @@ interface SharedTaskViewProps {
 export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
   const blobExpansion = new ExpansionRequest({ expand: ['blobs'] });
 
-  const taskMeta = task.metadata as Record<string, unknown> | undefined;
-  const senderName = taskMeta?.sender_name as string | undefined
+  const senderName = task.sender_name
     || task.shared_by_id
     || 'Unknown';
 
@@ -30,6 +37,31 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
     { query: blobExpansion },
   );
   const conversationTypeId = task.firstContextOfType?.('conversation') ?? null;
+
+  const { localUser } = useLocalUser();
+  const isAuthor = !!(localUser?.id && task.shared_by_id && localUser.id === task.shared_by_id);
+  const [requestingStatus, setRequestingStatus] = useState(false);
+
+  const handleRequestStatus = async () => {
+    if (!task.conversation_id || requestingStatus) return;
+    setRequestingStatus(true);
+    try {
+      await sendReply(
+        { task, conversationId: task.conversation_id },
+        '',
+        undefined,
+        { promptText: STATUS_REQUEST_PROMPT_TEXT },
+      );
+      toast.success('Status request sent', {
+        description: 'The recipient will see a PROMPT to approve.',
+      });
+    } catch (err) {
+      console.error('[SharedTaskView] sendReply failed', err);
+      toast.error('Failed to send status request');
+    } finally {
+      setRequestingStatus(false);
+    }
+  };
 
   return (
     <div className="flex h-full w-full flex-col bg-card">
@@ -48,41 +80,57 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
             <p className="text-xs text-muted-foreground">From {senderName}</p>
           )}
         </div>
+        {isAuthor && task.conversation_id && (
+          <button
+            type="button"
+            onClick={() => void handleRequestStatus()}
+            disabled={requestingStatus}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+            title="Send a PROMPT to the recipient asking for a status summary"
+          >
+            <Activity className="h-3.5 w-3.5" />
+            {requestingStatus ? 'Sending…' : 'Request status'}
+          </button>
+        )}
       </div>
 
-      {/* Body */}
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
-
-        {/* Read-only fields */}
-        <section className="space-y-3">
-          {spec?.title && (
-            <div>
-              <span className="text-xs font-medium text-muted-foreground">Title</span>
-              <p className="mt-0.5 text-sm">{spec.title}</p>
-            </div>
-          )}
-          {spec?.content && (
-            <div>
-              <span className="text-xs font-medium text-muted-foreground">Description</span>
-              <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border border-border bg-muted/30 p-3 text-sm text-foreground/80 whitespace-pre-wrap">
-                {spec.content}
+      {/* Body + Runs drawer */}
+      <div className="flex min-h-0 flex-1 flex-row">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+          {/* Read-only fields */}
+          <section className="space-y-3">
+            {spec?.title && (
+              <div>
+                <span className="text-xs font-medium text-muted-foreground">Title</span>
+                <p className="mt-0.5 text-sm">{spec.title}</p>
               </div>
-            </div>
-          )}
-        </section>
+            )}
+            {spec?.content && (
+              <div>
+                <span className="text-xs font-medium text-muted-foreground">Description</span>
+                <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border border-border bg-muted/30 p-3 text-sm text-foreground/80 whitespace-pre-wrap">
+                  {spec.content}
+                </div>
+              </div>
+            )}
+          </section>
 
-        {/* Conversation */}
-        <section className="-mx-4 flex flex-col">
-          {conversationTypeId ? (
-            <ConversationPanel
-              task={task}
-              conversationId={conversationTypeId.id}
-              senderName={senderName}
-            />
-          ) : (
-            <p className="px-4 text-xs italic text-muted-foreground/60">No conversation yet.</p>
-          )}
-        </section>
+          {/* Conversation */}
+          <section className="-mx-4 flex flex-col">
+            {conversationTypeId ? (
+              <ConversationPanel
+                task={task}
+                conversationId={conversationTypeId.id}
+                senderName={senderName}
+                mode={ConversationMode.HEADLESS}
+              />
+            ) : (
+              <p className="px-4 text-xs italic text-muted-foreground/60">No conversation yet.</p>
+            )}
+          </section>
+        </div>
+
+        <TaskRunsDrawer task={task} />
       </div>
     </div>
   );
