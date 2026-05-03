@@ -201,7 +201,7 @@ export function MessageComposer({ task, conversationId, isRemote, disabled, onSe
             type="button"
             onClick={() => setShowPromptDialog(true)}
             disabled={isDisabled}
-            title={activePrompt ? 'Edit attached prompt' : 'Add a prompt to your reply'}
+            title={activePrompt ? 'Edit attached prompt' : 'Suggest a prompt for the other user to approve'}
             className={cn(
               'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors disabled:opacity-40',
               activePrompt
@@ -210,7 +210,7 @@ export function MessageComposer({ task, conversationId, isRemote, disabled, onSe
             )}
           >
             <MessageSquarePlus className="h-3 w-3" />
-            {activePrompt ? 'Edit prompt' : 'Add prompt'}
+            {activePrompt ? 'Edit prompt' : 'Suggest prompt'}
           </button>
         )}
         <button

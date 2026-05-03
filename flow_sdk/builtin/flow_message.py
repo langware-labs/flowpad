@@ -59,6 +59,7 @@ class FlowMessage(Entity):
     # NOTE: ``context`` (list[TypeId]) was renamed and consolidated into the
     # unified ``context_entities`` on the base ``Entity``. Read via
     # ``msg.context_entities`` / ``msg.first_context_of_type('task')``.
+    is_draft: bool = APIField(default=False)
     _api_visible: ClassVar[bool] = True
 
     @model_serializer(mode="wrap")

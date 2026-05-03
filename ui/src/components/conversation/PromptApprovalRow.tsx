@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Paperclip, Pencil, Sparkles } from 'lucide-react';
+import { Paperclip, Pencil } from 'lucide-react';
 import type { Attachment } from '@sdk/entities/flow-message';
 import {
   Dialog,
@@ -9,6 +9,7 @@ import {
   DialogTrigger,
 } from '@src/components/ui/dialog';
 import { fileAttachmentUrl } from './attachment-url';
+import { EntityChip } from './EntityChip';
 
 interface PromptApprovalRowProps {
   /** Every PROMPT attachment on the message — the row splits inline text from prompt files. */
@@ -159,14 +160,11 @@ export function PromptApprovalRow({
       })}
 
       {onApprove && (
-        <button
-          type="button"
+        <EntityChip
+          entity={{ type: 'prompt', name: 'Approve & Execute' }}
           onClick={onApprove}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-500/20 dark:text-emerald-300"
-        >
-          <Sparkles className="h-3 w-3" />
-          Approve &amp; Execute
-        </button>
+          title="Approve this prompt and run it in the shared session"
+        />
       )}
       {!onApprove && onEdit && (
         <button

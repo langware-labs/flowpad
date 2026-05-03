@@ -55,12 +55,10 @@ export interface ClassificationInfo {
   command: string;
 }
 
-/** Extract classification result from a completed classification task's metadata. */
+/** Extract classification result from a completed classification task. */
 export function getClassificationInfo(task: Task): ClassificationInfo | null {
   if (task.task_type !== TaskType.CLASSIFICATION) return null;
-  const category = task.metadata?.classification_category;
-  const title = task.metadata?.classification_title;
-  const command = task.metadata?.classification_command;
+  const { classification_category: category, classification_title: title, classification_command: command } = task;
   if (typeof category !== 'string' || typeof title !== 'string' || typeof command !== 'string') return null;
   return { category, title, command };
 }
@@ -68,15 +66,13 @@ export function getClassificationInfo(task: Task): ClassificationInfo | null {
 /** Get the analysis report machine path from a task, or null. */
 export function getAnalysisPath(task: Task): string | null {
   if (task.task_type !== TaskType.ANALYSIS) return null;
-  const path = task.metadata?.analysisPath;
-  return typeof path === 'string' ? path : null;
+  return task.analysis_path ?? null;
 }
 
 /** Get the analysis JSON machine path from a task, or null. */
 export function getAnalysisJsonPath(task: Task): string | null {
   if (task.task_type !== TaskType.ANALYSIS) return null;
-  const path = task.metadata?.analysisJsonPath;
-  return typeof path === 'string' ? path : null;
+  return task.analysis_json_path ?? null;
 }
 
 export interface ArtifactInfo {
@@ -92,19 +88,19 @@ const SKILL_SCOPE_TO_DOCK: Record<string, SkillsScope> = {
   system: SkillsScope.System,
 };
 
-/** Get artifact paths from task metadata. */
+/** Get artifact paths from a task. */
 export function getArtifactPaths(task: Task): ArtifactInfo[] {
   const artifacts: ArtifactInfo[] = [];
 
-  const skillPath = task.metadata?.skillPath;
-  const analysisPath = task.metadata?.analysisPath;
-  const analysisJsonPath = task.metadata?.analysisJsonPath;
-  const outputDir = task.metadata?.output_dir;
-  const skillName = task.metadata?.skillName;
-  const folderName = task.metadata?.folderName;
-  const skillScope = task.metadata?.skillScope;
+  const skillPath = task.skill_path;
+  const analysisPath = task.analysis_path;
+  const analysisJsonPath = task.analysis_json_path;
+  const outputDir = task.output_dir;
+  const skillName = task.skill_name;
+  const folderName = task.folder_name;
+  const skillScope = task.skill_scope;
 
-  // folderName is the kebab-case name used for file paths; skillName is the display name
+  // folder_name is the kebab-case name used for file paths; skill_name is the display name
   const effectiveFolder = typeof folderName === 'string' && folderName ? folderName : skillName;
 
   // Build the skills-tab dock path from scope + folder name
@@ -112,7 +108,7 @@ export function getArtifactPaths(task: Task): ArtifactInfo[] {
   const skillDockPath =
     typeof effectiveFolder === 'string' && effectiveFolder ? `${dockPrefix}/${effectiveFolder}` : undefined;
 
-  // SKILL.md -- explicit path or derived from output_dir + folderName
+  // SKILL.md -- explicit path or derived from output_dir + folder_name
   if (typeof skillPath === 'string') {
     artifacts.push({ path: skillPath, label: 'SKILL.md', skillDockPath });
   } else if (typeof outputDir === 'string' && typeof effectiveFolder === 'string' && effectiveFolder) {
@@ -137,7 +133,7 @@ export function getArtifactPaths(task: Task): ArtifactInfo[] {
   }
 
   // classification.json for classification tasks
-  const classificationPath = task.metadata?.classificationPath;
+  const classificationPath = task.classification_path;
   if (typeof classificationPath === 'string') {
     artifacts.push({ path: classificationPath, label: 'classification.json' });
   } else if (task.task_type === TaskType.CLASSIFICATION && typeof outputDir === 'string') {
@@ -145,10 +141,10 @@ export function getArtifactPaths(task: Task): ArtifactInfo[] {
     artifacts.push({ path: `${normalized}/classification.json`, label: 'classification.json' });
   }
 
-  // Generic artifacts from metadata.artifacts array
-  const metadataArtifacts = task.metadata?.artifacts;
-  if (Array.isArray(metadataArtifacts)) {
-    for (const artifact of metadataArtifacts) {
+  // Generic artifacts from task.artifacts array
+  const taskArtifacts = task.artifacts;
+  if (Array.isArray(taskArtifacts)) {
+    for (const artifact of taskArtifacts) {
       if (typeof artifact === 'string') {
         // Simple string path
         const filename = artifact.split('/').pop() || artifact;
@@ -197,15 +193,11 @@ export function getStatusBadgeClass(status: string): string {
 
 /**
  * Get a displayable type label from the task.
- * Checks metadata.activeForm, metadata.taskTypeLabel, or task_type field.
+ * Checks active_form, task_type_label, or task_type field.
  */
 export function getTaskTypeLabel(task: Task): string | null {
-  if (task.metadata?.activeForm && typeof task.metadata.activeForm === 'string') {
-    return task.metadata.activeForm;
-  }
-  if (task.metadata?.taskTypeLabel && typeof task.metadata.taskTypeLabel === 'string') {
-    return task.metadata.taskTypeLabel;
-  }
+  if (task.active_form) return task.active_form;
+  if (task.task_type_label) return task.task_type_label;
   if (task.task_type && task.task_type !== TaskType.TASK && task.task_type !== 'task') {
     return task.task_type
       .split('_')

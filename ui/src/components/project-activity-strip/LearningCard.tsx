@@ -31,11 +31,8 @@ export function LearningCard({
     useAnalysisTaskProgress(task);
   const artifacts = getArtifactPaths(task);
 
-  const workerSessionId =
-    (task.metadata?.workerSessionId as string | undefined) ??
-    (task.metadata?.session_id as string | undefined) ??
-    null;
-  const isErrorTask = task.tags?.includes('error') || !!task.metadata?.errorFingerprint;
+  const workerSessionId = task.worker_session_id ?? task.session_id ?? null;
+  const isErrorTask = task.tags?.includes('error') || !!task.error_fingerprint;
   const isInProgress = isRunning || (!isComplete && !isError && task.status === TaskStatus.IN_PROGRESS);
   const latestEvent = workerSessionId ? sessionLatestEvent?.get(workerSessionId) ?? null : null;
   const eventCount = workerSessionId ? sessionEventCounts?.get(workerSessionId) ?? 0 : 0;
