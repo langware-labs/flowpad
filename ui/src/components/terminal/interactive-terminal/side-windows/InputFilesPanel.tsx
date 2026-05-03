@@ -1,7 +1,7 @@
 import { type TypeId } from '@sdk';
 import { fsStore } from '@sdk';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
-import { ExternalLink, File, RefreshCw } from 'lucide-react';
+import { ExternalLink, File, RefreshCw, Trash2 } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import { Button } from '@src/components/ui/button';
 import {
@@ -36,18 +36,24 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
   const fsRef = React.useRef(fs);
   fsRef.current = fs;
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [deletingPath, setDeletingPath] = useState<string | null>(null);
 
+  const browseResult = fs?.browse(inputDirAbsPath);
+  const items = browseResult?.items ?? [];
+
+  // Fetch whenever the cache has no entry for this path. This covers initial
+  // mount and any later invalidation triggered by upload/delete elsewhere in
+  // the app — listDirectory dedupes concurrent calls, so spurious fires are
+  // cheap. fs is read via ref because useFS returns a new object each render.
   useEffect(() => {
-    if (!fsRef.current) return;
-    void fsRef.current.listDirectory(inputDirAbsPath);
-  }, [inputDirAbsPath, refreshKey]);
+    if (browseResult) return;
+    void fsRef.current?.listDirectory(inputDirAbsPath);
+  }, [browseResult, inputDirAbsPath]);
 
   const handleRefresh = () => {
     if (!fs) return;
     fs.invalidate(inputDirAbsPath, 'browse');
-    setRefreshKey((k) => k + 1);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -73,8 +79,15 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
     await Promise.all(uploads.map((u) => u.waitForCompletion()));
   };
 
-  const browseResult = fs?.browse(inputDirAbsPath);
-  const items = browseResult?.items ?? [];
+  const handleDelete = async (path: string) => {
+    if (!fs) return;
+    setDeletingPath(path);
+    try {
+      await fs.delete(path);
+    } finally {
+      setDeletingPath(null);
+    }
+  };
 
   return (
     <div
@@ -103,12 +116,14 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
         ) : (
           <div className="flex flex-col gap-1">
             {items.map((item) => {
-              const downloadUrl = fs?.getDownloadUrl(item.vfs_abs_path ?? `${inputDirAbsPath}/${item.name}`);
+              const itemPath = `${inputDirAbsPath}/${item.name}`;
+              const downloadUrl = fs?.getDownloadUrl(item.vfs_abs_path ?? itemPath);
               const isImage = isImageFile(item.name);
+              const isDeleting = deletingPath === itemPath;
               return (
                 <div
                   key={item.name}
-                  className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${isImage ? 'cursor-pointer hover:bg-muted' : 'hover:bg-muted/50'}`}
+                  className={`group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${isImage ? 'cursor-pointer hover:bg-muted' : 'hover:bg-muted/50'} ${isDeleting ? 'opacity-50' : ''}`}
                   onClick={isImage && downloadUrl ? () => setSelectedImage(downloadUrl) : undefined}
                 >
                   {isImage && downloadUrl ? (
@@ -126,6 +141,20 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
                       <p className="text-[10px] text-muted-foreground">{formatSize(item.size)}</p>
                     )}
                   </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 shrink-0 p-0 opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                    aria-label={`Delete ${item.name}`}
+                    title={`Delete ${item.name}`}
+                    disabled={isDeleting}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void handleDelete(itemPath);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
               );
             })}

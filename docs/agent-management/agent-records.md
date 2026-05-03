@@ -1,18 +1,24 @@
+---
+
+---
+
 # Agent Records
 
 Reference for the filesystem records and entity/runtime state used by agent
 management. The important boundary is:
 
-- Durable records and DB entities survive server restarts: `Record`,
+* Durable records and DB entities survive server restarts: `Record`,
   `AgenticProcessRecord`, `ShellRecord`, `ClaudeSessionRecord`, and the
   `AgenticProcess` / `Shell` entity rows.
-- Live runtime state does not survive restarts: in-memory PTY handles, replay
+
+* Live runtime state does not survive restarts: in-memory PTY handles, replay
   buffer chunks, `_PROMPT_LOCKS`, `_PROMPT_WORKERS`, live OS PIDs, and the
   cached compute-node binding on `Shell`.
-- Claude conversation history is durable because Claude writes JSONL transcripts
+
+* Claude conversation history is durable because Claude writes JSONL transcripts
   under `~/.claude/projects/...`, not because the live worker object is durable.
 
----
+***
 
 ## Table of Contents
 
@@ -28,7 +34,7 @@ management. The important boundary is:
 10. [TypeScript SDK Counterparts](#10-typescript-sdk-counterparts)
 11. [Key Files Reference](#11-key-files-reference)
 
----
+***
 
 ## 1. Base Record Class
 
@@ -40,11 +46,15 @@ single internal `_data` dict for live storage.
 
 Current storage model:
 
-- Public fields are direct instance attributes.
-- Dirty tracking is private and uses `_dirty_keys: set[str]`.
-- `_data` remains only as a constructor compatibility argument.
-- `.data` and `.raw_json` are read shims over `to_dict()`.
-- The TypeScript client still uses `FsRecord` naming, and some
+* Public fields are direct instance attributes.
+
+* Dirty tracking is private and uses `_dirty_keys: set[str]`.
+
+* `_data` remains only as a constructor compatibility argument.
+
+* `.data` and `.raw_json` are read shims over `to_dict()`.
+
+* The TypeScript client still uses `FsRecord` naming, and some
   record-specific Python aliases remain, such as `ClaudeSessionFsRecord`.
   The Python base class in `flow_sdk.fs_store` is now `Record`.
 
@@ -86,15 +96,15 @@ location/runtime attributes such as `source_file`, `path`, `json_path`,
 
 ### Location Properties
 
-| Property | Type | Description |
-|---|---|---|
-| `source_file` | `str | None` | Backing file path, often `metadata.json` or an external asset file |
-| `path` | `str | None` | Record folder path |
-| `record_dir` | `Path | None` | `path`, or `source_file.parent` |
-| `record_data_dir` | `Path | None` | Alias for `record_dir` |
-| `default_path` | `Path | None` | `records_root / type / <type>-@<id>` |
-| `record_folder_ref` | `FSRef | None` | FSRef for the metadata folder, lazily resolved from `default_path` |
-| `asset_ref` | `FSRef | None` | External content ref, private in memory and serialized as a path |
+| Property            | Type    | Description |                                                                    |
+| ------------------- | ------- | ----------- | ------------------------------------------------------------------ |
+| `source_file`       | \`str   | None\`      | Backing file path, often `metadata.json` or an external asset file |
+| `path`              | \`str   | None\`      | Record folder path                                                 |
+| `record_dir`        | \`Path  | None\`      | `path`, or `source_file.parent`                                    |
+| `record_data_dir`   | \`Path  | None\`      | Alias for `record_dir`                                             |
+| `default_path`      | \`Path  | None\`      | `records_root / type / <type>-@<id>`                               |
+| `record_folder_ref` | \`FSRef | None\`      | FSRef for the metadata folder, lazily resolved from `default_path` |
+| `asset_ref`         | \`FSRef | None\`      | External content ref, private in memory and serialized as a path   |
 
 ### Constructor
 
@@ -129,7 +139,7 @@ Read-only enforcement is FSRef-level. A record is read-only when its `_asset_ref
 is read-only. `ClaudeSessionRecord` sets this explicitly so session records are
 never saved back to Claude's JSONL transcript.
 
----
+***
 
 ## 2. ClaudeSessionRecord
 
@@ -170,49 +180,54 @@ Each JSONL line is a Claude event with shared envelope fields such as
 
 `from_jsonl(path)` is intentionally cheap:
 
-- Reads the first 4 KB for `session_id`, `slug`, and `cwd`.
-- Reads the last 16 KB for the latest `custom-title`.
-- Sets `jsonl_path`, `source_file`, `path`, and `project_encoded_name`.
-- Does not eagerly parse full stats such as token counts or message counts.
+* Reads the first 4 KB for `session_id`, `slug`, and `cwd`.
+
+* Reads the last 16 KB for the latest `custom-title`.
+
+* Sets `jsonl_path`, `source_file`, `path`, and `project_encoded_name`.
+
+* Does not eagerly parse full stats such as token counts or message counts.
 
 The constructor sets:
 
-- `id = session_id`.
-- `name = custom_title or slug or session_id`.
-- `_asset_ref = FSRef(jsonl_path or "/", read_only=True)`.
+* `id = session_id`.
+
+* `name = custom_title or slug or session_id`.
+
+* `_asset_ref = FSRef(jsonl_path or "/", read_only=True)`.
 
 ### Lazy Data Fields
 
 Aggregated fields are `_SessionStatsProp` descriptors. The first access parses
 the JSONL once and caches the result on the instance as `_session_batch_stats`.
 
-| Field | Type | Notes |
-|---|---|---|
-| `session_id` | `str` | Claude session UUID; also the record id |
-| `cwd` | `str` | Session working directory |
-| `version` | `str` | Claude Code CLI version |
-| `git_branch` | `str` | Git branch from transcript envelope |
-| `slug` | `str` | Claude session slug |
-| `model` | `str | None` | First/primary model seen in assistant usage |
-| `message_count` | `int` | User plus assistant messages |
-| `user_message_count` | `int` | User messages |
-| `assistant_message_count` | `int` | Assistant messages |
-| `input_tokens` | `int` | Total input tokens |
-| `output_tokens` | `int` | Total output tokens |
-| `cache_read_input_tokens` | `int` | Cache-read input tokens |
-| `cache_creation_input_tokens` | `int` | Cache-creation input tokens |
-| `duration_ms` | `int` | Total turn duration |
-| `tools_used` | `list[str]` | Tool names |
-| `has_plan` | `bool` | True if transcript includes plan content |
-| `last_stop_reason` | `str | None` | Last assistant stop reason |
-| `project_encoded_name` | `str` | Encoded project directory name |
-| `last_user_message` | `str | None` | Last user text |
-| `modified_at` | `str | None` | Derived from transcript/file metadata |
-| `task_path` | `str | None` | Claude task/todo path when available |
-| `estimated_cost_usd` | `float` | Estimated session cost |
-| `models_used` | `list[str]` | All models encountered |
-| `primary_model` | `str | None` | Primary model |
-| `created_at` | `str | None` | First transcript timestamp |
+| Field                         | Type        | Notes                                    |                                             |
+| ----------------------------- | ----------- | ---------------------------------------- | ------------------------------------------- |
+| `session_id`                  | `str`       | Claude session UUID; also the record id  |                                             |
+| `cwd`                         | `str`       | Session working directory                |                                             |
+| `version`                     | `str`       | Claude Code CLI version                  |                                             |
+| `git_branch`                  | `str`       | Git branch from transcript envelope      |                                             |
+| `slug`                        | `str`       | Claude session slug                      |                                             |
+| `model`                       | \`str       | None\`                                   | First/primary model seen in assistant usage |
+| `message_count`               | `int`       | User plus assistant messages             |                                             |
+| `user_message_count`          | `int`       | User messages                            |                                             |
+| `assistant_message_count`     | `int`       | Assistant messages                       |                                             |
+| `input_tokens`                | `int`       | Total input tokens                       |                                             |
+| `output_tokens`               | `int`       | Total output tokens                      |                                             |
+| `cache_read_input_tokens`     | `int`       | Cache-read input tokens                  |                                             |
+| `cache_creation_input_tokens` | `int`       | Cache-creation input tokens              |                                             |
+| `duration_ms`                 | `int`       | Total turn duration                      |                                             |
+| `tools_used`                  | `list[str]` | Tool names                               |                                             |
+| `has_plan`                    | `bool`      | True if transcript includes plan content |                                             |
+| `last_stop_reason`            | \`str       | None\`                                   | Last assistant stop reason                  |
+| `project_encoded_name`        | `str`       | Encoded project directory name           |                                             |
+| `last_user_message`           | \`str       | None\`                                   | Last user text                              |
+| `modified_at`                 | \`str       | None\`                                   | Derived from transcript/file metadata       |
+| `task_path`                   | \`str       | None\`                                   | Claude task/todo path when available        |
+| `estimated_cost_usd`          | `float`     | Estimated session cost                   |                                             |
+| `models_used`                 | `list[str]` | All models encountered                   |                                             |
+| `primary_model`               | \`str       | None\`                                   | Primary model                               |
+| `created_at`                  | \`str       | None\`                                   | First transcript timestamp                  |
 
 `to_dict()` includes all lazy properties and therefore triggers the batch parse
 on first call. `meta_dict()` has a fast path that avoids the full parse during
@@ -272,7 +287,7 @@ Without `project`, `get()` scans all project directories under
 first 20 lines and returns `None` if the JSONL mtime is older than
 `max_active_seconds`.
 
----
+***
 
 ## 3. AgenticProcessRecord
 
@@ -317,13 +332,17 @@ if "pty_session_id" in kwargs and "pty_pid" not in kwargs:
 
 Important naming:
 
-- `status` is the stored process-container lifecycle and uses `ProcessStatus`.
-- `pty_pid` replaced old `pty_session_id`.
-- `shell_id` links to the `Shell` entity.
-- `worker_session_id` still exists on the record for backward compatibility and
+* `status` is the stored process-container lifecycle and uses `ProcessStatus`.
+
+* `pty_pid` replaced old `pty_session_id`.
+
+* `shell_id` links to the `Shell` entity.
+
+* `worker_session_id` still exists on the record for backward compatibility and
   for `discover_worker_status()`, but the current `AgenticProcess` entity uses
   `session_id` as the canonical Claude/Codex session field.
-- HTTP `open` still accepts legacy `worker_session_id` in the body and maps it
+
+* HTTP `open` still accepts legacy `worker_session_id` in the body and maps it
   to entity `session_id`.
 
 ### Execution Folder Layout
@@ -345,10 +364,13 @@ Per-process artifacts live under the record folder:
 
 The folder FSRefs are exposed through:
 
-- `exe_folder`
-- `input_folder`
-- `output_folder`
-- `assets_folder`
+* `exe_folder`
+
+* `input_folder`
+
+* `output_folder`
+
+* `assets_folder`
 
 `meta_dict()` injects these FSRef dictionaries for Entity consumers.
 
@@ -356,10 +378,10 @@ The folder FSRefs are exposed through:
 
 `AgenticProcessRecord` defines TTL-backed `PropertyRecord` descriptors:
 
-| Property | TTL | Source |
-|---|---:|---|
-| `is_active` | 30s | Linked `ClaudeSessionRecord.is_active` |
-| `queue` | 5s | `queue.json` in the record folder, defaulting to `{"enabled": True, "entries": []}` |
+| Property    | TTL | Source                                                                              |
+| ----------- | --: | ----------------------------------------------------------------------------------- |
+| `is_active` | 30s | Linked `ClaudeSessionRecord.is_active`                                              |
+| `queue`     |  5s | `queue.json` in the record folder, defaulting to `{"enabled": True, "entries": []}` |
 
 ### Worker Status Discovery
 
@@ -382,7 +404,7 @@ it explicitly when using this record helper:
 record.discover_worker_status(process.session_id)
 ```
 
----
+***
 
 ## 4. Process and Worker Status
 
@@ -437,10 +459,12 @@ class WorkerStatus(StrEnum):
 
 Helper sets:
 
-- Running worker statuses: `WAITING`, `THINKING`, `TOOL_CALL`,
+* Running worker statuses: `WAITING`, `THINKING`, `TOOL_CALL`,
   `TOOL_RUNNING`, `API_ERROR`.
-- Busy worker statuses: `THINKING`, `TOOL_CALL`, `TOOL_RUNNING`.
-- Terminal worker statuses: `COMPLETE`, `ERROR`, `INTERRUPTED`, `INACTIVE`,
+
+* Busy worker statuses: `THINKING`, `TOOL_CALL`, `TOOL_RUNNING`.
+
+* Terminal worker statuses: `COMPLETE`, `ERROR`, `INTERRUPTED`, `INACTIVE`,
   `API_TIMEOUT`.
 
 ### Tail Status Algorithm
@@ -448,29 +472,30 @@ Helper sets:
 `_tail_status(path)` reads the last 4 KB of the JSONL and checks file mtime.
 The key classifications are:
 
-| Condition | WorkerStatus |
-|---|---|
-| JSONL missing | `INITIALIZING` |
-| `last-prompt` after an assistant turn with no pending tool | `COMPLETE` |
-| pending tool after assistant `stop_reason == "tool_use"` | `TOOL_RUNNING` |
-| last user text contains `interrupted` | `INTERRUPTED` |
-| last assistant `stop_reason == "end_turn"` | `COMPLETE` |
-| last assistant `stop_reason == "stop_sequence"` | `ERROR` |
-| file stale for more than 5 minutes with no terminal signal | `INACTIVE` |
-| active `system` entry with subtype `api_error` | `API_ERROR` |
-| active assistant entry with no stop reason | `THINKING` |
-| active assistant `stop_reason == "tool_use"` | `TOOL_CALL` |
-| active `progress` entry | `TOOL_RUNNING` |
-| active `user` entry newer than 30s | `WAITING` |
-| active `user` entry older than 30s | `API_TIMEOUT` |
-| unrecognized tail | `UNKNOWN` |
+| Condition                                                  | WorkerStatus   |
+| ---------------------------------------------------------- | -------------- |
+| JSONL missing                                              | `INITIALIZING` |
+| `last-prompt` after an assistant turn with no pending tool | `COMPLETE`     |
+| pending tool after assistant `stop_reason == "tool_use"`   | `TOOL_RUNNING` |
+| last user text contains `interrupted`                      | `INTERRUPTED`  |
+| last assistant `stop_reason == "end_turn"`                 | `COMPLETE`     |
+| last assistant `stop_reason == "stop_sequence"`            | `ERROR`        |
+| file stale for more than 5 minutes with no terminal signal | `INACTIVE`     |
+| active `system` entry with subtype `api_error`             | `API_ERROR`    |
+| active assistant entry with no stop reason                 | `THINKING`     |
+| active assistant `stop_reason == "tool_use"`               | `TOOL_CALL`    |
+| active `progress` entry                                    | `TOOL_RUNNING` |
+| active `user` entry newer than 30s                         | `WAITING`      |
+| active `user` entry older than 30s                         | `API_TIMEOUT`  |
+| unrecognized tail                                          | `UNKNOWN`      |
 
 ### Entity Projection
 
 `AgenticProcess.to_dict()` and its API serializer add:
 
-- `worker_status`: derived by `self.driver.tail_status(transcript_path)`.
-- `ready_for_input`: derived by
+* `worker_status`: derived by `self.driver.tail_status(transcript_path)`.
+
+* `ready_for_input`: derived by
   `flow_sdk/builtin/agentic_process/status_predicates.py::is_ready_for_input()`.
 
 Readiness contract:
@@ -484,17 +509,17 @@ If there is no transcript yet, a process with no `session_id` is treated as
 ready; a process with a `session_id` is treated as busy until a transcript is
 found or the driver reports a status.
 
----
+***
 
 ## 5. Transcript and History by Mode
 
 `AgenticProcess.visible` selects the worker mode. The mode itself is not stored
 separately.
 
-| `visible` | Mode | Worker shape |
-|---|---|---|
-| `False` | CLI/headless | One subprocess per prompt turn, no `Shell`/PTY |
-| `True` | Interactive/PTY | Live `Shell` entity and PTY-backed terminal tab |
+| `visible` | Mode            | Worker shape                                    |
+| --------- | --------------- | ----------------------------------------------- |
+| `False`   | CLI/headless    | One subprocess per prompt turn, no `Shell`/PTY  |
+| `True`    | Interactive/PTY | Live `Shell` entity and PTY-backed terminal tab |
 
 Both modes use `AgenticProcess.session_id` as the durable conversation/session
 identifier and both write or resume the same Claude JSONL transcript path:
@@ -513,30 +538,42 @@ self.driver.run_print_turn(self, instruction)
 
 For Claude, `ClaudeDriver.run_print_turn()`:
 
-- Requires `process.workdir`.
-- Eagerly assigns `process.session_id` when missing.
-- Sets lifecycle `status` to `ProcessStatus.RUNNING`.
-- Spawns `ClaudeCLIStreamWorker`.
-- Runs `claude -p --output-format stream-json --verbose`.
-- Passes either `--session-id <sid>` for a fresh turn or `--resume <sid>` for a
+* Requires `process.workdir`.
+
+* Eagerly assigns `process.session_id` when missing.
+
+* Sets lifecycle `status` to `ProcessStatus.RUNNING`.
+
+* Spawns `ClaudeCLIStreamWorker`.
+
+* Runs `claude -p --output-format stream-json --verbose`.
+
+* Passes either `--session-id <sid>` for a fresh turn or `--resume <sid>` for a
   resume turn.
-- Captures the first `system:init` session id from stdout if Claude reports a
+
+* Captures the first `system:init` session id from stdout if Claude reports a
   different id, then saves it back onto the process.
-- Streams FlowData to listeners from stdout.
-- Leaves `status` as `RUNNING` after the turn so the process can accept the
+
+* Streams FlowData to listeners from stdout.
+
+* Leaves `status` as `RUNNING` after the turn so the process can accept the
   next prompt when `worker_status` becomes ready.
 
 Durable storage in this mode:
 
-- `AgenticProcess` DB row: `session_id`, `status`, `workdir`, `cli_config`, etc.
-- Claude JSONL transcript: conversation history and worker-state source.
+* `AgenticProcess` DB row: `session_id`, `status`, `workdir`, `cli_config`, etc.
+
+* Claude JSONL transcript: conversation history and worker-state source.
 
 Non-durable live state in this mode:
 
-- `_PROMPT_LOCKS`
-- `_PROMPT_WORKERS`
-- The live `ClaudeCLIStreamWorker`
-- The subprocess PID
+* `_PROMPT_LOCKS`
+
+* `_PROMPT_WORKERS`
+
+* The live `ClaudeCLIStreamWorker`
+
+* The subprocess PID
 
 History loading:
 
@@ -554,11 +591,12 @@ not require a live worker.
 `AgenticProcess.start()` / HTTP `open` creates or reuses a `Shell` entity, then
 launches the worker in one of two ways:
 
-- Default direct PTY path (`shell_mode=False`): Claude is the PTY process. The
+* Default direct PTY path (`shell_mode=False`): Claude is the PTY process. The
   code builds argv/env with `cmd.to_spawn_args()` and calls
   `shell.start(spawn_args=..., extra_env=...)`, then records the PTY PID with
   `shell.set_worker_pid_direct()`.
-- Legacy shell path (`shell_mode=True`): starts a shell such as zsh first, then
+
+* Legacy shell path (`shell_mode=True`): starts a shell such as zsh first, then
   injects the Claude command with `shell.launch()`.
 
 In both paths, `ClaudeCliOptions` carries `process.session_id` into the CLI as
@@ -567,36 +605,45 @@ used by headless mode.
 
 Durable storage in this mode:
 
-- `AgenticProcess` DB row: `session_id`, `shell_id`, lifecycle `status`,
+* `AgenticProcess` DB row: `session_id`, `shell_id`, lifecycle `status`,
   `visible`, `cli_config`, etc.
-- `Shell` DB row: tab metadata, `pty_pid`, `worker_pid`, `worker_name`,
+
+* `Shell` DB row: tab metadata, `pty_pid`, `worker_pid`, `worker_name`,
   `last_launch_cmd`, workdir, env, tab order.
-- `ShellRecord`: shell record metadata and the `.pty` stream file.
-- Claude JSONL transcript.
+
+* `ShellRecord`: shell record metadata and the `.pty` stream file.
+
+* Claude JSONL transcript.
 
 Non-durable live state in this mode:
 
-- Provider-owned live PTY handle.
-- In-memory replay buffer chunks.
-- Actual OS process liveness behind `worker_pid` / PTY PID.
-- Cached compute-node binding on the `Shell` instance.
+* Provider-owned live PTY handle.
+
+* In-memory replay buffer chunks.
+
+* Actual OS process liveness behind `worker_pid` / PTY PID.
+
+* Cached compute-node binding on the `Shell` instance.
 
 Completion handling:
 
-- `_poll_for_completion()` polls `ClaudeSessionRecord.get(session_id).status`
+* `_poll_for_completion()` polls `ClaudeSessionRecord.get(session_id).status`
   until a terminal worker status, then sets lifecycle `status` to `STOPPED`.
-- The PTY exit callback also updates the process lifecycle and indexes the
+
+* The PTY exit callback also updates the process lifecycle and indexes the
   `ClaudeSessionRecord` on close.
 
 Resume and fork:
 
-- `AgenticProcess.resume(session_id)` pre-bakes `--resume <session_id>`.
-- `AgenticProcess.fork(session_id)` pre-bakes
+* `AgenticProcess.resume(session_id)` pre-bakes `--resume <session_id>`.
+
+* `AgenticProcess.fork(session_id)` pre-bakes
   `--resume <source> --fork-session --session-id <new>`.
-- When resuming/forking, the code tries to find the source
+
+* When resuming/forking, the code tries to find the source
   `ClaudeSessionRecord` and uses its `cwd` as `CLAUDE_PROJECT_DIR` / workdir.
 
----
+***
 
 ## 6. Shell and PTY Runtime State
 
@@ -607,13 +654,19 @@ terminal tab / PTY session.
 
 It stores queryable metadata such as:
 
-- `id`: also the shell/PTY session id.
-- `status`: `idle`, `running`, or `closed`.
-- `workdir`, `env`, `name`, `tab_order`.
-- `pty_pid`: PTY session id; currently set to the shell id by `Shell.start()`.
-- `compute_node_id` and `compute_node_uname`.
-- `worker_pid`, `worker_name`, and `last_launch_cmd`.
-- `collaboration_room_id`.
+* `id`: also the shell/PTY session id.
+
+* `status`: `idle`, `running`, or `closed`.
+
+* `workdir`, `env`, `name`, `tab_order`.
+
+* `pty_pid`: PTY session id; currently set to the shell id by `Shell.start()`.
+
+* `compute_node_id` and `compute_node_uname`.
+
+* `worker_pid`, `worker_name`, and `last_launch_cmd`.
+
+* `collaboration_room_id`.
 
 The entity does not own the PTY bytes. It locates the live PTY through the
 linked compute node.
@@ -659,17 +712,21 @@ Do not treat `ShellRecord`, `Shell.pty_pid`, or `Shell.worker_pid` as proof that
 a process is still alive. They are durable hints used for recovery and
 reattachment. The current live state is checked through:
 
-- `Shell.has_attachable_pty()`
-- `Shell.is_alive`
-- `Shell.worker_alive()`
-- compute-provider PTY lookups
-- `psutil` PID checks
+* `Shell.has_attachable_pty()`
+
+* `Shell.is_alive`
+
+* `Shell.worker_alive()`
+
+* compute-provider PTY lookups
+
+* `psutil` PID checks
 
 `Shell.stop()` kills the PTY and leaves the shell entity. `Shell.close()` is
 permanent teardown: kill/close PTY, delete the `ShellRecord`, and delete the
 `Shell` entity.
 
----
+***
 
 ## 7. AgentRecord
 
@@ -695,7 +752,7 @@ record fields.
 system agent locations. `to_agents_cli_json()` returns the dict passed to
 Claude's `--agents` flag.
 
----
+***
 
 ## 8. Record-Entity Sync
 
@@ -726,29 +783,39 @@ Current `Entity.get_record()` resolves by entity type and id through
 
 `Entity.from_record()`:
 
-- Chooses the entity class registered for `record.type`.
-- Starts from `record.meta_dict()`.
-- Allocates a stable entity id with the entity class.
-- Creates or updates the entity.
-- For specialized entity classes, pulls matching domain fields from
+* Chooses the entity class registered for `record.type`.
+
+* Starts from `record.meta_dict()`.
+
+* Allocates a stable entity id with the entity class.
+
+* Creates or updates the entity.
+
+* For specialized entity classes, pulls matching domain fields from
   `record.to_dict()` only when needed.
-- Saves the entity.
+
+* Saves the entity.
 
 `Record.sync_to_db()` then:
 
-- Writes entity metadata back to the record via `sync_from_entity()`.
-- Upserts FTS using `search_title`, `search_description`, and `search_content`.
-- Records errors as `RecordError` on failure.
+* Writes entity metadata back to the record via `sync_from_entity()`.
+
+* Upserts FTS using `search_title`, `search_description`, and `search_content`.
+
+* Records errors as `RecordError` on failure.
 
 ### Entity -> Record
 
 `Entity.store()` / `_store()`:
 
-- Looks up the record class for `entity.get_type()`.
-- Loads the record by `entity.id`, or creates `record_cls(id=entity.id)` if no
+* Looks up the record class for `entity.get_type()`.
+
+* Loads the record by `entity.id`, or creates `record_cls(id=entity.id)` if no
   record exists yet.
-- Calls `record.sync_from_entity(entity)` in a worker thread.
-- Updates FTS if the record exposes `search_content`.
+
+* Calls `record.sync_from_entity(entity)` in a worker thread.
+
+* Updates FTS if the record exposes `search_content`.
 
 `Record.sync_from_entity(entity)` uses `entity.db_json()`, ignores private,
 DB-excluded, and `None` fields, and writes only changed values. It is a no-op
@@ -761,7 +828,7 @@ extracts old `vfs_record` values into a `record_data_ref` column and removes
 `vfs_record` / `vfs_orphan` from the JSON data blob. Current record/entity
 loading for these agent records is type/id based.
 
----
+***
 
 ## 9. Read/Write Patterns
 
@@ -828,7 +895,7 @@ live_stream = shell.output()       # live PTY stream; empty if no live PTY
 
 Use `Shell.has_attachable_pty()` or `Shell.worker_alive()` to check live state.
 
----
+***
 
 ## 10. TypeScript SDK Counterparts
 
@@ -872,13 +939,16 @@ The TypeScript data shape includes session stats, `jsonl_path`, `start_time`,
 
 `ts_sdk/src/process/agentic-types.ts` mirrors the Python two-axis model:
 
-- `ProcessStatus`: `new`, `starting`, `running`, `stopping`, `stopped`,
+* `ProcessStatus`: `new`, `starting`, `running`, `stopping`, `stopped`,
   `failed`.
-- `WorkerStatus`: `initializing`, `idle`, `complete`, `error`, `interrupted`,
+
+* `WorkerStatus`: `initializing`, `idle`, `complete`, `error`, `interrupted`,
   `inactive`, `waiting`, `thinking`, `tool_call`, `tool_running`,
   `api_error`, `api_timeout`, `unknown`.
-- `WorkerMode`: derived from `visible`, not stored.
-- `isReadyForInput()`: mirrors the Python readiness predicate.
+
+* `WorkerMode`: derived from `visible`, not stored.
+
+* `isReadyForInput()`: mirrors the Python readiness predicate.
 
 `AgenticProcess` TypeScript uses `session_id` as the canonical session field.
 Some method parameters and comments still mention `workerSessionId` for
@@ -891,42 +961,43 @@ legacy `worker_session_id` handling.
 for older rows. New agent/session/process code should not use those fields for
 record lookup.
 
----
+***
 
 ## 11. Key Files Reference
 
 ### Python
 
-| File | Role |
-|---|---|
-| `flow_sdk/fs_store/record.py` | Base `Record`, direct-attribute storage, folder save/load, sync helpers |
-| `flow_sdk/fs_store/record_ref.py` | `RecordRef` / `RecordDataRef` helpers |
-| `flow_sdk/fs_store/record_types.py` | `RecordType` constants |
-| `flow_sdk/fs_records/claude/claude_session.py` | `ClaudeSessionRecord`, lazy stats, transcript entries, status from `_tail_status` |
-| `flow_sdk/fs_records/claude/claude_active_session.py` | Active-session lightweight record |
-| `flow_sdk/fs_records/claude/claude_transcript_entry.py` | Transcript entry re-exports |
-| `flow_sdk/fs_records/claude/transcript_records/` | Type-specific Claude transcript record parsers |
-| `flow_sdk/fs_records/agent_status.py` | `WorkerStatus`, status helper sets, `_tail_status()` |
-| `flow_sdk/fs_records/agentic_process_lifecycle.py` | `ProcessStatus` and process lifecycle helper sets |
-| `flow_sdk/fs_records/agentic_process_record.py` | `AgenticProcessRecord`, execution folders, legacy field migration |
-| `flow_sdk/fs_records/shell_record.py` | `ShellRecord`, `ShellStatus`, durable `.pty` stream path |
-| `flow_sdk/builtin/agentic_process/agentic_process.py` | DB-backed `AgenticProcess` entity, mode routing, status projection |
-| `flow_sdk/builtin/agentic_process/status_predicates.py` | `WorkerMode`, readiness predicate, status helper imports |
-| `flow_sdk/builtin/agentic_process/cli_drivers/claude/driver.py` | Claude driver, headless print-mode execution, transcript path/history |
-| `flow_sdk/builtin/agentic_process/cli_drivers/claude/stream_worker.py` | `claude -p --output-format stream-json` subprocess worker |
-| `flow_sdk/builtin/agentic_process/cli_drivers/claude/session_history.py` | JSONL-to-FlowData history loading |
-| `flow_sdk/builtin/agentic_process/cli_drivers/claude/cli.py` | `ClaudeCliOptions`, `--session-id`, `--resume`, `--fork-session` args |
-| `flow_sdk/builtin/shell.py` | DB-backed `Shell` entity, PTY launch/read/write/runtime checks |
-| `flow_sdk/builtin/faas/pty_actions.py` | PTY creation, ShellRecord creation/update, replay/attach routes |
-| `flow_sdk/core/entity/entity_model.py` | `Entity.from_record()`, `get_record()`, `store()`, refresh |
-| `flow_sdk/db/drivers/sqlite/sqlite_driver.py` | SQLite entity persistence and legacy VFS migration |
+| File                                                                     | Role                                                                              |
+| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| `flow_sdk/fs_store/record.py`                                            | Base `Record`, direct-attribute storage, folder save/load, sync helpers           |
+| `flow_sdk/fs_store/record_ref.py`                                        | `RecordRef` / `RecordDataRef` helpers                                             |
+| `flow_sdk/fs_store/record_types.py`                                      | `RecordType` constants                                                            |
+| `flow_sdk/fs_records/claude/claude_session.py`                           | `ClaudeSessionRecord`, lazy stats, transcript entries, status from `_tail_status` |
+| `flow_sdk/fs_records/claude/claude_active_session.py`                    | Active-session lightweight record                                                 |
+| `flow_sdk/fs_records/claude/claude_transcript_entry.py`                  | Transcript entry re-exports                                                       |
+| `flow_sdk/fs_records/claude/transcript_records/`                         | Type-specific Claude transcript record parsers                                    |
+| `flow_sdk/fs_records/agent_status.py`                                    | `WorkerStatus`, status helper sets, `_tail_status()`                              |
+| `flow_sdk/fs_records/agentic_process_lifecycle.py`                       | `ProcessStatus` and process lifecycle helper sets                                 |
+| `flow_sdk/fs_records/agentic_process_record.py`                          | `AgenticProcessRecord`, execution folders, legacy field migration                 |
+| `flow_sdk/fs_records/shell_record.py`                                    | `ShellRecord`, `ShellStatus`, durable `.pty` stream path                          |
+| `flow_sdk/builtin/agentic_process/agentic_process.py`                    | DB-backed `AgenticProcess` entity, mode routing, status projection                |
+| `flow_sdk/builtin/agentic_process/status_predicates.py`                  | `WorkerMode`, readiness predicate, status helper imports                          |
+| `flow_sdk/builtin/agentic_process/cli_drivers/claude/driver.py`          | Claude driver, headless print-mode execution, transcript path/history             |
+| `flow_sdk/builtin/agentic_process/cli_drivers/claude/stream_worker.py`   | `claude -p --output-format stream-json` subprocess worker                         |
+| `flow_sdk/builtin/agentic_process/cli_drivers/claude/session_history.py` | JSONL-to-FlowData history loading                                                 |
+| `flow_sdk/builtin/agentic_process/cli_drivers/claude/cli.py`             | `ClaudeCliOptions`, `--session-id`, `--resume`, `--fork-session` args             |
+| `flow_sdk/builtin/shell.py`                                              | DB-backed `Shell` entity, PTY launch/read/write/runtime checks                    |
+| `flow_sdk/builtin/faas/pty_actions.py`                                   | PTY creation, ShellRecord creation/update, replay/attach routes                   |
+| `flow_sdk/core/entity/entity_model.py`                                   | `Entity.from_record()`, `get_record()`, `store()`, refresh                        |
+| `flow_sdk/db/drivers/sqlite/sqlite_driver.py`                            | SQLite entity persistence and legacy VFS migration                                |
 
 ### TypeScript SDK
 
-| File | Role |
-|---|---|
-| `ts_sdk/src/resource_management/fs_records/fs-record.ts` | Client-side `FsRecord` base |
+| File                                                                 | Role                                                               |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `ts_sdk/src/resource_management/fs_records/fs-record.ts`             | Client-side `FsRecord` base                                        |
 | `ts_sdk/src/resource_management/fs_records/claude/claude-session.ts` | `ClaudeSessionRecord` and deprecated `ClaudeSessionFsRecord` alias |
-| `ts_sdk/src/process/agentic-process.ts` | Client-side `AgenticProcess` entity wrapper |
-| `ts_sdk/src/process/agentic-types.ts` | `ProcessStatus`, `WorkerStatus`, `WorkerMode`, readiness helpers |
-| `ts_sdk/src/IEntity.ts` | Base entity interface with legacy VFS fields |
+| `ts_sdk/src/process/agentic-process.ts`                              | Client-side `AgenticProcess` entity wrapper                        |
+| `ts_sdk/src/process/agentic-types.ts`                                | `ProcessStatus`, `WorkerStatus`, `WorkerMode`, readiness helpers   |
+| `ts_sdk/src/IEntity.ts`                                              | Base entity interface with legacy VFS fields                       |
+
