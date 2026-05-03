@@ -105,3 +105,88 @@ export async function createProjectConversation(
   const res = await dataManager.callAction<CreateProjectConversationParams, CreateProjectConversationResult>(action);
   return res!;
 }
+
+// ---------------------------------------------------------------------------
+// Hub-mirrored conversations (Entity.remote === true).
+// ---------------------------------------------------------------------------
+
+export interface HubConversationParticipantInput {
+  /** Either the hub user id (when address_type='id') or an email address. */
+  address: string;
+  address_type: 'id' | 'email';
+}
+
+export interface CreateHubConversationParams {
+  participants: HubConversationParticipantInput[];
+  /** First message text. */
+  initial_text?: string;
+  title?: string;
+}
+
+export interface CreateHubConversationResult {
+  conversation_id: string;
+  invitations: Array<{ id: string; recipient_email: string }>;
+}
+
+/** Create a conversation that lives on the hub and is mirrored locally with `remote=true`. */
+export async function createHubConversation(
+  params: CreateHubConversationParams,
+): Promise<CreateHubConversationResult> {
+  const action = new ActionInfo('conversation-start-hub', null, null, 'POST');
+  action.bodyParameters = params;
+  const res = await dataManager.callAction<CreateHubConversationParams, CreateHubConversationResult>(action);
+  return res!;
+}
+
+export interface SyncFromHubResult {
+  invitations: number;
+  conversations: number;
+  flow_messages: number;
+}
+
+/** Pull pending invitations + accessible conversations from the hub. */
+export async function syncFromHub(): Promise<SyncFromHubResult> {
+  const action = new ActionInfo('conversation-sync', null, null, 'POST');
+  action.bodyParameters = {};
+  const res = await dataManager.callAction<Record<string, never>, SyncFromHubResult>(action);
+  return res!;
+}
+
+export interface AddRemoteMessageParams {
+  conversation_id: string;
+  text: string;
+}
+
+export interface AddRemoteMessageResult {
+  flow_message_id: string | null;
+  conversation_id: string;
+}
+
+/** Add a message to a hub-mirrored conversation. */
+export async function addRemoteMessage(
+  params: AddRemoteMessageParams,
+): Promise<AddRemoteMessageResult> {
+  const action = new ActionInfo('conversation-add-remote-message', null, null, 'POST');
+  action.bodyParameters = params;
+  const res = await dataManager.callAction<AddRemoteMessageParams, AddRemoteMessageResult>(action);
+  return res!;
+}
+
+export interface AcceptInvitationParams {
+  invitation_id: string;
+}
+
+export interface AcceptInvitationResult {
+  invitation_id: string;
+  synced: SyncFromHubResult;
+}
+
+/** Accept a pending invitation on the hub, then sync to materialize the conversation. */
+export async function acceptInvitation(
+  params: AcceptInvitationParams,
+): Promise<AcceptInvitationResult> {
+  const action = new ActionInfo('invitation-accept', null, null, 'POST');
+  action.bodyParameters = params;
+  const res = await dataManager.callAction<AcceptInvitationParams, AcceptInvitationResult>(action);
+  return res!;
+}
