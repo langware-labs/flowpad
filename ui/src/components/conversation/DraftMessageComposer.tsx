@@ -200,28 +200,10 @@ export function DraftMessageComposer({
           onDragLeave={onDragLeave}
           onDrop={onDrop}
           className={cn(
-            'flex items-end gap-2 rounded-md border border-border bg-background px-2 py-1.5 transition-colors focus-within:border-primary/50',
+            'flex flex-col gap-1.5 rounded-md border border-border bg-background px-2 py-1.5 transition-colors focus-within:border-primary/50',
             dragging && 'border-primary bg-primary/5',
           )}
         >
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isBusy}
-            title="Attach files"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
-          >
-            <Paperclip className="h-3.5 w-3.5" />
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            disabled={isBusy}
-            onChange={(e) => addFiles(e.target.files)}
-            onClick={(e) => ((e.target as HTMLInputElement).value = '')}
-          />
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -229,43 +211,65 @@ export function DraftMessageComposer({
             placeholder={dragging ? 'Drop files here' : 'Edit your draft…'}
             rows={Math.max(2, Math.min(10, text.split('\n').length + 1))}
             disabled={isBusy}
-            className="min-h-[1.5rem] flex-1 resize-none bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full min-h-[2.5rem] resize-none bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
           />
-          {canAddPrompt && (
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => setShowPromptDialog(true)}
+              onClick={() => fileInputRef.current?.click()}
               disabled={isBusy}
-              title={queuedPrompt ? 'Edit attached prompt' : 'Suggest a prompt for the other user to approve'}
-              className={cn(
-                'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors disabled:opacity-40',
-                queuedPrompt
-                  ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-300'
-                  : 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300',
-              )}
+              title="Attach files"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
             >
-              <MessageSquarePlus className="h-3 w-3" />
-              {queuedPrompt ? 'Edit prompt' : 'Suggest prompt'}
+              <Paperclip className="h-3.5 w-3.5" />
             </button>
-          )}
-          <button
-            type="button"
-            onClick={handleSend}
-            disabled={!canSend}
-            title="Send"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
-          >
-            <Send className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleDiscard()}
-            disabled={isBusy}
-            title="Discard draft"
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              disabled={isBusy}
+              onChange={(e) => addFiles(e.target.files)}
+              onClick={(e) => ((e.target as HTMLInputElement).value = '')}
+            />
+            {canAddPrompt && (
+              <button
+                type="button"
+                onClick={() => setShowPromptDialog(true)}
+                disabled={isBusy}
+                title={queuedPrompt ? 'Edit attached prompt' : 'Suggest a prompt for the other user to approve'}
+                className={cn(
+                  'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors disabled:opacity-40',
+                  queuedPrompt
+                    ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-300'
+                    : 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300',
+                )}
+              >
+                <MessageSquarePlus className="h-3 w-3" />
+                {queuedPrompt ? 'Edit prompt' : 'Suggest prompt'}
+              </button>
+            )}
+            <div className="ml-auto flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => void handleDiscard()}
+                disabled={isBusy}
+                title="Discard draft"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={handleSend}
+                disabled={!canSend}
+                title="Send"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+              >
+                <Send className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
         </div>
 
         {canAddPrompt && queuedPrompt && (
