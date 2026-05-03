@@ -788,4 +788,4 @@ debug_file_path = os.path.join(FLOWPAD_TEMP_DIR, "debug.log")
 
 # Environment variable constants (for consumers that import these)
 GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", None)
-DEVELOPMENT = os.getenv("DEVELOPMENT", False)
+DEVELOPMENT = os.getenv("FLOWPAD_DEV", False)

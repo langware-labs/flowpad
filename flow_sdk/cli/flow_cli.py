@@ -506,7 +506,7 @@ def auth_test(delay: Annotated[int, typer.Option(help="Delay in seconds before a
     port = _discover_port()
 
     # Build the test login URL with callback and delay
-    callback_url = f"http://127.0.0.1:{port}/api/v1/cloud/login_callback"
+    callback_url = f"http://127.0.0.1:{port}/api/v1/cloud/post_login"
     test_login_url = f"http://127.0.0.1:{port}/api/v1/cloud/test_login?callback={callback_url}&delay={delay}"
 
     typer.echo(f"\n🧪 Opening test login page with {delay} second delay...")

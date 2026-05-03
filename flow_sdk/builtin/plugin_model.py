@@ -527,7 +527,7 @@ class Plugin(Entity):
             if not self.name:
                 raise ValueError("Plugin name not found")
             self.manifest_ = await PluginManifest.get_by_name(self.name)
-        DEVELOPMENT = os.getenv("DEVELOPMENT", False)
+        DEVELOPMENT = os.getenv("FLOWPAD_DEV", False)
         if not self.manifest_ and DEVELOPMENT:  # allow non installed manifests on development
             if not self.name:
                 raise ValueError("Plugin name not found")
