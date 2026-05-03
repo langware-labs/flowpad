@@ -198,7 +198,7 @@ async def _get_flowpad_cloud_oauth_auth() -> ApiResponse:
     from flow_sdk.instance_settings import get_instance_settings
 
     public_url = os.environ.get("FLOWPAD_DOCKER_PUBLIC_URL", "").strip()
-    callback_path = "/api/v1/cloud/login_callback"
+    callback_path = "/api/v1/cloud/post_login"
     if public_url:
         callback_url = f"{public_url}{callback_path}"
     else:

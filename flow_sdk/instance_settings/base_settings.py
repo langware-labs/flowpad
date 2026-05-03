@@ -143,8 +143,8 @@ class BaseInstanceSettings:
             claude_mcp_json_path=claude_home / "mcp.json",
             claude_settings_json_path=claude_home / "settings.json",
             claude_managed_settings_path=claude_home / "managed-settings.json",
-            cloud_user_email=os.environ.get("CLOUD_USER_EMAIL") or None,
-            cloud_user_pass=os.environ.get("CLOUD_USER_PASS") or None,
+            cloud_user_email=os.environ.get("FLOWPAD_CLOUD_USER_EMAIL") or None,
+            cloud_user_pass=os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD") or None,
             cloud_login_timeout_seconds=cls._resolve_login_timeout(),
         )
 

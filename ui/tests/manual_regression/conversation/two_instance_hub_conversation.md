@@ -20,7 +20,7 @@ This scenario does **not** rely on real email — addressing is by hub `user.id`
   - **Instance B (prod)** — `flowpad-app` (sister) checkout. Backend on
     `$LOCAL_SERVER_PORT_B` (e.g. 9007), Vite on `$VITE_PORT_B` (e.g. 4097).
 - Each repo's `.env.local` has `FLOWPAD_HUB_URL=http://localhost:8093` and
-  the env-mode auto-login pair `CLOUD_USER_EMAIL` + `CLOUD_USER_PASS`
+  the env-mode auto-login pair `FLOWPAD_CLOUD_USER_EMAIL` + `FLOWPAD_CLOUD_USER_PASSWORD`
   (alice@local.test/alice-pw-1234 in A; bob@local.test/bob-pw-1234 in B).
 - Local hub running at `http://localhost:8093` with policies & WIP code
   containing `start_guest_conversation` (project.py) and the `flow_message`
