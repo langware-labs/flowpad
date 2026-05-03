@@ -160,7 +160,7 @@ export function PTYEventsViewer({ open, onClose, shell }: Props) {
     <Dialog open={open} onOpenChange={(v) => { if (!v) { setSelected(null); onClose(); } }}>
       <DialogContent className={`flex flex-col ${expanded ? 'max-w-[95vw] max-h-[95vh]' : 'max-w-4xl max-h-[85vh]'}`}>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-sm">
+          <DialogTitle className="flex items-center gap-2 pr-8 text-sm">
             <Zap className="h-3.5 w-3.5 text-amber-400" />
             PTY Events
             {shell && <span className="text-xs text-muted-foreground font-mono">{shell.id.slice(0, 8)}</span>}
