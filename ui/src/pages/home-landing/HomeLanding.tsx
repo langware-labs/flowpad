@@ -39,6 +39,7 @@ import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { resolveConversationDockPointer } from '@src/navigation/conversation-route-resolver';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type React from 'react';
 import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
@@ -110,10 +111,6 @@ export function HomeLanding() {
           // Has a REPO attachment — show pull/clone dialog
           setPendingTask({ taskId, taskTitle, senderName, projectUrl, branch, repoId });
         } else {
-          // No REPO attachments — try to land on the conversation route directly,
-          // since that's the new home for shared-task message threads. Fall back
-          // to the task route only if the task hasn't been materialised yet
-          // (its conversation_id will fill in on the next refresh).
           void (async () => {
             try {
               const { dataManager, Task, TypeId } = await import('@sdk');
@@ -121,8 +118,15 @@ export function HomeLanding() {
                 .getByTypeId<import('@sdk').Task>(new TypeId(Task.type, taskId))
                 .catch(() => null);
               const convTypeId = task?.firstContextOfType?.('conversation');
-              if (convTypeId) {
-                navigation.openDock(DockPointer.forConversation(convTypeId.id));
+              const convId = convTypeId?.id ?? task?.conversation_id ?? null;
+              if (convId) {
+                navigation.openDock(
+                  resolveConversationDockPointer({
+                    conversationId: convId,
+                    taskId: task?.id ?? taskId,
+                    projectId: task?.project_id ?? null,
+                  }),
+                );
                 return;
               }
             } catch {

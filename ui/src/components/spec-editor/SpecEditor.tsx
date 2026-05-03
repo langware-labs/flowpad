@@ -286,6 +286,7 @@ const PlanFileEditor: React.FC = () => {
         planFilePath={filePath}
         planContent={fileContent}
         workdir={agenticProcess?.workdir}
+        processId={agenticProcess?.id}
       />
 
       {/* Editor body */}

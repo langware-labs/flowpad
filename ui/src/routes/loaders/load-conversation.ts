@@ -9,7 +9,7 @@
  *   - Writes `dataContext`:
  *       - CurrentProjectTypeId  — from task.project_id when known
  *       - CurrentActiveEntityTypeId — to the conversation itself
- *       - workdir              — from task.metadata.project_root when known
+ *       - workdir              — from task.project_root when known
  *
  * Wrapper `loadConversationRoute(pointer)` is the URL-aware shell. Mirrors
  * the load-shell / load-project two-layer split: the primitive doesn't know
@@ -60,9 +60,8 @@ export async function loadConversation(conversationId: string): Promise<Conversa
     task = await dataManager.getByTypeId<Task>(taskTypeId).catch(() => null);
   }
 
-  const taskMeta = (task?.metadata as Record<string, unknown> | undefined) ?? {};
   const projectId = task?.project_id ?? undefined;
-  const projectRoot = taskMeta.project_root as string | undefined;
+  const projectRoot = task?.project_root ?? undefined;
 
   // Active entity = the conversation. Same pattern as the session view's
   // setActiveEntity for AgenticProcess.

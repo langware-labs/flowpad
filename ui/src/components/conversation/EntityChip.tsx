@@ -85,6 +85,9 @@ function resolveTypeAndId(entity: EntityChipEntity): { type: string; id: string 
     if (raw.type && raw.id) return { type: raw.type, id: raw.id };
   }
   if (entity.type && entity.id) return { type: entity.type, id: String(entity.id) };
+  // Type without id is fine for "decorative" chips (Approve & Execute, prompt
+  // preview) — they get the type's icon + style but no navigation target.
+  if (entity.type) return { type: entity.type, id: '' };
   return null;
 }
 
@@ -95,13 +98,15 @@ function resolveTypeAndId(entity: EntityChipEntity): { type: string; id: string 
  * `<EntityChip entity={project} inside={conversation} />` rendered inside
  * a Conversation view jumps to `/dock/project/<id>/conversation/<id>`.
  *
- * When `inside` is omitted it falls back to the bare entity URL.
+ * When `inside` is omitted it falls back to the bare entity URL. When the
+ * entity has no id (decorative use, e.g. an "Approve & Execute" prompt
+ * chip) the chip looks the same but only fires `onClick`.
  */
 export function EntityChip({ entity, inside, onClick, title, size = 'chip' }: EntityChipProps) {
   const { navigation } = useDockNavigation();
   const resolved = resolveTypeAndId(entity);
   const Icon = entity.icon ?? (resolved ? ICON_BY_TYPE[resolved.type] : undefined) ?? ExternalLink;
-  const label = entity.name ?? (resolved?.id ?? '(unnamed)');
+  const label = entity.name ?? (resolved?.id || '(unnamed)');
   const typeStyle = (resolved && STYLE_BY_TYPE[resolved.type]) ?? DEFAULT_STYLE;
   const tooltip = title ?? (resolved ? `Open in ${resolved.type}` : `Open ${label}`);
 
@@ -111,8 +116,8 @@ export function EntityChip({ entity, inside, onClick, title, size = 'chip' }: En
         onClick();
         return;
       }
-      if (!resolved) return;
-      const pointer = buildDockPointer(resolved, inside);
+      if (!resolved || !resolved.id) return;
+      const pointer = buildDockPointer(resolved as { type: string; id: string }, inside);
       if (pointer) navigation.openDock(pointer);
     };
   }, [onClick, resolved, inside, navigation]);

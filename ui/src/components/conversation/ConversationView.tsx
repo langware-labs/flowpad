@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Conversation, dataManager, FlowMessage, TypeId } from '@sdk';
-import { useEntity } from '@sdk/react/hooks';
+import { Conversation, dataManager, FlowMessage, QueryFilter, QueryRequest, TypeId } from '@sdk';
+import { useEntitiesQuery, useEntity } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { openInboxMessage } from '@src/components/inbox-view/inbox-api';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { MessageComposer } from './MessageComposer';
-import { useApproveAndExecute } from './useApproveAndExecute';
+import { useApproveAndExecutePty } from './useApproveAndExecutePty';
+import { useApproveAndExecuteHeadless } from './useApproveAndExecuteHeadless';
+import { useLocalUser } from './useLocalUser';
+import { ConversationMode } from './conversation-mode';
+import { buildConversationItems, ConversationItemKind } from './conversation-items';
+
+export { ConversationMode } from './conversation-mode';
 
 interface ConversationViewProps {
   conversationId: string;
@@ -14,6 +20,7 @@ interface ConversationViewProps {
   senderName?: string;
   /** Wraps any action that needs a `cwd`/project. Provided by the parent (SharedTaskView / TaskDetailPanel). */
   ensureMapped?: (continuation: () => void | Promise<void>) => void;
+  mode?: ConversationMode;
 }
 
 export function ConversationView({
@@ -21,12 +28,39 @@ export function ConversationView({
   task,
   senderName: _senderName,
   ensureMapped,
+  mode = ConversationMode.HEADLESS,
 }: ConversationViewProps) {
   const { data: conversation, refetch } = useEntity<Conversation>(
     new TypeId(Conversation.type, conversationId),
   );
+  const { localUser } = useLocalUser();
 
   const pointers = conversation?.conversationMessageIds ?? [];
+
+  // Local-only drafts attached to this conversation. Filtered to the local
+  // user so a counterparty's stray draft never renders here. Match is built
+  // as an explicit $AND/$EQ tree — the SDK's multi-key plain-object shorthand
+  // doesn't recursively wrap operands, which makes real-time validate() crash.
+  const draftsRequest = useMemo(() => {
+    const eqClauses: Array<{ op: string; operands: unknown[] }> = [
+      { op: '$EQ', operands: ['conversation_id', conversationId] },
+      { op: '$EQ', operands: ['is_draft', true] },
+    ];
+    if (localUser?.id) {
+      eqClauses.push({ op: '$EQ', operands: ['sender_id', localUser.id] });
+    }
+    return new QueryRequest({
+      type: FlowMessage.type,
+      scope: [],
+      name: `drafts:${conversationId}`,
+      query: new QueryFilter({
+        match: { op: '$AND', operands: eqClauses } as Record<string, unknown>,
+      }),
+    });
+  }, [conversationId, localUser?.id]);
+  const { data: draftMessages = [] } = useEntitiesQuery<FlowMessage>(draftsRequest, {
+    enabled: !!conversationId,
+  });
 
   // Backfill missing FlowMessage entities. `backfilledIds` tracks ids whose
   // bundle finished unpacking — adding an id flips the bubble's React key,
@@ -74,36 +108,59 @@ export function ConversationView({
   // task is present so we can keep the call unconditional, then suppress the
   // approve action below.
   const inertTask = useMemo(() => ({ id: '', metadata: {} }) as ITask, []);
-  const { approveAndExecute } = useApproveAndExecute({ task: task ?? inertTask });
+  const { approveAndExecute: approveAndExecutePty } = useApproveAndExecutePty({ task: task ?? inertTask });
+  const { approveAndExecute: approveAndExecuteHeadless } = useApproveAndExecuteHeadless({ task: task ?? inertTask });
 
   const runApprove = useCallback(
     (messageId: string, idx: number) => {
       if (!task) return;
       const action = async () => {
-        await approveAndExecute(messageId, idx);
+        if (mode === ConversationMode.HEADLESS) {
+          await approveAndExecuteHeadless(messageId, idx);
+        } else {
+          await approveAndExecutePty(messageId, idx);
+        }
         void refetch();
       };
       if (ensureMapped) ensureMapped(action);
       else void action();
     },
-    [approveAndExecute, refetch, ensureMapped, task],
+    [approveAndExecuteHeadless, approveAndExecutePty, mode, refetch, ensureMapped, task],
+  );
+
+  const orderedItems = useMemo(
+    () => buildConversationItems(pointers, draftMessages, backfilledIds),
+    [pointers, backfilledIds, draftMessages],
   );
 
   return (
     <div className="space-y-3">
-      {pointers.length === 0 ? (
+      {orderedItems.length === 0 ? (
         <p className="text-xs italic text-muted-foreground/60">No messages yet.</p>
       ) : (
         <div className="flex flex-col gap-3">
-          {pointers.map((ptr) => (
-            <FlowMessageBubble
-              key={backfilledIds.has(ptr.message_id) ? `${ptr.message_id}:resolved` : ptr.message_id}
-              messageId={ptr.message_id}
-              timestamp={ptr.timestamp}
-              task={task}
-              onApproveAndExecute={task ? runApprove : undefined}
-            />
-          ))}
+          {orderedItems.map((item) =>
+            item.kind === ConversationItemKind.POINTER ? (
+              <FlowMessageBubble
+                key={item.key}
+                messageId={item.messageId}
+                timestamp={item.timestamp}
+                task={task}
+                onApproveAndExecute={task ? runApprove : undefined}
+              />
+            ) : (
+              <FlowMessageBubble
+                key={item.key}
+                messageId={item.draft.id ?? ''}
+                timestamp={item.draft.created_date instanceof Date
+                  ? item.draft.created_date.toISOString()
+                  : (item.draft.created_date ?? '')}
+                task={task}
+                isDraft
+                onDraftSent={() => void refetch()}
+              />
+            ),
+          )}
         </div>
       )}
 

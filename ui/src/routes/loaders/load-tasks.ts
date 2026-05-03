@@ -6,7 +6,7 @@
  *   - Sets `dataContext`:
  *       - CurrentProjectTypeId  — from task.project_id (or null when unmapped)
  *       - CurrentActiveEntityTypeId — to the task itself
- *       - workdir              — from task.metadata.project_root when known
+ *       - workdir              — from task.project_root when known
  *   - Prefetches the Project entity into the cache so the footer label /
  *     `useEntity(Project, …)` reads are warm on first paint.
  *
@@ -53,9 +53,8 @@ export async function loadTask(taskId: string): Promise<Task> {
     throw new TaskLoadError('not_found', taskId);
   }
 
-  const taskMeta = (task.metadata as Record<string, unknown> | undefined) ?? {};
   const projectId = task.project_id ?? undefined;
-  const projectRoot = taskMeta.project_root as string | undefined;
+  const projectRoot = task.project_root ?? undefined;
 
   // Active entity = the task. Mirrors how load-project sets the project as
   // the active entity for /dock/project/<id> and load-conversation sets the

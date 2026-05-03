@@ -44,6 +44,8 @@ export interface IFlowMessage extends IEntity {
   // NOTE: ``context`` (string[]) was renamed and consolidated into the
   // unified ``context_entities`` on IEntity. Read via
   // ``msg.contextEntities`` / ``msg.firstContextOfType('task')``.
+  /** Local-only draft message: not appended to conversation.jsonl, not pushed to hub. Flips to false on send-draft. */
+  is_draft?: boolean;
 }
 
 @registerEntity
@@ -59,6 +61,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   conversation_id?: string | null;
   is_read?: boolean;
   is_archived?: boolean;
+  is_draft?: boolean;
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -74,6 +77,14 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.conversation_id = entity.conversation_id;
     this.is_read = entity.is_read ?? false;
     this.is_archived = entity.is_archived ?? false;
+    this.is_draft = entity.is_draft ?? false;
+  }
+
+  /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */
+  async sendDraft(): Promise<{ flow_message_id: string; conversation_id: string; message_count: number }> {
+    const action = new ActionInfo('send-draft', 'flow_message', this.id ?? null, 'POST');
+    const res = await dataManager.callAction<unknown, { flow_message_id: string; conversation_id: string; message_count: number }>(action);
+    return res!;
   }
 }
 

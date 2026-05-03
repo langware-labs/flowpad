@@ -51,6 +51,8 @@ from flow_sdk.builtin.bookmark import Bookmark
 
 logger = logging.getLogger(__name__)
 
+PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT = "Please run the following prompt:"
+
 
 def _unique_dir_name(base_name: str, parent: Path) -> str:
     """Return a directory name that doesn't already exist under parent."""
@@ -155,42 +157,49 @@ async def _create_spec_and_task(
     project_name: Optional[str] = None,
     project_root: Optional[str] = None,
     sender_process_id: Optional[str] = None,
-) -> tuple[Spec, Task]:
-    """Create Spec + Task entities locally and register the task on the hub."""
-    spec_payload: dict = {
-        "title": spec_title,
-        "content": spec_content,
-        "spec_type": spec_type,
-        "author_id": sender_id,
-    }
-    if plan_id:
-        # plan_id consolidated into ``context_entities``.
-        spec_payload["context_entities"] = [f"plan-{plan_id}"]
-    spec = Spec.model_validate(spec_payload)
-    spec.id = Spec.allocate_id(spec.model_dump())
-    spec = await spec.save(someone_typeid)
+    forked_process_id: Optional[str] = None,
+) -> tuple[Optional[Spec], Task]:
+    """Create Task (and optionally Spec) entities locally and register the task on the hub.
 
-    task_meta: dict = {
+    The Spec is skipped when both `spec_title` and `spec_content` are blank
+    — used by the "I need help" flow where the recipient drives the task with
+    a PROMPT reply rather than a written specification.
+    """
+    spec: Optional[Spec] = None
+    spec_id: Optional[str] = None
+    if spec_title or spec_content:
+        spec_payload: dict = {
+            "title": spec_title,
+            "content": spec_content,
+            "spec_type": spec_type,
+            "author_id": sender_id,
+        }
+        if plan_id:
+            # plan_id consolidated into ``context_entities``.
+            spec_payload["context_entities"] = [f"plan-{plan_id}"]
+        spec = Spec.model_validate(spec_payload)
+        spec.id = Spec.allocate_id(spec.model_dump())
+        spec = await spec.save(someone_typeid)
+        spec_id = spec.id
+
+    task_payload: dict = {
+        "title": task_title,
+        "shared_by_id": sender_id,
         "sender_name": sender_name,
         "sender_email": sender_email,
         "recipient_email": recipient_email or "",
-    }
-    if team_space_id:
-        task_meta["team_space_id"] = team_space_id
-    if project_name:
-        task_meta["project_name"] = project_name
-    if project_root:
-        task_meta["project_root"] = project_root
-    task = Task.model_validate({
-        "title": task_title,
-        "shared_by_id": sender_id,
-        "metadata": task_meta,
+        "team_space_id": team_space_id or None,
+        "project_name": project_name or None,
+        "project_root": project_root or None,
         "project_id": project_id,
         "spec_type": spec_type,
         "my_process_id": sender_process_id,
+        "shared_process_id": forked_process_id,
+    }
+    if spec_id:
         # spec_id consolidated into ``context_entities``.
-        "context_entities": [f"spec-{spec.id}"],
-    })
+        task_payload["context_entities"] = [f"spec-{spec_id}"]
+    task = Task.model_validate(task_payload)
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
 
@@ -211,7 +220,7 @@ async def _create_spec_and_task(
 
 async def _create_conversation_and_fm(
     *,
-    spec: Spec,
+    spec: Optional[Spec],
     task: Task,
     task_dir: Path,
     sender_id: Optional[str],
@@ -248,12 +257,15 @@ async def _create_conversation_and_fm(
         "conversation_id": conv.id,
     })
     fm.id = FlowMessage.allocate_id(fm.model_dump())
-    fm.attachment = [
-        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.SPEC.value, id=spec.id))),
+    attachments: list[Attachment] = []
+    if spec:
+        attachments.append(Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.SPEC.value, id=spec.id))))
+    attachments.extend([
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.TASK.value, id=task.id))),
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))),
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm.id))),
-    ]
+    ])
+    fm.attachment = attachments
     fm = await fm.save(someone_typeid)
 
     fm_ts = datetime.now(UTC).isoformat()
@@ -277,7 +289,7 @@ async def _create_conversation_and_fm(
 async def _write_task_to_git(
     *,
     project_root: Path,
-    spec: Spec,
+    spec: Optional[Spec],
     task: Task,
     spec_title: str,
     spec_type: str,
@@ -290,25 +302,27 @@ async def _write_task_to_git(
     repo_id_val: str,
     someone_typeid: str,
 ) -> tuple[Conversation, "FlowMessage", str, str]:
-    """Write spec.md, manifest.json, conversation.jsonl; create Conversation + FlowMessage.
+    """Write spec.md (when present), manifest.json, conversation.jsonl; create Conversation + FlowMessage.
 
-    Returns (conv, fm, spec_file_path, branch_at_write).
+    Returns (conv, fm, spec_file_path, branch_at_write). `spec_file_path` is
+    "" when there is no Spec ("I need help" flow).
     """
     tasks_root = Path(project_root) / "tasks"
-    spec_root = tasks_root / "spec"
-
-    spec_dir_name = _unique_dir_name(_meaningful_name(spec_title), spec_root)
     task_dir_name = _unique_dir_name(_meaningful_name(task_title), tasks_root)
 
-    spec_file_path = f"tasks/spec/{spec_dir_name}/spec.md"
-
-    spec_dir = spec_root / spec_dir_name
-    spec_dir.mkdir(parents=True, exist_ok=True)
-    (spec_dir / "spec.md").write_text(
-        f"---\ntitle: \"{spec_title}\"\nspec_type: {spec_type}\n"
-        f"spec_id: {spec.id}\nauthor_id: {sender_id or ''}\nplan_id: {plan_id or ''}\n---\n\n{spec.content}",
-        encoding="utf-8",
-    )
+    spec_file_path = ""
+    spec_dir_name = ""
+    if spec:
+        spec_root = tasks_root / "spec"
+        spec_dir_name = _unique_dir_name(_meaningful_name(spec_title), spec_root)
+        spec_file_path = f"tasks/spec/{spec_dir_name}/spec.md"
+        spec_dir = spec_root / spec_dir_name
+        spec_dir.mkdir(parents=True, exist_ok=True)
+        (spec_dir / "spec.md").write_text(
+            f"---\ntitle: \"{spec_title}\"\nspec_type: {spec_type}\n"
+            f"spec_id: {spec.id}\nauthor_id: {sender_id or ''}\nplan_id: {plan_id or ''}\n---\n\n{spec.content}",
+            encoding="utf-8",
+        )
 
     task_dir = tasks_root / task_dir_name
     task_dir.mkdir(parents=True, exist_ok=True)
@@ -325,12 +339,11 @@ async def _write_task_to_git(
     )
 
     branch_at_write = git_current_branch(project_root)
-    task_meta = task.metadata or {}
     (task_dir / "manifest.json").write_text(
         _json.dumps({
             "task_id": task.id,
             "title": task_title,
-            "spec_id": spec.id,
+            "spec_id": spec.id if spec else "",
             "spec_dir": spec_dir_name,
             "shared_by_id": sender_id,
             "sender_name": sender_name,
@@ -339,7 +352,7 @@ async def _write_task_to_git(
             "repo_id": repo_id_val,
             "branch": branch_at_write,
             "project_id": task.project_id or "",
-            "project_name": task_meta.get("project_name") or "",
+            "project_name": task.project_name or "",
             "spec_type": task.spec_type or "",
         }, indent=2, default=str),
         encoding="utf-8",
@@ -350,7 +363,7 @@ async def _write_task_to_git(
 
 async def _create_local_conversation_and_fm(
     *,
-    spec: Spec,
+    spec: Optional[Spec],
     task: Task,
     task_title: str,
     sender_id: Optional[str],
@@ -397,7 +410,7 @@ async def _send_hub_notification(
     sender_id: Optional[str],
     sender_name: str,
     task: Task,
-    spec: Spec,
+    spec: Optional[Spec],
     message: Optional[str],
     project_url: str,
     repo_id_val: str,
@@ -418,7 +431,6 @@ async def _send_hub_notification(
     # the same key, so a receiver missing this message can call
     # `inbox-open(message_id)` and the hub answers without any hub_id mapping.
     flow_message_id = fm.id if fm else str(uuid.uuid4())
-    task_meta = task.metadata or {}
     hub_flow_message_id: Optional[str] = None
     email_error: Optional[str] = None
     try:
@@ -429,17 +441,17 @@ async def _send_hub_notification(
             "sender_name": sender_name,
             "task_id": task.id,
             "task_title": task_title,
-            "spec_id": spec.id,
-            "spec_title": spec.title,
-            "spec_content": spec.content or None,
-            "spec_type": spec.spec_type,
+            "spec_id": spec.id if spec else None,
+            "spec_title": spec.title if spec else None,
+            "spec_content": (spec.content or None) if spec else None,
+            "spec_type": (spec.spec_type if spec else None) or task.spec_type,
             "message": message,
             "project_url": project_url,
             "repo_id": repo_id_val,
             "branch": branch,
             "spec_file_path": spec_file_path,
             "project_id": task.project_id or None,
-            "project_name": task_meta.get("project_name") or None,
+            "project_name": task.project_name or None,
         }, action="send")
     except HubError as e:
         # Hub returned non-2xx (e.g. 401 unauthorized) or transport error.
@@ -556,11 +568,15 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     project_path = (body.get("project_path") or "").strip() or None
     team_space_id = (body.get("team_space_id") or "").strip() or None
     sender_process_id = (body.get("sender_process_id") or "").strip() or None
+    forked_process_id = (body.get("forked_process_id") or "").strip() or None
 
     if not recipient_id:
         return ApiFailResponse(message="recipient_id is required")
-    if not spec_title:
-        return ApiFailResponse(message="spec_title is required")
+    # No-spec flow ("I need help"): both spec fields blank — require task_title instead.
+    if not spec_title and not spec_content and not task_title:
+        return ApiFailResponse(message="task_title is required when spec_title and spec_content are blank")
+    if spec_title and not task_title:
+        task_title = spec_title
 
     try:
         recipient_email, resolved_recipient_id = await _resolve_recipient(recipient_id)
@@ -596,6 +612,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         project_name=project_name_val,
         project_root=str(project_root) if project_root else None,
         sender_process_id=sender_process_id,
+        forked_process_id=forked_process_id,
     )
 
     uploaded_files = body.get("files") or []
@@ -688,7 +705,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     return ApiSuccessResponse(data={
         "sent": bool(hub_flow_message_id),
         "email_error": email_error,
-        "spec_id": spec.id,
+        "spec_id": spec.id if spec else None,
         "task_id": task.id,
         "conversation_id": conv.id if conv else None,
         "notification_id": notification.id,
@@ -713,6 +730,7 @@ def _build_reply_flow_message(
     message: str,
     sender_id: Optional[str],
     sender_name: str,
+    is_draft: bool = False,
 ) -> "FlowMessage":
     """Build (but do not save) the FlowMessage entity for a conversation reply.
 
@@ -735,6 +753,7 @@ def _build_reply_flow_message(
         "sender_id": sender_id,
         "sender_name": sender_name,
         "conversation_id": conv_id,
+        "is_draft": is_draft,
     })
     reply_fm.id = FlowMessage.allocate_id(reply_fm.model_dump())
     attachments: list[Attachment] = []
@@ -861,10 +880,9 @@ def _resolve_reply_recipient_email(task: Task, local_user_id: str) -> str:
 
     Direction: if I am the original sender → deliver to recipient; otherwise → deliver to sender.
     """
-    task_meta = task.metadata or {}
     if task.shared_by_id and task.shared_by_id == local_user_id:
-        return task_meta.get("recipient_email") or ""
-    return task_meta.get("sender_email") or ""
+        return task.recipient_email or ""
+    return task.sender_email or ""
 
 
 async def _send_reply_to_hub(
@@ -925,6 +943,7 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     task_id = (body.get("task_id") or "").strip()
     conversation_id = (body.get("conversation_id") or "").strip()
     message = (body.get("message") or "").strip()
+    is_draft = bool(body.get("is_draft"))
     prompt_text_preview = (body.get("prompt_text") or "").strip()
     prompt_files_preview = body.get("prompt_files") or []
     if not isinstance(prompt_files_preview, list):
@@ -936,8 +955,9 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         return ApiFailResponse(message="message or prompt is required")
     if not message:
         # Synthesize a placeholder so the rest of the pipeline (which assumes a
-        # non-empty text body) keeps working for prompt-only sends.
-        message = "(proposed prompt)"
+        # non-empty text body) keeps working for prompt-only sends. The
+        # frontend suppresses the body when it matches this exact constant.
+        message = PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT
 
     task: Optional[Task] = None
     if task_id:
@@ -965,6 +985,7 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         message=message,
         sender_id=sender_id,
         sender_name=sender_name,
+        is_draft=is_draft,
     )
 
     uploaded_files = body.get("files") or []
@@ -982,6 +1003,17 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         await _attach_prompt(reply_fm, sender_id, prompt_text, prompt_files)
 
     reply_fm = await reply_fm.save(someone_typeid)
+
+    if is_draft:
+        # Local-only draft: skip jsonl append, hub push, and git commit.
+        # The UI surfaces the draft via an entity query on (conversation_id, is_draft=true).
+        return ApiSuccessResponse(data={
+            "task_id": effective_task_id or "",
+            "conversation_id": conv.id,
+            "message_count": conv.message_count,
+            "flow_message_id": reply_fm.id,
+            "is_draft": True,
+        })
 
     # Append pointer BEFORE packing the bundle so conversation.jsonl is up-to-date in the zip
     conv = await _append_message_to_conversation(
@@ -1006,7 +1038,7 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     _notify_ui_conversation_updated(conv.id, effective_task_id or "", reply_fm.id)
 
     if task:
-        project_root_str = (task.metadata or {}).get("project_root")
+        project_root_str = task.project_root
         if project_root_str:
             await git_add_commit_push(
                 Path(project_root_str),
