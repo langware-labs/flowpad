@@ -7,8 +7,9 @@ import { useMarkdownContent } from '@src/hooks/use-markdown-content';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { FSRef } from '@sdk';
+import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
-import { ChevronDown, ChevronRight, Eye, ExternalLink, FileCode, MessageSquareDiff, Pencil, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Eye, ExternalLink, FileCode, MessageSquareDiff, Pencil, RefreshCw } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -156,8 +157,15 @@ function MarkdownEditorContent({
   const dirPath = sourcePath.slice(0, sourcePath.lastIndexOf('/'));
 
   const handleOpenExternal = useCallback(() => {
-    navigator.clipboard.writeText(sourcePath).catch(() => {});
-  }, [sourcePath]);
+    void fsRef.open({ select: true });
+  }, [fsRef]);
+
+  const handleDownload = useCallback(() => {
+    void (async () => {
+      const content = await fsRef.read();
+      downloadFile({ name: fileName, content: new Blob([content], { type: 'text/markdown' }) });
+    })();
+  }, [fsRef, fileName]);
 
   const handleLinkClick = useCallback((href: string) => {
     // /dock/assets/wiki/<name> → keep the URL at the wiki form; the
@@ -186,6 +194,7 @@ function MarkdownEditorContent({
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           onOpenExternal={handleOpenExternal}
+          onDownload={handleDownload}
           actions={toolbar}
         />
         <div className="flex flex-1 items-center justify-center">
@@ -206,6 +215,7 @@ function MarkdownEditorContent({
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           onOpenExternal={handleOpenExternal}
+          onDownload={handleDownload}
           actions={toolbar}
         />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
@@ -229,6 +239,7 @@ function MarkdownEditorContent({
         viewMode={viewMode}
         onViewModeChange={setViewMode}
         onOpenExternal={handleOpenExternal}
+        onDownload={handleDownload}
         actions={toolbar}
       />
 
@@ -374,10 +385,11 @@ interface EditorHeaderProps {
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
   onOpenExternal: () => void;
+  onDownload?: () => void;
   actions?: React.ReactNode;
 }
 
-function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, onOpenExternal, actions }: EditorHeaderProps) {
+function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, actions }: EditorHeaderProps) {
   return (
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
       <div className="min-w-0 flex-1">
@@ -385,9 +397,29 @@ function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, on
           <span className="text-sm font-medium">{fileName}</span>
           {dirty && <span className="text-sm text-amber-500">*</span>}
         </div>
-        {dirPath && (
-          <div className="truncate text-[11px] text-muted-foreground">{dirPath}</div>
-        )}
+        <div className="flex min-w-0 items-center gap-1">
+          {dirPath && (
+            <span className="min-w-0 truncate text-[11px] text-muted-foreground">{dirPath}</span>
+          )}
+          <button
+            title="Reveal in Finder"
+            onClick={onOpenExternal}
+            data-testid="markdown-editor-open-external"
+            className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <ExternalLink className="h-3 w-3" />
+          </button>
+          {onDownload && (
+            <button
+              title="Download file"
+              onClick={onDownload}
+              data-testid="markdown-editor-download"
+              className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <Download className="h-3 w-3" />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-shrink-0 items-center rounded-md border bg-muted/40 p-0.5">
@@ -413,14 +445,6 @@ function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, on
       </div>
 
       {actions && <div className="flex flex-shrink-0 items-center gap-1">{actions}</div>}
-
-      <button
-        title="Copy path to clipboard"
-        onClick={onOpenExternal}
-        className="flex-shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-      >
-        <ExternalLink className="h-4 w-4" />
-      </button>
     </div>
   );
 }
