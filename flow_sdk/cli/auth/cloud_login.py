@@ -1,9 +1,10 @@
 """Cloud login chokepoint.
 
 ``cloud_login()`` is the single entry point. Internally it picks env-mode
-(POST cloud /login with ``CLOUD_USER_EMAIL`` / ``CLOUD_USER_PASS``) or
-browser-mode (open the system browser to the cloud's login form, wait for
-the cloud's redirect to ``/api/v1/cloud/login_callback``).
+(POST cloud /login with ``FLOWPAD_CLOUD_USER_EMAIL`` /
+``FLOWPAD_CLOUD_USER_PASSWORD``) or browser-mode (open the system browser
+to the cloud's login form, wait for the cloud's redirect to
+``/api/v1/cloud/post_login``).
 
 Both paths converge on ``_finalize_login``, which broadcasts the success
 WS event and persists the bearer token + user.
@@ -14,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import webbrowser
 from typing import Any
+from urllib.parse import urlparse
 
 from flow_sdk.api.messages import OAuthMessage, OAuthMessageStatus
 from flow_sdk.api.oauth_api import OAuthProvider
@@ -24,16 +26,35 @@ from flow_sdk.cloud_client import ApiConfig, FlowpadClient
 from flow_sdk.instance_settings import get_instance_settings
 
 
-async def cloud_login() -> dict[str, Any]:
-    """Returns ``{status: "logged_in", user}`` (env-mode) or ``{status: "started", url}`` (browser-mode).
+def _classify_hub(api_base_url: str | None) -> str:
+    """Classify the configured hub: ``"cloud"`` (flowpad.ai), ``"local"`` (loopback), or ``"unsupported"``."""
+    host = (urlparse(api_base_url or "").hostname or "").lower()
+    if host == "flowpad.ai" or host.endswith(".flowpad.ai"):
+        return "cloud"
+    if host in ("localhost", "127.0.0.1", "::1"):
+        return "local"
+    return "unsupported"
 
-    Raises on synchronous failure (rejected creds, can't open browser).
+
+async def cloud_login() -> dict[str, Any]:
+    """Route by hub URL: flowpad.ai → browser/Auth0, localhost → env-mode creds, else error.
+
+    Returns ``{status: "logged_in", user}`` (local) or ``{status: "started", url}`` (cloud).
     Browser-mode result arrives later via OAuthMessage WS broadcast.
     """
     settings = get_instance_settings()
-    if settings.cloud_user_email and settings.cloud_user_pass:
+    hub_url = ApiConfig.from_env().api_base_url
+    kind = _classify_hub(hub_url)
+
+    if kind == "cloud":
+        return await _login_by_window(settings.port, settings.cloud_login_timeout_seconds)
+
+    if kind == "local":
+        if not (settings.cloud_user_email and settings.cloud_user_pass):
+            raise ValueError("Local hub login requires FLOWPAD_CLOUD_USER_EMAIL and FLOWPAD_CLOUD_USER_PASSWORD")
         return await _login_by_api(settings.cloud_user_email, settings.cloud_user_pass)
-    return await _login_by_window(settings.port, settings.cloud_login_timeout_seconds)
+
+    raise ValueError(f"Login not supported for hub URL: {hub_url}")
 
 
 async def _login_by_api(email: str, password: str) -> dict[str, Any]:
@@ -50,7 +71,7 @@ async def _login_by_window(port: int, timeout: float) -> dict[str, Any]:
     state.login_result = None
     asyncio.create_task(_wait_or_timeout(timeout))
 
-    url = get_login_url(f"http://127.0.0.1:{port}/api/v1/cloud/login_callback")
+    url = get_login_url(f"http://127.0.0.1:{port}/api/v1/cloud/post_login")
     await asyncio.to_thread(webbrowser.open, url)
     return {"status": "started", "url": url}
 
