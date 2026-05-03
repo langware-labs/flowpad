@@ -17,7 +17,7 @@ def get_database_path() -> str:
     return str(get_instance_settings().db_path)
 
 
-DEVELOPMENT = os.environ.get("DEVELOPMENT", "true").lower() == "true"
+DEVELOPMENT = os.environ.get("FLOWPAD_DEV", "true").lower() == "true"
 
 
 class Base(DeclarativeBase):

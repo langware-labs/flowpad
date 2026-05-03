@@ -4,7 +4,11 @@
 * ``POST   /login``            — env-mode (synchronous) or browser-mode
                                  (returns "started" + URL, completion via WS)
 * ``POST   /logout``           — clear keyring + user JSON; return cloud logout URL
-* ``GET    /login_callback``   — cloud's redirect target after browser-mode auth
+* ``GET    /post_login``       — cloud's redirect target after browser-mode auth.
+                                 Path must contain ``/post_login`` because the hub's
+                                 ``append_desktop_api_key`` only appends ``flowpad-api-key``
+                                 to redirects whose path matches that substring
+                                 (hub: ``core/auth/providers/auth_provider.py``).
 * ``GET    /logout_callback``  — cloud's redirect target after logout
 * ``POST   /refresh-token``    — local-dev stub
 """
@@ -100,8 +104,8 @@ def _render_result_page(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/login_callback", response_class=HTMLResponse)
-async def login_callback(
+@router.get("/post_login", response_class=HTMLResponse)
+async def post_login(
     flowpad_api_key: str = Query(None, alias="flowpad-api-key"),
     next: str = Query(None),
 ):
