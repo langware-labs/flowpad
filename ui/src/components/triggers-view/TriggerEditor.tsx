@@ -84,7 +84,7 @@ export function TriggerEditor({ trigger }: Props) {
         <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${SCOPE_COLORS[trigger.scope || 'user'] ?? SCOPE_COLORS['user']}`}>
           {trigger.scope || 'user'}
         </span>
-        <span className="font-mono text-sm font-medium">{trigger.name}</span>
+        <span className="font-mono text-sm font-medium">{trigger.displayName}</span>
         <span className="text-xs text-muted-foreground">/trigger.py</span>
         {(trigger.hook_events?.length ?? 0) > 0 && (
           <div className="flex gap-1">

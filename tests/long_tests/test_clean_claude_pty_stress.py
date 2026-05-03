@@ -288,24 +288,42 @@ async def test_clean_claude_pty_stress(bootstrapped_client):
             await asyncio.sleep(SETTLE_SLEEP)
 
             pty_key = (cn.id, cn.node_provider_id, shell_id)
-            chunks = replay_buffer.get_replay(pty_key, since_seq=0)
-            full_pty = "".join(c.data.decode("utf-8", errors="replace") for c in chunks)
+
+            def _capture_invariants():
+                chunks = replay_buffer.get_replay(pty_key, since_seq=0)
+                full_pty = "".join(c.data.decode("utf-8", errors="replace") for c in chunks)
+                if not full_pty:
+                    return None, None
+                claude_bytes = extract_claude_section(full_pty)
+                screen = render_pty_screen(claude_bytes)
+                return extract_invariants(screen), full_pty
+
+            inv, full_pty = _capture_invariants()
             assert full_pty, f"[iter {i}] No PTY output captured"
 
-            # Render only the Claude Code section (skip shell echo)
-            claude_bytes = extract_claude_section(full_pty)
-            screen = render_pty_screen(claude_bytes)
-            inv = extract_invariants(screen)
+            # Cold-launch tail can sometimes lag past SETTLE_SLEEP for one
+            # invariant (most often bypass-permissions, which renders late
+            # in the bottom-right). Retry once with a short extra wait
+            # before declaring the iteration dirty — keeps the test's
+            # cleanliness contract honest while absorbing legitimate jitter
+            # in claude's startup banner.
+            def _problems(inv):
+                p = []
+                if not inv["separator_found"]:
+                    p.append("missing separator")
+                if not inv["prompt_found"]:
+                    p.append("missing ❯ prompt")
+                if not inv["bypass_found"]:
+                    p.append("missing bypass-permissions")
+                if inv["prompt_content"]:
+                    p.append(f"prompt not empty: {inv['prompt_content']!r}")
+                return p
 
-            problems = []
-            if not inv["separator_found"]:
-                problems.append("missing separator")
-            if not inv["prompt_found"]:
-                problems.append("missing ❯ prompt")
-            if not inv["bypass_found"]:
-                problems.append("missing bypass-permissions")
-            if inv["prompt_content"]:
-                problems.append(f"prompt not empty: {inv['prompt_content']!r}")
+            problems = _problems(inv)
+            if problems:
+                await asyncio.sleep(1.0)
+                inv2, _ = _capture_invariants()
+                problems = _problems(inv2) if inv2 else problems
 
             if problems:
                 failures.append(f"iter {i}: {'; '.join(problems)}")

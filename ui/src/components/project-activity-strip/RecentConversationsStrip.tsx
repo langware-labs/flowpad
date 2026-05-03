@@ -194,8 +194,8 @@ function ConversationRow({ conv }: { conv: Conversation }) {
   const { data: project } = useEntity<Project>(projectTypeId);
 
   const taskTypeId = useMemo(
-    () => (conv.task_id ? new TypeId(Task.type, conv.task_id) : null),
-    [conv.task_id],
+    () => conv.firstContextOfType?.('task') ?? null,
+    [conv],
   );
   const { data: task } = useEntity<Task>(taskTypeId);
 
@@ -207,9 +207,9 @@ function ConversationRow({ conv }: { conv: Conversation }) {
   }, [conv.message_ids]);
   const { data: latestMessage } = useEntity<FlowMessage>(latestMessageTypeId);
 
-  const title = conv.task_id ? `Task ${conv.task_id.slice(0, 8)}` : 'Conversation';
+  const title = taskTypeId ? `Task ${taskTypeId.id.slice(0, 8)}` : 'Conversation';
   const messageCount = conv.message_count ?? 0;
-  const projectLabel = project?.name ?? null;
+  const projectLabel = project?.displayName ?? null;
   const taskTitle = task?.title?.trim() || null;
   const taskFirstWord = taskTitle ? taskTitle.split(/\s+/)[0] : null;
   const previewText = latestMessage?.text?.trim().split('\n').find((l) => l.trim()) ?? null;

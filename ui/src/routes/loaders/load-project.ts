@@ -67,8 +67,13 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
   try {
     project = await dataManager.getByTypeId<Project>(new TypeId(Project.type, projectId));
   } catch {
-    // Missing project — let the page's own fallback (Loading… / EmptyState) handle it.
-    return;
+    toast({
+      title: 'Project not found',
+      description: "This project doesn't exist or is no longer available.",
+      variant: 'destructive',
+    });
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect('/');
   }
 
   await dataContext.setContextEntityTypeId(

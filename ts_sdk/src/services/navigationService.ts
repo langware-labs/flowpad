@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/browser';
 import { runInAction } from 'mobx';
 import { config } from '../config';
 import { dataContext, isTypeId, TypeId } from '../FlowSync';
+import { cloudManager } from './cloud_login';
 import { secretsService } from './secrets-service';
 import { secretApprovalGate } from './secretApprovalGate';
 
@@ -63,11 +64,16 @@ class Navigator {
     });
   }
 
-  async navigateToLogin(loginCallbackUrl: string = window.location.href, connection?: string): Promise<void> {
+  async navigateToLogin(_loginCallbackUrl: string = window.location.href, _connection?: string): Promise<void> {
     if (!(await this.ensureSecretsEnabled())) return;
     void dataContext.setActiveEntityTypeId(null);
-    const url = this.getLoginWithCallbackUrl(loginCallbackUrl, connection);
-    document.location.href = url;
+    // cloudManager handles env-mode vs system-browser-mode internally.
+    // The connection param is ignored — the cloud's login form handles provider choice.
+    try {
+      await cloudManager.login();
+    } catch (err) {
+      console.warn('[navigateToLogin] login failed:', err);
+    }
   }
 
   private async ensureSecretsEnabled(): Promise<boolean> {
@@ -92,13 +98,10 @@ class Navigator {
     }
   }
 
-  navigateToLogout(returnToUrl: string = window.location.origin) {
+  navigateToLogout(_returnToUrl: string = window.location.origin) {
     void dataContext.setActiveEntityTypeId(null);
-    // returnToUrl must match the "Allowed Logout URLs" set in
-    // https://manage.auth0.com/dashboard/us/flowpad-ai/applications/MVCrqf4VyI8J2VJf3wYN07Mu5kYvUZTs/settings
-    const url = this.appendParams(`${config.SERVER_URL}${config.API_PREFIXES.logout}`, { returnTo: returnToUrl });
     Sentry.setUser(null);
-    document.location.href = url;
+    void cloudManager.logout();
   }
 
   navigateToLanding(shouldReload: boolean = false) {

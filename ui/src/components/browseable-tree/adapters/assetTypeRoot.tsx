@@ -1,6 +1,6 @@
 import React from 'react';
-import * as lucideIcons from 'lucide-react';
-import { File, FileText, Plus, RefreshCw } from 'lucide-react';
+import { FileText, Plus, RefreshCw } from 'lucide-react';
+import { lucideByName } from '@src/lib/lucide-by-name';
 import apiClient from '@sdk/client';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
@@ -66,14 +66,8 @@ export function parseAssetPointer(pointer: string | null | undefined): AssetPoin
   return { mode: null, typeName: null, vfsPath: null, wikiName: null };
 }
 
-/**
- * Resolve a Lucide icon by name, falling back to a generic file icon.
- */
 function resolveAssetIcon(iconName: string | null): React.ReactNode {
-  const key = iconName as keyof typeof lucideIcons | null;
-  const Icon = (key && key in lucideIcons
-    ? (lucideIcons[key] as React.FC<{ className?: string }>)
-    : File) as React.FC<{ className?: string }>;
+  const Icon = lucideByName(iconName);
   return <Icon className="h-4 w-4 flex-shrink-0" />;
 }
 

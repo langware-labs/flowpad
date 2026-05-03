@@ -23,6 +23,7 @@ import { callCommand } from '@milkdown/utils';
 import type { MilkdownPlugin } from '@milkdown/ctx';
 import type { Ctx } from '@milkdown/ctx';
 import type { EditorState } from '@milkdown/prose/state';
+import { TextSelection } from '@milkdown/prose/state';
 import type { MarkType } from '@milkdown/prose/model';
 import type { EditorView } from '@milkdown/prose/view';
 import {
@@ -79,6 +80,54 @@ function mdLinksToWikilinks(md: string): string {
 }
 
 /**
+ * Returns the 1-indexed start line of each top-level CommonMark block in the body.
+ *
+ * Used to map ProseMirror's top-level child index ↔ body line number for the
+ * caret-line tracking feature. Recognizes paragraphs, headings, lists, fenced
+ * code blocks (treated as one block; internal blank lines don't split). Top-level
+ * HTML comment blocks are an edge case where this can drift from the rendered
+ * doc's child count — accepted approximation for v1.
+ */
+function getBlockStartLines(body: string): number[] {
+  const lines = body.split('\n');
+  const starts: number[] = [];
+  let inFence = false;
+  let inBlock = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const isFenceMarker = /^\s*(```|~~~)/.test(line);
+    if (inFence) {
+      if (isFenceMarker) inFence = false;
+      continue;
+    }
+    if (isFenceMarker) {
+      starts.push(i + 1);
+      inFence = true;
+      inBlock = true;
+      continue;
+    }
+    if (!line.trim()) {
+      inBlock = false;
+      continue;
+    }
+    if (!inBlock) {
+      starts.push(i + 1);
+      inBlock = true;
+    }
+  }
+  return starts;
+}
+
+/** Top-level child index of the caret in the doc, or null if not resolvable. */
+function caretBlockIndex(view: EditorView): number | null {
+  const sel = view.state.selection;
+  if (!sel) return null;
+  const $from = sel.$from;
+  if ($from.depth === 0) return null;
+  return $from.index(0);
+}
+
+/**
  * Modes the Milkdown WYSIWYG renderer understands.
  * Raw-markdown ('markdown') is rendered by a separate Monaco pane in wrappers,
  * never by this component.
@@ -105,6 +154,17 @@ interface MilkdownEditorProps {
    * gating — hidden in view/review modes.
    */
   toolbarRight?: React.ReactNode;
+  /**
+   * Fires when the caret moves to a different top-level block. The `bodyLine`
+   * is 1-indexed against the `content` prop (body markdown). Approximate when
+   * the caret lands inside a multi-line block (returns the block's start line).
+   */
+  onCursorLineChange?: (bodyLine: number) => void;
+  /**
+   * 1-indexed body line to restore the caret to on mount. Captured at first
+   * render — later prop changes do not move the caret.
+   */
+  initialLine?: number | null;
 }
 
 // ── Link popup (hover + toolbar) ──────────────────────────────────────────────
@@ -541,7 +601,7 @@ function SelectionToolbar({
 
 // ── Editor inner ──────────────────────────────────────────────────────────────
 
-function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveStateChange, onSelectionRectChange, editorRef }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
+function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, editorRef }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const localRef = useRef<Editor | null>(null);
   const setEditor = (e: Editor | null) => {
@@ -562,6 +622,29 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
   // Live mirror of isReadOnly so ProseMirror's `editable` closure reads current value.
   const isReadOnlyRef = useRef(isReadOnly);
   isReadOnlyRef.current = isReadOnly;
+
+  // Block-start-line table, kept in sync with the original `content` (body)
+  // — Monaco shows body line numbers, so this stays body-relative.
+  const blockLinesRef = useRef<number[]>(getBlockStartLines(content));
+  useEffect(() => {
+    blockLinesRef.current = getBlockStartLines(content);
+  }, [content]);
+
+  // Captured once at first render — initialLine is a "place caret here on mount"
+  // signal, not a controlled prop. Later changes from the parent (which feeds
+  // back the line we ourselves emitted) don't reapply.
+  const initialLineRef = useRef(initialLine ?? null);
+  const restoredRef = useRef(false);
+
+  const onCursorLineChangeRef = useRef(onCursorLineChange);
+  onCursorLineChangeRef.current = onCursorLineChange;
+  const lastEmittedLineRef = useRef<number | null>(null);
+  // Suppress emissions until the user actually interacts with the editor —
+  // selectionUpdated fires once on mount (Milkdown initializes a default
+  // selection at position 0), and we don't want that to drive the chat badge.
+  // Programmatic caret restoration also marks this true so the badge survives
+  // mode switches.
+  const userInteractedRef = useRef(false);
 
   // Keep ref in sync so editor uses latest content when re-initialized (e.g. after save)
   useEffect(() => {
@@ -590,22 +673,32 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
               onChange(mdLinksToWikilinks(markdown));
             });
           }
-          if (onActiveStateChange || onSelectionRectChange) {
-            const notify = (ctx: Ctx) => {
-              try {
-                const view = ctx.get(editorViewCtx);
-                onActiveStateChange?.(getActiveState(view.state));
-                onSelectionRectChange?.(computeSelectionRect(view));
-              } catch {
-                // view not ready during initialization
+          const notify = (ctx: Ctx) => {
+            try {
+              const view = ctx.get(editorViewCtx);
+              onActiveStateChange?.(getActiveState(view.state));
+              onSelectionRectChange?.(computeSelectionRect(view));
+              const emit = onCursorLineChangeRef.current;
+              if (emit && userInteractedRef.current) {
+                const blockIdx = caretBlockIndex(view);
+                if (blockIdx != null) {
+                  const table = blockLinesRef.current;
+                  const line = blockIdx < table.length ? table[blockIdx] : (table[table.length - 1] ?? 1);
+                  if (line !== lastEmittedLineRef.current) {
+                    lastEmittedLineRef.current = line;
+                    emit(line);
+                  }
+                }
               }
-            };
-            // Fire on document changes — debounced 200ms so view.state is already updated
-            lctx.updated((ctx) => notify(ctx));
-            // selectionUpdated fires synchronously during apply (view.state is still old),
-            // so defer by one tick to read the updated view.state
-            lctx.selectionUpdated((ctx) => setTimeout(() => notify(ctx), 0));
-          }
+            } catch {
+              // view not ready during initialization
+            }
+          };
+          // Fire on document changes — debounced 200ms so view.state is already updated
+          lctx.updated((ctx) => notify(ctx));
+          // selectionUpdated fires synchronously during apply (view.state is still old),
+          // so defer by one tick to read the updated view.state
+          lctx.selectionUpdated((ctx) => setTimeout(() => notify(ctx), 0));
         })
         .use(commonmark)
         .use(gfm)
@@ -631,6 +724,72 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
     if (get) {
       setEditor(get() ?? null);
     }
+  }, [get]);
+
+  // One-shot caret restoration: when the editor instance becomes available and
+  // an `initialLine` was supplied at mount, place the caret at the start of the
+  // top-level block whose start-line ≤ initialLine. Runs at most once per mount.
+  useEffect(() => {
+    if (restoredRef.current) return;
+    const editor = get?.();
+    if (!editor) return;
+    const target = initialLineRef.current;
+    if (target == null) {
+      restoredRef.current = true;
+      return;
+    }
+    try {
+      editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        const table = blockLinesRef.current;
+        if (table.length === 0) return;
+        let blockIdx = 0;
+        for (let i = 0; i < table.length; i++) {
+          if (table[i] <= target) blockIdx = i;
+          else break;
+        }
+        const doc = view.state.doc;
+        if (blockIdx >= doc.childCount) blockIdx = doc.childCount - 1;
+        let pos = 0;
+        for (let j = 0; j < blockIdx; j++) pos += doc.child(j).nodeSize;
+        // Step inside the block (past its opening token) so the caret lands in content.
+        pos += 1;
+        const sel = TextSelection.create(doc, Math.min(pos, doc.content.size));
+        view.dispatch(view.state.tr.setSelection(sel).scrollIntoView());
+        lastEmittedLineRef.current = table[blockIdx];
+        // Treat restoration as interaction so the badge persists across mode swaps.
+        userInteractedRef.current = true;
+      });
+    } catch {
+      // view not ready yet — try again on next render via the same guard
+      return;
+    }
+    restoredRef.current = true;
+  }, [get]);
+
+  // Mark the editor as "user-interacted" on first real input so the chat-line
+  // badge stays hidden until the user clicks/types. mousedown + keydown cover
+  // both pointer and keyboard navigation.
+  useEffect(() => {
+    const editor = get?.();
+    if (!editor) return;
+    const onUser = () => { userInteractedRef.current = true; };
+    let dom: HTMLElement | null = null;
+    try {
+      editor.action((ctx) => {
+        const view = ctx.get(editorViewCtx);
+        dom = view.dom as HTMLElement;
+        view.dom.addEventListener('mousedown', onUser);
+        view.dom.addEventListener('keydown', onUser);
+      });
+    } catch {
+      // view not ready yet
+    }
+    return () => {
+      if (!dom) return;
+      dom.removeEventListener('mousedown', onUser);
+      dom.removeEventListener('keydown', onUser);
+    };
   }, [get]);
 
   // Toggle editable on mode change. setProps forces ProseMirror to re-read the
@@ -677,7 +836,7 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
   );
 }
 
-export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugins, onLinkClick, editorRef: externalEditorRef, toolbarRight }: MilkdownEditorProps) {
+export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugins, onLinkClick, editorRef: externalEditorRef, toolbarRight, onCursorLineChange, initialLine }: MilkdownEditorProps) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const [activeState, setActiveState] = useState<ActiveState>(EMPTY_ACTIVE);
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
@@ -886,7 +1045,7 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
           onMouseLeave={scheduleHide}
           onClickCapture={handleContainerClick}
         >
-          <MilkdownEditorInner content={content} onChange={onChange} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} />
+          <MilkdownEditorInner content={content} onChange={onChange} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} onCursorLineChange={onCursorLineChange} initialLine={initialLine} />
         </div>
       </div>
       {!isReadOnly && !linkPopup && (

@@ -52,8 +52,6 @@ export function getOrCreateLocalMemberId(): string {
 @registerEntity
 export class Project extends APIEntity<Project> {
   static type: string = 'project';
-  name?: string;
-  fs_storage_mount_path?: string;
   computeNode?: ComputeNode | null = null;
   // ── Collaboration overlay (merged from the former CollaborationSpace) ──
   session_code: string | null = null;
@@ -62,8 +60,6 @@ export class Project extends APIEntity<Project> {
 
   constructor(entity: Partial<Project> = {}) {
     super(entity);
-    this.name = entity.name;
-    this.fs_storage_mount_path = entity.fs_storage_mount_path;
     this.session_code = (entity.session_code as string | null | undefined) ?? null;
     this.host_member_id = (entity.host_member_id as string | null | undefined) ?? null;
     this.members = (entity.members as ProjectMember[] | undefined) ?? [];
@@ -83,13 +79,16 @@ export class Project extends APIEntity<Project> {
   }
 
   /**
-   * Get the display name for the project (folder basename, not full path)
+   * Project's ``name`` is sometimes a full path (legacy data); strip to the
+   * basename so the UI shows ``foo-project`` rather than
+   * ``/Users/shlom/Documents/foo-project``. When ``name`` is empty or has no
+   * path separators, return null and let the default chain handle it.
    */
-  get displayName(): string {
-    if (!this.name || typeof this.name !== 'string') return 'New Project';
-    // Extract the last part of the path (folder name)
+  override getDisplayName(): string | null {
+    if (!this.name || typeof this.name !== 'string') return null;
     const parts = this.name.replace(/\\/g, '/').split('/').filter(Boolean);
-    return parts[parts.length - 1] || this.name;
+    if (parts.length <= 1) return null;
+    return parts[parts.length - 1] || null;
   }
 
   /**

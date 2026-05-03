@@ -13,21 +13,23 @@
  * so useContext() provides the agenticProcess for FS access and navigation.
  */
 
-import { useContext } from '@sdk/react/hooks';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { AgenticProcess, Bookmark, QueryRequest, Spec, TypeId } from '@sdk';
+import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
+import { useContext, useEntity } from '@sdk/react/hooks';
+import { EditorWithSidePanel } from '@src/components/milkdown-editor/EditorWithSidePanel';
+import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
+import { Button } from '@src/components/ui/button';
 import { useFS } from '@src/hooks/useFS';
 import { useShell } from '@src/hooks/useShell';
-import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
-import { planNotePlugins } from './plan-note-plugin';
-import { Button } from '@src/components/ui/button';
-import { SendPlanNotificationDialog } from './SendPlanNotificationDialog';
-import { Bookmark as BookmarkIcon, Copy, FolderOpen, Send, ShieldOff, StickyNote, X } from 'lucide-react';
-import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@src/lib/utils';
-import { AgenticProcess, Bookmark, QueryRequest } from '@sdk';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { ViewType } from '@src/types/ViewType';
+import { Bookmark as BookmarkIcon, Copy, FolderOpen, Send, ShieldOff, StickyNote, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './milkdown.css';
+import { planNotePlugins } from './plan-note-plugin';
+import { SendPlanNotificationDialog } from './SendSpecNotificationDialog';
 
 function parseFrontmatter(raw: string): { executed: boolean; body: string } {
   const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
@@ -36,14 +38,25 @@ function parseFrontmatter(raw: string): { executed: boolean; body: string } {
   return { executed, body: m[2] };
 }
 
-export const PlanEditor: React.FC = () => {
+export const SpecEditor: React.FC = () => {
+  const { currentDock } = useDockNavigation();
+  // Spec-entity mode: routed via /dock/spec/<specId>. Spec content lives on the
+  // entity record, not on a plan file, so we render the body via MilkdownEditor
+  // wrapped in EditorWithSidePanel (chat + backlinks keyed on the spec TypeId).
+  if (currentDock?.viewType === ViewType.SPEC) {
+    return <SpecEntityEditor />;
+  }
+  return <PlanFileEditor />;
+};
+
+const PlanFileEditor: React.FC = () => {
   const { agenticProcess } = useContext() as { agenticProcess: AgenticProcess | null };
   const { navigation, currentDock } = useDockNavigation();
 
   // Extract file path from the dock pointer
   // Pointer format: "agentic_process-<uuid>/<absolute-file-path>"
   const filePath = useMemo(
-    () => currentDock?.pointer ? DockPointer.parsePlanPointer(currentDock.pointer)?.filePath ?? '' : '',
+    () => (currentDock?.pointer ? (DockPointer.parsePlanPointer(currentDock.pointer)?.filePath ?? '') : ''),
     [currentDock?.pointer],
   );
   const { shell } = useShell(agenticProcess?.shell_id);
@@ -57,10 +70,7 @@ export const PlanEditor: React.FC = () => {
   const isDirty = cached?.isDirty || false;
 
   // Frontmatter: strip YAML header from display and read executed flag
-  const { executed: isExecuted, body: displayContent } = useMemo(
-    () => parseFrontmatter(fileContent),
-    [fileContent],
-  );
+  const { executed: isExecuted, body: displayContent } = useMemo(() => parseFrontmatter(fileContent), [fileContent]);
 
   // State
   const [isExecuting, setIsExecuting] = useState(false);
@@ -102,7 +112,7 @@ export const PlanEditor: React.FC = () => {
       try {
         await fs.download(filePath, false);
       } catch (error) {
-        console.error('[PlanEditor] Error downloading plan:', filePath, error);
+        console.error('[SepcEditor] Error downloading plan:', filePath, error);
       }
     };
 
@@ -129,7 +139,7 @@ export const PlanEditor: React.FC = () => {
           void action();
           navigation.openDock(agenticProcess.dockPointer);
         } catch (error) {
-          console.error('[PlanEditor] Error:', error);
+          console.error('[SepcEditor] Error:', error);
         } finally {
           setIsExecuting(false);
         }
@@ -146,9 +156,12 @@ export const PlanEditor: React.FC = () => {
   }, [filePath, fs, agenticProcess, navigation]);
 
   if (!filePath || !agenticProcess) {
-    const message = !filePath && !agenticProcess
-      ? 'No plan file or agentic process'
-      : !filePath ? 'No plan file selected' : 'No agentic process in context';
+    const message =
+      !filePath && !agenticProcess
+        ? 'No plan file or agentic process'
+        : !filePath
+          ? 'No plan file selected'
+          : 'No agentic process in context';
     return (
       <div className="flex h-full items-center justify-center text-muted-foreground">
         <div>{message}</div>
@@ -160,7 +173,9 @@ export const PlanEditor: React.FC = () => {
     <div className="relative flex h-full flex-col">
       {/* File path header */}
       <div className="flex items-center gap-1.5 border-b border-border bg-background/80 px-4 py-1 font-mono text-[11px] text-muted-foreground">
-        <span className="min-w-0 truncate" title={filePath}>{filePath}</span>
+        <span className="min-w-0 truncate" title={filePath}>
+          {filePath}
+        </span>
         <button
           type="button"
           title="Copy path"
@@ -193,7 +208,9 @@ export const PlanEditor: React.FC = () => {
             variant="outline"
             disabled={isExecuting || isExecuted}
             onClick={() => saveAndRun(() => agenticProcess.executePlan(filePath, { clearContext: true }))}
-            title={isExecuted ? 'Plan already executed' : 'Execute the plan, clearing context first. Full trust mode ON.'}
+            title={
+              isExecuted ? 'Plan already executed' : 'Execute the plan, clearing context first. Full trust mode ON.'
+            }
             className={cn((isExecuting || isExecuted) && 'opacity-50')}
           >
             <ShieldOff className="mr-2 h-4 w-4 text-amber-500" />
@@ -275,13 +292,130 @@ export const PlanEditor: React.FC = () => {
       <div className="min-h-0 flex-1 overflow-auto">
         <div className="plan-milkdown-editor">
           {cached ? (
-            <MilkdownEditor content={displayContent} onChange={handleContentChange} editorMode="editor" plugins={planNotePlugins} />
+            <MilkdownEditor
+              content={displayContent}
+              onChange={handleContentChange}
+              editorMode="editor"
+              plugins={planNotePlugins}
+            />
           ) : (
             <div className="flex h-full items-center justify-center text-muted-foreground">
               <div className="h-5 w-5 animate-spin rounded-full border-2 border-current border-t-transparent" />
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+};
+
+/**
+ * Spec-entity mode renderer. Loads a Spec by id from the dock pointer and
+ * shows its body in MilkdownEditor wrapped in EditorWithSidePanel — same
+ * editing surface as workflow / markdown asset views, with chat + backlinks
+ * keyed on the spec TypeId.
+ *
+ * Edits are debounced into spec.content + spec.save() (no file path; spec
+ * content lives on the entity record itself).
+ */
+const SpecEntityEditor: React.FC = () => {
+  const { navigation, currentDock } = useDockNavigation();
+  const specId = useMemo(() => {
+    const head = currentDock?.pointer?.split('/')[0];
+    return head || null;
+  }, [currentDock?.pointer]);
+
+  const specTypeId = useMemo(
+    () => (specId ? new TypeId(Spec.type, specId) : null),
+    [specId],
+  );
+  const { data: spec } = useEntity<Spec>(specTypeId);
+
+  const [localContent, setLocalContent] = useState<string | null>(null);
+  useEffect(() => {
+    if (spec?.content != null && localContent == null) setLocalContent(spec.content);
+  }, [spec?.content, localContent]);
+
+  const onChangeRef = useRef((_v: string) => {});
+  onChangeRef.current = (value: string) => {
+    setLocalContent(value);
+    if (spec) {
+      spec.content = value;
+      void spec.save();
+    }
+  };
+  const handleContentChange = useCallback((v: string) => onChangeRef.current(v), []);
+
+  const [showShareDialog, setShowShareDialog] = useState(false);
+
+  if (!specId) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        No spec specified.
+      </div>
+    );
+  }
+  if (!spec) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        Loading spec…
+      </div>
+    );
+  }
+
+  const chatTarget = specTypeId?.toString() ?? null;
+  // SendPlanNotificationDialog keys off the file path for the title fallback
+  // and the .flowmsg filename. A spec entity has no file, so we synthesise
+  // one from its title — title-derived names are still meaningful to humans.
+  const syntheticPath = `${(spec.title ?? 'spec').replace(/[^a-zA-Z0-9-_ ]/g, '').trim() || 'spec'}.md`;
+
+  return (
+    <div className="relative flex h-full flex-col">
+      {/* Top action bar — same shape as PlanFileEditor's, with only the
+          buttons that apply to a Spec record (no filePath / no AgenticProcess
+          means Execute Plan / Update Plan / Bookmark are skipped). */}
+      <div className="border-b border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setShowShareDialog(true)}
+            title="Package this spec as a task and share it with someone"
+          >
+            <Send className="mr-2 h-4 w-4" />
+            Share as Task
+          </Button>
+
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => navigation.openDock(DockPointer.forInbox())}
+            title="Go back to inbox"
+          >
+            <X className="mr-2 h-4 w-4" />
+            Cancel
+          </Button>
+        </div>
+      </div>
+
+      <SendPlanNotificationDialog
+        open={showShareDialog}
+        onClose={() => setShowShareDialog(false)}
+        planFilePath={syntheticPath}
+        planContent={localContent ?? spec.content ?? ''}
+        workdir={null}
+      />
+
+      <div className="min-h-0 flex-1">
+        <EditorWithSidePanel chatTarget={chatTarget}>
+          <div className="plan-milkdown-editor h-full overflow-auto">
+            <MilkdownEditor
+              content={localContent ?? ''}
+              onChange={handleContentChange}
+              editorMode="editor"
+            />
+          </div>
+        </EditorWithSidePanel>
       </div>
     </div>
   );

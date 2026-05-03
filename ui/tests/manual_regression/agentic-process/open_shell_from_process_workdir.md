@@ -1,5 +1,5 @@
 test 1: Open Terminal button opens a plain shell in the process workdir
-- navigate to {APP_URL}/dock/shell/new_terminal then click the Start Claude button (data-testid="start-claude-button")
+- navigate to {APP_URL}/dock/shell/new_terminal, then open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for the Claude banner
 - verify the process has a known workdir via the Info popover (note the Working Dir value)
 - click the SquareTerminal icon in the process toolbar (tooltip "Open terminal in <workdir>")

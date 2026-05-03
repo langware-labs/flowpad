@@ -39,8 +39,8 @@ export function useConversation(conversationId: string | null | undefined): UseC
   const { data: conversation } = useEntity<Conversation>(convTypeId);
 
   const taskTypeId = useMemo(
-    () => (conversation?.task_id ? new TypeId(Task.type, conversation.task_id) : null),
-    [conversation?.task_id],
+    () => conversation?.firstContextOfType?.('task') ?? null,
+    [conversation],
   );
   const { data: task } = useEntity<Task>(taskTypeId);
 
@@ -56,7 +56,7 @@ export function useConversation(conversationId: string | null | undefined): UseC
     task?.shared_by_id ||
     undefined;
 
-  const taskMissing = !!conversation?.task_id && task === null;
+  const taskMissing = !!taskTypeId && task === null;
 
   return { conversation, task, project, senderName, taskMissing };
 }

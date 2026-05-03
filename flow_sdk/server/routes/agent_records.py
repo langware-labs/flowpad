@@ -76,7 +76,7 @@ async def list_schema():
           ok: true,
           types: [
             { type_name, uid_field, index_fields, defaults, creatable,
-              user_asset, indexed_by_default, icon, parent_type, locations,
+              browseable, indexed_by_default, icon, parent_type, locations,
               schema_hash, has_record_cls, has_entity_cls }
           ]
         }

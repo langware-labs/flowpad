@@ -81,7 +81,7 @@ export const ArtifactCard: React.FC<ArtifactCardProps> = ({
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 overflow-hidden">
           <Icon className={`h-4 w-4 flex-shrink-0 ${typeConfig.color}`} />
-          <span className="truncate text-sm font-medium">{artifact.name || 'Unnamed'}</span>
+          <span className="truncate text-sm font-medium">{artifact.displayName}</span>
         </div>
 
         {/* Actions */}

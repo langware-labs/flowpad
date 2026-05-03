@@ -47,7 +47,6 @@ class FlowMessage(Entity):
     type: str = APIField(default="flow_message")
     text: str = APIField(...)
     instruction: Optional[str] = APIField(None)
-    context: list[TypeId] = APIField(default_factory=list)
     attachment: list[Attachment] = APIField(default_factory=list)
     sender_id: Optional[str] = APIField(None)
     sender_name: Optional[str] = APIField(None)
@@ -57,6 +56,9 @@ class FlowMessage(Entity):
     conversation_id: Optional[str] = APIField(None, description="ID of the parent Conversation, or None for legacy messages")
     is_read: bool = APIField(default=False)
     is_archived: bool = APIField(default=False)
+    # NOTE: ``context`` (list[TypeId]) was renamed and consolidated into the
+    # unified ``context_entities`` on the base ``Entity``. Read via
+    # ``msg.context_entities`` / ``msg.first_context_of_type('task')``.
     _api_visible: ClassVar[bool] = True
 
     @model_serializer(mode="wrap")

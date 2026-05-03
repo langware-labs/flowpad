@@ -1,5 +1,5 @@
 test 1: PTY Viewer opens from the Columns & Trace dropdown (always available, no dev-mode gate)
-- navigate to {APP_URL}/dock/shell/new_terminal then click the Start Claude button (data-testid="start-claude-button")
+- navigate to {APP_URL}/dock/shell/new_terminal, then open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for the Claude banner
 - open the Columns & Trace dropdown (BugPlay icon) in the process toolbar
 - validate the dropdown contains an item "PTY Viewer" at the bottom of the menu (below the separator)

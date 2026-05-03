@@ -316,7 +316,7 @@ class ScanActionsMixin:
                     pass
 
             process = AgenticProcess(
-                worker_type=worker_type,
+                worker_type=worker_type.value,
                 instruction_content="",
                 cli_config=cli_opts.to_json(),
                 context_data=context_data,

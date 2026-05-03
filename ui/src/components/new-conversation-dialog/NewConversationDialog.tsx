@@ -97,7 +97,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
               <SelectContent>
                 {projects.map((p) => (
                   <SelectItem key={p.id} value={p.id ?? ''}>
-                    {p.name || p.id}
+                    {p.displayName}
                   </SelectItem>
                 ))}
               </SelectContent>

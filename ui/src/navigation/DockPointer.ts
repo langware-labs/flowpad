@@ -516,6 +516,15 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create dock pointer for the dedicated spec viewer at
+   * `/dock/spec/<specId>`. Renders the Spec record's metadata and
+   * a link back to the source plan + generated tasks.
+   */
+  static forSpec(specId: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.SPEC, specId, undefined, layout);
+  }
+
+  /**
    * Create dock pointer for live session view
    * @param processId - Process ID for the session
    */

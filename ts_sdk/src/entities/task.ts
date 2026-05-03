@@ -1,5 +1,6 @@
 import { APIEntity, registerEntity } from '../APIEntity';
 import { DockPointerData } from '../models/DockPointer';
+import { TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import { IEntity } from '../IEntity';
 
@@ -19,11 +20,8 @@ export interface ITask extends IEntity {
   task_type?: string;
   priority?: string;
   tags?: string[];
-  links?: Record<string, string>;
   metadata?: Record<string, any>;
-  spec_id?: string | null;
   shared_by_id?: string | null;
-  conversation_id?: string | null;
   /** Local Project FK — receiver picks via the mapping dialog; sender's own project at send time. */
   project_id?: string | null;
   /** Cached `Spec.spec_type` so receivers don't need the Spec loaded to know "session" vs "plan". */
@@ -36,6 +34,10 @@ export interface ITask extends IEntity {
   remote_project_id?: string | null;
   /** Display name of the sender's project (for the mapping dialog copy). */
   remote_project_name?: string | null;
+  // NOTE: spec_id, conversation_id, links — moved into context_entities (the
+  // unified TypeId list on IEntity). Use task.firstContextOfType('spec') /
+  // task.firstContextOfType('conversation') and task.addContextEntity(...) /
+  // task.removeContextEntity(...) instead.
 }
 
 @registerEntity
@@ -55,11 +57,8 @@ export class Task extends APIEntity<Task> implements ITask {
   task_type?: string;
   priority?: string;
   tags?: string[];
-  links?: Record<string, string>;
   metadata?: Record<string, any>;
-  spec_id?: string | null;
   shared_by_id?: string | null;
-  conversation_id?: string | null;
   project_id?: string | null;
   spec_type?: string | null;
   my_process_id?: string | null;
@@ -85,11 +84,8 @@ export class Task extends APIEntity<Task> implements ITask {
     this.task_type = entity.task_type;
     this.priority = entity.priority;
     this.tags = entity.tags ||= [];
-    this.links = entity.links ||= {};
     this.metadata = entity.metadata ||= {};
-    this.spec_id = entity.spec_id;
     this.shared_by_id = entity.shared_by_id;
-    this.conversation_id = entity.conversation_id;
     this.project_id = entity.project_id;
     this.spec_type = entity.spec_type;
     this.my_process_id = entity.my_process_id;
@@ -100,6 +96,22 @@ export class Task extends APIEntity<Task> implements ITask {
 
   override get searchDockPointer(): DockPointerData {
     return new DockPointerData(ViewType.TASKS, this.id);
+  }
+
+  /**
+   * Project the chip-relevant direct fields into the merged context view.
+   * The project, the assignee, and the user's two AgenticProcesses
+   * (my_process / shared_process) are surfaced; pure indexing/audit fields
+   * (workspace_id, reporter, target_entity, remote_project_*) stay typed
+   * but are not chip-projected.
+   */
+  protected override _directFieldsAsTypeIds(): TypeId[] {
+    const out: TypeId[] = [];
+    if (this.project_id) out.push(new TypeId('project', this.project_id));
+    if (this.assignee) out.push(new TypeId('user', this.assignee));
+    if (this.my_process_id) out.push(new TypeId('agentic_process', this.my_process_id));
+    if (this.shared_process_id) out.push(new TypeId('agentic_process', this.shared_process_id));
+    return out;
   }
 
   // TODO: Remove getter and setter for descriptionPlainText when task is created with lexical description

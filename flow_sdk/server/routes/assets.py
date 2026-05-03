@@ -1,13 +1,15 @@
-"""
-Assets route for the local server.
+"""Assets route — type catalog and folder-prefix entity lookup.
 
-Provides asset-types endpoint for the Asset system.
-Tree and backlinks endpoints removed (Asset entity removed).
+Endpoints:
+- ``GET /api/v1/assets/types``    — registered user-asset entity types.
+- ``GET /api/v1/assets/by-path``  — entities whose ``asset_ref`` lives under
+  one or more folders. Thin wrapper over ``Entity.assets_by_path``.
 """
 
 from pathlib import Path
+from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
 router = APIRouter()
@@ -77,13 +79,13 @@ def _label_for_vault(p: Path, home: Path) -> str:
 
 @router.get("/api/v1/assets/types")
 async def get_asset_types():
-    """Return all record types marked as user_asset=True."""
+    """Return all record types marked as browseable=True."""
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     types = [{"type_name": "project", "label": "Projects", "icon": None, "creatable": False}]
     for type_name in SchemaRegistry.get_all_types():
         ti = SchemaRegistry.get(type_name)
-        if ti and ti.user_asset:
+        if ti and ti.browseable:
             entry: dict = {
                 "type_name": ti.type_name,
                 "label": ti.type_name.replace("_", " ").title(),
@@ -94,3 +96,47 @@ async def get_asset_types():
                 entry["vaults"] = _markdown_vaults()
             types.append(entry)
     return JSONResponse(content={"status": "SUCCESS", "data": {"types": types}})
+
+
+@router.get("/api/v1/assets/by-path")
+async def list_entities_by_path(
+    folder: list[str] = Query(
+        ..., description="One or more folder paths; results are union of strict descendants."
+    ),
+    record_type: Optional[list[str]] = Query(
+        default=None, description="Filter to these entity types. Omit for all types."
+    ),
+    limit: int = Query(default=200, ge=1, le=2000),
+    offset: int = Query(default=0, ge=0),
+    include_system: bool = Query(default=False),
+):
+    """List entities whose ``asset_ref`` lives under any of ``folder``.
+
+    Half-open ``[<dir>/, <dir>0)`` lex range against
+    ``json_extract(data, '$.asset_ref')``. The dir itself is **not** included
+    — only strict descendants. Multi-folder = union; multi-type = ``IN``.
+    """
+    from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions  # noqa: PLC0415
+
+    entities = await Entity.assets_by_path(PathQueryOptions(
+        search_dirs=list(folder),
+        types=list(record_type) if record_type else None,
+        include_system=include_system,
+        limit=limit,
+        offset=offset,
+    ))
+
+    return JSONResponse(content={"status": "SUCCESS", "data": {
+        "search_dirs": list(folder),
+        "types": list(record_type) if record_type else None,
+        "entities": [{
+            "id": e.id,
+            "type": e.type or e.get_type(),
+            "name": getattr(e, "name", "") or getattr(e, "uname", "") or "",
+            "asset_ref": getattr(e, "asset_ref", "") or "",
+            "scope": getattr(e, "scope", "") or "",
+            "modified_at": str(getattr(e, "updated_date", "") or ""),
+        } for e in entities],
+        "limit": limit,
+        "offset": offset,
+    }})

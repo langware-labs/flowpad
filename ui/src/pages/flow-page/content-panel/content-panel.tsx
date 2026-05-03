@@ -1,3 +1,4 @@
+import { SpecEditor } from '@src/components/spec-editor/SpecEditor';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { AIConfigView } from '@src/components/ai-config-view';
 import { ApiKeysView } from '@src/components/api-keys-view/api-keys-view';
@@ -12,51 +13,45 @@ import { ExplorerView } from '@src/components/explorer-view';
 import { HooksManager } from '@src/components/hooks-manager';
 import { LensViewer } from '@src/components/lens-viewer';
 import { SessionViewer } from '@src/components/live-workflow';
-import { ProcessTerminal } from '@src/components/process-terminal';
-import { SettingsView } from '@src/components/settings-view/SettingsView';
-import { TasksViewer } from '@src/components/tasks-viewer/TasksViewer';
 import { MachineOverview } from '@src/components/machine-overview/machine-overview';
 import { MarkdownViewer } from '@src/components/markdown-viewer';
-import { PlanEditor } from '@src/components/plan-editor/PlanEditor';
+import { ProcessTerminal } from '@src/components/process-terminal';
+import { SettingsView } from '@src/components/settings-view/SettingsView';
 import { ShowView } from '@src/components/show-view/ShowView';
+import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
+import { TasksViewer } from '@src/components/tasks-viewer/TasksViewer';
 import { HomeLanding } from '@src/pages/home-landing';
 import { LiveStatus } from '@src/pages/live-status';
 import { SearchView } from '@src/pages/search-view/SearchView';
-import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
 
-import { WorkflowsPage } from '@src/components/workflows-view/WorkflowsPage';
-import { CollaborationPage } from '@src/components/collaboration';
+import { ConnectionStatus, dataContext, navigator, ShellStatus, type OAuthConnection } from '@sdk';
+import { useAuth, useContext } from '@sdk/react/hooks';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
-import { InboxView } from '@src/components/inbox-view/InboxView';
+import { CollaborationPage } from '@src/components/collaboration';
+import { ConnectionsManager } from '@src/components/connections-manager';
 import { ConversationRoute } from '@src/components/conversation';
-import { TriggersView } from '@src/components/triggers-view';
+import { InboxView } from '@src/components/inbox-view/InboxView';
 import { SurveyView } from '@src/components/survey/SurveyView';
 import { TabbedTerminal, useStandardTabNav } from '@src/components/terminal';
-import { WebappViewer } from '@src/components/webapp-viewer';
-import { useContentPanelStore } from '@src/hooks/use-content-panel-store';
-import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
-import { useSendMessageStore } from '@src/store/use-send-message-store';
-import { useSurveyStore } from '@src/store/use-survey-store';
-import {
-  ConnectionStatus,
-  dataContext,
-  navigator,
-  ShellStatus,
-  type OAuthConnection,
-} from '@sdk';
-import { useAuth, useContext } from '@sdk/react/hooks';
-import { useActiveViewer } from '@src/hooks/flow-hooks';
-import { useActiveTerminals } from '@src/hooks/useActiveTerminals';
-import { ConnectionsManager } from '@src/components/connections-manager';
+import { TriggersView } from '@src/components/triggers-view';
 import { Button } from '@src/components/ui/button';
 import { Tabs, TabsContent } from '@src/components/ui/tabs';
+import { WebappViewer } from '@src/components/webapp-viewer';
+import { WorkflowsPage } from '@src/components/workflows-view/WorkflowsPage';
+import { useActiveViewer } from '@src/hooks/flow-hooks';
+import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
+import { useContentPanelStore } from '@src/hooks/use-content-panel-store';
+import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
+import { useToast } from '@src/hooks/use-toast';
+import { useActiveTerminals } from '@src/hooks/useActiveTerminals';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
+import { SpecRoute } from '@src/pages/spec/SpecRoute';
+import { useSendMessageStore } from '@src/store/use-send-message-store';
+import { useSurveyStore } from '@src/store/use-survey-store';
 import { ViewType } from '@src/types/ViewType';
 import { LogIn } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useToast } from '@src/hooks/use-toast';
 import { UserDropdown } from './user-dropdown/user-dropdown';
 
 export function ContentPanel() {
@@ -80,8 +75,7 @@ export function ContentPanel() {
    * Skips the current shell.
    */
   const findAliveShell = useCallback(
-    (currentShellId: string) =>
-      terminalTabs.find((t) => t.shellId !== currentShellId && !t.isDisabled),
+    (currentShellId: string) => terminalTabs.find((t) => t.shellId !== currentShellId && !t.isDisabled),
     [terminalTabs],
   );
 
@@ -377,7 +371,7 @@ export function ContentPanel() {
             value={ViewType.PLAN}
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
           >
-            <PlanEditor />
+            <SpecEditor />
           </TabsContent>
 
           {agent?.site_config?.feature_flags?.enable_escalation && (
@@ -533,8 +527,41 @@ export function ContentPanel() {
           >
             <ConversationRoute />
           </TabsContent>
+
+          <TabsContent
+            value={ViewType.SPEC}
+            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
+          >
+            <SpecRoute />
+          </TabsContent>
+
+          <TabsContent
+            value={ViewType.SKILLS}
+            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
+          >
+            <SkillsMovedNotice />
+          </TabsContent>
         </div>
       </Tabs>
+    </div>
+  );
+}
+
+function SkillsMovedNotice() {
+  return (
+    <div className="flex h-full items-center justify-center p-8 text-center">
+      <div className="max-w-md space-y-3">
+        <h2 className="text-lg font-semibold">Skills moved</h2>
+        <p className="text-sm text-muted-foreground">
+          The dedicated Skills view has been folded into the Assets browser.
+        </p>
+        <a
+          href="/dock/assets/list/skill"
+          className="inline-block rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          Open Skills in Assets
+        </a>
+      </div>
     </div>
   );
 }

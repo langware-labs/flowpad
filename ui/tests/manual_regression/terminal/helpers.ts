@@ -149,13 +149,38 @@ export async function waitForOutput(page: Page, text: string, timeout = 15_000) 
 }
 
 /**
+ * Click the "+" tab opener menu and pick a row by opener id.
+ * Pinned-opener inline buttons (opener-inline-<id>, open-terminal-tab-button)
+ * only render when the opener has been pinned; the always-present affordance
+ * is the plus button + dropdown menu row.
+ */
+export async function openTabViaMenu(page: Page, openerId: 'claude' | 'terminal' | 'sandbox' | 'docker' | 'history' | 'claude-resume-by-id') {
+  const inline =
+    openerId === 'terminal'
+      ? page.locator('[data-testid="open-terminal-tab-button"]')
+      : page.locator(`[data-testid="opener-inline-${openerId}"]`);
+  if (await inline.isVisible({ timeout: 500 }).catch(() => false)) {
+    await inline.click();
+    return;
+  }
+  await page.locator('[data-testid="opener-plus-button"]').click();
+  await page.locator(`[data-testid="opener-menu-row-${openerId}"]`).click();
+}
+
+/**
  * Click the "+" button to add a new terminal tab.
  */
 export async function addTerminalTab(page: Page) {
-  const addButton = page.locator('[data-testid="open-terminal-tab-button"]');
-  await addButton.click();
+  await openTabViaMenu(page, 'terminal');
   // Wait for the new tab and terminal to initialise
   await page.waitForTimeout(1_000);
+}
+
+/**
+ * Start a Claude session in the current shell view (creates a new agentic process).
+ */
+export async function startClaudeSession(page: Page) {
+  await openTabViaMenu(page, 'claude');
 }
 
 /**

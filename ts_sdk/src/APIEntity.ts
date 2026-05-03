@@ -41,19 +41,39 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   static type?: string = defaultEntityType;
   static autoLoadExpansions: ExpansionType[] = [];
   static icon: string | null = null;
+  // Shared fields lifted from Python ``DBBaseRecord`` + ``Entity``. All
+  // optional — subclasses populate the ones they care about. ``deepAssign``
+  // in the base constructor copies wire fields onto the instance, so
+  // subclasses no longer need to redeclare or manually assign these.
   id: string;
   uname?: string;
+  name?: string;
+  title?: string;
+  key?: string;
+  namespace?: string;
+  tags?: string[];
   system?: boolean;
   created_by?: string;
   created_date?: Date;
   updated_by?: string;
   updated_date?: Date;
+  created_through?: string;
+  updated_through?: string;
   schema_version?: string;
+  labels?: string[];
+  root_vfs_path?: string;
+  fs_storage_mount_path?: string;
+  visitor_role?: string;
   _expand?: EntityExpansion;
   _dirty: boolean = true;
   _typeId: TypeId | null = null;
-  labels?: string[];
-  root_vfs_path?: string;
+  /**
+   * Generic context-entity references. Private — use ``addContextEntity`` /
+   * ``removeContextEntity`` to mutate. The wire shape is ``string[]`` of
+   * TypeId-formatted entries; we deserialize to ``TypeId[]`` in the
+   * constructor and serialize back via ``toJSON``.
+   */
+  private _context_entities: TypeId[] = [];
   _isLoaded: boolean = false;
   static nextInstanceIndex: number = 0;
   _instanceIndex: number = APIEntity.nextInstanceIndex++;
@@ -95,6 +115,64 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
 
   get identifier(): string {
     return this.uname ? `@${this.uname}` : this.id;
+  }
+
+  /**
+   * Human-readable label for this entity. Used at every user-visible name
+   * display site. Composed from ``getDisplayName()`` (subclass override hook,
+   * defaults to ``null``) falling through to ``defaultDisplayName`` (the
+   * universal chain over ``name`` → ``uname`` → ``title`` → ``<type>-<key>``
+   * → ``<type>-<id-tail>``).
+   *
+   * Subclasses customize by overriding ``getDisplayName()``, NOT this getter.
+   * Returning ``null`` from ``getDisplayName`` defers to the default chain.
+   */
+  get displayName(): string {
+    return this.getDisplayName() ?? this.defaultDisplayName;
+  }
+
+  /**
+   * Subclass override hook. Return a custom display string when the default
+   * chain isn't what the entity wants (e.g. Project's cwd-basename branch,
+   * CollaborationRoom's participant join). Return ``null`` to defer to
+   * ``defaultDisplayName``. Base returns ``null``.
+   */
+  getDisplayName(): string | null {
+    return null;
+  }
+
+  /**
+   * Universal fallback chain. Read in order; first non-empty rung wins.
+   *   1. ``this.name`` if non-empty (after trim)
+   *   2. ``this.uname`` if non-empty
+   *   3. first 2 words of ``this.title`` + ' …' (or just the title if ≤ 2 words)
+   *   4. ``<type>-<key>`` if ``this.key`` is non-empty
+   *   5. ``<type>-<id[0:4]>…<id[-4:]>`` (or ``<type>-<id>`` literal when id < 8 chars)
+   */
+  get defaultDisplayName(): string {
+    const type = (this.constructor as typeof APIEntity).type ?? 'entity';
+
+    // 1. name
+    if (this.name && this.name.trim()) return this.name;
+
+    // 2. uname
+    if (this.uname && this.uname.trim()) return this.uname;
+
+    // 3. title prefix
+    const t = this.title?.trim();
+    if (t) {
+      const words = t.split(/\s+/);
+      const head = words.slice(0, 2).join(' ');
+      return words.length > 2 ? `${head} …` : head;
+    }
+
+    // 4. <type>-<key>
+    if (this.key && this.key.trim()) return `${type}-${this.key}`;
+
+    // 5. <type>-<id-tail>
+    const id = this.id ?? '';
+    if (id.length < 8) return `${type}-${id || '?'}`;
+    return `${type}-${id.slice(0, 4)}…${id.slice(-4)}`;
   }
 
   get expand(): EntityExpansion | undefined {
@@ -246,6 +324,16 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     if (entityJson.type && entityJson.type != this.getType()) {
       throw new Error(`Entity type mismatch: ${entityJson.type} != ${this.getType()}`);
     }
+    // Move the wire-shaped ``context_entities`` (string[] / TypeId[] after
+    // deepAssign) into the private storage and drop the public alias so
+    // toJSON's dynamic-property iterator doesn't double-emit it.
+    const fromWire = (this as any).context_entities as Array<unknown> | undefined;
+    if (Array.isArray(fromWire) && fromWire.length > 0) {
+      this._context_entities = fromWire.map((v) =>
+        v instanceof TypeId ? v : new TypeId(String(v)),
+      );
+    }
+    delete (this as any).context_entities;
     const proxy = getProxy(this);
     dataManager.register_new_entity(this.typeId, proxy);
     return proxy;
@@ -299,6 +387,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
       id: this.id,
       type: this.getType(),
       version: this.schema_version,
+      // Persist only the private array — direct fields are emitted as their
+      // own typed fields by the dynamic-property iterator below. The dynamic
+      // ``contextEntities`` getter merges them at read time.
+      context_entities: this._context_entities.map((t) => t.toString()),
     };
 
     // Dynamically add all enumerable properties of the instance
@@ -620,6 +712,65 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    */
   public get_labels(): string[] {
     return [...(this.labels || [])];
+  }
+
+  // ── context_entities surface ──────────────────────────────────────────
+  //
+  // Unified container for "what other entities is this one contextually
+  // related to." See ``IEntity.context_entities``. The persisted slot is the
+  // private ``_context_entities``; the public ``contextEntities`` getter
+  // merges in per-entity-projected direct fields (overridable via
+  // ``_directFieldsAsTypeIds``). Frontend writes go through
+  // ``addContextEntity`` / ``removeContextEntity`` only.
+
+  /**
+   * Per-entity projection of direct fields into the chip-renderable context.
+   * Override in subclasses to surface fields like ``project_id`` or
+   * ``assignee`` as TypeIds. Default: nothing.
+   */
+  protected _directFieldsAsTypeIds(): TypeId[] {
+    return [];
+  }
+
+  /**
+   * Full chip-renderable context: direct-field projection + persisted
+   * ``_context_entities``. Read-only — mutate via the add/remove methods.
+   */
+  public get contextEntities(): TypeId[] {
+    return [...this._directFieldsAsTypeIds(), ...this._context_entities];
+  }
+
+  /**
+   * Append a context entity (idempotent — no-op if the same TypeId is
+   * already present). Sets ``dirty`` and notifies dataManager so observers
+   * re-render.
+   */
+  public addContextEntity(typeId: TypeId): void {
+    if (this._context_entities.some((t) => t.equals(typeId))) return;
+    this._context_entities = [...this._context_entities, typeId];
+    dataManager.notifyPropertyChanged(this.typeId, 'context_entities');
+  }
+
+  /**
+   * Remove a context entity. Returns ``true`` if a matching entry was
+   * removed, ``false`` if none was present.
+   */
+  public removeContextEntity(typeId: TypeId): boolean {
+    const before = this._context_entities.length;
+    this._context_entities = this._context_entities.filter((t) => !t.equals(typeId));
+    if (this._context_entities.length === before) return false;
+    dataManager.notifyPropertyChanged(this.typeId, 'context_entities');
+    return true;
+  }
+
+  /** All context entries of the given type (e.g. ``'spec'``). */
+  public contextOfType(type: string): TypeId[] {
+    return this.contextEntities.filter((t) => t.type === type);
+  }
+
+  /** First context entry of the given type, or ``null``. */
+  public firstContextOfType(type: string): TypeId | null {
+    return this.contextEntities.find((t) => t.type === type) ?? null;
   }
 
   /**

@@ -32,10 +32,9 @@ test('clicking shell tab from agentic process view updates URL to shell session'
 
   const initialTabCount = await page.locator('[data-testid^="tab-"]').count();
 
-  // Click Start Claude
-  const startBtn = page.locator('[data-testid="start-claude-button"]');
-  await startBtn.waitFor({ state: 'visible', timeout: 10_000 });
-  await startBtn.click();
+  // Start Claude via the always-present "+" tab-opener menu.
+  await page.locator('[data-testid="opener-plus-button"]').click();
+  await page.locator('[data-testid="opener-menu-row-claude"]').click();
   await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 20_000 });
 
   // Wait for PTY tab to appear (confirms agentic process PTY started)

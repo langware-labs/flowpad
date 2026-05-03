@@ -12,7 +12,7 @@
  */
 
 import { AgenticProcess, dataManager } from '@sdk';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -52,6 +52,14 @@ You are a test agent.
     agentDir = homeClaude;
   });
 
+  afterEach(() => {
+    // Test fixture lives under the user's real ~/.claude/agents/ — delete it so
+    // it doesn't pollute every future "what assets does this process see?" view.
+    // Same for the temp workdir under $TMPDIR.
+    try { fs.unlinkSync(agentMdPath); } catch { /* ignore */ }
+    try { fs.rmSync(workdir, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
   it('attach → list → detach round-trip for an agent by uuid id', async () => {
     const proc = await new AgenticProcess({ workdir }).save([]);
 
@@ -77,13 +85,23 @@ You are a test agent.
     await proc.embeddedAssets.attach(agentRef);
     expect(proc.embeddedAssets.list().map((r) => r.toString())).toEqual([agentRef]);
 
-    // Read server-side to confirm persistence
-    const refreshed = await dataManager.getByTypeId<AgenticProcess>(proc.typeId);
+    // Read server-side to confirm persistence. Server appends the assets dir
+    // to ``additional_dirs`` and pushes the update via WebSocket; the cached
+    // entity reflects it once that WS message lands. Under suite load that
+    // can take a beat — poll briefly instead of asserting on a single snapshot
+    // so the test isn't racing a fan-out we can't observe directly.
+    const deadline = Date.now() + 5000;
+    let refreshed: AgenticProcess | null = null;
+    while (Date.now() < deadline) {
+      refreshed = await dataManager.getByTypeId<AgenticProcess>(proc.typeId);
+      if ((refreshed?.additional_dirs ?? []).some((d) => d.endsWith('/assets'))) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
     const refreshedRefs = (refreshed?.embedded_asset_refs ?? []).map((r) => r.toString());
     expect(refreshedRefs).toEqual([agentRef]);
     expect(
       (refreshed?.additional_dirs ?? []).some((d) => d.endsWith('/assets')),
-      'additional_dirs should contain the assets path after attach',
+      `additional_dirs should contain the assets path after attach (got: ${JSON.stringify(refreshed?.additional_dirs)})`,
     ).toBe(true);
 
     // Detach

@@ -69,7 +69,7 @@ export function ConversationRoute() {
     );
   }
 
-  const subject = task?.title?.trim() || 'Conversation';
+  const subject = task?.displayName ?? 'Conversation';
 
   return (
     <div className="flex h-full flex-col">

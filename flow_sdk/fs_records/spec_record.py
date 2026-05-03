@@ -40,7 +40,7 @@ class SpecRecord(Record):
 
     _record_type: ClassVar[str] = RecordType.SPEC
     _indexed_by_default: ClassVar[bool] = True
-    _user_asset: ClassVar[bool] = True
+    _browseable: ClassVar[bool] = True
     _icon: ClassVar[str] = "FileText"
     index_fields: ClassVar[list[str]] = ["name", "spec_type"]
 

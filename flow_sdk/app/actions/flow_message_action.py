@@ -59,8 +59,8 @@ async def handle_upload_flow_message(file, overwrite: bool) -> ApiResponse:
     finally:
         tmp_path.unlink(missing_ok=True)
 
-    task_id = next((c.id for c in fm.context if c.type == BuiltinEntityType.TASK.value), None)
-    conv_id = next((c.id for c in fm.context if c.type == BuiltinEntityType.CONVERSATION.value), None)
+    task_id = next((c.id for c in fm.context_entities if c.type == BuiltinEntityType.TASK.value), None)
+    conv_id = next((c.id for c in fm.context_entities if c.type == BuiltinEntityType.CONVERSATION.value), None)
 
     return ApiSuccessResponse(data={
         "message_id": fm.id,
@@ -100,9 +100,10 @@ async def handle_create_task_bundle(
     # 2. Create Task
     task = Task.model_validate({
         "title": task_title,
-        "spec_id": spec.id,
         "shared_by_id": sender_id,
         "metadata": {"team_space_id": team_space_id} if team_space_id else None,
+        # spec_id consolidated into ``context_entities``.
+        "context_entities": [f"spec-{spec.id}"],
     })
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
@@ -114,10 +115,11 @@ async def handle_create_task_bundle(
     jsonl_path.touch()
 
     conv = Conversation.model_validate({
-        "task_id": task.id,
         "project_id": project_id,
         "data_path": str(jsonl_path),
         "message_count": 0,
+        # task_id consolidated into ``context_entities``.
+        "context_entities": [f"task-{task.id}"],
     })
     conv.id = Conversation.allocate_id(conv.model_dump())
     conv = await conv.save(someone_typeid)
@@ -127,7 +129,7 @@ async def handle_create_task_bundle(
     rec.save()
     rec.link_to_parent_record()
 
-    task.conversation_id = conv.id
+    task.add_context_entity(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))
     task = await task.save(someone_typeid)
 
     # 4. Create FlowMessage record
@@ -138,7 +140,7 @@ async def handle_create_task_bundle(
 
     fm = FlowMessage.model_validate({
         "text": message or f"Task: {task_title}",
-        "context": context,
+        "context_entities": context,
         "attachment": [],
         "sender_id": sender_id,
         "sender_name": sender_name,
@@ -543,11 +545,11 @@ async def handle_inbox_open(fm_id: str) -> ApiResponse:
     local_fm = await FlowMessage.get_one({"id": fm_id})
     if local_fm:
         attachment_filename = (local_fm.attachment_filename or "").strip()
-        raw_context = [str(c) for c in (local_fm.context or [])]
+        raw_context = [str(c) for c in (local_fm.context_entities or [])]
     else:
         hub_data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
         attachment_filename = ((hub_data or {}).get("attachment_filename") or "").strip()
-        raw_context = (hub_data or {}).get("context") or []
+        raw_context = (hub_data or {}).get("context_entities") or []
 
     task_id = None
     conv_id = None

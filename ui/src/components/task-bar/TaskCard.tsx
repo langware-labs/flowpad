@@ -188,8 +188,8 @@ export function TaskCard({
                 </span>
               </div>
             )}
-            <div className="min-w-0 truncate pl-2 text-sm font-medium" title={task.title || 'Untitled'}>
-              {task.title || 'Untitled'}
+            <div className="min-w-0 truncate pl-2 text-sm font-medium" title={task.displayName}>
+              {task.displayName}
             </div>
           </div>
           {dueDateLabel && <div className="truncate text-xs text-muted-foreground">{dueDateLabel}</div>}
@@ -225,7 +225,7 @@ export function TaskCard({
         open={confirmRemove}
         onOpenChange={setConfirmRemove}
         title={`${actionLabel} task`}
-        description={`Are you sure you want to ${actionLabel.toLowerCase()} "${task.title || 'Untitled'}"?`}
+        description={`Are you sure you want to ${actionLabel.toLowerCase()} "${task.displayName}"?`}
         confirmLabel={actionLabel}
         variant="destructive"
         onConfirm={() => onRemove(task)}

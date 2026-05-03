@@ -1,10 +1,7 @@
-import type { Editor } from '@milkdown/core';
-import type { MilkdownPlugin } from '@milkdown/ctx';
 import type { AgenticProcess } from '@sdk';
-import type { MutableRefObject, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-drawer';
-import { MilkdownEditor, type MilkdownEditorMode } from './MilkdownEditor';
 import {
   BacklinksTab,
   ChatTab,
@@ -27,12 +24,9 @@ export interface ExtraSideTab {
   panel: ReactNode;
 }
 
-interface MilkdownEditorWithSidePanelProps {
-  content: string;
-  onChange?: (content: string) => void;
-  editorMode?: MilkdownEditorMode;
-  plugins?: MilkdownPlugin[];
-  onLinkClick?: (href: string) => void;
+interface EditorWithSidePanelProps {
+  /** The active editor surface (Milkdown or Monaco). Swapped by the caller — the side panel stays mounted. */
+  children: ReactNode;
   /**
    * Serialized TypeId of the first-class entity this file belongs to (e.g.
    * `"plan-<uuid>"`, `"agent-<uuid>"`). Chat + Backlinks are keyed by this.
@@ -47,32 +41,31 @@ interface MilkdownEditorWithSidePanelProps {
   onActiveTabChange?: (id: string) => void;
   /** Forwarded to the Chat tab — runs once after its backing process is created. */
   chatOnProcessCreated?: (process: AgenticProcess) => Promise<void> | void;
-  /** Outer ref to the underlying Milkdown Editor for imperative actions (e.g. toolbar inserts). */
-  editorRef?: MutableRefObject<Editor | null>;
-  /** Right-aligned slot rendered inside Milkdown's static toolbar. Hidden in view/review modes. */
-  toolbarRight?: ReactNode;
+  /**
+   * Current caret line (1-indexed, on-disk) emitted by whichever editor is mounted.
+   * Rendered as "line N" in the chat header. Null hides the badge.
+   */
+  cursorLine?: number | null;
 }
 
 /**
- * Wraps `MilkdownEditor` with a fixed-width tabbed side window (Chat, Backlinks).
- * The side panel is always on; Chat is the default tab. Callers must supply a
- * real entity TypeId as `chatTarget`; files without a backing entity cannot
- * host chat.
+ * Editor-agnostic shell: any markdown editor as `children`, plus a fixed-width
+ * tabbed side window (Chat, Backlinks, extras). The side panel is always on
+ * and stays mounted across editor swaps so its tab state, scroll position,
+ * and chat history persist when the parent toggles between editor backends.
+ *
+ * Callers must supply a real entity TypeId as `chatTarget`; files without a
+ * backing entity cannot host chat.
  */
-export function MilkdownEditorWithSidePanel({
-  content,
-  onChange,
-  editorMode,
-  plugins,
-  onLinkClick,
+export function EditorWithSidePanel({
+  children,
   chatTarget,
   extraTabs,
   activeTab: activeTabProp,
   onActiveTabChange,
   chatOnProcessCreated,
-  editorRef,
-  toolbarRight,
-}: MilkdownEditorWithSidePanelProps) {
+  cursorLine,
+}: EditorWithSidePanelProps) {
   const [internalTab, setInternalTab] = useState<string>(MD_SIDE_TABS_DEFAULT);
   const activeTab = activeTabProp ?? internalTab;
 
@@ -97,26 +90,22 @@ export function MilkdownEditorWithSidePanel({
 
   const panels = useMemo<Record<string, ReactNode>>(() => {
     const base: Record<string, ReactNode> = {
-      chat: <ChatTab target={chatTarget} onProcessCreated={chatOnProcessCreated} />,
+      chat: (
+        <ChatTab
+          target={chatTarget}
+          onProcessCreated={chatOnProcessCreated}
+          cursorLine={cursorLine}
+        />
+      ),
       backlinks: <BacklinksTab target={chatTarget} />,
     };
     for (const t of extraTabs ?? []) base[t.id] = t.panel;
     return base;
-  }, [chatTarget, extraTabs, chatOnProcessCreated]);
+  }, [chatTarget, extraTabs, chatOnProcessCreated, cursorLine]);
 
   return (
     <div className="flex h-full w-full" data-testid="md-editor-with-side-panel">
-      <div className="min-w-0 flex-1">
-        <MilkdownEditor
-          content={content}
-          onChange={onChange}
-          editorMode={editorMode}
-          plugins={plugins}
-          onLinkClick={onLinkClick}
-          editorRef={editorRef}
-          toolbarRight={toolbarRight}
-        />
-      </div>
+      <div className="min-w-0 flex-1">{children}</div>
       <TabbedSideDrawer<string>
         open
         width="w-80"

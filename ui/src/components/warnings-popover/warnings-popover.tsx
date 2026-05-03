@@ -132,11 +132,9 @@ export function WarningsPopover() {
           data-testid="warnings-popover-trigger"
         >
           <AlertTriangle className="h-4 w-4" />
-          {warnings.length > 1 && (
-            <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] text-destructive-foreground">
-              {warnings.length}
-            </span>
-          )}
+          <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] text-destructive-foreground">
+            {warnings.length}
+          </span>
         </button>
       </PopoverTrigger>
       <PopoverContent side="top" align="start" className="w-80 p-2">

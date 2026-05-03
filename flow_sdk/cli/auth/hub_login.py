@@ -2,57 +2,42 @@
 """
 Authentication module for flow CLI.
 Manages API keys using system keyring.
+
+The keyring slot is per-instance: ``prod`` keeps the legacy
+``flowpad_api_key`` username (zero migration for installed users); ``dev``
+and ``test`` use ``flowpad_api_key:<instance_name>`` so two local
+instances logged in as different cloud users don't overwrite each other's
+token.
 """
 
 import keyring
-from enum import Enum
 
 
-class AuthConstants(Enum):
-    """Authentication-related constants."""
-    SERVICE_NAME = "Flowpad.ai.app_secrets"
-    API_KEY_NAME = "flowpad_api_key"
+SERVICE_NAME = "Flowpad.ai.app_secrets"
+
+
+def _api_key_name() -> str:
+    """Per-instance keyring username — see module docstring."""
+    from flow_sdk.instance_settings import get_instance_settings
+    name = get_instance_settings().instance_name
+    return "flowpad_api_key" if name == "prod" else f"flowpad_api_key:{name}"
 
 
 def set_api_key(api_key: str) -> None:
-    """
-    Store the API key in the system keyring.
-
-    Args:
-        api_key: The API key to store
-    """
-    keyring.set_password(
-        AuthConstants.SERVICE_NAME.value,
-        AuthConstants.API_KEY_NAME.value,
-        api_key
-    )
+    """Store the API key in the system keyring."""
+    keyring.set_password(SERVICE_NAME, _api_key_name(), api_key)
 
 
 def get_api_key() -> str | None:
-    """
-    Retrieve the API key from the system keyring.
-
-    Returns:
-        str | None: The stored API key, or None if not found
-    """
-    password = keyring.get_password(
-        AuthConstants.SERVICE_NAME.value,
-        AuthConstants.API_KEY_NAME.value
-    )
-    return password
+    """Retrieve the API key from the system keyring."""
+    return keyring.get_password(SERVICE_NAME, _api_key_name())
 
 
 def delete_api_key() -> None:
-    """
-    Delete the API key from the system keyring.
-    """
+    """Delete the API key from the system keyring (idempotent)."""
     try:
-        keyring.delete_password(
-            AuthConstants.SERVICE_NAME.value,
-            AuthConstants.API_KEY_NAME.value
-        )
+        keyring.delete_password(SERVICE_NAME, _api_key_name())
     except keyring.errors.PasswordDeleteError:
-        # Key doesn't exist, that's fine
         pass
 
 
@@ -85,7 +70,7 @@ async def validate_api_key_async(api_key: str) -> dict:
     Raises:
         Exception: If API key is invalid or validation fails
     """
-    from flow_sdk.client import FlowpadClient, ApiConfig
+    from flow_sdk.cloud_client import FlowpadClient, ApiConfig
 
     # Create API config from environment
     config = ApiConfig.from_env()

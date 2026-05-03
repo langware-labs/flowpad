@@ -203,7 +203,7 @@ class TypeInfo:
     index_fields: list[str] = field(default_factory=list)
     defaults: dict[str, Any] = field(default_factory=dict)
     indexed_by_default: bool = False
-    user_asset: bool = False
+    browseable: bool = False
     creatable: bool = False
     icon: str | None = None
     parent_type: str | None = None
@@ -222,7 +222,7 @@ class TypeInfo:
             "index_fields": sorted(self.index_fields),
             "defaults": self.defaults,
             "indexed_by_default": self.indexed_by_default,
-            "user_asset": self.user_asset,
+            "browseable": self.browseable,
             "creatable": self.creatable,
             "icon": self.icon,
             "parent_type": self.parent_type,
@@ -253,7 +253,7 @@ class TypeInfo:
             "index_fields": self.index_fields,
             "defaults": self.defaults,
             "indexed_by_default": self.indexed_by_default,
-            "user_asset": self.user_asset,
+            "browseable": self.browseable,
             "creatable": self.creatable,
             "icon": self.icon,
             "parent_type": self.parent_type,
@@ -269,7 +269,7 @@ class TypeInfo:
             index_fields=data.get("index_fields", []),
             defaults=data.get("defaults", {}),
             indexed_by_default=data.get("indexed_by_default", False),
-            user_asset=data.get("user_asset", False),
+            browseable=data.get("browseable", False),
             creatable=data.get("creatable", False),
             icon=data.get("icon"),
             parent_type=data.get("parent_type"),
@@ -322,8 +322,8 @@ class SchemaRegistry:
                 existing.icon = info.icon
             if info.creatable and not existing.creatable:
                 existing.creatable = True
-            if info.user_asset and not existing.user_asset:
-                existing.user_asset = True
+            if info.browseable and not existing.browseable:
+                existing.browseable = True
             info = existing
         else:
             cls._types[info.type_name] = info

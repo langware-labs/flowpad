@@ -42,7 +42,18 @@ class CollaborationRoomRecord(Record):
         kwargs.setdefault("host_member_id", None)
         kwargs.setdefault("name", None)
         kwargs.setdefault("members", [])
-        kwargs.setdefault("agentic_process_ids", [])
+        # ``agentic_process_ids`` lived on the entity historically; it now
+        # consolidates into ``context_entities`` (TypeId list). For old records
+        # that still carry the legacy field, route it into context_entities so
+        # the entity loads cleanly.
+        legacy_procs = kwargs.pop("agentic_process_ids", None)
+        ctx = list(kwargs.get("context_entities") or [])
+        if legacy_procs:
+            for pid in legacy_procs:
+                tid = f"agentic_process-{pid}"
+                if tid not in ctx:
+                    ctx.append(tid)
+        kwargs["context_entities"] = ctx
         kwargs.setdefault("status", CollaborationRoomStatus.ACTIVE)
         kwargs.setdefault("started_at", now)
         kwargs.setdefault("updated_at", now)
@@ -58,13 +69,14 @@ class CollaborationRoomRecord(Record):
         self._mark_dirty("updated_at")
 
     def add_process(self, process_id: str) -> bool:
-        """Append an agentic_process_id to the room's list. Returns True if added."""
-        procs = list(object.__getattribute__(self, "__dict__").get("agentic_process_ids") or [])
-        if process_id in procs:
+        """Append an agentic_process to the room's context. Returns True if added."""
+        ctx = list(object.__getattribute__(self, "__dict__").get("context_entities") or [])
+        tid = f"agentic_process-{process_id}"
+        if tid in ctx:
             return False
-        procs.append(process_id)
-        object.__setattr__(self, "agentic_process_ids", procs)
-        self._mark_dirty("agentic_process_ids")
+        ctx.append(tid)
+        object.__setattr__(self, "context_entities", ctx)
+        self._mark_dirty("context_entities")
         self.touch()
         return True
 

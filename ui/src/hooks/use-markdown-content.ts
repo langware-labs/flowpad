@@ -5,22 +5,30 @@ export interface MarkdownContentState extends Omit<FsRefContentState, 'content' 
   fields: Record<string, string>;
   hasFields: boolean;
   body: string;
+  /** 1-indexed line in the on-disk file where `body[0]` sits. 1 when no frontmatter. */
+  bodyStartLine: number;
   setField: (key: string, value: string) => void;
   setBody: (body: string) => void;
 }
 
 // ── Pure frontmatter utilities ────────────────────────────────────────────────
 
-function parseFrontmatter(raw: string): { fields: Record<string, string>; body: string } {
-  if (!raw.startsWith('---\n')) return { fields: {}, body: raw };
+function parseFrontmatter(
+  raw: string,
+): { fields: Record<string, string>; body: string; bodyStartLine: number } {
+  if (!raw.startsWith('---\n')) return { fields: {}, body: raw, bodyStartLine: 1 };
 
   const closeIdx = raw.indexOf('\n---\n', 4);
-  if (closeIdx === -1) return { fields: {}, body: raw };
+  if (closeIdx === -1) return { fields: {}, body: raw, bodyStartLine: 1 };
 
   const frontmatter = raw.slice(4, closeIdx);
-  const body = raw.slice(closeIdx + 5).replace(/^\n+/, '');
-  const fields: Record<string, string> = {};
+  const afterClose = raw.slice(closeIdx + 5);
+  const leadingNewlines = afterClose.match(/^\n+/);
+  const body = afterClose.replace(/^\n+/, '');
+  const consumed = closeIdx + 5 + (leadingNewlines ? leadingNewlines[0].length : 0);
+  const bodyStartLine = raw.slice(0, consumed).split('\n').length;
 
+  const fields: Record<string, string> = {};
   for (const line of frontmatter.split('\n')) {
     const match = /^([\w-]+):\s*(.*)$/.exec(line);
     if (match) {
@@ -28,7 +36,7 @@ function parseFrontmatter(raw: string): { fields: Record<string, string>; body: 
     }
   }
 
-  return { fields, body };
+  return { fields, body, bodyStartLine };
 }
 
 function serializeFrontmatter(fields: Record<string, string>, body: string): string {
@@ -47,7 +55,7 @@ export function useMarkdownContent(
 ): MarkdownContentState {
   const { content, setContent, ...rest } = useFSRefContent(fsRef, options);
 
-  const { fields, body } = useMemo(() => parseFrontmatter(content), [content]);
+  const { fields, body, bodyStartLine } = useMemo(() => parseFrontmatter(content), [content]);
 
   // Stable refs so setField/setBody don't change identity when fields/body change
   const fieldsRef = useRef(fields);
@@ -73,6 +81,7 @@ export function useMarkdownContent(
     fields,
     hasFields: Object.keys(fields).length > 0,
     body,
+    bodyStartLine,
     setField,
     setBody,
     ...rest,

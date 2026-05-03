@@ -12,8 +12,8 @@ import { navigator } from './services/navigationService';
 // import { authService } from './services/authService';
 import * as Sentry from '@sentry/browser';
 import { ContextEntitiesEnum } from './FlowSync/context';
-import { getContextEntityFromLocalStorage } from './FlowSync/context-local-storage';
-import { OAuthEventType, OAUTH_PROVIDERS } from './services/oauth/oauth-service';
+import { getContextEntityFromLocalStorage, setContextEntityToLocalStorage } from './FlowSync/context-local-storage';
+import { cloudManager } from './services/cloud_login';
 import { ConnectionManager } from './websocket';
 
 declare global {
@@ -42,22 +42,9 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       // Store bootstrap info in dataContext for UI access (e.g., desktop_info)
       dataContext.bootstrapInfo = bootstrapInfo;
 
-      // Load cloud user lazily — fire-and-forget, must not block page load
-      if (dataContext.cloudLoginAvailable) {
-        void dataContext.loadCloudUser();
-      }
-
-      // Reload on cloud login and logout completion (works for both browser popup and Electron external browser)
-      dataManager.on(OAuthEventType.OAUTH_FLOW_COMPLETE, async (msg: { provider: string }) => {
-        if (msg.provider === OAUTH_PROVIDERS.FLOWPAD_CLOUD) {
-          const callback = (window as any).__postCloudLoginCallback as (() => Promise<void>) | undefined;
-          if (callback) {
-            (window as any).__postCloudLoginCallback = undefined;
-            try { await callback(); } catch (e) { console.error('[postLogin] callback failed', e); }
-          }
-          window.location.reload();
-        }
-      });
+      // Seed cloudManager from bootstrap; it owns isLoggedIn / currentUser / cloudUrl
+      // and listens to oauth WS events for the lifetime of the app.
+      void cloudManager.bootstrap(bootstrapInfo.desktop_info);
 
       // Load schemas (pass empty array if null to prevent re-fetching)
       await dataManager.loadSchemas(bootstrapInfo.schemas || []);
@@ -74,10 +61,19 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentVisitorTypeId, visitor.typeId);
       }
 
-      // Set default compute node from bootstrap before project — so refreshProject() skips the fetch
+      // Set default compute node from bootstrap before project — so refreshProject() skips the fetch.
+      // Compute_node ids are minted per-process by get_or_create_local_compute_node and rotate
+      // every time the dev DB is recreated (/tmp/flowpad_dev.db). Evict any persisted
+      // CurrentComputeNodeTypeId that doesn't match the bootstrap-issued id BEFORE the new id
+      // is applied, so callers that read localStorage directly don't issue requests against
+      // a dead UUID.
       if (bootstrapInfo.default_compute_node) {
         const computeNode = new ComputeNode(bootstrapInfo.default_compute_node as any);
         computeNode.markAsExpanded();
+        const persistedTypeId = getContextEntityFromLocalStorage(ContextEntitiesEnum.CurrentComputeNodeTypeId);
+        if (persistedTypeId && !persistedTypeId.equals(computeNode.typeId)) {
+          setContextEntityToLocalStorage(ContextEntitiesEnum.CurrentComputeNodeTypeId, null);
+        }
         await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentComputeNodeTypeId, computeNode.typeId);
       }
 

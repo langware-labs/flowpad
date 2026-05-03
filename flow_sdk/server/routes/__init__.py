@@ -3,8 +3,7 @@
 from .bootstrap import router as bootstrap_router
 from .graph import graph_router
 from .health import health_router
-from .auth import router as auth_router
-from .auth import api_router as auth_api_router
+from .cloud import router as cloud_router
 from .hooks import router as hooks_router
 from .chat import router as chat_router
 from .directory import router as directory_router
@@ -27,8 +26,7 @@ __all__ = [
     "bootstrap_router",
     "graph_router",
     "health_router",
-    "auth_router",
-    "auth_api_router",
+    "cloud_router",
     "hooks_router",
     "chat_router",
     "directory_router",

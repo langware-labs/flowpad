@@ -27,7 +27,7 @@
  * Test 9 (auto-refresh) is automatable but requires filesystem write access.
  */
 import { test, expect } from '@playwright/test';
-import { dismissSetupModal } from './helpers';
+import { dismissSetupModal, startClaudeSession } from './helpers';
 
 const APP_URL = process.env.APP_URL ?? 'http://localhost:4098';
 const API_URL = process.env.API_URL ?? 'http://localhost:9008';
@@ -66,9 +66,7 @@ async function gotoAgenticProcess(page: import('@playwright/test').Page) {
 
   if (!page.url().includes('agentic_process-')) {
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 60_000 });
-    const startBtn = page.locator('[data-testid="start-claude-button"]');
-    await startBtn.waitFor({ state: 'visible', timeout: 60_000 });
-    await startBtn.click();
+    await startClaudeSession(page);
     await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 60_000 });
   }
 

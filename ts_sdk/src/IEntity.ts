@@ -30,6 +30,15 @@ export interface IEntity extends Partial<IResource> {
   vfs_orphan?: boolean;
   /** True when this entity belongs to an SDK-shipped system project. Hidden by default. */
   system?: boolean;
+  /**
+   * Generic context-entity references. The unified container for "what other
+   * entities is this entity contextually related to." On the wire, each entry
+   * is a TypeId-formatted string ("type-id"); in code, entities expose a typed
+   * ``contextEntities`` getter that merges this list with per-entity-projected
+   * direct fields. Frontend code must NOT push to this array directly — use
+   * ``addContextEntity`` / ``removeContextEntity``.
+   */
+  context_entities?: string[];
 }
 
 export const defaultEntityType = 'entity_base';

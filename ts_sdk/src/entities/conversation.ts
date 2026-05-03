@@ -2,6 +2,7 @@ import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
+import { TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 
 export interface ConversationMessage {
@@ -23,17 +24,16 @@ export interface ConversationParticipant {
 }
 
 export interface IConversation extends IEntity {
-  task_id?: string | null;
   project_id?: string | null;
   data_path?: string | null;
   message_count?: number;
   message_ids?: string | null;  // JSON-encoded ConversationMessagePointer[]
   participants?: ConversationParticipant[];
+  // NOTE: task_id moved into context_entities. Use conv.firstContextOfType('task').
 }
 
 @registerEntity
 export class Conversation extends APIEntity<Conversation> implements IConversation {
-  task_id?: string | null;
   project_id?: string | null;
   data_path?: string | null;
   message_count?: number;
@@ -43,12 +43,18 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
 
   constructor(entity: Partial<IConversation> = {}) {
     super(entity);
-    this.task_id = entity.task_id;
     this.project_id = entity.project_id;
     this.data_path = entity.data_path;
     this.message_count = entity.message_count;
     this.message_ids = entity.message_ids;
     this.participants = entity.participants;
+  }
+
+  /** Surface the project as a chip-projected direct field. */
+  protected override _directFieldsAsTypeIds(): TypeId[] {
+    const out: TypeId[] = [];
+    if (this.project_id) out.push(new TypeId('project', this.project_id));
+    return out;
   }
 
   /**
