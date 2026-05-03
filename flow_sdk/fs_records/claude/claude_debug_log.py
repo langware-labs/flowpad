@@ -253,7 +253,7 @@ class ClaudeSessionDebugLogRecord(Record):
                 d = Path(appdata) / "claude" / "debug"
                 if d.is_dir():
                     return d
-        return home / ".claude" / "debug"
+        return Path.home() / ".claude" / "debug"
 
     @classmethod
     def discover(cls, scope=None, hours: float = 168.0, **kwargs) -> list[ClaudeSessionDebugLogRecord]:

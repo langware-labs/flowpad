@@ -30,9 +30,10 @@ export async function applyProjectToTask(taskId: string, project: Project): Prom
     // Also stamp the conversation when the task points at one. Keeps the
     // RecentConversationsStrip / project-scoped views in sync without
     // requiring a separate "set conversation project" step.
-    if (task.conversation_id) {
+    const convTypeId = task.firstContextOfType('conversation');
+    if (convTypeId) {
       const conv = await dataManager
-        .getByTypeId<Conversation>(new TypeId(Conversation.type, task.conversation_id))
+        .getByTypeId<Conversation>(convTypeId)
         .catch(() => null);
       if (conv && conv.project_id !== project.id) {
         conv.project_id = project.id ?? null;

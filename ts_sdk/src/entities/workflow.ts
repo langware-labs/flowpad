@@ -18,9 +18,6 @@ import { ViewType } from '../utils/ui/view-types';
 export class Workflow extends APIEntity<Workflow> {
   static type: string = 'workflow';
 
-  /** Display name of the workflow */
-  name?: string;
-
   /** Description of the workflow */
   description?: string;
 
@@ -35,18 +32,10 @@ export class Workflow extends APIEntity<Workflow> {
 
   constructor(entity: Partial<Workflow> = {}) {
     super(entity);
-    this.name = entity.name;
     this.description = entity.description;
     this.asset_ref = entity.asset_ref;
     this.project_id = entity.project_id;
     this.tab_index = entity.tab_index ?? null;
-  }
-
-  /**
-   * Get the display name for the workflow
-   */
-  get displayName(): string {
-    return this.name || 'Untitled Workflow';
   }
 
   override get dockPointer(): DockPointerData {

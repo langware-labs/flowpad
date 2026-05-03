@@ -34,10 +34,9 @@ test('agentic process with visible=false is recovered when navigating to shell U
   await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
   await page.waitForTimeout(2_000);
 
-  // Step 2: start Claude
-  const startBtn = page.locator('[data-testid="start-claude-button"]');
-  await startBtn.waitFor({ state: 'visible', timeout: 10_000 });
-  await startBtn.click();
+  // Step 2: start Claude via the always-present "+" tab-opener menu.
+  await page.locator('[data-testid="opener-plus-button"]').click();
+  await page.locator('[data-testid="opener-menu-row-claude"]').click();
   await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 30_000 });
 
   const processUrlMatch = page.url().match(/agentic_process-([\w-]+)/);

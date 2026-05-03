@@ -13,6 +13,28 @@ from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.builtin.workspace import Workspace
 from flow_sdk.fs_store.record import Record
 
+
+@pytest_asyncio.fixture(autouse=True)
+async def _isolate_record_state():
+    """Clear DB rows for record types these tests seed, before AND after each
+    test. Without this, sibling tests in the api suite leak rows that pollute
+    record_data_ref queries (the conftest autouse fixtures only reset caches,
+    not the shared session DB).
+    """
+    from flow_sdk.db import get_db_driver
+    driver = get_db_driver()
+    for t in ("markdown", "asset", "claude_project"):
+        try:
+            await driver.delete_entities_by_type(t)
+        except Exception:
+            pass
+    yield
+    for t in ("markdown", "asset", "claude_project"):
+        try:
+            await driver.delete_entities_by_type(t)
+        except Exception:
+            pass
+
 # Use proper UUIDs so record.id == record.uuid (no UUID5 derivation needed)
 _UUID_001 = str(uuid.uuid4())
 _UUID_002 = str(uuid.uuid4())

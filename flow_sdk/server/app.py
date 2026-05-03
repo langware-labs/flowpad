@@ -38,8 +38,7 @@ from flow_sdk.server import FlowServer
 
 from .routes import (
     assets_router,
-    auth_api_router,
-    auth_router,
+    cloud_router,
     chat_router,
     debug_router,
     detection_router,
@@ -152,8 +151,7 @@ async def _shutdown_extras():
 
 
 server = FlowServer()
-server.add_router(auth_router)
-server.add_router(auth_api_router)
+server.add_router(cloud_router)
 server.add_router(hooks_router)
 server.add_router(chat_router)
 server.add_router(directory_router)

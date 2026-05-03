@@ -35,9 +35,10 @@ test('navigating to shell URL with linked agentic process redirects to agentic_p
   await page.waitForTimeout(2_000);
 
   // Step 2: start Claude → URL moves to agentic_process-
-  const startBtn = page.locator('[data-testid="start-claude-button"]');
-  await startBtn.waitFor({ state: 'visible', timeout: 10_000 });
-  await startBtn.click();
+  // Use the always-present "+" tab opener menu; the inline Claude button only
+  // renders once that opener has been pinned (default pinned list is empty).
+  await page.locator('[data-testid="opener-plus-button"]').click();
+  await page.locator('[data-testid="opener-menu-row-claude"]').click();
   await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 30_000 });
 
   const processMatch = page.url().match(/agentic_process-([\w-]+)/);

@@ -1,6 +1,6 @@
 import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownEditor';
 import { enableMcp, isMcpAvailable } from '@src/components/assets/utils';
-import type { ExtraSideTab } from '@src/components/milkdown-editor/MilkdownEditorWithSidePanel';
+import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
 import {
   workflowRunStore,

@@ -18,13 +18,14 @@ import { Shell, ShellStatus } from '../entities/shell';
 import { FlowData, FlowDataSource } from '../flow_processing';
 import { FlowElementTypes } from '../flow_processing/flow-element-types';
 import { ActionInfo } from '../models/ActionInfo';
+import type { AssetDescriptor } from './asset-descriptor';
 import { DockPointerData } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { InstructionFile } from '../models/workflow/InstructionFile';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
-import { ProcessStatus, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
+import { ProcessIconKey, ProcessStatus, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
 
 /**
  * Result returned by AgenticProcess.spawn().
@@ -90,6 +91,8 @@ export interface IAgenticProcess extends IEntity {
   use_worker_history?: boolean;
   /** False=direct PTY spawn (default), True=legacy zsh intermediary */
   shell_mode?: boolean;
+  /** CLI worker vendor (e.g. 'claude', 'codex'). Drives icon selection. */
+  worker_type?: string | null;
   /** Shell entity ID linked to this process */
   shell_id?: string | null;
   /** Whether this process is visible in the tabs view */
@@ -113,6 +116,18 @@ export interface IAgenticProcess extends IEntity {
   collaboration_room_id?: string | null;
   /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats (e.g. per-doc chat keyed on the file path). */
   target_vfs_path?: string | null;
+  /**
+   * True when a worker-relevant field changed since the last successful start()
+   * while status==RUNNING. Backend sets this automatically via the save-hook;
+   * external callers may write it directly to signal an out-of-band change.
+   * Cleared only by start() on its success path.
+   */
+  restart_required?: boolean;
+  /**
+   * MD5 of the worker-relevant snapshot captured at the last successful start().
+   * Compared against the current snapshot on every save() to detect drift.
+   */
+  last_started_hash?: string | null;
   /** Root of the per-process execution folder — `<record_dir>/execution/`. */
   exe_folder?: FSRefJson | null;
   /** `<exe_folder>/input/` — instruction/queue inputs. */
@@ -424,6 +439,43 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return new DockPointerData(ViewType.SHELL, this.typeId?.toString());
   }
 
+  /**
+   * True when this process was created by resuming or forking a prior CLI
+   * session (not a fresh start). Derived from the persisted ``cli_config``
+   * so the answer is stable across reloads.
+   *
+   * The signal: ``cli_config.resume === true`` (passed when the user opened
+   * an existing ``session_id``) or ``cli_config.fork_session_id`` (passed
+   * when forking off a prior session). A bare ``session_id`` on the entity
+   * by itself isn't enough — that field is also populated for fresh
+   * processes once the CLI assigns one.
+   */
+  get wasRestoredFromSession(): boolean {
+    const cfg = this.cli_config as { resume?: boolean; fork_session_id?: string | null } | undefined;
+    if (!cfg) return false;
+    return Boolean(cfg.resume === true || cfg.fork_session_id);
+  }
+
+  /**
+   * Symbolic icon key for this process — the UI resolves it to a concrete
+   * React component via the ``pickProcessIcon`` registry. Two axes drive
+   * the choice:
+   *
+   * - **vendor**: ``worker_type`` ('claude' / 'codex' / fallback)
+   * - **state**: fresh-start vs ``wasRestoredFromSession``
+   */
+  get icon(): ProcessIconKey {
+    const wt = (this.worker_type ?? '').toLowerCase();
+    const restored = this.wasRestoredFromSession;
+    if (wt === 'codex') return restored ? 'codex-restore' : 'codex';
+    // Default to claude — that's what AgenticProcess.spawn produces today
+    // (ClaudeCliOptions hardcoded), so an unset worker_type means claude.
+    if (wt === '' || wt === 'claude' || wt.startsWith('claude_') || wt.startsWith('claude-')) {
+      return restored ? 'claude-restore' : 'claude';
+    }
+    return restored ? 'generic-restore' : 'generic';
+  }
+
   get searchDockPointer(): DockPointerData {
     if (this.session_id && this.project_encoded_name) {
       return new DockPointerData(ViewType.LENS, `claude/transcript/${this.project_encoded_name}/${this.session_id}`);
@@ -482,6 +534,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** False=direct PTY spawn (default), True=legacy zsh intermediary */
   shell_mode?: boolean;
 
+  /** CLI worker vendor (e.g. 'claude', 'codex'). Drives icon selection. */
+  worker_type?: string | null;
+
   /** Shell entity ID linked to this process */
   shell_id?: string | null;
 
@@ -499,6 +554,19 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats (e.g. per-doc chat keyed on the file path). */
   target_vfs_path: string | null = null;
+
+  /**
+   * True when a worker-relevant field changed since the last successful start()
+   * while status==RUNNING. Maintained by the backend save-hook; UI surfaces
+   * this as the "Restart" affordance on the process toolbar.
+   */
+  restart_required: boolean = false;
+
+  /**
+   * MD5 of the worker-relevant snapshot captured at the last successful start().
+   * Compared against the current snapshot on every save() to detect drift.
+   */
+  last_started_hash: string | null = null;
 
   /** Execution folder — `<record_dir>/execution/`. Null until the process has a record on disk. */
   exe_folder: FSRef | null = null;
@@ -610,6 +678,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       const pattern = /plan[\w-]*\.md/i;
       unsubShell = sh.addTrigger({
         pattern,
+        label: 'plan-detection',
         onMatch: async (line) => {
           if (validate) {
             const md = await this.getPlan();
@@ -670,6 +739,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.session_id = entity.session_id;
     this.use_worker_history = entity.use_worker_history;
     this.shell_mode = entity.shell_mode;
+    this.worker_type = entity.worker_type ?? null;
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;
     this.sidecar_shell_id = entity.sidecar_shell_id;
@@ -1072,6 +1142,22 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const actionInfo = new ActionInfo('load-embedded-agent', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = { asset_ref: sourcePath };
     await dataManager.callAction(actionInfo);
+  }
+
+  /**
+   * Unified read-side view of every asset visible to this process.
+   * Mirrors `flow_sdk.builtin.agentic_process.AgenticProcess.get_asset_descriptors`.
+   *
+   * The same asset may appear multiple times with different `source` values
+   * (e.g. EMBEDDED + USER_DIR for a skill that's both materialized into the
+   * process and globally discoverable).
+   *
+   * Currently filtered to ExecutableAssets (skills + agents).
+   */
+  async getAssets(): Promise<AssetDescriptor[]> {
+    const actionInfo = new ActionInfo('get-assets', AgenticProcess.type, this.id, 'GET');
+    const response = await dataManager.callAction<void, { assets?: AssetDescriptor[] }>(actionInfo);
+    return response?.assets ?? [];
   }
 
   /**

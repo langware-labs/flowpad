@@ -149,7 +149,8 @@ export class OAuthService {
 
       // Clean up the OAuth flow
       this.oAuthFlows.delete(data.oauth_request_id);
-    } else {
+    } else if (data.oauth_request_id !== OAUTH_PROVIDERS.FLOWPAD_CLOUD) {
+      // FlowpadCloud is owned by cloudManager — its WS messages don't go through this map.
       console.error(`[OAuthService] OAuth flow not found for request id:`, data.oauth_request_id);
       console.error(`[OAuthService] Available flows:`, Array.from(this.oAuthFlows.keys()));
     }
@@ -231,12 +232,12 @@ export class OAuthService {
     sharedEntityVarName?: string,
   ): Promise<OauthFlow | null> {
     try {
-      // For cloud login, the OS keychain must be approved before we open the
-      // OAuth popup — otherwise the post-callback set_api_key write triggers
-      // an OS prompt at an awkward UX moment. Pre-flight here so the prompt
-      // (if any) fires under the user's intentional approve click.
+      // FlowpadCloud is owned by cloudManager — route there instead of going through
+      // the generic OAuth popup machinery used by Slack/GitHub/etc.
       if (provider === OAUTH_PROVIDERS.FLOWPAD_CLOUD) {
-        if (!(await this.ensureSecretsEnabled())) return null;
+        const { cloudManager } = await import('../cloud_login');
+        await cloudManager.login();
+        return null;
       }
       // Start OAuth flow
       const oauthRequestInfo = await this.generateOauthRequestInfo(provider, targetEntity, sharedEntityVarName);
@@ -322,6 +323,17 @@ export class OAuthService {
 
   public async disconnect(provider: string): Promise<OAuthDetachResult> {
     try {
+      // FlowpadCloud disconnect is owned by cloudManager.
+      if (provider === OAUTH_PROVIDERS.FLOWPAD_CLOUD) {
+        const { cloudManager } = await import('../cloud_login');
+        await cloudManager.logout();
+        dataManager.emit(OAuthEventType.OAUTH_FLOW_COMPLETE, {
+          provider,
+          disconnectSuccess: true,
+        });
+        return { remaining_attachment_count: 0 } as OAuthDetachResult;
+      }
+
       const actionInfo = new ActionInfo('oauth');
       actionInfo.subpath = [provider, 'disconnect'];
       // No target entity needed for disconnect - it removes the user's token completely

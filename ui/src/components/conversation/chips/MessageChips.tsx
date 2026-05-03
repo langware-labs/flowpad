@@ -1,7 +1,9 @@
 import { Download } from 'lucide-react';
 import { ActionInfo } from '@sdk/models/ActionInfo';
+import { useChipsExclude } from './ChipsExcludeContext';
+import { ChipKey } from './keys';
 
-interface MessageActionsProps {
+interface MessageChipsProps {
   flowMessageId?: string;
 }
 
@@ -9,8 +11,17 @@ function localDownloadUrl(messageId: string): string {
   return new ActionInfo('create-and-download-local-flowmsg', 'flow_message', messageId, 'GET').fullActionUrl;
 }
 
-export function MessageActions({ flowMessageId }: MessageActionsProps) {
+/**
+ * Per-message chip row. Today: only the download button (preserved from
+ * the prior ``MessageActions`` component). Anything already rendered by a
+ * higher-level chip row (Task or Conversation) is suppressed via
+ * ``ChipsExcludeContext`` — the architecture is in place even though no
+ * current chip kind appears at multiple levels.
+ */
+export function MessageChips({ flowMessageId }: MessageChipsProps) {
+  const exclude = useChipsExclude();
   if (!flowMessageId) return null;
+  if (exclude.has(ChipKey.download(flowMessageId))) return null;
 
   return (
     <a

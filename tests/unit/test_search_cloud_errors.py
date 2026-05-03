@@ -17,7 +17,7 @@ import pytest
 # so we patch at the source modules, not at compute_node module level.
 _PATCH_GET_CURRENT_REQUEST_INFO = "flow_sdk.builtin.faas.compute_node.get_current_request_info"
 _PATCH_GET_API_KEY = "flow_sdk.cli.auth.hub_login.get_api_key"
-_PATCH_FLOWPAD_CLIENT = "flow_sdk.client.FlowpadClient"
+_PATCH_FLOWPAD_CLIENT = "flow_sdk.cloud_client.FlowpadClient"
 _PATCH_GET_RECORDS_ROOT = "flow_sdk.fs_store.record.get_default_records_root"
 
 

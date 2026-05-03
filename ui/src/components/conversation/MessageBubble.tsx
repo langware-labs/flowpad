@@ -4,7 +4,7 @@ import type { FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import { AttachmentType } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
-import { MessageActions } from './MessageActions';
+import { MessageChips } from './chips/MessageChips';
 import { PromptApprovalRow } from './PromptApprovalRow';
 import { useLocalUser } from './useLocalUser';
 
@@ -121,7 +121,7 @@ export function MessageBubble({
             </button>
           )}
           {time && <span className="text-[10px] text-muted-foreground">{time}</span>}
-          <MessageActions flowMessageId={flowMessageId} />
+          <MessageChips flowMessageId={flowMessageId} />
         </div>
         {message.content && message.content !== "Please run the prompt that I'm sending you" && (
           <div className={`text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>

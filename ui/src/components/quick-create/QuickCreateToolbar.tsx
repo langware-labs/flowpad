@@ -12,7 +12,7 @@ interface QuickCreateToolbarProps {
  * which opens the OpenProjectComponent on click (same modal used by the footer).
  */
 export function QuickCreateToolbar({ project, onOpenProjectPicker }: QuickCreateToolbarProps) {
-  const label = project?.displayName || project?.name || 'Select project';
+  const label = project?.displayName ?? 'Select project';
   return (
     <div className="flex items-center gap-2 border-b border-border pb-2">
       <Button

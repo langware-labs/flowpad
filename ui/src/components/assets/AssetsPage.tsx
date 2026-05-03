@@ -372,8 +372,8 @@ export function AssetsPage() {
         <button
           type="button"
           onClick={toggleSidebar}
-          title={sidebarCollapsed ? 'Show wiki tree' : 'Hide wiki tree'}
-          aria-label={sidebarCollapsed ? 'Show wiki tree' : 'Hide wiki tree'}
+          title={sidebarCollapsed ? 'Show asset tree' : 'Hide asset tree'}
+          aria-label={sidebarCollapsed ? 'Show asset tree' : 'Hide asset tree'}
           className="flex h-7 w-7 items-center justify-center rounded hover:bg-muted"
         >
           {sidebarCollapsed ? (
@@ -383,7 +383,7 @@ export function AssetsPage() {
           )}
         </button>
         <BookOpen className="h-4 w-4 text-muted-foreground" />
-        <span className="ml-1 text-sm font-medium">Wiki</span>
+        <span className="ml-1 text-sm font-medium">Assets</span>
         <div className="ml-auto">
           <ScopeFilterBar
             scope={assetFilter.scope}

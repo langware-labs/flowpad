@@ -137,10 +137,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     super(entity as IEntity);
     // Create PtyConnection eagerly — eliminates the secondary orphan buffer path.
     // compute_node_id may not be set yet; PtyConnection guards on empty string.
-    this.ptyConnection = new PtyConnection(
-      (entity as any).id ?? '',
-      (entity as any).compute_node_id ?? '',
-    );
+    this.ptyConnection = new PtyConnection((entity as any).id ?? '', (entity as any).compute_node_id ?? '');
     // Bridge PtyConnection events to Shell's EventEmitter so existing listeners
     // (shell.on('status', ...)) keep working during the migration to ptyConnection.
     this.ptyConnection.onReady(() => this.emit('status', 'connected'));
@@ -243,8 +240,25 @@ export class Shell extends APIEntity<Shell> implements IShell {
    * the matched line and the regex match. Pattern is tested against
    * already-ANSI-stripped lines.
    */
-  addTrigger(trigger: import('../services/shell/ptyConnection.js').PtyTrigger): () => void {
+  addTrigger(trigger: import('../services/shell/ptyConnection.js').PtyEvent): () => void {
     return this.ptyConnection.addTrigger(trigger);
+  }
+
+  /** Snapshot of recorded PtyEvent fires on this shell's PTY connection. */
+  getPtyEventFires(): readonly import('../services/shell/ptyConnection.js').PtyEventFire[] {
+    return this.ptyConnection.getEventFires();
+  }
+
+  /** Subscribe to new PtyEvent fires. Returns an unsubscribe function. */
+  onPtyEventFire(
+    fn: import('../services/shell/ptyConnection.js').PtyEventFireListener,
+  ): () => void {
+    return this.ptyConnection.onEventFire(fn);
+  }
+
+  /** Number of currently-registered PtyEvent watchers on this shell. */
+  getRegisteredPtyEventCount(): number {
+    return this.ptyConnection.getRegisteredEventCount();
   }
 
   // ── Shell start (backend HTTP + PTY attach) ───────────────────────────────

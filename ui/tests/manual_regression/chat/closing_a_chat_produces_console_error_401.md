@@ -1,6 +1,6 @@
 test 1: Closing a shell terminal tab does not produce 401 console error (FLOWPAD-1642)
 - navigate to {APP_URL}/dock/shell/new_terminal
-- wait for terminal to be ready (element with data-terminal-id is visible)
+- wait for terminal to be ready (element with active terminal panel `[data-testid="terminal-panel"][data-active="true"]` shows xterm)
 - validate at least one terminal tab is visible in the tab bar
 - click the X (close) button on the terminal tab (aria-label="Close tab")
 - wait 2 seconds
