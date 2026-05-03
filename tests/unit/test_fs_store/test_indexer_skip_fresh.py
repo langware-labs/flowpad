@@ -72,7 +72,7 @@ async def test_indexer_skips_fresh_on_second_run(tmp_path: Path) -> None:
 
     driver = get_db_driver()
 
-    idx = FSIndexer(state_dir=tmp_path / ".indexer_state")
+    idx = FSIndexer()
     idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER))
     idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn)
 

@@ -30,8 +30,6 @@ export interface Attachment {
 export interface IFlowMessage extends IEntity {
   text?: string;
   instruction?: string | null;
-  /** List of TypeId strings ("type-id") placing this message in context */
-  context?: string[];
   attachment?: Attachment[];
   sender_id?: string | null;
   sender_name?: string | null;
@@ -43,6 +41,9 @@ export interface IFlowMessage extends IEntity {
   conversation_id?: string | null;
   is_read?: boolean;
   is_archived?: boolean;
+  // NOTE: ``context`` (string[]) was renamed and consolidated into the
+  // unified ``context_entities`` on IEntity. Read via
+  // ``msg.contextEntities`` / ``msg.firstContextOfType('task')``.
   /** Local-only draft message: not appended to conversation.jsonl, not pushed to hub. Flips to false on send-draft. */
   is_draft?: boolean;
 }
@@ -51,7 +52,6 @@ export interface IFlowMessage extends IEntity {
 export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage {
   text?: string;
   instruction?: string | null;
-  context?: string[];
   attachment?: Attachment[];
   sender_id?: string | null;
   sender_name?: string | null;
@@ -68,7 +68,6 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     super(entity);
     this.text = entity.text;
     this.instruction = entity.instruction;
-    this.context = entity.context;
     this.attachment = entity.attachment;
     this.sender_id = entity.sender_id;
     this.sender_name = entity.sender_name;

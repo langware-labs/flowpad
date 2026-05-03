@@ -97,7 +97,7 @@ class AgentRecord(Record):
 
     _record_type: ClassVar[str] = RecordType.AGENT
     _indexed_by_default: ClassVar[bool] = True
-    _user_asset: ClassVar[bool] = True
+    _browseable: ClassVar[bool] = True
     _creatable: ClassVar[bool] = True
     _icon: ClassVar[str] = "Bot"
     index_fields: ClassVar[list[str]] = ["description"]

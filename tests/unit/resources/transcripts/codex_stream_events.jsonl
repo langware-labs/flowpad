@@ -1,0 +1,7 @@
+{"type": "thread.started", "thread_id": "019dddd0-1234-7000-9000-000000000001", "timestamp": "2026-03-11T15:02:01.000Z"}
+{"type": "turn.started", "timestamp": "2026-03-11T15:02:01.000Z"}
+{"type": "item.started", "item": {"id": "item_001", "type": "agent_message"}, "timestamp": "2026-03-11T15:02:01.000Z"}
+{"type": "item.completed", "item": {"id": "item_001", "type": "agent_message", "text": "Adding the helper function now."}, "timestamp": "2026-03-11T15:02:01.000Z"}
+{"type": "item.completed", "item": {"id": "item_002", "type": "command_execution", "command": "ls /repo", "aggregated_output": "helper.py\n", "exit_code": 0}, "timestamp": "2026-03-11T15:02:01.000Z"}
+{"type": "item.completed", "item": {"id": "item_003", "type": "file_change", "changes": [{"path": "/repo/helper.py", "kind": "modified"}]}, "timestamp": "2026-03-11T15:02:01.000Z"}
+{"type": "turn.completed", "usage": {"input_tokens": 1234, "output_tokens": 56}, "timestamp": "2026-03-11T15:02:01.000Z"}

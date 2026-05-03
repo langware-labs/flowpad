@@ -94,7 +94,7 @@ export function ScheduleTriggerEditor({ trigger, onSaved, onCancel }: Props) {
             <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${SCOPE_COLORS[trigger.scope || 'user'] ?? SCOPE_COLORS['user']}`}>
               {trigger.scope || 'user'}
             </span>
-            <span className="font-mono text-sm font-medium">{trigger.name}</span>
+            <span className="font-mono text-sm font-medium">{trigger.displayName}</span>
             <Badge variant="outline" className="h-4 px-1 text-[9px]">schedule</Badge>
             {trigger.next_run && (
               <span className="text-[10px] text-muted-foreground">

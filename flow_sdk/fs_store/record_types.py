@@ -16,6 +16,7 @@ class RecordType(StrEnum):
     BOOKMARK = "bookmark"
     ANNOTATION = "annotation"
     COMMENT = "comment"
+    APP_SECRET = "app_secret"
 
     # Claude Code record types
     CLAUDE_ROOT = "claude_root"

@@ -10,6 +10,29 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+import pytest_asyncio
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _isolate_record_state():
+    """Clear DB rows + FTS for record types these tests seed, before AND after
+    each test. Without this, a sibling test in the api suite can leak markdown
+    / asset / claude_project rows that pollute the search results (the
+    conftest autouse fixtures only reset caches, not the shared session DB).
+    """
+    from flow_sdk.db import get_db_driver
+    driver = get_db_driver()
+    for t in ("markdown", "asset", "claude_project"):
+        try:
+            await driver.delete_entities_by_type(t)
+        except Exception:
+            pass
+    yield
+    for t in ("markdown", "asset", "claude_project"):
+        try:
+            await driver.delete_entities_by_type(t)
+        except Exception:
+            pass
 
 
 async def _seed_md(tmp: Path, scan_roots: list[Path]) -> None:

@@ -1,6 +1,6 @@
 test 1: Shell sessions persist and do not disappear after page refresh (FLOWPAD-1646)
 - navigate to {APP_URL}/dock/shell/new_terminal
-- wait for terminal to be ready (element with data-terminal-id is visible)
+- wait for terminal to be ready (element with active terminal panel `[data-testid="terminal-panel"][data-active="true"]` shows xterm)
 - navigate to {APP_URL}/dock/home
 - navigate back to {APP_URL}/dock/shell
 - wait 3 seconds for session sync to complete

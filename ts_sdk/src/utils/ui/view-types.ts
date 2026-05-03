@@ -57,6 +57,7 @@ export enum ViewType {
   PROJECT = 'project', // Collaboration on a project — meet, share tabs/docs/plans
   INBOX = 'inbox', // Inbox — received FlowMessages from hub
   CONVERSATION = 'conversation', // Single Conversation viewer (avatar bubbles + composer)
+  SPEC = 'spec', // Single Spec viewer (shows spec metadata, plan link, generated tasks)
 }
 
 /**

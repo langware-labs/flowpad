@@ -15,7 +15,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useLocalUser } from './useLocalUser';
 
 interface UseMyProcessOptions {
-  task: ITask;
+  task: Task;
   conversationId: string;
   senderName?: string;
 }
@@ -37,7 +37,7 @@ interface UseMyProcessResult {
  * just reattach to the existing process with no instruction.
  */
 async function buildReceiverContextPrompt(
-  task: ITask,
+  task: Task,
   conversationId: string,
   senderName: string | undefined,
 ): Promise<string> {
@@ -70,9 +70,10 @@ async function buildReceiverContextPrompt(
     });
   const transcriptPath = transcript ? (transcript.local_path ?? transcript.data) : null;
 
-  const spec = task.spec_id
+  const specTypeId = task.firstContextOfType('spec');
+  const spec = specTypeId
     ? await dataManager.getByTypeId<Spec>(
-        new TypeId(Spec.type, task.spec_id),
+        specTypeId,
         new ExpansionRequest({ expand: ['blobs'] }),
       ).catch(() => null)
     : null;
@@ -80,7 +81,7 @@ async function buildReceiverContextPrompt(
   const effectiveSpecType = task.spec_type ?? spec?.spec_type ?? 'plan';
   const isSession = effectiveSpecType === 'session';
 
-  const specTitle = spec?.title ?? task.title ?? 'Untitled';
+  const specTitle = spec?.displayName ?? task.displayName;
   const specContent = spec?.content ?? '';
   const senderLabel = senderName ?? 'Sender';
   const msgLines = messages.map(formatMsg).filter(Boolean).join('\n');
@@ -95,7 +96,7 @@ async function buildReceiverContextPrompt(
   if (specContent) {
     parts.push(isSession ? `Session content:\n\n${specContent}` : `Here is the plan:\n\n${specContent}`);
   } else {
-    parts.push(`Task: ${task.title || 'Untitled'}`);
+    parts.push(`Task: ${task.displayName}`);
   }
 
   if (transcriptPath) {

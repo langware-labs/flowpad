@@ -15,10 +15,31 @@ import tempfile
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 from flow_sdk.builtin.project import Project
 from flow_sdk.fs_records.claude.claude_project import ClaudeProjectFsRecord
 from flow_sdk.fs_store.record import set_default_records_root
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _isolate_record_state():
+    """Clear DB rows for record types these tests seed (project, claude_project),
+    before AND after each test. Sibling tests in the api suite leak rows that
+    pollute discover()/check_and_refresh_record() behavior."""
+    from flow_sdk.db import get_db_driver
+    driver = get_db_driver()
+    for t in ("markdown", "asset", "claude_project", "project"):
+        try:
+            await driver.delete_entities_by_type(t)
+        except Exception:
+            pass
+    yield
+    for t in ("markdown", "asset", "claude_project", "project"):
+        try:
+            await driver.delete_entities_by_type(t)
+        except Exception:
+            pass
 
 
 def _project_entity_id(workdir: str) -> str:
@@ -29,6 +50,8 @@ def _project_entity_id(workdir: str) -> str:
 @pytest.mark.asyncio
 async def test_discover_picks_up_updated_project_name(bootstrapped_client):
     """Project record name updated on disk is reflected after discover + sync_to_db."""
+    from flow_sdk.fs_store.record import get_default_records_root
+    original_root = get_default_records_root()
     with tempfile.TemporaryDirectory() as records_tmp, \
          tempfile.TemporaryDirectory() as workdir:
 
@@ -76,13 +99,15 @@ async def test_discover_picks_up_updated_project_name(bootstrapped_client):
             )
 
         finally:
-            set_default_records_root(Path.home() / ".flow" / "records")
+            set_default_records_root(original_root)
 
 
 @pytest.mark.asyncio
 async def test_asset_newer_than_db_triggers_reindex_via_check_and_refresh(bootstrapped_client):
     """Bumping asset mtime past DB updated_date → check_and_refresh_record() re-syncs."""
     import os, time as _time
+    from flow_sdk.fs_store.record import get_default_records_root
+    original_root = get_default_records_root()
 
     with tempfile.TemporaryDirectory() as records_tmp, \
          tempfile.TemporaryDirectory() as workdir:
@@ -130,4 +155,4 @@ async def test_asset_newer_than_db_triggers_reindex_via_check_and_refresh(bootst
             )
 
         finally:
-            set_default_records_root(Path.home() / ".flow" / "records")
+            set_default_records_root(original_root)

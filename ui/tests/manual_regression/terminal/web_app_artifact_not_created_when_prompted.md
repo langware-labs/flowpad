@@ -1,7 +1,7 @@
 test 1: Web app view is accessible after starting a Claude session (FLOWPAD-1616)
 - navigate to {APP_URL}/dock/shell/new_terminal
-- wait for terminal to be ready (element with data-terminal-id is visible)
-- click the Start Claude button (data-testid="start-claude-button")
+- wait for terminal to be ready (active terminal panel `[data-testid="terminal-panel"][data-active="true"]` shows xterm)
+- click the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait up to 45 seconds for the Claude CLI banner to appear in the terminal
 - validate the terminal input is visible (aria-label="Terminal Input")
 - navigate to {APP_URL}/dock/web-app

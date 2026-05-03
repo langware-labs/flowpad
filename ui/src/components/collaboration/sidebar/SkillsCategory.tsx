@@ -1,4 +1,4 @@
-import { config, Project, TypeId } from '@sdk';
+import { config, Project, Skill, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -16,14 +16,6 @@ interface Props {
    * sidebar still works if mounted outside CollaborationPage.
    */
   onOpenTab?: (tab: RoomTab) => void;
-}
-
-interface SkillRow {
-  id: string;
-  name?: string;
-  asset_ref?: string;
-  description?: string;
-  system?: boolean;
 }
 
 /**
@@ -45,20 +37,21 @@ export function SkillsCategory({ projectId, onOpenTab }: Props) {
   const { data: project } = useEntity<Project>(projectTypeId);
   const mount = project?.fs_storage_mount_path?.replace(/\/+$/, '') ?? '';
 
-  const { data, isLoading } = useQuery<SkillRow[]>({
+  const { data, isLoading } = useQuery<Skill[]>({
     queryKey: ['skills-include-system'],
     queryFn: async () => {
       const url = `${config.SERVER_URL}${config.API_PREFIXES.graph}/skill?include_system=true`;
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`Failed to load skills: ${resp.status}`);
       const body = await resp.json();
-      return (body.data ?? []) as SkillRow[];
+      const rows = (body.data ?? []) as Partial<Skill>[];
+      return rows.map((row) => new Skill(row));
     },
     staleTime: 30_000,
   });
 
   const items = useMemo(() => {
-    if (!mount || !data) return [] as SkillRow[];
+    if (!mount || !data) return [] as Skill[];
     const prefix = `${mount}/.claude/skills/`;
     return data.filter((s) => (s.asset_ref ?? '').startsWith(prefix));
   }, [data, mount]);
@@ -86,7 +79,7 @@ export function SkillsCategory({ projectId, onOpenTab }: Props) {
               onOpenTab({
                 key: `skill:${s.id}`,
                 type: 'skill',
-                title: typeof s.name === 'string' && s.name.trim() ? s.name : 'Untitled',
+                title: s.displayName,
                 asset_ref: s.asset_ref,
               });
             } else {
@@ -97,7 +90,7 @@ export function SkillsCategory({ projectId, onOpenTab }: Props) {
           className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
         >
           <Sparkles className="h-3.5 w-3.5 flex-shrink-0" />
-          <span className="truncate">{typeof s.name === 'string' && s.name ? s.name : 'Untitled'}</span>
+          <span className="truncate">{s.displayName}</span>
         </li>
       ))}
     </ul>

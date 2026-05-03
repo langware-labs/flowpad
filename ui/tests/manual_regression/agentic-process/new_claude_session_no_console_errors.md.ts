@@ -30,9 +30,9 @@ test('creating a Claude session produces no console errors', async ({ page }) =>
   await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
   await page.waitForTimeout(2_000);
 
-  const startBtn = page.locator('[data-testid="start-claude-button"]');
-  await startBtn.waitFor({ state: 'visible', timeout: 10_000 });
-  await startBtn.click();
+  // Start Claude via the always-present "+" tab-opener menu.
+  await page.locator('[data-testid="opener-plus-button"]').click();
+  await page.locator('[data-testid="opener-menu-row-claude"]').click();
   await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 20_000 });
   await page.waitForTimeout(3_000);
 

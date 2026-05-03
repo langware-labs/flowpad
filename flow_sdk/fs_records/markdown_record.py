@@ -61,8 +61,9 @@ def _doc_search_dirs() -> list[Path]:
 
     Scans user-level (~/.claude/docs), all known Claude projects
     (every 'docs' directory anywhere in each project tree, plus
-    <project>/.claude/docs), cwd-level, and any extra dirs from
-    FLOWPAD_DOC_DIRS (colon-separated).
+    <project>/docs and <project>/.claude/docs for back-compat),
+    cwd-level, and any extra dirs from FLOWPAD_DOC_DIRS
+    (colon-separated).
     """
     dirs: list[Path] = []
     seen: set[Path] = set()
@@ -78,6 +79,7 @@ def _doc_search_dirs() -> list[Path]:
     # SDK-shipped system docs under the Flowpad Assistant system project.
     try:
         from flow_sdk.config import flowpad_assistant_project_root
+        _add(flowpad_assistant_project_root() / "docs")
         _add(flowpad_assistant_project_root() / ".claude" / "docs")
     except Exception:
         pass
@@ -86,8 +88,10 @@ def _doc_search_dirs() -> list[Path]:
     for real in iter_claude_project_paths():
         for docs_dir in _find_docs_subdirs(real):
             _add(docs_dir)
+        _add(real / "docs")
         _add(real / ".claude" / "docs")
 
+    _add(Path(os.getcwd()) / "docs")
     _add(Path(os.getcwd()) / ".claude" / "docs")
     for docs_dir in _find_docs_subdirs(Path(os.getcwd())):
         _add(docs_dir)
@@ -97,6 +101,38 @@ def _doc_search_dirs() -> list[Path]:
             _add(Path(extra.strip()))
 
     return dirs
+
+
+_SYSTEM_PID_CACHE: dict[str, str | None] = {}
+
+
+def _resolve_system_project_id_for_path(path: Path) -> str | None:
+    """Path-based fallback for stamping `project_id` onto a markdown record
+    that lives under flow_sdk/system_projects/. Used when the indexer's
+    cached SYSTEM_ROOT FSRef predates the project entity creation.
+    """
+    try:
+        from flow_sdk.config import system_projects_root  # noqa: PLC0415
+    except Exception:
+        return None
+    try:
+        sys_root = system_projects_root().resolve()
+        target = path.resolve()
+    except OSError:
+        return None
+    try:
+        rel = target.relative_to(sys_root)
+    except ValueError:
+        return None
+    if not rel.parts:
+        return None
+    sub_dirname = rel.parts[0]
+    if sub_dirname in _SYSTEM_PID_CACHE:
+        return _SYSTEM_PID_CACHE[sub_dirname]
+    from flow_sdk.fs_store.indexer.roots import lookup_project_id_by_uname  # noqa: PLC0415
+    pid = lookup_project_id_by_uname(sub_dirname)
+    _SYSTEM_PID_CACHE[sub_dirname] = pid
+    return pid
 
 
 def _resolve_vault_root(path: Path) -> str | None:
@@ -143,13 +179,13 @@ class MarkdownRecord(Record):
 
     _record_type: ClassVar[str] = RecordType.MARKDOWN
     _indexed_by_default: ClassVar[bool] = True
-    _user_asset: ClassVar[bool] = True
+    _browseable: ClassVar[bool] = True
     _creatable: ClassVar[bool] = True
     _icon: ClassVar[str] = "BookOpen"
     index_fields: ClassVar[list[str]] = ["title", "tags", "links"]
 
-    # Framework upsert: <scope_root>/.claude/docs/<safe_name>.md
-    _main_subdir: ClassVar[str] = ".claude/docs"
+    # Framework upsert: <scope_root>/docs/<safe_name>.md
+    _main_subdir: ClassVar[str] = "docs"
     _main_layout: ClassVar[str] = "file"
 
     def __init__(self, **kwargs: Any):
@@ -317,18 +353,90 @@ class MarkdownRecord(Record):
     async def from_fsref(cls, ref) -> list["MarkdownRecord"]:
         """Indexer entry point — construct from an FSRef emitted by markdown_fn.
 
-        When the FSRef carries `project_id` (stamped on the project root by
-        the index handler, inherited via the parent chain), tag the record
-        so the UI's project-scoped Docs query finds it.
+        Stamps `project_id` (FSRef inheritance, with a system-projects path
+        fallback for files seen before the project entity was created).
+        DocsCategory's project-scoped tree filters on this field.
         """
         rec = cls.from_file(ref._path)
-        pid = getattr(ref, "project_id", None)
+        pid = (
+            getattr(ref, "project_id", None)
+            or _resolve_system_project_id_for_path(Path(ref._path))
+        )
         if pid:
             try:
                 object.__setattr__(rec, "project_id", pid)
             except Exception:
                 pass
         return [rec]
+
+    async def sync_to_db(self, fts_batch=None, notify: bool = True) -> None:
+        """Persist + reconcile folder-doc parent/child edges.
+
+        After the entity row is written, wire ``<Folder>/<folder>.md`` (case-
+        insensitive basename match) as the canonical entity for its folder:
+        the folder doc owns its sibling .md files via attach_child. Both
+        index orders are handled (folder doc first OR sibling first), since
+        attach_child is idempotent and we re-scan siblings on every save.
+        """
+        await super().sync_to_db(fts_batch=fts_batch, notify=notify)
+        try:
+            await self._reconcile_folder_doc_edges()
+        except Exception as exc:  # noqa: BLE001
+            import logging  # noqa: PLC0415
+            logging.getLogger(__name__).warning(
+                "folder-doc edge reconciliation failed for %s — %s",
+                self.id, exc,
+            )
+
+    async def _reconcile_folder_doc_edges(self) -> None:
+        parent_path = getattr(self, "parent_path", None) or ""
+        ar = self._asset_ref if hasattr(self, "_asset_ref") else None
+        if not parent_path or ar is None:
+            return
+        folder = Path(parent_path)
+        folder_basename = folder.name
+        if not folder_basename:
+            return
+
+        # FS-only fast path: if the folder has no .md whose stem matches the
+        # folder name (case-insensitive), there's no folder doc here and no
+        # edges to wire. One stat-bounded glob; no DB session opened.
+        try:
+            on_disk = list(folder.glob("*.md"))
+        except OSError:
+            return
+        target = folder_basename.lower()
+        folder_doc_path = next(
+            (p for p in on_disk if p.is_file() and p.stem.lower() == target),
+            None,
+        )
+        if folder_doc_path is None:
+            return
+
+        from flow_sdk.builtin.claude_memory_entities import Docs  # noqa: PLC0415
+
+        siblings = await Docs.get_all({"parent_path": parent_path})
+        if not siblings:
+            return
+
+        folder_doc = next(
+            (d for d in siblings if Path(d.asset_ref) == folder_doc_path),
+            None,
+        )
+        if folder_doc is None:
+            return
+
+        if folder_doc.id == self.id:
+            for sib in siblings:
+                if sib.id == folder_doc.id:
+                    continue
+                await folder_doc.attach_child(sib.typeid)
+            return
+
+        self_entity = next((d for d in siblings if d.id == self.id), None)
+        if self_entity is None:
+            return
+        await folder_doc.attach_child(self_entity.typeid)
 
     # ── Portable identity (Phase 7c) ─────────────────────────────────────────
     # MarkdownRecord opts into `asset_id` minting: genId writes a stable uuid

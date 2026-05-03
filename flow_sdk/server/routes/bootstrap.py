@@ -510,11 +510,47 @@ async def validate_cloud_token(token: Optional[str] = None) -> bool:
 
 
 async def is_cloud_login_available() -> bool:
-    """Check if cloud login is available by checking stored credentials."""
+    """Check if cloud login is available.
+
+    Validates the stored API key against the Flowpad cloud (real HTTP call).
+    To avoid triggering a macOS keychain prompt at startup for unrecognized
+    binaries, we gate the keychain read on the non-prompting sentinel probe
+    (``is_secrets_enabled``). If the user has not yet approved keychain
+    access, we treat them as logged-out and the UI's SecretApprovalDialog
+    will prompt before any subsequent login attempt.
+
+    Returns False on any failure (no sentinel, no key, network error, invalid
+    token). Logout cleanup is the caller's responsibility — bootstrap only
+    reports the current validity.
+    """
+    api_key = None
     try:
-        from flow_sdk.cli.auth import is_logged_in
-        return await asyncio.to_thread(is_logged_in)
+        from flow_sdk.cli.auth.hub_login import validate_api_key_async, get_api_key
+        from flow_sdk.cli.auth.secrets import is_secrets_enabled
+
+        # Non-prompting probe: skip keychain read entirely if user hasn't approved.
+        if not await asyncio.to_thread(is_secrets_enabled):
+            return False
+
+        api_key = await asyncio.to_thread(get_api_key)
+        if not api_key:
+            return False
+
+        # Real cloud validation — succeeds only when the token is still valid.
+        await validate_api_key_async(api_key)
+        return True
     except Exception:
+        # Stored token failed validation (expired, revoked, network error). When
+        # we definitely had a key, drop it from the keychain and clear the user
+        # record so the UI reflects logged-out state without further round-trips.
+        if api_key:
+            try:
+                from flow_sdk.cli.app_config import set_user
+                from flow_sdk.cli.auth.hub_login import delete_api_key
+                await asyncio.to_thread(delete_api_key)
+                set_user({})
+            except Exception:
+                pass
         return False
 
 
@@ -1062,6 +1098,51 @@ async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list
     return ensured
 
 
+async def _ensure_welcome_favorite(user: User) -> None:
+    """One-shot onboarding: drop a favorite bookmark to the Welcome markdown
+    onto the user's home view the first time the server boots.
+
+    Idempotent via ``user.onboarded``. If the Welcome markdown isn't indexed
+    yet (indexer is async), retry a few times; if still not found, leave
+    ``onboarded`` False so the next bootstrap retries.
+    """
+    if getattr(user, "onboarded", False):
+        return
+
+    from flow_sdk.builtin.bookmark import Bookmark, BookmarkType  # noqa: PLC0415
+    from flow_sdk.builtin.claude_memory_entities import Docs  # noqa: PLC0415
+
+    welcome = None
+    for _ in range(5):
+        candidates = await Docs.get_all({"name": "Welcome"})
+        if candidates:
+            welcome = candidates[0]
+            break
+        await asyncio.sleep(0.5)
+    if welcome is None:
+        logging.info("[bootstrap] Welcome markdown not yet indexed; skipping favorite seed for now")
+        return
+
+    favorite = Bookmark(
+        bookmark_type=BookmarkType.FAVORITE.value,
+        title="Welcome",
+        source="onboarding",
+        data={
+            "entity_type": "markdown",
+            "entity_id": str(welcome.typeid),
+            "icon": "BookOpen",
+            # The favorite click handler reads asset_ref from data.nav and
+            # routes directly, bypassing a name-resolution hop on click.
+            "nav": {"asset_ref": welcome.asset_ref or ""},
+        },
+    )
+    await favorite.save(owner=user)
+
+    user.onboarded = True
+    await user.save()
+    logging.info(f"[bootstrap] Seeded Welcome favorite for user {user.typeid}")
+
+
 # ---------------------------------------------------------------------------
 # File system setup (migrated from desktop_loader.py:init_desktop_entities)
 # ---------------------------------------------------------------------------
@@ -1125,6 +1206,8 @@ async def get_desktop_info() -> LmInfo:
 
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
     """
+    from flow_sdk.cloud_client import ApiConfig
+
     llm_providers = detect_available_llm_providers()
     installed_agents = await asyncio.to_thread(get_installed_agents)
     cloud_login_available = await is_cloud_login_available()
@@ -1136,6 +1219,7 @@ async def get_desktop_info() -> LmInfo:
         llm_providers=llm_providers,
         installed_agents=installed_agents,
         cloud_login_available=cloud_login_available,
+        cloud_url=ApiConfig.from_env().api_base_url,
         paths=app_paths,
         # Legacy fields for backward compatibility (deprecated)
         home=get_vfs_home_path(),
@@ -1238,6 +1322,11 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         except Exception as e:
             logging.warning(f"[bootstrap] Failed to ensure system projects (non-fatal): {e}")
         _t.time("ensure_system_projects")
+        try:
+            await _ensure_welcome_favorite(user)
+        except Exception as e:
+            logging.warning(f"[bootstrap] Failed to seed Welcome favorite (non-fatal): {e}")
+        _t.time("ensure_welcome_favorite")
         workspace = await get_or_create_local_workspace(desktop_user=user)
         _t.time("get_or_create_local_workspace")
         compute_node = await get_or_create_local_compute_node(local_project=project, desktop_user=user)

@@ -30,12 +30,20 @@ websocket_router = APIRouter()
 class ConnectionInfo:
     """Per-connection state: socket plus tab presence (visible/focused) and
     the monotonic timestamp of the last presence update, used to tie-break
-    when selecting a single 'active' tab."""
+    when selecting a single 'active' tab.
+
+    ``browser_context`` mirrors the UI's per-tab data-context (current
+    project / process / workspace TypeIds, etc). The UI sends a
+    ``browser_context`` WS message on every change; agents read it via
+    ``flow context list`` to drive "navigate to current X" style actions
+    without asking the user for the id.
+    """
 
     ws: WebSocket
     visible: bool = True
     focused: bool = True
     last_presence_at: float = field(default_factory=time.monotonic)
+    browser_context: dict = field(default_factory=dict)
 
 
 # Store active connections (id -> ConnectionInfo).
@@ -88,6 +96,27 @@ def get_connection_infos() -> Dict[str, ConnectionInfo]:
     ``get_active_connections()``.
     """
     return _active_connections
+
+
+def get_active_connection_info() -> Optional[tuple[str, "ConnectionInfo"]]:
+    """Same selection rule as ``get_active_connection`` but returns the full
+    ``ConnectionInfo`` so callers can read presence + browser_context.
+    """
+    if not _active_connections:
+        return None
+    items = list(_active_connections.items())
+
+    def _rank(kv):
+        _cid, info = kv
+        return (info.last_presence_at, _cid)
+
+    visible_focused = [kv for kv in items if kv[1].visible and kv[1].focused]
+    if visible_focused:
+        return max(visible_focused, key=_rank)
+    visible = [kv for kv in items if kv[1].visible]
+    if visible:
+        return max(visible, key=_rank)
+    return max(items, key=_rank)
 
 
 def get_active_connection() -> Optional[tuple[str, WebSocket]]:
@@ -288,6 +317,17 @@ async def handle_json_message(connection_id: str, websocket: WebSocket, message_
                 "content": message_data.get("content", ""),
             }
             await broadcast(json.dumps(broadcast_msg))
+
+        elif message_type == "browser_context":
+            # Per-tab data-context snapshot from the UI (current project /
+            # process / workspace TypeIds, etc.). Fire-and-forget like
+            # ``presence`` — the client never awaits a reply. Agents read
+            # this via ``flow context list``.
+            info = _active_connections.get(connection_id)
+            if info is not None:
+                ctx = message_data.get("context")
+                if isinstance(ctx, dict):
+                    info.browser_context = ctx
 
         elif message_type == "presence":
             # Per-tab visibility/focus update from the UI. Fire-and-forget:

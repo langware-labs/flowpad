@@ -1,13 +1,16 @@
-import type { ITask } from '@sdk/entities/task';
+import { useMemo } from 'react';
+import { Conversation, type Task, TypeId } from '@sdk';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { ConversationToolbar } from './ConversationToolbar';
 import { ConversationView } from './ConversationView';
 import { ConversationMode } from './conversation-mode';
 import { useProjectMappingGate } from './useProjectMappingGate';
+import { ChipsExcludeProvider } from './chips/ChipsExcludeContext';
+import { ChipKey, taskChipKeys } from './chips/keys';
 
 interface ConversationPanelProps {
   /** Optional. Project-scoped conversations have no task. */
-  task?: ITask | null;
+  task?: Task | null;
   conversationId: string;
   /** Optional sender label for messages whose `sender_name` field is missing. */
   senderName?: string;
@@ -59,6 +62,18 @@ export function ConversationPanel({
   const ensureMapped = task ? mappingGate.ensureMapped : undefined;
   const mappingDialogProps = mappingGate.dialogProps;
 
+  // Seed the chip-exclude scope with what TaskChips will render so deeper
+  // chip rows (MessageChips) skip duplicates automatically.
+  const taskKeys = useMemo(() => taskChipKeys(task ?? null), [task]);
+  // The conversation we are SHOWING is the page subject — never render a
+  // chip for ourselves. Add it to the exclude scope at the toolbar level so
+  // the data-driven TaskChips iteration over ``task.contextEntities`` skips
+  // the matching conversation entry.
+  const selfPageKeys = useMemo(
+    () => new Set([ChipKey.forTypeId(new TypeId(Conversation.type, conversationId))]),
+    [conversationId],
+  );
+
   const headerWrapper =
     variant === 'compact'
       ? 'flex items-center gap-1.5 text-xs font-medium text-muted-foreground'
@@ -71,22 +86,27 @@ export function ConversationPanel({
         <div className={headerWrapper}>
           {headerLabel !== null && <span>{headerLabel}</span>}
           {task && (
-            <ConversationToolbar
-              task={task}
-              conversationId={conversationId}
-              senderName={senderName}
-              ensureMapped={ensureMapped}
-          />)}
+            <ChipsExcludeProvider add={selfPageKeys}>
+              <ConversationToolbar
+                task={task}
+                conversationId={conversationId}
+                senderName={senderName}
+                ensureMapped={ensureMapped}
+              />
+            </ChipsExcludeProvider>
+          )}
         </div>
       )}
       <div className={bodyWrapper}>
-        <ConversationView
-          conversationId={conversationId}
-          task={task}
-          senderName={senderName}
-          ensureMapped={ensureMapped}
-          mode={mode}
-        />
+        <ChipsExcludeProvider add={taskKeys}>
+          <ConversationView
+            conversationId={conversationId}
+            task={task}
+            senderName={senderName}
+            ensureMapped={ensureMapped}
+            mode={mode}
+          />
+        </ChipsExcludeProvider>
       </div>
 
       {task && <OpenProjectComponent {...mappingDialogProps} />}

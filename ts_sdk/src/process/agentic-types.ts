@@ -170,6 +170,25 @@ export enum WorkerMode {
   CLI         = 'cli',
 }
 
+/**
+ * Symbolic icon identifier for an AgenticProcess. The TS SDK can't import
+ * React components, so this is the contract: process exposes a key, the UI
+ * resolves it to a concrete React icon via a registry (see
+ * ``ui/src/components/icons/process-icons.ts``).
+ *
+ * Two axes:
+ * - **vendor**: which CLI worker (`claude`, `codex`, generic fallback)
+ * - **state**: `fresh` (this process started a new session) vs `restored`
+ *   (this process resumed a prior `session_id`)
+ */
+export type ProcessIconKey =
+  | 'claude'
+  | 'claude-restore'
+  | 'codex'
+  | 'codex-restore'
+  | 'generic'
+  | 'generic-restore';
+
 /** Derive the worker mode from the process' ``visible`` field. */
 export function getWorkerMode(p: StatusBearingProcess): WorkerMode {
   return p.visible ? WorkerMode.Interactive : WorkerMode.CLI;

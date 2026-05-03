@@ -15,6 +15,11 @@ export class FSItem extends APIEntity<FSItem> {
   vfs_abs_path: string;
   upload_progress?: number;
   symlink_target?: string;
+  // Computed once at construction so it survives Immer's produce() in stores
+  // that hold FSItem instances — Immer strips class getters but preserves
+  // enumerable instance fields. Consumers (sort comparators, find-by-name)
+  // can rely on .name being defined after the item passes through any cache.
+  name: string;
 
   /** Cached VFSPath instance for efficient path operations */
   private _vfsPath?: VFSPath;
@@ -29,6 +34,14 @@ export class FSItem extends APIEntity<FSItem> {
     this.vfs_abs_path = entity.vfs_abs_path || '';
     this.upload_progress = entity.upload_progress;
     this.symlink_target = entity.symlink_target;
+    this.name = this._computeName();
+  }
+
+  private _computeName(): string {
+    const filename = this.vfsPath.filename;
+    if (!filename) return '';
+    if (filename === '.') return 'Root';
+    return filename;
   }
 
   /**
@@ -65,14 +78,6 @@ export class FSItem extends APIEntity<FSItem> {
 
   get title() {
     return this.display_name || this.vfs_file_name;
-  }
-
-  get name() {
-    const filename = this.vfsPath.filename;
-    if (!filename) return '';
-    // Handle root folder case where name is "."
-    if (filename === '.') return 'Root';
-    return filename;
   }
 
   /**

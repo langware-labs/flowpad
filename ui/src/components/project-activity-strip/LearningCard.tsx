@@ -56,7 +56,7 @@ export function LearningCard({
         {!isRunning && !isComplete && !isError && task.status !== TaskStatus.IN_PROGRESS && !isErrorTask && (
           <Sparkles className="h-4 w-4 shrink-0 text-purple-500" />
         )}
-        <span className="learning-card-title">{task.title || 'Untitled'}</span>
+        <span className="learning-card-title">{task.displayName}</span>
         {onArchive && (
           <button
             type="button"
@@ -101,7 +101,7 @@ export function LearningCard({
             style={{ marginLeft: '1.5rem' }}
             onClick={(e) => {
               e.stopPropagation();
-              onOpenEventDialog?.(workerSessionId, task.title || 'Task');
+              onOpenEventDialog?.(workerSessionId, task.displayName);
             }}
           >
             {eventCount > 0 && (

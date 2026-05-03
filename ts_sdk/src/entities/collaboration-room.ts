@@ -2,6 +2,7 @@ import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
+import { TypeId } from '../models/TypeId';
 import { ViewType } from '../utils/ui/view-types';
 import type { ProjectMember } from './project';
 import { Project, getOrCreateLocalMemberId } from './project';
@@ -13,11 +14,12 @@ export interface ICollaborationRoom extends IEntity {
   host_member_id?: string | null;
   name?: string | null;
   members?: ProjectMember[];
-  agentic_process_ids?: string[];
   status?: string;
   started_at?: string | null;
   updated_at?: string | null;
   ended_at?: string | null;
+  // NOTE: agentic_process_ids moved into context_entities. Use
+  // room.contextOfType('agentic_process') / room.addContextEntity(...).
 }
 
 @registerEntity
@@ -32,7 +34,6 @@ export class CollaborationRoom
   host_member_id: string | null = null;
   name: string | null = null;
   members: ProjectMember[] = [];
-  agentic_process_ids: string[] = [];
   status: string = 'active';
   started_at: string | null = null;
   updated_at: string | null = null;
@@ -42,13 +43,28 @@ export class CollaborationRoom
     super(entity as IEntity);
     Object.assign(this, entity);
     this.members = entity.members ?? [];
-    this.agentic_process_ids = entity.agentic_process_ids ?? [];
   }
 
-  get displayName(): string {
-    if (this.name && this.name.trim()) return this.name;
-    // Backfill display for legacy records that were created before auto-naming
-    // landed. Uses the same "<Host>'s room (Day, HH:MM)" shape as create().
+  /** Convenience: list of agentic_process TypeIds in this room's context. */
+  get agenticProcessIds(): string[] {
+    return this.contextOfType('agentic_process').map((t) => t.id);
+  }
+
+  /** Project the room's project as a chip-projected direct field. */
+  protected override _directFieldsAsTypeIds(): TypeId[] {
+    const out: TypeId[] = [];
+    if (this.project_id) out.push(new TypeId('project', this.project_id));
+    return out;
+  }
+
+  /**
+   * When ``name`` is empty (legacy records created before auto-naming),
+   * synthesize ``"<Host>'s room (Day, HH:MM)"`` from ``host_name`` +
+   * ``started_at``. With ``name`` set, return null and let the default chain
+   * use it.
+   */
+  override getDisplayName(): string | null {
+    if (this.name && this.name.trim()) return null;
     const host = this.host_name?.trim() || 'Anonymous';
     const when = this.started_at ? new Date(this.started_at) : new Date();
     if (!Number.isNaN(when.getTime())) {
@@ -96,13 +112,25 @@ export class CollaborationRoom
   public async addProcess(processId: string): Promise<void> {
     const info = new ActionInfo('add_process', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters = { agentic_process_id: processId };
+    // Backend appends the process to context_entities and returns the full
+    // list as TypeId-formatted strings. Rebuild the local context to mirror.
     const result = await dataManager.callAction<
       { agentic_process_id: string },
-      { ok: boolean; agentic_process_ids: string[] }
+      { ok: boolean; context_entities: string[] }
     >(info);
-    if (result && Array.isArray(result.agentic_process_ids)) {
-      this.agentic_process_ids = result.agentic_process_ids;
-    }
+    if (!result?.context_entities || !Array.isArray(result.context_entities)) return;
+    // Replace the local context with what the backend returned: drop the
+    // current agentic_process entries, re-add from the response. Other
+    // (non-process) context entries the backend may have stamped are kept.
+    const currentProcs = this.contextOfType('agentic_process');
+    currentProcs.forEach((t) => this.removeContextEntity(t));
+    result.context_entities.forEach((tid) => {
+      try {
+        this.addContextEntity(new TypeId(tid));
+      } catch {
+        // Skip malformed entries from server.
+      }
+    });
   }
 
   public async end(): Promise<void> {

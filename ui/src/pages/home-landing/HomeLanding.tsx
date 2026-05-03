@@ -117,12 +117,14 @@ export function HomeLanding() {
               const task = await dataManager
                 .getByTypeId<import('@sdk').Task>(new TypeId(Task.type, taskId))
                 .catch(() => null);
-              if (task?.conversation_id) {
+              const convTypeId = task?.firstContextOfType?.('conversation');
+              const convId = convTypeId?.id ?? task?.conversation_id ?? null;
+              if (convId) {
                 navigation.openDock(
                   resolveConversationDockPointer({
-                    conversationId: task.conversation_id,
-                    taskId: task.id ?? taskId,
-                    projectId: task.project_id ?? null,
+                    conversationId: convId,
+                    taskId: task?.id ?? taskId,
+                    projectId: task?.project_id ?? null,
                   }),
                 );
                 return;
@@ -751,6 +753,8 @@ export function HomeLanding() {
 
         {/* Right column: Recent conversations */}
         <div className="w-72 shrink-0 flex flex-col gap-2">
+          {/* Invisible spacer mirroring the left column's Inbox row so Recent conversations aligns with Todos */}
+          <div aria-hidden className="h-9 shrink-0" />
           <RecentConversationsStrip />
         </div>
 

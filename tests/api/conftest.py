@@ -44,6 +44,68 @@ def _invalidate_caches():
         pass
 
 
+# Capture the canonical session-start records-root the moment the conftest
+# loads — before any test has had a chance to mutate it via
+# ``set_default_records_root`` (which writes to ``os.environ['FS_RECORD_PATH']``
+# AND rebuilds the InstanceSettings cache). Tests that forget to restore on
+# their teardown leak the value, breaking every subsequent test that depends
+# on the canonical records dir. The autouse fixture below restores it.
+_CANONICAL_FS_RECORD_PATH = os.environ.get("FS_RECORD_PATH")
+
+
+@pytest.fixture(autouse=True)
+def _rebind_session_db_driver():
+    """Re-bind the session DB driver before every test.
+
+    Tests that use starlette ``TestClient`` (sync) trigger the FastAPI
+    lifespan, whose shutdown calls ``close_db()`` — which pops the cached
+    SQLite driver from ``_driver_instances`` and closes its engine. The
+    next test then sees a split-brain: writes hit a freshly-created driver
+    on disk, but reads via ``DBEntity._db`` still go through the OLD
+    (closed) driver instance that ``initialize_test_db`` rebound at session
+    start. The symptom is silent: ``sync_to_db`` succeeds, ``get_one``
+    returns ``None``.
+
+    Restoring both pointers before each test keeps every read/write on the
+    single session-owned driver.
+    """
+    import tests.conftest as _root_cf
+    driver = getattr(_root_cf, "_test_db_driver", None)
+    if driver is not None:
+        try:
+            import flow_sdk.db.drivers.db_driver as _ddm
+            _ddm._driver_instances["sqlite"] = driver
+            from flow_sdk.db.db_entity import DBEntity
+            from flow_sdk.db.db_relationship import DBRelationship
+            DBEntity._db = driver
+            DBRelationship._db = driver
+        except Exception:
+            pass
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _restore_records_root():
+    """Restore ``FS_RECORD_PATH`` and rebuild ``InstanceSettings`` BEFORE and
+    AFTER each test. Catches leaks from tests that mutate
+    ``set_default_records_root`` in their setup but fail to restore on
+    teardown (or restore to a hardcoded wrong value). Restoring at the start
+    is critical — restoring only at end leaves the FIRST test after a leak
+    seeing the polluted env."""
+    def _reset():
+        if _CANONICAL_FS_RECORD_PATH and os.environ.get("FS_RECORD_PATH") != _CANONICAL_FS_RECORD_PATH:
+            os.environ["FS_RECORD_PATH"] = _CANONICAL_FS_RECORD_PATH
+            try:
+                from flow_sdk.instance_settings import reset_instance_settings
+                reset_instance_settings()
+            except Exception:
+                pass
+
+    _reset()
+    yield
+    _reset()
+
+
 @pytest.fixture(scope="session", autouse=True)
 def clean_db():
     """Delete WAL/SHM files at session start; close driver at session end."""

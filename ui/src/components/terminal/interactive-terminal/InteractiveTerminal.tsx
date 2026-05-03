@@ -452,19 +452,35 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const showAnnotationGutter = !!process?.session_id && colVis.annotations;
   const reserveAnnotationSpace = colVis.annotations;
 
-  const lastPlanAnnotation = useMemo(() => {
-    const plans = sessionAnnotations.filter((a) => a.labels?.includes('plan:'));
-    if (plans.length === 0) return null;
-    return plans.reduce((latest, a) =>
-      String(a.created_date ?? '') > String(latest.created_date ?? '') ? a : latest,
-    );
-  }, [sessionAnnotations]);
+  // Single source of truth: the entity's persisted ``plan_path``.
+  // listen.py's ExitPlanMode hook + the PTY-trigger getPlan() flow both
+  // write to the same field and broadcast the entity-update over WS, so
+  // the button flips on within ms of plan detection from any source.
+  const hasPlan = !!process?.plan_path;
 
   const handleOpenLastPlan = useCallback(() => {
-    if (!lastPlanAnnotation || !agenticProcessTypeId) return;
-    const filePath = (lastPlanAnnotation.data as Record<string, unknown>)?.file_path as string | undefined;
-    if (filePath) navigation.openPlan(agenticProcessTypeId, filePath);
-  }, [lastPlanAnnotation, agenticProcessTypeId, navigation]);
+    if (!agenticProcessTypeId || !process?.plan_path) return;
+    navigation.openPlan(agenticProcessTypeId, process.plan_path);
+  }, [process?.plan_path, agenticProcessTypeId, navigation]);
+
+  // On mount (and whenever the process identity changes), proactively call
+  // getPlan() once so the button restores after a reload — the line trigger
+  // only fires for live new output, but ``plan_path`` survives persistence.
+  useEffect(() => {
+    if (!process || process.plan_path) return;
+    void process.getPlan();
+    // We intentionally only react to the process identity changing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [process?.id]);
+
+  // Refresh-driven plan-detection: subscribe to status transitions and
+  // run getPlan() once at registration. Server-side resolves the plan
+  // from the JSONL transcript and persists plan_path on the entity; the
+  // next entity-update over WS makes ``hasPlan`` flip to true automatically.
+  useEffect(() => {
+    if (!process) return;
+    return process.onPlan({ validate: true }, () => {});
+  }, [process]);
 
   const mergedPrompts = useMemo<PromptEntry[]>(() => {
     const annotationPrompts: PromptEntry[] = rawAnnotationElements
@@ -1235,8 +1251,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           >
             {/* Relative container: xterm fills the space with padding for gutters;
                 gutters are absolutely positioned over the padded areas.
-                This prevents any gutter mount/unmount from changing xterm width. */}
-            <div className="relative min-h-0 flex-1">
+                This prevents any gutter mount/unmount from changing xterm width.
+                ``overflow-hidden`` clips gutter rows that overshoot the visible
+                box (TimeGutter etc. render a fixed row count regardless of the
+                container height — without clipping they paint over the footer). */}
+            <div className="relative min-h-0 flex-1 overflow-hidden">
               {/* Wrapper reserves gutter space; xterm fills the content area only */}
               <div
                 className="absolute inset-0 flex"
@@ -1394,7 +1413,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
               dispatchSideTab({ type: 'toggle', tab });
             }
           }}
-          hasLastPlan={!!lastPlanAnnotation}
+          hasLastPlan={hasPlan}
           onOpenLastPlan={handleOpenLastPlan}
         />
       )}

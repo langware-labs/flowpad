@@ -188,6 +188,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             output_format="stream-json",
             print_mode=True,
             effort=context.effort,
+            add_dirs=list(context.add_dirs),
             # verbose=True is auto-enabled by ClaudeCliOptions when
             # output_format == "stream-json".
         )

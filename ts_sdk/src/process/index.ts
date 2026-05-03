@@ -23,10 +23,12 @@ export {
   getDisplayStatus,
   getWorkerMode,
 } from './agentic-types';
-export type { ParsedUIUri, UIComponentPayload, StatusBearingProcess } from './agentic-types';
+export type { ParsedUIUri, ProcessIconKey, UIComponentPayload, StatusBearingProcess } from './agentic-types';
 
 export { AgenticProcess } from './agentic-process';
 export type { IAgenticProcess, ProcessState, ExecuteOptions, SpawnResult } from './agentic-process';
+export type { AssetDescriptor, AssetSource } from './asset-descriptor';
+export { ASSET_SOURCE_LABEL, READONLY_ASSET_SOURCES, isReadOnlySource } from './asset-descriptor';
 
 export { serializeAgenticContext } from './agentic-context';
 export type { AgenticContext, PermissionMode, IAgenticProcessOptions, ISpawnWorkerOptions } from './agentic-context';

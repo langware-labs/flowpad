@@ -3,7 +3,7 @@ test 1: Fork button is disabled before a session exists and before the first ass
 - wait for the plain shell tab
 - validate the Fork button (GitFork icon) in the process toolbar is disabled
 - hover the Fork button; validate the tooltip reads "Launch a session first"
-- click the Start Claude button (data-testid="start-claude-button") and wait for the banner
+- open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude") and wait for the banner
 - validate the Fork button is STILL disabled (no transcript yet; workerStatus is INITIALIZING or IDLE)
 - hover; validate the tooltip reads "Send a message first — fork requires conversation history"
 

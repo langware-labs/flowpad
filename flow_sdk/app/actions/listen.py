@@ -264,7 +264,16 @@ def set_plan_auto_approve(agentic_process_id: str | None) -> None:
 
 
 async def _create_plan_annotation(tool_input: dict, session_id: str) -> None:
-    """Create an Annotation entity for an ExitPlanMode event. Non-critical."""
+    """On ``PreToolUse:ExitPlanMode``, persist ``plan_path`` on the linked
+    AgenticProcess and create a ``plan:`` Annotation for the gutter.
+
+    Path resolution prefers ``tool_input["planFilePath"]`` (emitted directly
+    by Claude Code on every ExitPlanMode call) and falls back to the older
+    Write/Edit cache for older Claude versions. The save on AgenticProcess
+    broadcasts an entity-update over WS, which is what flips the
+    "Open Plan" button on in the live UI without polling.
+    Non-critical: errors are logged and swallowed.
+    """
     try:
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.annotation import Annotation
@@ -272,18 +281,37 @@ async def _create_plan_annotation(tool_input: dict, session_id: str) -> None:
 
         plan_text = tool_input.get("plan", "")
 
-        # Resolve plan file from last Write / Edit path if it's a .claude/plans/*.md
-        plan_file_path = ""
-        last_file_op = _last_file_op_path_by_session.pop(session_id, None)
-        last_file_op_str = str(last_file_op) if last_file_op else ""
-        if last_file_op_str and ".claude/plans/" in last_file_op_str and last_file_op_str.endswith(".md"):
-            plan_file_path = last_file_op_str
+        # Primary: planFilePath emitted directly by Claude Code (newer
+        # versions). Fallback: cached Write/Edit path under .claude/plans/.
+        plan_file_path = str(tool_input.get("planFilePath") or "")
+        if not plan_file_path:
+            last_file_op = _last_file_op_path_by_session.pop(session_id, None)
+            last_file_op_str = str(last_file_op) if last_file_op else ""
+            if last_file_op_str and ".claude/plans/" in last_file_op_str and last_file_op_str.endswith(".md"):
+                plan_file_path = last_file_op_str
+        else:
+            # Drain the cache to avoid cross-session drift.
+            _last_file_op_path_by_session.pop(session_id, None)
 
         now_iso = datetime.now(timezone.utc).isoformat()
         agentic_processes = await AgenticProcess.get_all(
             entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id))
         )
-        agentic_process_id = agentic_processes[0].id if agentic_processes else ""
+        agentic_process = agentic_processes[0] if agentic_processes else None
+        agentic_process_id = agentic_process.id if agentic_process else ""
+
+        # Persist plan_path on the entity — this is the single field the UI
+        # button reads. The save() WS broadcast lights up the "Open Plan"
+        # button in real time.
+        if agentic_process and plan_file_path and agentic_process.plan_path != plan_file_path:
+            agentic_process.plan_path = plan_file_path
+            try:
+                await agentic_process.save()
+            except Exception:
+                logger.debug(
+                    "_create_plan_annotation: agentic_process.save() failed for %s",
+                    agentic_process.id, exc_info=True,
+                )
 
         content = plan_text[:50] if plan_text else "Plan created"
 

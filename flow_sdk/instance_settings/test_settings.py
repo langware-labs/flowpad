@@ -23,6 +23,7 @@ from pathlib import Path
 from .base_settings import (
     DEFAULT_DB_DRIVER,
     ENV_DESKTOP_DB,
+    ENV_FLOWPAD_CLAUDE_HOME,
     ENV_FS_RECORD_PATH,
     ENV_SQLITE_DATABASE_PATH,
     BaseInstanceSettings,
@@ -41,7 +42,11 @@ class TestInstanceSettings(BaseInstanceSettings):
         sandbox.mkdir(parents=True, exist_ok=True)
 
         flow_home = sandbox / ".flow"
-        claude_home = sandbox / ".claude"
+        # Honour ``FLOWPAD_CLAUDE_HOME`` so long-running tests that drive a
+        # real ``claude`` CLI can point flow_sdk at the same ``~/.claude``
+        # location the CLI itself writes to. Default stays sandboxed.
+        claude_home_env = os.environ.get(ENV_FLOWPAD_CLAUDE_HOME)
+        claude_home = Path(claude_home_env) if claude_home_env else sandbox / ".claude"
         flow_home.mkdir(parents=True, exist_ok=True)
         claude_home.mkdir(parents=True, exist_ok=True)
         for sub in ("skills", "agents", "projects", "commands", "plans", "workflows", "docs", "tasks"):
@@ -92,6 +97,9 @@ class TestInstanceSettings(BaseInstanceSettings):
             claude_mcp_json_path=claude_home / "mcp.json",
             claude_settings_json_path=claude_home / "settings.json",
             claude_managed_settings_path=claude_home / "managed-settings.json",
+            cloud_user_email=os.environ.get("FLOWPAD_CLOUD_USER_EMAIL") or None,
+            cloud_user_pass=os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD") or None,
+            cloud_login_timeout_seconds=cls._resolve_login_timeout(),
         )
 
     @staticmethod

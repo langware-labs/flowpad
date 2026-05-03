@@ -86,6 +86,9 @@ def test_append_scan_writes_per_type_log(tmp_path):
 
 
 def test_append_index_writes_both_logs(tmp_path):
+    """append_index now writes per-type only — global timestamp is derived
+    in get_index_status as max(per_type[i].last_indexed_at) (see
+    SchemaRegistry.append_index docstring)."""
     with mock.patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
         ts = SchemaRecord.append_index(
             trigger="test",
@@ -93,17 +96,13 @@ def test_append_index_writes_both_logs(tmp_path):
             total_indexed=3,
             types=[{"type": "bookmark", "indexed": 3}],
         )
-    assert (tmp_path / "index_log.jsonl").exists()
     assert (tmp_path / "types" / "bookmark" / "index_log.jsonl").exists()
-
-    global_entry = json.loads((tmp_path / "index_log.jsonl").read_text().strip().splitlines()[-1])
-    assert global_entry["total_indexed"] == 3
-    assert global_entry["created_at"] == ts
 
     per_type_entry = json.loads(
         (tmp_path / "types" / "bookmark" / "index_log.jsonl").read_text().strip().splitlines()[-1]
     )
     assert per_type_entry["total_indexed"] == 3
+    assert per_type_entry["created_at"] == ts
 
 
 def test_get_last_scan_at_none_when_missing(tmp_path):

@@ -85,6 +85,8 @@ export interface ControlMessage extends BaseMessage {
 export interface OAuthMessage extends BaseMessage {
   oauth_request_id: string;
   status: 'success' | 'error';
+  message?: string | null;
+  user?: Record<string, any> | null;
 }
 
 /**

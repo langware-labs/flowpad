@@ -1,6 +1,6 @@
 import React from 'react';
-import * as lucideIcons from 'lucide-react';
-import { File, FileText, Plus, RefreshCw } from 'lucide-react';
+import { FileText, Plus, RefreshCw } from 'lucide-react';
+import { lucideByName } from '@src/lib/lucide-by-name';
 import apiClient from '@sdk/client';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
@@ -27,9 +27,11 @@ export interface AssetTypeRootDeps {
 }
 
 interface AssetPointerParts {
-  mode: 'editor' | 'list' | null;
+  mode: 'editor' | 'list' | 'wiki' | null;
   typeName: string | null;
   vfsPath: string | null;
+  /** Name target when mode === 'wiki'. */
+  wikiName: string | null;
 }
 
 /**
@@ -37,33 +39,35 @@ interface AssetPointerParts {
  * DockPointer factories). Pointer format:
  *   `list/<typeName>`
  *   `editor/<typeName>/<vfsPath>`
+ *   `wiki/<encoded name>`
  */
 export function parseAssetPointer(pointer: string | null | undefined): AssetPointerParts {
-  if (!pointer) return { mode: null, typeName: null, vfsPath: null };
+  if (!pointer) return { mode: null, typeName: null, vfsPath: null, wikiName: null };
   if (pointer.startsWith('editor/')) {
     const rest = pointer.slice('editor/'.length);
     const slash = rest.indexOf('/');
-    if (slash < 0) return { mode: 'editor', typeName: rest || null, vfsPath: null };
+    if (slash < 0) return { mode: 'editor', typeName: rest || null, vfsPath: null, wikiName: null };
     return {
       mode: 'editor',
       typeName: rest.slice(0, slash) || null,
       vfsPath: rest.slice(slash + 1) || null,
+      wikiName: null,
     };
   }
   if (pointer.startsWith('list/')) {
-    return { mode: 'list', typeName: pointer.slice('list/'.length) || null, vfsPath: null };
+    return { mode: 'list', typeName: pointer.slice('list/'.length) || null, vfsPath: null, wikiName: null };
   }
-  return { mode: null, typeName: null, vfsPath: null };
+  if (pointer.startsWith('wiki/')) {
+    const raw = pointer.slice('wiki/'.length);
+    let name = raw;
+    try { name = decodeURIComponent(raw); } catch { /* keep raw */ }
+    return { mode: 'wiki', typeName: 'markdown', vfsPath: null, wikiName: name || null };
+  }
+  return { mode: null, typeName: null, vfsPath: null, wikiName: null };
 }
 
-/**
- * Resolve a Lucide icon by name, falling back to a generic file icon.
- */
 function resolveAssetIcon(iconName: string | null): React.ReactNode {
-  const key = iconName as keyof typeof lucideIcons | null;
-  const Icon = (key && key in lucideIcons
-    ? (lucideIcons[key] as React.FC<{ className?: string }>)
-    : File) as React.FC<{ className?: string }>;
+  const Icon = lucideByName(iconName);
   return <Icon className="h-4 w-4 flex-shrink-0" />;
 }
 

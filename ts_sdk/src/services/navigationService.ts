@@ -2,6 +2,9 @@ import * as Sentry from '@sentry/browser';
 import { runInAction } from 'mobx';
 import { config } from '../config';
 import { dataContext, isTypeId, TypeId } from '../FlowSync';
+import { cloudManager } from './cloud_login';
+import { secretsService } from './secrets-service';
+import { secretApprovalGate } from './secretApprovalGate';
 
 export type BootstrapErrorType = 'config' | 'network' | 'server';
 
@@ -61,19 +64,44 @@ class Navigator {
     });
   }
 
-  navigateToLogin(loginCallbackUrl: string = window.location.href, connection?: string) {
+  async navigateToLogin(_loginCallbackUrl: string = window.location.href, _connection?: string): Promise<void> {
+    if (!(await this.ensureSecretsEnabled())) return;
     void dataContext.setActiveEntityTypeId(null);
-    const url = this.getLoginWithCallbackUrl(loginCallbackUrl, connection);
-    document.location.href = url;
+    // cloudManager handles env-mode vs system-browser-mode internally.
+    // The connection param is ignored — the cloud's login form handles provider choice.
+    try {
+      await cloudManager.login();
+    } catch (err) {
+      console.warn('[navigateToLogin] login failed:', err);
+    }
   }
 
-  navigateToLogout(returnToUrl: string = window.location.origin) {
+  private async ensureSecretsEnabled(): Promise<boolean> {
+    try {
+      const initial = await secretsService.isEnabled();
+      if (initial?.enabled) return true;
+    } catch {
+      // If the probe fails (offline, server down) fall through to the dialog;
+      // the dialog's own enable() call will surface the same error.
+    }
+
+    const approved = await secretApprovalGate.request();
+    if (!approved) return false;
+
+    // The dialog already called secretsService.enable(); re-verify before
+    // redirecting in case the OS denied the prompt despite the in-app approval.
+    try {
+      const verified = await secretsService.isEnabled();
+      return Boolean(verified?.enabled);
+    } catch {
+      return false;
+    }
+  }
+
+  navigateToLogout(_returnToUrl: string = window.location.origin) {
     void dataContext.setActiveEntityTypeId(null);
-    // returnToUrl must match the "Allowed Logout URLs" set in
-    // https://manage.auth0.com/dashboard/us/flowpad-ai/applications/MVCrqf4VyI8J2VJf3wYN07Mu5kYvUZTs/settings
-    const url = this.appendParams(`${config.SERVER_URL}${config.API_PREFIXES.logout}`, { returnTo: returnToUrl });
     Sentry.setUser(null);
-    document.location.href = url;
+    void cloudManager.logout();
   }
 
   navigateToLanding(shouldReload: boolean = false) {

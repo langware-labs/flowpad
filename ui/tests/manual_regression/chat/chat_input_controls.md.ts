@@ -42,12 +42,18 @@ test.describe('Chat Input Controls', () => {
     await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible();
   });
 
-  test('Claude start button and add tab button are visible', async ({ page }) => {
+  test('Tab opener menu exposes Claude and Terminal rows', async ({ page }) => {
     test.setTimeout(120_000);
 
     await gotoShell(page);
 
-    await expect(page.getByTestId('start-claude-button')).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByTestId('open-terminal-tab-button')).toBeVisible({ timeout: 5_000 });
+    // The "+" plus button is the always-present tab-opener affordance.
+    // Inline opener buttons (opener-inline-claude, opener-plus-button)
+    // only render once the user has pinned that opener.
+    const plus = page.getByTestId('opener-plus-button');
+    await expect(plus).toBeVisible({ timeout: 5_000 });
+    await plus.click();
+    await expect(page.getByTestId('opener-menu-row-claude')).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByTestId('opener-menu-row-terminal')).toBeVisible({ timeout: 5_000 });
   });
 });
