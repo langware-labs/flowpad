@@ -969,26 +969,8 @@ async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
     conv_count = 0
     fm_count = 0
 
-    # Standard read with a recipient_email filter — replaces the legacy
-    # "mine" action. The hub's `read` action parses ?filter= via
-    # request_parameters into a QueryFilter; recipients can see their own
-    # pending invitations via the policy on Invitation.recipient_email.
-    #
-    # Use the *cloud* user's email (the one this install is logged into the
-    # hub with), not the bare local-placeholder User.email — the local one
-    # is a synthetic ``Gadi-PC@desktop.local``-style string that never
-    # matches what the sender typed.
-    from flow_sdk.cli.app_config import get_user as _get_cloud_user
-    cloud_user = _get_cloud_user() or {}
-    local_email = (cloud_user.get("email") or "").strip()
-    if not local_email:
-        logger.warning("[conversation-sync] no cloud-user email; skipping invitation pull")
-    # Single key → ExpressionNode infers EQ; explicit op form works too.
-    inv_filter = _json.dumps({"match": {"op": "$EQ", "operands": ["recipient_email", local_email]}})
-    logger.warning("[conversation-sync] cloud_email=%r filter=%s", local_email, inv_filter)
     invitations = await hub_get(
-        BuiltinEntityType.INVITATION,
-        params={"filter": inv_filter},
+        BuiltinEntityType.INVITATION, action="pending",
     ) or []
     if not isinstance(invitations, list):
         invitations = []
