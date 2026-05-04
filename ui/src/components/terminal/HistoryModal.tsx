@@ -4,7 +4,6 @@ import { useEntitiesQuery } from '@sdk/react/hooks';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { useClaudeHistory } from '@src/hooks/useClaudeHistory';
-import { useContext } from '@src/hooks/useContext';
 import React, { useEffect, useMemo, useState } from 'react';
 
 const LIMIT = 10;
@@ -108,21 +107,8 @@ const processQuery = new QueryRequest({
   }),
 });
 
-function stripTrailingSlash(p: string): string {
-  return p.replace(/[/\\]+$/, '');
-}
-
 export function useRecentSessions(enabled: boolean = true): RecentItem[] {
-  const { project } = useContext();
-  const currentProjectId = project?.id ?? null;
-  const currentProjectPath = useMemo(
-    () => (project?.fs_storage_mount_path ? stripTrailingSlash(project.fs_storage_mount_path) : null),
-    [project?.fs_storage_mount_path],
-  );
-
-  // List 1: last N agentic_process entities. Query stays global; we filter
-  // client-side by project_id so the cache/subscription is shared with anyone
-  // else who needs the global list.
+  // List 1: last N agentic_process entities across all projects
   const { data: processes = [] } = useEntitiesQuery<AgenticProcess>(processQuery);
 
   // List 2: last N entries from ~/.claude/history.jsonl across all projects
@@ -130,21 +116,12 @@ export function useRecentSessions(enabled: boolean = true): RecentItem[] {
   // a GET discovery/claude_session + POST upsertSessionProcess.
   const { entries: historyEntries } = useClaudeHistory(HISTORY_FETCH, { enabled });
 
-  // Filter history entries by current project BEFORE the resolution loop —
-  // each unfiltered entry would trigger an AgenticProcess.fromClaudeSession
-  // round-trip. history.jsonl's `project` field is an absolute filesystem
-  // path, so compare against fs_storage_mount_path.
-  const filteredHistoryEntries = useMemo(() => {
-    if (!currentProjectPath) return historyEntries;
-    return historyEntries.filter((entry) => stripTrailingSlash(entry.project ?? '') === currentProjectPath);
-  }, [historyEntries, currentProjectPath]);
-
   const [historyItems, setHistoryItems] = useState<RecentItem[]>([]);
 
   // Per-session metadata harvested from history entries (ships `_session` with `include=claude_session`).
   const sessionMetaMap = useMemo(() => {
     const m = new Map<string, SessionMeta>();
-    for (const entry of filteredHistoryEntries) {
+    for (const entry of historyEntries) {
       if (!entry.session_id) continue;
       const fromSession = metaFromSession(entry._session);
       m.set(entry.session_id, {
@@ -153,17 +130,17 @@ export function useRecentSessions(enabled: boolean = true): RecentItem[] {
       });
     }
     return m;
-  }, [filteredHistoryEntries]);
+  }, [historyEntries]);
 
   useEffect(() => {
-    if (!enabled || filteredHistoryEntries.length === 0) {
+    if (!enabled || historyEntries.length === 0) {
       setHistoryItems([]);
       return;
     }
     let cancelled = false;
     void (async () => {
       const resolved: RecentItem[] = [];
-      for (const entry of filteredHistoryEntries) {
+      for (const entry of historyEntries) {
         if (!entry.session_id) continue;
         try {
           const p = await AgenticProcess.fromClaudeSession(entry.session_id);
@@ -186,12 +163,11 @@ export function useRecentSessions(enabled: boolean = true): RecentItem[] {
     return () => {
       cancelled = true;
     };
-  }, [enabled, filteredHistoryEntries, sessionMetaMap]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [enabled, historyEntries, sessionMetaMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return useMemo(() => {
     const processItems: RecentItem[] = processes
       .filter((p) => p.session_id != null)
-      .filter((p) => currentProjectId == null || p.project_id === currentProjectId)
       .map((p) => {
         const sid = p.session_id!;
         const meta = sessionMetaMap.get(sid) ?? {};
@@ -215,7 +191,7 @@ export function useRecentSessions(enabled: boolean = true): RecentItem[] {
         return true;
       })
       .slice(0, LIMIT);
-  }, [processes, historyItems, sessionMetaMap, currentProjectId]);
+  }, [processes, historyItems, sessionMetaMap]);
 }
 
 interface HistoryModalProps {
