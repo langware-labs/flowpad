@@ -194,14 +194,14 @@ def send_resource_sync(
         True if notification was queued, False if skipped.
     """
     if is_webhook_rate_limited():
-        logger.warning(f"[notify] SKIPPED: rate-limited ({log_context})")
+        logger.debug(f"Notification skipped: rate-limited ({log_context})")
         return False
 
     ctx = log_context or f"{type}/{operation}"
     urls = _get_report_urls()
-    logger.warning(f"[notify] urls={urls} type={type} op={operation} ctx={ctx}")
+    logger.debug(f"[notify] webhook urls: {urls} | type: {type} | op: {operation} | {ctx}")
     if not urls:
-        logger.warning(f"[notify] SKIPPED: no webhook urls (Flowpad discovery returned empty) ({ctx})")
+        logger.debug(f"Notification skipped: Flowpad not running ({ctx})")
         return False
 
     payload = {

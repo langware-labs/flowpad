@@ -143,22 +143,23 @@ async def materialize_flow_message(
     if notify:
         try:
             task_id_for_sync = parent_id if parent_type == RecordType.TASK else fm.id
-            r1 = send_resource_sync(
+            send_resource_sync(
                 type="flow_message",
                 id=fm.id,
                 operation=SyncOperation.CREATE,
                 data={"event_data": {"flow_message_id": fm.id, "task_id": task_id_for_sync}},
             )
-            r2 = send_resource_sync(
+            send_resource_sync(
                 type="conversation",
                 id=conv.id,
                 operation=SyncOperation.UPDATE,
                 data={"event_data": {"task_id": task_id_for_sync, "conversation_id": conv.id}},
             )
-            logger.warning(
-                "[materialize_flow_message] notify dispatched fm=%s conv=%s fm_sent=%s conv_sent=%s",
-                fm.id, conv.id, r1, r2,
-            )
+            # Entity-event channel — required for React useEntity hooks to
+            # re-render. send_resource_sync only fires the sniffer channel.
+            conv_fresh = await Conversation.get_one({"id": conv.id})
+            if conv_fresh:
+                await conv_fresh.notify_updated()
         except Exception as e:  # noqa: BLE001
             logger.warning("[materialize_flow_message] notify failed: %s", e)
 
