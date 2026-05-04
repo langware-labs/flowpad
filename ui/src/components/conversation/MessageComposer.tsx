@@ -42,10 +42,16 @@ export function MessageComposer({ task, conversationId, isRemote, disabled, onSe
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { localUser } = useLocalUser();
   // The initiator approves prompts (they own my_process_id and the fork);
-  // recipients propose them. So Add prompt is recipient-only — and only
-  // exists at all when there's a Task. Project-scoped conversations hide it.
+  // recipients propose them. So Add prompt is recipient-only.
+  //
+  // Two surfaces:
+  //   - Task-bound: initiator = ``task.shared_by_id === local_user.id``.
+  //   - Hub-direct (no Task): the conversation itself anchors the run via
+  //     conversation/<id>/run-headless. Both participants can add a prompt,
+  //     since neither side owns a "shared_by_id" — the recipient suggests,
+  //     the other side approves and runs server-side.
   const isInitiator = !!(task && localUser?.id && task.shared_by_id && task.shared_by_id === localUser.id);
-  const canAddPrompt = !!task && !isInitiator;
+  const canAddPrompt = task ? !isInitiator : !!conversationId;
 
   const activePrompt = queuedPrompt ?? localPrompt;
   const setActivePrompt = (p: QueuedPrompt | null) => {

@@ -1,12 +1,5 @@
-import { useMemo, useState } from 'react';
-import { History } from 'lucide-react';
 import { Task } from '@sdk';
-import { TabbedSideDrawer } from '@src/components/ui/side-drawer';
-import { useProcessesForTarget } from '@src/components/entity-chat-panel/hooks/useProcessesForTarget';
-import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
-import { buildRunEntries } from './task-runs';
-
-type TaskRunsTabId = 'runs';
+import { RunsDrawer } from '@src/components/runs-drawer/RunsDrawer';
 
 interface TaskRunsDrawerProps {
   task: Task;
@@ -15,45 +8,20 @@ interface TaskRunsDrawerProps {
 }
 
 /**
- * Right-side drawer hosting the headless run history for a task. Only one tab
- * (`Runs N`) — drops the Chat / Backlinks tabs you'd get from
- * `MilkdownEditorWithSidePanel` since they don't apply here.
+ * Right-side drawer hosting the headless run history for a task.
  *
- * Process source: `useProcessesForTarget(task.typeId)` — every headless run
- * spawned via `task/<id>/run-headless` carries `target_vfs_path = task TypeId`.
+ * Thin wrapper over the generic {@link RunsDrawer} — kept so the task-bar
+ * call sites (`SharedTaskView`, `TaskDetailPanel`) don't have to know how
+ * to build the target typeid themselves.
  */
 export function TaskRunsDrawer({ task, computeNodeId, className }: TaskRunsDrawerProps) {
-  const targetKey = task.typeId?.toString();
-  const { processes } = useProcessesForTarget(targetKey);
-
-  const entries = useMemo(() => buildRunEntries(processes), [processes]);
-
-  const [open, setOpen] = useState(true);
-  const tabs = useMemo(
-    () => [{ id: 'runs' as TaskRunsTabId, label: `Runs ${entries.length}`, icon: History }],
-    [entries.length],
-  );
-
+  if (!task.typeId) return null;
   return (
-    <TabbedSideDrawer<TaskRunsTabId>
-      open={open}
-      onOpenChange={setOpen}
-      tabs={tabs}
-      activeTab="runs"
-      onActiveTabChange={() => {}}
-      width="w-72"
+    <RunsDrawer
+      targetTypeId={task.typeId}
+      computeNodeId={computeNodeId}
       className={className}
-      data-testid="task-runs-drawer"
-    >
-      {{
-        runs: (
-          <WorkflowRunsPanel
-            entries={entries}
-            currentEntry={entries[0] ?? null}
-            computeNodeId={computeNodeId}
-          />
-        ),
-      }}
-    </TabbedSideDrawer>
+      testId="task-runs-drawer"
+    />
   );
 }

@@ -889,6 +889,13 @@ async def handle_conversation_start_hub(body: dict, someone_typeid: str) -> ApiR
     initial_text = (body.get("initial_text") or body.get("text") or "").strip()
     title = (body.get("title") or "").strip() or None
 
+    local_user = await User.get_one({"uname": "local"})
+    sender_id: Optional[str] = local_user.id if local_user else None
+    body_sender_name = (body.get("sender_name") or "").strip()
+    sender_name: str = body_sender_name or (
+        (local_user.name or local_user.email or "") if local_user else ""
+    )
+
     # 1. Create the Conversation row on the hub.
     try:
         hub_conv = await hub_post(BuiltinEntityType.CONVERSATION, {"title": title})
@@ -906,7 +913,11 @@ async def handle_conversation_start_hub(body: dict, someone_typeid: str) -> ApiR
         try:
             hub_first_fm = await hub_post(
                 BuiltinEntityType.CONVERSATION,
-                {"text": initial_text},
+                {
+                    "text": initial_text,
+                    "sender_id": sender_id,
+                    "sender_name": sender_name or None,
+                },
                 conv_id,
                 "add_message",
             )

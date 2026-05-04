@@ -143,11 +143,14 @@ export interface CreateHubConversationParams {
   /** First message text. */
   initial_text?: string;
   title?: string;
+  /** Display name on the first FlowMessage. Defaults server-side to the
+   * local user's name (synced from `git config user.name`). */
+  sender_name?: string | null;
 }
 
 export interface CreateHubConversationResult {
   conversation_id: string;
-  invitations: Array<{ id: string; recipient_email: string }>;
+  invited_emails: string[];
 }
 
 /** Create a conversation that lives on the hub and is mirrored locally with `remote=true`. */
