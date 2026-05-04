@@ -16,6 +16,7 @@ export default defineConfig(({ mode }) => {
       __AUTH_PROVIDER__: JSON.stringify(env.AUTH_PROVIDER || 'local'),
       __DEPLOY_ENV__: JSON.stringify(env.DEPLOY_ENV || 'local'),
       __IS_PACKAGE__: JSON.stringify(!!isPackage),
+      __FLOWPAD_DEV__: JSON.stringify(env.FLOWPAD_DEV === 'true'),
     },
     build: {
       sourcemap: true,
