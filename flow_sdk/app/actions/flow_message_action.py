@@ -1070,18 +1070,28 @@ async def conversation_sync() -> ApiResponse:
 
 
 async def handle_conversation_add_remote_message(body: dict, someone_typeid: str) -> ApiResponse:
-    """Add a message to a hub-mirrored conversation: POST hub add_message,
-    materialize the returned FlowMessage locally with remote=True.
+    """Add a message to a hub-mirrored conversation: forward the FlowMessage-shaped
+    body to the hub's ``add_message`` action, materialize the returned FlowMessage
+    locally with remote=True.
+
+    The body is expected to be a partial ``FlowMessage`` payload — every field
+    except ``conversation_id`` (which lives in the URL) is forwarded verbatim
+    to the hub. The hub's ``add_message`` action validates the FlowMessage
+    model, so we don't second-guess the shape here. New FlowMessage fields
+    work out of the box without touching this handler.
     """
     conv_id = (body.get("conversation_id") or "").strip()
-    text = (body.get("text") or "").strip()
-    if not conv_id or not text:
-        return ApiFailResponse(message="conversation_id and text required")
+    if not conv_id:
+        return ApiFailResponse(message="conversation_id required")
+
+    fm_payload = {k: v for k, v in body.items() if k != "conversation_id"}
+    if not fm_payload.get("text") and not fm_payload.get("attachment"):
+        return ApiFailResponse(message="text or attachment required")
 
     try:
         from flow_sdk.utils.hub import HubError
         data = await hub_post(
-            BuiltinEntityType.CONVERSATION, {"text": text}, conv_id, "add_message"
+            BuiltinEntityType.CONVERSATION, fm_payload, conv_id, "add_message"
         )
     except HubError as e:
         return ApiFailResponse(message=f"Hub error ({e.status_code}): {e.reason}")

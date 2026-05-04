@@ -115,10 +115,20 @@ export function MessageComposer({ task, conversationId, isRemote, disabled, onSe
     setError(null);
     try {
       if (isRemote && conversationId) {
-        // Hub-mirrored conversation: post to the hub's add_message and let
-        // the local server materialize the FlowMessage with remote=true.
-        // Files / prompts are not yet supported through the hub flow.
-        await addRemoteMessage({ conversation_id: conversationId, text: trimmed });
+        // Hub-mirrored conversation: forward a FlowMessage-shaped payload to
+        // the hub's add_message action via the local server, which
+        // materializes the returned FlowMessage with remote=true.
+        const attachment = effectivePrompt
+          ? queuedPromptAttachments.map((a) => ({
+              attachment_type: a.attachment_type,
+              data: a.data,
+            }))
+          : undefined;
+        await addRemoteMessage({
+          conversation_id: conversationId,
+          text: trimmed || undefined,
+          attachment,
+        });
       } else {
         const extras = effectivePrompt
           ? {

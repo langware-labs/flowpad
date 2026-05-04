@@ -177,9 +177,15 @@ export async function syncFromHub(): Promise<SyncFromHubResult> {
   return res!;
 }
 
+export interface AddRemoteMessageAttachment {
+  attachment_type: string;
+  data: string;
+}
+
 export interface AddRemoteMessageParams {
   conversation_id: string;
-  text: string;
+  text?: string;
+  attachment?: AddRemoteMessageAttachment[];
 }
 
 export interface AddRemoteMessageResult {
