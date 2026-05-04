@@ -14,6 +14,7 @@ import json
 import logging
 import time
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from enum import Enum
 from functools import cached_property
 from pathlib import Path
@@ -1390,6 +1391,42 @@ class AgenticProcess(Entity):
         await self.save()
         return ApiSuccessResponse(data={"ok": True, "name": agent.name})
 
+    @action.post(action_name="load-embedded-skill")
+    async def load_embedded_skill_action(self, asset_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
+        """Symlink a skill folder into this process's assets dir.
+
+        Skills are directory-discovered by Claude Code at startup, not a CLI
+        input. We symlink the live source folder under
+        ``<assets_dir>/.claude/skills/<name>/`` so edits to the original SKILL.md
+        flow through to the next chat without re-materialization.
+        """
+        import shutil
+        if not asset_ref:
+            return ApiFailResponse(message="asset_ref is required")
+        skill_dir = Path("/" + asset_ref.lstrip("/")).resolve()
+        if not skill_dir.is_dir():
+            return ApiFailResponse(message=f"Skill folder not found: {skill_dir}")
+        if not (skill_dir / "SKILL.md").exists():
+            return ApiFailResponse(message=f"SKILL.md missing in: {skill_dir}")
+        try:
+            assets_dir = await self._assets_dir_path()
+            assets_dir.mkdir(parents=True, exist_ok=True)
+            skills_root = assets_dir / ".claude" / "skills"
+            skills_root.mkdir(parents=True, exist_ok=True)
+            link = skills_root / skill_dir.name
+            # Refresh: a stale symlink, prior copy, or regular file all get replaced.
+            if link.is_symlink() or link.is_file():
+                link.unlink()
+            elif link.is_dir():
+                shutil.rmtree(link)
+            link.symlink_to(skill_dir, target_is_directory=True)
+            self._ensure_assets_dir_in_add_dirs(assets_dir)
+            await self.save()
+            return ApiSuccessResponse(data={"ok": True, "name": skill_dir.name, "link": str(link)})
+        except Exception as exc:
+            logger.exception("load_embedded_skill failed for %s", asset_ref)
+            return ApiFailResponse(message=str(exc))
+
     def load_embedded_agent(self, agent: "Any") -> None:
         """Embed an agent into this process so it is registered via --agents at launch.
 
@@ -2121,6 +2158,95 @@ class AgenticProcess(Entity):
         result = await self.start(instruction=instruction, visible=visible)
         _http_bench("after start() return")
         return result
+
+    @action.get(action_name="os-status")
+    async def os_status(self) -> ApiSuccessResponse:
+        """OS-level status snapshot for this AgenticProcess.
+
+        Single source of truth for "is this thing alive?". Combines:
+          - Persisted entity status (process + linked shell records).
+          - In-memory PTY-session liveness on the bound compute node.
+          - Real PID liveness check on the worker (psutil + cmdline match).
+
+        ``ready`` is the headline: True iff the PTY session is alive AND the
+        worker PID matches the recorded ``--session-id``/``--resume`` value.
+        It's the answer the frontend ``AgenticProcess.isAlive()`` returns.
+
+        Read-only with respect to lifecycle. ``has_attachable_pty`` /
+        ``worker_alive`` may opportunistically rebind a stale compute-node
+        link (self-healing), but never spawns or kills anything.
+        """
+        shell = await self.shell() if self.shell_id else None
+
+        pty_alive = False
+        worker_is_alive = False
+        has_attachable = False
+        pty_pid: int | None = None
+        worker_pid: int | None = None
+        worker_name: str | None = None
+        shell_status: str | None = None
+
+        if shell is not None:
+            shell_status = shell.status
+            worker_pid = shell.worker_pid
+            worker_name = shell.worker_name
+            try:
+                has_attachable = await shell.has_attachable_pty()
+            except Exception as exc:
+                logger.warning("os_status: has_attachable_pty failed for %s: %s", self.id, exc)
+                has_attachable = False
+            try:
+                pty_alive = bool(shell.is_alive)
+            except Exception:
+                pty_alive = False
+            try:
+                worker_is_alive = await shell.worker_alive()
+            except RuntimeError:
+                # ``worker_alive`` raises when the PTY exists but its session
+                # is dead — for a status read we treat that as "not alive".
+                worker_is_alive = False
+            except Exception as exc:
+                logger.warning("os_status: worker_alive failed for %s: %s", self.id, exc)
+                worker_is_alive = False
+            if shell.compute_node_id:
+                try:
+                    cn = shell.compute_node
+                    pty_pid_val = cn.compute_provider.get_pty_shell_pid(cn.node_provider_id, shell.id)
+                    pty_pid = int(pty_pid_val) if pty_pid_val is not None else None
+                except Exception:
+                    pty_pid = None
+
+        ready = has_attachable and worker_is_alive
+
+        if ready:
+            reason = None
+        elif not self.shell_id:
+            reason = "no shell linked to process"
+        elif shell is None:
+            reason = f"shell {self.shell_id} not found"
+        elif not has_attachable:
+            reason = "pty session not attachable"
+        elif not worker_is_alive:
+            reason = "worker pid not alive or cmdline mismatch"
+        else:
+            reason = None
+
+        return ApiSuccessResponse(data={
+            "process_id": self.id,
+            "process_status": self.status,
+            "shell_id": self.shell_id,
+            "shell_status": shell_status,
+            "session_id": self.session_id,
+            "pty_pid": pty_pid,
+            "worker_pid": worker_pid,
+            "worker_name": worker_name,
+            "pty_alive": pty_alive,
+            "worker_alive": worker_is_alive,
+            "has_attachable_pty": has_attachable,
+            "ready": ready,
+            "reason": reason,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        })
 
     @action.post(action_name="close")
     async def _http_close(self) -> ApiSuccessResponse | ApiFailResponse:
