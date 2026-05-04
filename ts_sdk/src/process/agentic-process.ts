@@ -27,6 +27,47 @@ import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
 import { ProcessIconKey, ProcessStatus, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
 
+// ---------------------------------------------------------------------------
+// Auto-recovery dispatcher — mirrors Shell's static-listener pattern at
+// ts_sdk/src/entities/shell.ts:81-95. A single ConnectionManager listener and
+// a periodic poll fan out to every registered AgenticProcess; each instance's
+// ``reconnect()`` then short-circuits cheaply when nothing is wrong, so the
+// fan-out cost is one ``GET /os-status`` per registered process per tick.
+// ---------------------------------------------------------------------------
+const _agenticProcessRegistry = new Set<AgenticProcess>();
+let _agenticListenersRegistered = false;
+let _pollTimer: ReturnType<typeof setInterval> | null = null;
+const _POLL_INTERVAL_MS = 5000;
+
+function _ensureAgenticStaticListeners(): void {
+  if (_agenticListenersRegistered) return;
+  _agenticListenersRegistered = true;
+  void import('../websocket').then(({ ConnectionManager }) => {
+    const cm = ConnectionManager.getInstance();
+    cm.on('on_reconnected', () => {
+      for (const proc of _agenticProcessRegistry) void proc.reconnect();
+    });
+  });
+  if (_pollTimer === null) {
+    _pollTimer = setInterval(() => {
+      for (const proc of _agenticProcessRegistry) void proc.reconnect();
+    }, _POLL_INTERVAL_MS);
+  }
+}
+
+/**
+ * Predicate consumed by ``Shell._onCmReconnected`` so the bare-shell
+ * reconnect handler skips shells that are owned by an AgenticProcess. The
+ * process layer drives recovery — it knows the session_id, --resume, env
+ * injection. Bare ``Shell.start()`` would just spawn an empty PTY.
+ */
+export function _isShellOwnedByAgenticProcess(shellId: string): boolean {
+  for (const proc of _agenticProcessRegistry) {
+    if (proc.shell_id === shellId) return true;
+  }
+  return false;
+}
+
 /**
  * Result returned by AgenticProcess.spawn().
  */
@@ -766,6 +807,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   private _historyLoaded: boolean = false;
   private _historyLoading: Promise<void> | null = null;
 
+  /**
+   * True after the user explicitly stopped this process (``stop`` /
+   * ``exit`` / ``close``) and before the next successful ``start``. Gates
+   * the auto-recovery dispatcher so a deliberately stopped process is not
+   * silently relaunched.
+   */
+  private _userInitiatedStop: boolean = false;
+
   constructor(entity: Partial<IAgenticProcess> = {}) {
     super(entity);
     this.instruction_content = entity.instruction_content;
@@ -1448,6 +1497,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   async exit(): Promise<void> {
     if (!this.shell_id) return; // Nothing to exit
 
+    // Mark this stop as user-initiated so the auto-recovery dispatcher does
+    // not relaunch the worker between the optimistic CLOSING update and the
+    // backend's eventual STOPPED/STOPPING write.
+    this._userInitiatedStop = true;
+
     // Optimistically mark the shell CLOSING synchronously (no await) so the
     // loader's resolveDefaultShell sees it as non-alive and won't redirect back
     // to this tab while the exit API call is in-flight.
@@ -1494,6 +1548,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   async close(): Promise<void> {
     if (this.status === ProcessStatus.STOPPING || this.status === ProcessStatus.STOPPED) return;
+
+    // Permanent teardown — deregister so neither the poll nor the
+    // on_reconnected dispatcher tries to relaunch this process.
+    this._userInitiatedStop = true;
+    _agenticProcessRegistry.delete(this);
 
     if (this.shell_id) {
       const shell = Shell.getByIdFromCache(this.shell_id);
@@ -1575,6 +1634,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       timeout: options?.ptyTimeout,
       ptyId: result.pty_id,
     });
+    // Successful open clears any prior user-stop intent and registers this
+    // process for auto-recovery (poll + on_reconnected dispatcher).
+    this._userInitiatedStop = false;
+    _agenticProcessRegistry.add(this);
+    _ensureAgenticStaticListeners();
     return true;
   }
 
@@ -1599,6 +1663,34 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   async isAlive(): Promise<boolean> {
     const status = await this.getOsStatus();
     return status.ready;
+  }
+
+  /**
+   * Auto-recovery entry point. Driven by the static reconnect dispatcher on
+   * ConnectionManager ``on_reconnected`` events and a 5 s poll. Cheap when
+   * the process is healthy: one GET ``os-status`` and an early return.
+   *
+   * Skipped when:
+   *   - user explicitly stopped this process (``_userInitiatedStop``);
+   *   - status is mid-transition (``STARTING`` / ``STOPPING``) — let the
+   *     in-flight call finish first;
+   *   - status is ``FAILED`` — relaunching would loop because the worker
+   *     can't start with the current ``cli_options``.
+   *
+   * Concurrent triggers (e.g. ``on_reconnected`` arriving while a poll is
+   * already in flight) converge: the backend's per-process ``_OPEN_LOCKS``
+   * mutex serializes ``open``, and the second ``isAlive()`` call sees the
+   * first recovery's result and short-circuits.
+   *
+   * @returns true iff a recovery ``start()`` was issued.
+   */
+  async reconnect(): Promise<boolean> {
+    if (this._userInitiatedStop) return false;
+    if (this.status === ProcessStatus.STARTING || this.status === ProcessStatus.STOPPING) return false;
+    if (this.status === ProcessStatus.FAILED) return false;
+    if (await this.isAlive()) return false;
+    await this.start({ visible: this.visible });
+    return true;
   }
 
   /**
