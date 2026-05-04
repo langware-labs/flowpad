@@ -913,8 +913,11 @@ async def handle_conversation_start_hub(body: dict, someone_typeid: str) -> ApiR
     target_typeid = f"{BuiltinEntityType.CONVERSATION.value}-{conv_id}"
     invited_emails: list[str] = []
     for p in participants:
-        email = (p.get("email") if isinstance(p, dict) else "") or ""
-        email = email.strip()
+        if not isinstance(p, dict):
+            continue
+        if (p.get("address_type") or "").strip().lower() != "email":
+            continue  # 'id' (existing user) takes a different invite path
+        email = (p.get("address") or "").strip()
         if not email:
             continue
         try:
@@ -923,7 +926,7 @@ async def handle_conversation_start_hub(body: dict, someone_typeid: str) -> ApiR
                 {
                     "recipient_email": email,
                     "invitation_targets": [
-                        {"typeid": target_typeid, "role": "participant"}
+                        {"typeid": target_typeid, "role": "member"}
                     ],
                     "message": initial_text or None,
                 },
