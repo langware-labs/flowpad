@@ -977,10 +977,16 @@ async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
     logger.warning("[conversation-sync] hub returned %d invitations", len(invitations))
     for inv in invitations:
         try:
-            if await _materialize_remote_invitation(inv, someone_typeid):
+            logger.warning(
+                "[conversation-sync] inv id=%s recipient=%s accepted=%s",
+                inv.get("id"), inv.get("recipient_email"), inv.get("accepted"),
+            )
+            saved = await _materialize_remote_invitation(inv, someone_typeid)
+            if saved:
                 inv_count += 1
+                logger.warning("[conversation-sync] saved local Invitation %s accepted=%s", saved.id, saved.accepted)
         except Exception as e:
-            logger.warning("[conversation-sync] invitation upsert failed: %s", e)    # Incremental sync: ask the hub for only Conversations whose updated_date
+            logger.warning("[conversation-sync] invitation upsert failed: %s", e, exc_info=True)    # Incremental sync: ask the hub for only Conversations whose updated_date
     # has moved past last_sync (server-side filter via the standard `read`
     # action's `?filter=` query param), then for each, only flow_messages
     # whose created_date moved past last_sync. last_sync is the max value
