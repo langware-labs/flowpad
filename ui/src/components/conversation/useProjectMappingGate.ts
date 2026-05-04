@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { dataManager, Project, TypeId } from '@sdk';
 import type { ITask } from '@sdk/entities/task';
 import { useContext } from '@src/hooks/useContext';
 import { applyProjectToTask, persistRemoteToLocalMapping } from './apply-project-choice';
+import { useProjectGate } from './useProjectGate';
 import { useProjectMapping } from './useProjectMapping';
 
 /**
@@ -30,8 +31,6 @@ import { useProjectMapping } from './useProjectMapping';
 export function useProjectMappingGate(task: ITask | null | undefined) {
   const { mapping, loaded: mappingLoaded } = useProjectMapping();
   const ctx = useContext();
-  const [open, setOpen] = useState(false);
-  const continuationRef = useRef<(() => void | Promise<void>) | null>(null);
   const autoApplyAttemptedRef = useRef<Set<string>>(new Set());
   const autoMapAttemptedRef = useRef<Set<string>>(new Set());
 
@@ -157,57 +156,17 @@ export function useProjectMappingGate(task: ITask | null | undefined) {
     })();
   }, [mappingLoaded, remoteProjectId, taskId, activeProjectId, mapping]);
 
-  const ensureMapped = useCallback(
-    (continuation: () => void | Promise<void>) => {
-      if (hasMapping) {
-        void continuation();
-        return;
-      }
-      continuationRef.current = continuation;
-      if (mappingLoaded) setOpen(true);
-    },
-    [hasMapping, mappingLoaded],
-  );
-
-  // Watch for the mapping flipping from unset → set while a continuation is
-  // pending. Defer one tick so React state (the picker's setCurrentProject,
-  // task entity refresh) finishes committing before the action runs.
-  useEffect(() => {
-    if (!hasMapping || !continuationRef.current) return;
-    const cont = continuationRef.current;
-    continuationRef.current = null;
-    setOpen(false);
-    const handle = window.setTimeout(() => {
-      void cont();
-    }, 0);
-    return () => window.clearTimeout(handle);
-  }, [hasMapping]);
-
-  // If the mapping table finishes loading and we *still* have no mapping
-  // for this remote project, only then commit to the picker — the user has
-  // a pending action that genuinely needs a fresh choice.
-  useEffect(() => {
-    if (!mappingLoaded) return;
-    if (hasMapping) return;
-    if (!continuationRef.current) return;
-    setOpen(true);
-  }, [mappingLoaded, hasMapping]);
-
-  const dialogProps = {
-    open,
-    onOpenChange: (next: boolean) => {
-      setOpen(next);
-      // Treat a manual close (no mapping written) as a cancel — drop the
-      // pending continuation so it doesn't fire on some unrelated future
-      // mapping change. The successful-pick path closes the dialog from
-      // inside the effect above, by which point the ref is already null.
-      if (!next && !hasMapping) continuationRef.current = null;
-    },
-    taskId: task?.id ?? undefined,
-    remoteProjectId: remoteProjectId ?? null,
-    remoteProjectName,
-    trigger: (remoteProjectId ? 'map' : 'gate') as 'map' | 'gate',
+  const apply = async (project: Project) => {
+    if (taskId) await applyProjectToTask(taskId, project);
+    if (remoteProjectId && project.id) await persistRemoteToLocalMapping(remoteProjectId, project.id);
   };
 
-  return { ensureMapped, dialogProps };
+  return useProjectGate({
+    mapped: hasMapping,
+    apply,
+    trigger: remoteProjectId ? 'map' : 'gate',
+    remoteProjectName,
+    taskId: task?.id ?? null,
+    remoteProjectId: remoteProjectId ?? null,
+  });
 }

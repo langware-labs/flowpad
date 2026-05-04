@@ -1,9 +1,11 @@
 import { useMemo } from 'react';
-import { Conversation, type Task, TypeId } from '@sdk';
+import { Conversation, dataManager, type Project, type Task, TypeId } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { ConversationToolbar } from './ConversationToolbar';
 import { ConversationView } from './ConversationView';
 import { ConversationMode } from './conversation-mode';
+import { useProjectGate } from './useProjectGate';
 import { useProjectMappingGate } from './useProjectMappingGate';
 import { ChipsExcludeProvider } from './chips/ChipsExcludeContext';
 import { ChipKey, taskChipKeys } from './chips/keys';
@@ -57,10 +59,28 @@ export function ConversationPanel({
   mode,
   className,
 }: ConversationPanelProps) {
-  // Project-scoped conversations skip the project-mapping gate entirely.
-  const mappingGate = useProjectMappingGate(task ?? undefined);
-  const ensureMapped = task ? mappingGate.ensureMapped : undefined;
-  const mappingDialogProps = mappingGate.dialogProps;
+  // Task-bound conversations use the task gate (handles remote→local mapping
+  // table + auto-apply). Hub-direct conversations call the generic
+  // `useProjectGate` directly, watching `Conversation.project_id` and writing
+  // it on pick. Both feed the same `OpenProjectComponent` dialog.
+  const taskMappingGate = useProjectMappingGate(task ?? undefined);
+  const { data: convEntity } = useEntity<Conversation>(
+    new TypeId(Conversation.type, conversationId),
+  );
+  const convMappingGate = useProjectGate({
+    mapped: !!convEntity?.project_id,
+    apply: async (project: Project) => {
+      if (!project.id) return;
+      const conv = await dataManager
+        .getByTypeId<Conversation>(new TypeId(Conversation.type, conversationId))
+        .catch(() => null);
+      if (!conv || conv.project_id === project.id) return;
+      conv.project_id = project.id;
+      await conv.save();
+    },
+  });
+  const ensureMapped = task ? taskMappingGate.ensureMapped : convMappingGate.ensureMapped;
+  const mappingDialogProps = task ? taskMappingGate.dialogProps : convMappingGate.dialogProps;
 
   // Seed the chip-exclude scope with what TaskChips will render so deeper
   // chip rows (MessageChips) skip duplicates automatically.
@@ -109,7 +129,7 @@ export function ConversationPanel({
         </ChipsExcludeProvider>
       </div>
 
-      {task && <OpenProjectComponent {...mappingDialogProps} />}
+      <OpenProjectComponent {...mappingDialogProps} />
     </div>
   );
 }
