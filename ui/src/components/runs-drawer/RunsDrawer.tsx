@@ -2,43 +2,33 @@ import { useMemo, useState } from 'react';
 import { History } from 'lucide-react';
 import type { TypeId } from '@sdk';
 import { TabbedSideDrawer } from '@src/components/ui/side-drawer';
-import { useProcessesForTarget } from '@src/components/entity-chat-panel/hooks/useProcessesForTarget';
-import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
-import { buildRunEntries } from '@src/components/task-bar/task-runs';
+import { useRunsForTarget } from './useRunsForTarget';
+import { RunsListPanel } from './RunsListPanel';
 
 type RunsTabId = 'runs';
 
 interface RunsDrawerProps {
-  /** Anchor entity for the run history. The `target_vfs_path` of every
-   *  AgenticProcess spawned by `run-headless` matches this typeid. */
+  /** Anchor entity for the run history. Every Run created by `run-headless`
+   *  carries `target_vfs_path` matching this typeid. */
   targetTypeId: TypeId;
-  computeNodeId?: string;
   className?: string;
   testId?: string;
 }
 
 /**
- * Right-side drawer hosting the headless run history for any anchor entity
- * (Task, Conversation, etc).
- *
- * Generic over the entity that anchors the runs: every headless run spawned
- * via `<entity>/<id>/run-headless` carries `target_vfs_path = entity TypeId`,
- * and `useProcessesForTarget` queries by that key — so the drawer is the
- * same component regardless of whether the host is a Task or a Conversation.
- *
- * Task scope was the first user (see `SharedTaskView`); the conversation
- * scope (`ConversationRoute` for hub-direct conversations from homelanding)
- * is the second.
+ * Right-side drawer listing every Approve & Execute (Run) for the anchor
+ * entity. One row per Run; multiple Runs for the same target share the
+ * underlying AgenticProcess (Claude session continuity), so the terminal
+ * icon on any row attaches to the same shared session.
  */
-export function RunsDrawer({ targetTypeId, computeNodeId, className, testId }: RunsDrawerProps) {
+export function RunsDrawer({ targetTypeId, className, testId }: RunsDrawerProps) {
   const targetKey = useMemo(() => targetTypeId.toString(), [targetTypeId]);
-  const { processes } = useProcessesForTarget(targetKey);
-  const entries = useMemo(() => buildRunEntries(processes), [processes]);
+  const { runs } = useRunsForTarget(targetKey);
 
   const [open, setOpen] = useState(true);
   const tabs = useMemo(
-    () => [{ id: 'runs' as RunsTabId, label: `Runs ${entries.length}`, icon: History }],
-    [entries.length],
+    () => [{ id: 'runs' as RunsTabId, label: `Runs ${runs.length}`, icon: History }],
+    [runs.length],
   );
 
   return (
@@ -53,13 +43,7 @@ export function RunsDrawer({ targetTypeId, computeNodeId, className, testId }: R
       data-testid={testId ?? 'runs-drawer'}
     >
       {{
-        runs: (
-          <WorkflowRunsPanel
-            entries={entries}
-            currentEntry={entries[0] ?? null}
-            computeNodeId={computeNodeId}
-          />
-        ),
+        runs: <RunsListPanel runs={runs} />,
       }}
     </TabbedSideDrawer>
   );

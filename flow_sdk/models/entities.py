@@ -61,6 +61,11 @@ except ImportError as e:
     print(f"[WARN] Failed to import Bookmark: {e}")
 
 try:
+    from flow_sdk.builtin.run import Run  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Run: {e}")
+
+try:
     from flow_sdk.builtin.annotation import Annotation  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Annotation: {e}")

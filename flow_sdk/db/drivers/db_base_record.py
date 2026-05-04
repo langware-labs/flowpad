@@ -323,6 +323,7 @@ class BuiltinEntityType(Enum):
     TEAM_SPACE = "team_space"
     NOTIFICATION = "notification"
     BOOKMARK = "bookmark"
+    RUN = "run"
 
 
 class EntityChild(BaseModel, Generic[RecordType]):
