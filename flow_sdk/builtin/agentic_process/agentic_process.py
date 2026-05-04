@@ -1390,6 +1390,42 @@ class AgenticProcess(Entity):
         await self.save()
         return ApiSuccessResponse(data={"ok": True, "name": agent.name})
 
+    @action.post(action_name="load-embedded-skill")
+    async def load_embedded_skill_action(self, asset_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
+        """Symlink a skill folder into this process's assets dir.
+
+        Skills are directory-discovered by Claude Code at startup, not a CLI
+        input. We symlink the live source folder under
+        ``<assets_dir>/.claude/skills/<name>/`` so edits to the original SKILL.md
+        flow through to the next chat without re-materialization.
+        """
+        import shutil
+        if not asset_ref:
+            return ApiFailResponse(message="asset_ref is required")
+        skill_dir = Path("/" + asset_ref.lstrip("/")).resolve()
+        if not skill_dir.is_dir():
+            return ApiFailResponse(message=f"Skill folder not found: {skill_dir}")
+        if not (skill_dir / "SKILL.md").exists():
+            return ApiFailResponse(message=f"SKILL.md missing in: {skill_dir}")
+        try:
+            assets_dir = await self._assets_dir_path()
+            assets_dir.mkdir(parents=True, exist_ok=True)
+            skills_root = assets_dir / ".claude" / "skills"
+            skills_root.mkdir(parents=True, exist_ok=True)
+            link = skills_root / skill_dir.name
+            # Refresh: a stale symlink, prior copy, or regular file all get replaced.
+            if link.is_symlink() or link.is_file():
+                link.unlink()
+            elif link.is_dir():
+                shutil.rmtree(link)
+            link.symlink_to(skill_dir, target_is_directory=True)
+            self._ensure_assets_dir_in_add_dirs(assets_dir)
+            await self.save()
+            return ApiSuccessResponse(data={"ok": True, "name": skill_dir.name, "link": str(link)})
+        except Exception as exc:
+            logger.exception("load_embedded_skill failed for %s", asset_ref)
+            return ApiFailResponse(message=str(exc))
+
     def load_embedded_agent(self, agent: "Any") -> None:
         """Embed an agent into this process so it is registered via --agents at launch.
 
