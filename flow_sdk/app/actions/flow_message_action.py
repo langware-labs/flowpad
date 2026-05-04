@@ -84,9 +84,7 @@ async def handle_create_task_bundle(
 
     Returns flow_message_id so the caller can immediately trigger a .flowmsg download.
     """
-    local_user = await User.get_one({"uname": "local"})
-    sender_id: Optional[str] = local_user.id if local_user else None
-    sender_name: str = (local_user.name or local_user.email or "") if local_user else ""
+    sender_id, sender_name = await User.local_sender_identity()
 
     # 1. Create Spec
     spec = Spec.model_validate({
@@ -682,9 +680,16 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     fm = await fm.save(someone_typeid)
 
     if task:
-        local_user = await User.get_one({"uname": "local"})
-        sender_id = local_user.id if local_user else fm.sender_id
-        sender_name = fm.sender_name or ((local_user.name or local_user.email or "") if local_user else "")
+        local_user = await User.get_local()
+        # fm.sender_name takes precedence (set explicitly on the draft);
+        # otherwise fall back to the local-user chain via the shared helper.
+        if fm.sender_name:
+            sender_id = local_user.id if local_user else fm.sender_id
+            sender_name = fm.sender_name
+        else:
+            sender_id, sender_name = await User.local_sender_identity()
+            if not sender_id:
+                sender_id = fm.sender_id
         recipient_email = _resolve_reply_recipient_email(task, local_user.id if local_user else "")
         await _send_reply_to_hub(
             reply_fm=fm,
@@ -827,6 +832,8 @@ async def _materialize_remote_flow_message(
         "sender_name": hub_fm.get("sender_name") or None,
         "receiver_address": hub_fm.get("receiver_address") or None,
         "receiver_address_type": hub_fm.get("receiver_address_type") or None,
+        "context": hub_fm.get("context") or [],
+        "attachment": hub_fm.get("attachment") or [],
         "remote": True,
     }
     return await materialize_flow_message(
@@ -889,12 +896,7 @@ async def handle_conversation_start_hub(body: dict, someone_typeid: str) -> ApiR
     initial_text = (body.get("initial_text") or body.get("text") or "").strip()
     title = (body.get("title") or "").strip() or None
 
-    local_user = await User.get_one({"uname": "local"})
-    sender_id: Optional[str] = local_user.id if local_user else None
-    body_sender_name = (body.get("sender_name") or "").strip()
-    sender_name: str = body_sender_name or (
-        (local_user.name or local_user.email or "") if local_user else ""
-    )
+    sender_id, sender_name = await User.local_sender_identity(body.get("sender_name"))
 
     # 1. Create the Conversation row on the hub.
     try:
@@ -1066,56 +1068,6 @@ async def conversation_sync() -> ApiResponse:
         return await handle_conversation_sync(request_info.someone_typeid)
     except Exception as e:
         logger.error("[flow_message_action] conversation-sync error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Failed: {e}")
-
-
-async def handle_conversation_add_remote_message(body: dict, someone_typeid: str) -> ApiResponse:
-    """Add a message to a hub-mirrored conversation: forward the FlowMessage-shaped
-    body to the hub's ``add_message`` action, materialize the returned FlowMessage
-    locally with remote=True.
-
-    The body is expected to be a partial ``FlowMessage`` payload — every field
-    except ``conversation_id`` (which lives in the URL) is forwarded verbatim
-    to the hub. The hub's ``add_message`` action validates the FlowMessage
-    model, so we don't second-guess the shape here. New FlowMessage fields
-    work out of the box without touching this handler.
-    """
-    conv_id = (body.get("conversation_id") or "").strip()
-    if not conv_id:
-        return ApiFailResponse(message="conversation_id required")
-
-    fm_payload = {k: v for k, v in body.items() if k != "conversation_id"}
-    if not fm_payload.get("text") and not fm_payload.get("attachment"):
-        return ApiFailResponse(message="text or attachment required")
-
-    try:
-        from flow_sdk.utils.hub import HubError
-        data = await hub_post(
-            BuiltinEntityType.CONVERSATION, fm_payload, conv_id, "add_message"
-        )
-    except HubError as e:
-        return ApiFailResponse(message=f"Hub error ({e.status_code}): {e.reason}")
-
-    if not data:
-        return ApiFailResponse(message="Hub returned no data")
-
-    fm = await _materialize_remote_flow_message(data, conv_id, someone_typeid)
-    return ApiSuccessResponse(data={
-        "flow_message_id": fm.id if fm else None,
-        "conversation_id": conv_id,
-    })
-
-
-@action.post(action_name="conversation-add-remote-message", types=None)
-async def conversation_add_remote_message() -> ApiResponse:
-    try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.someone_typeid:
-            return ApiFailResponse(message="Authentication required")
-        body = await request_info.get_post_data() or {}
-        return await handle_conversation_add_remote_message(body, request_info.someone_typeid)
-    except Exception as e:
-        logger.error("[flow_message_action] conversation-add-remote-message error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
 
 
