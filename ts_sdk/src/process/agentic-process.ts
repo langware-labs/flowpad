@@ -603,8 +603,20 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /** Append a directory to additional_dirs (passed to Claude via --add-dir). */
   async addDir(path: string): Promise<void> {
-    await this.callAction('add-dir', { path });
-    this.additional_dirs = [...(this.additional_dirs ?? []), path];
+    const actionInfo = new ActionInfo('add-dir', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { path };
+    await dataManager.callAction(actionInfo);
+    if (!(this.additional_dirs ?? []).includes(path)) {
+      this.additional_dirs = [...(this.additional_dirs ?? []), path];
+    }
+  }
+
+  /** Remove a directory from additional_dirs. No-op if not present. */
+  async removeDir(path: string): Promise<void> {
+    const actionInfo = new ActionInfo('remove-dir', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { path };
+    await dataManager.callAction(actionInfo);
+    this.additional_dirs = (this.additional_dirs ?? []).filter((d) => d !== path);
   }
 
   async shell(): Promise<Shell | null> {
@@ -1490,24 +1502,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       throw new Error('Process is stopping');
     }
 
-    // Fast path: if this process is already LIVE, its shell is cached, and the PTY is fully
-    // attached in this client, skip the backend `open` round-trip entirely. Tab switches
-    // between live sessions hit this path. Instructions must always go to the backend,
-    // so we only short-circuit when no instruction is provided.
-    // Requires the Shell entity to already be in cache AND its ptyConnection to be
-    // attached to the current pty_pid. That holds for repeat visits to a tab during
-    // the same app session; first visit still pays the full open + attach round-trip.
-    if (
-      this.status === ProcessStatus.RUNNING &&
-      this.shell_id &&
-      !options?.instruction
-    ) {
-      const cachedShell = dataManager.getByTypeIdFromCache<Shell>(new TypeId(Shell.type, this.shell_id));
-      if (cachedShell && cachedShell.pty_pid && cachedShell.ptyConnection?.isAttachedTo(cachedShell.pty_pid)) {
-        return true;
-      }
-    }
-
+    // No client-side lifecycle fast path. The backend ``open`` action is the
+    // single oracle for reattach-vs-recover-vs-fresh. The dedupe that *did*
+    // matter — "I'm already on this same pty_id, don't reopen the WS" — is
+    // already enforced inside ``PtyConnection.attach`` via the
+    // ``_attachedPtyId`` early-return and the in-flight ``_attachPromise``
+    // guard, so removing the short-circuit here costs nothing on tab-switch
+    // performance and removes the empty-shell-after-refresh failure mode
+    // (the cached ``status === RUNNING`` could outlive the actual worker).
     const actionInfo = new ActionInfo('open', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = options ?? {};
     const result = await dataManager.callAction<

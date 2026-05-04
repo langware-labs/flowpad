@@ -26,7 +26,6 @@ import {
   Loader2,
   SquareTerminal,
   X,
-  XCircle,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HistoryModal } from './HistoryModal';
@@ -880,23 +879,27 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
             </Button>
           )}
 
-          {/* Close All button — shown when 2+ tabs are open */}
+          {/* Close All button — shown when 2+ tabs are open. Tab count badge
+              hints at the destructive scope before clicking. */}
           {visibleSessions.length >= 2 && (
             <TooltipProvider delayDuration={600}>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0 rounded-none text-muted-foreground hover:text-destructive"
+                    variant="outline"
+                    size="sm"
+                    className="mx-1.5 h-6 shrink-0 gap-1.5 rounded-md border-border bg-background px-2 text-foreground shadow-sm hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive"
                     onClick={handleCloseAll}
-                    aria-label="Close all tabs"
+                    aria-label={`Close all ${visibleSessions.length} tabs`}
                     data-testid="close-all-tabs-button"
                   >
-                    <XCircle className="h-4 w-4" />
+                    <X className="h-3.5 w-3.5" />
+                    <span className="inline-flex h-4 min-w-[1.125rem] items-center justify-center rounded-full bg-foreground/10 px-1 text-[10px] font-semibold leading-none tabular-nums text-foreground">
+                      {visibleSessions.length}
+                    </span>
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">Close all tabs</TooltipContent>
+                <TooltipContent side="bottom">Close all {visibleSessions.length} tabs</TooltipContent>
               </Tooltip>
             </TooltipProvider>
           )}

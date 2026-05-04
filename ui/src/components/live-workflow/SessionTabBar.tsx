@@ -113,13 +113,8 @@ export function SessionTabBar({
     await onCloseTab(sessionId);
   };
 
-  // Handle click on name to start editing
-  const handleTabNameClick = (e: React.MouseEvent, sessionId: string, currentName: string, isActive: boolean) => {
-    e.stopPropagation();
-    if (!isActive) {
-      handleTabClick(sessionId);
-      return;
-    }
+  // Enter rename mode (double-click on tab title)
+  const handleTabNameDoubleClick = (sessionId: string, currentName: string) => {
     setEditingSessionId(sessionId);
     setEditingName(currentName);
   };
@@ -230,7 +225,10 @@ export function SessionTabBar({
               ) : (
                 <span
                   className="max-w-[150px] truncate text-sm font-medium"
-                  onClick={(e) => session.id && handleTabNameClick(e, session.id, displayName, isActive)}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    if (session.id) handleTabNameDoubleClick(session.id, displayName);
+                  }}
                 >
                   {displayName}
                 </span>
