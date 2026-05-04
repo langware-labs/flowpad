@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Conversation, dataManager, FlowMessage, QueryFilter, QueryRequest, TypeId } from '@sdk';
+import { RefreshCw } from 'lucide-react';
+import { Conversation, dataManager, FlowMessage, QueryFilter, QueryRequest, syncFromHub, TypeId } from '@sdk';
 import { useEntitiesQuery, useEntity } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { openInboxMessage } from '@src/components/inbox-view/inbox-api';
@@ -138,8 +139,34 @@ export function ConversationView({
     [pointers, backfilledIds, draftMessages],
   );
 
+  const [hubSyncing, setHubSyncing] = useState(false);
+  const handleRefresh = useCallback(async () => {
+    setHubSyncing(true);
+    try {
+      try {
+        await syncFromHub();
+      } catch {
+        // Hub may be offline / not configured — local refetch still runs.
+      }
+      await refetch();
+    } finally {
+      setHubSyncing(false);
+    }
+  }, [refetch]);
+
   return (
     <div className="space-y-3">
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => void handleRefresh()}
+          title="Refresh (pulls from hub)"
+          data-testid="refresh-conversation-button"
+          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${hubSyncing ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
       {orderedItems.length === 0 ? (
         <p className="text-xs italic text-muted-foreground/60">No messages yet.</p>
       ) : (
