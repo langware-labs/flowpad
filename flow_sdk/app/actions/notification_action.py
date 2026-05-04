@@ -947,20 +947,29 @@ async def _handle_hub_mirrored_append(
         return ApiFailResponse(message="Hub returned no flow_message id")
     fm_id = hub_fm["id"]
 
+    # Hub upload path: sub_path is the *destination directory*; the hub's
+    # upload action appends the multipart filename. So `upload/data` +
+    # filename `foo.png` lands at `data/foo.png` (NOT `data/foo.png/foo.png`).
+    logger.info(
+        "[hub_mirrored_append] uploading to hub fm=%s files=%s prompt_files=%s",
+        fm_id, list(file_bytes.keys()), list(prompt_file_bytes.keys()),
+    )
     for name, data in file_bytes.items():
         try:
             await hub_post(
-                BuiltinEntityType.FLOW_MESSAGE, {}, fm_id, "fs", f"upload/data/{name}",
+                BuiltinEntityType.FLOW_MESSAGE, {}, fm_id, "fs", "upload/data",
                 files={"uploaded_file": (name, data, "application/octet-stream")},
             )
+            logger.info("[hub_mirrored_append] uploaded data/%s (%d bytes)", name, len(data))
         except HubError as e:
             logger.warning("[hub_mirrored_append] file upload %s failed: %s", name, e)
     for name, data in prompt_file_bytes.items():
         try:
             await hub_post(
-                BuiltinEntityType.FLOW_MESSAGE, {}, fm_id, "fs", f"upload/prompt/{name}",
+                BuiltinEntityType.FLOW_MESSAGE, {}, fm_id, "fs", "upload/prompt",
                 files={"uploaded_file": (name, data, "application/octet-stream")},
             )
+            logger.info("[hub_mirrored_append] uploaded prompt/%s (%d bytes)", name, len(data))
         except HubError as e:
             logger.warning("[hub_mirrored_append] prompt file upload %s failed: %s", name, e)
 
@@ -1050,15 +1059,18 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     prompt_files_preview = body.get("prompt_files") or []
     if not isinstance(prompt_files_preview, list):
         prompt_files_preview = [prompt_files_preview]
+    uploaded_files_preview = body.get("files") or []
+    if not isinstance(uploaded_files_preview, list):
+        uploaded_files_preview = [uploaded_files_preview]
 
     if not task_id and not conversation_id:
         return ApiFailResponse(message="task_id or conversation_id is required")
-    if not message and not prompt_text_preview and not prompt_files_preview:
-        return ApiFailResponse(message="message or prompt is required")
+    if not message and not prompt_text_preview and not prompt_files_preview and not uploaded_files_preview:
+        return ApiFailResponse(message="message, prompt, or files required")
     if not message:
         # Synthesize a placeholder so the rest of the pipeline (which assumes a
-        # non-empty text body) keeps working for prompt-only sends. The
-        # frontend suppresses the body when it matches this exact constant.
+        # non-empty text body) keeps working for prompt-only / files-only sends.
+        # The frontend suppresses the body when it matches this exact constant.
         message = PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT
 
     task: Optional[Task] = None
