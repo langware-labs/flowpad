@@ -977,14 +977,14 @@ async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
     local_email = (local_user.email if local_user else "") or ""
     # Single key → ExpressionNode infers EQ; explicit op form works too.
     inv_filter = _json.dumps({"match": {"op": "$EQ", "operands": ["recipient_email", local_email]}})
-    logger.info("[conversation-sync] local_email=%r filter=%s", local_email, inv_filter)
+    logger.warning("[conversation-sync] local_email=%r filter=%s", local_email, inv_filter)
     invitations = await hub_get(
         BuiltinEntityType.INVITATION,
         params={"filter": inv_filter},
     ) or []
     if not isinstance(invitations, list):
         invitations = []
-    logger.info("[conversation-sync] hub returned %d invitations", len(invitations))
+    logger.warning("[conversation-sync] hub returned %d invitations", len(invitations))
     for inv in invitations:
         try:
             if await _materialize_remote_invitation(inv, someone_typeid):
@@ -1006,7 +1006,7 @@ async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
     ) or []
     if not isinstance(conversations, list):
         conversations = []
-    logger.info(
+    logger.warning(
         "[conversation-sync] hub returned %d conversations (last_sync=%s)",
         len(conversations), last_sync,
     )
