@@ -242,13 +242,21 @@ async def _finalize_run(
     draft_fm_id: Optional[str],
     someone_typeid: str,
 ) -> None:
-    """Land the Run in a terminal status. Best-effort — never raises."""
+    """Land the Run in a terminal status. Best-effort — never raises.
+
+    Fires an explicit ``notify_updated`` after save: ``save()``'s built-in
+    UPDATE notification doesn't always reach the entity-event channel that
+    ``useEntitiesQuery`` subscribes to (same reason ``materialize_flow_message``
+    re-fetches and notifies after its conversation update). Without this the
+    second run's spinner stays running until something else triggers a refetch.
+    """
     try:
         run.status = (RunStatus.FAILED if errored else RunStatus.STOPPED).value
         run.ended_at = datetime.now(UTC).isoformat()
         if draft_fm_id:
             run.draft_flow_message_id = draft_fm_id
         await run.save(someone_typeid)
+        await run.notify_updated()
     except Exception:
         logger.debug("[run] finalize save failed", exc_info=True)
 
