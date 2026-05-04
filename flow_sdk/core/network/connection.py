@@ -13,7 +13,7 @@ from flow_sdk.flowpad_types.enums.entity_enums import (
     NotificationStatus,
     NotificationType,
 )
-
+from flow_sdk.fs_store.type_id import TypeId
 
 class Notification(Entity):
     type: str = APIField(default="notification")
@@ -26,8 +26,8 @@ class Notification(Entity):
     recipient_id: str = APIField(default="")
     sender_id: Optional[str] = APIField(None)
 
-    # Target — TypeId string, e.g. "task-@<uuid>"
-    notification_target: Optional[str] = APIField(None)
+    # Target — TypeId for the entity this notification is about.
+    notification_target: Optional[TypeId] = APIField(None)
 
     # Delivery
     delivery_method: str = APIField(default=DeliveryMethod.EMAIL)
@@ -41,6 +41,23 @@ class Notification(Entity):
 
     def after_create(self, create_data: dict):
         pass
+
+    @classmethod
+    def from_envelope(cls, envelope: "NotificationEnvelope") -> "Notification":
+        """Build a Notification row from a NotificationEnvelope (hub-side).
+
+        Lazy import of NotificationEnvelope to avoid pulling pydantic into
+        every Connection import; this method is only called from the hub.
+        """
+        return cls.model_validate({
+            "notification_type": envelope.notification_type,
+            "notification_subtype": envelope.notification_subtype,
+            "notification_target": envelope.target,
+            "sender_id": envelope.sender_id,
+            "recipient_id": envelope.recipient_id,
+            "message": envelope.body_text,
+            "metadata": envelope.metadata,
+        })
 
 
 class Connection(Entity):

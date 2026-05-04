@@ -2,12 +2,13 @@
 
 Bundle format (.flowmsg — a zip file):
   <slug>.flowmsg
-  ├── message.json                              (FlowMessage fields as dict)
+  ├── header.json                              (top-level FlowMessage fields)
   └── attachment/
       ├── spec-@<id>/spec.md                   (frontmatter + content)
-      ├── task-@<id>/manifest.json             (task fields)
-      ├── conversation-@<id>/conversation.jsonl (JSONL lines)
-      └── flow_message-@<id>/message.json      (FlowMessage fields as dict)
+      ├── task-@<id>/header.json               (task fields)
+      ├── conversation-@<id>/conversation.jsonl (typed Pointer per line)
+      └── flow_message-@<id>/header.json       (FlowMessage fields as dict)
+
 """
 from __future__ import annotations
 
@@ -90,7 +91,7 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
         for att in msg_data.get("attachment", []):
             if att.get("attachment_type") == AttachmentType.FILE.value:
                 att["data"] = f"attachment/files/{Path(att['data']).name}"
-        (tmp_root / "message.json").write_text(
+        (tmp_root / "header.json").write_text(
             json.dumps(msg_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
         )
 
@@ -135,7 +136,7 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
                         include=_TASK_FIELDS,
                         context={"skip_api_serializer": True},
                     )
-                    (task_dir / "manifest.json").write_text(
+                    (task_dir / "header.json").write_text(
                         json.dumps(task_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
                     )
 
@@ -173,7 +174,7 @@ async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None)
 
 
 async def _pack_flow_message_entry(fm_id: str, attachment_dir: Path) -> None:
-    """Write a flow_message-@<id>/message.json into attachment_dir."""
+    """Write a flow_message-@<id>/header.json into attachment_dir."""
     from flow_sdk.builtin.flow_message import FlowMessage
 
     fm_dir = attachment_dir / f"flow_message-@{fm_id}"
@@ -187,9 +188,20 @@ async def _pack_flow_message_entry(fm_id: str, attachment_dir: Path) -> None:
             include=_FM_FIELDS,
             context={"skip_api_serializer": True},
         )
-        (fm_dir / "message.json").write_text(
+        (fm_dir / "header.json").write_text(
             json.dumps(fm_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
         )
+
+
+def _read_entity_header(entity_dir: Path) -> dict | None:
+    """Read the entity's ``header.json`` descriptor, or None if missing/invalid."""
+    path = entity_dir / "header.json"
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -230,28 +242,31 @@ def _merge_conversation_jsonl(bundle_jsonl: Path, dest: Path) -> None:
     """Write a merged conversation.jsonl to dest.
 
     Keeps all existing local pointers in dest, then appends any pointers from
-    bundle_jsonl whose message_id is not already present (preserving local replies).
+    bundle_jsonl whose target id is not already present (preserving local replies).
     """
-    def _read_ptrs(path: Path) -> list[dict]:
-        ptrs: list[dict] = []
+    from flow_sdk.fs_store.pointer import Pointer  # noqa: PLC0415
+
+    def _read_ptrs(path: Path) -> list[Pointer]:
+        ptrs: list[Pointer] = []
         if not path.exists():
             return ptrs
         for line in path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
-            if line:
-                try:
-                    ptrs.append(json.loads(line))
-                except Exception:
-                    pass
+            if not line:
+                continue
+            try:
+                ptrs.append(Pointer.from_jsonl_line(line))
+            except Exception:
+                pass
         return ptrs
 
     existing = _read_ptrs(dest)
-    existing_ids = {p.get("message_id") for p in existing}
-    new_ptrs = [p for p in _read_ptrs(bundle_jsonl) if p.get("message_id") not in existing_ids]
+    existing_ids = {p.id for p in existing}
+    new_ptrs = [p for p in _read_ptrs(bundle_jsonl) if p.id not in existing_ids]
     dest.parent.mkdir(parents=True, exist_ok=True)
     with dest.open("w", encoding="utf-8") as fh:
         for ptr in existing + new_ptrs:
-            fh.write(json.dumps(ptr) + "\n")
+            fh.write(ptr.to_jsonl_line() + "\n")
 
 
 # ---------------------------------------------------------------------------
@@ -286,11 +301,10 @@ async def unpack_bundle(
         with zipfile.ZipFile(zip_path, "r") as zf:
             zf.extractall(tmp_root)
 
-        # 2. Read top-level message.json
-        msg_file = tmp_root / "message.json"
-        if not msg_file.exists():
-            raise ValueError("Invalid .flowmsg: missing message.json")
-        msg_data = json.loads(msg_file.read_text(encoding="utf-8"))
+        # 2. Read top-level header.json
+        msg_data = _read_entity_header(tmp_root)
+        if msg_data is None:
+            raise ValueError("Invalid .flowmsg: missing header.json")
         msg_data.pop("expand", None)  # strip transient field before validation
 
         # Resolve owner
@@ -339,9 +353,8 @@ async def unpack_bundle(
                         await _create_spec_from_file(spec_file, entry_id, owner_typeid)
 
                 elif entry_type == BuiltinEntityType.TASK.value:
-                    manifest_file = entry_dir / "manifest.json"
-                    if manifest_file.exists():
-                        task_data = json.loads(manifest_file.read_text(encoding="utf-8"))
+                    task_data = _read_entity_header(entry_dir)
+                    if task_data is not None:
                         task_id = task_data.get("id") or entry_id
                         # Materialize the sender as a local User (contact list).
                         bundle_sender_email = task_data.get("sender_email") or ""
@@ -417,9 +430,8 @@ async def unpack_bundle(
                             # referenced FlowMessage is saved (step 5), causing 404s.
 
                 elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
-                    fm_file = entry_dir / "message.json"
-                    if fm_file.exists():
-                        fm_data = json.loads(fm_file.read_text(encoding="utf-8"))
+                    fm_data = _read_entity_header(entry_dir)
+                    if fm_data is not None:
                         fm_data.pop("expand", None)
                         fm_id = fm_data.get("id") or entry_id
                         existing_fm = await FlowMessage.get_one({"id": fm_id})
@@ -430,69 +442,48 @@ async def unpack_bundle(
                         inner_fm.id = fm_id
                         await inner_fm.save(owner_typeid)
 
-        # 5. Resolve FILE attachment paths and save the top-level FlowMessage record
-        # Bundle stores zip-relative paths; rewrite to absolute paths on this machine.
-        # Now that conversation/spec/task attachments have been processed, raise if the
-        # top-level FM already existed (callers treat this as "already materialized").
+        # 5. Resolve FILE attachment paths and materialize the top-level FlowMessage
+        # via the unified write path. ``materialize_flow_message`` saves the
+        # FM, appends a typed Pointer to conversation.jsonl, projects
+        # message_ids/message_count, and dispatches WS sync (FM CREATE then
+        # Conversation UPDATE) — same sequence every other producer uses.
         if top_fm_already_exists and not overwrite:
             raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
 
+        from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
+
         top_fm_id = msg_data.get("id") or FlowMessage.allocate_id(msg_data)
         _rewrite_file_attachments(msg_data, tmp_root, top_fm_id)
-        # Backfill conversation_id from bundle context_entities if sender bundle predates the field
+        msg_data["id"] = top_fm_id
         if not msg_data.get("conversation_id") and conversation_id:
             msg_data["conversation_id"] = conversation_id
-        top_fm = FlowMessage.model_validate(msg_data)
-        top_fm.id = top_fm_id
-        top_fm = await top_fm.save(owner_typeid)
 
-        # 6. Append pointer to target conversation (only if not already present)
         target_conv_id = conversation_id or next(
-            (c.id for c in top_fm.context_entities if c.type == BuiltinEntityType.CONVERSATION.value),
+            (TypeId(c).id for c in msg_data.get("context_entities", [])
+             if TypeId(c).type == BuiltinEntityType.CONVERSATION.value),
             None,
         )
-        if target_conv_id:
-            conv_entity = await Conversation.get_one({"id": target_conv_id})
-            if conv_entity and conv_entity.data_path:
-                from pathlib import Path as _Path
-                _jsonl_path = _Path(conv_entity.data_path)
-                _existing = _jsonl_path.read_text(encoding="utf-8") if _jsonl_path.exists() else ""
-                if top_fm.id not in _existing:
-                    rec = ConversationRecord.from_jsonl(
-                        _jsonl_path,
-                        next((c.id for c in top_fm.context_entities if c.type == BuiltinEntityType.TASK.value), ""),
-                        target_conv_id,
-                    )
-                    rec.append_message_pointer(top_fm.id, datetime.now(UTC).isoformat())
+        if not target_conv_id:
+            # Bundle has no conversation pointer — fall back to a bare save.
+            top_fm = FlowMessage.model_validate(msg_data)
+            top_fm.id = top_fm_id
+            return await top_fm.save(owner_typeid)
 
-        # 7. Fire resource sync — both flow_message (CREATE) and conversation (UPDATE)
-        # are sent here, AFTER the FM is saved, so the UI doesn't refetch the
-        # conversation and try to load an FM that hasn't been persisted yet.
+        bundle_ts = msg_data.get("created_date") or datetime.now(UTC).isoformat()
+        top_fm = await materialize_flow_message(
+            msg_data,
+            conversation_id=target_conv_id,
+            someone_typeid=owner_typeid,
+            bundle_ts=bundle_ts,
+        )
+
+        # Entity-event channel: useEntity hooks in the UI re-render on this,
+        # not just send_resource_sync. Keep the explicit notify in addition to
+        # the WS sync materialize_flow_message already dispatched.
         try:
-            task_id_for_sync = next(
-                (c.id for c in top_fm.context_entities if c.type == BuiltinEntityType.TASK.value),
-                top_fm.id,
-            )
-            send_resource_sync(
-                type="flow_message",
-                id=top_fm.id,
-                operation=SyncOperation.CREATE,
-                data={"event_data": {"flow_message_id": top_fm.id, "task_id": task_id_for_sync}},
-            )
-            # Notify the UI that the conversation has changed via the entity-event
-            # channel (notify_updated), not just send_resource_sync — useEntity hooks
-            # in the UI listen on the entity event channel, so this is what makes
-            # the conversation/task view re-render with the new message pointer.
-            if conversation_id:
-                conv_to_notify = await Conversation.get_one({"id": conversation_id})
-                if conv_to_notify:
-                    await conv_to_notify.notify_updated()
-                send_resource_sync(
-                    type="conversation",
-                    id=conversation_id,
-                    operation=SyncOperation.UPDATE,
-                    data={"event_data": {"task_id": task_id_for_sync, "conversation_id": conversation_id}},
-                )
+            conv_to_notify = await Conversation.get_one({"id": target_conv_id})
+            if conv_to_notify:
+                await conv_to_notify.notify_updated()
         except Exception:
             pass
 
