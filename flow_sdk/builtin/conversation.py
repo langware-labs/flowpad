@@ -58,6 +58,20 @@ class Conversation(Entity):
             )
         return super().__setattr__(key, value)
 
+    def apply_field_updates(self, fields: dict):
+        """Silently drop projection fields from inbound PUT/PATCH bodies.
+
+        A typical client save round-trips the entire entity dump, which
+        includes ``message_ids`` / ``message_count``. Those are projections
+        of ``conversation.jsonl`` — re-applying the previous values would
+        be a no-op, but the projection guard refuses any direct write.
+        Stripping them here keeps generic graph CRUD working without making
+        the projection guard leaky.
+        """
+        if fields:
+            fields = {k: v for k, v in fields.items() if k not in _PROJECTED_FIELDS}
+        return super().apply_field_updates(fields)
+
     def _set_projection(self, key: str, value, sentinel) -> None:
         """Internal projection writer used by ConversationRecord.sync_to_db."""
         if sentinel is not _PROJECTION_SENTINEL:
