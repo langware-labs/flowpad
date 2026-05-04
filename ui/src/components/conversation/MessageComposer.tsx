@@ -1,7 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { File, MessageSquarePlus, Paperclip, Send, X } from 'lucide-react';
 import { sendReply } from '@sdk/entities/notifications';
-import { addRemoteMessage } from '@sdk/entities/conversation';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
 import { cn } from '@src/lib/utils';
@@ -15,8 +14,6 @@ interface MessageComposerProps {
   task?: ITask | null;
   /** Project-scoped conversation id (used when no task is present). */
   conversationId?: string;
-  /** True when the parent Conversation has remote=true; reply posts to the hub. */
-  isRemote?: boolean;
   disabled?: boolean;
   onSent?: () => void;
   /** Optional queued prompt provided by per-message Add-prompt chips. */
@@ -31,7 +28,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function MessageComposer({ task, conversationId, isRemote, disabled, onSent, queuedPrompt, onQueuedPromptChange }: MessageComposerProps) {
+export function MessageComposer({ task, conversationId, disabled, onSent, queuedPrompt, onQueuedPromptChange }: MessageComposerProps) {
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
@@ -114,35 +111,18 @@ export function MessageComposer({ task, conversationId, isRemote, disabled, onSe
     setSending(true);
     setError(null);
     try {
-      if (isRemote && conversationId) {
-        // Hub-mirrored conversation: forward a FlowMessage-shaped payload to
-        // the hub's add_message action via the local server, which
-        // materializes the returned FlowMessage with remote=true.
-        const attachment = effectivePrompt
-          ? queuedPromptAttachments.map((a) => ({
-              attachment_type: a.attachment_type,
-              data: a.data,
-            }))
-          : undefined;
-        await addRemoteMessage({
-          conversation_id: conversationId,
-          text: trimmed || undefined,
-          attachment,
-        });
-      } else {
-        const extras = effectivePrompt
-          ? {
-              promptText: effectivePrompt.text || undefined,
-              promptFiles: effectivePrompt.files.length > 0 ? effectivePrompt.files : undefined,
-            }
-          : undefined;
-        await sendReply(
-          { task, conversationId },
-          trimmed,
-          files.length > 0 ? files : undefined,
-          extras,
-        );
-      }
+      const extras = effectivePrompt
+        ? {
+            promptText: effectivePrompt.text || undefined,
+            promptFiles: effectivePrompt.files.length > 0 ? effectivePrompt.files : undefined,
+          }
+        : undefined;
+      await sendReply(
+        { task, conversationId },
+        trimmed,
+        files.length > 0 ? files : undefined,
+        extras,
+      );
       setText('');
       setFiles([]);
       setActivePrompt(null);

@@ -396,9 +396,7 @@ async def run_scope(scope: HeadlessRunScope, prompt_text: str, someone_typeid: s
             message=f"{scope.target_typeid.type} has no project mapped — map it to a local project first"
         )
 
-    local_user = await User.get_one({"uname": "local"})
-    sender_id: Optional[str] = local_user.id if local_user else None
-    sender_name: str = (local_user.name or local_user.email or "") if local_user else ""
+    sender_id, sender_name = await User.local_sender_identity()
 
     process = await _resolve_or_spawn_process(scope, someone_typeid)
 

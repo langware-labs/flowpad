@@ -591,10 +591,8 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     except ValueError as e:
         return ApiFailResponse(message=str(e))
 
-    local_user = await User.get_one({"uname": "local"})
-    sender_id: Optional[str] = local_user.id if local_user else None
-    body_sender_name = (body.get("sender_name") or "").strip()
-    sender_name: str = body_sender_name or ((local_user.name or local_user.email or "") if local_user else "")
+    sender_id, sender_name = await User.local_sender_identity(body.get("sender_name"))
+    local_user = await User.get_local()
     sender_email: str = (local_user.email or "") if local_user else ""
 
     project_root = find_project_root(project_path) if project_path else None
@@ -884,6 +882,56 @@ def _resolve_reply_recipient_email(task: Task, local_user_id: str) -> str:
     return task.sender_email or ""
 
 
+async def _push_message_to_hub_conversation(
+    *,
+    reply_fm: "FlowMessage",
+    conv_id: str,
+) -> None:
+    """Push a reply to a hub-mirrored Conversation via ``conversation/<id>/add_message``.
+
+    The local FM has already been saved with the canonical id; the hub's
+    add_message action accepts our id and uses it (Entity.id is honored on
+    deserialize), so both sides stay aligned without a re-materialize.
+
+    PROMPT files live in the local FM's VFS at ``prompt/<filename>``. We
+    upload each one to the hub-side FM's VFS at the same subpath so the
+    receiver can fetch them via ``flow_message/<id>/fs/download/prompt/<n>``.
+    """
+    from flow_sdk.builtin.flow_message import AttachmentType
+    from flow_sdk.storage import get_entity_embedded_storage
+
+    if not hub_base_url():
+        return
+    payload = reply_fm.model_dump(mode="json", exclude_none=True)
+    payload.pop("conversation_id", None)
+    payload.pop("created_date", None)
+    payload.pop("updated_date", None)
+    try:
+        await hub_post(
+            BuiltinEntityType.CONVERSATION, payload, conv_id, "add_message"
+        )
+    except HubError as e:
+        logger.warning("[append_conversation] hub add_message failed: %s", e)
+        return
+
+    storage = get_entity_embedded_storage(reply_fm.typeid)
+    for att in reply_fm.attachment or []:
+        if att.attachment_type != AttachmentType.PROMPT:
+            continue
+        if not att.data or not att.data.startswith("prompt/"):
+            continue
+        local_path = Path(storage.get_storage_path(att.data))
+        if not local_path.exists():
+            continue
+        try:
+            await hub_post(
+                BuiltinEntityType.FLOW_MESSAGE, {}, reply_fm.id, "fs", f"upload/{att.data}",
+                files={"uploaded_file": (Path(att.data).name, local_path.read_bytes(), "application/octet-stream")},
+            )
+        except HubError as e:
+            logger.warning("[append_conversation] hub PROMPT file upload %s failed: %s", att.data, e)
+
+
 async def _send_reply_to_hub(
     *,
     reply_fm: "FlowMessage",
@@ -971,10 +1019,7 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         if not conv:
             return ApiFailResponse(message=f"Conversation not found: {conversation_id}")
 
-    local_user = await User.get_one({"uname": "local"})
-    sender_id: Optional[str] = local_user.id if local_user else None
-    body_sender_name = (body.get("sender_name") or "").strip()
-    sender_name: str = body_sender_name or ((local_user.name or local_user.email or "") if local_user else "")
+    sender_id, sender_name = await User.local_sender_identity(body.get("sender_name"))
 
     effective_task_id: Optional[str] = task.id if task else None
 
@@ -1023,6 +1068,7 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     )
 
     if task:
+        local_user = await User.get_local()
         recipient_email = _resolve_reply_recipient_email(task, local_user.id if local_user else "")
         await _send_reply_to_hub(
             reply_fm=reply_fm,
@@ -1033,6 +1079,11 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
             sender_name=sender_name,
             recipient_email=recipient_email,
         )
+    elif conv.remote:
+        # Hub-mirrored conversation (no Task): push the reply directly via
+        # the hub's conversation/<id>/add_message action so it fans out to
+        # the other participants' websockets.
+        await _push_message_to_hub_conversation(reply_fm=reply_fm, conv_id=conv.id)
 
     _notify_ui_conversation_updated(conv.id, effective_task_id or "", reply_fm.id)
 

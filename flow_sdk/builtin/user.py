@@ -64,6 +64,40 @@ class User(Entity):
         return await cls.get_one({"email": email})
 
     @classmethod
+    async def get_local(cls) -> "User | None":
+        """Return the singleton desktop user (uname='local'), or None.
+
+        Bootstrap (``server/routes/bootstrap.py``) creates this row at startup
+        and refreshes its ``name`` field from ``git config user.name`` on
+        every server boot (unless the user manually overrode it via
+        update-local-user-name).
+        """
+        return await cls.get_one({"uname": "local"})
+
+    @classmethod
+    async def local_sender_identity(
+        cls, override_name: str | None = None
+    ) -> tuple[str | None, str]:
+        """Return ``(sender_id, sender_name)`` for outbound messages.
+
+        Single source of truth for the resolution chain used by share-task,
+        ask-for-assistance, start-conversation, append-conversation, and
+        headless replies:
+
+        * ``sender_id`` ← local desktop user's id (None if no local user)
+        * ``sender_name`` ← ``override_name.strip()`` if non-empty, else
+          ``local_user.name`` (synced from ``git config user.name``), else
+          ``local_user.email``, else ``""``.
+        """
+        local_user = await cls.get_local()
+        sender_id = local_user.id if local_user else None
+        if override_name and override_name.strip():
+            return sender_id, override_name.strip()
+        if local_user:
+            return sender_id, local_user.name or local_user.email or ""
+        return None, ""
+
+    @classmethod
     async def get_or_create_by_email(cls, email: str, name: str | None = None) -> "User":
         existing = await cls.get_one({"email": email})
         if existing:

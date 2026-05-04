@@ -177,32 +177,6 @@ export async function syncFromHub(): Promise<SyncFromHubResult> {
   return res!;
 }
 
-export interface AddRemoteMessageAttachment {
-  attachment_type: string;
-  data: string;
-}
-
-export interface AddRemoteMessageParams {
-  conversation_id: string;
-  text?: string;
-  attachment?: AddRemoteMessageAttachment[];
-}
-
-export interface AddRemoteMessageResult {
-  flow_message_id: string | null;
-  conversation_id: string;
-}
-
-/** Add a message to a hub-mirrored conversation. */
-export async function addRemoteMessage(
-  params: AddRemoteMessageParams,
-): Promise<AddRemoteMessageResult> {
-  const action = new ActionInfo('conversation-add-remote-message', null, null, 'POST');
-  action.bodyParameters = params;
-  const res = await dataManager.callAction<AddRemoteMessageParams, AddRemoteMessageResult>(action);
-  return res!;
-}
-
 export interface AcceptInvitationParams {
   invitation_id: string;
 }

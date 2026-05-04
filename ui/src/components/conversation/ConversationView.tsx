@@ -173,7 +173,7 @@ export function ConversationView({
         <MessageComposer
           task={task}
           conversationId={conversationId}
-          isRemote={!!conversation?.remote}onSent={() => void refetch()}
+          onSent={() => void refetch()}
         />
       )}
     </div>
