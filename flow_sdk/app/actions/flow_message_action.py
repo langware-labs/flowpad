@@ -453,6 +453,14 @@ async def _download_and_unpack_bundle(fm_id: str, attachment_filename: str) -> b
         return True
     except FlowMessageExistsError:
         return True  # already materialized — counts as success
+    except ValueError as e:
+        # Legacy bundles (pre-header.json) raise "Invalid .flowmsg: missing
+        # header.json". Per the no-legacy-support rule, drop them silently
+        # rather than logging a stack trace.
+        if "missing header.json" in str(e):
+            return False
+        logger.error("[bundle] unpack failed fm=%s: %s", fm_id, e, exc_info=True)
+        return False
     except Exception as e:
         logger.error("[bundle] unpack failed fm=%s: %s", fm_id, e, exc_info=True)
         return False
