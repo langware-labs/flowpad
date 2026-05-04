@@ -32,7 +32,7 @@ async def task_fn(
             # Skip the "spec" sibling used for task specs (legacy convention).
             if not task_dir.is_dir() or task_dir.name == "spec":
                 continue
-            manifest = task_dir / "manifest.json"
+            manifest = task_dir / "header.json"
             if not manifest.is_file():
                 continue
             key = str(manifest.resolve())

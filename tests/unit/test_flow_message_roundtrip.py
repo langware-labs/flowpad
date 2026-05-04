@@ -51,7 +51,7 @@ def _write_flowmsg_zip(tmp_path: Path, fm_data: dict, attachments: dict[str, byt
     """Write a minimal .flowmsg zip to tmp_path and return its path."""
     zip_path = tmp_path / "test.flowmsg"
     with zipfile.ZipFile(zip_path, "w") as zf:
-        zf.writestr("message.json", json.dumps(fm_data))
+        zf.writestr("header.json", json.dumps(fm_data))
         if attachments:
             for arc_name, content in attachments.items():
                 zf.writestr(arc_name, content)
@@ -64,8 +64,8 @@ def _write_flowmsg_zip(tmp_path: Path, fm_data: dict, attachments: dict[str, byt
 
 class TestPackBundle:
     @pytest.mark.asyncio
-    async def test_pack_creates_zip_with_message_json(self, tmp_path):
-        """pack_bundle with no attachments creates a zip containing message.json."""
+    async def test_pack_creates_zip_with_header_json(self, tmp_path):
+        """pack_bundle with no attachments creates a zip containing header.json."""
         fm = _make_flow_message()
 
         zip_path = await pack_bundle(fm, dest_dir=tmp_path)
@@ -74,14 +74,14 @@ class TestPackBundle:
         assert zip_path.suffix == ".flowmsg"
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            assert "message.json" in names
-            data = json.loads(zf.read("message.json"))
+            assert "header.json" in names
+            data = json.loads(zf.read("header.json"))
             assert data["text"] == "Hello, world!"
             assert data["id"] == fm.id
 
     @pytest.mark.asyncio
     async def test_pack_with_flow_message_attachment(self, tmp_path):
-        """pack_bundle includes attachment/flow_message-@<id>/message.json for flow_message entries."""
+        """pack_bundle includes attachment/flow_message-@<id>/header.json for flow_message entries."""
         fm = _make_flow_message()
         inner_id = "bbbb2222-0000-0000-0000-000000000002"
         fm.attachment = [Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"flow_message-{inner_id}")]
@@ -94,7 +94,7 @@ class TestPackBundle:
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            expected = f"attachment/flow_message-@{inner_id}/message.json"
+            expected = f"attachment/flow_message-@{inner_id}/header.json"
             assert expected in names
 
     @pytest.mark.asyncio
@@ -122,7 +122,7 @@ class TestPackBundle:
 
     @pytest.mark.asyncio
     async def test_pack_with_task_attachment(self, tmp_path):
-        """pack_bundle writes manifest.json for task attachments."""
+        """pack_bundle writes header.json for task attachments."""
         from flow_sdk.builtin.task import Task
 
         fm = _make_flow_message()
@@ -137,7 +137,7 @@ class TestPackBundle:
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            expected = f"attachment/task-@{task_id}/manifest.json"
+            expected = f"attachment/task-@{task_id}/header.json"
             assert expected in names
             data = json.loads(zf.read(expected))
             assert data["title"] == "My Task"
@@ -243,10 +243,17 @@ class TestUnpackBundle:
         assert result is not None
 
     @pytest.mark.asyncio
-    async def test_unpack_appends_conversation_pointer(self, tmp_path):
+    async def test_unpack_appends_conversation_pointer(self, tmp_path, monkeypatch):
         """unpack_bundle calls append_message_pointer on the target conversation."""
         from flow_sdk.builtin.conversation import Conversation
         from flow_sdk.builtin.user import User
+        from flow_sdk.fs_records.conversation_record import ConversationRecord
+
+        # Pin the records-data root to tmp_path so the canonical jsonl lives here.
+        monkeypatch.setattr(
+            "flow_sdk.fs_store.record.get_default_records_data_root",
+            lambda: tmp_path,
+        )
 
         conv_id = "cccc9999-0000-0000-0000-000000000009"
         task_id = "eeee1010-0000-0000-0000-000000000010"
@@ -260,14 +267,12 @@ class TestUnpackBundle:
         }
         zip_path = _write_flowmsg_zip(tmp_path, fm_data)
 
-        # Create a real jsonl file for the conversation
-        jsonl_path = tmp_path / "conversation.jsonl"
-        jsonl_path.write_text("")
+        # Pre-create the canonical jsonl path.
+        canonical = ConversationRecord.default_jsonl_path(conv_id)
+        canonical.parent.mkdir(parents=True, exist_ok=True)
+        canonical.write_text("")
 
-        mock_conv = Conversation(
-            data_path=str(jsonl_path),
-            context_entities=[f"task-{task_id}"],
-        )
+        mock_conv = Conversation(context_entities=[f"task-{task_id}"])
         mock_conv.id = conv_id
 
         saved_fm = FlowMessage.model_validate(fm_data)
@@ -281,9 +286,9 @@ class TestUnpackBundle:
         ):
             result = await unpack_bundle(zip_path, "local-user-id")
 
-        # The pointer should have been appended to the jsonl file
-        lines = [line.strip() for line in jsonl_path.read_text().splitlines() if line.strip()]
+        # The typed pointer should have been appended to the canonical jsonl.
+        lines = [line.strip() for line in canonical.read_text().splitlines() if line.strip()]
         assert len(lines) == 1
         pointer = json.loads(lines[0])
-        assert "message_id" in pointer
-        assert "timestamp" in pointer
+        assert pointer["typeid"] == f"flow_message-{fm_id}"
+        assert "ts" in pointer
