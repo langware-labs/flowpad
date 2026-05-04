@@ -49,10 +49,13 @@ export function DraftMessageComposer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { localUser } = useLocalUser();
 
-  // Match MessageComposer's rule: only non-initiators can suggest prompts back
-  // (the initiator is the one who runs the agent on their fork).
+  // Match MessageComposer's rule:
+  //   - Task-bound: only non-initiators suggest prompts (the initiator owns
+  //     the fork and runs the agent themselves).
+  //   - Hub-direct (no task): both sides can suggest, since the conversation
+  //     itself anchors the headless run.
   const isInitiator = !!(task && localUser?.id && task.shared_by_id && task.shared_by_id === localUser.id);
-  const canAddPrompt = !!task && !isInitiator;
+  const canAddPrompt = task ? !isInitiator : !!conversationId;
   const isBusy = sending || discarding;
 
   // Debounced auto-save: persists edits into the FlowMessage entity so a
