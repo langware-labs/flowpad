@@ -975,7 +975,8 @@ async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
     # pending invitations via the policy on Invitation.recipient_email.
     local_user = await User.get_one({"uname": "local"})
     local_email = (local_user.email if local_user else "") or ""
-    inv_filter = _json.dumps({"match": {"recipient_email": local_email}})
+    # Single key → ExpressionNode infers EQ; explicit op form works too.
+    inv_filter = _json.dumps({"match": {"op": "$EQ", "operands": ["recipient_email", local_email]}})
     invitations = await hub_get(
         BuiltinEntityType.INVITATION,
         params={"filter": inv_filter},
@@ -996,7 +997,7 @@ async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
     # ignores the filter (older deployments).
     last_sync = _load_last_conversation_sync() or "1970-01-01T00:00:00Z"
     new_high_water = last_sync
-    conv_filter = _json.dumps({"match": {"updated_date": {"$GT": last_sync}}})
+    conv_filter = _json.dumps({"match": {"op": "$GT", "operands": ["updated_date", last_sync]}})
     conversations = await hub_get(
         BuiltinEntityType.CONVERSATION,
         params={"filter": conv_filter},
@@ -1014,7 +1015,7 @@ async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
             conv_count += 1
             if hub_updated and hub_updated > new_high_water:
                 new_high_water = hub_updated
-            msg_filter = _json.dumps({"match": {"created_date": {"$GT": last_sync}}})
+            msg_filter = _json.dumps({"match": {"op": "$GT", "operands": ["created_date", last_sync]}})
             msgs = await hub_get(
                 BuiltinEntityType.CONVERSATION, conv.id, "flow_message",
                 params={"filter": msg_filter},
