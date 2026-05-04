@@ -908,7 +908,8 @@ async def handle_conversation_start_hub(body: dict, someone_typeid: str) -> ApiR
     # 3. Invite each participant by email. The hub's /members route resolves
     # known users and creates an Invitation row otherwise. Returns no body of
     # interest, so we don't try to materialize the rows here — the next
-    # conversation-sync round picks them up via ``invitation?action=mine``.
+    # conversation-sync round picks them up via the recipient_email filter
+    # on the standard /graph/invitation read.
     target_typeid = f"{BuiltinEntityType.CONVERSATION.value}-{conv_id}"
     invited_emails: list[str] = []
     for p in participants:
@@ -968,10 +969,17 @@ async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
     conv_count = 0
     fm_count = 0
 
-    # Use the dedicated "list mine" hub action so the recipient sees pending
-    # invitations addressed to their email (default graph list requires a
-    # direct role, which the recipient lacks until they accept).
-    invitations = await hub_get(BuiltinEntityType.INVITATION, action="mine") or []
+    # Standard read with a recipient_email filter — replaces the legacy
+    # "mine" action. The hub's `read` action parses ?filter= via
+    # request_parameters into a QueryFilter; recipients can see their own
+    # pending invitations via the policy on Invitation.recipient_email.
+    local_user = await User.get_one({"uname": "local"})
+    local_email = (local_user.email if local_user else "") or ""
+    inv_filter = _json.dumps({"match": {"recipient_email": local_email}})
+    invitations = await hub_get(
+        BuiltinEntityType.INVITATION,
+        params={"filter": inv_filter},
+    ) or []
     if not isinstance(invitations, list):
         invitations = []
     for inv in invitations:
@@ -979,28 +987,31 @@ async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
             if await _materialize_remote_invitation(inv, someone_typeid):
                 inv_count += 1
         except Exception as e:
-            logger.warning("[conversation-sync] invitation upsert failed: %s", e)
-
-    # Incremental sync: pull only Conversations whose updated_date moved past
-    # last_sync, then for each, only flow_messages whose created_date moved
-    # past last_sync. last_sync is the max(updated_date) returned by the hub
-    # in this round — never the client clock (avoids clock-skew loss).
+            logger.warning("[conversation-sync] invitation upsert failed: %s", e)    # Incremental sync: ask the hub for only Conversations whose updated_date
+    # has moved past last_sync (server-side filter via the standard `read`
+    # action's `?filter=` query param), then for each, only flow_messages
+    # whose created_date moved past last_sync. last_sync is the max value
+    # seen in this round — never the client clock (avoids clock-skew loss).
+    # Client-side gating is kept as a defense-in-depth in case the hub
+    # ignores the filter (older deployments).
     last_sync = _load_last_conversation_sync() or "1970-01-01T00:00:00Z"
     new_high_water = last_sync
-    conv_list_filter = _json.dumps({"match": {"updated_date": {"$GT": last_sync}}})
+    conv_filter = _json.dumps({"match": {"updated_date": {"$GT": last_sync}}})
     conversations = await hub_get(
         BuiltinEntityType.CONVERSATION,
-        params={"filter": conv_list_filter},
+        params={"filter": conv_filter},
     ) or []
     if not isinstance(conversations, list):
         conversations = []
     for hub_conv in conversations:
         try:
+            hub_updated = hub_conv.get("updated_date") or hub_conv.get("created_date") or ""
+            if hub_updated and hub_updated <= last_sync:
+                continue  # already synced past this point (defense-in-depth)
             conv = await _materialize_remote_conversation(hub_conv, someone_typeid)
             if not conv:
                 continue
             conv_count += 1
-            hub_updated = hub_conv.get("updated_date") or hub_conv.get("created_date")
             if hub_updated and hub_updated > new_high_water:
                 new_high_water = hub_updated
             msg_filter = _json.dumps({"match": {"created_date": {"$GT": last_sync}}})
@@ -1010,9 +1021,11 @@ async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
             ) or []
             if isinstance(msgs, list):
                 for m in msgs:
+                    m_created = m.get("created_date") or ""
+                    if m_created and m_created <= last_sync:
+                        continue
                     if await _materialize_remote_flow_message(m, conv.id, someone_typeid):
                         fm_count += 1
-                    m_created = m.get("created_date")
                     if m_created and m_created > new_high_water:
                         new_high_water = m_created
         except Exception as e:
