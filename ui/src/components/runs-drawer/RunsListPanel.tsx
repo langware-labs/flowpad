@@ -1,4 +1,4 @@
-import { AgenticProcess, type Run, RunStatus, TypeId } from '@sdk';
+import { AgenticProcess, Run, RunStatus, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Button } from '@src/components/ui/button';
@@ -50,21 +50,28 @@ export function RunsListPanel({ runs }: RunsListPanelProps) {
 
 function RunItem({ run, label }: { run: Run; label: string }) {
   const { navigation } = useDockNavigation();
-  const processTypeId = run.process_id ? new TypeId(AgenticProcess.type, run.process_id) : null;
+  // Live subscription to this Run's entity-event updates. The parent query
+  // (`useEntitiesQuery`) sees CREATEs reliably but the UPDATEs that flip
+  // status from running → stopped don't always re-render the row through it,
+  // so each row owns its own subscription — same pattern WorkflowRunsPanel
+  // uses for the AgenticProcess entry.
+  const { data: liveRun } = useEntity<Run>(run.id ? new TypeId(Run.type, run.id) : null);
+  const current = liveRun ?? run;
+  const processTypeId = current.process_id ? new TypeId(AgenticProcess.type, current.process_id) : null;
   const { data: process } = useEntity<AgenticProcess>(processTypeId);
 
   const onOpenTerminal = () => {
     if (process?.dockPointer) navigation.openDock(process.dockPointer);
   };
 
-  const promptPreview = truncatePrompt(run.prompt_text ?? '') || label;
-  const status = (run.status ?? RunStatus.RUNNING) as string;
+  const promptPreview = truncatePrompt(current.prompt_text ?? '') || label;
+  const status = (current.status ?? RunStatus.RUNNING) as string;
 
   return (
     <div className="group flex items-center gap-2 px-2 py-1.5">
       <StatusIcon status={status} />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-xs text-foreground" title={run.prompt_text ?? ''}>
+        <div className="truncate text-xs text-foreground" title={current.prompt_text ?? ''}>
           {promptPreview}
         </div>
         <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label} · {status}</div>
