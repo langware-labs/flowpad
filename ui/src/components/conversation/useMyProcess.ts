@@ -46,7 +46,7 @@ async function buildReceiverContextPrompt(
 
   const messages = await Promise.all(
     pointers.map((ptr) =>
-      dataManager.getByTypeId<FlowMessage>(new TypeId(FlowMessage.type, ptr.message_id)),
+      dataManager.getByTypeId<FlowMessage>(new TypeId(FlowMessage.type, ptr.id)),
     ),
   );
 

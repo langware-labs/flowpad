@@ -12,9 +12,23 @@ export interface ConversationMessage {
   timestamp: string;
 }
 
+/**
+ * Parsed conversation pointer: each line of conversation.jsonl is stored as
+ * {typeid: "flow_message-<uuid>", ts: "<ISO>"} on disk, but call sites want
+ * the bare id + type + ts triple — that's what this getter returns.
+ */
 export interface ConversationMessagePointer {
-  message_id: string;
-  timestamp: string;
+  /** Entity id (uuid). */
+  id: string;
+  /** Entity type (e.g. "flow_message"). */
+  type: string;
+  /** ISO timestamp the pointer was appended. */
+  ts: string;
+}
+
+interface RawConversationPointer {
+  typeid: string;
+  ts: string;
 }
 
 export interface ConversationParticipant {
@@ -25,17 +39,17 @@ export interface ConversationParticipant {
 
 export interface IConversation extends IEntity {
   project_id?: string | null;
-  data_path?: string | null;
   message_count?: number;
-  message_ids?: string | null;  // JSON-encoded ConversationMessagePointer[]
+  message_ids?: string | null;  // JSON-encoded RawConversationPointer[]
   participants?: ConversationParticipant[];
   // NOTE: task_id moved into context_entities. Use conv.firstContextOfType('task').
+  // NOTE: data_path is derived from the canonical records-data path on the
+  // server — not exposed as a stored field anymore.
 }
 
 @registerEntity
 export class Conversation extends APIEntity<Conversation> implements IConversation {
   project_id?: string | null;
-  data_path?: string | null;
   message_count?: number;
   message_ids?: string | null;
   participants?: ConversationParticipant[];
@@ -44,7 +58,6 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   constructor(entity: Partial<IConversation> = {}) {
     super(entity);
     this.project_id = entity.project_id;
-    this.data_path = entity.data_path;
     this.message_count = entity.message_count;
     this.message_ids = entity.message_ids;
     this.participants = entity.participants;
@@ -75,11 +88,20 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
 
   get conversationMessageIds(): ConversationMessagePointer[] {
     if (!this.message_ids) return [];
+    let raw: RawConversationPointer[];
     try {
-      return JSON.parse(this.message_ids) as ConversationMessagePointer[];
+      raw = JSON.parse(this.message_ids) as RawConversationPointer[];
     } catch {
       return [];
     }
+    const out: ConversationMessagePointer[] = [];
+    for (const p of raw) {
+      if (!p?.typeid || !p?.ts) continue;
+      const dash = p.typeid.indexOf('-');
+      if (dash <= 0) continue;
+      out.push({ type: p.typeid.slice(0, dash), id: p.typeid.slice(dash + 1), ts: p.ts });
+    }
+    return out;
   }
 }
 

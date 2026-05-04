@@ -295,7 +295,7 @@ function ConversationRow({ conv }: { conv: Conversation }) {
   const latestMessageTypeId = useMemo(() => {
     const pointers = conv.conversationMessageIds ?? [];
     const last = pointers[pointers.length - 1];
-    return last ? new TypeId(FlowMessage.type, last.message_id) : null;
+    return last ? new TypeId(FlowMessage.type, last.id) : null;
   }, [conv.message_ids]);
   const { data: latestMessage } = useEntity<FlowMessage>(latestMessageTypeId);
 
