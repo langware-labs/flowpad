@@ -607,7 +607,7 @@ class AgenticProcess(Entity):
             cmd = self.cli_options
 
             # Server-restart resume: process had a shell but cli_config didn't encode resume
-            if not cmd.resume and self.shell_id:
+            if not cmd.resume and self.session_id:
                 cmd.resume = self._is_exist_claude_resume_session(self.session_id)
 
             # Fork & CLAUDE_PROJECT_DIR plumbing are Claude-only — Codex's
