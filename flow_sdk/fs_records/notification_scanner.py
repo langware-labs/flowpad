@@ -145,17 +145,18 @@ async def _process_manifest(
     from flow_sdk.utils.git import git_remote_url
     project_url = git_remote_url(str(project_root))
 
-    # Conversation.project_id is intentionally left null on receive; the
-    # picker stamps it (alongside task.project_id) when the user maps. Older
-    # code computed a deterministic uuid5 from `project_root` here, which
-    # produced ids that 404'd because no Project entity actually existed at
-    # that uuid.
+    # Conversation.project_id (the *local* mapped project) is intentionally
+    # left null on receive — the picker stamps it when the user maps. The
+    # *remote* provenance (sender's project_id / name) is stamped here so the
+    # mapping gate can route subsequent messages without re-prompting.
     conv = await _create_conversation_from_disk(
         task_dir=task_dir,
         task_id=task_id,
         conversation_id=conversation_id,
         owner_typeid=owner_typeid,
         project_id=None,
+        remote_project_id=remote_project_id,
+        remote_project_name=remote_project_name,
     )
 
     # --- Create Task entity ---
@@ -171,8 +172,6 @@ async def _process_manifest(
         "branch": manifest_branch,
         "sender_name": sender_name,
         "sender_email": data.get("sender_email") or "",
-        "remote_project_id": remote_project_id,
-        "remote_project_name": remote_project_name,
         "spec_type": spec_type_meta,
     })
     task = await task.save(owner_typeid)
@@ -231,6 +230,8 @@ async def _create_conversation_from_disk(
     owner_typeid,
     notify: bool = True,
     project_id: str | None = None,
+    remote_project_id: str | None = None,
+    remote_project_name: str | None = None,
 ) -> Conversation | None:
     """Create a Conversation entity from conversation.jsonl on disk (recipient side).
 
@@ -257,6 +258,8 @@ async def _create_conversation_from_disk(
         conv_id,
         parent_typeid=parent_typeid,
         project_id=project_id,
+        remote_project_id=remote_project_id,
+        remote_project_name=remote_project_name,
         someone_typeid=owner_typeid,
     )
 
