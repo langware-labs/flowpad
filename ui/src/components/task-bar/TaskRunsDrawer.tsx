@@ -3,7 +3,6 @@ import { RunsDrawer } from '@src/components/runs-drawer/RunsDrawer';
 
 interface TaskRunsDrawerProps {
   task: Task;
-  computeNodeId?: string;
   className?: string;
 }
 
@@ -14,12 +13,11 @@ interface TaskRunsDrawerProps {
  * call sites (`SharedTaskView`, `TaskDetailPanel`) don't have to know how
  * to build the target typeid themselves.
  */
-export function TaskRunsDrawer({ task, computeNodeId, className }: TaskRunsDrawerProps) {
+export function TaskRunsDrawer({ task, className }: TaskRunsDrawerProps) {
   if (!task.typeId) return null;
   return (
     <RunsDrawer
       targetTypeId={task.typeId}
-      computeNodeId={computeNodeId}
       className={className}
       testId="task-runs-drawer"
     />

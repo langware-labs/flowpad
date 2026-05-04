@@ -32,13 +32,17 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOpt
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
     ClaudeCLIStreamWorker,
 )
+from flow_sdk._compat import UTC
 from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
+from flow_sdk.builtin.run import Run, RunStatus
 from flow_sdk.builtin.user import User
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowElementType
 from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -208,11 +212,53 @@ async def _save_draft_flow_message(
     return await fm.save(someone_typeid)
 
 
+async def _create_run(
+    *,
+    scope: HeadlessRunScope,
+    process: AgenticProcess,
+    prompt_text: str,
+    someone_typeid: str,
+) -> Run:
+    """Open a new Run row in RUNNING state.
+
+    One Run per Approve & Execute. The drawer queries Runs (not processes)
+    so each turn surfaces as its own row even though the underlying
+    AgenticProcess is reused for Claude session continuity.
+    """
+    run = Run.model_validate({
+        "target_vfs_path": str(scope.target_typeid),
+        "process_id": process.id,
+        "prompt_text": prompt_text,
+        "status": RunStatus.RUNNING.value,
+        "started_at": datetime.now(UTC).isoformat(),
+    })
+    return await run.save(someone_typeid)
+
+
+async def _finalize_run(
+    *,
+    run: Run,
+    errored: bool,
+    draft_fm_id: Optional[str],
+    someone_typeid: str,
+) -> None:
+    """Land the Run in a terminal status. Best-effort — never raises."""
+    try:
+        run.status = (RunStatus.FAILED if errored else RunStatus.STOPPED).value
+        run.ended_at = datetime.now(UTC).isoformat()
+        if draft_fm_id:
+            run.draft_flow_message_id = draft_fm_id
+        await run.save(someone_typeid)
+    except Exception:
+        logger.debug("[run] finalize save failed", exc_info=True)
+
+
 async def _run_turn_and_capture(
     *,
     process: AgenticProcess,
     prompt_text: str,
     scope: HeadlessRunScope,
+    run: Run,
     sender_id: Optional[str],
     sender_name: str,
     someone_typeid: str,
@@ -346,6 +392,7 @@ async def _run_turn_and_capture(
             logger.debug("[%s] terminal notify_updated failed", scope.log_label, exc_info=True)
 
     if errored:
+        await _finalize_run(run=run, errored=True, draft_fm_id=None, someone_typeid=someone_typeid)
         return
 
     text = _extract_assistant_text(captured)
@@ -370,12 +417,19 @@ async def _run_turn_and_capture(
             scope.log_label, scope.target_typeid, process.id, len(captured),
             process.session_id, is_resume, details,
         )
+        await _finalize_run(run=run, errored=False, draft_fm_id=None, someone_typeid=someone_typeid)
         return
-    await _save_draft_flow_message(
+    draft = await _save_draft_flow_message(
         scope=scope,
         text=text,
         sender_id=sender_id,
         sender_name=sender_name,
+        someone_typeid=someone_typeid,
+    )
+    await _finalize_run(
+        run=run,
+        errored=False,
+        draft_fm_id=draft.id if draft else None,
         someone_typeid=someone_typeid,
     )
 
@@ -399,16 +453,20 @@ async def run_scope(scope: HeadlessRunScope, prompt_text: str, someone_typeid: s
     sender_id, sender_name = await User.local_sender_identity()
 
     process = await _resolve_or_spawn_process(scope, someone_typeid)
+    run = await _create_run(
+        scope=scope, process=process, prompt_text=prompt_text, someone_typeid=someone_typeid,
+    )
 
     asyncio.create_task(
         _run_turn_and_capture(
             process=process,
             prompt_text=prompt_text,
             scope=scope,
+            run=run,
             sender_id=sender_id,
             sender_name=sender_name,
             someone_typeid=someone_typeid,
         ),
         name=f"{scope.log_label}-{scope.target_typeid.id[:8] if scope.target_typeid.id else '?'}",
     )
-    return ApiSuccessResponse(data={"process_id": process.id})
+    return ApiSuccessResponse(data={"process_id": process.id, "run_id": run.id})
