@@ -59,6 +59,32 @@ export interface ProcessState {
 }
 
 /**
+ * OS-level status snapshot returned by the backend ``os-status`` action.
+ * Single source of truth for "is this process alive right now?". Combines
+ * persisted entity status, in-memory PTY-session state on the compute
+ * node, and a real PID liveness check (psutil + cmdline match).
+ *
+ * ``ready`` is the answer to ``AgenticProcess.isAlive()``: true iff the
+ * PTY session is alive AND the worker PID matches the recorded session.
+ */
+export interface AgenticProcessOSStatus {
+  process_id: string;
+  process_status: string;
+  shell_id: string | null;
+  shell_status: string | null;
+  session_id: string | null;
+  pty_pid: number | null;
+  worker_pid: number | null;
+  worker_name: string | null;
+  pty_alive: boolean;
+  worker_alive: boolean;
+  has_attachable_pty: boolean;
+  ready: boolean;
+  reason: string | null;
+  checked_at: string;
+}
+
+/**
  * Response from get-history action
  */
 interface HistoryResponse {
@@ -1550,6 +1576,29 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       ptyId: result.pty_id,
     });
     return true;
+  }
+
+  /**
+   * Read-only OS-level status snapshot. Calls the backend ``os-status``
+   * action which checks the PTY session liveness on the compute node and
+   * the worker PID via psutil + cmdline match. Use this whenever you need
+   * ground truth about whether the process is actually running — never
+   * infer it from the cached ``status`` field.
+   */
+  async getOsStatus(): Promise<AgenticProcessOSStatus> {
+    const actionInfo = new ActionInfo('os-status', AgenticProcess.type, this.id, 'GET');
+    const result = await dataManager.callAction<unknown, AgenticProcessOSStatus>(actionInfo);
+    if (!result) throw new Error('os-status returned no data');
+    return result;
+  }
+
+  /**
+   * True iff the backend reports both an alive PTY session and a live
+   * worker PID for this process. Sugar over ``getOsStatus().ready``.
+   */
+  async isAlive(): Promise<boolean> {
+    const status = await this.getOsStatus();
+    return status.ready;
   }
 
   /**

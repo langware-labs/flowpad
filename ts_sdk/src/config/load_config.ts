@@ -6,6 +6,7 @@ declare const __AUTH_PROVIDER__: string;
 declare const __DEPLOY_ENV__: string;
 declare const __FLOWPAD_APP_HOST__: string;
 declare const __FLOWPAD_APP_PORT__: string;
+declare const __FLOWPAD_DEV__: boolean;
 declare const __SENTRY_DSN__: string;
 declare const __SENTRY_PROJECT__: string;
 
