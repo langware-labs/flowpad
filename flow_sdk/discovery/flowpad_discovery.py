@@ -114,6 +114,13 @@ class _ServerState:
         """Check if cached result is still valid."""
         if self._discovery_result is None:
             return False
+        # Don't cache negative results: if the previous discovery couldn't
+        # confirm the server is running, always retry. Otherwise a startup
+        # race (server.json written before health endpoint binds) poisons
+        # the cache permanently — the mtime never changes again, so the
+        # cache stays valid and notifications get silently dropped forever.
+        if self._discovery_result.status != FlowpadStatus.RUNNING:
+            return False
         # Invalidate if port file changed
         current_mtime = self._get_port_file_mtime()
         if current_mtime != self._port_file_mtime:
