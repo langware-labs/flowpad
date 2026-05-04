@@ -150,6 +150,7 @@ async def hub_get(
     try:
         timeout = httpx.Timeout(connect=10, write=10, read=600, pool=5) if raw else httpx.Timeout(10)
         async with httpx.AsyncClient(timeout=timeout) as client:
+            logger.warning("[hub] GET %s params=%s", url, params)
             resp = await client.get(url, headers=_auth_headers(), params=params or {})
             if resp.status_code == 200:
                 result = resp.content if raw else resp.json().get("data") or {}
