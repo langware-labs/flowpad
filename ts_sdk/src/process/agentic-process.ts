@@ -1158,6 +1158,18 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
+   * Symlink a skill folder into this process's assets dir so Claude Code
+   * discovers it at startup. `sourcePath` is the absolute path of the skill
+   * folder (parent of SKILL.md). Live edits to the source SKILL.md flow
+   * through to the next chat — no re-materialization needed.
+   */
+  async loadEmbeddedSkill(sourcePath: string): Promise<void> {
+    const actionInfo = new ActionInfo('load-embedded-skill', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { asset_ref: sourcePath };
+    await dataManager.callAction(actionInfo);
+  }
+
+  /**
    * Unified read-side view of every asset visible to this process.
    * Mirrors `flow_sdk.builtin.agentic_process.AgenticProcess.get_asset_descriptors`.
    *
