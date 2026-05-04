@@ -143,17 +143,21 @@ async def materialize_flow_message(
     if notify:
         try:
             task_id_for_sync = parent_id if parent_type == RecordType.TASK else fm.id
-            send_resource_sync(
+            r1 = send_resource_sync(
                 type="flow_message",
                 id=fm.id,
                 operation=SyncOperation.CREATE,
                 data={"event_data": {"flow_message_id": fm.id, "task_id": task_id_for_sync}},
             )
-            send_resource_sync(
+            r2 = send_resource_sync(
                 type="conversation",
                 id=conv.id,
                 operation=SyncOperation.UPDATE,
                 data={"event_data": {"task_id": task_id_for_sync, "conversation_id": conv.id}},
+            )
+            logger.warning(
+                "[materialize_flow_message] notify dispatched fm=%s conv=%s fm_sent=%s conv_sent=%s",
+                fm.id, conv.id, r1, r2,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("[materialize_flow_message] notify failed: %s", e)
