@@ -109,11 +109,16 @@ export function ConversationView({
   // approve action below.
   const inertTask = useMemo(() => ({ id: '', metadata: {} }) as ITask, []);
   const { approveAndExecute: approveAndExecutePty } = useApproveAndExecutePty({ task: task ?? inertTask });
-  const { approveAndExecute: approveAndExecuteHeadless } = useApproveAndExecuteHeadless({ task: task ?? inertTask });
+  const { approveAndExecute: approveAndExecuteHeadless } = useApproveAndExecuteHeadless({
+    task: task ?? inertTask,
+    conversationId,
+  });
+
+  const canApproveAndExecute = !!task || !!conversationId;
 
   const runApprove = useCallback(
     (messageId: string, idx: number) => {
-      if (!task) return;
+      if (!canApproveAndExecute) return;
       const action = async () => {
         if (mode === ConversationMode.HEADLESS) {
           await approveAndExecuteHeadless(messageId, idx);
@@ -125,7 +130,7 @@ export function ConversationView({
       if (ensureMapped) ensureMapped(action);
       else void action();
     },
-    [approveAndExecuteHeadless, approveAndExecutePty, mode, refetch, ensureMapped, task],
+    [approveAndExecuteHeadless, approveAndExecutePty, mode, refetch, ensureMapped, canApproveAndExecute],
   );
 
   const orderedItems = useMemo(
@@ -146,7 +151,7 @@ export function ConversationView({
                 messageId={item.messageId}
                 timestamp={item.timestamp}
                 task={task}
-                onApproveAndExecute={task ? runApprove : undefined}
+                onApproveAndExecute={canApproveAndExecute ? runApprove : undefined}
               />
             ) : (
               <FlowMessageBubble
