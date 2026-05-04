@@ -882,54 +882,109 @@ def _resolve_reply_recipient_email(task: Task, local_user_id: str) -> str:
     return task.sender_email or ""
 
 
-async def _push_message_to_hub_conversation(
-    *,
-    reply_fm: "FlowMessage",
-    conv_id: str,
-) -> None:
-    """Push a reply to a hub-mirrored Conversation via ``conversation/<id>/add_message``.
+async def _read_upload_files(uploads: list) -> dict[str, bytes]:
+    """Drain UploadFile objects into an in-memory {filename: bytes} map.
 
-    The local FM has already been saved with the canonical id; the hub's
-    add_message action accepts our id and uses it (Entity.id is honored on
-    deserialize), so both sides stay aligned without a re-materialize.
-
-    PROMPT files live in the local FM's VFS at ``prompt/<filename>``. We
-    upload each one to the hub-side FM's VFS at the same subpath so the
-    receiver can fetch them via ``flow_message/<id>/fs/download/prompt/<n>``.
+    UploadFile is a single-read stream — we need the bytes twice (once to
+    push to the hub, once to land in the local FM's VFS), so read upfront.
     """
+    out: dict[str, bytes] = {}
+    for uf in uploads or []:
+        if not hasattr(uf, "read"):
+            continue
+        name = getattr(uf, "filename", None) or "file"
+        out[name] = await uf.read()
+    return out
+
+
+async def _handle_hub_mirrored_append(
+    *,
+    conv: Conversation,
+    message: str,
+    sender_id: Optional[str],
+    sender_name: str,
+    uploaded_files: list,
+    prompt_text: str,
+    prompt_files: list,
+    someone_typeid: str,
+) -> ApiResponse:
+    """Hub-mirrored send path: hub allocates the FM id, both sides mirror.
+
+    The local-first append-conversation path doesn't fit hub-mirrored conversations
+    because the hub's ``add_message`` action treats a body-supplied ``id`` as a
+    reference to an existing entity (and 404s when not found). So we do the
+    inverse: push first, materialize locally with the hub-allocated id.
+    """
+    from flow_sdk.app.actions.flow_message_action import _materialize_remote_flow_message
     from flow_sdk.builtin.flow_message import AttachmentType
     from flow_sdk.storage import get_entity_embedded_storage
 
     if not hub_base_url():
-        return
-    payload = reply_fm.model_dump(mode="json", exclude_none=True)
-    payload.pop("conversation_id", None)
-    payload.pop("created_date", None)
-    payload.pop("updated_date", None)
-    try:
-        await hub_post(
-            BuiltinEntityType.CONVERSATION, payload, conv_id, "add_message"
-        )
-    except HubError as e:
-        logger.warning("[append_conversation] hub add_message failed: %s", e)
-        return
+        return ApiFailResponse(message="Hub not configured")
 
-    storage = get_entity_embedded_storage(reply_fm.typeid)
-    for att in reply_fm.attachment or []:
-        if att.attachment_type != AttachmentType.PROMPT:
-            continue
-        if not att.data or not att.data.startswith("prompt/"):
-            continue
-        local_path = Path(storage.get_storage_path(att.data))
-        if not local_path.exists():
-            continue
+    file_bytes = await _read_upload_files(uploaded_files)
+    prompt_file_bytes = await _read_upload_files(prompt_files)
+
+    attachment: list[dict] = []
+    if prompt_text:
+        attachment.append({"attachment_type": AttachmentType.PROMPT.value, "data": prompt_text, "proposer_id": sender_id})
+    for name in prompt_file_bytes:
+        attachment.append({"attachment_type": AttachmentType.PROMPT.value, "data": f"prompt/{name}", "proposer_id": sender_id})
+    for name in file_bytes:
+        attachment.append({"attachment_type": AttachmentType.FILE.value, "data": f"data/{name}"})
+
+    payload = {
+        "text": message,
+        "sender_id": sender_id,
+        "sender_name": sender_name,
+        "attachment": attachment,
+    }
+    try:
+        hub_fm = await hub_post(BuiltinEntityType.CONVERSATION, payload, conv.id, "add_message")
+    except HubError as e:
+        return ApiFailResponse(message=f"Hub error ({e.status_code}): {e.reason}")
+    if not hub_fm or not hub_fm.get("id"):
+        return ApiFailResponse(message="Hub returned no flow_message id")
+    fm_id = hub_fm["id"]
+
+    for name, data in file_bytes.items():
         try:
             await hub_post(
-                BuiltinEntityType.FLOW_MESSAGE, {}, reply_fm.id, "fs", f"upload/{att.data}",
-                files={"uploaded_file": (Path(att.data).name, local_path.read_bytes(), "application/octet-stream")},
+                BuiltinEntityType.FLOW_MESSAGE, {}, fm_id, "fs", f"upload/data/{name}",
+                files={"uploaded_file": (name, data, "application/octet-stream")},
             )
         except HubError as e:
-            logger.warning("[append_conversation] hub PROMPT file upload %s failed: %s", att.data, e)
+            logger.warning("[hub_mirrored_append] file upload %s failed: %s", name, e)
+    for name, data in prompt_file_bytes.items():
+        try:
+            await hub_post(
+                BuiltinEntityType.FLOW_MESSAGE, {}, fm_id, "fs", f"upload/prompt/{name}",
+                files={"uploaded_file": (name, data, "application/octet-stream")},
+            )
+        except HubError as e:
+            logger.warning("[hub_mirrored_append] prompt file upload %s failed: %s", name, e)
+
+    fm = await _materialize_remote_flow_message(hub_fm, conv.id, someone_typeid)
+    if not fm:
+        return ApiFailResponse(message="Failed to materialize FlowMessage locally")
+
+    storage = get_entity_embedded_storage(fm.typeid)
+    for name, data in file_bytes.items():
+        path = Path(storage.get_storage_path(f"data/{name}"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    for name, data in prompt_file_bytes.items():
+        path = Path(storage.get_storage_path(f"prompt/{name}"))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+
+    conv = await Conversation.get_one({"id": conv.id})
+    return ApiSuccessResponse(data={
+        "task_id": "",
+        "conversation_id": conv.id,
+        "message_count": conv.message_count,
+        "flow_message_id": fm.id,
+    })
 
 
 async def _send_reply_to_hub(
@@ -1021,6 +1076,29 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
 
     sender_id, sender_name = await User.local_sender_identity(body.get("sender_name"))
 
+    uploaded_files = body.get("files") or []
+    if not isinstance(uploaded_files, list):
+        uploaded_files = [uploaded_files]
+    prompt_text = (body.get("prompt_text") or "").strip()
+    prompt_files = body.get("prompt_files") or []
+    if not isinstance(prompt_files, list):
+        prompt_files = [prompt_files]
+
+    # Hub-mirrored conversations require the hub to allocate the FM id —
+    # its add_message action 404s on body-supplied ids — so this path
+    # diverges from the local-first sequence.
+    if not task and conv.remote and not is_draft:
+        return await _handle_hub_mirrored_append(
+            conv=conv,
+            message=message,
+            sender_id=sender_id,
+            sender_name=sender_name,
+            uploaded_files=uploaded_files,
+            prompt_text=prompt_text,
+            prompt_files=prompt_files,
+            someone_typeid=someone_typeid,
+        )
+
     effective_task_id: Optional[str] = task.id if task else None
 
     reply_fm = _build_reply_flow_message(
@@ -1032,17 +1110,9 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         is_draft=is_draft,
     )
 
-    uploaded_files = body.get("files") or []
-    if not isinstance(uploaded_files, list):
-        uploaded_files = [uploaded_files]
     if uploaded_files:
         await _attach_uploaded_files(reply_fm, uploaded_files)
 
-    # Optional PROMPT attachment: inline text and/or uploaded file(s).
-    prompt_text = (body.get("prompt_text") or "").strip()
-    prompt_files = body.get("prompt_files") or []
-    if not isinstance(prompt_files, list):
-        prompt_files = [prompt_files]
     if prompt_text or prompt_files:
         await _attach_prompt(reply_fm, sender_id, prompt_text, prompt_files)
 
@@ -1079,11 +1149,6 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
             sender_name=sender_name,
             recipient_email=recipient_email,
         )
-    elif conv.remote:
-        # Hub-mirrored conversation (no Task): push the reply directly via
-        # the hub's conversation/<id>/add_message action so it fans out to
-        # the other participants' websockets.
-        await _push_message_to_hub_conversation(reply_fm=reply_fm, conv_id=conv.id)
 
     _notify_ui_conversation_updated(conv.id, effective_task_id or "", reply_fm.id)
 
