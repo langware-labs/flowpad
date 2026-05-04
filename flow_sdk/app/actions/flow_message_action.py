@@ -860,50 +860,89 @@ async def _materialize_remote_invitation(
 
 
 async def handle_conversation_start_hub(body: dict, someone_typeid: str) -> ApiResponse:
-    """Create a hub-mirrored conversation. Calls hub `conversation/start_direct`
-    and materializes the returned conversation + first FlowMessage locally
-    with `remote=True`.
+    """Create a hub-mirrored conversation via standard graph CRUD.
+
+    Three round-trips, no custom hub action:
+      1. POST /conversation                          → create the row
+      2. POST conversation/{id}/add_message          → seed first FlowMessage
+      3. POST conversation/{id}/members (per email)  → create invitations
+
+    The conversation + FM are materialized locally with ``remote=True`` so
+    the caller can immediately navigate to the new thread. Invitations are
+    fire-and-forget here; they reach the local DB on the next
+    ``handle_conversation_sync`` round (which already pulls
+    ``invitation?action=mine``).
     """
+    from flow_sdk.utils.hub import HubError
+
     participants = body.get("participants") or []
     if not isinstance(participants, list) or not participants:
         return ApiFailResponse(message="participants required")
     initial_text = (body.get("initial_text") or body.get("text") or "").strip()
     title = (body.get("title") or "").strip() or None
 
-    hub_payload = {
-        "participants": participants,
-        "text": initial_text,
-        "title": title,
-    }
-
+    # 1. Create the Conversation row on the hub.
     try:
-        from flow_sdk.utils.hub import HubError
-        data = await hub_post(BuiltinEntityType.CONVERSATION, hub_payload, action="start_direct")
+        hub_conv = await hub_post(BuiltinEntityType.CONVERSATION, {"title": title})
     except HubError as e:
         return ApiFailResponse(message=f"Hub error ({e.status_code}): {e.reason}")
+    if not hub_conv or not hub_conv.get("id"):
+        return ApiFailResponse(message="Hub returned no conversation id")
+    conv_id = hub_conv["id"]
 
-    if not data:
-        return ApiFailResponse(message="Hub returned no data")
+    # 2. Seed the first FlowMessage (uses the hub's existing add_message action,
+    # which add_child's the FM and bumps Conversation.updated_date — same path
+    # every subsequent message takes).
+    hub_first_fm: Optional[dict] = None
+    if initial_text:
+        try:
+            hub_first_fm = await hub_post(
+                BuiltinEntityType.CONVERSATION,
+                {"text": initial_text},
+                conv_id,
+                "add_message",
+            )
+        except HubError as e:
+            logger.warning("[conversation-start-hub] add_message failed: %s", e)
 
-    hub_conv = data.get("conversation") or {}
-    hub_first_fm = data.get("first_message") or None
-    hub_invitations = data.get("invitations") or []
+    # 3. Invite each participant by email. The hub's /members route resolves
+    # known users and creates an Invitation row otherwise. Returns no body of
+    # interest, so we don't try to materialize the rows here — the next
+    # conversation-sync round picks them up via ``invitation?action=mine``.
+    target_typeid = f"{BuiltinEntityType.CONVERSATION.value}-{conv_id}"
+    invited_emails: list[str] = []
+    for p in participants:
+        email = (p.get("email") if isinstance(p, dict) else "") or ""
+        email = email.strip()
+        if not email:
+            continue
+        try:
+            await hub_post(
+                BuiltinEntityType.CONVERSATION,
+                {
+                    "recipient_email": email,
+                    "invitation_targets": [
+                        {"typeid": target_typeid, "role": "participant"}
+                    ],
+                    "message": initial_text or None,
+                },
+                conv_id,
+                "members",
+            )
+            invited_emails.append(email)
+        except HubError as e:
+            logger.warning("[conversation-start-hub] invite %s failed: %s", email, e)
 
+    # Materialize locally so the UI can navigate immediately.
     conv = await _materialize_remote_conversation(hub_conv, someone_typeid)
     if not conv:
         return ApiFailResponse(message="Failed to materialize conversation")
-
     if hub_first_fm:
         await _materialize_remote_flow_message(hub_first_fm, conv.id, someone_typeid)
 
-    # The sender's local mirror also tracks invitations he created.
-    for inv_meta in hub_invitations:
-        # `inv_meta` is `{id, recipient_email}` from hub start_direct return.
-        await _materialize_remote_invitation(inv_meta, someone_typeid)
-
     return ApiSuccessResponse(data={
         "conversation_id": conv.id,
-        "invitations": hub_invitations,
+        "invited_emails": invited_emails,
     })
 
 
