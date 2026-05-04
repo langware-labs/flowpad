@@ -75,8 +75,11 @@ async def _resolve_or_spawn_process(task: Task, someone_typeid: str, workdir: st
     if task.shared_process_id:
         existing = await AgenticProcess.get_one({"id": task.shared_process_id})
         if existing and existing.status in _REUSABLE_PROCESS_STATUSES:
-            # Reused process — keep its existing context but make sure this
-            # turn's task/conversation/spec/project are all in the list.
+            # Top up ``context_entities`` so this turn's task / conversation
+            # / spec / project all appear in the fork's awareness list. The
+            # task↔fork wiring (target_vfs_path / project_id / workdir) is
+            # done eagerly at share-time in
+            # ``notification_action._create_spec_and_task``.
             if existing.add_context_entities(*_task_context_typeids(task, project_id)):
                 try:
                     await existing.save(someone_typeid)
@@ -181,15 +184,63 @@ async def _run_turn_and_capture(
     from flow_sdk.builtin.agentic_process.agentic_process import _PROMPT_WORKERS
 
     cli_cfg = process.cli_config or {}
-    is_resume = bool(cli_cfg.get("resume")) or bool(process.session_id)
+    # First-turn fork detection. When the process was created via
+    # ``AgenticProcess.fork()`` (Scenario C pre-fork), cli_config carries
+    # ``fork_session_id`` but the fork's own JSONL doesn't exist on disk yet
+    # (the PTY launched claude but no turn has happened, so claude allocated
+    # only the session-env directory). Plain ``--resume <fork_sid>`` would
+    # fail with "No conversation found". Mirror driver.run_print_turn's
+    # logic: when fork_session_id is set, build the context to issue
+    # ``--resume <parent> --fork-session --session-id <fork>`` so claude
+    # materializes the fork's transcript on this very turn.
+    fork_source = cli_cfg.get("fork_session_id")
+    transcript = process.driver.transcript_path(process)
+    transcript_exists = transcript is not None and transcript.exists()
+    is_resume = bool(cli_cfg.get("resume")) or transcript_exists
+    if fork_source and not transcript_exists:
+        # First turn against a fresh fork — issue the actual fork incantation.
+        resume_sid = fork_source
+        new_sid = process.session_id
+        fork_session = True
+    elif is_resume and process.session_id:
+        # Subsequent turn or non-fork resume — plain --resume <sid>.
+        resume_sid = process.session_id
+        new_sid = None
+        fork_session = False
+    else:
+        resume_sid = None
+        new_sid = process.session_id
+        fork_session = False
     context = AgenticContext(
         workdir=process.workdir,
         env_vars=dict(cli_cfg.get("env_vars") or {}),
         model=cli_cfg.get("model") or "sonnet",
         permission_mode=cli_cfg.get("permission_mode", "bypassPermissions"),
-        resume_session_id=process.session_id if is_resume else None,
-        session_id=None if is_resume else process.session_id,
+        resume_session_id=resume_sid,
+        session_id=new_sid,
+        fork_session=fork_session,
     )
+
+    # Drop any attached interactive PTY before launching the print-mode
+    # subprocess. Two claude processes on the same session id race on the
+    # JSONL: the interactive one doesn't tail the file, so turns appended
+    # here are invisible to the open xterm and the user is stuck looking at
+    # a stale transcript until they reopen. Killing the shell now means the
+    # next time the user clicks "Open Shared Terminal" / the Runs row, a
+    # fresh ``claude --resume`` reads the up-to-date JSONL and renders the
+    # new turn. (Not destructive — only the PTY view goes; the entity, the
+    # session_id, and the transcript file are untouched.)
+    if process.shell_id:
+        try:
+            from flow_sdk.builtin.shell import Shell
+            existing_shell = await Shell.get_by_id(process.shell_id)
+            if existing_shell is not None:
+                await process._drop_stale_shell(
+                    existing_shell,
+                    reason="run-headless: avoid stale xterm vs. print-mode JSONL writer",
+                )
+        except Exception:
+            logger.debug("[run-headless] drop-shell failed", exc_info=True)
 
     cli_cfg_with_prompt = dict(process.cli_config or {})
     cli_cfg_with_prompt["last_prompt"] = prompt_text
@@ -234,6 +285,13 @@ async def _run_turn_and_capture(
         cli_cfg_next.pop("output_format", None)
         if process.session_id:
             cli_cfg_next["resume"] = True
+        # First-turn fork has now materialized the JSONL (or failed). Either
+        # way, the fork is no longer a "fork" — subsequent runs should
+        # plain --resume against the now-existing transcript. Leaving
+        # fork_session_id in place would cause every turn to re-fork from
+        # the parent, throwing away the fork's accumulated history.
+        if not errored and fork_source:
+            cli_cfg_next.pop("fork_session_id", None)
         process.cli_config = cli_cfg_next
         try:
             await process.save(someone_typeid)
@@ -249,7 +307,33 @@ async def _run_turn_and_capture(
 
     text = _extract_assistant_text(captured)
     if not text:
-        logger.warning("[run-headless] empty assistant output for task=%s process=%s", task.id, process.id)
+        kinds = [
+            (
+                (getattr(fd, "attributes", {}) or {}).get("element-type"),
+                (getattr(fd, "attributes", {}) or {}).get("role"),
+            )
+            for fd in captured
+        ]
+        # Dump every result/status event's payload — claude's exit reason and
+        # any error message live there. Without this we can't distinguish
+        # "session not found" from "rate limited" from "permissions error".
+        details = []
+        for fd in captured:
+            attrs = getattr(fd, "attributes", {}) or {}
+            kind = attrs.get("element-type")
+            if kind in ("result", "status"):
+                details.append({
+                    "kind": kind,
+                    "subtype": attrs.get("subtype"),
+                    "outcome": attrs.get("outcome"),
+                    "value": getattr(fd, "flow_value", None),
+                })
+        logger.warning(
+            "[run-headless] empty assistant output for task=%s process=%s "
+            "captured=%d kinds=%s session_id=%s resume=%s details=%s",
+            task.id, process.id, len(captured), kinds,
+            process.session_id, is_resume, details,
+        )
         return
     await _save_draft_flow_message(
         task=task,

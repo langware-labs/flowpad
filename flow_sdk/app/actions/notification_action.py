@@ -193,6 +193,28 @@ async def _create_spec_and_task(
     task = Task.model_validate(task_payload)
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
+    if forked_process_id:
+        try:
+            from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+            fork = await AgenticProcess.get_one({"id": forked_process_id})
+            if fork is not None:
+                task_vfs = str(TypeId(type=BuiltinEntityType.TASK.value, id=task.id))
+                dirty = False
+                if fork.target_vfs_path != task_vfs:
+                    fork.target_vfs_path = task_vfs
+                    dirty = True
+                if not fork.project_id and project_id:
+                    fork.project_id = project_id
+                    dirty = True
+                if not fork.workdir and project_root:
+                    fork.workdir = project_root
+                    dirty = True
+                if dirty:
+                    await fork.save(someone_typeid)
+        except Exception as e:
+            logger.warning(
+                "[notification_action] fork-task wiring failed (non-fatal): %s", e
+            )
 
     # Register task on hub so the recipient can load it via the hub graph API.
     # Best-effort: a hub failure here shouldn't abort the local share-task flow.
