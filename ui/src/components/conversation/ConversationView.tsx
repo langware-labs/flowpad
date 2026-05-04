@@ -75,24 +75,24 @@ export function ConversationView({
     (async () => {
       for (const ptr of pointers) {
         if (cancelled) return;
-        if (requestedRef.current.has(ptr.message_id)) continue;
-        const fmTypeId = new TypeId(FlowMessage.type, ptr.message_id);
+        if (requestedRef.current.has(ptr.id)) continue;
+        const fmTypeId = new TypeId(FlowMessage.type, ptr.id);
         const local = await dataManager.getByTypeId<FlowMessage>(fmTypeId).catch(() => null);
         if (local) continue;
-        requestedRef.current.add(ptr.message_id);
+        requestedRef.current.add(ptr.id);
         try {
-          await openInboxMessage(ptr.message_id);
+          await openInboxMessage(ptr.id);
           if (cancelled) return;
           setBackfilledIds((prev) => {
-            if (prev.has(ptr.message_id)) return prev;
+            if (prev.has(ptr.id)) return prev;
             const next = new Set(prev);
-            next.add(ptr.message_id);
+            next.add(ptr.id);
             return next;
           });
         } catch {
           // Drop from the set so a future render can retry once the user
           // refreshes; avoid hammering the hub on transient failures.
-          requestedRef.current.delete(ptr.message_id);
+          requestedRef.current.delete(ptr.id);
         }
       }
     })();
@@ -102,7 +102,7 @@ export function ConversationView({
     // We deliberately key on the joined pointer list (not `pointers` identity)
     // so brand-new replies trigger a fetch but identical re-renders don't.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pointers.map((p) => p.message_id).join(',')]);
+  }, [pointers.map((p) => p.id).join(',')]);
 
   // Approve & Execute is task-bound. Pass an inert task to the hook when no
   // task is present so we can keep the call unconditional, then suppress the
