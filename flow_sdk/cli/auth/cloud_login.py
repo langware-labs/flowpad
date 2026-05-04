@@ -110,6 +110,12 @@ async def _finalize_login(token: str, user_info: dict[str, Any]) -> None:
     ))
 
     set_api_key(token)
+    # If the keyring write succeeded, mark the secrets-enabled sentinel so
+    # is_cloud_login_available() can read the key on subsequent boots.
+    # enable_secrets() swallows its own keyring errors and returns a bool,
+    # so we don't need a try/except here.
+    from flow_sdk.cli.auth.secrets import enable_secrets
+    enable_secrets()
     set_user(user_info)
     state.login_result = {"success": True, "user": user_info, "message": "Login successful"}
     state.login_received.set()
