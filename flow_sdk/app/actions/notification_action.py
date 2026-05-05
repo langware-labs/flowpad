@@ -922,7 +922,7 @@ async def _handle_plain_conversation_append(
     to bundle download on the receiver.
     """
     from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
-    from flow_sdk.builtin.flow_message import AttachmentType
+    from flow_sdk.builtin.flow_message import AttachmentType, FILE_VFS_PREFIX, PROMPT_FILE_VFS_PREFIX
     from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.storage import get_entity_embedded_storage
 
@@ -936,9 +936,9 @@ async def _handle_plain_conversation_append(
     if prompt_text:
         attachment.append({"attachment_type": AttachmentType.PROMPT.value, "data": prompt_text, "proposer_id": sender_id})
     for name in prompt_file_bytes:
-        attachment.append({"attachment_type": AttachmentType.PROMPT.value, "data": f"prompt/{name}", "proposer_id": sender_id})
+        attachment.append({"attachment_type": AttachmentType.PROMPT.value, "data": f"{PROMPT_FILE_VFS_PREFIX}{name}", "proposer_id": sender_id})
     for name in file_bytes:
-        attachment.append({"attachment_type": AttachmentType.FILE.value, "data": f"data/{name}"})
+        attachment.append({"attachment_type": AttachmentType.FILE.value, "data": f"{FILE_VFS_PREFIX}{name}"})
 
     payload = {
         "text": message,
@@ -983,11 +983,11 @@ async def _handle_plain_conversation_append(
     # resolve fs/download identically.
     storage = get_entity_embedded_storage(fm.typeid)
     for name, data in file_bytes.items():
-        path = Path(storage.get_storage_path(f"data/{name}"))
+        path = Path(storage.get_storage_path(f"{FILE_VFS_PREFIX}{name}"))
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
     for name, data in prompt_file_bytes.items():
-        path = Path(storage.get_storage_path(f"prompt/{name}"))
+        path = Path(storage.get_storage_path(f"{PROMPT_FILE_VFS_PREFIX}{name}"))
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
