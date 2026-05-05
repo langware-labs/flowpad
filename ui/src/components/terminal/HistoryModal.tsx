@@ -50,7 +50,7 @@ interface HistoryModalProps {
 }
 
 export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps) {
-  const { entries } = useWorkerHistory(30, { enabled: open });
+  const { entries, isLoading } = useWorkerHistory(30, { enabled: open });
   const { navigation } = useDockNavigation();
 
   return (
@@ -72,7 +72,9 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
             </button>
           </div>
         </DialogHeader>
-        {entries.length === 0 ? (
+        {isLoading && entries.length === 0 ? (
+          <p className="py-4 text-center text-xs text-muted-foreground">Loading…</p>
+        ) : entries.length === 0 ? (
           <p className="py-4 text-center text-xs text-muted-foreground">No recent sessions</p>
         ) : (
           <ul className="mt-1 flex flex-col gap-0.5 overflow-y-auto">

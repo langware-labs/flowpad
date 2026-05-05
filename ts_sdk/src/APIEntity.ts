@@ -490,7 +490,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
 
   public isDbField(fieldName: string): boolean {
     if (!this.schema) {
-      console.warn('isDbField: Schema not found, cant check blobs');
+      console.warn('isDbField: Schema not found, cant check blobs', this.type);
       return false;
     }
     const property = this.schema.getProperty(fieldName);
