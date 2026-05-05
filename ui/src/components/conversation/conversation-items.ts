@@ -36,13 +36,13 @@ export function buildConversationItems(
   const pointerIds = new Set<string>();
   const items: ConversationItem[] = [];
   for (const ptr of pointers) {
-    pointerIds.add(ptr.message_id);
+    pointerIds.add(ptr.id);
     items.push({
       kind: ConversationItemKind.POINTER,
-      key: backfilledIds.has(ptr.message_id) ? `${ptr.message_id}:resolved` : ptr.message_id,
-      messageId: ptr.message_id,
-      timestamp: ptr.timestamp,
-      sortAt: safeTime(ptr.timestamp, 0),
+      key: backfilledIds.has(ptr.id) ? `${ptr.id}:resolved` : ptr.id,
+      messageId: ptr.id,
+      timestamp: ptr.ts,
+      sortAt: safeTime(ptr.ts, 0),
     });
   }
   for (const draft of drafts) {

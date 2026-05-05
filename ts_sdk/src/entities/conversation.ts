@@ -12,9 +12,23 @@ export interface ConversationMessage {
   timestamp: string;
 }
 
+/**
+ * Parsed conversation pointer: each line of conversation.jsonl is stored as
+ * {typeid: "flow_message-<uuid>", ts: "<ISO>"} on disk, but call sites want
+ * the bare id + type + ts triple — that's what this getter returns.
+ */
 export interface ConversationMessagePointer {
-  message_id: string;
-  timestamp: string;
+  /** Entity id (uuid). */
+  id: string;
+  /** Entity type (e.g. "flow_message"). */
+  type: string;
+  /** ISO timestamp the pointer was appended. */
+  ts: string;
+}
+
+interface RawConversationPointer {
+  typeid: string;
+  ts: string;
 }
 
 export interface ConversationParticipant {
@@ -24,18 +38,27 @@ export interface ConversationParticipant {
 }
 
 export interface IConversation extends IEntity {
+  /** Local Project FK — receiver picks via the mapping dialog; sender's own
+   *  project at send time. Null until the receiver maps. */
   project_id?: string | null;
-  data_path?: string | null;
+  /** Cross-machine identity of the *sender's* project. Drives the per-machine
+   *  remote→local mapping table. Null on local-origin conversations. */
+  remote_project_id?: string | null;
+  /** Display name of the sender's project (for the mapping dialog copy). */
+  remote_project_name?: string | null;
   message_count?: number;
-  message_ids?: string | null;  // JSON-encoded ConversationMessagePointer[]
+  message_ids?: string | null;  // JSON-encoded RawConversationPointer[]
   participants?: ConversationParticipant[];
   // NOTE: task_id moved into context_entities. Use conv.firstContextOfType('task').
+  // NOTE: data_path is derived from the canonical records-data path on the
+  // server — not exposed as a stored field anymore.
 }
 
 @registerEntity
 export class Conversation extends APIEntity<Conversation> implements IConversation {
   project_id?: string | null;
-  data_path?: string | null;
+  remote_project_id?: string | null;
+  remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;
   participants?: ConversationParticipant[];
@@ -44,7 +67,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   constructor(entity: Partial<IConversation> = {}) {
     super(entity);
     this.project_id = entity.project_id;
-    this.data_path = entity.data_path;
+    this.remote_project_id = entity.remote_project_id;
+    this.remote_project_name = entity.remote_project_name;
     this.message_count = entity.message_count;
     this.message_ids = entity.message_ids;
     this.participants = entity.participants;
@@ -75,11 +99,20 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
 
   get conversationMessageIds(): ConversationMessagePointer[] {
     if (!this.message_ids) return [];
+    let raw: RawConversationPointer[];
     try {
-      return JSON.parse(this.message_ids) as ConversationMessagePointer[];
+      raw = JSON.parse(this.message_ids) as RawConversationPointer[];
     } catch {
       return [];
     }
+    const out: ConversationMessagePointer[] = [];
+    for (const p of raw) {
+      if (!p?.typeid || !p?.ts) continue;
+      const dash = p.typeid.indexOf('-');
+      if (dash <= 0) continue;
+      out.push({ type: p.typeid.slice(0, dash), id: p.typeid.slice(dash + 1), ts: p.ts });
+    }
+    return out;
   }
 }
 
@@ -121,11 +154,14 @@ export interface CreateHubConversationParams {
   /** First message text. */
   initial_text?: string;
   title?: string;
+  /** Display name on the first FlowMessage. Defaults server-side to the
+   * local user's name (synced from `git config user.name`). */
+  sender_name?: string | null;
 }
 
 export interface CreateHubConversationResult {
   conversation_id: string;
-  invitations: Array<{ id: string; recipient_email: string }>;
+  invited_emails: string[];
 }
 
 /** Create a conversation that lives on the hub and is mirrored locally with `remote=true`. */
@@ -149,26 +185,6 @@ export async function syncFromHub(): Promise<SyncFromHubResult> {
   const action = new ActionInfo('conversation-sync', null, null, 'POST');
   action.bodyParameters = {};
   const res = await dataManager.callAction<Record<string, never>, SyncFromHubResult>(action);
-  return res!;
-}
-
-export interface AddRemoteMessageParams {
-  conversation_id: string;
-  text: string;
-}
-
-export interface AddRemoteMessageResult {
-  flow_message_id: string | null;
-  conversation_id: string;
-}
-
-/** Add a message to a hub-mirrored conversation. */
-export async function addRemoteMessage(
-  params: AddRemoteMessageParams,
-): Promise<AddRemoteMessageResult> {
-  const action = new ActionInfo('conversation-add-remote-message', null, null, 'POST');
-  action.bodyParameters = params;
-  const res = await dataManager.callAction<AddRemoteMessageParams, AddRemoteMessageResult>(action);
   return res!;
 }
 

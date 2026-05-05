@@ -20,7 +20,7 @@ def _make_flowmsg_bytes(msg_data: dict) -> bytes:
     """Build a minimal .flowmsg zip in memory and return its bytes."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("message.json", json.dumps(msg_data, ensure_ascii=False))
+        zf.writestr("header.json", json.dumps(msg_data, ensure_ascii=False))
     return buf.getvalue()
 
 
@@ -77,7 +77,7 @@ def _make_flowmsg_bytes_with_attachment(msg_data: dict, inner_fm_id: str) -> byt
     }
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("message.json", json.dumps(msg_data, ensure_ascii=False))
+        zf.writestr("header.json", json.dumps(msg_data, ensure_ascii=False))
         zf.writestr(
             f"attachment/flow_message-@{inner_fm_id}/message.json",
             json.dumps(inner_fm_data, ensure_ascii=False),
@@ -179,4 +179,4 @@ async def test_download_flow_message_returns_zip(bootstrapped_client):
     buf = io.BytesIO(download_resp.content)
     with zipfile.ZipFile(buf, "r") as zf:
         names = zf.namelist()
-    assert "message.json" in names, f"message.json missing from zip. Files: {names}"
+    assert "header.json" in names, f"header.json missing from zip. Files: {names}"

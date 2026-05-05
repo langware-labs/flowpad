@@ -27,13 +27,13 @@ export async function findConversationTranscript(
     const pointers = conv?.conversationMessageIds ?? [];
     for (const ptr of pointers) {
       const fm = await dataManager
-        .getByTypeId<FlowMessage>(new TypeId(FlowMessage.type, ptr.message_id))
+        .getByTypeId<FlowMessage>(new TypeId(FlowMessage.type, ptr.id))
         .catch(() => null);
       if (!fm) continue;
       const att = (fm.attachment ?? []).find(
         (a) => a.attachment_type === AttachmentType.FILE && a.data.endsWith('conversation.jsonl'),
       );
-      if (att) return { messageId: ptr.message_id, vfsPath: att.data };
+      if (att) return { messageId: ptr.id, vfsPath: att.data };
     }
   } catch {
     // fall through — the toolbar treats null as "no transcript yet".
