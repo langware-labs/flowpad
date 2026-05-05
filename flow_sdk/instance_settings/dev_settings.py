@@ -55,6 +55,7 @@ class DevInstanceSettings(BaseInstanceSettings):
             logs_dir=flow_home / "dev_logs",
             monitor_log_path=flow_home / "dev_monitor.log",
             inbox_last_fetch_path=flow_home / ".dev_inbox_last_fetch.json",
+            conversation_last_sync_path=flow_home / ".dev_conversation_last_sync.json",
             db_driver=os.environ.get(ENV_DESKTOP_DB, DEFAULT_DB_DRIVER).lower(),
             user_home=Path.home(),
             claude_home=claude_home,

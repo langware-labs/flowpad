@@ -149,6 +149,37 @@ async def browse(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
         return ApiFailResponse(message=f"Failed to browse directory: {str(e)}")
 
 
+async def _fetch_remote_flow_message_file(
+    fm_id: str, vfs_path: str, storage: "LocalStorageDriver",
+) -> bool:
+    """Pull a missing FILE/PROMPT-file from the hub for a hub-mirrored FlowMessage.
+
+    Returns True when bytes landed on local disk. Best-effort: returns False
+    on any error so the caller can 404 the way it would have anyway.
+    """
+    try:
+        from flow_sdk.builtin.flow_message import FlowMessage
+        from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+        from flow_sdk.utils.hub import hub_base_url, hub_get
+        from pathlib import Path
+    except Exception:
+        return False
+    if not hub_base_url():
+        return False
+    fm = await FlowMessage.get_one({"id": fm_id})
+    if not fm or not getattr(fm, "remote", False):
+        return False
+    bytes_ = await hub_get(
+        BuiltinEntityType.FLOW_MESSAGE, fm_id, "fs", f"download/{vfs_path}", raw=True,
+    )
+    if not bytes_:
+        return False
+    target = Path(storage.get_storage_path(vfs_path))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(bytes_)
+    return True
+
+
 async def download(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> StreamingResponse | ApiFailResponse:
     """Download file.
 
@@ -167,9 +198,21 @@ async def download(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Strea
     try:
         storage = await _get_storage_for_entity(request_info)
 
-        # Check if file exists
+        # Check if file exists. For hub-mirrored FlowMessages the bytes live
+        # on the hub, not the local FS — fall back to a hub fetch and cache
+        # locally so future hits + the headless agent (which reads via the
+        # local path) both find the file.
         if not await storage.exists(fs_info.vpath.abs_vfspath):
-            return ApiFailResponse(message="File not found", status_code=404)
+            tid = fs_info.vpath.typeid
+            if tid and getattr(tid, "type", None) == "flow_message":
+                if await _fetch_remote_flow_message_file(
+                    str(tid.id), fs_info.vpath.entity_sub_path, storage,
+                ):
+                    pass  # bytes landed; fall through to stream
+                else:
+                    return ApiFailResponse(message="File not found", status_code=404)
+            else:
+                return ApiFailResponse(message="File not found", status_code=404)
 
         # Stream file
         stream: AsyncIterator[bytes] = storage.stream(fs_info.vpath.abs_vfspath)

@@ -82,7 +82,7 @@ export function useApproveAndExecutePty({ task }: UseApproveAndExecutePtyOptions
           // unlike executeInstruction which silently no-ops on a closed PTY.
           await existing.start({ instruction: promptText });
           taskApprovalCache.set(taskId, existing);
-          navigation.openInBrowserTab(existing.dockPointer);
+          navigation.openDock(existing.dockPointer);
           return;
         }
         if (existing.session_id) {
@@ -101,7 +101,7 @@ export function useApproveAndExecutePty({ task }: UseApproveAndExecutePtyOptions
             t.shared_process_id = resumed.id;
             await t.save();
           }
-          navigation.openInBrowserTab(resumed.dockPointer);
+          navigation.openDock(resumed.dockPointer);
           return;
         }
       }
@@ -125,7 +125,7 @@ export function useApproveAndExecutePty({ task }: UseApproveAndExecutePtyOptions
       t.shared_process_id = forked.id;
       await t.save();
     }
-    navigation.openInBrowserTab(forked.dockPointer);
+    navigation.openDock(forked.dockPointer);
   };
 
   return { approveAndExecute };

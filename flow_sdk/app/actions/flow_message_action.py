@@ -25,6 +25,7 @@ from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_records.conversation_record import ConversationRecord
 from flow_sdk.fs_records.flow_message_bundle import FlowMessageExistsError
+from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse, ApiResponse
 from flow_sdk._compat import UTC
@@ -83,9 +84,7 @@ async def handle_create_task_bundle(
 
     Returns flow_message_id so the caller can immediately trigger a .flowmsg download.
     """
-    local_user = await User.get_one({"uname": "local"})
-    sender_id: Optional[str] = local_user.id if local_user else None
-    sender_name: str = (local_user.name or local_user.email or "") if local_user else ""
+    sender_id, sender_name = await User.local_sender_identity()
 
     # 1. Create Spec
     spec = Spec.model_validate({
@@ -108,59 +107,45 @@ async def handle_create_task_bundle(
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
 
-    # 3. Create Conversation + conversation.jsonl under <tasks_dir>/<slug>-<id>/
-    task_dir = get_instance_settings().tasks_dir / f"{_meaningful_name(task_title)}-{task.id[:8]}"
-    task_dir.mkdir(parents=True, exist_ok=True)
-    jsonl_path = task_dir / "conversation.jsonl"
-    jsonl_path.touch()
+    # 3. Create Conversation entity + canonical jsonl + parent linkage.
+    from flow_sdk.app.actions.materialize_flow_message import (
+        ensure_conversation_entity,
+        materialize_flow_message,
+    )
 
-    conv = Conversation.model_validate({
+    conv_id = Conversation.allocate_id({
         "project_id": project_id,
-        "data_path": str(jsonl_path),
-        "message_count": 0,
-        # task_id consolidated into ``context_entities``.
         "context_entities": [f"task-{task.id}"],
     })
-    conv.id = Conversation.allocate_id(conv.model_dump())
-    conv = await conv.save(someone_typeid)
+    task_typeid = TypeId(type=BuiltinEntityType.TASK.value, id=task.id)
+    conv = await ensure_conversation_entity(
+        conv_id, parent_typeid=task_typeid,
+        project_id=project_id, someone_typeid=someone_typeid,
+    )
     await task.attach_child(conv)
-
-    rec = ConversationRecord.from_jsonl(jsonl_path, task.id, conv.id)
-    rec.save()
-    rec.link_to_parent_record()
-
     task.add_context_entity(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))
     task = await task.save(someone_typeid)
 
-    # 4. Create FlowMessage record
-    context = [
-        TypeId(type=BuiltinEntityType.TASK.value, id=task.id),
-        TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id),
-    ]
-
-    fm = FlowMessage.model_validate({
-        "text": message or f"Task: {task_title}",
-        "context_entities": context,
-        "attachment": [],
-        "sender_id": sender_id,
-        "sender_name": sender_name,
-        "conversation_id": conv.id,
-    })
-    fm.id = FlowMessage.allocate_id(fm.model_dump())
-    fm.attachment = [
+    # 4. Materialize the first FlowMessage through the unified write path.
+    fm_id = FlowMessage.allocate_id({"text": message or f"Task: {task_title}"})
+    attachments = [
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.SPEC.value, id=spec.id))),
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.TASK.value, id=task.id))),
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))),
-        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm.id))),
+        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm_id))),
     ]
-    fm = await fm.save(someone_typeid)
-
-    # Append pointer to conversation
-    bundle_ts = datetime.now(UTC).isoformat()
-    rec.append_message_pointer(fm.id, bundle_ts)
-    conv.message_ids = _json.dumps([{"message_id": fm.id, "timestamp": bundle_ts}])
-    conv.message_count = 1
-    conv = await conv.save(someone_typeid)
+    fm = await materialize_flow_message(
+        {
+            "id": fm_id,
+            "text": message or f"Task: {task_title}",
+            "context_entities": [task_typeid, TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id)],
+            "attachment": attachments,
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+        },
+        conversation_id=conv.id,
+        someone_typeid=someone_typeid,
+    )
 
     return ApiSuccessResponse(data={
         "flow_message_id": fm.id,
@@ -327,7 +312,6 @@ async def handle_create_project_conversation(
     summary.
     """
     from flow_sdk.builtin.project import Project
-    from flow_sdk.fs_store.record_types import RecordType
 
     project = await Project.get_one({"id": project_id})
     if not project:
@@ -350,22 +334,14 @@ async def handle_create_project_conversation(
         "task_id": None,
         "project_id": project.id,
         "participants": resolved,
-        "message_count": 0,
         "name": derived_name,
     })
     conv.id = Conversation.allocate_id(conv.model_dump())
-
-    # Standard records-data location (same convention as ShellRecord et al).
-    # Project linkage is logical via parent_ref/attach_child below; the data
-    # file itself doesn't need to live inside the project mount.
-    jsonl_path = ConversationRecord.default_jsonl_path(conv.id)
-    jsonl_path.parent.mkdir(parents=True, exist_ok=True)
-    jsonl_path.touch()
-
-    conv.data_path = str(jsonl_path)
     conv = await conv.save(someone_typeid)
     await project.attach_child(conv)
 
+    # Canonical jsonl path is auto-created under records-data root.
+    jsonl_path = ConversationRecord.default_jsonl_path(conv.id)
     rec = ConversationRecord.from_jsonl(
         jsonl_path, project.id, conv.id, parent_type=RecordType.PROJECT
     )
@@ -432,6 +408,27 @@ def _save_last_fetch(ts: str) -> None:
     _last_fetch_path().write_text(_json.dumps({"last_fetch": ts}))
 
 
+def _conversation_sync_path() -> Path:
+    return get_instance_settings().conversation_last_sync_path
+
+
+def _load_last_conversation_sync() -> Optional[str]:
+    """Return ISO timestamp of last successful conversation sync, or None."""
+    try:
+        p = _conversation_sync_path()
+        if p.exists():
+            return _json.loads(p.read_text()).get("last_sync")
+    except Exception:
+        pass
+    return None
+
+
+def _save_last_conversation_sync(ts: str) -> None:
+    p = _conversation_sync_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(_json.dumps({"last_sync": ts}))
+
+
 async def _download_and_unpack_bundle(fm_id: str, attachment_filename: str) -> bool:
     """Download the .flowmsg bundle from the hub and unpack it locally.
 
@@ -454,6 +451,14 @@ async def _download_and_unpack_bundle(fm_id: str, attachment_filename: str) -> b
         return True
     except FlowMessageExistsError:
         return True  # already materialized — counts as success
+    except ValueError as e:
+        # Legacy bundles (pre-header.json) raise "Invalid .flowmsg: missing
+        # header.json". Per the no-legacy-support rule, drop them silently
+        # rather than logging a stack trace.
+        if "missing header.json" in str(e):
+            return False
+        logger.error("[bundle] unpack failed fm=%s: %s", fm_id, e, exc_info=True)
+        return False
     except Exception as e:
         logger.error("[bundle] unpack failed fm=%s: %s", fm_id, e, exc_info=True)
         return False
@@ -675,9 +680,16 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     fm = await fm.save(someone_typeid)
 
     if task:
-        local_user = await User.get_one({"uname": "local"})
-        sender_id = local_user.id if local_user else fm.sender_id
-        sender_name = fm.sender_name or ((local_user.name or local_user.email or "") if local_user else "")
+        local_user = await User.get_local()
+        # fm.sender_name takes precedence (set explicitly on the draft);
+        # otherwise fall back to the local-user chain via the shared helper.
+        if fm.sender_name:
+            sender_id = local_user.id if local_user else fm.sender_id
+            sender_name = fm.sender_name
+        else:
+            sender_id, sender_name = await User.local_sender_identity()
+            if not sender_id:
+                sender_id = fm.sender_id
         recipient_email = _resolve_reply_recipient_email(task, local_user.id if local_user else "")
         await _send_reply_to_hub(
             reply_fm=fm,
@@ -801,47 +813,35 @@ async def _materialize_remote_flow_message(
 ) -> Optional[FlowMessage]:
     """Upsert a local FlowMessage row to mirror a hub-side flow_message.
 
-    Also appends a pointer to the parent Conversation's `message_ids`
-    so the existing ConversationView rendering pipeline (which reads
-    `conversation.conversationMessageIds`) picks it up.
+    Hub-mirrored conversations follow the same record-first model as the
+    bundle path: the typed Pointer is appended to ``conversation.jsonl`` and
+    ``ConversationRecord.sync_to_db`` projects ``message_ids`` /
+    ``message_count`` uniformly.
     """
     if not hub_fm or not hub_fm.get("id"):
         return None
-    fm_id = hub_fm["id"]
-    existing = await FlowMessage.get_one({"id": fm_id})
-    if existing:
-        existing.remote = True
-        return await existing.save(someone_typeid)
 
-    fm = FlowMessage.model_validate({
+    from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
+
+    fm_id = hub_fm["id"]
+    bundle_ts = hub_fm.get("created_date")
+    payload = {
         "id": fm_id,
         "text": hub_fm.get("text") or "",
         "sender_id": hub_fm.get("sender_id") or None,
         "sender_name": hub_fm.get("sender_name") or None,
         "receiver_address": hub_fm.get("receiver_address") or None,
         "receiver_address_type": hub_fm.get("receiver_address_type") or None,
-        "conversation_id": conv_id,
+        "context": hub_fm.get("context") or [],
+        "attachment": hub_fm.get("attachment") or [],
         "remote": True,
-    })
-    saved = await fm.save(someone_typeid)
-
-    # Maintain the conversation's pointer list + count.
-    conv = await Conversation.get_one({"id": conv_id})
-    if conv:
-        ts = hub_fm.get("created_date") or datetime.now(UTC).isoformat()
-        existing_ids: list = []
-        if conv.message_ids:
-            try:
-                existing_ids = _json.loads(conv.message_ids)
-            except Exception:
-                existing_ids = []
-        if not any(p.get("message_id") == fm_id for p in existing_ids):
-            existing_ids.append({"message_id": fm_id, "timestamp": ts})
-            conv.message_ids = _json.dumps(existing_ids)
-            conv.message_count = len(existing_ids)
-            await conv.save(someone_typeid)
-
-    return saved
+    }
+    return await materialize_flow_message(
+        payload,
+        conversation_id=conv_id,
+        someone_typeid=someone_typeid,
+        bundle_ts=bundle_ts,
+    )
 
 
 async def _materialize_remote_invitation(
@@ -875,50 +875,99 @@ async def _materialize_remote_invitation(
 
 
 async def handle_conversation_start_hub(body: dict, someone_typeid: str) -> ApiResponse:
-    """Create a hub-mirrored conversation. Calls hub `conversation/start_direct`
-    and materializes the returned conversation + first FlowMessage locally
-    with `remote=True`.
+    """Create a hub-mirrored conversation via standard graph CRUD.
+
+    Three round-trips, no custom hub action:
+      1. POST /conversation                          → create the row
+      2. POST conversation/{id}/add_message          → seed first FlowMessage
+      3. POST conversation/{id}/members (per email)  → create invitations
+
+    The conversation + FM are materialized locally with ``remote=True`` so
+    the caller can immediately navigate to the new thread. Invitations are
+    fire-and-forget here; they reach the local DB on the next
+    ``handle_conversation_sync`` round (which already pulls
+    ``invitation?action=mine``).
     """
+    from flow_sdk.utils.hub import HubError
+
     participants = body.get("participants") or []
     if not isinstance(participants, list) or not participants:
         return ApiFailResponse(message="participants required")
     initial_text = (body.get("initial_text") or body.get("text") or "").strip()
     title = (body.get("title") or "").strip() or None
 
-    hub_payload = {
-        "participants": participants,
-        "text": initial_text,
-        "title": title,
-    }
+    sender_id, sender_name = await User.local_sender_identity(body.get("sender_name"))
 
+    # 1. Create the Conversation row on the hub.
     try:
-        from flow_sdk.utils.hub import HubError
-        data = await hub_post(BuiltinEntityType.CONVERSATION, hub_payload, action="start_direct")
+        hub_conv = await hub_post(BuiltinEntityType.CONVERSATION, {"title": title})
     except HubError as e:
         return ApiFailResponse(message=f"Hub error ({e.status_code}): {e.reason}")
+    if not hub_conv or not hub_conv.get("id"):
+        return ApiFailResponse(message="Hub returned no conversation id")
+    conv_id = hub_conv["id"]
 
-    if not data:
-        return ApiFailResponse(message="Hub returned no data")
+    # 2. Seed the first FlowMessage (uses the hub's existing add_message action,
+    # which add_child's the FM and bumps Conversation.updated_date — same path
+    # every subsequent message takes).
+    hub_first_fm: Optional[dict] = None
+    if initial_text:
+        try:
+            hub_first_fm = await hub_post(
+                BuiltinEntityType.CONVERSATION,
+                {
+                    "text": initial_text,
+                    "sender_id": sender_id,
+                    "sender_name": sender_name or None,
+                },
+                conv_id,
+                "add_message",
+            )
+        except HubError as e:
+            logger.warning("[conversation-start-hub] add_message failed: %s", e)
 
-    hub_conv = data.get("conversation") or {}
-    hub_first_fm = data.get("first_message") or None
-    hub_invitations = data.get("invitations") or []
+    # 3. Invite each participant by email. The hub's /members route resolves
+    # known users and creates an Invitation row otherwise. Returns no body of
+    # interest, so we don't try to materialize the rows here — the next
+    # conversation-sync round picks them up via the recipient_email filter
+    # on the standard /graph/invitation read.
+    target_typeid = f"{BuiltinEntityType.CONVERSATION.value}-{conv_id}"
+    invited_emails: list[str] = []
+    for p in participants:
+        if not isinstance(p, dict):
+            continue
+        if (p.get("address_type") or "").strip().lower() != "email":
+            continue  # 'id' (existing user) takes a different invite path
+        email = (p.get("address") or "").strip()
+        if not email:
+            continue
+        try:
+            await hub_post(
+                BuiltinEntityType.CONVERSATION,
+                {
+                    "recipient_email": email,
+                    "invitation_targets": [
+                        {"typeid": target_typeid, "role": "member"}
+                    ],
+                    "message": initial_text or None,
+                },
+                conv_id,
+                "members",
+            )
+            invited_emails.append(email)
+        except HubError as e:
+            logger.warning("[conversation-start-hub] invite %s failed: %s", email, e)
 
+    # Materialize locally so the UI can navigate immediately.
     conv = await _materialize_remote_conversation(hub_conv, someone_typeid)
     if not conv:
         return ApiFailResponse(message="Failed to materialize conversation")
-
     if hub_first_fm:
         await _materialize_remote_flow_message(hub_first_fm, conv.id, someone_typeid)
 
-    # The sender's local mirror also tracks invitations he created.
-    for inv_meta in hub_invitations:
-        # `inv_meta` is `{id, recipient_email}` from hub start_direct return.
-        await _materialize_remote_invitation(inv_meta, someone_typeid)
-
     return ApiSuccessResponse(data={
         "conversation_id": conv.id,
-        "invitations": hub_invitations,
+        "invited_emails": invited_emails,
     })
 
 
@@ -944,10 +993,9 @@ async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
     conv_count = 0
     fm_count = 0
 
-    # Use the dedicated "list mine" hub action so the recipient sees pending
-    # invitations addressed to their email (default graph list requires a
-    # direct role, which the recipient lacks until they accept).
-    invitations = await hub_get(BuiltinEntityType.INVITATION, action="mine") or []
+    invitations = await hub_get(
+        BuiltinEntityType.INVITATION, action="pending",
+    ) or []
     if not isinstance(invitations, list):
         invitations = []
     for inv in invitations:
@@ -957,22 +1005,52 @@ async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
         except Exception as e:
             logger.warning("[conversation-sync] invitation upsert failed: %s", e)
 
-    conversations = await hub_get(BuiltinEntityType.CONVERSATION) or []
+    # Incremental sync: ask the hub for only Conversations whose updated_date
+    # has moved past last_sync (server-side filter via the standard `read`
+    # action's `?filter=` query param), then for each, only flow_messages
+    # whose created_date moved past last_sync. last_sync is the max value
+    # seen in this round — never the client clock (avoids clock-skew loss).
+    # Client-side gating is kept as a defense-in-depth in case the hub
+    # ignores the filter (older deployments).
+    last_sync = _load_last_conversation_sync() or "1970-01-01T00:00:00Z"
+    new_high_water = last_sync
+    conv_filter = _json.dumps({"match": {"op": "$GT", "operands": ["updated_date", last_sync]}})
+    conversations = await hub_get(
+        BuiltinEntityType.CONVERSATION,
+        params={"filter": conv_filter},
+    ) or []
     if not isinstance(conversations, list):
         conversations = []
     for hub_conv in conversations:
         try:
+            hub_updated = hub_conv.get("updated_date") or hub_conv.get("created_date") or ""
+            if hub_updated and hub_updated <= last_sync:
+                continue  # already synced past this point (defense-in-depth)
             conv = await _materialize_remote_conversation(hub_conv, someone_typeid)
             if not conv:
                 continue
             conv_count += 1
-            msgs = await hub_get(BuiltinEntityType.CONVERSATION, conv.id, "flow_message") or []
+            if hub_updated and hub_updated > new_high_water:
+                new_high_water = hub_updated
+            msg_filter = _json.dumps({"match": {"op": "$GT", "operands": ["created_date", last_sync]}})
+            msgs = await hub_get(
+                BuiltinEntityType.CONVERSATION, conv.id, "flow_message",
+                params={"filter": msg_filter},
+            ) or []
             if isinstance(msgs, list):
                 for m in msgs:
+                    m_created = m.get("created_date") or ""
+                    if m_created and m_created <= last_sync:
+                        continue
                     if await _materialize_remote_flow_message(m, conv.id, someone_typeid):
                         fm_count += 1
+                    if m_created and m_created > new_high_water:
+                        new_high_water = m_created
         except Exception as e:
             logger.warning("[conversation-sync] conv sync failed for %s: %s", hub_conv.get("id"), e)
+
+    if new_high_water != last_sync:
+        _save_last_conversation_sync(new_high_water)
 
     return ApiSuccessResponse(data={
         "invitations": inv_count,
@@ -990,46 +1068,6 @@ async def conversation_sync() -> ApiResponse:
         return await handle_conversation_sync(request_info.someone_typeid)
     except Exception as e:
         logger.error("[flow_message_action] conversation-sync error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Failed: {e}")
-
-
-async def handle_conversation_add_remote_message(body: dict, someone_typeid: str) -> ApiResponse:
-    """Add a message to a hub-mirrored conversation: POST hub add_message,
-    materialize the returned FlowMessage locally with remote=True.
-    """
-    conv_id = (body.get("conversation_id") or "").strip()
-    text = (body.get("text") or "").strip()
-    if not conv_id or not text:
-        return ApiFailResponse(message="conversation_id and text required")
-
-    try:
-        from flow_sdk.utils.hub import HubError
-        data = await hub_post(
-            BuiltinEntityType.CONVERSATION, {"text": text}, conv_id, "add_message"
-        )
-    except HubError as e:
-        return ApiFailResponse(message=f"Hub error ({e.status_code}): {e.reason}")
-
-    if not data:
-        return ApiFailResponse(message="Hub returned no data")
-
-    fm = await _materialize_remote_flow_message(data, conv_id, someone_typeid)
-    return ApiSuccessResponse(data={
-        "flow_message_id": fm.id if fm else None,
-        "conversation_id": conv_id,
-    })
-
-
-@action.post(action_name="conversation-add-remote-message", types=None)
-async def conversation_add_remote_message() -> ApiResponse:
-    try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.someone_typeid:
-            return ApiFailResponse(message="Authentication required")
-        body = await request_info.get_post_data() or {}
-        return await handle_conversation_add_remote_message(body, request_info.someone_typeid)
-    except Exception as e:
-        logger.error("[flow_message_action] conversation-add-remote-message error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
 
 

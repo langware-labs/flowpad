@@ -9,10 +9,6 @@ import {
   QueryRequest,
 } from '@sdk';
 import apiClient from '@sdk/client';
-import {
-  applyProjectToTask,
-  persistRemoteToLocalMapping,
-} from '@src/components/conversation/apply-project-choice';
 import { useProject } from '@sdk/react/hooks';
 import { useDevMode } from '@src/contexts/dev-mode-context';
 import { Button } from '@src/components/ui/button';
@@ -656,19 +652,19 @@ export function OpenProjectComponent({
       await dataContext.refreshProject();
       dataContext.setWorkdir(project.fs_storage_mount_path ?? null);
 
-      // Optional side-effects when the dialog was opened via the gate /
-      // mapping flow. Both are no-ops in the plain footer-switch case.
-      if (taskId) await applyProjectToTask(taskId, project);
-      if (remoteProjectId) await persistRemoteToLocalMapping(remoteProjectId, project.id ?? null);
-
       onProjectChanged?.();
+      // Entity stamping (task/conversation/project_id, mapping table writes,
+      // remap navigation) happens inside `onPicked` — the gate's apply
+      // callback owns it so the wasReplacement signal isn't clobbered by a
+      // pre-stamp here. In the plain footer-switch case onPicked is undefined
+      // and only ctx.project changes, which is the right behavior.
       try {
         await onPicked?.(project);
       } catch {
         // continuation errors shouldn't break the picker
       }
     },
-    [onProjectChanged, taskId, remoteProjectId, onPicked],
+    [onProjectChanged, onPicked],
   );
 
   const ensureProjectAndSetContext = useCallback(

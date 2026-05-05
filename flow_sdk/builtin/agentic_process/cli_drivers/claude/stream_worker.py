@@ -214,11 +214,11 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             async for line in proc.stderr:
                 decoded = line.decode("utf-8", errors="replace").rstrip()
                 if decoded:
-                    logger.debug("claude stderr: %s", decoded)
+                    logger.warning("claude stderr: %s", decoded)
         except asyncio.CancelledError:
             pass
         except Exception:
-            logger.debug("stderr drain error", exc_info=True)
+            logger.warning("stderr drain error", exc_info=True)
 
     async def _terminate_process(self) -> None:
         """SIGTERM → grace → SIGKILL. Safe to call multiple times."""
