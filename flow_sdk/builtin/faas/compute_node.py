@@ -444,6 +444,128 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.get(action_name="list-shells")
     async def _list_shells(self): return await self._pty_list_shells()
 
+    @action.get(action_name="active-terminals")
+    async def _active_terminals(self) -> ApiResponse:
+        """Single source of truth for the tab strip.
+
+        Atomically: reaps stuck-STOPPING agentic processes whose worker is
+        actually dead, then returns the joined list of visible terminals
+        (Shell + linked AgenticProcess) along with the full underlying
+        entities so the frontend can write them through to its cache.
+
+        Wire shape: {shells, processes, tabs, checked_at}.
+          - ``shells``: full Shell entity dicts (status != closed).
+          - ``processes``: full AgenticProcess entity dicts (visible == true).
+          - ``tabs``: per-row joined view in tab_order.
+        """
+        from flow_sdk.builtin.shell import Shell as ShellEntity
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+        from flow_sdk.builtin.project import Project
+        from flow_sdk.fs_records.agentic_process_lifecycle import is_running
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
+
+        # 1. Fetch
+        all_shells = await ShellEntity.get_all()
+        # Reap pass also covers invisible STOPPING rows so they can recover
+        # and re-appear when the user opens them. The visible filter is
+        # applied below for what we *return*, not for what we *reap*.
+        all_processes = await AgenticProcess.get_all()
+
+        # 2. Reap stuck STOPPING — single source of liveness logic on the entity.
+        reaped_any = False
+        for proc in all_processes:
+            if await proc.reap_if_orphaned():
+                reaped_any = True
+
+        # 3. Refetch if we reaped, then narrow to visible.
+        if reaped_any:
+            all_processes = await AgenticProcess.get_all()
+        visible_processes = [p for p in all_processes if getattr(p, "visible", False)]
+
+        # 4. Sidecars + filter shells.
+        sidecar_ids = {p.sidecar_shell_id for p in visible_processes if p.sidecar_shell_id}
+        kept_shells = [
+            s for s in all_shells
+            if s.status not in ("closed", "error") and s.id not in sidecar_ids
+        ]
+
+        # 5. Build join.
+        active_procs_by_shell = {
+            p.shell_id: p for p in visible_processes
+            if p.shell_id and is_running(p.status)
+        }
+
+        # 6. Resolve project display name (cache lookups in Python — only fetch each project once).
+        project_cache: dict[str, Project | None] = {}
+
+        async def resolve_project(pid: str | None) -> tuple[str | None, str | None]:
+            if not pid:
+                return None, None
+            if pid in project_cache:
+                p = project_cache[pid]
+                return (pid, p.name if p else None)
+            # Try by id, then by uname alias
+            try:
+                p = await Project.get_by_id(pid)
+            except Exception:
+                p = None
+            if p is None:
+                try:
+                    candidates = await Project.get_all(
+                        entities_filter=QueryFilter(match=ExpressionNode(id=pid)),
+                    )
+                    p = candidates[0] if candidates else None
+                except Exception:
+                    p = None
+            project_cache[pid] = p
+            display = None
+            if p:
+                # Prefer the basename when name is a path, else the literal name.
+                raw = (p.name or "").strip()
+                if raw:
+                    parts = raw.replace("\\", "/").split("/")
+                    parts = [x for x in parts if x]
+                    display = parts[-1] if parts else raw
+                if not display:
+                    display = pid[:8]
+            return (pid, display)
+
+        tabs: list[dict] = []
+        for shell in kept_shells:
+            linked = active_procs_by_shell.get(shell.id)
+            effective_pid = (
+                shell.project_id if getattr(shell, "project_id", None)
+                else (linked.project_id if linked else None)
+            )
+            pid, pdisplay = await resolve_project(effective_pid)
+            is_disabled = shell.status == "closing"
+            status_reason = "Closing..." if shell.status == "closing" else ""
+            tabs.append({
+                "shell_id": shell.id,
+                "process_id": linked.id if linked else None,
+                "tab_order": getattr(shell, "tab_order", 0) or 0,
+                "name": getattr(shell, "name", None),
+                "is_disabled": is_disabled,
+                "status_reason": status_reason,
+                "project_id": pid,
+                "project_display_name": pdisplay,
+            })
+
+        # 7. Sort by tab_order.
+        tabs.sort(key=lambda t: t["tab_order"])
+
+        # 8. Build response with full entity dicts for cache write-through.
+        shell_dicts = [s.model_dump(mode="json") for s in kept_shells]
+        process_dicts = [p.model_dump(mode="json") for p in visible_processes]
+
+        from datetime import datetime as _dt, timezone as _tz
+        return ApiSuccessResponse(data={
+            "shells": shell_dicts,
+            "processes": process_dicts,
+            "tabs": tabs,
+            "checked_at": _dt.now(tz=_tz.utc).isoformat(),
+        })
+
     @action.get(action_name="session-transcript")
     async def _session_transcript(self): return await self._pty_session_transcript()
 

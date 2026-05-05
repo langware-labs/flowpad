@@ -67,7 +67,8 @@ export function ContentPanel() {
   // Sync flow focus and URL dock state to viewer store
   useActiveViewer(flow);
 
-  const { tabs: terminalTabs, isLoading: terminalsLoading } = useActiveTerminals();
+  const { data: terminalTabs } = useActiveTerminals();
+  const terminalsLoading = false;
   const { onTabClick, onTabClose, onTabOpen } = useStandardTabNav();
 
   /**

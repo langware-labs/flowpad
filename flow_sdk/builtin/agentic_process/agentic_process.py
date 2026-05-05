@@ -585,6 +585,12 @@ class AgenticProcess(Entity):
                 with open("/tmp/bench_open.log", "a") as _f:
                     _f.write(f"[BENCH start {_bench_id}] {label}: {(time.perf_counter() - _bench_t0) * 1000:.1f}ms\n")
             _bench("entry")
+            # If we're stuck in STOPPING with a dead worker (orphan from a
+            # crashed close()/exit()), reset to STOPPED before doing anything
+            # else. The rest of this function then sees a startable state
+            # rather than refusing or spawning under stale assumptions.
+            await self.reap_if_orphaned()
+            _bench("after reap_if_orphaned")
             self.session_id = self.session_id or str(uuid4())
             if visible is not None:
                 self.visible = visible
@@ -2238,6 +2244,47 @@ class AgenticProcess(Entity):
         result = await self.start(instruction=instruction, visible=visible)
         _http_bench("after start() return")
         return result
+
+    async def reap_if_orphaned(self, *, grace_seconds: int = 10) -> bool:
+        """Force-complete a stuck STOPPING transition when the worker is gone.
+
+        Same liveness predicates ``os_status`` exposes (``has_attachable_pty``
+        + ``worker_alive``). Writes ``STOPPED`` only when the row is
+        ``STOPPING``, has been in that state for at least ``grace_seconds``
+        (don't race live transitioners), and the worker is demonstrably gone.
+
+        Returns True iff the persisted status was advanced. Idempotent —
+        calling on a non-STOPPING row is a cheap no-op.
+        """
+        from datetime import datetime, timedelta, timezone
+        if self.status != ProcessStatus.STOPPING.value:
+            return False
+        updated = self.updated_date
+        if updated and isinstance(updated, str):
+            try:
+                updated = datetime.fromisoformat(updated.replace("Z", "+00:00"))
+            except Exception:
+                updated = None
+        cutoff = datetime.now(tz=timezone.utc) - timedelta(seconds=grace_seconds)
+        if updated and updated > cutoff:
+            return False
+        shell = await self.shell() if self.shell_id else None
+        has_pty = False
+        alive = False
+        if shell is not None:
+            try:
+                has_pty = bool(await shell.has_attachable_pty())
+            except Exception:
+                has_pty = False
+            try:
+                alive = bool(await shell.worker_alive())
+            except Exception:
+                alive = False
+        if has_pty or alive:
+            return False
+        self.status = ProcessStatus.STOPPED.value
+        await self.save()
+        return True
 
     @action.get(action_name="os-status")
     async def os_status(self) -> ApiSuccessResponse:

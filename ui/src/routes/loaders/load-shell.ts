@@ -24,14 +24,13 @@ import {
   dataContext,
   dataManager,
   Project,
-  QueryFilter,
   QueryRequest,
   Shell,
   ShellStatus,
   systemTools,
   TypeId,
 } from '@sdk';
-import { filterTabs, type TerminalTab } from '@src/hooks/useActiveTerminals';
+import { type TerminalTab } from '@src/hooks/useActiveTerminals';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { toast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation';
@@ -73,19 +72,6 @@ function cachedEntitiesByType<U>(type: string): U[] {
     if (entity) out.push(entity);
   }
   return out;
-}
-
-export async function fetchShellsAndProcesses(): Promise<[Shell[], AgenticProcess[]]> {
-  return Promise.all([
-    Shell.query<Shell>(new QueryRequest({ type: Shell.type, scope: [] })),
-    AgenticProcess.query<AgenticProcess>(
-      new QueryRequest({
-        type: AgenticProcess.type,
-        scope: [],
-        query: new QueryFilter({ match: { visible: true } as Record<string, unknown> }),
-      }),
-    ),
-  ]);
 }
 
 function _perfLog(label: string) {
