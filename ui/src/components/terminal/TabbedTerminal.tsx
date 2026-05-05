@@ -165,9 +165,16 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   onTabClose,
   onTabOpen,
 }) => {
-  const { tabs: sessions } = useActiveTerminals({ collaborationRoomId });
   const { flow } = useAgentContext();
-  const { activeShellId: contextShellId, agenticProcess: contextAgenticProcess } = useContext();
+  const {
+    activeShellId: contextShellId,
+    agenticProcess: contextAgenticProcess,
+    project: contextProject,
+  } = useContext();
+  // Scope the tab strip to the current project (or the spawn project, when this
+  // strip is rendered for a CollaborationSpace that pins to a different project).
+  const tabsProjectId = spawnProjectId ?? contextProject?.id ?? null;
+  const { tabs: sessions } = useActiveTerminals({ collaborationRoomId, projectId: tabsProjectId });
   const _perfLoggedRef = useRef(false);
   if (!_perfLoggedRef.current) {
     _perfLoggedRef.current = true;

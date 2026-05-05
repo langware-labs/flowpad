@@ -6,6 +6,7 @@ Supports discovery of .md files across a project directory.
 
 from __future__ import annotations
 
+import functools
 import os
 import re
 import uuid
@@ -56,27 +57,57 @@ def _find_docs_subdirs(root: Path) -> list[Path]:
     return found
 
 
-def _doc_search_dirs() -> list[Path]:
-    """Return directories to scan for doc .md files.
+def _doc_search_dirs() -> tuple[Path, ...]:
+    """Return resolved directories to scan for doc .md files.
 
     Scans user-level (~/.claude/docs), all known Claude projects
     (every 'docs' directory anywhere in each project tree, plus
     <project>/docs and <project>/.claude/docs for back-compat),
     cwd-level, and any extra dirs from FLOWPAD_DOC_DIRS
-    (colon-separated).
+    (colon-separated). Returned paths are pre-resolved so callers
+    can compare prefixes without per-call ``.resolve()``.
+
+    Memoised on a fingerprint of the inputs (Claude projects list,
+    cwd, FLOWPAD_DOC_DIRS) so a new Claude project or env-var change
+    transparently invalidates the cache without a manual hook.
     """
+    return _doc_search_dirs_cached(_doc_search_dirs_fingerprint())
+
+
+def _doc_search_dirs_fingerprint() -> tuple:
+    """Cheap snapshot of every input that affects ``_doc_search_dirs``.
+
+    One ``iterdir`` + a ``getcwd`` + an ``environ`` lookup — sub-millisecond
+    and orders of magnitude cheaper than the cached body.
+    """
+    try:
+        proj_dir = get_instance_settings().claude_projects_dir
+        projects = (
+            tuple(sorted(p.name for p in proj_dir.iterdir()))
+            if proj_dir.is_dir() else ()
+        )
+    except OSError:
+        projects = ()
+    return (os.getcwd(), os.environ.get("FLOWPAD_DOC_DIRS", ""), projects)
+
+
+@functools.lru_cache(maxsize=4)
+def _doc_search_dirs_cached(_fingerprint: tuple) -> tuple[Path, ...]:
     dirs: list[Path] = []
     seen: set[Path] = set()
 
     def _add(p: Path) -> None:
-        rp = p.resolve()
-        if rp not in seen and rp.is_dir():
-            seen.add(rp)
-            dirs.append(p)
+        try:
+            rp = p.resolve()
+        except OSError:
+            return
+        if rp in seen or not rp.is_dir():
+            return
+        seen.add(rp)
+        dirs.append(rp)
 
     _add(get_instance_settings().claude_docs_dir)
 
-    # SDK-shipped system docs under the Flowpad Assistant system project.
     try:
         from flow_sdk.config import flowpad_assistant_project_root
         _add(flowpad_assistant_project_root() / "docs")
@@ -100,7 +131,7 @@ def _doc_search_dirs() -> list[Path]:
         if extra.strip():
             _add(Path(extra.strip()))
 
-    return dirs
+    return tuple(dirs)
 
 
 _SYSTEM_PID_CACHE: dict[str, str | None] = {}
@@ -138,8 +169,8 @@ def _resolve_system_project_id_for_path(path: Path) -> str | None:
 def _resolve_vault_root(path: Path) -> str | None:
     """Return the canonical abs path of the scan root that owns `path`, if any.
 
-    Walks _doc_search_dirs() looking for the first root that is an ancestor of
-    `path.resolve()`. Resolved before comparison so symlinks agree.
+    Roots from ``_doc_search_dirs`` are pre-resolved, so symlink agreement
+    only requires resolving the target once.
     """
     try:
         target = path.resolve()
@@ -147,14 +178,10 @@ def _resolve_vault_root(path: Path) -> str | None:
         return None
     for root in _doc_search_dirs():
         try:
-            root_resolved = root.resolve()
-        except OSError:
-            continue
-        try:
-            target.relative_to(root_resolved)
+            target.relative_to(root)
         except ValueError:
             continue
-        return str(root_resolved)
+        return str(root)
     return None
 
 

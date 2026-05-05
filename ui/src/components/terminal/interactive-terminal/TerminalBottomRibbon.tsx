@@ -3,7 +3,6 @@ import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
 import { FileText } from 'lucide-react';
-import { QueueButton } from './QueueButton';
 import type { QueueEntry, QueueState } from '@src/hooks/useAgenticQueue';
 import { SIDE_TABS, SideTabId, type SideTabId as SideTabIdType } from './side-windows';
 
@@ -21,32 +20,9 @@ interface TerminalBottomRibbonProps {
   onOpenLastPlan?: () => void;
 }
 
-const QueueNextLabel: React.FC<{ queue: QueueState }> = ({ queue }) => {
-  const next = (queue.entries ?? [])[0];
-  const text = next?.queue_entry_data.prompt ?? '';
-  const isEmpty = !text;
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="max-w-[160px] cursor-default truncate text-[11px] text-muted-foreground/70 select-none">
-          {isEmpty ? 'No pending prompts' : text}
-        </span>
-      </TooltipTrigger>
-      {!isEmpty && (
-        <TooltipContent side="top" className="max-w-xs whitespace-pre-wrap break-words">
-          {text}
-        </TooltipContent>
-      )}
-    </Tooltip>
-  );
-};
-
 const RIBBON_TABS: SideTabIdType[] = [
-  SideTabId.Shell,
   SideTabId.Git,
   SideTabId.Prompts,
-  SideTabId.Queue,
   SideTabId.Files,
 ];
 
@@ -70,17 +46,6 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
         <span
           className={`inline-flex h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`}
         />
-        {queue && onQueueAdd && onQueueRemove && (
-          <TooltipProvider delayDuration={400}>
-            <QueueButton
-              queue={queue}
-              onAdd={onQueueAdd}
-              onRemove={onQueueRemove}
-              onOpenPanel={() => onOpenSideTab(SideTabId.Queue)}
-            />
-            <QueueNextLabel queue={queue} />
-          </TooltipProvider>
-        )}
         {hasLastPlan && onOpenLastPlan && (
           <TooltipProvider delayDuration={400}>
             <Tooltip>

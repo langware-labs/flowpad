@@ -13,6 +13,8 @@ import { User } from '../entities/user';
 import { createCloudLoginFailedWarning } from '../models/UserWarning';
 import type { OAuthMessage } from '../websocket';
 import { OAUTH_PROVIDERS } from './oauth/oauth-service';
+import { secretApprovalGate } from './secretApprovalGate';
+import { secretsService } from './secrets-service';
 
 // Lazy imports break the cycle: context.ts can no longer import this module
 // at top level (it does dynamic-import for the cloudLogout delegate only).
@@ -69,6 +71,10 @@ class CloudManager extends EventEmitter {
   }
 
   async login(): Promise<CloudLoginResult> {
+    if (!(await this._ensureSecretsEnabled())) {
+      throw new Error('Login canceled');
+    }
+
     if (this._pending) {
       this._pending.off();
       this._pending.reject(new Error('superseded by new login attempt'));
@@ -119,6 +125,23 @@ class CloudManager extends EventEmitter {
   get cloudUrl() { return this._cloudUrl; }
 
   // --- internals ---
+
+  private async _ensureSecretsEnabled(): Promise<boolean> {
+    try {
+      const initial = await secretsService.isEnabled();
+      if (initial?.enabled) return true;
+    } catch {
+      // probe failed (offline/server down) — fall through to the dialog
+    }
+    const approved = await secretApprovalGate.request();
+    if (!approved) return false;
+    try {
+      const verified = await secretsService.isEnabled();
+      return Boolean(verified?.enabled);
+    } catch {
+      return false;
+    }
+  }
 
   private async _onOAuthMessage(msg: OAuthMessage) {
     if (msg.oauth_request_id !== OAUTH_PROVIDERS.FLOWPAD_CLOUD) return;
