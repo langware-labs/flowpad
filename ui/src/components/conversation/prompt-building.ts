@@ -90,12 +90,26 @@ export async function buildMergedPrompt(flowMessage: FlowMessage): Promise<strin
   return [...inlineParts, ...promptFilePaths, ...fileContext].join('\n\n');
 }
 
-/** POST `approve-prompt` and refetch the FlowMessage so PROMPT.local_path / approved_by are populated. */
+/** POST `approve-prompt`, then refetch the FlowMessage and nudge cache subscribers
+ * so the approve-and-execute button re-evaluates immediately — don't wait for the
+ * backend's WS UPDATE round-trip (which has been observed to land late or miss
+ * `useEntity` consumers, leaving the button visible after a successful approve).
+ *
+ * `invalidateCacheByTypeId` drops the stale entry so `getByTypeId` re-fetches
+ * from the server (with the new `approved_by` populated and `local_path`
+ * resolved); `notifyEntityChanged` then ticks every watched query for the
+ * `flow_message` type so React subscribers re-render against the fresh data.
+ */
 export async function approveAndReload(messageId: string, attachmentIndex: number): Promise<FlowMessage | null> {
   const approveAction = new ActionInfo('approve-prompt', 'flow_message', messageId, 'POST');
   approveAction.bodyParameters = { attachment_index: attachmentIndex, approve_all: true };
   await dataManager.callAction(approveAction);
-  return dataManager
-    .getByTypeId<FlowMessage>(new TypeId(FlowMessage.type, messageId))
-    .catch(() => null);
+
+  const typeId = new TypeId(FlowMessage.type, messageId);
+  dataManager.invalidateCacheByTypeId(typeId);
+  const fm = await dataManager.getByTypeId<FlowMessage>(typeId).catch(() => null);
+  if (fm) {
+    dataManager.notifyEntityChanged(fm);
+  }
+  return fm;
 }
