@@ -666,8 +666,9 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
         return ApiFailResponse(message=f"Conversation not found: {fm.conversation_id}")
 
     task: Optional[Task] = None
-    if conv.task_id:
-        task = await Task.get_one({"id": conv.task_id})
+    task_typeid = conv.first_context_of_type(BuiltinEntityType.TASK.value)
+    if task_typeid:
+        task = await Task.get_one({"id": task_typeid.id})
 
     conv = await _append_message_to_conversation(
         conv=conv,
