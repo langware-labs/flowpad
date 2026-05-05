@@ -14,7 +14,7 @@ class ConfigKey(Enum):
     """Enumerated config keys with their default values."""
     FLOWPAD_API_SERVER_HOST = "localhost:8000"
     LOGIN_URL = "localhost:5173"
-    POST_LOGIN_TIMEOUT = "30"
+    LOGIN_CALLBACK_TIMEOUT = "30"
 
 
 def load_config():
