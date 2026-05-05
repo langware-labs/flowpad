@@ -38,6 +38,7 @@ from flow_sdk.server import FlowServer
 
 from .routes import (
     assets_router,
+    auth_router,
     cloud_router,
     chat_router,
     debug_router,
@@ -151,6 +152,7 @@ async def _shutdown_extras():
 
 
 server = FlowServer()
+server.add_router(auth_router)
 server.add_router(cloud_router)
 server.add_router(hooks_router)
 server.add_router(chat_router)
@@ -272,9 +274,9 @@ def start_server(port: int):
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
 
-def wait_for_post_login(timeout_sec: int = None):
+def wait_for_login_callback(timeout_sec: int = None):
     """
-    Wait for the post_login endpoint to be called.
+    Wait for the login_callback endpoint to be called.
     Runs the server in a separate thread and waits for login.
 
     Args:
@@ -292,7 +294,7 @@ def wait_for_post_login(timeout_sec: int = None):
 
     # Get timeout from config if not provided
     if timeout_sec is None:
-        timeout_str = get_config_value("post_login_timeout")
+        timeout_str = get_config_value("login_callback_timeout")
         timeout_sec = int(timeout_str) if timeout_str else 30
 
     port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
