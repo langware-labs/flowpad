@@ -33,8 +33,15 @@ export function useProjectGate(opts: {
   taskId?: string | null;
   /** Optional pass-through for the remote→local mapping-table flow. */
   remoteProjectId?: string | null;
+  /** When false, `ensureMapped` queues the continuation but holds the dialog
+   *  closed. The watcher below opens it when this flips to true (still
+   *  unmapped). Lets task-mapping callers defer the picker until the
+   *  remote→local mapping table has finished loading — otherwise a saved
+   *  mapping would auto-apply silently mid-frame and the picker would have
+   *  flashed open for nothing. Defaults to true (no deferral). */
+  ready?: boolean;
 }) {
-  const { mapped, apply, trigger, remoteProjectName, taskId, remoteProjectId } = opts;
+  const { mapped, apply, trigger, remoteProjectName, taskId, remoteProjectId, ready = true } = opts;
   const [open, setOpen] = useState(false);
   const continuationRef = useRef<(() => void | Promise<void>) | null>(null);
 
@@ -45,9 +52,9 @@ export function useProjectGate(opts: {
         return;
       }
       continuationRef.current = continuation;
-      setOpen(true);
+      if (ready) setOpen(true);
     },
-    [mapped],
+    [mapped, ready],
   );
 
   // Watch for unmapped → mapped while a continuation is pending. Defer one
@@ -63,6 +70,14 @@ export function useProjectGate(opts: {
     }, 0);
     return () => window.clearTimeout(handle);
   }, [mapped]);
+
+  // Loading-window open: the caller invoked `ensureMapped` while `ready` was
+  // false (mapping table still loading). Once it flips to true, if we're
+  // still unmapped, open the picker.
+  useEffect(() => {
+    if (!ready || mapped || !continuationRef.current) return;
+    setOpen(true);
+  }, [ready, mapped]);
 
   const dialogProps = {
     open,

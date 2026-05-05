@@ -38,7 +38,14 @@ export interface ConversationParticipant {
 }
 
 export interface IConversation extends IEntity {
+  /** Local Project FK — receiver picks via the mapping dialog; sender's own
+   *  project at send time. Null until the receiver maps. */
   project_id?: string | null;
+  /** Cross-machine identity of the *sender's* project. Drives the per-machine
+   *  remote→local mapping table. Null on local-origin conversations. */
+  remote_project_id?: string | null;
+  /** Display name of the sender's project (for the mapping dialog copy). */
+  remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;  // JSON-encoded RawConversationPointer[]
   participants?: ConversationParticipant[];
@@ -50,6 +57,8 @@ export interface IConversation extends IEntity {
 @registerEntity
 export class Conversation extends APIEntity<Conversation> implements IConversation {
   project_id?: string | null;
+  remote_project_id?: string | null;
+  remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;
   participants?: ConversationParticipant[];
@@ -58,6 +67,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   constructor(entity: Partial<IConversation> = {}) {
     super(entity);
     this.project_id = entity.project_id;
+    this.remote_project_id = entity.remote_project_id;
+    this.remote_project_name = entity.remote_project_name;
     this.message_count = entity.message_count;
     this.message_ids = entity.message_ids;
     this.participants = entity.participants;

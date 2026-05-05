@@ -34,6 +34,8 @@ async def ensure_conversation_entity(
     parent_typeid,
     *,
     project_id: Optional[str] = None,
+    remote_project_id: Optional[str] = None,
+    remote_project_name: Optional[str] = None,
     someone_typeid: Optional[str] = None,
 ) -> Conversation:
     """Idempotent: return the local Conversation entity, creating it if missing.
@@ -45,12 +47,22 @@ async def ensure_conversation_entity(
 
     ``parent_typeid`` may be a ``TypeId`` for the Task (preferred) or None when
     this conversation is project-scoped (uses ``project_id`` instead).
+
+    ``remote_project_id`` / ``remote_project_name`` are the cross-machine
+    identity of the *sender's* project. Stamped on receive so the per-machine
+    remote→local mapping table can route future messages from the same remote
+    project to the same local Project without re-prompting. Null on
+    local-origin conversations.
     """
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
         payload: dict = {"id": conversation_id}
         if project_id:
             payload["project_id"] = project_id
+        if remote_project_id:
+            payload["remote_project_id"] = remote_project_id
+        if remote_project_name:
+            payload["remote_project_name"] = remote_project_name
         if parent_typeid is not None:
             payload["context_entities"] = [str(parent_typeid)]
         conv = Conversation.model_validate(payload)

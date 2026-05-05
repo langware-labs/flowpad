@@ -3,6 +3,8 @@ import {
   ConversationParticipant,
   createHubConversation,
   createProjectConversation,
+  dataManager,
+  TypeId,
 } from '@sdk';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
@@ -87,6 +89,26 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
           initial_text: initialMessage.trim() || undefined,
           sender_name: senderName.trim() || null,
         });
+        // Feature 2: persist the user's chosen project on the conversation so
+        // the footer reads it on refresh, and so Approve & Execute on incoming
+        // prompts skips the picker. The hub-mirrored creation path doesn't
+        // accept a project_id directly, so we stamp it on the local entity
+        // after materialisation. The chosen project is whichever was selected
+        // in the dropdown (defaulted to the active project when the dialog
+        // opened).
+        if (projectId) {
+          try {
+            const conv = await dataManager
+              .getByTypeId<Conversation>(new TypeId(Conversation.type, result.conversation_id))
+              .catch(() => null);
+            if (conv && conv.project_id !== projectId) {
+              conv.project_id = projectId;
+              await conv.save();
+            }
+          } catch {
+            // non-fatal — the user can re-pick from the gate or status bar.
+          }
+        }
         navigation.openDock(DockPointer.forConversation(result.conversation_id));
         onClose();
       } else {

@@ -7,7 +7,8 @@
  *     it's mapped to via task.project_id) so the page renders warm
  *     instead of flashing through "Loading task context…".
  *   - Writes `dataContext`:
- *       - CurrentProjectTypeId  — from task.project_id when known
+ *       - CurrentProjectTypeId  — from task.project_id, or conv.project_id
+ *                                 when there's no task
  *       - CurrentActiveEntityTypeId — to the conversation itself
  *       - workdir              — from task.project_root when known
  *
@@ -60,7 +61,13 @@ export async function loadConversation(conversationId: string): Promise<Conversa
     task = await dataManager.getByTypeId<Task>(taskTypeId).catch(() => null);
   }
 
-  const projectId = task?.project_id ?? undefined;
+  // Task wins when present (it owns project_root for cwd). Otherwise fall
+  // through to the conversation's own project_id — task-less conversations
+  // (project-scoped chats, hub-direct convs) carry their mapping there. Without
+  // this fallback, refreshing a task-less conversation drops ctx.project to
+  // null and the StatusBar renders the red "Select Project" pill even though
+  // the conversation already knows which local Project it belongs to.
+  const projectId = task?.project_id ?? conv.project_id ?? undefined;
   const projectRoot = task?.project_root ?? undefined;
 
   // Active entity = the conversation. Same pattern as the session view's
