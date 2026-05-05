@@ -666,8 +666,9 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
         return ApiFailResponse(message=f"Conversation not found: {fm.conversation_id}")
 
     task: Optional[Task] = None
-    if conv.task_id:
-        task = await Task.get_one({"id": conv.task_id})
+    task_typeid = conv.first_context_of_type(BuiltinEntityType.TASK.value)
+    if task_typeid:
+        task = await Task.get_one({"id": task_typeid.id})
 
     conv = await _append_message_to_conversation(
         conv=conv,
@@ -1042,7 +1043,21 @@ async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
                     m_created = m.get("created_date") or ""
                     if m_created and m_created <= last_sync:
                         continue
-                    if await _materialize_remote_flow_message(m, conv.id, someone_typeid):
+                    fm_id = (m.get("id") or "").strip()
+                    attachment_filename = (m.get("attachment_filename") or "").strip()
+                    materialized = False
+                    if fm_id and attachment_filename:
+                        # Bundle delivery: download + unpack writes the FM,
+                        # appends the conversation pointer, and lands all
+                        # FILE/PROMPT blobs in entity storage atomically —
+                        # same path task-bound replies use.
+                        materialized = await _download_and_unpack_bundle(fm_id, attachment_filename)
+                    if not materialized:
+                        # No bundle on hub (text-only message or upload failed):
+                        # fall back to metadata-only mirror so the message still
+                        # surfaces in the conversation.
+                        materialized = bool(await _materialize_remote_flow_message(m, conv.id, someone_typeid))
+                    if materialized:
                         fm_count += 1
                     if m_created and m_created > new_high_water:
                         new_high_water = m_created
