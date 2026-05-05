@@ -114,6 +114,13 @@ class _ServerState:
         """Check if cached result is still valid."""
         if self._discovery_result is None:
             return False
+        # Don't cache negative results: if the previous discovery couldn't
+        # confirm the server is running, always retry. Otherwise a startup
+        # race (server.json written before health endpoint binds) poisons
+        # the cache permanently — the mtime never changes again, so the
+        # cache stays valid and notifications get silently dropped forever.
+        if self._discovery_result.status != FlowpadStatus.RUNNING:
+            return False
         # Invalidate if port file changed
         current_mtime = self._get_port_file_mtime()
         if current_mtime != self._port_file_mtime:
@@ -226,7 +233,7 @@ def check_server_health(server_info: FlowpadServerInfo, timeout: float = 2.0) ->
     try:
         req = urllib.request.Request(health_url, method="GET")
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.worker_status == 200
+            return resp.status == 200
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError):
         return False
 

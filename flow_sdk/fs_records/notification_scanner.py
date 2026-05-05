@@ -1,8 +1,8 @@
 """Scanner for incoming cross-user notifications.
 
 On the RECIPIENT side: walks known Claude project roots looking for
-tasks/*/manifest.json files that were committed by the sender. If the
-manifest identifies this user as the recipient (via sender + notification
+tasks/*/header.json files that were committed by the sender. If the
+header identifies this user as the recipient (via sender + notification
 data), creates the Task, Spec, and Conversation entities in the local DB.
 
 Called on: server startup, after git_pull, on-demand via API.
@@ -43,7 +43,7 @@ async def scan_incoming_notifications(local_user_id: str) -> list[str]:
         for task_dir in sorted(tasks_dir.iterdir()):
             if not task_dir.is_dir() or task_dir.name == "spec":
                 continue
-            manifest_file = task_dir / "manifest.json"
+            manifest_file = task_dir / "header.json"
             if not manifest_file.exists():
                 continue
             try:
@@ -73,7 +73,7 @@ async def scan_task_in_repo(local_user_id: str, repo_path: str, task_id: str) ->
     for task_dir in sorted(tasks_dir.iterdir()):
         if not task_dir.is_dir() or task_dir.name == "spec":
             continue
-        manifest_file = task_dir / "manifest.json"
+        manifest_file = task_dir / "header.json"
         if not manifest_file.exists():
             continue
         try:
@@ -145,17 +145,18 @@ async def _process_manifest(
     from flow_sdk.utils.git import git_remote_url
     project_url = git_remote_url(str(project_root))
 
-    # Conversation.project_id is intentionally left null on receive; the
-    # picker stamps it (alongside task.project_id) when the user maps. Older
-    # code computed a deterministic uuid5 from `project_root` here, which
-    # produced ids that 404'd because no Project entity actually existed at
-    # that uuid.
+    # Conversation.project_id (the *local* mapped project) is intentionally
+    # left null on receive — the picker stamps it when the user maps. The
+    # *remote* provenance (sender's project_id / name) is stamped here so the
+    # mapping gate can route subsequent messages without re-prompting.
     conv = await _create_conversation_from_disk(
         task_dir=task_dir,
         task_id=task_id,
         conversation_id=conversation_id,
         owner_typeid=owner_typeid,
         project_id=None,
+        remote_project_id=remote_project_id,
+        remote_project_name=remote_project_name,
     )
 
     # --- Create Task entity ---
@@ -171,8 +172,6 @@ async def _process_manifest(
         "branch": manifest_branch,
         "sender_name": sender_name,
         "sender_email": data.get("sender_email") or "",
-        "remote_project_id": remote_project_id,
-        "remote_project_name": remote_project_name,
         "spec_type": spec_type_meta,
     })
     task = await task.save(owner_typeid)
@@ -231,92 +230,70 @@ async def _create_conversation_from_disk(
     owner_typeid,
     notify: bool = True,
     project_id: str | None = None,
+    remote_project_id: str | None = None,
+    remote_project_name: str | None = None,
 ) -> Conversation | None:
     """Create a Conversation entity from conversation.jsonl on disk (recipient side).
 
-    Set notify=False when called from unpack_bundle so the UI doesn't refetch the
-    conversation (and try to load referenced FMs) before the FMs themselves are saved.
+    Funnels through ``ensure_conversation_entity`` so sender and recipient
+    paths share one creation routine. Runs ``sync_to_db`` so ``message_ids``
+    / ``message_count`` reflect what's on disk.
+
+    ``task_dir`` is unused (the canonical jsonl lives under records-data
+    root, not the task dir). It is preserved as a parameter for callsite
+    back-compat.
+
+    Set notify=False when called from unpack_bundle so the UI doesn't refetch
+    the conversation (and try to load referenced FMs) before the FMs
+    themselves are saved.
     """
+    from flow_sdk.app.actions.materialize_flow_message import ensure_conversation_entity
     from flow_sdk.fs_records.conversation_record import ConversationRecord
+    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+    from flow_sdk.fs_store.type_id import TypeId
 
-    jsonl_path = task_dir / "conversation.jsonl"
+    parent_typeid = TypeId(type=BuiltinEntityType.TASK.value, id=task_id) if task_id else None
+    conv_id = conversation_id or Conversation.allocate_id({"task_id": task_id})
+    conv = await ensure_conversation_entity(
+        conv_id,
+        parent_typeid=parent_typeid,
+        project_id=project_id,
+        remote_project_id=remote_project_id,
+        remote_project_name=remote_project_name,
+        someone_typeid=owner_typeid,
+    )
 
-    # Read pointer lines from jsonl (each line: {"message_id": uuid, "timestamp": ISO})
-    pointers: list[dict] = []
-    if jsonl_path.exists():
-        try:
-            for line in jsonl_path.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if line:
-                    pointers.append(json.loads(line))
-        except Exception as e:
-            logger.warning(f"notification_scanner: could not read {jsonl_path}: {e}")
-
-    # Ensure the jsonl file exists (create empty if not)
-    if not jsonl_path.exists():
-        jsonl_path.parent.mkdir(parents=True, exist_ok=True)
-        jsonl_path.touch()
-
-    conv = Conversation.model_validate({
-        "task_id": task_id,
-        "project_id": project_id,
-        "data_path": str(jsonl_path),
-        "message_count": len(pointers),
-        "message_ids": json.dumps(pointers) if pointers else None,
-    })
-    if conversation_id:
-        conv.id = conversation_id
-    else:
-        conv.id = Conversation.allocate_id(conv.model_dump())
-
-    conv = await conv.save(owner_typeid, notify=notify)
-
-    # Record-level parent-child composition (conversation → task via parent_ref)
-    rec = ConversationRecord.from_jsonl(jsonl_path, task_id, conv.id)
-    rec.save()
-    # Bidirectional: add conversation to task's children_refs
-    rec.link_to_parent_record()
-
-    return conv
+    rec = ConversationRecord.from_jsonl(
+        ConversationRecord.default_jsonl_path(conv.id), task_id, conv.id
+    )
+    await rec.sync_to_db(notify=notify)
+    return await Conversation.get_one({"id": conv.id})
 
 
 async def _sync_conversation(task: Task, task_dir: Path) -> None:
     """For an already-imported task, sync conversation.jsonl → Conversation entity."""
+    from flow_sdk.fs_records.conversation_record import ConversationRecord
+
     conv_typeid = task.first_context_of_type("conversation")
     if not conv_typeid:
         return
 
     conv = await Conversation.get_one({"id": conv_typeid.id})
-    if not conv or not conv.data_path:
+    if not conv:
         return
 
-    jsonl_path = Path(conv.data_path)
+    jsonl_path = ConversationRecord.default_jsonl_path(conv.id)
     if not jsonl_path.exists():
         return
 
-    pointers: list[dict] = []
-    try:
-        for line in jsonl_path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line:
-                pointers.append(json.loads(line))
-    except Exception:
-        return
-
-    new_message_ids = json.dumps(pointers) if pointers else None
-    if new_message_ids == conv.message_ids and len(pointers) == conv.message_count:
-        return  # nothing changed
-
-    local_user = await User.get_one({"uname": "local"})
-    owner_typeid = local_user.typeid if local_user else None
-
-    conv.message_ids = new_message_ids
-    conv.message_count = len(pointers)
-    await conv.save(owner_typeid)
+    rec = ConversationRecord.from_jsonl(jsonl_path, task.id, conv.id)
+    await rec.sync_to_db()
 
     try:
         import asyncio as _asyncio
         from flow_sdk.app.actions.flow_message_action import handle_inbox_fetch
+        local_user = await User.get_one({"uname": "local"})
+        owner_typeid = local_user.typeid if local_user else None
         if owner_typeid is not None:
             _asyncio.ensure_future(handle_inbox_fetch(str(owner_typeid)))
     except Exception as e:

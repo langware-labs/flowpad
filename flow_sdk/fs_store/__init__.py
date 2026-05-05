@@ -11,6 +11,7 @@ from .fs_ref import TextFsRef as TextFsRef
 from .json_file_record_store import JsonFileRecordStore as JsonFileRecordStore
 from .json_file_record_store import JsonFileRecordStore as SourceFileRecordList  # noqa: F401 — legacy alias
 from .json_file_record_store import _escape_json_pointer as _escape_json_pointer
+from .pointer import Pointer as Pointer
 from .property_record import PropertyRecord as PropertyRecord
 from .record_field import RecordField as RecordField
 from .provider import FSProvider as FSProvider
