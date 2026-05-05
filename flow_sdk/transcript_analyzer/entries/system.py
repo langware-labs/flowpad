@@ -33,3 +33,6 @@ class SystemEntry(TranscriptEntry):
     def to_flow_data(self) -> list[FlowData]:
         # System / progress events are not surfaced in the FlowData stream.
         return []
+
+    def to_dict(self) -> dict:
+        return {**super().to_dict(), "subtype": self.subtype, "payload": self.payload}

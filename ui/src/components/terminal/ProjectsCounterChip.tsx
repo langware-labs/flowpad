@@ -1,8 +1,7 @@
-import { Project } from '@sdk';
+import { ContextEntitiesEnum, dataContext, Project } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useActiveTerminals, type TerminalTab } from '@src/hooks/useActiveTerminals';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Layers } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
@@ -29,7 +28,6 @@ function resolveProjectName(projectId: string): string {
 export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ currentProjectId }) => {
   const [open, setOpen] = useState(false);
   const { tabs } = useActiveTerminals({});
-  const { navigation } = useDockNavigation();
 
   const { rows, total } = useMemo(() => {
     const byProject = new Map<string, TerminalTab[]>();
@@ -84,11 +82,18 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ curren
     );
   }
 
-  const handleSelect = (row: Row) => {
-    const firstTab = row.tabs[0];
-    const pointer = firstTab?.shell?.dockPointer;
-    if (pointer) navigation.openDockPointer(pointer);
+  const handleSelect = async (row: Row) => {
     setOpen(false);
+    const project = Project.getByIdFromCache<Project>(row.projectId);
+    if (!project) return;
+    // Mirror the footer's "Switch Project" flow: pure context update, no
+    // navigation. The tab strip's per-project filter re-renders to the new
+    // project's tabs automatically.
+    await dataContext.setContextEntityTypeId(
+      ContextEntitiesEnum.CurrentProjectTypeId,
+      project.typeId,
+    );
+    dataContext.setWorkdir(project.fs_storage_mount_path ?? null);
   };
 
   return (

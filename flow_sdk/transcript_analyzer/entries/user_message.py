@@ -32,3 +32,6 @@ class UserMessageEntry(TranscriptEntry):
                 "role": "user",
             },
         )]
+
+    def to_dict(self) -> dict:
+        return {**super().to_dict(), "text": self.text}

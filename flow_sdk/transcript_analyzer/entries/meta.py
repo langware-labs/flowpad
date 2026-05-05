@@ -25,3 +25,6 @@ class MetaEntry(TranscriptEntry):
 
     def to_flow_data(self) -> list[FlowData]:
         return []
+
+    def to_dict(self) -> dict:
+        return {**super().to_dict(), "meta_kind": self.meta_kind, "payload": self.payload}

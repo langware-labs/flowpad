@@ -50,3 +50,13 @@ class ToolResultEntry(TranscriptEntry):
             created_time=self.timestamp,
             attributes=attrs,
         )]
+
+    def to_dict(self) -> dict:
+        return {
+            **super().to_dict(),
+            "tool_use_id": self.tool_use_id,
+            "tool_output": self.tool_output,
+            "is_error": self.is_error,
+            "file_path": self.file_path,
+            "tool_name": self.tool_name,
+        }

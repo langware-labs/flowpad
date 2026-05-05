@@ -43,6 +43,7 @@ class TranscriptEntry:
         timestamp: str,
         worker: str,
         parent_id: str | None = None,
+        is_sidechain: bool = False,
         raw_data: dict | None = None,
     ) -> None:
         self.id = id
@@ -50,6 +51,10 @@ class TranscriptEntry:
         self.timestamp = timestamp
         self.worker = worker
         self.parent_id = parent_id
+        # ``is_sidechain`` distinguishes sub-agent (Task tool) lines from
+        # main-session lines. Defaults to False so workers without a
+        # sidechain concept (codex stream-events) don't have to populate it.
+        self.is_sidechain = is_sidechain
         # ``raw_data`` is None for known typed entries (parser populated only
         # for ``UnknownEntry``). Existing typed entries extract whatever they
         # need at parse time.
@@ -63,6 +68,23 @@ class TranscriptEntry:
         tool_use + thinking) yields multiple ``FlowData`` items in one shot.
         """
         return []
+
+    def to_dict(self) -> dict:
+        """Serialize the envelope fields for REST round-trip.
+
+        Subclasses override to add their specific fields. The TS analyzer
+        mirror's ``fromJson`` factory discriminates on ``kind`` and
+        re-instantiates the right subclass from this payload.
+        """
+        return {
+            "kind": self.kind.value,
+            "id": self.id,
+            "session_id": self.session_id,
+            "timestamp": self.timestamp,
+            "worker": self.worker,
+            "parent_id": self.parent_id,
+            "is_sidechain": self.is_sidechain,
+        }
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(id={self.id!r}, kind={self.kind.value})"

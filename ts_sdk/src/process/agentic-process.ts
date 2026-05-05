@@ -775,13 +775,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /**
    * Fetch the plan as a Markdown entity.
    *
-   * Server-side resolves the plan file path from ``plan_path`` (preferred)
-   * or by scanning the transcript for the latest ``ExitPlanMode.planFilePath``,
-   * reads the file, builds a saved+indexed ``Markdown`` entity, and returns
-   * it. Returns ``null`` if no plan has been produced yet.
+   * Calls the ``transcript/plan`` sub-action — the server resolves the
+   * plan file path (existence-gated), persists ``plan_path``, indexes the
+   * file as a Markdown record, and returns it. Returns ``null`` if no
+   * plan has been produced yet.
    */
   async getPlan(): Promise<import('../entities/markdown.js').Markdown | null> {
-    const actionInfo = new ActionInfo('get-plan', AgenticProcess.type, this.id, 'POST');
+    const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
+    actionInfo.subpath = 'plan';
     const response = await dataManager.callAction<
       unknown,
       { markdown?: Record<string, unknown> | null; plan_path?: string | null }
@@ -791,6 +792,32 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return dataManager.updateEntityFromJson<import('../entities/markdown').Markdown>(
       response.markdown as Record<string, unknown>,
     );
+  }
+
+  /**
+   * Fetch the canonical user-prompt list from the JSONL transcript.
+   *
+   * Calls ``transcript/prompts`` — the server walks the parsed transcript
+   * and returns ``UserMessageEntry``-shaped dicts. Filters: drop sub-agent
+   * (``is_sidechain``) lines, drop empty/whitespace text, drop the
+   * ``[Request interrupted by user for tool use]`` synthetic. Hydrates
+   * each entry via the analyzer's ``fromJson`` factory.
+   */
+  async getPrompts(): Promise<import('../transcript-analyzer').UserMessageEntry[]> {
+    const { fromJson, UserMessageEntry } = await import('../transcript-analyzer');
+    const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
+    actionInfo.subpath = 'prompts';
+    const response = await dataManager.callAction<
+      unknown,
+      { prompts?: Record<string, unknown>[] | null }
+    >(actionInfo);
+    const raw = response?.prompts ?? [];
+    const out: import('../transcript-analyzer').UserMessageEntry[] = [];
+    for (const r of raw) {
+      const entry = fromJson(r);
+      if (entry instanceof UserMessageEntry) out.push(entry);
+    }
+    return out;
   }
 
   // ─────────────────────────────────────────────────────────────────────────

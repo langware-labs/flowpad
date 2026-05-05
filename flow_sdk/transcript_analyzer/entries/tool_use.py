@@ -43,3 +43,11 @@ class ToolUseEntry(TranscriptEntry):
                 "tool-name": self.tool_name,
             },
         )]
+
+    def to_dict(self) -> dict:
+        return {
+            **super().to_dict(),
+            "tool_name": self.tool_name,
+            "tool_use_id": self.tool_use_id,
+            "tool_input": self.tool_input,
+        }

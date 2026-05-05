@@ -7,7 +7,7 @@ export interface PromptEntry {
   absRow: number | null;
   text: string;
   time: string;
-  source: 'annotation' | 'trace';
+  source: 'annotation' | 'trace' | 'transcript';
 }
 
 interface PromptIndexPanelProps {
@@ -58,9 +58,11 @@ const PromptItem: React.FC<{
           <div className="flex items-start gap-1.5">
             <span className={cn(
               'mt-0.5 shrink-0 text-[9px] font-bold uppercase',
-              entry.source === 'annotation' ? 'text-lime-400' : 'text-sky-400',
+              entry.source === 'annotation' && 'text-lime-400',
+              entry.source === 'trace' && 'text-sky-400',
+              entry.source === 'transcript' && 'text-amber-400',
             )}>
-              {entry.source === 'annotation' ? 'A' : 'T'}
+              {entry.source === 'annotation' ? 'A' : entry.source === 'trace' ? 'T' : 'P'}
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-1">
