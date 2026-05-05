@@ -1,141 +1,126 @@
-import { type ProjectItem } from '@sdk';
-import { Check, FolderOpen, Loader2, Search } from 'lucide-react';
+import { Loader2, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-/**
- * Props for the ProjectSelector component
- */
+export interface ProjectSelectorItem {
+  /** Stable identifier the consumer cares about (encoded_name, project id, etc). */
+  id: string;
+  name: string;
+  /** Full filesystem path, shown as the row's sub-line. */
+  path?: string;
+  /** ISO timestamp used for sorting and the "ago" label. */
+  modifiedAt?: string | null;
+}
+
 export interface ProjectSelectorProps {
-  /** List of projects to display */
-  projects: ProjectItem[];
-  /** Currently selected project's encoded_name, or null for none */
-  selectedEncodedName: string | null;
-  /** Callback when a project is selected (null to deselect) */
-  onSelect: (encodedName: string | null) => void;
-  /** Whether the projects are loading */
+  projects: ProjectSelectorItem[];
+  selectedId: string | null;
+  /** Called with the picked id, or null when the current selection is toggled off. */
+  onSelect: (id: string | null) => void;
   isLoading?: boolean;
+  /** Override the empty-state copy (e.g. inside a modal). */
+  emptyMessage?: string;
+}
+
+function timeAgo(iso?: string | null): string | null {
+  if (!iso) return null;
+  const diff = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(diff)) return null;
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return `${mo}mo ago`;
+  return `${Math.floor(mo / 12)}y ago`;
 }
 
 /**
- * ProjectSelector - A narrow list component for selecting projects
- *
- * Features:
- * - Filter input at top
- * - Scrollable project list sorted by session count
- * - Selected state indicator
- * - Click to select/deselect project
+ * Concise project picker: filter input on top, then a list of `name` rows with
+ * the full `path` as a sub-line and an "X ago" label aligned to the right.
+ * Sorted by `modifiedAt` desc. Renders no card chrome — the host controls the
+ * outer container (panel, modal, popover).
  */
-export function ProjectSelector({ projects, selectedEncodedName, onSelect, isLoading = false }: ProjectSelectorProps) {
+export function ProjectSelector({
+  projects,
+  selectedId,
+  onSelect,
+  isLoading = false,
+  emptyMessage,
+}: ProjectSelectorProps) {
   const [filter, setFilter] = useState('');
 
-  // Filter and sort projects: filter by name, sort by session_count descending
-  const filteredProjects = useMemo(() => {
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase();
     return projects
-      .filter((project) => project.name.toLowerCase().includes(filter.toLowerCase()))
-      .sort((a, b) => b.session_count - a.session_count);
+      .filter((p) => {
+        if (!q) return true;
+        return p.name.toLowerCase().includes(q) || (p.path ?? '').toLowerCase().includes(q);
+      })
+      .sort((a, b) => {
+        const ta = a.modifiedAt ? new Date(a.modifiedAt).getTime() : 0;
+        const tb = b.modifiedAt ? new Date(b.modifiedAt).getTime() : 0;
+        return tb - ta;
+      });
   }, [projects, filter]);
 
-  // Handle project click - toggle selection
-  const handleProjectClick = (project: ProjectItem) => {
-    if (selectedEncodedName === project.encoded_name) {
-      // Deselect if clicking the already selected project
-      onSelect(null);
-    } else {
-      onSelect(project.encoded_name);
-    }
-  };
-
   return (
-    <div className="flex h-full flex-col rounded-lg border border-border bg-card">
-      {/* Header */}
-      <div className="border-b border-border px-3 py-2">
-        <div className="flex items-center gap-2">
-          <FolderOpen className="h-4 w-4 text-muted-foreground" />
-          <span className="text-xs font-medium">Projects</span>
-          <span className="ml-auto rounded-full bg-muted px-1.5 text-[10px] text-muted-foreground">
-            {filteredProjects.length}
-          </span>
-        </div>
+    <div className="flex h-full flex-col gap-2">
+      <div className="relative shrink-0">
+        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <input
+          type="text"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          placeholder="Filter projects…"
+          className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+        />
       </div>
 
-      {/* Filter input */}
-      <div className="border-b border-border p-2">
-        <div className="relative">
-          <Search className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Filter..."
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="h-7 w-full rounded border border-border bg-background pl-7 pr-2 text-xs placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-          />
-        </div>
-      </div>
-
-      {/* Project list */}
-      <div className="flex-1 overflow-auto p-1">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {isLoading && projects.length === 0 ? (
-          <div className="flex items-center justify-center gap-2 py-4">
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-            <span className="text-[10px] text-muted-foreground">Loading...</span>
+          <div className="flex items-center justify-center gap-2 py-6">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Loading…</span>
           </div>
-        ) : filteredProjects.length === 0 ? (
-          <div className="py-4 text-center text-[10px] text-muted-foreground">
-            {filter ? 'No projects match filter' : 'No projects found'}
+        ) : filtered.length === 0 ? (
+          <div className="py-6 text-center text-xs text-muted-foreground">
+            {filter ? 'No matches' : emptyMessage ?? 'No projects'}
           </div>
         ) : (
           <div className="space-y-0.5">
-            {/* "All Projects" option */}
-            <button
-              onClick={() => onSelect(null)}
-              className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition-colors ${
-                selectedEncodedName === null
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
-            >
-              <div className="flex h-4 w-4 items-center justify-center">
-                {selectedEncodedName === null && <Check className="h-3 w-3" />}
-              </div>
-              <span className="flex-1 text-xs font-medium">All Projects</span>
-            </button>
-
-            {/* Individual projects */}
-            {filteredProjects.map((project) => {
-              const isSelected = selectedEncodedName === project.encoded_name;
-
+            {filtered.map((p) => {
+              const isSelected = selectedId === p.id;
+              const ago = timeAgo(p.modifiedAt);
               return (
                 <button
-                  key={project.id}
-                  onClick={() => handleProjectClick(project)}
-                  className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left transition-colors ${
-                    isSelected ? 'bg-primary/10 text-primary' : 'text-foreground hover:bg-muted'
+                  key={p.id}
+                  type="button"
+                  onClick={() => onSelect(isSelected ? null : p.id)}
+                  className={`flex w-full flex-col items-stretch gap-0.5 rounded px-2 py-1.5 text-left transition-colors ${
+                    isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted'
                   }`}
-                  title={project.cwd || project.name}
+                  title={p.path || p.name}
                 >
-                  <div className="flex h-4 w-4 items-center justify-center">
-                    {isSelected && <Check className="h-3 w-3" />}
+                  <div className="flex items-baseline gap-2">
+                    <span className="truncate text-sm font-medium">{p.name}</span>
+                    {ago && (
+                      <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{ago}</span>
+                    )}
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <span className="block truncate text-xs">{project.name}</span>
-                    <span className="block text-[10px] text-muted-foreground">
-                      {project.session_count} session{project.session_count !== 1 ? 's' : ''}
-                    </span>
-                  </div>
+                  {p.path && (
+                    <div className="truncate font-mono text-[10px] text-muted-foreground">
+                      {p.path}
+                    </div>
+                  )}
                 </button>
               );
             })}
           </div>
         )}
-      </div>
-
-      {/* Footer with count */}
-      <div className="border-t border-border px-3 py-1.5">
-        <span className="text-[10px] text-muted-foreground">
-          {selectedEncodedName
-            ? `Selected: ${filteredProjects.find((p) => p.encoded_name === selectedEncodedName)?.name || 'Unknown'}`
-            : 'Click to filter stats'}
-        </span>
       </div>
     </div>
   );

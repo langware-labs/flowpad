@@ -665,6 +665,20 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         cwd = (cmd.all_stdout or "").strip()
         return ApiSuccessResponse(data={"cwd": cwd})
 
+    @action.get(action_name="worker-history")
+    async def worker_history_action(self) -> ApiResponse:
+        """Unified Recent Sessions list across every worker (claude, codex, …)."""
+        from flow_sdk.fs_records.worker_history import get_worker_history
+
+        request_info = get_current_request_info()
+        limit_raw = request_info.get_param("limit") if request_info else None
+        try:
+            limit = int(limit_raw) if limit_raw else 10
+        except (TypeError, ValueError):
+            limit = 10
+        entries = await asyncio.to_thread(get_worker_history, limit)
+        return ApiSuccessResponse(data=[e.model_dump(mode="json") for e in entries])
+
     @action.get(action_name="git-ops")
     async def git_ops_action(self) -> ApiResponse:
         """Unified gateway for git operations. Delegates to GitRepo.dispatch().

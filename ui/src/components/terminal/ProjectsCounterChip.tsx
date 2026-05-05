@@ -86,9 +86,9 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ curren
     setOpen(false);
     const project = Project.getByIdFromCache<Project>(row.projectId);
     if (!project) return;
-    // Mirror the footer's "Switch Project" flow: pure context update, no
-    // navigation. The tab strip's per-project filter re-renders to the new
-    // project's tabs automatically.
+    // Pure context flip — TabbedTerminal self-heals: when its active shell
+    // falls out of the new project's strip, it picks the first tab and
+    // updates URL + activeShellId. Keeps this chip's concern minimal.
     await dataContext.setContextEntityTypeId(
       ContextEntitiesEnum.CurrentProjectTypeId,
       project.typeId,
