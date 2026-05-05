@@ -3,11 +3,14 @@ import {
   ConversationParticipant,
   createHubConversation,
   createProjectConversation,
+  dataManager,
+  TypeId,
 } from '@sdk';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
 import { Button } from '@src/components/ui/button';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
+import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import {
   Select,
@@ -18,7 +21,7 @@ import {
 } from '@src/components/ui/select';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { MessageSquarePlus } from 'lucide-react';
+import { MessageSquarePlus, Pencil } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 
 interface NewConversationDialogProps {
@@ -30,10 +33,13 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   const { navigation } = useDockNavigation();
   const ctx = useDataContext();
   const { projects = [] } = useProjects();
+  const { localUser, updateName } = useLocalUser();
 
   const [projectId, setProjectId] = useState<string>('');
   const [participants, setParticipants] = useState<ConversationParticipant[]>([]);
   const [initialMessage, setInitialMessage] = useState('');
+  const [senderName, setSenderName] = useState('');
+  const [editingName, setEditingName] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,8 +49,14 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     setParticipants([]);
     setInitialMessage('');
     setError(null);
+    setEditingName(false);
     setProjectId(ctx.project?.id ?? projects[0]?.id ?? '');
   }, [open, ctx.project?.id, projects]);
+
+  // Default sender name from git-synced local user. Mirror SendSpecNotificationDialog.
+  useEffect(() => {
+    if (localUser?.name) setSenderName(localUser.name);
+  }, [localUser?.name]);
 
   // Hub-aware mode: any participant addressed by email triggers the
   // hub-mirrored flow (createHubConversation). Otherwise we keep the
@@ -75,7 +87,28 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
             .filter((p) => !!p.email)
             .map((p) => ({ address: p.email!, address_type: 'email' as const })),
           initial_text: initialMessage.trim() || undefined,
+          sender_name: senderName.trim() || null,
         });
+        // Feature 2: persist the user's chosen project on the conversation so
+        // the footer reads it on refresh, and so Approve & Execute on incoming
+        // prompts skips the picker. The hub-mirrored creation path doesn't
+        // accept a project_id directly, so we stamp it on the local entity
+        // after materialisation. The chosen project is whichever was selected
+        // in the dropdown (defaulted to the active project when the dialog
+        // opened).
+        if (projectId) {
+          try {
+            const conv = await dataManager
+              .getByTypeId<Conversation>(new TypeId(Conversation.type, result.conversation_id))
+              .catch(() => null);
+            if (conv && conv.project_id !== projectId) {
+              conv.project_id = projectId;
+              await conv.save();
+            }
+          } catch {
+            // non-fatal — the user can re-pick from the gate or status bar.
+          }
+        }
         navigation.openDock(DockPointer.forConversation(result.conversation_id));
         onClose();
       } else {
@@ -107,6 +140,46 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
         </DialogHeader>
 
         <div className="flex flex-col gap-4 text-sm">
+          {hasEmailParticipant && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="font-medium">From:</span>
+              {editingName ? (
+                <input
+                  className="border-b border-input bg-transparent text-xs text-foreground focus:outline-none"
+                  value={senderName}
+                  onChange={(e) => setSenderName(e.target.value)}
+                  onBlur={async () => {
+                    setEditingName(false);
+                    if (senderName.trim() && senderName.trim() !== localUser?.name) {
+                      await updateName(senderName.trim());
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.currentTarget.blur();
+                    if (e.key === 'Escape') {
+                      setSenderName(localUser?.name ?? '');
+                      setEditingName(false);
+                    }
+                  }}
+                  autoFocus
+                />
+              ) : (
+                <>
+                  <span>{senderName || '...'}</span>
+                  <button
+                    type="button"
+                    onClick={() => setEditingName(true)}
+                    className="text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                    title="Edit sender name"
+                    disabled={busy}
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Project — only for local-only conversations. Hidden when the
               recipient is identified by email (the hub-mirrored flow does
               not require a Project parent). */}

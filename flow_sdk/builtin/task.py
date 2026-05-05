@@ -46,8 +46,6 @@ class Task(Entity):
     spec_type: Optional[str] = APIField(None)
     my_process_id: Optional[str] = APIField(None)
     shared_process_id: Optional[str] = APIField(None)
-    remote_project_id: Optional[str] = APIField(None)
-    remote_project_name: Optional[str] = APIField(None)
     # NOTE: spec_id, conversation_id, links — moved into the unified
     # ``context_entities`` list on the base ``Entity``. Read via
     # ``task.first_context_of_type('spec')`` / ``task.first_context_of_type('conversation')``;

@@ -1,6 +1,9 @@
 import { useMemo } from 'react';
 import { Conversation, type Task, TypeId } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
+import { ConversationChips } from './chips/ConversationChips';
+import { ConversationEntityChips } from './chips/ConversationEntityChips';
 import { ConversationToolbar } from './ConversationToolbar';
 import { ConversationView } from './ConversationView';
 import { ConversationMode } from './conversation-mode';
@@ -57,9 +60,16 @@ export function ConversationPanel({
   mode,
   className,
 }: ConversationPanelProps) {
-  // Project-scoped conversations skip the project-mapping gate entirely.
-  const mappingGate = useProjectMappingGate(task ?? undefined);
-  const ensureMapped = task ? mappingGate.ensureMapped : undefined;
+  // One gate, two subject shapes. Remote provenance always lives on the
+  // conversation; the gate stamps the task when present (task owns project_root
+  // for cwd) or the conversation itself otherwise. Both shapes feed the same
+  // `OpenProjectComponent` dialog and the same per-machine remote→local
+  // mapping table.
+  const { data: convEntity } = useEntity<Conversation>(
+    new TypeId(Conversation.type, conversationId),
+  );
+  const mappingGate = useProjectMappingGate(task ?? undefined, convEntity ?? undefined);
+  const ensureMapped = mappingGate.ensureMapped;
   const mappingDialogProps = mappingGate.dialogProps;
 
   // Seed the chip-exclude scope with what TaskChips will render so deeper
@@ -82,10 +92,10 @@ export function ConversationPanel({
 
   return (
     <div className={className}>
-      {(headerLabel !== null || ensureMapped) && (
+      {(headerLabel !== null || task || convEntity) && (
         <div className={headerWrapper}>
           {headerLabel !== null && <span>{headerLabel}</span>}
-          {task && (
+          {task ? (
             <ChipsExcludeProvider add={selfPageKeys}>
               <ConversationToolbar
                 task={task}
@@ -94,7 +104,20 @@ export function ConversationPanel({
                 ensureMapped={ensureMapped}
               />
             </ChipsExcludeProvider>
-          )}
+          ) : convEntity ? (
+            // Task-less conversations (project-scoped chats, hub-direct convs)
+            // get the same chip strip — driven by `conversation.contextEntities`
+            // (project_id projection + any explicit context entries) plus the
+            // shared transcript/terminal chips. Without this, the upper bar
+            // would be empty even when the conversation knows which project
+            // (and other entities) it relates to.
+            <ChipsExcludeProvider add={selfPageKeys}>
+              <div className="flex items-center gap-1">
+                <ConversationEntityChips conversation={convEntity} />
+                <ConversationChips conversationId={conversationId} />
+              </div>
+            </ChipsExcludeProvider>
+          ) : null}
         </div>
       )}
       <div className={bodyWrapper}>
@@ -109,7 +132,7 @@ export function ConversationPanel({
         </ChipsExcludeProvider>
       </div>
 
-      {task && <OpenProjectComponent {...mappingDialogProps} />}
+      <OpenProjectComponent {...mappingDialogProps} />
     </div>
   );
 }

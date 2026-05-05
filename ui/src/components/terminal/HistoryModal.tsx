@@ -55,9 +55,9 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-full max-w-sm overflow-hidden p-4">
+      <DialogContent className="flex w-full max-w-sm flex-col overflow-hidden p-4 max-h-[80vh]">
         <DialogHeader>
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center justify-between gap-2 pr-7">
             <DialogTitle className="text-sm font-semibold">Recent Sessions</DialogTitle>
             <button
               type="button"
@@ -75,7 +75,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
         {entries.length === 0 ? (
           <p className="py-4 text-center text-xs text-muted-foreground">No recent sessions</p>
         ) : (
-          <ul className="mt-1 flex flex-col gap-0.5 overflow-hidden">
+          <ul className="mt-1 flex flex-col gap-0.5 overflow-y-auto">
             {entries.map((entry) => {
               const subline = buildSubline(entry);
               return (

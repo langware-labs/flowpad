@@ -60,6 +60,7 @@ class BaseInstanceSettings:
     logs_dir: Path
     monitor_log_path: Path
     inbox_last_fetch_path: Path
+    conversation_last_sync_path: Path
 
     # ---- Database ----
     db_driver: str               # "sqlite" | "neo4j" | "networkx"
@@ -128,6 +129,7 @@ class BaseInstanceSettings:
             logs_dir=flow_home / "logs",
             monitor_log_path=flow_home / "monitor.log",
             inbox_last_fetch_path=flow_home / ".inbox_last_fetch.json",
+            conversation_last_sync_path=flow_home / ".conversation_last_sync.json",
             db_driver=os.environ.get(ENV_DESKTOP_DB, DEFAULT_DB_DRIVER).lower(),
             user_home=Path.home(),
             claude_home=claude_home,

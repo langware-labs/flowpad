@@ -150,6 +150,7 @@ async def hub_get(
     try:
         timeout = httpx.Timeout(connect=10, write=10, read=600, pool=5) if raw else httpx.Timeout(10)
         async with httpx.AsyncClient(timeout=timeout) as client:
+            logger.info("[hub] GET %s params=%s", url, params)
             resp = await client.get(url, headers=_auth_headers(), params=params or {})
             if resp.status_code == 200:
                 result = resp.content if raw else resp.json().get("data") or {}
@@ -193,6 +194,10 @@ async def hub_post(
     timeout = httpx.Timeout(connect=10, write=600, read=60, pool=5) if files else httpx.Timeout(10)
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
+            logger.info(
+                "[hub] POST %s files=%s payload_keys=%s",
+                url, bool(files), list(payload.keys()) if not files and payload else None,
+            )
             if files:
                 resp = await client.post(url, headers=_auth_headers(), files=files)
             else:
@@ -225,6 +230,10 @@ async def hub_put(
         return None
     try:
         async with httpx.AsyncClient(timeout=10) as client:
+            logger.info(
+                "[hub] PUT %s payload_keys=%s",
+                url, list(payload.keys()) if payload else None,
+            )
             resp = await client.put(url, json=payload, headers=_auth_headers())
     except Exception as e:
         logger.warning("[hub] PUT %s transport error: %s", url, e)

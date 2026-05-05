@@ -466,9 +466,32 @@ class AgenticProcess(Entity):
         workdir: str | None = None,
         **kwargs,
     ) -> "AgenticProcess":
-        """Factory: pre-bake fork cli_config. start() injects --resume <src> --fork-session."""
-        cmd = ClaudeCliOptions(fork_session_id=session_id)
-        proc = cls(workdir=workdir, **kwargs)
+        """Factory: pre-bake the cli_config that ``start()`` turns into
+        ``claude --resume <parent> --fork-session --session-id <new>``.
+
+        Three things must all be set for ``ClaudeCliOptions.to_spawn_args``
+        to emit the fork incantation:
+          * ``resume=True``
+          * ``session_id=<new>``        (the fork's own pre-allocated sid)
+          * ``fork_session_id=<parent>`` (passed in as ``session_id`` arg)
+
+        Without all three, the spawn falls through to a plain ``claude``
+        invocation — no resume, no fork — and claude starts a completely
+        unrelated session whose transcript never lands on disk (because
+        nobody ever sends it a prompt). The entity ends up with a session_id
+        that resolves to nothing, and any later ``--resume`` fails with
+        "No conversation found with session ID: <sid>". Pre-allocating
+        ``session_id`` here also lets callers persist it on the entity row
+        before the first turn, so transcript discovery doesn't race the
+        ``system:init`` event.
+        """
+        new_session_id = str(uuid4())
+        cmd = ClaudeCliOptions(
+            resume=True,
+            fork_session_id=session_id,
+            session_id=new_session_id,
+        )
+        proc = cls(workdir=workdir, session_id=new_session_id, **kwargs)
         proc.cli_config = cmd.to_json()
         return proc
 

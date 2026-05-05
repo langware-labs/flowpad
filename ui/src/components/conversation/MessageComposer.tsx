@@ -1,7 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { File, MessageSquarePlus, Paperclip, Send, X } from 'lucide-react';
 import { sendReply } from '@sdk/entities/notifications';
-import { addRemoteMessage } from '@sdk/entities/conversation';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
 import { cn } from '@src/lib/utils';
@@ -15,8 +14,6 @@ interface MessageComposerProps {
   task?: ITask | null;
   /** Project-scoped conversation id (used when no task is present). */
   conversationId?: string;
-  /** True when the parent Conversation has remote=true; reply posts to the hub. */
-  isRemote?: boolean;
   disabled?: boolean;
   onSent?: () => void;
   /** Optional queued prompt provided by per-message Add-prompt chips. */
@@ -31,7 +28,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function MessageComposer({ task, conversationId, isRemote, disabled, onSent, queuedPrompt, onQueuedPromptChange }: MessageComposerProps) {
+export function MessageComposer({ task, conversationId, disabled, onSent, queuedPrompt, onQueuedPromptChange }: MessageComposerProps) {
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
@@ -42,10 +39,16 @@ export function MessageComposer({ task, conversationId, isRemote, disabled, onSe
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { localUser } = useLocalUser();
   // The initiator approves prompts (they own my_process_id and the fork);
-  // recipients propose them. So Add prompt is recipient-only — and only
-  // exists at all when there's a Task. Project-scoped conversations hide it.
+  // recipients propose them. So Add prompt is recipient-only.
+  //
+  // Two surfaces:
+  //   - Task-bound: initiator = ``task.shared_by_id === local_user.id``.
+  //   - Hub-direct (no Task): the conversation itself anchors the run via
+  //     conversation/<id>/run-headless. Both participants can add a prompt,
+  //     since neither side owns a "shared_by_id" — the recipient suggests,
+  //     the other side approves and runs server-side.
   const isInitiator = !!(task && localUser?.id && task.shared_by_id && task.shared_by_id === localUser.id);
-  const canAddPrompt = !!task && !isInitiator;
+  const canAddPrompt = task ? !isInitiator : !!conversationId;
 
   const activePrompt = queuedPrompt ?? localPrompt;
   const setActivePrompt = (p: QueuedPrompt | null) => {
@@ -108,25 +111,18 @@ export function MessageComposer({ task, conversationId, isRemote, disabled, onSe
     setSending(true);
     setError(null);
     try {
-      if (isRemote && conversationId) {
-        // Hub-mirrored conversation: post to the hub's add_message and let
-        // the local server materialize the FlowMessage with remote=true.
-        // Files / prompts are not yet supported through the hub flow.
-        await addRemoteMessage({ conversation_id: conversationId, text: trimmed });
-      } else {
-        const extras = effectivePrompt
-          ? {
-              promptText: effectivePrompt.text || undefined,
-              promptFiles: effectivePrompt.files.length > 0 ? effectivePrompt.files : undefined,
-            }
-          : undefined;
-        await sendReply(
-          { task, conversationId },
-          trimmed,
-          files.length > 0 ? files : undefined,
-          extras,
-        );
-      }
+      const extras = effectivePrompt
+        ? {
+            promptText: effectivePrompt.text || undefined,
+            promptFiles: effectivePrompt.files.length > 0 ? effectivePrompt.files : undefined,
+          }
+        : undefined;
+      await sendReply(
+        { task, conversationId },
+        trimmed,
+        files.length > 0 ? files : undefined,
+        extras,
+      );
       setText('');
       setFiles([]);
       setActivePrompt(null);

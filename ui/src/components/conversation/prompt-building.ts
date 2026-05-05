@@ -1,6 +1,7 @@
 import { dataManager, FlowMessage, TypeId } from '@sdk';
 import { ActionInfo } from '@sdk/models/ActionInfo';
 import { AttachmentType } from '@sdk/entities/flow-message';
+import { fileAttachmentUrl } from './attachment-url';
 
 /**
  * Resolve a single PROMPT attachment to its inline text.
@@ -25,32 +26,68 @@ export async function resolvePromptText(
 }
 
 /**
- * Merge every PROMPT attachment on a message into a single instruction.
- * Inline text comes first (whatever the user typed in the dialog); each
- * file's contents follow under a labelled section. Lets a "type some prompt
- * + drop a file" reply run as a single Claude turn instead of N sequential
- * ones.
+ * Merge every PROMPT and FILE attachment on a message into a single instruction.
+ *
+ * - Inline PROMPT text (typed in the dialog) is concatenated as-is.
+ * - File-backed PROMPT attachments (`data` starts with `prompt/`) are referenced
+ *   by their absolute local path: `Your prompt to execute is here: <path>`.
+ *   The agent reads the file directly instead of us inlining it (works for
+ *   binaries; avoids context bloat for large text files).
+ * - FILE attachments are listed at the end as absolute paths the agent can read.
+ *
+ * For hub-mirrored conversations the bytes live on the hub until first access;
+ * we pre-fetch every file-backed attachment via ``fileAttachmentUrl`` (the local
+ * download endpoint with hub fallback) so the cached copy lands on local disk
+ * before the agent tries to read the path.
  */
 export async function buildMergedPrompt(flowMessage: FlowMessage): Promise<string> {
   const promptAtts = (flowMessage.attachment ?? []).filter(
     (a) => a.attachment_type === AttachmentType.PROMPT,
   );
+  const fileAtts = (flowMessage.attachment ?? []).filter(
+    (a) => a.attachment_type === AttachmentType.FILE && !!a.data && !a.data.endsWith('conversation.jsonl'),
+  );
+
   const inlineParts: string[] = [];
-  const filePromptParts: string[] = [];
+  const promptFilePaths: string[] = [];
 
   for (const att of promptAtts) {
     const isFile = !!att.data && att.data.startsWith('prompt/');
-    const text = await resolvePromptText(att);
-    if (!text) continue;
-    if (isFile) {
-      const filename = att.data.split('/').pop() ?? att.data;
-      filePromptParts.push(`--- ${filename} ---\n${text}`);
+    if (isFile && flowMessage.id) {
+      // Trigger the local download endpoint so a hub-mirrored FlowMessage's
+      // bytes are cached on disk before the agent reads via local_path.
+      try {
+        await fetch(fileAttachmentUrl(flowMessage.id, att.data));
+      } catch {
+        // best-effort
+      }
+      const localPath = att.local_path || att.data;
+      promptFilePaths.push(`Your prompt to execute is here: ${localPath}`);
     } else {
-      inlineParts.push(text);
+      const text = await resolvePromptText(att);
+      if (text) inlineParts.push(text);
     }
   }
 
-  return [...inlineParts, ...filePromptParts].join('\n\n');
+  const fileContext: string[] = [];
+  if (fileAtts.length > 0 && flowMessage.id) {
+    const lines: string[] = [];
+    for (const att of fileAtts) {
+      try {
+        await fetch(fileAttachmentUrl(flowMessage.id, att.data));
+      } catch {
+        // best-effort
+      }
+      const localPath = att.local_path || att.data;
+      const filename = att.data.split('/').pop() ?? att.data;
+      lines.push(`- ${filename}: ${localPath}`);
+    }
+    fileContext.push(
+      `The user attached the following files as context — use them when answering:\n${lines.join('\n')}`,
+    );
+  }
+
+  return [...inlineParts, ...promptFilePaths, ...fileContext].join('\n\n');
 }
 
 /** POST `approve-prompt` and refetch the FlowMessage so PROMPT.local_path / approved_by are populated. */

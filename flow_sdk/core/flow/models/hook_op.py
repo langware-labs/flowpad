@@ -32,6 +32,9 @@ class RecordType(StrEnum):
     AGENTIC_PROCESS = "agentic_process"
     BOOKMARK = "bookmark"
     SESSION_ANALYSIS = "session_analysis"
+    CONVERSATION = "conversation"
+    FLOW_MESSAGE = "flow_message"
+    INVITATION = "invitation"
 
 
 class RelationshipType(StrEnum):

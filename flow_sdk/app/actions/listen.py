@@ -659,6 +659,15 @@ async def _reflect_entity(
 
     try:
         if operation == SyncOperation.CREATE:
+            existing_by_id = await entity_cls.get_one({"id": external_id})
+            if existing_by_id:
+                logger.debug(
+                    f"[_reflect_entity] {record_type} id={external_id} already exists locally, skipping reflection"
+                )
+                return ApiSuccessResponse(
+                    data={f"{record_type}_id": existing_by_id.id, "action": "noop"}
+                ), None
+
             existing = await entity_cls.get_by_uname(external_id)
             if existing:
                 warning = f"CREATE with existing uname={external_id}, treating as UPDATE"
@@ -697,9 +706,11 @@ async def _reflect_entity(
             return ApiSuccessResponse(data={f"{record_type}_id": entity.id, "action": "created"}), None
 
         elif operation == SyncOperation.UPDATE:
-            existing = await entity_cls.get_by_uname(external_id)
+            existing = await entity_cls.get_one({"id": external_id})
             if not existing:
-                warning = f"UPDATE for non-existing uname={external_id}"
+                existing = await entity_cls.get_by_uname(external_id)
+            if not existing:
+                warning = f"UPDATE for non-existing id/uname={external_id}"
                 logger.warning(f"[_reflect_entity] {warning}")
                 return None, warning
 

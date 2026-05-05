@@ -6,10 +6,10 @@ export interface UseConversationResult {
   conversation: Conversation | null | undefined;
   task: Task | null | undefined;
   /**
-   * Local Project the task is bound to (sender's source project, OR the
-   * project the receiver mapped to via OpenProjectComponent). Resolved from
-   * `task.project_id`. `undefined` while loading; `null` when the task
-   * hasn't been mapped to a local project yet (receiver pre-mapping).
+   * Local Project this conversation is filed under. Resolved from
+   * `task.project_id` when a task is bound, otherwise from
+   * `conversation.project_id`. `undefined` while loading; `null` when the
+   * conversation hasn't been mapped to a local project yet.
    */
   project: Project | null | undefined;
   /** Sender label derived from `task.sender_name`, falling back to shared_by_id. */
@@ -25,10 +25,10 @@ export interface UseConversationResult {
  * re-implementing the same useEntity dance.
  *
  * Project semantics:
- * - User 1 (sender): `task.project_id` is stamped at send time from
- *   `_resolve_local_project_identity(project_root)`.
- * - User 2 (receiver): unset until `OpenProjectComponent` writes it on the
- *   first project-requiring action. Until then `project` is `null`.
+ * - Task-bound: `task.project_id` is the source of truth; the conversation
+ *   mirrors it (kept in sync by `applyProjectToTask`).
+ * - Task-less: `conversation.project_id` is the source of truth — set at
+ *   creation (e.g. NewConversationDialog) or by the gate on first pick.
  */
 export function useConversation(conversationId: string | null | undefined): UseConversationResult {
   const convTypeId = useMemo(
@@ -43,7 +43,7 @@ export function useConversation(conversationId: string | null | undefined): UseC
   );
   const { data: task } = useEntity<Task>(taskTypeId);
 
-  const projectId = task?.project_id ?? undefined;
+  const projectId = task?.project_id ?? conversation?.project_id ?? undefined;
   const projectTypeId = useMemo(
     () => (projectId ? new TypeId(Project.type, projectId) : null),
     [projectId],

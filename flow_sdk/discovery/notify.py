@@ -40,16 +40,23 @@ def get_flowpad_status() -> str:
 
 
 def _get_report_urls() -> list[str]:
-    """Discover all running Flowpad servers and return their webhook URLs.
+    """Return webhook URLs for all servers that have written a server.json.
 
-    Returns:
-        List of webhook URLs for all running servers (prod + dev).
+    Uses ``read_all_server_infos()`` (file read only) rather than the
+    health-checked ``discover_all_flowpads()``. The reason is async-safety:
+    ``check_server_health`` does a synchronous ``urllib.request.urlopen`` to
+    localhost, and when this function runs inside an async request handler
+    that synchronous call blocks the event loop — the server can't service
+    its own health probe, the probe times out, discovery returns
+    ``not_running``, and every WS notification gets silently dropped.
+
+    File presence is a strong-enough signal: server.json is only written
+    after server startup completes (``set_server_info`` in
+    ``_on_server_startup``), and stale files are cleared on shutdown.
+    Webhook POSTs themselves are fire-and-forget; a dead URL is harmless.
     """
-    return [
-        r.server_info.url
-        for r in discover_all_flowpads()
-        if r.server_info
-    ]
+    from flow_sdk.discovery.flowpad_discovery import read_all_server_infos
+    return [info.url for info in read_all_server_infos()]
 
 
 # ---------------------------------------------------------------------------
