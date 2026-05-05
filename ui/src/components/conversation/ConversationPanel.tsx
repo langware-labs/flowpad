@@ -1,11 +1,10 @@
 import { useMemo } from 'react';
-import { Conversation, dataManager, type Project, type Task, TypeId } from '@sdk';
+import { Conversation, type Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { ConversationToolbar } from './ConversationToolbar';
 import { ConversationView } from './ConversationView';
 import { ConversationMode } from './conversation-mode';
-import { useProjectGate } from './useProjectGate';
 import { useProjectMappingGate } from './useProjectMappingGate';
 import { ChipsExcludeProvider } from './chips/ChipsExcludeContext';
 import { ChipKey, taskChipKeys } from './chips/keys';
@@ -59,28 +58,17 @@ export function ConversationPanel({
   mode,
   className,
 }: ConversationPanelProps) {
-  // Task-bound conversations use the task gate (handles remote→local mapping
-  // table + auto-apply). Hub-direct conversations call the generic
-  // `useProjectGate` directly, watching `Conversation.project_id` and writing
-  // it on pick. Both feed the same `OpenProjectComponent` dialog.
-  const taskMappingGate = useProjectMappingGate(task ?? undefined);
+  // One gate, two subject shapes. Remote provenance always lives on the
+  // conversation; the gate stamps the task when present (task owns project_root
+  // for cwd) or the conversation itself otherwise. Both shapes feed the same
+  // `OpenProjectComponent` dialog and the same per-machine remote→local
+  // mapping table.
   const { data: convEntity } = useEntity<Conversation>(
     new TypeId(Conversation.type, conversationId),
   );
-  const convMappingGate = useProjectGate({
-    mapped: !!convEntity?.project_id,
-    apply: async (project: Project) => {
-      if (!project.id) return;
-      const conv = await dataManager
-        .getByTypeId<Conversation>(new TypeId(Conversation.type, conversationId))
-        .catch(() => null);
-      if (!conv || conv.project_id === project.id) return;
-      conv.project_id = project.id;
-      await conv.save();
-    },
-  });
-  const ensureMapped = task ? taskMappingGate.ensureMapped : convMappingGate.ensureMapped;
-  const mappingDialogProps = task ? taskMappingGate.dialogProps : convMappingGate.dialogProps;
+  const mappingGate = useProjectMappingGate(task ?? undefined, convEntity ?? undefined);
+  const ensureMapped = mappingGate.ensureMapped;
+  const mappingDialogProps = mappingGate.dialogProps;
 
   // Seed the chip-exclude scope with what TaskChips will render so deeper
   // chip rows (MessageChips) skip duplicates automatically.
@@ -102,7 +90,7 @@ export function ConversationPanel({
 
   return (
     <div className={className}>
-      {(headerLabel !== null || ensureMapped) && (
+      {(headerLabel !== null || task) && (
         <div className={headerWrapper}>
           {headerLabel !== null && <span>{headerLabel}</span>}
           {task && (

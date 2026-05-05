@@ -29,7 +29,9 @@ class Conversation(Entity):
     """
 
     type: str = APIField(default="conversation")
-    project_id: Optional[str] = APIField(None, description="ID of the parent project, or None when unscoped")
+    project_id: Optional[str] = APIField(None, description="ID of the local Project this conversation is filed under, or None when unmapped")
+    remote_project_id: Optional[str] = APIField(None)
+    remote_project_name: Optional[str] = APIField(None)
     message_count: int = APIField(0)
     message_ids: Optional[str] = APIField(None)  # JSON-encoded [{"typeid": ..., "ts": ...}]
     participants: list[dict] = APIField(default_factory=list)  # [{user_id, email, name}]

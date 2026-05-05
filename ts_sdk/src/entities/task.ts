@@ -29,10 +29,10 @@ export interface ITask extends IEntity {
   my_process_id?: string | null;
   /** Forked AgenticProcess that runs *approved* incoming prompts. Initiator-only. */
   shared_process_id?: string | null;
-  /** Cross-machine identity of the *sender's* project. Used as the key in the per-machine mapping table. */
-  remote_project_id?: string | null;
-  /** Display name of the sender's project (for the mapping dialog copy). */
-  remote_project_name?: string | null;
+  // NOTE: `remote_project_id` / `remote_project_name` moved to the Conversation
+  // entity. Task-bound conversations carry the same provenance there; task-less
+  // conversations need it too. Read from the task's child conversation when
+  // needed (`task.firstContextOfType('conversation')` → `conv.remote_project_id`).
   // NOTE: spec_id, conversation_id, links — moved into context_entities (the
   // unified TypeId list on IEntity). Use task.firstContextOfType('spec') /
   // task.firstContextOfType('conversation') and task.addContextEntity(...) /
@@ -93,8 +93,6 @@ export class Task extends APIEntity<Task> implements ITask {
   spec_type?: string | null;
   my_process_id?: string | null;
   shared_process_id?: string | null;
-  remote_project_id?: string | null;
-  remote_project_name?: string | null;
 
   active_form?: string | null;
   analysis_json_path?: string | null;
@@ -151,8 +149,6 @@ export class Task extends APIEntity<Task> implements ITask {
     this.spec_type = entity.spec_type;
     this.my_process_id = entity.my_process_id;
     this.shared_process_id = entity.shared_process_id;
-    this.remote_project_id = entity.remote_project_id;
-    this.remote_project_name = entity.remote_project_name;
 
     this.active_form = entity.active_form;
     this.analysis_json_path = entity.analysis_json_path;
@@ -194,8 +190,8 @@ export class Task extends APIEntity<Task> implements ITask {
    * Project the chip-relevant direct fields into the merged context view.
    * The project, the assignee, and the user's two AgenticProcesses
    * (my_process / shared_process) are surfaced; pure indexing/audit fields
-   * (workspace_id, reporter, target_entity, remote_project_*) stay typed
-   * but are not chip-projected.
+   * (workspace_id, reporter, target_entity) stay typed but are not
+   * chip-projected.
    */
   protected override _directFieldsAsTypeIds(): TypeId[] {
     const out: TypeId[] = [];

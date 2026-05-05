@@ -950,7 +950,7 @@ async def _handle_hub_mirrored_append(
     # Hub upload path: sub_path is the *destination directory*; the hub's
     # upload action appends the multipart filename. So `upload/data` +
     # filename `foo.png` lands at `data/foo.png` (NOT `data/foo.png/foo.png`).
-    logger.info(
+    logger.warning(
         "[hub_mirrored_append] uploading to hub fm=%s files=%s prompt_files=%s",
         fm_id, list(file_bytes.keys()), list(prompt_file_bytes.keys()),
     )
@@ -960,7 +960,7 @@ async def _handle_hub_mirrored_append(
                 BuiltinEntityType.FLOW_MESSAGE, {}, fm_id, "fs", "upload/data",
                 files={"uploaded_file": (name, data, "application/octet-stream")},
             )
-            logger.info("[hub_mirrored_append] uploaded data/%s (%d bytes)", name, len(data))
+            logger.warning("[hub_mirrored_append] uploaded data/%s (%d bytes)", name, len(data))
         except HubError as e:
             logger.warning("[hub_mirrored_append] file upload %s failed: %s", name, e)
     for name, data in prompt_file_bytes.items():
@@ -969,7 +969,7 @@ async def _handle_hub_mirrored_append(
                 BuiltinEntityType.FLOW_MESSAGE, {}, fm_id, "fs", "upload/prompt",
                 files={"uploaded_file": (name, data, "application/octet-stream")},
             )
-            logger.info("[hub_mirrored_append] uploaded prompt/%s (%d bytes)", name, len(data))
+            logger.warning("[hub_mirrored_append] uploaded prompt/%s (%d bytes)", name, len(data))
         except HubError as e:
             logger.warning("[hub_mirrored_append] prompt file upload %s failed: %s", name, e)
 

@@ -33,7 +33,7 @@ _TASK_FIELDS = {"type", "id", "title", "description", "status", "task_type",
                 "priority", "shared_by_id",
                 "due_at", "start_date",
                 "project_id", "spec_type", "my_process_id",
-                "shared_process_id", "remote_project_id", "remote_project_name",
+                "shared_process_id",
                 "context_entities",
                 "active_form", "analysis_json_path", "analysis_path", "artifacts",
                 "branch", "classification_category", "classification_command",
@@ -45,7 +45,9 @@ _TASK_FIELDS = {"type", "id", "title", "description", "status", "task_type",
                 "skill_scope", "task_type_label", "team_space_id",
                 "worker_session_id"}
 # `project_root` is intentionally excluded — it's the sender's local filesystem
-# path and means nothing on the receiver's machine.
+# path and means nothing on the receiver's machine. Remote-project provenance
+# (`remote_project_id` / `remote_project_name`) lives on the Conversation, not
+# the Task — see flow_sdk/builtin/conversation.py.
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
@@ -72,125 +74,196 @@ class FlowMessageExistsError(Exception):
 # pack_bundle
 # ---------------------------------------------------------------------------
 
-async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None) -> Path:
-    """Build a .flowmsg zip from a FlowMessage entity. Returns zip path."""
-    from flow_sdk.builtin.conversation import Conversation
+
+def _write_top_level_header(flow_message: "FlowMessage", tmp_root: Path) -> None:
+    """Serialize the FlowMessage's own fields to ``<root>/header.json``.
+
+    FILE attachments are stored locally as VFS subpaths (e.g. ``data/file.txt``)
+    but the receiver locates them at ``attachment/files/<basename>`` inside
+    the zip — rewrite the ``data`` field accordingly so both sides agree.
+    """
+    msg_data = flow_message.model_dump(
+        mode="python",
+        include=_FM_FIELDS,
+        context={"skip_api_serializer": True},
+    )
+    for att in msg_data.get("attachment", []):
+        if att.get("attachment_type") == AttachmentType.FILE.value:
+            att["data"] = f"attachment/files/{Path(att['data']).name}"
+    (tmp_root / "header.json").write_text(
+        json.dumps(msg_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def _pack_file_attachment(entry, flow_message: "FlowMessage", attachment_dir: Path) -> None:
+    """Copy a single FILE attachment from local VFS storage into ``attachment/files/``."""
+    from flow_sdk.storage import get_entity_embedded_storage
+
+    storage = get_entity_embedded_storage(flow_message.typeid)
+    file_path = Path(storage.get_storage_path(entry.data))
+    if not file_path.exists():
+        return
+    files_dir = attachment_dir / "files"
+    files_dir.mkdir(exist_ok=True)
+    shutil.copy2(file_path, files_dir / file_path.name)
+
+
+async def _pack_spec_attachment(entry_id: str, attachment_dir: Path) -> None:
+    """Write ``attachment/spec-@<id>/spec.md`` (frontmatter + content)."""
     from flow_sdk.builtin.spec import Spec
+
+    spec = await Spec.get_one({"id": entry_id})
+    if not spec:
+        return
+    spec_dir = attachment_dir / f"spec-@{entry_id}"
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    fm_lines = ["---\n", f'title: "{spec.title}"\n', f'spec_type: "{spec.spec_type}"\n', "---\n"]
+    spec_md = "".join(fm_lines) + (spec.content or "")
+    (spec_dir / "spec.md").write_text(spec_md, encoding="utf-8")
+
+
+async def _pack_task_attachment(entry_id: str, attachment_dir: Path) -> None:
+    """Write ``attachment/task-@<id>/header.json`` (whitelisted Task fields)."""
     from flow_sdk.builtin.task import Task
 
+    task = await Task.get_one({"id": entry_id})
+    if not task:
+        return
+    task_dir = attachment_dir / f"task-@{entry_id}"
+    task_dir.mkdir(parents=True, exist_ok=True)
+    task_data = task.model_dump(
+        mode="python",
+        include=_TASK_FIELDS,
+        context={"skip_api_serializer": True},
+    )
+    (task_dir / "header.json").write_text(
+        json.dumps(task_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+async def _pack_conversation_attachment(
+    entry_id: str, flow_message: "FlowMessage", attachment_dir: Path,
+) -> None:
+    """Write ``attachment/conversation-@<id>/`` (jsonl + remote-project header)
+    plus the current FlowMessage's own entry.
+
+    Only the *current* FlowMessage is packed — prior messages already reached
+    the receiver in earlier bundles, and re-shipping them risks reverting
+    the receiver's local replies that haven't yet round-tripped.
+    """
+    from flow_sdk.builtin.conversation import Conversation
+    from flow_sdk.builtin.project import Project
+
+    conv = await Conversation.get_one({"id": entry_id})
+    if not conv or not conv.data_path:
+        return
+    jsonl_path = Path(conv.data_path)
+    if not jsonl_path.exists():
+        return
+
+    conv_dir = attachment_dir / f"conversation-@{entry_id}"
+    conv_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(jsonl_path, conv_dir / "conversation.jsonl")
+
+    # Header carries the conversation's remote provenance from the receiver's
+    # POV: the sender's local ``project_id`` and a snapshot of that Project's
+    # name. Receiver stores them as ``remote_project_id`` /
+    # ``remote_project_name`` to drive the per-machine remote→local mapping
+    # table.
+    sender_project_id = conv.project_id or None
+    sender_project_name = None
+    if sender_project_id:
+        proj = await Project.get_one({"id": sender_project_id})
+        if proj is not None:
+            sender_project_name = proj.name or None
+    conv_header = {
+        "type": "conversation",
+        "id": conv.id,
+        "project_id": sender_project_id,
+        "project_name": sender_project_name,
+    }
+    (conv_dir / "header.json").write_text(
+        json.dumps(conv_header, default=_json_default, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    await _pack_flow_message_entry(flow_message.id, attachment_dir)
+
+
+async def _pack_attachment_entry(
+    entry, flow_message: "FlowMessage", attachment_dir: Path,
+) -> None:
+    """Dispatch a single attachment entry to the correct per-type packer.
+
+    Repo/URL attachments have no bytes to bundle — silently skipped.
+    """
+    if entry.attachment_type == AttachmentType.FILE:
+        _pack_file_attachment(entry, flow_message, attachment_dir)
+        return
+    if entry.attachment_type != AttachmentType.TYPE_ID:
+        return
+    tid = TypeId(entry.data)
+    entry_type, entry_id = tid.type, tid.id
+    if not entry_type or not entry_id:
+        return
+    if entry_type == BuiltinEntityType.SPEC.value:
+        await _pack_spec_attachment(entry_id, attachment_dir)
+    elif entry_type == BuiltinEntityType.TASK.value:
+        await _pack_task_attachment(entry_id, attachment_dir)
+    elif entry_type == BuiltinEntityType.CONVERSATION.value:
+        await _pack_conversation_attachment(entry_id, flow_message, attachment_dir)
+    elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
+        await _pack_flow_message_entry(entry_id, attachment_dir)
+
+
+def _zip_bundle(tmp_root: Path, dest_dir: Path | None, fm_id: str | None) -> Path:
+    """Zip ``tmp_root`` contents into ``<dest_dir>/<slug>.flowmsg`` and return the path."""
+    short_id = fm_id[:8] if fm_id else "msg"
+    slug = f"flow-message-{short_id}"
+    if dest_dir is None:
+        dest_dir = Path(tempfile.mkdtemp(prefix="flowmsg_zip_"))
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = dest_dir / f"{slug}.flowmsg"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file_path in tmp_root.rglob("*"):
+            if file_path.is_file():
+                zf.write(file_path, file_path.relative_to(tmp_root))
+    return zip_path
+
+
+async def pack_bundle(flow_message: "FlowMessage", dest_dir: Path | None = None) -> Path:
+    """Build a .flowmsg zip from a FlowMessage entity. Returns the zip path."""
     tmp_root = Path(tempfile.mkdtemp(prefix="flowmsg_pack_"))
     try:
-        # 1. Write top-level message.json
-        # FILE attachment data is stored as a VFS subpath locally (e.g. "data/file.txt");
-        # rewrite to zip-relative paths so the receiver can locate them inside the zip.
-        msg_data = flow_message.model_dump(
-            mode="python",
-            include=_FM_FIELDS,
-            context={"skip_api_serializer": True},
-        )
-        for att in msg_data.get("attachment", []):
-            if att.get("attachment_type") == AttachmentType.FILE.value:
-                att["data"] = f"attachment/files/{Path(att['data']).name}"
-        (tmp_root / "header.json").write_text(
-            json.dumps(msg_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
-        )
-
+        _write_top_level_header(flow_message, tmp_root)
         attachment_dir = tmp_root / "attachment"
         attachment_dir.mkdir()
-
-        # 2. Process each attachment entry
         for entry in flow_message.attachment:
-            if entry.attachment_type == AttachmentType.FILE:
-                from flow_sdk.storage import get_entity_embedded_storage
-                storage = get_entity_embedded_storage(flow_message.typeid)
-                file_path = Path(storage.get_storage_path(entry.data))
-                if file_path.exists():
-                    files_dir = attachment_dir / "files"
-                    files_dir.mkdir(exist_ok=True)
-                    shutil.copy2(file_path, files_dir / file_path.name)
-                continue
-            if entry.attachment_type != AttachmentType.TYPE_ID:
-                continue  # repo/url attachments have no bytes to bundle
-            tid = TypeId(entry.data)
-            entry_type, entry_id = tid.type, tid.id
-            if not entry_type or not entry_id:
-                continue
-
-            if entry_type == BuiltinEntityType.SPEC.value:
-                spec = await Spec.get_one({"id": entry_id})
-                if spec:
-                    spec_dir = attachment_dir / f"spec-@{entry_id}"
-                    spec_dir.mkdir(parents=True, exist_ok=True)
-                    fm_lines = ["---\n", f'title: "{spec.title}"\n', f'spec_type: "{spec.spec_type}"\n', "---\n"]
-                    content = spec.content or ""
-                    spec_md = "".join(fm_lines) + content
-                    (spec_dir / "spec.md").write_text(spec_md, encoding="utf-8")
-
-            elif entry_type == BuiltinEntityType.TASK.value:
-                task = await Task.get_one({"id": entry_id})
-                if task:
-                    task_dir = attachment_dir / f"task-@{entry_id}"
-                    task_dir.mkdir(parents=True, exist_ok=True)
-                    task_data = task.model_dump(
-                        mode="python",
-                        include=_TASK_FIELDS,
-                        context={"skip_api_serializer": True},
-                    )
-                    (task_dir / "header.json").write_text(
-                        json.dumps(task_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
-                    )
-
-            elif entry_type == BuiltinEntityType.CONVERSATION.value:
-                conv = await Conversation.get_one({"id": entry_id})
-                if conv and conv.data_path:
-                    conv_dir = attachment_dir / f"conversation-@{entry_id}"
-                    conv_dir.mkdir(parents=True, exist_ok=True)
-                    jsonl_path = Path(conv.data_path)
-                    if jsonl_path.exists():
-                        shutil.copy2(jsonl_path, conv_dir / "conversation.jsonl")
-                        # Only bundle the current FlowMessage — the receiver already has
-                        # all prior messages from the previous bundle they received.
-                        await _pack_flow_message_entry(flow_message.id, attachment_dir)
-
-            elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
-                await _pack_flow_message_entry(entry_id, attachment_dir)
-
-        # 3. Zip everything
-        short_id = flow_message.id[:8] if flow_message.id else "msg"
-        slug = f"flow-message-{short_id}"
-        if dest_dir is None:
-            dest_dir = Path(tempfile.mkdtemp(prefix="flowmsg_zip_"))
-        dest_dir = Path(dest_dir)
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        zip_path = dest_dir / f"{slug}.flowmsg"
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for file_path in tmp_root.rglob("*"):
-                if file_path.is_file():
-                    zf.write(file_path, file_path.relative_to(tmp_root))
-
-        return zip_path
+            await _pack_attachment_entry(entry, flow_message, attachment_dir)
+        return _zip_bundle(tmp_root, dest_dir, flow_message.id)
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
 
 
 async def _pack_flow_message_entry(fm_id: str, attachment_dir: Path) -> None:
-    """Write a flow_message-@<id>/header.json into attachment_dir."""
+    """Write ``attachment/flow_message-@<id>/header.json`` (idempotent)."""
     from flow_sdk.builtin.flow_message import FlowMessage
 
     fm_dir = attachment_dir / f"flow_message-@{fm_id}"
     if fm_dir.exists():
-        return  # already included
+        return
     fm = await FlowMessage.get_one({"id": fm_id})
-    if fm:
-        fm_dir.mkdir(parents=True, exist_ok=True)
-        fm_data = fm.model_dump(
-            mode="python",
-            include=_FM_FIELDS,
-            context={"skip_api_serializer": True},
-        )
-        (fm_dir / "header.json").write_text(
-            json.dumps(fm_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
-        )
+    if not fm:
+        return
+    fm_dir.mkdir(parents=True, exist_ok=True)
+    fm_data = fm.model_dump(
+        mode="python",
+        include=_FM_FIELDS,
+        context={"skip_api_serializer": True},
+    )
+    (fm_dir / "header.json").write_text(
+        json.dumps(fm_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
+    )
 
 
 def _read_entity_header(entity_dir: Path) -> dict | None:
@@ -377,17 +450,22 @@ async def unpack_bundle(
                                 existing_task.sender_email = bundle_sender_email
                                 await existing_task.save(owner_typeid)
                         if existing_task is None or overwrite:
-                            sender_project_id = task_data.get("project_id") or None
-                            sender_project_name = task_data.get("project_name") or None
-                            # Strip the sender's project_root — meaningless on the receiver.
-                            task_payload = {k: v for k, v in task_data.items() if k != "project_root"}
+                            # Strip sender-local fields that are meaningless on the
+                            # receiver: `project_root` is the sender's filesystem
+                            # path; `project_name` mirrors the sender's local
+                            # Project name. Remote provenance now lives on the
+                            # Conversation (see CONVERSATION branch below), not the
+                            # Task — so we don't propagate `project_id` /
+                            # `project_name` onto the receiver's task either.
+                            task_payload = {
+                                k: v for k, v in task_data.items()
+                                if k not in ("project_root", "project_name")
+                            }
                             task_payload.update({
                                 "id": task_id,
                                 "title": task_data.get("title", ""),
                                 "status": task_data.get("status", "to_do"),
                                 "spec_type": task_data.get("spec_type") or None,
-                                "remote_project_id": sender_project_id,
-                                "remote_project_name": sender_project_name,
                                 "project_id": None,
                             })
                             task = Task.model_validate(task_payload)
@@ -400,6 +478,14 @@ async def unpack_bundle(
                             (TypeId(c).id for c in msg_data.get("context_entities", []) if TypeId(c).type == BuiltinEntityType.TASK.value),
                             None,
                         ) or task_id
+                        # The bundle's conversation header carries the sender's
+                        # local project_id / project_name. The receiver stores
+                        # them as the conversation's `remote_project_id` /
+                        # `remote_project_name` — provenance for the per-machine
+                        # remote→local mapping table.
+                        conv_header = _read_entity_header(entry_dir) or {}
+                        bundle_remote_project_id = conv_header.get("project_id") or None
+                        bundle_remote_project_name = conv_header.get("project_name") or None
                         # Copy conversation.jsonl to a permanent location before the
                         # temp dir is cleaned up — _create_conversation_from_disk
                         # stores data_path pointing at task_dir, so it must survive.
@@ -422,6 +508,8 @@ async def unpack_bundle(
                             owner_typeid=owner_typeid,
                             notify=False,
                             project_id=None,
+                            remote_project_id=bundle_remote_project_id,
+                            remote_project_name=bundle_remote_project_name,
                         )
                         if conv:
                             conversation_id = conv.id
