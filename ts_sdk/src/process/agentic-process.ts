@@ -454,8 +454,16 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    *
    * @param sessionId - The Claude CLI session UUID
    * @param cwd - Optional working directory (resolved from session record if omitted)
+   * @param projectId - Optional project_id to stamp on the process. Pass the
+   *   session's *intrinsic* project (e.g. ``WorkerHistoryEntry.project_id``)
+   *   when restoring a session from history; the active dataContext project is
+   *   used as a fallback only when the caller cannot derive a better value.
    */
-  static async fromClaudeSession(sessionId: string, cwd?: string): Promise<AgenticProcess> {
+  static async fromClaudeSession(
+    sessionId: string,
+    cwd?: string,
+    projectId?: string | null,
+  ): Promise<AgenticProcess> {
     const { dataContext } = await import('../FlowSync/context');
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.fromClaudeSession] No compute node');
@@ -473,9 +481,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
     // upsertSessionProcess is idempotent: finds existing process or creates a new one.
     // Backend sets cli_config.resume=true if the transcript exists on disk.
+    const resolvedProjectId = projectId ?? dataContext.project?.id;
     const { processId } = await computeNode.upsertSessionProcess(sessionId, {
       ...(resolvedCwd ? { workdir: resolvedCwd } : {}),
-      projectId: dataContext.project?.id,
+      ...(resolvedProjectId ? { projectId: resolvedProjectId } : {}),
     });
     const process = await AgenticProcess.getById(processId);
     if (!process) throw new Error(`[AgenticProcess.fromClaudeSession] Process ${processId} not found`);

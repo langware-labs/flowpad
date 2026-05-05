@@ -79,11 +79,24 @@ def _pick_name(
     return None
 
 
-def _project_id_from_encoded(encoded: Optional[str]) -> Optional[str]:
-    """Mirror ``ClaudeProjectFsRecord._project_id`` so the two systems agree on ids."""
-    if not encoded:
-        return None
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{encoded}"))
+def _project_id_for(cwd: Optional[str], encoded: Optional[str]) -> Optional[str]:
+    """Compute a project_id that the Entity layer also uses.
+
+    ``Project.allocate_id`` (flow_sdk/builtin/project.py) keys on the real mount
+    path: ``uuid5(DNS, f"project:{mount_path}")``. We mirror that here so the
+    id we return matches the Project entity that gets materialized for the same
+    cwd — the tab-strip filter in ``useActiveTerminals`` checks Project entity
+    ids, not the ``ClaudeProjectFsRecord`` (encoded-name) ids.
+
+    Fallback to the encoded form only when no real cwd is known (rare — empty
+    or never-touched session). That fallback id won't equal a Project entity id
+    but is still a stable identifier for the row.
+    """
+    if cwd:
+        return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{cwd}"))
+    if encoded:
+        return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{encoded}"))
+    return None
 
 
 def _coerce_datetime(value: object) -> Optional[datetime]:
@@ -225,7 +238,7 @@ def get_claude_worker_history(limit: int) -> list[WorkerHistoryEntry]:
             WorkerHistoryEntry(
                 worker_type=WorkerType.CLAUDE,
                 worker_id=sid,
-                project_id=_project_id_from_encoded(project_encoded),
+                project_id=_project_id_for(cwd, project_encoded),
                 project_name=_basename(cwd) or (project_encoded or None),
                 project_cwd=cwd,
                 last_active_time=datetime.fromtimestamp(mtime, tz=timezone.utc),
@@ -281,7 +294,7 @@ def _agentic_process_only_entries(
             WorkerHistoryEntry(
                 worker_type=worker_type,
                 worker_id=sid,
-                project_id=rec.project_id or _project_id_from_encoded(rec.project_encoded_name),
+                project_id=rec.project_id or _project_id_for(None, rec.project_encoded_name),
                 project_name=None,
                 project_cwd=None,
                 last_active_time=last_active,

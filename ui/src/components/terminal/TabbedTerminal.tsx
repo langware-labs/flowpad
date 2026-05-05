@@ -1015,6 +1015,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
               const process = await AgenticProcess.fromClaudeSession(
                 entry.worker_id,
                 entry.project_cwd ?? undefined,
+                entry.project_id ?? undefined,
               );
               navigation.openDockPointer(process.dockPointer);
             } catch (err) {

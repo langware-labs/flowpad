@@ -68,7 +68,9 @@ export function filterTabs(
     }
     if (projectId != null) {
       const linked = shellToProcess.get(shell.id);
-      const tabProjectId = shell.project_id ?? linked?.project_id ?? null;
+      // Treat empty-string project_id as "unset" so we fall back to the linked
+      // process — backend sometimes spawns shells without stamping the field.
+      const tabProjectId = (shell.project_id || null) ?? (linked?.project_id || null);
       if (tabProjectId !== projectId) return false;
     }
     return true;

@@ -34,6 +34,7 @@ import {
   QueuePanel,
   SideTabId,
   SideWindow,
+  SimpleDirTree,
   parseSideTabIdList,
   parseSideTabId,
   type PromptEntry,
@@ -1415,6 +1416,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                   <InputFilesPanel
                     computeNodeTypeId={inputDirInfo.computeNodeTypeId}
                     inputDirAbsPath={inputDirInfo.absPath}
+                  />
+                )}
+                {activeSideTab === SideTabId.Dir && inputDirInfo && (process?.workdir || shellRef.current?.workdir) && (
+                  <SimpleDirTree
+                    computeNodeTypeId={inputDirInfo.computeNodeTypeId}
+                    topLevel={process?.workdir ?? shellRef.current?.workdir ?? ''}
                   />
                 )}
               </SideWindow>
