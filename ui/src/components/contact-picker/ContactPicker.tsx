@@ -40,6 +40,7 @@ export function ContactPicker({
   testId = 'contact-input',
 }: ContactPickerProps) {
   const [filterText, setFilterText] = useState('');
+  const [listOpen, setListOpen] = useState(false);
 
   const usersRequest = useMemo(() => new QueryRequest({ type: User.type }), []);
   const { data: allUsers = [] } = useEntitiesQuery<User>(usersRequest, { enabled });
@@ -68,6 +69,7 @@ export function ContactPicker({
     if (!u.email || alreadyAdded(u.email) || isFull) return;
     onChange([...value, { user_id: u.id, email: u.email!, name: u.name ?? null }]);
     setFilterText('');
+    setListOpen(false);
   };
 
   const addFreeFormEmail = () => {
@@ -75,7 +77,13 @@ export function ContactPicker({
     if (!v || !EMAIL_RE.test(v) || alreadyAdded(v) || isFull) return;
     onChange([...value, { email: v, name: null }]);
     setFilterText('');
+    setListOpen(false);
   };
+
+  const trimmed = filterText.trim();
+  const showList = !isFull && (trimmed.length > 0 || listOpen);
+  const listSource = trimmed.length > 0 ? filteredContacts : contacts;
+  const visibleContacts = listOpen && !trimmed ? listSource : listSource.slice(0, 8);
 
   const removeParticipant = (email: string) => {
     onChange(value.filter((p) => p.email !== email));
@@ -110,7 +118,13 @@ export function ContactPicker({
           placeholder={placeholder}
           value={filterText}
           onChange={(e) => setFilterText(e.target.value)}
+          onDoubleClick={() => setListOpen(true)}
+          onBlur={() => setTimeout(() => setListOpen(false), 150)}
           onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              setListOpen(false);
+              return;
+            }
             if (e.key !== 'Enter') return;
             e.preventDefault();
             if (filteredContacts.length === 1) {
@@ -124,9 +138,9 @@ export function ContactPicker({
         />
       )}
 
-      {!isFull && filterText.trim() && filteredContacts.length > 0 && (
+      {showList && visibleContacts.length > 0 && (
         <div className="max-h-40 overflow-y-auto rounded-md border border-border">
-          {filteredContacts.slice(0, 8).map((u) => (
+          {visibleContacts.map((u) => (
             <button
               key={u.id}
               type="button"

@@ -1293,27 +1293,24 @@ class AgenticProcess(Entity):
     async def get_plan(self) -> ApiSuccessResponse | ApiFailResponse:
         """Return the latest plan as an indexed Markdown record.
 
-        Resolution order for the plan file:
-          1. ``self.plan_path`` if already set (from a prior call or trigger).
-          2. Latest ``ExitPlanMode`` ``planFilePath`` from the session JSONL,
-             via the transcript analyzer. Persisted onto ``plan_path`` so
-             subsequent calls (and reloads) skip the scan.
-          3. Otherwise — no plan yet.
+        Path-source resolution (in order):
+          1. ``self.plan_path`` if already set.
+          2. Latest ``ExitPlanMode`` ``planFilePath`` from the session JSONL.
+          3. Latest ``plan_mode`` attachment ``planFilePath`` from the JSONL.
 
-        On success: builds a ``MarkdownRecord`` from the file, indexes it via
-        ``sync_to_db()``, and returns ``{"markdown": rec.meta_dict(),
-        "plan_path": <path>}``. On any race where the file isn't yet flushed,
-        retries once after 100ms before giving up.
+        Existence on disk (``Path.exists()``) is the single gate for
+        persisting ``plan_path`` and broadcasting the WS entity-update that
+        flips the UI "Open Plan" button. The transcript signals are *path
+        sources*, not "plan ready" signals — they all point at the same
+        slug-derived path; what changes is whether Claude has written the
+        file yet. That makes ``hasPlan = !!plan_path`` honest by construction.
+
+        Self-heals: if ``self.plan_path`` is set but the file is missing
+        (e.g. stale value from an earlier buggy write, or the user deleted
+        the file), this clears the field so the button reflects reality.
         """
         plan_file_path = self.plan_path or ""
 
-        # Discover via transcript when we don't already know the path.
-        # Two transcript variants emit the plan file path:
-        #   1. ``ExitPlanMode`` tool_use (Claude SDK / non-interactive flow) —
-        #      ``tool_input.planFilePath``.
-        #   2. ``plan_mode`` attachment (interactive PTY plan-mode flow) —
-        #      ``payload.attachment.planFilePath`` on a MetaEntry.
-        # Both surface in the JSONL; we check (1) first, fall back to (2).
         if not plan_file_path and self.session_id:
             try:
                 from flow_sdk.transcript_analyzer import AgentTranscript
@@ -1336,31 +1333,35 @@ class AgenticProcess(Entity):
                                 plan_file_path = str(att.get("planFilePath") or "")
                                 if plan_file_path:
                                     break
-                    if plan_file_path:
-                        self.plan_path = plan_file_path
-                        try:
-                            await self.save()
-                        except Exception:
-                            logger.debug(
-                                "AgenticProcess %s get-plan: save plan_path failed", self.id, exc_info=True
-                            )
             except Exception:
                 logger.debug("AgenticProcess %s get-plan: transcript scan failed", self.id, exc_info=True)
 
-        if not plan_file_path:
+        if not plan_file_path or not Path(plan_file_path).exists():
+            # Self-heal: clear a stale plan_path so the button stops claiming
+            # a plan exists when it doesn't.
+            if self.plan_path:
+                self.plan_path = None
+                try:
+                    await self.save()
+                except Exception:
+                    logger.debug(
+                        "AgenticProcess %s get-plan: clear stale plan_path failed", self.id, exc_info=True
+                    )
             return ApiSuccessResponse(data={"markdown": None, "plan_path": None})
 
-        path = Path(plan_file_path)
-        if not path.exists():
-            # Race protection: Claude may have just written the path; brief wait + recheck.
-            await asyncio.sleep(0.1)
-            if not path.exists():
-                return ApiSuccessResponse(data={"markdown": None, "plan_path": plan_file_path})
+        if self.plan_path != plan_file_path:
+            self.plan_path = plan_file_path
+            try:
+                await self.save()
+            except Exception:
+                logger.debug(
+                    "AgenticProcess %s get-plan: save plan_path failed", self.id, exc_info=True
+                )
 
         try:
             from flow_sdk.fs_records.markdown_record import MarkdownRecord
 
-            rec = MarkdownRecord.from_file(path)
+            rec = MarkdownRecord.from_file(Path(plan_file_path))
             await rec.sync_to_db()
             return ApiSuccessResponse(data={"markdown": rec.meta_dict(), "plan_path": plan_file_path})
         except Exception as e:

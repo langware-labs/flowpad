@@ -2,8 +2,12 @@ import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/Asse
 import { WikiResolveView } from '@src/components/assets/editor/WikiResolveView';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { getDescriptor } from '@src/components/quick-create';
+import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
+import { InlineSearchResults } from '@src/pages/home-landing/InlineSearchResults';
+import type { SearchFilters, SearchResult as RecordSearchResult } from '@src/hooks/use-record-search';
 import { useToast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dataContext, RecordType } from '@sdk';
 import apiClient from '@sdk/client';
@@ -202,10 +206,29 @@ export function AssetsPage() {
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
   const [assetFilter, setAssetFilter] = useState<AssetFilter>(DEFAULT_ASSET_FILTER);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
+  const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
   });
+
+  useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
+
+  const handleSearchSubmit = useCallback(() => {
+    const q = searchQuery.trim();
+    navigation.openSearch(q ? searchQuery : undefined, searchFilters);
+  }, [navigation, searchQuery, searchFilters]);
+
+  const handleSearchKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedResultIndex(0); }
+    if (e.key === 'Escape') { setSelectedResultIndex(-1); }
+  }, []);
+
+  const handleNavigateResult = useCallback((result: RecordSearchResult) => {
+    void navigateToResult(result, navigation);
+  }, [navigation]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -384,7 +407,30 @@ export function AssetsPage() {
         </button>
         <BookOpen className="h-4 w-4 text-muted-foreground" />
         <span className="ml-1 text-sm font-medium">Assets</span>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <div className="relative w-96 shrink-0">
+            <RecordSearchBar
+              query={searchQuery}
+              filters={searchFilters}
+              onQueryChange={setSearchQuery}
+              onFiltersChange={setSearchFilters}
+              onSubmit={handleSearchSubmit}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Search..."
+            />
+            {searchQuery.trim().length >= 2 && (
+              <div className="absolute right-0 top-full z-50 w-[600px] pt-1">
+                <InlineSearchResults
+                  query={searchQuery}
+                  filters={searchFilters}
+                  selectedIndex={selectedResultIndex}
+                  onSelectedIndexChange={setSelectedResultIndex}
+                  onOpenFullSearch={handleSearchSubmit}
+                  onNavigateResult={handleNavigateResult}
+                />
+              </div>
+            )}
+          </div>
           <ScopeFilterBar
             scope={assetFilter.scope}
             projectIds={assetFilter.projectIds}

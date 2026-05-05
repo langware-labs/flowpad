@@ -30,6 +30,7 @@ import {
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HistoryModal } from './HistoryModal';
 import InteractiveTerminal from './interactive-terminal';
+import { ProjectsCounterChip } from './ProjectsCounterChip';
 import { TerminalOpenerToolbar } from './openers/TerminalOpenerToolbar';
 import type { OpenerDescriptor } from './openers/tab_opener_types';
 
@@ -687,6 +688,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       <div className="flex h-full w-full flex-col">
         {/* Tab Bar */}
         <div className="flex items-center border-b bg-muted" data-testid="terminal-tab-bar">
+          <ProjectsCounterChip currentProjectId={tabsProjectId} />
           {/* Left Scroll Button */}
           {canScrollLeft && (
             <Button
