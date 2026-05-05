@@ -60,12 +60,25 @@ function RunItem({ run, label }: { run: Run; label: string }) {
   const processTypeId = current.process_id ? new TypeId(AgenticProcess.type, current.process_id) : null;
   const { data: process } = useEntity<AgenticProcess>(processTypeId);
 
+  const promptPreview = truncatePrompt(current.prompt_text ?? '') || label;
+  const status = (current.status ?? RunStatus.RUNNING) as string;
+  // Block "Open in terminal" while the run is in flight: the underlying
+  // AgenticProcess is still ``visible: false`` (headless), and the terminal
+  // tab list filters by ``visible: true`` — clicking now navigates to a
+  // pointer the tab strip can't render until the run finishes and the user
+  // refreshes. Re-enable on terminal statuses.
+  const isRunning = status === RunStatus.RUNNING;
+
   const onOpenTerminal = () => {
+    if (isRunning) return;
     if (process?.dockPointer) navigation.openDock(process.dockPointer);
   };
 
-  const promptPreview = truncatePrompt(current.prompt_text ?? '') || label;
-  const status = (current.status ?? RunStatus.RUNNING) as string;
+  const terminalTitle = isRunning
+    ? 'Available after the run completes'
+    : process
+      ? 'Open in terminal'
+      : 'Process not available';
 
   return (
     <div className="group flex items-center gap-2 px-2 py-1.5">
@@ -80,8 +93,8 @@ function RunItem({ run, label }: { run: Run; label: string }) {
         variant="ghost"
         size="icon"
         className="h-5 w-5 flex-shrink-0 opacity-60 group-hover:opacity-100 disabled:opacity-30"
-        title={process ? 'Open in terminal' : 'Process not available'}
-        disabled={!process?.dockPointer}
+        title={terminalTitle}
+        disabled={isRunning || !process?.dockPointer}
         onClick={onOpenTerminal}
       >
         <Terminal className="h-3 w-3" />
