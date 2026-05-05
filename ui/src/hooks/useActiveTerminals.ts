@@ -28,6 +28,11 @@ export interface TabFilter {
   visible?: boolean;
   /** When set, only include shells tagged with this collaboration room id. */
   collaborationRoomId?: string | null;
+  /**
+   * When set, only include tabs whose Shell or linked AgenticProcess has
+   * this project_id. Tabs with no project association are dropped.
+   */
+  projectId?: string | null;
 }
 
 /**
@@ -40,12 +45,17 @@ export function filterTabs(
   processes: AgenticProcess[],
   filter: TabFilter = {},
 ): TerminalTab[] {
-  const { visible = false, collaborationRoomId = null } = filter;
+  const { visible = false, collaborationRoomId = null, projectId = null } = filter;
   const activeProcesses = processes.filter((p) => isProcessActive(p.status));
 
   const sidecarShellIds = new Set<string>();
   for (const proc of processes) {
     if (proc.sidecar_shell_id) sidecarShellIds.add(proc.sidecar_shell_id);
+  }
+
+  const shellToProcess = new Map<string, AgenticProcess>();
+  for (const proc of activeProcesses) {
+    if (proc.shell_id) shellToProcess.set(proc.shell_id, proc);
   }
 
   const keptShells = shells.filter((shell) => {
@@ -56,13 +66,13 @@ export function filterTabs(
     if (collaborationRoomId != null && shell.collaboration_room_id !== collaborationRoomId) {
       return false;
     }
+    if (projectId != null) {
+      const linked = shellToProcess.get(shell.id);
+      const tabProjectId = shell.project_id ?? linked?.project_id ?? null;
+      if (tabProjectId !== projectId) return false;
+    }
     return true;
   });
-
-  const shellToProcess = new Map<string, AgenticProcess>();
-  for (const proc of activeProcesses) {
-    if (proc.shell_id) shellToProcess.set(proc.shell_id, proc);
-  }
 
   const result: TerminalTab[] = keptShells.map((shell) => {
     const linkedProcess = shellToProcess.get(shell.id);
@@ -112,18 +122,20 @@ const processQuery = new QueryRequest({
  */
 export interface UseActiveTerminalsOptions {
   collaborationRoomId?: string | null;
+  /** When set, only return tabs whose shell/process belongs to this project_id. */
+  projectId?: string | null;
 }
 
 export function useActiveTerminals(options: UseActiveTerminalsOptions = {}) {
-  const { collaborationRoomId = null } = options;
+  const { collaborationRoomId = null, projectId = null } = options;
   const { data: shells = [], isLoading: shellsLoading } = useEntitiesQuery<Shell>(shellQuery);
   const { data: processes = [], isLoading: processesLoading } =
     useEntitiesQuery<AgenticProcess>(processQuery);
   const shellProjectionKey = shells
-    .map((shell) => `${shell.id}:${shell.status ?? ''}:${shell.error_message ?? ''}:${shell.name ?? ''}:${shell.tab_order ?? 0}:${shell.collaboration_room_id ?? ''}`)
+    .map((shell) => `${shell.id}:${shell.status ?? ''}:${shell.error_message ?? ''}:${shell.name ?? ''}:${shell.tab_order ?? 0}:${shell.collaboration_room_id ?? ''}:${shell.project_id ?? ''}`)
     .join('|');
   const processProjectionKey = processes
-    .map((process) => `${process.id}:${process.status ?? ''}:${process.shell_id ?? ''}:${process.sidecar_shell_id ?? ''}`)
+    .map((process) => `${process.id}:${process.status ?? ''}:${process.shell_id ?? ''}:${process.sidecar_shell_id ?? ''}:${process.project_id ?? ''}`)
     .join('|');
 
   // Refs keep the latest arrays accessible without adding them as useMemo deps.
@@ -140,9 +152,10 @@ export function useActiveTerminals(options: UseActiveTerminalsOptions = {}) {
     return filterTabs(shellsRef.current, processesRef.current, {
       visible: true,
       collaborationRoomId,
+      projectId,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shellProjectionKey, processProjectionKey, collaborationRoomId]);
+  }, [shellProjectionKey, processProjectionKey, collaborationRoomId, projectId]);
 
   const isLoading = shellsLoading || processesLoading;
 

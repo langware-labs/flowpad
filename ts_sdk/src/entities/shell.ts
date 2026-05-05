@@ -337,7 +337,15 @@ export class Shell extends APIEntity<Shell> implements IShell {
     if (this.status === ShellStatus.ERROR) return;
     if (!this._hasEverBeenActive) return;
     const workdir = this.workdir ?? dataContext.project?.fs_storage_mount_path ?? undefined;
-    void this.start({ cols: 80, rows: 24, workdir });
+    // Owned-shell guard: shells owned by an AgenticProcess have their
+    // recovery driven at the process layer (it knows session_id, --resume,
+    // env injection). Bare ``Shell.start`` would just spawn an empty PTY
+    // that the agentic-process open then has to drop. Lazy import keeps the
+    // existing module-dependency direction (agentic-process imports Shell).
+    void import('../process/agentic-process').then(({ _isShellOwnedByAgenticProcess }) => {
+      if (_isShellOwnedByAgenticProcess(this.id)) return;
+      void this.start({ cols: 80, rows: 24, workdir });
+    });
   }
 
   // ── Entity lifecycle ──────────────────────────────────────────────────────
