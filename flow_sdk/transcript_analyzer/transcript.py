@@ -7,9 +7,16 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator
 
-from .entries import ToolUseEntry
+from .entries import ExitPlanModeEntry, ToolUseEntry, UserMessageEntry
 from .entry import EntryKind, TranscriptEntry
 from .parsers import get_parser_class
+
+# User-message texts that are synthetic (Claude Code injects them on user
+# interrupts). They're "user" lines in the JSONL but the human didn't type
+# them — drop from the prompts collection.
+_SYNTHETIC_USER_TEXTS = frozenset({
+    "[Request interrupted by user for tool use]",
+})
 
 if TYPE_CHECKING:
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
@@ -109,6 +116,39 @@ class AgentTranscript:
             if isinstance(e, ToolUseEntry) and e.tool_name == tool_name:
                 return e
         return None
+
+    @property
+    def prompts(self) -> list[UserMessageEntry]:
+        """User-typed prompts in chronological order.
+
+        Filters: drop sub-agent (``is_sidechain``) lines, drop empty/
+        whitespace-only text, drop Claude Code's synthetic
+        ``[Request interrupted by user for tool use]`` marker. Slash
+        commands and Flowpad-injected prompts are kept — they're
+        user-equivalent actions.
+        """
+        out: list[UserMessageEntry] = []
+        for e in self.entries:
+            if not isinstance(e, UserMessageEntry):
+                continue
+            if e.is_sidechain:
+                continue
+            text = (e.text or "").strip()
+            if not text or text in _SYNTHETIC_USER_TEXTS:
+                continue
+            out.append(e)
+        return out
+
+    @property
+    def latest_plan(self) -> ExitPlanModeEntry | None:
+        """Most recent ``ExitPlanMode`` tool_use, or None.
+
+        ``latest_tool_use("ExitPlanMode")`` already returns the
+        ``ExitPlanModeEntry`` subclass when present (parser-side dispatch
+        in ``ClaudeParser._parse_assistant``).
+        """
+        latest = self.latest_tool_use("ExitPlanMode")
+        return latest if isinstance(latest, ExitPlanModeEntry) else None
 
     def to_flow_data(self) -> list["FlowData"]:
         """Concatenated ``FlowData`` stream from every entry."""

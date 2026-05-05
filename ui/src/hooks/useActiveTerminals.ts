@@ -1,6 +1,6 @@
-import { AgenticProcess, isProcessActive, QueryFilter, QueryRequest, Shell, ShellStatus } from '@sdk';
+import { AgenticProcess, isProcessActive, ProcessStatus, QueryFilter, QueryRequest, Shell, ShellStatus } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 
 /** Discriminator for tab type */
 export type TerminalTabType = 'plain' | 'claude';
@@ -156,6 +156,46 @@ export function useActiveTerminals(options: UseActiveTerminalsOptions = {}) {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shellProjectionKey, processProjectionKey, collaborationRoomId, projectId]);
+
+  // Cleanup stuck STOPPING processes from the client. After a 10s debounce
+  // (so a live close() has time to finish naturally), check each STOPPING
+  // row's actual liveness via os-status; if the worker is demonstrably
+  // gone, write STOPPED directly via the entity's save() path. Imperfect
+  // (race window between the os-status read and the save), but pragmatic —
+  // we don't have a server-side reconciler.
+  const stuckKey = processes
+    .filter((p) => p.status === ProcessStatus.STOPPING)
+    .map((p) => p.id)
+    .sort()
+    .join('|');
+  useEffect(() => {
+    if (!stuckKey) return;
+    const stuckIds = stuckKey.split('|');
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void (async () => {
+        for (const id of stuckIds) {
+          if (cancelled) return;
+          const proc = processesRef.current.find((p) => p.id === id);
+          if (!proc || proc.status !== ProcessStatus.STOPPING) continue;
+          try {
+            const status = await proc.getOsStatus();
+            if (cancelled) return;
+            if (!status.has_attachable_pty && !status.worker_alive) {
+              proc.status = ProcessStatus.STOPPED;
+              await proc.save();
+            }
+          } catch {
+            // best-effort cleanup; swallow per-process errors
+          }
+        }
+      })();
+    }, 10_000);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [stuckKey]);
 
   const isLoading = shellsLoading || processesLoading;
 

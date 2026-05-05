@@ -32,3 +32,6 @@ class UnknownEntry(TranscriptEntry):
     def to_flow_data(self) -> list[FlowData]:
         # Unknowns don't render — the warn is the audit trail.
         return []
+
+    def to_dict(self) -> dict:
+        return {**super().to_dict(), "raw_data": self.raw_data}

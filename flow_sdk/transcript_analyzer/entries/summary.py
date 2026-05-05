@@ -19,3 +19,6 @@ class SummaryEntry(TranscriptEntry):
     def to_flow_data(self) -> list[FlowData]:
         # Summaries belong to the session metadata pane, not the chat stream.
         return []
+
+    def to_dict(self) -> dict:
+        return {**super().to_dict(), "summary_text": self.summary_text}

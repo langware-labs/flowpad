@@ -50,3 +50,6 @@ class AssistantMessageEntry(TranscriptEntry):
                 },
             ))
         return out
+
+    def to_dict(self) -> dict:
+        return {**super().to_dict(), "text": self.text, "thinking": self.thinking}

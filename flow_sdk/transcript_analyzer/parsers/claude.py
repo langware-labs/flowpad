@@ -82,6 +82,7 @@ class ClaudeParser:
             timestamp=str(raw.get("timestamp") or ""),
             worker=self.worker_type,
             parent_id=str(raw.get("parentUuid") or "") or None,
+            is_sidechain=bool(raw.get("isSidechain", False)),
         )
 
         if rtype == "assistant":
