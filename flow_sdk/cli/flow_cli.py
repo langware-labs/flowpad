@@ -440,7 +440,7 @@ def auth_login(
         import asyncio
 
         from flow_sdk.cli.auth.cloud_login import cloud_login
-        from flow_sdk.server.app import wait_for_post_login
+        from flow_sdk.server.app import wait_for_login_callback
 
         typer.echo("\n🌊 Logging in to Flowpad...")
         try:
@@ -456,7 +456,7 @@ def auth_login(
         else:
             # Browser-mode: cloud_login opened the system browser; wait for the callback.
             typer.echo(f"Opened browser: {launch['url']}\n")
-            result = wait_for_post_login()
+            result = wait_for_login_callback()
             if result.get("success"):
                 typer.echo("\n✓ Successfully logged in to Flowpad")
                 typer.echo("✓ API key stored securely in system keyring")
@@ -501,12 +501,12 @@ def auth_test(delay: Annotated[int, typer.Option(help="Delay in seconds before a
     """
     import webbrowser
 
-    from flow_sdk.server.app import wait_for_post_login
+    from flow_sdk.server.app import wait_for_login_callback
 
     port = _discover_port()
 
     # Build the test login URL with callback and delay
-    callback_url = f"http://127.0.0.1:{port}/api/v1/cloud/post_login"
+    callback_url = f"http://127.0.0.1:{port}/auth/login_callback"
     test_login_url = f"http://127.0.0.1:{port}/api/v1/cloud/test_login?callback={callback_url}&delay={delay}"
 
     typer.echo(f"\n🧪 Opening test login page with {delay} second delay...")
@@ -516,7 +516,7 @@ def auth_test(delay: Annotated[int, typer.Option(help="Delay in seconds before a
     webbrowser.open(test_login_url)
 
     # Wait for the login callback
-    result = wait_for_post_login()
+    result = wait_for_login_callback()
 
     if result.get("success"):
         typer.echo("\n✓ Test login successful!")
