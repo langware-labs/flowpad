@@ -1631,10 +1631,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     rows?: number;
   }): Promise<boolean> {
     const { Shell } = await import('../entities/shell');
-    if (this.status === ProcessStatus.STOPPING) {
-      throw new Error('Process is stopping');
-    }
-
+    // No client-side STOPPING guard. The server's ``open`` action runs
+    // ``reap_if_orphaned()`` at entry: if the row is stuck in STOPPING with
+    // a dead worker, it's reset to STOPPED and the start proceeds normally.
+    // If it's a *live* transitioner (within the 10s grace), the server will
+    // refuse with a useful response — let the server be the authority.
+    //
     // No client-side lifecycle fast path. The backend ``open`` action is the
     // single oracle for reattach-vs-recover-vs-fresh. The dedupe that *did*
     // matter — "I'm already on this same pty_id, don't reopen the WS" — is

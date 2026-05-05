@@ -172,10 +172,17 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     agenticProcess: contextAgenticProcess,
     project: contextProject,
   } = useContext();
-  // Scope the tab strip to the current project (or the spawn project, when this
-  // strip is rendered for a CollaborationSpace that pins to a different project).
+  // The strip presents exactly what the hook returns. Initial fetch + direct
+  // mutations (pushTab/removeTab) own the list. Per-row liveness flows through
+  // the entity cache (shell.status, agenticProcess.status, etc.).
+  // The `spawnProjectId`/`contextProject` is kept only as a label for
+  // ProjectsCounterChip — never to filter the strip.
   const tabsProjectId = spawnProjectId ?? contextProject?.id ?? null;
-  const { tabs: sessions } = useActiveTerminals({ collaborationRoomId, projectId: tabsProjectId });
+  const { data: allTabs, removeTab, pushTab, refresh: refreshTabs } = useActiveTerminals();
+  const sessions = useMemo(() => {
+    if (collaborationRoomId == null) return allTabs;
+    return allTabs.filter((t) => t.shell?.collaboration_room_id === collaborationRoomId);
+  }, [allTabs, collaborationRoomId]);
   const _perfLoggedRef = useRef(false);
   if (!_perfLoggedRef.current) {
     _perfLoggedRef.current = true;
@@ -281,8 +288,9 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
         result.shellId
           ? Shell.getByIdFromCache<Shell>(result.shellId) ?? undefined
           : undefined;
-      onTabOpen?.({
+      const newTab: TerminalTab = {
         shellId: result.shellId ?? '',
+        processId: agenticProcess?.id ?? null,
         tabOrder: shell?.tab_order ?? 0,
         name: shell?.name ?? null,
         type: 'claude',
@@ -290,9 +298,14 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
         shell,
         isDisabled: false,
         statusReason: '',
-      });
+        projectId: agenticProcess?.project_id ?? shell?.project_id ?? null,
+        projectDisplayName: null,
+      };
+      if (newTab.shellId) pushTab(newTab);
+      onTabOpen?.(newTab);
+      void refreshTabs();
     },
-    [clearPendingTabCreation, navigation, onTabOpen, spawnProjectId],
+    [clearPendingTabCreation, navigation, onTabOpen, pushTab, refreshTabs, spawnProjectId],
   );
 
   const handleStartClaude = useCallback(() => startAgenticTab('claude', 'claude_code'), [startAgenticTab]);
@@ -315,17 +328,23 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       }
       setPendingTabCreation({ kind: 'terminal', targetShellId: result.shellId, targetProcessId: null });
       const shell = Shell.getByIdFromCache<Shell>(result.shellId) ?? undefined;
-      onTabOpen?.({
+      const newTab: TerminalTab = {
         shellId: result.shellId,
+        processId: null,
         tabOrder: shell?.tab_order ?? 0,
         name: shell?.name ?? null,
         type: 'plain',
         shell,
         isDisabled: false,
         statusReason: '',
-      });
+        projectId: shell?.project_id ?? null,
+        projectDisplayName: null,
+      };
+      pushTab(newTab);
+      onTabOpen?.(newTab);
+      void refreshTabs();
     },
-    [clearPendingTabCreation, navigation, onTabOpen],
+    [clearPendingTabCreation, navigation, onTabOpen, pushTab, refreshTabs],
   );
 
   const handleStartTerminal = useCallback(() => startTerminalTab(), [startTerminalTab]);
@@ -431,6 +450,11 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     async (shellId: string): Promise<void> => {
       const session = sessions.find((s) => s.shellId === shellId);
       if (!session) return;
+      // Optimistic local removal. Background refreshes are intentionally
+      // non-disruptive (they preserve stale rows so the strip doesn't churn
+      // under the user); user-initiated close is the only explicit signal
+      // that a tab should disappear from the strip.
+      removeTab(shellId);
       try {
         const sessionProcess = session.shellId === activeShellId ? contextAgenticProcess : undefined;
         if (sessionProcess) {
@@ -443,7 +467,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
         console.error('[TabbedTerminal] Failed to close tab:', shellId, error);
       }
     },
-    [sessions, activeShellId, contextAgenticProcess, onTabClose],
+    [sessions, activeShellId, contextAgenticProcess, onTabClose, removeTab],
   );
 
   const handleCloseTab = useCallback(
@@ -1006,21 +1030,21 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
         onOpenChange={setHistoryModalOpen}
         onSelect={async (entry) => {
           setHistoryModalOpen(false);
-          if (entry.agentic_process_id) {
-            await navigation.openShellProcess(entry.agentic_process_id);
-            return;
-          }
-          if (entry.worker_type === 'claude') {
-            try {
+          try {
+            if (entry.agentic_process_id) {
+              await navigation.openShellProcess(entry.agentic_process_id);
+            } else if (entry.worker_type === 'claude') {
               const process = await AgenticProcess.fromClaudeSession(
                 entry.worker_id,
                 entry.project_cwd ?? undefined,
                 entry.project_id ?? undefined,
               );
               navigation.openDockPointer(process.dockPointer);
-            } catch (err) {
-              console.error('[TabbedTerminal] Failed to open Claude session from history:', err);
             }
+          } catch (err) {
+            console.error('[TabbedTerminal] Failed to open Claude session from history:', err);
+          } finally {
+            void refreshTabs();
           }
         }}
       />

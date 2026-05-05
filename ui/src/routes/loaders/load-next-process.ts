@@ -20,9 +20,9 @@
  */
 
 import { AgenticProcess, Shell } from '@sdk';
-import { filterTabs } from '@src/hooks/useActiveTerminals';
+import { fetchActiveTerminals } from '@src/hooks/useActiveTerminals';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
-import { fetchShellsAndProcesses, loadShell, resolveDefaultTab, ShellLoadError } from './load-shell';
+import { loadShell, resolveDefaultTab, ShellLoadError } from './load-shell';
 
 // ── public types ────────────────────────────────────────────────────────────
 
@@ -147,8 +147,11 @@ export async function loadNextProcess(
   const cleaned: CleanupRecord[] = [];
   const tried = new Set(options.excludeIds ?? []);
 
-  const [shells, processes] = await fetchShellsAndProcesses();
-  const tabs = filterTabs(shells, processes, { visible: true, projectId: options.projectId ?? null });
+  const allTabs = await fetchActiveTerminals();
+  const projectId = options.projectId ?? null;
+  const tabs = projectId == null
+    ? allTabs
+    : allTabs.filter((t) => t.projectId === projectId);
 
   while (true) {
     const tab = resolveDefaultTab(tabs, tried);

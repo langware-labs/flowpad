@@ -27,7 +27,7 @@ function resolveProjectName(projectId: string): string {
 
 export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ currentProjectId }) => {
   const [open, setOpen] = useState(false);
-  const { tabs } = useActiveTerminals({});
+  const { data: tabs } = useActiveTerminals();
 
   const { rows, total } = useMemo(() => {
     const byProject = new Map<string, TerminalTab[]>();
