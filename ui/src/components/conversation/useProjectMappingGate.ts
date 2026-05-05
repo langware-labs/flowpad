@@ -100,14 +100,24 @@ export function useProjectMappingGate(
   const initialActiveRef = useRef<{ subjectKey: string; activeProjectId: string | null } | null>(null);
   useEffect(() => {
     if (!mappingLoaded || !subjectKey) return;
-    if (!remoteProjectId && !isRemapTo(activeProjectId)) return;
 
+    // Capture the initial activeProjectId before any remote/remap guards —
+    // otherwise an early-return on a fresh-and-local conversation would skip
+    // the capture and the *next* pick would be (incorrectly) treated as the
+    // initial observation rather than a change.
     if (initialActiveRef.current?.subjectKey !== subjectKey) {
       initialActiveRef.current = { subjectKey, activeProjectId };
       return;
     }
     if (initialActiveRef.current.activeProjectId === activeProjectId) return;
     if (!activeProjectId) return;
+
+    // Now decide whether this change matters. A change matters when the
+    // subject either has remote provenance (mapping-table write) or already
+    // had a local project (Feature 1 navigate-on-remap). Otherwise the conv
+    // is fresh-and-local — leave claim-on-context-change to the explicit
+    // creation flow (Feature 2).
+    if (!remoteProjectId && !isRemapTo(activeProjectId)) return;
 
     const dedupeKey = `${subjectKey}:${remoteProjectId ?? ''}:${activeProjectId}`;
     if (autoMapAttemptedRef.current.has(dedupeKey)) return;

@@ -502,6 +502,37 @@ describe('useProjectMappingGate — Feature 1 navigate-on-remap', () => {
     expect(openDockMock).not.toHaveBeenCalled();
   });
 
+  it('navigates on the FIRST switch for a local conv with no remote provenance', async () => {
+    // Regression: the conversation has its own project_id but no
+    // remote_project_id (a local-origin conv). The auto-persist effect must
+    // capture the mount-time activeProjectId on first observation regardless
+    // of remote/remap guards — otherwise the user's first project switch
+    // would be (mis-)treated as the initial mount and only the *second*
+    // switch would navigate.
+    registerFakeProject(ID.localZ, 'Z', '/p/z');
+    const conv = makeConv({
+      id: ID.convA,
+      remote_project_id: null,    // local-origin: no remote provenance
+      project_id: ID.localY,      // already filed under localY
+    });
+    // Loader has set ctx.project to match conv.project_id by the time the
+    // gate mounts (load-conversation reads conv.project_id).
+    setCtxProject({ id: ID.localY });
+
+    renderHook(() => useProjectMappingGate(undefined, conv));
+
+    // First switch (footer pill localY → localZ).
+    await act(async () => { setCtxProject({ id: ID.localZ }); });
+
+    await waitFor(() => {
+      // Feature 1: navigation must fire on the *first* switch.
+      expect(openDockMock).toHaveBeenCalledTimes(1);
+    });
+    // Conv is preserved.
+    expect(applyProjectToConversationMock).not.toHaveBeenCalled();
+    expect(persistRemoteToLocalMappingMock).not.toHaveBeenCalled();
+  });
+
   it('navigates only on task-bound remap — does NOT rewrite the task or conversation', async () => {
     // Regression: the gate must base "is this a remap?" on whichever entity
     // actually carries the existing project. If the conv mirror is null but

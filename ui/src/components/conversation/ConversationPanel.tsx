@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import { Conversation, type Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
+import { ConversationChips } from './chips/ConversationChips';
+import { ConversationEntityChips } from './chips/ConversationEntityChips';
 import { ConversationToolbar } from './ConversationToolbar';
 import { ConversationView } from './ConversationView';
 import { ConversationMode } from './conversation-mode';
@@ -90,10 +92,10 @@ export function ConversationPanel({
 
   return (
     <div className={className}>
-      {(headerLabel !== null || task) && (
+      {(headerLabel !== null || task || convEntity) && (
         <div className={headerWrapper}>
           {headerLabel !== null && <span>{headerLabel}</span>}
-          {task && (
+          {task ? (
             <ChipsExcludeProvider add={selfPageKeys}>
               <ConversationToolbar
                 task={task}
@@ -102,7 +104,20 @@ export function ConversationPanel({
                 ensureMapped={ensureMapped}
               />
             </ChipsExcludeProvider>
-          )}
+          ) : convEntity ? (
+            // Task-less conversations (project-scoped chats, hub-direct convs)
+            // get the same chip strip — driven by `conversation.contextEntities`
+            // (project_id projection + any explicit context entries) plus the
+            // shared transcript/terminal chips. Without this, the upper bar
+            // would be empty even when the conversation knows which project
+            // (and other entities) it relates to.
+            <ChipsExcludeProvider add={selfPageKeys}>
+              <div className="flex items-center gap-1">
+                <ConversationEntityChips conversation={convEntity} />
+                <ConversationChips conversationId={conversationId} />
+              </div>
+            </ChipsExcludeProvider>
+          ) : null}
         </div>
       )}
       <div className={bodyWrapper}>
