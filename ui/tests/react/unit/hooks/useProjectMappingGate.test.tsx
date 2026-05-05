@@ -463,7 +463,7 @@ describe('useProjectMappingGate — task-less conversation subject', () => {
 // ────────────────────────────────────────────────────────────────────────────
 
 describe('useProjectMappingGate — Feature 1 navigate-on-remap', () => {
-  it('navigates to the new project home when the conversation had a different project', async () => {
+  it('navigates only — does NOT rewrite project_id when the conversation already had a different project', async () => {
     registerFakeProject(ID.localZ, 'Z', '/p/z');
     // Conversation arrives already mapped to localY (a prior pick).
     const conv = makeConv({
@@ -471,8 +471,6 @@ describe('useProjectMappingGate — Feature 1 navigate-on-remap', () => {
       remote_project_id: ID.remoteX,
       project_id: ID.localY,
     });
-    // Stamp helper reports a replacement so the gate's navigate path fires.
-    applyProjectToConversationMock.mockResolvedValueOnce({ saved: true, wasReplacement: true });
 
     renderHook(() => useProjectMappingGate(undefined, conv));
 
@@ -480,20 +478,19 @@ describe('useProjectMappingGate — Feature 1 navigate-on-remap', () => {
     await act(async () => { setCtxProject({ id: ID.localZ }); });
 
     await waitFor(() => {
-      expect(applyProjectToConversationMock).toHaveBeenCalledWith(
-        ID.convA,
-        expect.objectContaining({ id: ID.localZ }),
-      );
-      // Feature 1: navigation fired with the new project's dock pointer.
+      // Feature 1: navigation fires with the picked project's dock pointer.
       expect(openDockMock).toHaveBeenCalledTimes(1);
     });
+    // The conversation's project_id is preserved — picking a different
+    // project from a mapped conv is a navigation shortcut, not a re-map.
+    expect(applyProjectToConversationMock).not.toHaveBeenCalled();
+    expect(persistRemoteToLocalMappingMock).not.toHaveBeenCalled();
   });
 
-  it('does NOT navigate on first-time pick (no previous project_id to replace)', async () => {
+  it('does NOT navigate on first-time pick (no previous project to replace) — stamps instead', async () => {
     registerFakeProject(ID.localY, 'Y', '/p/y');
     // Conversation has no project yet.
     const conv = makeConv({ id: ID.convA, remote_project_id: ID.remoteX });
-    // Default mock returns wasReplacement: false — first pick is not a remap.
 
     renderHook(() => useProjectMappingGate(undefined, conv));
 
@@ -503,5 +500,31 @@ describe('useProjectMappingGate — Feature 1 navigate-on-remap', () => {
       expect(applyProjectToConversationMock).toHaveBeenCalled();
     });
     expect(openDockMock).not.toHaveBeenCalled();
+  });
+
+  it('navigates only on task-bound remap — does NOT rewrite the task or conversation', async () => {
+    // Regression: the gate must base "is this a remap?" on whichever entity
+    // actually carries the existing project. If the conv mirror is null but
+    // task.project_id is set, the remap signal must still fire.
+    registerFakeProject(ID.localZ, 'Z', '/p/z');
+    const task = makeTask({ id: ID.taskA, project_id: ID.localY });
+    const conv = makeConv({
+      id: ID.convA,
+      remote_project_id: ID.remoteX,
+      project_id: null, // mirror not set — task carries the existing project
+    });
+    renderHook(() => useProjectMappingGate(task, conv));
+
+    // Footer pill: user picks a different local project.
+    await act(async () => { setCtxProject({ id: ID.localZ }); });
+
+    await waitFor(() => {
+      // Feature 1: navigation fires because task already had localY.
+      expect(openDockMock).toHaveBeenCalledTimes(1);
+    });
+    // Task / conversation / mapping table are all left alone.
+    expect(applyProjectToTaskMock).not.toHaveBeenCalled();
+    expect(applyProjectToConversationMock).not.toHaveBeenCalled();
+    expect(persistRemoteToLocalMappingMock).not.toHaveBeenCalled();
   });
 });
