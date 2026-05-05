@@ -481,20 +481,61 @@ async def _send_hub_notification(
     return hub_flow_message_id, email_error
 
 
-async def _upload_bundle_to_hub(hub_flow_message_id: str, fm: "FlowMessage", task_title: str) -> None:
-    """Pack and upload the .flowmsg bundle to the hub (best-effort, non-fatal)."""
+def _bundle_filename_for(task_title: str) -> str:
+    """Deterministic .flowmsg filename for a given title — callable before the
+    FM exists so callers can pre-stamp ``attachment_filename`` on the hub FM at
+    creation time (avoids a follow-up PUT, which 'member'-role senders can't make).
+    """
+    return f"{_meaningful_name(task_title)}.flowmsg"
+
+
+async def _pack_and_upload_bundle(
+    hub_flow_message_id: str, fm: "FlowMessage", bundle_filename: str,
+) -> bool:
+    """Pack the FM into a .flowmsg zip and POST it to the hub's fs/upload action.
+
+    Best-effort: returns True on success, False (with a warning) on any failure.
+    Caller is responsible for ensuring ``attachment_filename`` lands on the hub
+    FM record — either via this function's companion ``_upload_bundle_to_hub``
+    (PUT-based) or by including the field in the FM's create-time payload.
+    """
     try:
         zip_path = await fm.to_file()
-        bundle_filename = f"{_meaningful_name(task_title)}.flowmsg"
         content = zip_path.read_bytes()
         await hub_post(
             BuiltinEntityType.FLOW_MESSAGE, {}, hub_flow_message_id, "fs", "upload",
             files={"uploaded_file": (bundle_filename, content, "application/zip")},
         )
         zip_path.unlink(missing_ok=True)
-        await hub_put(BuiltinEntityType.FLOW_MESSAGE, hub_flow_message_id, {"attachment_filename": bundle_filename})
+        return True
     except Exception as _upload_err:
         logger.warning("[notification_action] bundle upload to hub failed (non-fatal): %s", _upload_err)
+        return False
+
+
+async def _upload_bundle_to_hub(hub_flow_message_id: str, fm: "FlowMessage", task_title: str) -> None:
+    """Pack, upload, and stamp ``attachment_filename`` on the hub FM via PUT.
+
+    Used by the task-bound reply path where the sender owns the FM and the
+    follow-up PUT is permitted. The plain-conversation path can't use this
+    (members lack PUT access on flow_message); it pre-stamps
+    ``attachment_filename`` via the ``add_message`` body and calls
+    ``_pack_and_upload_bundle`` directly.
+    """
+    bundle_filename = _bundle_filename_for(task_title)
+    if not await _pack_and_upload_bundle(hub_flow_message_id, fm, bundle_filename):
+        return
+    try:
+        await hub_put(
+            BuiltinEntityType.FLOW_MESSAGE,
+            hub_flow_message_id,
+            {"attachment_filename": bundle_filename},
+        )
+    except Exception as _put_err:
+        logger.warning(
+            "[notification_action] bundle attachment_filename PUT failed (non-fatal): %s",
+            _put_err,
+        )
 
 
 async def _save_local_notification(
@@ -910,16 +951,23 @@ async def _handle_plain_conversation_append(
 ) -> ApiResponse:
     """Send path for plain (taskless) replies on a hub-mirrored conversation.
 
-    Identical bundle delivery to the task-bound path; the only divergence is
-    *id allocation*. The hub's ``conversation/{id}/add_message`` action
-    requires hub-allocated ids (it 404s on body-supplied ones), so we POST
-    first, then build the local FM with the returned id, then pack and
-    upload the .flowmsg bundle. ``context_entities`` carries the Conversation
-    TypeId so receiver-side ``unpack_bundle`` can resolve target_conv_id and
-    thread the message through the conversation pointer; ``_upload_bundle_to_hub``
-    stamps ``attachment_filename`` on the hub FM, which is the signal
-    ``handle_conversation_sync`` uses to switch from metadata-only mirror
-    to bundle download on the receiver.
+    Identical bundle delivery to the task-bound path with two differences:
+
+    1. *Id allocation*: the hub's ``conversation/{id}/add_message`` action
+       requires hub-allocated ids (it 404s on body-supplied ones), so we POST
+       first, then build the local FM with the returned id.
+    2. *attachment_filename stamping*: the bundle filename is pre-computed
+       from ``conv.name`` and included in the ``add_message`` body so it
+       lands on the hub FM at creation time. The task-bound path PUTs it
+       afterwards via ``_upload_bundle_to_hub`` — but that PUT is rejected
+       for the 'member' role on someone else's conversation, so we sidestep
+       it here by pre-stamping.
+
+    ``context_entities`` carries the Conversation TypeId so receiver-side
+    ``unpack_bundle`` can resolve target_conv_id and thread the message
+    through the conversation pointer. ``attachment_filename`` is the signal
+    ``handle_conversation_sync`` uses on the receiver to switch from
+    metadata-only mirror to bundle download.
     """
     from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
     from flow_sdk.builtin.flow_message import AttachmentType, FILE_VFS_PREFIX, PROMPT_FILE_VFS_PREFIX
@@ -940,11 +988,20 @@ async def _handle_plain_conversation_append(
     for name in file_bytes:
         attachment.append({"attachment_type": AttachmentType.FILE.value, "data": f"{FILE_VFS_PREFIX}{name}"})
 
+    # Pre-compute the bundle filename so we can stamp it on the hub FM at
+    # creation time. This avoids a follow-up PUT to set attachment_filename,
+    # which a 'member'-role sender lacks permission to make on someone else's
+    # conversation. The filename is deterministic from conv.name, so it's
+    # safe to commit to it before the bundle exists.
+    bundle_title = conv.name or "message"
+    bundle_filename = _bundle_filename_for(bundle_title)
+
     payload = {
         "text": message,
         "sender_id": sender_id,
         "sender_name": sender_name,
         "attachment": attachment,
+        "attachment_filename": bundle_filename,
     }
     try:
         hub_fm = await hub_post(BuiltinEntityType.CONVERSATION, payload, conv.id, "add_message")
@@ -991,11 +1048,10 @@ async def _handle_plain_conversation_append(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
-    # Pack the .flowmsg bundle and upload to the hub. _upload_bundle_to_hub
-    # also stamps attachment_filename on the hub FM record — that's the
-    # signal handle_conversation_sync uses on the receiver to switch from
-    # metadata-only mirror to bundle download.
-    await _upload_bundle_to_hub(fm_id, fm, conv.name or "message")
+    # Pack and upload the .flowmsg. attachment_filename was already stamped
+    # at creation time via the add_message payload, so no follow-up PUT is
+    # needed (which 'member' senders can't make anyway).
+    await _pack_and_upload_bundle(fm_id, fm, bundle_filename)
 
     conv = await Conversation.get_one({"id": conv.id})
     return ApiSuccessResponse(data={
