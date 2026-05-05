@@ -236,6 +236,20 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     if (activeShellId) dataContext.setActiveShellId(activeShellId);
   }, [activeShellId]);
 
+  // Self-heal when the active shell falls out of the visible strip — happens
+  // after a project context switch (chip popover, footer modal, deep link).
+  // We pick the first tab in the new strip and navigate to it; the route
+  // loader updates URL + activeShellId + dataContext.project together so
+  // the strip, panel, and URL stay coherent regardless of who triggered the
+  // context change.
+  useEffect(() => {
+    if (visibleSessions.length === 0) return;
+    if (hasActiveTab) return;
+    const firstSession = visibleSessions[0];
+    const pointer = firstSession.agenticProcess?.dockPointer ?? firstSession.shell?.dockPointer;
+    if (pointer) navigation.openDockPointer(pointer);
+  }, [hasActiveTab, visibleSessions, navigation]);
+
   const clearPendingTabCreation = useCallback(() => {
     tabCreationLockRef.current = false;
     setPendingTabCreation(null);
@@ -990,9 +1004,23 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       <HistoryModal
         open={historyModalOpen}
         onOpenChange={setHistoryModalOpen}
-        onSelect={(item) => {
+        onSelect={async (entry) => {
           setHistoryModalOpen(false);
-          navigation.openDockPointer(item.dockPointer);
+          if (entry.agentic_process_id) {
+            await navigation.openShellProcess(entry.agentic_process_id);
+            return;
+          }
+          if (entry.worker_type === 'claude') {
+            try {
+              const process = await AgenticProcess.fromClaudeSession(
+                entry.worker_id,
+                entry.project_cwd ?? undefined,
+              );
+              navigation.openDockPointer(process.dockPointer);
+            } catch (err) {
+              console.error('[TabbedTerminal] Failed to open Claude session from history:', err);
+            }
+          }
         }}
       />
       <InputDialog
