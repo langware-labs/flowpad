@@ -78,9 +78,11 @@ class FlowMessageExistsError(Exception):
 def _write_top_level_header(flow_message: "FlowMessage", tmp_root: Path) -> None:
     """Serialize the FlowMessage's own fields to ``<root>/header.json``.
 
-    FILE attachments are stored locally as VFS subpaths (e.g. ``data/file.txt``)
-    but the receiver locates them at ``attachment/files/<basename>`` inside
-    the zip — rewrite the ``data`` field accordingly so both sides agree.
+    Binary attachments are stored locally as VFS subpaths (FILE: ``data/<name>``,
+    PROMPT-with-file: ``prompt/<name>``) but the receiver locates them at
+    ``attachment/files/<basename>`` inside the zip — rewrite the ``data``
+    field accordingly so both sides agree. Inline-text PROMPT attachments
+    (data is the prompt text, not a VFS path) have no file and pass through.
     """
     msg_data = flow_message.model_dump(
         mode="python",
@@ -88,19 +90,31 @@ def _write_top_level_header(flow_message: "FlowMessage", tmp_root: Path) -> None
         context={"skip_api_serializer": True},
     )
     for att in msg_data.get("attachment", []):
-        if att.get("attachment_type") == AttachmentType.FILE.value:
-            att["data"] = f"attachment/files/{Path(att['data']).name}"
+        raw = att.get("data", "")
+        if raw.startswith("data/") or raw.startswith("prompt/"):
+            att["data"] = f"attachment/files/{Path(raw).name}"
     (tmp_root / "header.json").write_text(
         json.dumps(msg_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
     )
 
 
 def _pack_file_attachment(entry, flow_message: "FlowMessage", attachment_dir: Path) -> None:
-    """Copy a single FILE attachment from local VFS storage into ``attachment/files/``."""
+    """Copy a binary attachment (FILE or PROMPT-with-file) into ``attachment/files/``.
+
+    The local VFS layout (``data/<name>`` for FILE, ``prompt/<name>`` for
+    PROMPT-with-file) tells us whether bytes exist on disk. Inline-text
+    PROMPT attachments (no path prefix) are skipped — their text rides on
+    header.json. The receiver's ``_rewrite_file_attachments`` re-splits FILE
+    vs. PROMPT into ``data/`` / ``prompt/`` based on ``attachment_type``,
+    so the zip uses a single ``files/`` dir for both.
+    """
     from flow_sdk.storage import get_entity_embedded_storage
 
+    raw = entry.data or ""
+    if not (raw.startswith("data/") or raw.startswith("prompt/")):
+        return
     storage = get_entity_embedded_storage(flow_message.typeid)
-    file_path = Path(storage.get_storage_path(entry.data))
+    file_path = Path(storage.get_storage_path(raw))
     if not file_path.exists():
         return
     files_dir = attachment_dir / "files"
@@ -196,7 +210,7 @@ async def _pack_attachment_entry(
 
     Repo/URL attachments have no bytes to bundle — silently skipped.
     """
-    if entry.attachment_type == AttachmentType.FILE:
+    if entry.attachment_type in (AttachmentType.FILE, AttachmentType.PROMPT):
         _pack_file_attachment(entry, flow_message, attachment_dir)
         return
     if entry.attachment_type != AttachmentType.TYPE_ID:
@@ -283,24 +297,33 @@ def _read_entity_header(entity_dir: Path) -> dict | None:
 
 
 def _rewrite_file_attachments(fm_data: dict, tmp_root: Path, fm_id: str) -> None:
-    """Copy FILE attachments from the extracted zip into the FlowMessage's embedded
-    storage and rewrite their `data` field to a VFS subpath (data/{filename}).
+    """Copy binary attachments from the extracted zip into the FlowMessage's embedded
+    storage and rewrite their `data` field to the receiver-side VFS subpath.
 
-    This mirrors how the sender stores files so that fs/download works identically
-    for both sender and recipient.
+    FILE attachments land at ``data/<filename>``; PROMPT-with-file attachments
+    land at ``prompt/<filename>`` — the same layout the sender uses, so
+    ``/fs/download/`` resolves identically on both sides. Inline-text PROMPT
+    attachments are passed through.
     """
     from flow_sdk.api.type_id import TypeId
     from flow_sdk.storage import get_entity_embedded_storage
     fm_typeid = TypeId(type="flow_message", id=fm_id)
     storage = get_entity_embedded_storage(fm_typeid)
     for att in fm_data.get("attachment", []):
-        if att.get("attachment_type") != AttachmentType.FILE.value:
-            continue
+        att_type = att.get("attachment_type")
         rel_path = att.get("data", "")
+        if not rel_path.startswith("attachment/files/"):
+            continue
+        if att_type == AttachmentType.FILE.value:
+            vfs_prefix = "data"
+        elif att_type == AttachmentType.PROMPT.value:
+            vfs_prefix = "prompt"
+        else:
+            continue
         src = tmp_root / rel_path
         if not src.exists():
             continue
-        vfs_subpath = f"data/{src.name}"
+        vfs_subpath = f"{vfs_prefix}/{src.name}"
         dest = Path(storage.get_storage_path(vfs_subpath))
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)

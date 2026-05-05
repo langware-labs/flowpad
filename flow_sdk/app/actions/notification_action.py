@@ -897,7 +897,7 @@ async def _read_upload_files(uploads: list) -> dict[str, bytes]:
     return out
 
 
-async def _handle_hub_mirrored_append(
+async def _handle_plain_conversation_append(
     *,
     conv: Conversation,
     message: str,
@@ -908,15 +908,22 @@ async def _handle_hub_mirrored_append(
     prompt_files: list,
     someone_typeid: str,
 ) -> ApiResponse:
-    """Hub-mirrored send path: hub allocates the FM id, both sides mirror.
+    """Send path for plain (taskless) replies on a hub-mirrored conversation.
 
-    The local-first append-conversation path doesn't fit hub-mirrored conversations
-    because the hub's ``add_message`` action treats a body-supplied ``id`` as a
-    reference to an existing entity (and 404s when not found). So we do the
-    inverse: push first, materialize locally with the hub-allocated id.
+    Identical bundle delivery to the task-bound path; the only divergence is
+    *id allocation*. The hub's ``conversation/{id}/add_message`` action
+    requires hub-allocated ids (it 404s on body-supplied ones), so we POST
+    first, then build the local FM with the returned id, then pack and
+    upload the .flowmsg bundle. ``context_entities`` carries the Conversation
+    TypeId so receiver-side ``unpack_bundle`` can resolve target_conv_id and
+    thread the message through the conversation pointer; ``_upload_bundle_to_hub``
+    stamps ``attachment_filename`` on the hub FM, which is the signal
+    ``handle_conversation_sync`` uses to switch from metadata-only mirror
+    to bundle download on the receiver.
     """
-    from flow_sdk.app.actions.flow_message_action import _materialize_remote_flow_message
+    from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
     from flow_sdk.builtin.flow_message import AttachmentType
+    from flow_sdk.fs_store.type_id import TypeId
     from flow_sdk.storage import get_entity_embedded_storage
 
     if not hub_base_url():
@@ -947,36 +954,33 @@ async def _handle_hub_mirrored_append(
         return ApiFailResponse(message="Hub returned no flow_message id")
     fm_id = hub_fm["id"]
 
-    # Hub upload path: sub_path is the *destination directory*; the hub's
-    # upload action appends the multipart filename. So `upload/data` +
-    # filename `foo.png` lands at `data/foo.png` (NOT `data/foo.png/foo.png`).
-    logger.warning(
-        "[hub_mirrored_append] uploading to hub fm=%s files=%s prompt_files=%s",
-        fm_id, list(file_bytes.keys()), list(prompt_file_bytes.keys()),
+    # Materialize the local FM with the hub-allocated id. context_entities
+    # carries the Conversation TypeId so pack_bundle's header.json contains
+    # the pointer the receiver's unpack_bundle uses to thread the message
+    # through materialize_flow_message → conversation.jsonl.
+    local_payload = {
+        "id": fm_id,
+        "text": message,
+        "sender_id": sender_id,
+        "sender_name": sender_name,
+        "context_entities": [str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))],
+        "attachment": attachment,
+        "conversation_id": conv.id,
+        "remote": True,
+    }
+    if hub_fm.get("created_date"):
+        local_payload["created_date"] = hub_fm["created_date"]
+    fm = await materialize_flow_message(
+        local_payload,
+        conversation_id=conv.id,
+        someone_typeid=someone_typeid,
+        bundle_ts=hub_fm.get("created_date"),
     )
-    for name, data in file_bytes.items():
-        try:
-            await hub_post(
-                BuiltinEntityType.FLOW_MESSAGE, {}, fm_id, "fs", "upload/data",
-                files={"uploaded_file": (name, data, "application/octet-stream")},
-            )
-            logger.warning("[hub_mirrored_append] uploaded data/%s (%d bytes)", name, len(data))
-        except HubError as e:
-            logger.warning("[hub_mirrored_append] file upload %s failed: %s", name, e)
-    for name, data in prompt_file_bytes.items():
-        try:
-            await hub_post(
-                BuiltinEntityType.FLOW_MESSAGE, {}, fm_id, "fs", "upload/prompt",
-                files={"uploaded_file": (name, data, "application/octet-stream")},
-            )
-            logger.warning("[hub_mirrored_append] uploaded prompt/%s (%d bytes)", name, len(data))
-        except HubError as e:
-            logger.warning("[hub_mirrored_append] prompt file upload %s failed: %s", name, e)
 
-    fm = await _materialize_remote_flow_message(hub_fm, conv.id, someone_typeid)
-    if not fm:
-        return ApiFailResponse(message="Failed to materialize FlowMessage locally")
-
+    # Write blobs to sender's local entity storage so pack_bundle can read
+    # them. Layout (data/<name>, prompt/<name>) matches what the receiver's
+    # _rewrite_file_attachments writes after unpack — sender and receiver
+    # resolve fs/download identically.
     storage = get_entity_embedded_storage(fm.typeid)
     for name, data in file_bytes.items():
         path = Path(storage.get_storage_path(f"data/{name}"))
@@ -986,6 +990,12 @@ async def _handle_hub_mirrored_append(
         path = Path(storage.get_storage_path(f"prompt/{name}"))
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
+
+    # Pack the .flowmsg bundle and upload to the hub. _upload_bundle_to_hub
+    # also stamps attachment_filename on the hub FM record — that's the
+    # signal handle_conversation_sync uses on the receiver to switch from
+    # metadata-only mirror to bundle download.
+    await _upload_bundle_to_hub(fm_id, fm, conv.title or "message")
 
     conv = await Conversation.get_one({"id": conv.id})
     return ApiSuccessResponse(data={
@@ -1096,11 +1106,12 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     if not isinstance(prompt_files, list):
         prompt_files = [prompt_files]
 
-    # Hub-mirrored conversations require the hub to allocate the FM id —
-    # its add_message action 404s on body-supplied ids — so this path
-    # diverges from the local-first sequence.
+    # Plain (taskless) replies on a hub-mirrored conversation diverge only
+    # in id allocation: the hub's add_message action 404s on body-supplied
+    # ids, so we POST first and let the hub allocate. Bundle delivery from
+    # there on is identical to the task-bound path.
     if not task and conv.remote and not is_draft:
-        return await _handle_hub_mirrored_append(
+        return await _handle_plain_conversation_append(
             conv=conv,
             message=message,
             sender_id=sender_id,
