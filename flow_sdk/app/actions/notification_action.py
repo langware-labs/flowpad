@@ -785,7 +785,7 @@ async def _attach_prompt(
     `prompt_files` is written to the entity VFS at `prompt/{filename}` and
     appended as a separate PROMPT attachment whose `data` is that VFS subpath.
     """
-    from flow_sdk.builtin.flow_message import Attachment, AttachmentType
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType, PROMPT_FILE_VFS_PREFIX
     from flow_sdk.storage import get_entity_embedded_storage
 
     new_atts: list = list(reply_fm.attachment or [])
@@ -801,7 +801,7 @@ async def _attach_prompt(
             if not hasattr(uf, "read"):
                 continue
             filename = getattr(uf, "filename", None) or "prompt.txt"
-            vfs_subpath = f"prompt/{filename}"
+            vfs_subpath = f"{PROMPT_FILE_VFS_PREFIX}{filename}"
             local_path = Path(storage.get_storage_path(vfs_subpath))
             local_path.parent.mkdir(parents=True, exist_ok=True)
             local_path.write_bytes(await uf.read())
@@ -819,7 +819,7 @@ async def _attach_uploaded_files(reply_fm: "FlowMessage", uploaded_files: list) 
     Files are stored at data/{filename} within the entity's embedded storage root so they can
     be served via GET /api/v1/graph/flow_message/{id}/fs/download/data/{filename}.
     """
-    from flow_sdk.builtin.flow_message import Attachment, AttachmentType
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FILE_VFS_PREFIX
     from flow_sdk.storage import get_entity_embedded_storage
 
     fm_typeid = reply_fm.typeid
@@ -830,7 +830,7 @@ async def _attach_uploaded_files(reply_fm: "FlowMessage", uploaded_files: list) 
         if not hasattr(uf, "read"):
             continue
         filename = getattr(uf, "filename", None) or "file"
-        vfs_subpath = f"data/{filename}"
+        vfs_subpath = f"{FILE_VFS_PREFIX}{filename}"
         local_path = Path(storage.get_storage_path(vfs_subpath))
         local_path.parent.mkdir(parents=True, exist_ok=True)
         content = await uf.read()
@@ -995,7 +995,7 @@ async def _handle_plain_conversation_append(
     # also stamps attachment_filename on the hub FM record — that's the
     # signal handle_conversation_sync uses on the receiver to switch from
     # metadata-only mirror to bundle download.
-    await _upload_bundle_to_hub(fm_id, fm, conv.title or "message")
+    await _upload_bundle_to_hub(fm_id, fm, conv.name or "message")
 
     conv = await Conversation.get_one({"id": conv.id})
     return ApiSuccessResponse(data={

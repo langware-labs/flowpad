@@ -52,7 +52,7 @@ _TASK_FIELDS = {"type", "id", "title", "description", "status", "task_type",
 if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
 
-from flow_sdk.builtin.flow_message import AttachmentType
+from flow_sdk.builtin.flow_message import AttachmentType, FILE_VFS_PREFIX, PROMPT_FILE_VFS_PREFIX
 
 
 def _json_default(obj):
@@ -91,7 +91,7 @@ def _write_top_level_header(flow_message: "FlowMessage", tmp_root: Path) -> None
     )
     for att in msg_data.get("attachment", []):
         raw = att.get("data", "")
-        if raw.startswith("data/") or raw.startswith("prompt/"):
+        if raw.startswith(FILE_VFS_PREFIX) or raw.startswith(PROMPT_FILE_VFS_PREFIX):
             att["data"] = f"attachment/files/{Path(raw).name}"
     (tmp_root / "header.json").write_text(
         json.dumps(msg_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
@@ -111,7 +111,7 @@ def _pack_file_attachment(entry, flow_message: "FlowMessage", attachment_dir: Pa
     from flow_sdk.storage import get_entity_embedded_storage
 
     raw = entry.data or ""
-    if not (raw.startswith("data/") or raw.startswith("prompt/")):
+    if not (raw.startswith(FILE_VFS_PREFIX) or raw.startswith(PROMPT_FILE_VFS_PREFIX)):
         return
     storage = get_entity_embedded_storage(flow_message.typeid)
     file_path = Path(storage.get_storage_path(raw))
@@ -315,9 +315,9 @@ def _rewrite_file_attachments(fm_data: dict, tmp_root: Path, fm_id: str) -> None
         if not rel_path.startswith("attachment/files/"):
             continue
         if att_type == AttachmentType.FILE.value:
-            vfs_prefix = "data"
+            vfs_prefix = FILE_VFS_PREFIX.rstrip("/")
         elif att_type == AttachmentType.PROMPT.value:
-            vfs_prefix = "prompt"
+            vfs_prefix = PROMPT_FILE_VFS_PREFIX.rstrip("/")
         else:
             continue
         src = tmp_root / rel_path
