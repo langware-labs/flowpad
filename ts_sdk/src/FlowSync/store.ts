@@ -399,10 +399,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     switch (op) {
       case 'create': {
-        const ref = this.getRef(typeId);
-        ref.entity = this.castAndDeepAssign(data);
-        ref.status = EntityStatus.READY;
-        this.subscriptions.get(typeId)?.forEach((cb) => void cb(ref.entity));
+        const entity = this.castAndDeepAssign(data);
+        this.register_new_entity(typeId, entity);
+        this._notifyAllAliases(typeId, entity, entity);
         break;
       }
       case 'update': {
@@ -417,12 +416,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         }
         ref.entity = this.castAndDeepAssign(data);
         ref.status = EntityStatus.READY;
-        this.subscriptions.get(typeId)?.forEach((cb) => void cb(ref.entity));
+        // Aliases share the same `ref` so cache reads stay consistent automatically;
+        // subscribers on alias keys still need to be notified.
+        this._notifyAllAliases(typeId, ref.entity, ref.entity);
         break;
       }
       case 'delete': {
-        this.entities.delete(typeId);
-        this.subscriptions.get(typeId)?.forEach((cb) => void cb(null));
+        const ref = this.entities.get(typeId);
+        const entity = ref?.entity ?? null;
+        this._deleteWithAliases(typeId);
+        this._notifyAllAliases(typeId, entity, null);
         break;
       }
     }
@@ -543,7 +546,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         // Silently ignore if schema is not available or isDbField check fails
       }
     }
-    this.subscriptions.get(typeId)?.forEach((cb) => void cb(ref.entity));
+    this._notifyAllAliases(typeId, ref.entity, ref.entity);
   }
 
   /**
@@ -560,6 +563,53 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
   }
 
+  /**
+   * Compute the alternate cache keys for an entity. Entities loaded with both
+   * a `uname` and a real UUID `id` are normally cached only under
+   * `<type>-@<uname>` (because `APIEntity.identifier` prefers `@uname`). We
+   * also mirror them under `<type>-<id>` so consumers that resolve refs by
+   * raw UUID — e.g. `process.project_id` → `Project.getByIdFromCache(uuid)` —
+   * find the entity. Returns an array to keep room for future alias kinds.
+   */
+  private _aliasTypeIdsFor(entity: any): TypeId[] {
+    if (!entity?.uname || !entity?.id || entity.id === `@${entity.uname}`) return [];
+    try {
+      return [new TypeId(entity.getType(), entity.id)];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Delete a cache entry AND any alias entries pointing to the same entity.
+   * Symmetric: works whether the caller passes the primary or an alias key.
+   */
+  private _deleteWithAliases(typeId: TypeId): void {
+    const ref = this.entities.get(typeId);
+    this.entities.delete(typeId);
+    if (ref?.entity) {
+      for (const alias of this._aliasTypeIdsFor(ref.entity)) {
+        if (!alias.equals(typeId)) this.entities.delete(alias);
+      }
+    }
+  }
+
+  /**
+   * Notify subscribers of `typeId` AND of any alias keys for the same entity.
+   * Caller must pass the entity (read BEFORE any deletion) so aliases compute
+   * correctly even when notifying about a removal (`value === null`).
+   */
+  private _notifyAllAliases(typeId: TypeId, entity: any | null, value: any | null): void {
+    this.subscriptions.get(typeId)?.forEach((cb) => void cb(value));
+    if (entity) {
+      for (const alias of this._aliasTypeIdsFor(entity)) {
+        if (!alias.equals(typeId)) {
+          this.subscriptions.get(alias)?.forEach((cb) => void cb(value));
+        }
+      }
+    }
+  }
+
   public register_new_entity(typeId: TypeId, entity: any) {
     const ref = this.getRef(typeId);
     if (ref.entity && ref.entity !== entity) {
@@ -567,6 +617,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
     ref.entity = entity;
     ref.status = EntityStatus.READY;
+    for (const alias of this._aliasTypeIdsFor(entity)) {
+      if (!alias.equals(typeId)) this.entities.set(alias, ref);
+    }
   }
 
   public hasRef(typeId: TypeId): boolean {
@@ -582,13 +635,15 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   public invalidateCacheByTypeId(typeId: TypeId): void {
-    this.entities.delete(typeId);
+    this._deleteWithAliases(typeId);
   }
 
   public removeEntityFromCache(typeId: TypeId): void {
     this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
-    this.entities.delete(typeId);
-    this.subscriptions.get(typeId)?.forEach((cb) => void cb(null));
+    const ref = this.entities.get(typeId);
+    const entity = ref?.entity ?? null;
+    this._deleteWithAliases(typeId);
+    this._notifyAllAliases(typeId, entity, null);
   }
 
   public getRef(typeId: TypeId): EntityRef<T> {
@@ -1047,11 +1102,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           console.warn(`[DataManager] Skipping entity with invalid id "${identifier}" for type: ${entityJson['type']}`);
           continue;
         }
-        const ref = this.getRef(typeId);
-        ref.entity = this.castAndDeepAssign(entityJson);
-        ref.status = EntityStatus.READY;
-        // TODO: Why we did not update the entity here ? we are just update the ref!!
-        this.entities.set(ref.entity.typeId, ref);
+        const entity = this.castAndDeepAssign(entityJson);
+        this.register_new_entity(entity.typeId, entity);
+        const ref = this.getRef(entity.typeId);
         queryResult.push(ref.entity as U);
       }
 
@@ -1177,7 +1230,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       if (!isDeleted) {
         throw new Error('No data returned');
       }
-      this.entities.delete(typeId);
+      this._deleteWithAliases(typeId);
       // Keep query-driven UIs reactive even when backend doesn't emit a delete DataOp.
       // If a delete DataOp arrives later, removeEntityFromResults is idempotent.
       this.watchedQueries.removeEntityFromResults(typeId.type, typeId);

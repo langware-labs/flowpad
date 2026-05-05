@@ -204,7 +204,7 @@ async function routeNewTerminal(): Promise<never> {
 }
 
 async function routeDefaultShell(): Promise<void> {
-  const result = await loadNextProcess();
+  const result = await loadNextProcess({ projectId: dataContext.project?.id ?? null });
   handleCleanups(result.cleaned);
   if (!result.loaded) {
     // Empty state: clear context, render whatever the shell view shows when
@@ -234,7 +234,10 @@ async function routeProcessPointer(processId: string): Promise<void> {
     // Use replace so the broken URL doesn't sit in history; otherwise BACK
     // would pop right back to it and re-trigger this loader → flicker.
     const directCleanup = buildProcessCleanupForRoute(e);
-    const next = await loadNextProcess({ excludeIds: new Set([processId]) });
+    const next = await loadNextProcess({
+      excludeIds: new Set([processId]),
+      projectId: dataContext.project?.id ?? null,
+    });
     handleCleanups([directCleanup, ...next.cleaned]);
     if (!next.loaded) {
       // eslint-disable-next-line @typescript-eslint/only-throw-error
@@ -269,7 +272,10 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
     if (!(e instanceof ShellLoadError)) throw e;
     // See routeProcessPointer for rationale on `replace`.
     const directCleanup = await buildShellCleanupForRoute(e);
-    const next = await loadNextProcess({ excludeIds: new Set([shellId]) });
+    const next = await loadNextProcess({
+      excludeIds: new Set([shellId]),
+      projectId: dataContext.project?.id ?? null,
+    });
     handleCleanups([directCleanup, ...next.cleaned]);
     if (!next.loaded) {
       // eslint-disable-next-line @typescript-eslint/only-throw-error

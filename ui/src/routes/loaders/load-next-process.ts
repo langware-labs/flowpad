@@ -53,6 +53,11 @@ export interface LoadNextProcessOptions {
   /** Candidate ids to skip (process ids and/or shell ids cohabit). Used by
    *  direct-link callers that want to exclude their own already-failed id. */
   excludeIds?: Set<string>;
+  /** When set, only consider tabs whose shell/process belongs to this project_id.
+   *  Mirrors the per-project filter on the visible tab strip — closing the last
+   *  tab in the current project should land on the empty view, not silently
+   *  switch the user to a tab in a different project. */
+  projectId?: string | null;
 }
 
 export interface LoadNextProcessResult {
@@ -143,7 +148,7 @@ export async function loadNextProcess(
   const tried = new Set(options.excludeIds ?? []);
 
   const [shells, processes] = await fetchShellsAndProcesses();
-  const tabs = filterTabs(shells, processes, { visible: true });
+  const tabs = filterTabs(shells, processes, { visible: true, projectId: options.projectId ?? null });
 
   while (true) {
     const tab = resolveDefaultTab(tabs, tried);
