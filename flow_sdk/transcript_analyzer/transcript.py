@@ -145,15 +145,25 @@ class AgentTranscript:
         return out
 
     @property
-    def latest_plan(self) -> ExitPlanModeEntry | None:
-        """Most recent ``ExitPlanMode`` tool_use, or None.
+    def latest_plan(self) -> ToolUseEntry | None:
+        """Most recent plan-emitting tool_use across workers, or None.
 
-        ``latest_tool_use("ExitPlanMode")`` already returns the
-        ``ExitPlanModeEntry`` subclass when present (parser-side dispatch
-        in ``ClaudeParser._parse_assistant``).
+        Recognizes:
+          * ``ExitPlanMode`` — claude (returns the ``ExitPlanModeEntry``
+            subclass; ``plan_file_path`` is a real file claude wrote to disk).
+          * ``update_plan`` — codex (returns a generic ``ToolUseEntry``;
+            ``tool_input`` carries ``{explanation, plan: [{step, status}]}``
+            inline — the caller materializes the file).
+
+        Used by ``AgenticProcess._transcript_plan`` to drive the UI's
+        "Open last plan" button uniformly across workers.
         """
-        latest = self.latest_tool_use("ExitPlanMode")
-        return latest if isinstance(latest, ExitPlanModeEntry) else None
+        for entry in reversed(self.entries):
+            if not isinstance(entry, ToolUseEntry):
+                continue
+            if entry.tool_name in ("ExitPlanMode", "update_plan"):
+                return entry
+        return None
 
     def to_flow_data(self) -> list["FlowData"]:
         """Concatenated ``FlowData`` stream from every entry."""

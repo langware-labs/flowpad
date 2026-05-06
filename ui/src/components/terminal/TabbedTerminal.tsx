@@ -807,7 +807,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
           <div
             ref={tabContainerRef}
             data-testid="terminal-tabs-scroll-container"
-            className="scrollbar-hide flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-2 py-1"
+            className="scrollbar-hide flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1 pl-2 pr-0"
             style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
           >
             {visibleSessions.map((session, index) => {

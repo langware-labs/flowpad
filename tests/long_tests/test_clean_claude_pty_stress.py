@@ -172,6 +172,11 @@ def extract_invariants(screen_rows: list[str]) -> dict:
         after = screen_rows[prompt_row].split("❯", 1)[1].strip()
         # Remove the cursor block character (U+2588 FULL BLOCK or U+258B etc.)
         after = re.sub(r"[\u2580-\u259f\u2588\xa0 ]+", "", after)
+        # Claude renders a placeholder hint (e.g. `Try "edit <file> to..."`) when
+        # the input is empty. Treat that hint as empty \u2014 only real leaked input
+        # matters.
+        if re.fullmatch(r'Try.*\.\.\.?"?', after):
+            after = ""
         prompt_content = after
 
     return {
