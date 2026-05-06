@@ -6,10 +6,12 @@ import {
   dataManager,
   TypeId,
 } from '@sdk';
+import { sendReply } from '@sdk/entities/notifications';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
 import { Button } from '@src/components/ui/button';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
+import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import {
@@ -38,6 +40,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   const [projectId, setProjectId] = useState<string>('');
   const [participants, setParticipants] = useState<ConversationParticipant[]>([]);
   const [initialMessage, setInitialMessage] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
   const [senderName, setSenderName] = useState('');
   const [editingName, setEditingName] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -48,6 +51,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     if (!open) return;
     setParticipants([]);
     setInitialMessage('');
+    setFiles([]);
     setError(null);
     setEditingName(false);
     setProjectId(ctx.project?.id ?? projects[0]?.id ?? '');
@@ -81,14 +85,27 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     setBusy(true);
     setError(null);
     try {
+      // When files are attached, defer the first FlowMessage to a follow-up
+      // ``sendReply`` call. ``createHubConversation``'s ``initial_text`` path
+      // is text-only (no multipart) — ``sendReply`` handles FormData uploads
+      // and is also the canonical write path on the project flow. So: create
+      // an empty conversation first, then post the initial message + files
+      // as one append.
+      const hasFiles = files.length > 0;
+      const message = initialMessage.trim();
+
+      let conversationId: string;
+      let projectIdForNav: string | null = null;
+
       if (hasEmailParticipant) {
         const result = await createHubConversation({
           participants: participants
             .filter((p) => !!p.email)
             .map((p) => ({ address: p.email!, address_type: 'email' as const })),
-          initial_text: initialMessage.trim() || undefined,
+          initial_text: hasFiles ? undefined : (message || undefined),
           sender_name: senderName.trim() || null,
         });
+        conversationId = result.conversation_id;
         // Feature 2: persist the user's chosen project on the conversation so
         // the footer reads it on refresh, and so Approve & Execute on incoming
         // prompts skips the picker. The hub-mirrored creation path doesn't
@@ -99,7 +116,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
         if (projectId) {
           try {
             const conv = await dataManager
-              .getByTypeId<Conversation>(new TypeId(Conversation.type, result.conversation_id))
+              .getByTypeId<Conversation>(new TypeId(Conversation.type, conversationId))
               .catch(() => null);
             if (conv && conv.project_id !== projectId) {
               conv.project_id = projectId;
@@ -109,18 +126,27 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
             // non-fatal — the user can re-pick from the gate or status bar.
           }
         }
-        navigation.openDock(DockPointer.forConversation(result.conversation_id));
-        onClose();
       } else {
         const result = await createProjectConversation({
           project_id: projectId,
           participants,
         });
-        navigation.openDock(
-          DockPointer.forProject(result.project_id, { conversationId: result.conversation_id }),
-        );
-        onClose();
+        conversationId = result.conversation_id;
+        projectIdForNav = result.project_id;
       }
+
+      if (hasFiles) {
+        await sendReply({ conversationId }, message, files);
+      }
+
+      if (projectIdForNav) {
+        navigation.openDock(
+          DockPointer.forProject(projectIdForNav, { conversationId }),
+        );
+      } else {
+        navigation.openDock(DockPointer.forConversation(conversationId));
+      }
+      onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to create conversation';
       setError(msg);
@@ -229,6 +255,14 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
               placeholder={hasEmailParticipant ? 'Say hi…' : 'Optional'}
               data-testid="initial-message-input"
             />
+          </div>
+
+          {/* Attachments */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+              Attachments
+            </label>
+            <FileAttachmentPicker files={files} onChange={setFiles} disabled={busy} />
           </div>
 
           {error && <p className="text-xs text-destructive">{error}</p>}
