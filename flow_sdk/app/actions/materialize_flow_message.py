@@ -36,6 +36,7 @@ async def ensure_conversation_entity(
     project_id: Optional[str] = None,
     remote_project_id: Optional[str] = None,
     remote_project_name: Optional[str] = None,
+    participants: Optional[list] = None,
     someone_typeid: Optional[str] = None,
 ) -> Conversation:
     """Idempotent: return the local Conversation entity, creating it if missing.
@@ -63,10 +64,17 @@ async def ensure_conversation_entity(
             payload["remote_project_id"] = remote_project_id
         if remote_project_name:
             payload["remote_project_name"] = remote_project_name
+        if participants:
+            payload["participants"] = list(participants)
         if parent_typeid is not None:
             payload["context_entities"] = [str(parent_typeid)]
         conv = Conversation.model_validate(payload)
         conv.id = conversation_id
+        conv = await conv.save(someone_typeid, notify=False)
+    elif participants and not (conv.participants or []):
+        # Existing conv with no participants — backfill from the bundle so
+        # the reply-recipient resolver can find the other party's email.
+        conv.participants = list(participants)
         conv = await conv.save(someone_typeid, notify=False)
 
     if parent_typeid is not None and parent_typeid.type == BuiltinEntityType.TASK.value:
