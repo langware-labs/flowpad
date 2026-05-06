@@ -179,6 +179,8 @@ export interface IAgenticProcess extends IEntity {
   embedded_asset_refs?: TypeId[];
   /** Owning project ID */
   project_id?: string | null;
+  /** Encoded project path/name used for worker history and transcript lookup */
+  project_encoded_name?: string | null;
   /** CollaborationRoom this process was spawned in, if any */
   collaboration_room_id?: string | null;
   /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats (e.g. per-doc chat keyed on the file path). */
@@ -899,6 +901,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;
     this.sidecar_shell_id = entity.sidecar_shell_id;
+    this.project_id = entity.project_id ?? null;
+    this.project_encoded_name = entity.project_encoded_name ?? null;
     this.collaboration_room_id = entity.collaboration_room_id ?? null;
     this.target_vfs_path = entity.target_vfs_path ?? null;
     this.exe_folder = entity.exe_folder ? FSRef.fromJson(entity.exe_folder) : null;

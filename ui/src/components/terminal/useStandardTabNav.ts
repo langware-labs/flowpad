@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import type { TerminalTab } from '@src/hooks/useActiveTerminals';
+import { terminalTargetKey, type TerminalTab } from '@src/hooks/useActiveTerminals';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 
@@ -15,16 +15,16 @@ import { DockPointer } from '@src/navigation/DockPointer';
  */
 export function useStandardTabNav() {
   const { navigation } = useDockNavigation();
-  // MRU stack of shell ids, most-recent first. Updated on tab clicks only.
+  // MRU stack of terminal target TypeId strings, most-recent first. Updated on tab clicks only.
   const mruRef = useRef<string[]>([]);
 
-  const touchMru = useCallback((shellId: string) => {
-    mruRef.current = [shellId, ...mruRef.current.filter((id) => id !== shellId)];
+  const touchMru = useCallback((targetKey: string) => {
+    mruRef.current = [targetKey, ...mruRef.current.filter((id) => id !== targetKey)];
   }, []);
 
   const onTabClick = useCallback(
-    (shellId: string, session: TerminalTab) => {
-      touchMru(shellId);
+    (_targetKey: string, session: TerminalTab) => {
+      touchMru(terminalTargetKey(session));
       const pointer = session.agenticProcess?.dockPointer ?? session.shell?.dockPointer;
       if (pointer) navigation.openDock(pointer);
     },
@@ -32,23 +32,24 @@ export function useStandardTabNav() {
   );
 
   const onTabClose = useCallback(
-    (shellId: string) => {
-      mruRef.current = mruRef.current.filter((id) => id !== shellId);
+    (targetKeyOrKeys: string | string[]) => {
+      const closed = new Set(Array.isArray(targetKeyOrKeys) ? targetKeyOrKeys : [targetKeyOrKeys]);
+      mruRef.current = mruRef.current.filter((id) => !closed.has(id));
       const nextId = mruRef.current[0];
       if (!nextId) {
         navigation.openDock(DockPointer.forShell());
       }
       // When there is a next-in-MRU, we don't need to navigate: the loader will
-      // pick a default and set activeShellId once the closed shell drops off
-      // the entity list. The MRU only matters once the consumer wants to force
-      // a specific tab — clicks do that already.
+      // pick a default target once the closed terminal drops off the entity
+      // list. The MRU only matters once the consumer wants to force a specific
+      // tab — clicks do that already.
     },
     [navigation],
   );
 
   const onTabOpen = useCallback(
     (session: TerminalTab) => {
-      touchMru(session.shellId);
+      touchMru(terminalTargetKey(session));
       const pointer = session.agenticProcess?.dockPointer ?? session.shell?.dockPointer;
       if (pointer) navigation.openDock(pointer);
     },

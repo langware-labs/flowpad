@@ -1,4 +1,4 @@
-import { dataContext, detectLanguage, downloadFile, EditorLanguage, FSItem, fsManager, Shell, VFSPath } from '@sdk';
+import { dataContext, detectLanguage, downloadFile, EditorLanguage, FSItem, fsManager, Shell, TypeId, VFSPath } from '@sdk';
 import { TabbedTerminal, useStandardTabNav } from '@src/components/terminal';
 import { Button } from '@src/components/ui/button';
 import { InputDialog } from '@src/components/ui/input-dialog';
@@ -385,6 +385,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
       }
 
       dataContext.setActiveShellId(runShell.id);
+      dataContext.setActiveTerminalTargetTypeId(new TypeId(Shell.type, runShell.id));
 
       if (!runShell.pty?.isLive) {
         await runShell.start({ cols: 80, rows: 24, workdir: runShell.workdir ?? dataContext.project?.fs_storage_mount_path ?? undefined });

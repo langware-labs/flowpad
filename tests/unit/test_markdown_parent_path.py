@@ -121,6 +121,13 @@ def test_vault_root_picks_first_matching_root(tmp_path: Path):
 
 
 def test_resolve_vault_root_handles_symlink(tmp_path: Path):
+    """A doc reached through a symlinked vault still resolves to the real root.
+
+    ``_doc_search_dirs`` pre-resolves its outputs, so patching it must mirror
+    that contract — any caller that bypasses the resolution would lose this
+    invariant. The function relies on the search-dir paths being canonical so
+    a single ``target.resolve()`` is enough to compare.
+    """
     real = tmp_path / "real-vault"
     real.mkdir()
     link = tmp_path / "link-vault"
@@ -130,7 +137,7 @@ def test_resolve_vault_root_handles_symlink(tmp_path: Path):
     f = write_md(real / "sub" / "doc.md")
     with patch(
         "flow_sdk.fs_records.markdown_record._doc_search_dirs",
-        return_value=[link],
+        return_value=[link.resolve()],
     ):
         resolved = _resolve_vault_root(f)
     assert resolved == str(real.resolve())

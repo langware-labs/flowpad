@@ -288,6 +288,7 @@ class DBEntity(DBBaseRecord):
 
     @classmethod
     async def get_by_id(cls: type[DBEntityType], eid: str) -> Optional[DBEntityType]:
+        import logging as _logging
         from flow_sdk.request_context.methods import get_current_request_info
         request_info = get_current_request_info()
         e_type = cls.get_type()
@@ -305,6 +306,11 @@ class DBEntity(DBBaseRecord):
                 entity = await cls.get_by_key(key)
         else:
             entity = await cls._db.get_by_id(eid, e_type)
+            if entity is None:
+                _logging.warning(
+                    f"[B1-probe] DBEntity.get_by_id miss: cls={cls.__name__} e_type={e_type!r} "
+                    f"eid={eid!r} _db_id={id(cls._db):#x} _db_cls={type(cls._db).__name__}"
+                )
         return entity
 
     @classmethod
