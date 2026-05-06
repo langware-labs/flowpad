@@ -288,6 +288,8 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
         result.shellId
           ? Shell.getByIdFromCache<Shell>(result.shellId) ?? undefined
           : undefined;
+      // Atomic create: backend spawned the Shell + PTY before responding,
+      // so result.shellId is always populated. Push directly into tabsState.
       const newTab: TerminalTab = {
         shellId: result.shellId ?? '',
         processId: agenticProcess?.id ?? null,
@@ -301,11 +303,10 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
         projectId: agenticProcess?.project_id ?? shell?.project_id ?? null,
         projectDisplayName: null,
       };
-      if (newTab.shellId) pushTab(newTab);
+      pushTab(newTab);
       onTabOpen?.(newTab);
-      void refreshTabs();
     },
-    [clearPendingTabCreation, navigation, onTabOpen, pushTab, refreshTabs, spawnProjectId],
+    [clearPendingTabCreation, navigation, onTabOpen, pushTab, spawnProjectId],
   );
 
   const handleStartClaude = useCallback(() => startAgenticTab('claude', 'claude_code'), [startAgenticTab]);
@@ -342,9 +343,8 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       };
       pushTab(newTab);
       onTabOpen?.(newTab);
-      void refreshTabs();
     },
-    [clearPendingTabCreation, navigation, onTabOpen, pushTab, refreshTabs],
+    [clearPendingTabCreation, navigation, onTabOpen, pushTab],
   );
 
   const handleStartTerminal = useCallback(() => startTerminalTab(), [startTerminalTab]);

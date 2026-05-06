@@ -10,6 +10,7 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowElementType,
 )
 
+from .._helpers import render_block
 from ..entry import EntryKind, TranscriptEntry
 
 
@@ -35,3 +36,6 @@ class UserMessageEntry(TranscriptEntry):
 
     def to_dict(self) -> dict:
         return {**super().to_dict(), "text": self.text}
+
+    def _body_lines(self) -> list[str]:
+        return render_block("text", self.text)

@@ -86,5 +86,43 @@ class TranscriptEntry:
             "is_sidechain": self.is_sidechain,
         }
 
+    # ── string rendering ─────────────────────────────────────────────────────
+
+    def to_string(self) -> str:
+        """Human-readable single-entry rendering.
+
+        Layout: a header banner with kind+id, then the common envelope
+        fields, then subclass-specific lines via :meth:`_body_lines`. The
+        envelope only emits fields that carry information (parent_id is
+        skipped when None, is_sidechain only printed when True) so the
+        output reads like a stripped-down version of the source JSONL.
+        """
+        head = f"==== {self.kind.value} {self.id} ===="
+        lines: list[str] = [head]
+        if self.timestamp:
+            lines.append(f"timestamp: {self.timestamp}")
+        lines.append(f"worker: {self.worker}")
+        if self.session_id:
+            lines.append(f"session_id: {self.session_id}")
+        if self.parent_id:
+            lines.append(f"parent_id: {self.parent_id}")
+        if self.is_sidechain:
+            lines.append("is_sidechain: true")
+        body = self._body_lines()
+        if body:
+            lines.append("--")
+            lines.extend(body)
+        return "\n".join(lines)
+
+    def _body_lines(self) -> list[str]:
+        """Subclass hook returning specialized field lines.
+
+        Each line is a complete output line (no trailing newline). Multi-line
+        values (text, code, JSON) should be returned as one block per logical
+        field, e.g. ``text:`` followed by indented content. Default is empty
+        for entries that have no specialized fields beyond the envelope.
+        """
+        return []
+
     def __repr__(self) -> str:
         return f"{type(self).__name__}(id={self.id!r}, kind={self.kind.value})"
