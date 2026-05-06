@@ -35,21 +35,24 @@ def _scope_from_task(task: Task, project_id: Optional[str]) -> HeadlessRunScope:
     project mapping happens after spawn. The draft context drops project
     (FlowMessage attachments don't reference projects today).
     """
+    conv_typeid = task.first_context_of_type(BuiltinEntityType.CONVERSATION.value)
+    spec_typeid = task.first_context_of_type(BuiltinEntityType.SPEC.value)
+
     process_ctx: list[TypeId] = [TypeId(type=BuiltinEntityType.TASK.value, id=task.id)]
-    if task.conversation_id:
-        process_ctx.append(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=task.conversation_id))
-    if task.spec_id:
-        process_ctx.append(TypeId(type=BuiltinEntityType.SPEC.value, id=task.spec_id))
+    if conv_typeid:
+        process_ctx.append(conv_typeid)
+    if spec_typeid:
+        process_ctx.append(spec_typeid)
     if project_id:
         process_ctx.append(TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id))
 
     draft_ctx: list[TypeId] = [TypeId(type=BuiltinEntityType.TASK.value, id=task.id)]
-    if task.conversation_id:
-        draft_ctx.append(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=task.conversation_id))
+    if conv_typeid:
+        draft_ctx.append(conv_typeid)
 
     return HeadlessRunScope(
         target_typeid=TypeId(type=BuiltinEntityType.TASK.value, id=task.id),
-        conversation_id=task.conversation_id or "",
+        conversation_id=conv_typeid.id if conv_typeid else "",
         workdir=(task.project_root or "").strip(),
         project_id=project_id,
         process_context=process_ctx,
