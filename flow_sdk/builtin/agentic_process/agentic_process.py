@@ -23,11 +23,14 @@ from uuid import uuid4
 
 from pydantic import SerializationInfo, model_serializer
 
+from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.builtin.agentic_process.cli_drivers import (
     AgenticContext as _AgenticContext,
+    AgenticProcessContextKey,
+    WorkerCLIOptions,
     WorkerDriver,
     get_driver,
 )
@@ -80,6 +83,13 @@ READONLY_ASSET_SOURCES: frozenset[AssetSource] = frozenset({
     AssetSource.WORKDIR,
     AssetSource.ADDITIONAL_DIR,
 })
+
+
+class TranscriptSubpath(StrEnum):
+    PLAN = "plan"
+    PROMPT = "prompt"
+    PROMPTS = "prompts"
+    FULL = "full"
 
 
 def is_readonly_source(source: AssetSource) -> bool:
@@ -214,45 +224,19 @@ async def _index_session_on_close(session_id: str, pty_title: str | None = None)
         logger.debug("[AgenticProcess] failed to index session %s on close", session_id, exc_info=True)
 
 
-async def _poll_for_completion(agentic_process_id: str, session_id: str | None) -> None:
+async def _poll_for_completion(agentic_process_id: str, _session_id: str | None) -> None:
     """Background task: poll the transcript until terminal worker_status, then save.
 
-    Called from AgenticProcess.start() after launching the worker. When Claude
-    exits (end_turn / stop_sequence), the transcript tail changes. Saving the
-    updated lifecycle status broadcasts a WS entity-update that includes the
-    new worker_status projection from to_dict().
+    Called from AgenticProcess.start() after launching the worker. The
+    transcript path and tail-status calculation are driver-owned so Claude and
+    Codex visible processes follow the same status flow.
     """
-    from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
-
     TERMINAL = {WorkerStatus.COMPLETE, WorkerStatus.ERROR, WorkerStatus.INTERRUPTED}
 
-    await asyncio.sleep(1)  # give Claude time to start and write the first JSONL entry
+    await asyncio.sleep(1)  # give the worker time to start and write the first JSONL entry
     for _ in range(1800):  # poll up to 30 min (1800 * 1 s)
         await asyncio.sleep(1)
         try:
-            if not session_id:
-                break
-            record = ClaudeSessionRecord.get(session_id)
-            if record is None:
-                continue  # transcript not written yet
-
-            new_status = record.status
-            try:
-                status_enum = WorkerStatus(str(new_status))
-            except ValueError:
-                continue
-
-            if status_enum == WorkerStatus.API_TIMEOUT:
-                _AgenticProcess = globals().get("AgenticProcess")
-                if _AgenticProcess:
-                    proc = await _AgenticProcess.get_by_id(agentic_process_id)
-                    if proc:
-                        await proc._on_timeout()
-                continue  # keep polling — visible may recover; invisible will go INACTIVE
-
-            if status_enum not in TERMINAL:
-                continue  # still running or unknown
-
             # Fetch entity fresh from DB — use module-level AgenticProcess via
             # globals() to avoid forward-reference issues (class defined below).
             _AgenticProcess = globals().get("AgenticProcess")
@@ -262,12 +246,37 @@ async def _poll_for_completion(agentic_process_id: str, session_id: str | None) 
             if proc is None:
                 return  # entity deleted
 
+            new_status = proc._discover_status_from_transcript()
+            if new_status is None:
+                continue  # transcript not written yet
+            try:
+                status_enum = WorkerStatus(str(new_status))
+            except ValueError:
+                continue
+
+            if status_enum == WorkerStatus.API_TIMEOUT:
+                await proc._on_timeout()
+                continue  # keep polling — visible may recover; invisible will go INACTIVE
+
+            if status_enum not in TERMINAL:
+                continue  # still running or unknown
+
             if proc.status in {
                 ProcessStatus.STOPPING.value,
                 ProcessStatus.STOPPED.value,
                 ProcessStatus.FAILED.value,
             }:
                 return  # already up to date — WS was already sent
+
+            if await proc.is_running():
+                await proc.notify_updated()
+                logger.info(
+                    "AgenticProcess %s: completion monitor broadcast worker_status=%s with lifecycle=%s",
+                    agentic_process_id,
+                    new_status,
+                    proc.status,
+                )
+                return
 
             proc.status = ProcessStatus.STOPPED.value
             await proc.save()
@@ -390,14 +399,6 @@ class AgenticProcess(Entity):
             "save() to detect drift."
         ),
     )
-    target_vfs_path: str | None = APIField(
-        default=None,
-        description=(
-            "VFS path the process is keyed to (e.g. an entity TypeId string "
-            "'markdown-<uuid>' or a '<typeid>/<sub_path>' form). Frontend "
-            "chat panel queries processes by this field; persisted opaquely."
-        ),
-    )
     additional_dirs: list[str] = APIField(default_factory=list, description="Extra directories passed to Claude via --add-dir")
     embedded_agent_ids: list[str] = APIField(default_factory=list, description="Agent ids injected via --agents at session launch")
     embedded_asset_refs: list[TypeId] = APIField(
@@ -516,14 +517,28 @@ class AgenticProcess(Entity):
             "worker_pid": shell.worker_pid,
         }
 
+    def _record_worker_started_at(self, started_at: str | None) -> None:
+        if not started_at:
+            return
+        context = dict(self.context_data or {})
+        context[AgenticProcessContextKey.WORKER_STARTED_AT.value] = started_at
+        self.context_data = context
+
     async def _get_local_compute_node(self):
         """Return the local compute node used for shell creation and recovery."""
         from flow_sdk.builtin.faas.compute_node import ComputeNode
 
         return await ComputeNode.get_by_uname("local")
 
-    async def _drop_stale_shell(self, shell: "Shell | None", *, reason: str) -> None:
+    async def _drop_stale_shell(
+        self,
+        shell: "Shell | None",
+        *,
+        reason: str,
+        preserve_shell_id: bool = False,
+    ) -> None:
         """Discard a linked shell that can no longer be reattached."""
+        stale_shell_id = shell.id if shell is not None else self.shell_id
         if shell is not None:
             logger.warning("AgenticProcess %s: discarding stale shell %s (%s)", self.id, shell.id, reason)
             context = dict(self.context_data or {})
@@ -537,7 +552,7 @@ class AgenticProcess(Entity):
                 await shell.close()
             except Exception as exc:
                 logger.warning("AgenticProcess %s: failed closing stale shell %s: %s", self.id, shell.id, exc)
-        self.shell_id = None
+        self.shell_id = stale_shell_id if preserve_shell_id else None
         self.sidecar_shell_id = None
 
     async def start(
@@ -578,18 +593,11 @@ class AgenticProcess(Entity):
         here; the caller is responsible for the lock and the start-lifecycle
         flag."""
         try:
-            _bench_t0 = time.perf_counter()
-            _bench_id = self.id[:8]
-            def _bench(label):
-                with open("/tmp/bench_open.log", "a") as _f:
-                    _f.write(f"[BENCH start {_bench_id}] {label}: {(time.perf_counter() - _bench_t0) * 1000:.1f}ms\n")
-            _bench("entry")
             # If we're stuck in STOPPING with a dead worker (orphan from a
             # crashed close()/exit()), reset to STOPPED before doing anything
             # else. The rest of this function then sees a startable state
             # rather than refusing or spawning under stale assumptions.
             await self.reap_if_orphaned()
-            _bench("after reap_if_orphaned")
             self.session_id = self.session_id or str(uuid4())
             reattach_changed = False
             if visible is not None and self.visible != visible:
@@ -597,7 +605,6 @@ class AgenticProcess(Entity):
                 reattach_changed = True
 
             shell = await self.shell() if self.shell_id else None
-            _bench("after self.shell()")
             if shell is not None:
                 if not await shell.ensure_live_compute_node_binding():
                     return ApiFailResponse(message=f"Compute node not found for linked shell {shell.id}")
@@ -631,14 +638,13 @@ class AgenticProcess(Entity):
                 await self._drop_stale_shell(
                     shell,
                     reason=f"{self.status} process is missing a fully-alive PTY+worker",
+                    preserve_shell_id=True,
                 )
                 shell = None
 
             await self.get_project()
-            _bench("after get_project")
 
-            # Build the CLI command from cli_config + entity fields
-            cmd = self.cli_options
+            cmd = self._finalized_restart_cli_options()
 
             # Server-restart resume: process had a shell but cli_config didn't encode resume
             if not cmd.resume and self.session_id:
@@ -668,28 +674,26 @@ class AgenticProcess(Entity):
             )
 
             is_resume = cmd.resume
-            _bench("after cli_options/cmd build")
 
-            # Get existing shell or create a new one
             shell = await self._get_or_create_shell()
-            _bench("after _get_or_create_shell")
             self.shell_id = shell.id
             self.status = ProcessStatus.STARTING.value
-            # Save session_id + shell_id before launching Claude so revalidation
-            # can observe STARTING and avoid issuing a second open.
+            if self.driver.name == WorkerType.CODEX.value:
+                self._record_worker_started_at(datetime.now(timezone.utc).isoformat())
+            # Save STARTING + shell_id before launching the worker so a
+            # concurrent revalidation observes the in-flight start instead
+            # of issuing a second open.
             await self.save()
-            _bench("after save#1 (STARTING)")
             on_exit = self._make_pty_exit_callback()
             worker_is_alive = False
+            execution_info = None
 
             if self.shell_mode:
                 # Legacy path — zsh intermediary
                 await shell.start(on_exit=on_exit)
-                _bench("after shell.start (shell_mode)")
                 worker_is_alive = await shell.worker_alive()
                 if not worker_is_alive:
                     execution_info = await shell.launch(cmd, instruction=instruction)
-                    _bench("after shell.launch")
                     logger.info(
                         "AgenticProcess %s worker launched (shell): pid=%s name=%r",
                         self.id, execution_info.pid, execution_info.name,
@@ -697,18 +701,18 @@ class AgenticProcess(Entity):
             else:
                 # Direct path — Claude IS the PTY process (no zsh intermediary)
                 spawn_argv, spawn_env = cmd.to_spawn_args(instruction=instruction)
-                _bench("after to_spawn_args")
                 spawned = await shell.start(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
-                _bench("after shell.start (direct PTY)")
                 if not spawned:
                     worker_is_alive = await shell.worker_alive()
                 if not worker_is_alive:
                     execution_info = await shell.set_worker_pid_direct(cmd)
-                    _bench("after set_worker_pid_direct")
                     logger.info(
                         "AgenticProcess %s worker launched (direct PTY): pid=%s name=%r",
                         self.id, execution_info.pid, execution_info.name,
                     )
+
+            if execution_info is not None:
+                self._record_worker_started_at(execution_info.started_at)
 
             if not worker_is_alive:
                 # Start background task to detect completion via transcript polling.
@@ -723,7 +727,6 @@ class AgenticProcess(Entity):
             self.last_started_hash = self._restart_snapshot()
             self.restart_required = False
             await self.save()
-            _bench("after save#2 (RUNNING)")
 
             return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=is_resume))
 
@@ -767,6 +770,7 @@ class AgenticProcess(Entity):
                 logger.warning("AgenticProcess %s: Shell entity %s not found on exit", self.id, self.shell_id)
 
             self.status = ProcessStatus.STOPPED.value
+            self.context_data = {k: v for k, v in self.context_data.items() if k != "_shell_exit_pending"}
             await self.save()
             logger.info(
                 "AgenticProcess %s: exited (session_id preserved: %s)",
@@ -1324,28 +1328,63 @@ class AgenticProcess(Entity):
             logger.exception(f"AgenticProcess {self.id} update-plan error: {e}")
             return ApiFailResponse(message=str(e))
 
-    def _load_transcript(self) -> "AgentTranscript | None":
+    @property
+    def transcript(self):
+        """Resolved transcript descriptor for this process, if one exists."""
+        try:
+            return self.driver.transcript_descriptor(self)
+        except Exception:
+            logger.debug("AgenticProcess %s transcript: driver lookup failed", self.id, exc_info=True)
+            return None
+
+    @property
+    def transcript_path(self) -> Path | None:
+        descriptor = self.transcript
+        return descriptor.path if descriptor else None
+
+    def _load_transcript(self, descriptor=None) -> "AgentTranscript | None":
         """Worker-agnostic transcript loader.
 
-        Resolves the JSONL via the vendor driver (``self.driver.transcript_path``)
-        and parses it through the analyzer. Returns None if no session is
-        attached or the file is missing. Per-request load — no caching;
-        eager parse is fast enough for current sizes.
+        Resolves the JSONL via the vendor driver and parses it through the
+        analyzer using the descriptor's native format. Returns None if no
+        session is attached or the file is missing. Per-request load — no
+        caching; eager parse is fast enough for current sizes.
         """
         from flow_sdk.transcript_analyzer import AgentTranscript
 
-        try:
-            path = self.driver.transcript_path(self)
-        except Exception:
-            logger.debug("AgenticProcess %s _load_transcript: driver lookup failed", self.id, exc_info=True)
-            return None
-        if path is None or not path.exists():
+        descriptor = descriptor or self.transcript
+        if descriptor is None or not descriptor.path.exists():
             return None
         try:
-            return AgentTranscript(self.driver.name, path)
+            return AgentTranscript(
+                self.driver.name,
+                descriptor.path,
+                session_id=descriptor.session_id,
+                transcript_format=descriptor.format,
+            )
         except Exception:
             logger.debug("AgenticProcess %s _load_transcript: parse failed", self.id, exc_info=True)
             return None
+
+    async def _persist_transcript_session_id(self, descriptor) -> None:
+        if descriptor is None or not descriptor.session_id:
+            return
+        if self.session_id == descriptor.session_id:
+            return
+        self.session_id = descriptor.session_id
+        try:
+            self._set_start_lifecycle(True)
+            if self.status == ProcessStatus.RUNNING.value:
+                self.last_started_hash = self._restart_snapshot()
+            await self.save()
+        except Exception:
+            logger.debug(
+                "AgenticProcess %s transcript: session_id save failed",
+                self.id,
+                exc_info=True,
+            )
+        finally:
+            self._set_start_lifecycle(False)
 
     @action.post(action_name="transcript")
     async def transcript_action(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -1360,15 +1399,23 @@ class AgenticProcess(Entity):
         New sub-actions hang off the same loader without re-parsing.
         """
         request_info = get_current_request_info()
-        sub_path = (request_info.sub_path or "").strip("/").lower() if request_info else ""
+        sub_path_raw = (request_info.sub_path or "").strip("/").lower() if request_info else ""
+        try:
+            sub_path = TranscriptSubpath(sub_path_raw)
+        except ValueError:
+            sub_path = None
 
-        transcript = self._load_transcript()
+        descriptor = self.transcript
+        await self._persist_transcript_session_id(descriptor)
+        transcript = self._load_transcript(descriptor)
 
-        if sub_path == "plan":
+        if sub_path is TranscriptSubpath.PLAN:
             return await self._transcript_plan(transcript)
-        if sub_path in {"prompt", "prompts"}:
+        if sub_path in {TranscriptSubpath.PROMPT, TranscriptSubpath.PROMPTS}:
             return self._transcript_prompts(transcript)
-        return ApiFailResponse(message=f"unknown transcript sub-path: {sub_path!r}")
+        if sub_path is TranscriptSubpath.FULL:
+            return self._transcript_full(transcript, descriptor)
+        return ApiFailResponse(message=f"unknown transcript sub-path: {sub_path_raw!r}")
 
     async def _transcript_plan(
         self, transcript: "AgentTranscript | None",
@@ -1451,12 +1498,60 @@ class AgenticProcess(Entity):
             "prompts": [e.to_dict() for e in transcript.prompts],
         })
 
+    def _transcript_full(
+        self,
+        transcript: "AgentTranscript | None",
+        descriptor=None,
+    ) -> ApiSuccessResponse:
+        if transcript is None or descriptor is None:
+            return ApiSuccessResponse(data={
+                "worker_type": self.driver.name,
+                "session_id": self.session_id,
+                "path": None,
+                "transcript_path": None,
+                "transcript_format": None,
+                "transcript_source": None,
+                "header": {},
+                "entries": [],
+            })
+        path = str(descriptor.path)
+        return ApiSuccessResponse(data={
+            "worker_type": self.driver.name,
+            "session_id": transcript.session_id or descriptor.session_id,
+            "path": path,
+            "transcript_path": path,
+            "transcript_format": descriptor.format.value,
+            "transcript_source": descriptor.source.value,
+            "header": self._transcript_header(transcript),
+            "entries": [e.to_dict() for e in transcript.entries],
+        })
+
+    def _transcript_header(self, transcript: "AgentTranscript") -> dict[str, Any]:
+        meta = transcript._session_meta_payload()
+        if not meta:
+            return {}
+        out: dict[str, Any] = {}
+        for key in ("cwd", "cli_version", "originator", "model_provider"):
+            value = meta.get(key)
+            if value:
+                out[key] = value
+        git = meta.get("git")
+        if isinstance(git, dict):
+            out["git"] = {
+                k: v
+                for k, v in git.items()
+                if k in {"branch", "commit_hash", "repository_url"} and v
+            }
+        return out
+
     @action.post(action_name="get-plan")
     async def get_plan(self) -> ApiSuccessResponse | ApiFailResponse:
         """Back-compat alias for ``transcript/plan`` — delegates to the new
         action so existing TS callers (``process.getPlan()``) keep working.
         """
-        return await self._transcript_plan(self._load_transcript())
+        descriptor = self.transcript
+        await self._persist_transcript_session_id(descriptor)
+        return await self._transcript_plan(self._load_transcript(descriptor))
 
     # ── State ─────────────────────────────────────────────────────────────────
 
@@ -1898,8 +1993,100 @@ class AgenticProcess(Entity):
 
     # ── Restart-required tracking ─────────────────────────────────────────────
 
+    @staticmethod
+    def _normalize_restart_value(value: Any) -> Any:
+        """Canonicalize values before hashing restart snapshots.
+
+        Entity serialization may prune null optional fields while in-memory
+        CLI option objects often include them. Dict-level ``None`` removal
+        makes explicit null and missing optional keys equivalent.
+        """
+        if isinstance(value, Enum):
+            return value.value
+        if isinstance(value, TypeId):
+            return str(value)
+        if isinstance(value, Path):
+            return str(value)
+        if isinstance(value, dict):
+            normalized: dict[str, Any] = {}
+            for key, item in value.items():
+                normalized_item = AgenticProcess._normalize_restart_value(item)
+                if normalized_item is not None:
+                    normalized[str(key)] = normalized_item
+            return normalized
+        if isinstance(value, (list, tuple)):
+            return [AgenticProcess._normalize_restart_value(item) for item in value]
+        if isinstance(value, set):
+            return sorted(
+                AgenticProcess._normalize_restart_value(item) for item in value
+            )
+        return value
+
+    def _restart_driver(self) -> WorkerDriver | None:
+        """Resolve the driver from the current worker_type value."""
+        try:
+            return get_driver(self.worker_type)
+        except ValueError:
+            return None
+
+    def _finalized_restart_cli_options(self) -> WorkerCLIOptions:
+        """Build the launch options used for worker restart comparison.
+
+        This mirrors the persisted/process-derived CLI inputs used by
+        ``start()`` but intentionally excludes runtime-only env injection.
+        """
+        driver = self._restart_driver()
+        if driver is None:
+            raise ValueError(f"No WorkerDriver registered for worker_type={self.worker_type!r}")
+        cmd = driver.cli_options(self)
+
+        # Server-restart resume: process had a shell but cli_config didn't
+        # encode resume. This is part of the effective launch shape.
+        if not getattr(cmd, "resume", False) and self.session_id:
+            cmd.resume = self._is_exist_claude_resume_session(self.session_id)
+
+        # Claude-only transcript cwd plumbing. Keep this sync and reproducible
+        # so start-time and save-time snapshots use the same persisted inputs.
+        if hasattr(cmd, "fork_session_id"):
+            fork_session_id = getattr(cmd, "fork_session_id", None)
+            if fork_session_id or (getattr(cmd, "resume", False) and self.session_id):
+                lookup_id = fork_session_id or self.session_id
+                session_rec = self._discover_claude_record_session(lookup_id)
+                if session_rec and session_rec.cwd:
+                    cmd.env_vars["CLAUDE_PROJECT_DIR"] = session_rec.cwd
+                    cmd.workdir = session_rec.cwd
+
+        return cmd
+
+    def _generic_restart_snapshot_payload(self, driver: WorkerDriver | None) -> dict[str, Any]:
+        worker_type: Any = driver.name if driver is not None else self.worker_type
+        return {
+            "worker_type": worker_type,
+            "shell_mode": self.shell_mode,
+            "workdir": self.workdir,
+            "session_id": self.session_id,
+            "additional_dirs": sorted(self.additional_dirs or []),
+            "embedded_asset_refs": sorted(
+                str(r) for r in (self.embedded_asset_refs or [])
+            ),
+            "embedded_agent_ids": sorted(self.embedded_agent_ids or []),
+        }
+
+    def _restart_snapshot_payload(self) -> dict[str, Any]:
+        driver = self._restart_driver()
+        if driver is None:
+            return {
+                "generic": self._generic_restart_snapshot_payload(driver),
+                "worker": {"cli_config": self.cli_config or {}},
+            }
+        options = self._finalized_restart_cli_options()
+        return {
+            "generic": self._generic_restart_snapshot_payload(driver),
+            "worker": driver.restart_snapshot(self, options),
+        }
+
     def _restart_snapshot(self) -> str:
-        """Stable hash over the worker-relevant subset of fields.
+        """Stable hash over finalized generic + worker launch inputs.
 
         Mismatch against ``last_started_hash`` (captured at last successful
         ``start()``) means the live worker is running with stale config —
@@ -1907,30 +2094,8 @@ class AgenticProcess(Entity):
         """
         import hashlib
         import json as _json
-        from enum import Enum
 
-        # Normalize enum-typed fields to their .value (a plain str). Different
-        # construction paths (``_scan_create_process`` constructor vs
-        # ``Entity.from_record``) yield ``self.worker_type`` as either a plain
-        # string ``"claude_code"`` or a ``WorkerType.CLAUDE_CODE`` enum instance.
-        # ``str(enum_instance)`` returns the prefixed form (``"WorkerType.CLAUDE_CODE"``)
-        # while ``str(plain_str)`` returns the bare value — different inputs hash
-        # differently, causing spurious post-start ``restart_required=True`` flips
-        # whenever ``check_and_refresh_record`` re-hydrates the entity via
-        # ``from_record`` between ``start()``'s capture and a downstream save.
-        wt = self.worker_type
-        if isinstance(wt, Enum):
-            wt = wt.value
-        payload = {
-            "cli_config": self.cli_config or {},
-            "workdir": self.workdir,
-            "additional_dirs": sorted(self.additional_dirs or []),
-            "embedded_asset_refs": sorted(str(r) for r in (self.embedded_asset_refs or [])),
-            "embedded_agent_ids": sorted(self.embedded_agent_ids or []),
-            "worker_type": wt if wt else None,
-            "shell_mode": self.shell_mode,
-            "session_id": self.session_id,
-        }
+        payload = self._normalize_restart_value(self._restart_snapshot_payload())
         return hashlib.md5(
             _json.dumps(payload, sort_keys=True, default=str).encode()
         ).hexdigest()
@@ -2022,7 +2187,7 @@ class AgenticProcess(Entity):
         ``WorkerCLIOptions`` base contract (``workdir``, ``env_vars``,
         ``add_dirs``, ``to_shell_string``).
         """
-        return self.driver.cli_options(self)  # type: ignore[return-value]
+        return get_driver(self.worker_type).cli_options(self)  # type: ignore[return-value]
 
     @property
     def cmd_line(self) -> str:
@@ -2080,6 +2245,12 @@ class AgenticProcess(Entity):
             return WorkerStatus.COMPLETE
         path = self.driver.transcript_path(self)
         if path is None:
+            if self.status in {
+                ProcessStatus.STARTING.value,
+                ProcessStatus.RUNNING.value,
+                ProcessStatus.STOPPING.value,
+            } and (self.session_id or self.shell_id):
+                return WorkerStatus.INITIALIZING
             return None
         return self.driver.tail_status(path)
 
@@ -2231,24 +2402,15 @@ class AgenticProcess(Entity):
 
         POST body: {instruction?, visible?, session_id?}
         """
-        _http_t0 = time.perf_counter()
-        _http_id = self.id[:8]
-        def _http_bench(label):
-            with open("/tmp/bench_open.log", "a") as _f:
-                _f.write(f"[BENCH _http_open {_http_id}] {label}: {(time.perf_counter() - _http_t0) * 1000:.1f}ms\n")
-        _http_bench("entry")
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
-        _http_bench("after get_post_data")
         instruction = body.get("instruction")
         visible = body.get("visible")
         # Support legacy worker_session_id in POST body for older clients
         session_id_override = body.get("session_id") or body.get("worker_session_id")
         if session_id_override:
             self.session_id = session_id_override
-        result = await self.start(instruction=instruction, visible=visible)
-        _http_bench("after start() return")
-        return result
+        return await self.start(instruction=instruction, visible=visible)
 
     async def reap_if_orphaned(self, *, grace_seconds: int = 10) -> bool:
         """Force-complete a stuck STOPPING transition when the worker is gone.
@@ -2487,6 +2649,7 @@ class AgenticProcess(Entity):
         """Get existing shell by shell_id, or create a new one."""
         from flow_sdk.builtin.shell import Shell
 
+        shell_id = self.shell_id
         if self.shell_id:
             shell = await Shell.get_by_id(self.shell_id)
             if shell:
@@ -2516,14 +2679,17 @@ class AgenticProcess(Entity):
         cn = await self._get_local_compute_node()
         if cn is None:
             raise RuntimeError("Compute node not found for local shell session (@local)")
-        shell = Shell(
-            compute_node_id=str(cn.id),
-            compute_node_uname=getattr(cn, "uname", None),
-            name=session_name,
-            workdir=workdir,
-            tab_order=tab_order,
-            project_id=self.project_id,
-        )
+        shell_kwargs = {
+            "compute_node_id": str(cn.id),
+            "compute_node_uname": getattr(cn, "uname", None),
+            "name": session_name,
+            "workdir": workdir,
+            "tab_order": tab_order,
+            "project_id": self.project_id,
+        }
+        if shell_id:
+            shell_kwargs["id"] = shell_id
+        shell = Shell(**shell_kwargs)
         await shell.save()
         return shell
 
@@ -2545,8 +2711,13 @@ class AgenticProcess(Entity):
                     if not proc.shell_id:
                         return  # close() already handled it
                     if proc.context_data.get("_shell_exit_pending"):
-                        # exit() was called — shell entity stays alive, just clear the flag
+                        # exit() was called — shell entity stays alive. The callback
+                        # may race the final exit() save, so make the terminal state
+                        # explicit instead of re-saving a stale STOPPING row.
                         proc.context_data = {k: v for k, v in proc.context_data.items() if k != "_shell_exit_pending"}
+                        proc.sidecar_shell_id = None
+                        if proc.status == ProcessStatus.STOPPING.value:
+                            proc.status = ProcessStatus.STOPPED.value
                         await proc.save()
                         return
                     proc.sidecar_shell_id = None

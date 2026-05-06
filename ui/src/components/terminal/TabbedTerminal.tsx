@@ -14,6 +14,7 @@ import { InputDialog } from '@src/components/ui/input-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
 import {
+  closeTerminalTargets,
   terminalProcessId,
   terminalTargetKey,
   terminalTransportShellId,
@@ -185,7 +186,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   const tabsProjectId = spawnProjectId ?? contextProject?.id ?? null;
   const {
     data: projectTabs,
-    removeTerminal,
     pushTerminal,
     updateTerminal,
     refresh: refreshTabs,
@@ -483,49 +483,24 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTargetKey, hasActiveTab, selectTab]);
 
-  const closeTab = useCallback(
-    async (targetKey: string, options: { notify?: boolean } = {}): Promise<boolean> => {
-      const session = sessions.find((s) => terminalTargetKey(s) === targetKey);
-      if (!session) return false;
-      // Optimistic local removal so the strip reflects intent immediately.
-      removeTerminal(session);
-      // Each row owns its own closer: process rows close the AgenticProcess
-      // (which cascades to the underlying Shell + PTY); plain rows close the
-      // Shell directly. No branching on active target — every tab knows how
-      // to close itself.
-      const target = session.agenticProcess ?? session.shell;
-      if (!target) {
-        pushTerminal(session);
-        return false;
-      }
-      try {
-        await target.close();
-        if (options.notify !== false) onTabClose?.(targetKey);
-        return true;
-      } catch (error) {
-        pushTerminal(session);
-        console.error('[TabbedTerminal] Failed to close tab:', targetKey, error);
-        return false;
-      }
-    },
-    [sessions, onTabClose, pushTerminal, removeTerminal],
-  );
-
   const closeTabs = useCallback(
     async (tabs: TerminalTab[]): Promise<void> => {
       const keys = tabs.map(terminalTargetKey);
-      const results = await Promise.all(keys.map((key) => closeTab(key, { notify: false })));
-      const closedKeys = keys.filter((_, index) => results[index]);
-      if (closedKeys.length > 0) onTabClose?.(closedKeys);
+      const result = await closeTerminalTargets(keys);
+      if (result.invalid.length > 0 || result.missing.length > 0) {
+        console.warn('[TabbedTerminal] Some terminal close targets were not accepted:', result);
+      }
+      if (result.accepted.length > 0) onTabClose?.(result.accepted);
     },
-    [closeTab, onTabClose],
+    [onTabClose],
   );
 
   const handleCloseTab = useCallback(
     (targetKey: string) => {
-      void closeTab(targetKey);
+      const session = visibleSessions.find((s) => terminalTargetKey(s) === targetKey);
+      if (session) void closeTabs([session]);
     },
-    [closeTab],
+    [visibleSessions, closeTabs],
   );
 
   const handleCloseAll = useCallback(() => {

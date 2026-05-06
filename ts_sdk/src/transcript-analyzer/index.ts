@@ -16,11 +16,12 @@ import {
   SystemEntry,
   ToolResultEntry,
   ToolUseEntry,
+  TokenUsageEntry,
   UnknownEntry,
   UserMessageEntry,
 } from './entries';
 
-export { AgentTranscript } from './transcript';
+export { AgentTranscript, TranscriptFormat, TranscriptSource } from './transcript';
 export { EntryKind, TranscriptEntry, type TranscriptEntryBase } from './entry';
 export {
   AssistantMessageEntry,
@@ -30,6 +31,7 @@ export {
   SystemEntry,
   ToolResultEntry,
   ToolUseEntry,
+  TokenUsageEntry,
   UnknownEntry,
   UserMessageEntry,
   type AssistantMessageEntryData,
@@ -38,6 +40,7 @@ export {
   type SystemEntryData,
   type ToolResultEntryData,
   type ToolUseEntryData,
+  type TokenUsageEntryData,
   type UnknownEntryData,
   type UserMessageEntryData,
 } from './entries';
@@ -69,6 +72,8 @@ export function fromJson(raw: Record<string, unknown>): TranscriptEntry {
       return new ToolResultEntry(raw as never);
     case EntryKind.META:
       return new MetaEntry(raw as never);
+    case EntryKind.TOKEN_USAGE:
+      return new TokenUsageEntry(raw as never);
     case EntryKind.SYSTEM:
       return new SystemEntry(raw as never);
     case EntryKind.SUMMARY:

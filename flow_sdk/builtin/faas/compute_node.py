@@ -10,6 +10,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, AsyncIterator, Literal, overload
 
+from fastapi import BackgroundTasks
 from pydantic import Field
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.messages import ResponseMessage
@@ -444,8 +445,26 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.get(action_name="list-shells")
     async def _list_shells(self): return await self._pty_list_shells()
 
+    @action.all(action_name="terminals", methods=["get", "post"])
+    async def _terminals(self, background_tasks: BackgroundTasks) -> ApiResponse:
+        request_info = get_current_request_info()
+        sub_path = (request_info.sub_path or "").strip("/").lower() if request_info else ""
+        if sub_path == "list":
+            if request_info and not request_info.is_get:
+                return ApiFailResponse(message="terminals/list requires GET", status_code=405)
+            return await self._terminal_list()
+        if sub_path == "close":
+            if request_info and not request_info.is_post:
+                return ApiFailResponse(message="terminals/close requires POST", status_code=405)
+            body = await request_info.get_post_data() if request_info else {}
+            return await self._terminal_close(body, background_tasks)
+        return ApiFailResponse(message=f"unknown terminals sub-path: {sub_path!r}", status_code=400)
+
     @action.get(action_name="active-terminals")
-    async def _active_terminals(self) -> ApiResponse:
+    async def _active_terminals_removed(self) -> ApiResponse:
+        return ApiFailResponse(message="active-terminals was removed; use terminals/list", status_code=410)
+
+    async def _terminal_list(self) -> ApiResponse:
         """Single source of truth for the tab strip.
 
         Returns two flat, non-overlapping lists. The frontend renders both,
@@ -494,9 +513,15 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         sidecar_ids = {p.sidecar_shell_id for p in all_processes if getattr(p, "sidecar_shell_id", None)}
         excluded_shell_ids = owned_shell_ids | sidecar_ids
 
+        from flow_sdk.fs_records.shell_record import ShellStatus
+        terminal_shell_states = {
+            ShellStatus.CLOSING.value,
+            ShellStatus.CLOSED.value,
+            ShellStatus.ERROR.value,
+        }
         pure_shells = [
             s for s in all_shells
-            if s.status not in ("closed", "error")
+            if s.status not in terminal_shell_states
             and s.id not in excluded_shell_ids
         ]
 
@@ -510,6 +535,132 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             "visible_processes": process_dicts,
             "checked_at": _dt.now(tz=_tz.utc).isoformat(),
         })
+
+    def _parse_terminal_target(self, raw: Any) -> tuple[str, str] | None:
+        if not isinstance(raw, str):
+            return None
+        target = raw.strip()
+        if not target:
+            return None
+        if ":" in target:
+            entity_type, entity_id = target.split(":", 1)
+            if entity_type not in {"shell", "agentic_process"} or not entity_id:
+                return None
+            try:
+                TypeId(type=entity_type, id=entity_id)
+            except Exception:
+                return None
+            return entity_type, entity_id
+        try:
+            typeid = TypeId(target)
+        except Exception:
+            return None
+        if typeid.type not in {"shell", "agentic_process"} or not typeid.id:
+            return None
+        return typeid.type, typeid.id
+
+    async def _mark_shell_closing(self, shell_id: str) -> bool:
+        from flow_sdk.builtin.shell import Shell as ShellEntity
+        from flow_sdk.fs_records.shell_record import ShellStatus
+
+        shell = await ShellEntity.get_by_id(shell_id)
+        if not shell:
+            return False
+        if shell.status != ShellStatus.CLOSING.value:
+            shell.status = ShellStatus.CLOSING.value
+            await shell.save()
+        try:
+            record = await shell.get_record()
+            if record:
+                record.sync_from_entity(shell)
+        except Exception as e:
+            logging.warning(f"[terminals/close] Failed to mark ShellRecord closing for {shell_id}: {e}")
+        return True
+
+    async def _terminal_close(self, body: dict, background_tasks: BackgroundTasks) -> ApiResponse:
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+        from flow_sdk.builtin.shell import Shell as ShellEntity
+        from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+
+        targets = body.get("targets") if isinstance(body, dict) else None
+        if not isinstance(targets, list):
+            return ApiFailResponse(message="terminals/close requires body: { targets: string[] }", status_code=400)
+
+        accepted: list[str] = []
+        missing: list[str] = []
+        invalid: list[str] = []
+        seen: set[str] = set()
+
+        for raw in targets:
+            parsed = self._parse_terminal_target(raw)
+            if not parsed:
+                invalid.append(str(raw))
+                continue
+
+            entity_type, entity_id = parsed
+            canonical = str(TypeId(type=entity_type, id=entity_id))
+            if canonical in seen:
+                continue
+            seen.add(canonical)
+
+            if entity_type == "agentic_process":
+                proc = await AgenticProcess.get_by_id(entity_id)
+                if not proc:
+                    missing.append(canonical)
+                    continue
+                shell_id = getattr(proc, "shell_id", None)
+                proc.status = ProcessStatus.STOPPING.value
+                proc.visible = False
+                await proc.save()
+                if shell_id:
+                    await self._mark_shell_closing(shell_id)
+                accepted.append(canonical)
+                background_tasks.add_task(self._close_agentic_terminal_background, entity_id)
+                continue
+
+            shell = await ShellEntity.get_by_id(entity_id)
+            if not shell:
+                missing.append(canonical)
+                continue
+            await self._mark_shell_closing(entity_id)
+            accepted.append(canonical)
+            background_tasks.add_task(self._close_shell_terminal_background, entity_id)
+
+        return ApiSuccessResponse(data={
+            "accepted": accepted,
+            "missing": missing,
+            "invalid": invalid,
+        })
+
+    async def _close_agentic_terminal_background(self, process_id: str) -> None:
+        try:
+            from flow_sdk.builtin.agentic_process import AgenticProcess
+
+            proc = await AgenticProcess.get_by_id(process_id)
+            if proc:
+                await proc.close()
+        except Exception as e:
+            logging.exception(f"[terminals/close] AgenticProcess teardown failed for {process_id}: {e}")
+
+    async def _close_shell_terminal_background(self, shell_id: str) -> None:
+        try:
+            from flow_sdk.builtin.shell import Shell as ShellEntity
+
+            shell = await ShellEntity.get_by_id(shell_id)
+            if shell:
+                await shell.close()
+        except Exception as e:
+            logging.exception(f"[terminals/close] Shell teardown failed for {shell_id}: {e}")
+            try:
+                from flow_sdk.builtin.shell import Shell as ShellEntity
+
+                shell = await ShellEntity.get_by_id(shell_id)
+                if shell:
+                    shell.status = "error"
+                    shell.error_message = str(e)
+                    await shell.save()
+            except Exception:
+                logging.exception(f"[terminals/close] Failed to persist shell close error for {shell_id}")
 
     @action.get(action_name="session-transcript")
     async def _session_transcript(self): return await self._pty_session_transcript()

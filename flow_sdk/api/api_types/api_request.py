@@ -168,10 +168,6 @@ class APIRequest(BaseModel):
             else:
                 none_scoped_pairs.append(original_pairs[i])
 
-        api_request.direct_resource_type = (
-            none_scoped_pairs[0][0] if none_scoped_pairs and is_entity_type(none_scoped_pairs[0][0]) else None
-        )
-
         if scoped_typeid_pairs:
             target_pair = scoped_typeid_pairs.pop()
             api_request.target_typeid = TypeId(type=target_pair[0], id=target_pair[1])
@@ -179,7 +175,21 @@ class APIRequest(BaseModel):
         if none_scoped_pairs:
             non_scoped_segments = list(itertools.chain(*none_scoped_pairs))
             non_scoped_segments = list(filter(lambda x: x is not None, non_scoped_segments))
-            if api_request.target_typeid and not api_request.direct_resource_type:
+            target_action = (
+                api_request.target_typeid
+                and non_scoped_segments
+                and is_action(non_scoped_segments[0], api_request.target_typeid.type)
+            )
+            if target_action:
+                api_request.action = non_scoped_segments.pop(0)
+                api_request.sub_path = (
+                    "/".join([seg for seg in non_scoped_segments]) if non_scoped_segments else None
+                )
+            else:
+                api_request.direct_resource_type = (
+                    non_scoped_segments[0] if non_scoped_segments and is_entity_type(non_scoped_segments[0]) else None
+                )
+            if api_request.target_typeid and not api_request.direct_resource_type and not api_request.action:
                 api_request.action = (
                     non_scoped_segments.pop(0)
                     if is_action(non_scoped_segments[0], api_request.target_typeid.type)
@@ -189,10 +199,10 @@ class APIRequest(BaseModel):
                     api_request.sub_path = (
                         "/".join([seg for seg in non_scoped_segments]) if non_scoped_segments else None
                     )
-            elif is_action(non_scoped_segments[0]):
+            elif not api_request.action and non_scoped_segments and is_action(non_scoped_segments[0]):
                 api_request.action = non_scoped_segments.pop(0)
                 api_request.sub_path = "/".join([seg for seg in non_scoped_segments]) if non_scoped_segments else None
-            elif api_request.direct_resource_type:
+            elif not api_request.action and api_request.direct_resource_type:
                 resource_type = non_scoped_segments.pop(0)
                 assert resource_type == api_request.direct_resource_type, "Resource type mismatch"
                 if non_scoped_segments:
@@ -206,7 +216,7 @@ class APIRequest(BaseModel):
                             status_code=422,
                             detail=f"Unknown resource type or action: {non_scoped_segments[0]} for {api_request.raw_api_path}",
                         )
-            else:
+            elif not api_request.action:
                 raise HTTPException(
                     status_code=422,
                     detail=f"Unknown entity type or action: {non_scoped_segments[0]} for {api_request.raw_api_path}",
