@@ -29,5 +29,5 @@ class Agent(Entity):
     name: str | None = APIField(default=None)
     description: str | None = APIField(default=None)
     asset_ref: str = APIField(default="")
-    _api_visible: bool = True
+    _api_visible: ClassVar[bool] = True
     _icon: ClassVar[str] = "Bot"

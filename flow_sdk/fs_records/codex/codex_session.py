@@ -10,7 +10,7 @@ Mirrors ``ClaudeSessionRecord`` (``flow_sdk/fs_records/claude/claude_session.py`
 - Lazy stats via ``_CodexSessionStatsProp`` descriptors that share one
   ``_codex_session_batch_stats`` cache populated on first access.
 - ``discover()`` walks the date-bucketed sessions tree without parsing.
-- ``from_jsonl()`` does an O(1) head read for envelope fields.
+- ``from_jsonl()`` does a bounded first-lines read for envelope fields.
 
 Read-only: rollouts are owned by Codex itself; we never write back.
 """
@@ -29,7 +29,20 @@ from flow_sdk.instance_settings import get_instance_settings
 from .properties import _CodexSessionStatsProp
 
 
-_HEAD_BYTES = 8192  # session_meta lines can be large (base_instructions blob)
+_HEAD_LINES = 64
+
+
+def _iter_head_json(path: Path):
+    """Yield parsed JSON envelopes from the first few JSONL lines."""
+    with open(path, encoding="utf-8") as fh:
+        for _, line in zip(range(_HEAD_LINES), fh):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                continue
 
 
 def _extract_thread_id(filename: str) -> str | None:
@@ -126,16 +139,7 @@ class CodexSessionRecord(Record):
     def getId(cls, ref) -> str:
         """Stable id = session_meta payload.id (the thread_id)."""
         try:
-            with ref._path.open("rb") as fh:
-                head = fh.read(_HEAD_BYTES).decode("utf-8", errors="replace")
-            for line in head.splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    raw = json.loads(line)
-                except json.JSONDecodeError:
-                    break
+            for raw in _iter_head_json(ref._path):
                 if raw.get("type") == "session_meta":
                     payload = raw.get("payload") or {}
                     if payload.get("id"):
@@ -222,7 +226,7 @@ class CodexSessionRecord(Record):
     def from_jsonl(cls, path: str | Path) -> Self:
         """Build a session record from a rollout JSONL path.
 
-        Reads only the first ``_HEAD_BYTES`` to extract envelope fields (id,
+        Reads only the first few JSONL lines to extract envelope fields (id,
         cwd, version, originator). Stats are loaded lazily on first attribute
         access via ``_CodexSessionStatsProp`` descriptors.
         """
@@ -231,20 +235,9 @@ class CodexSessionRecord(Record):
         cwd = ""
         version = ""
         originator = ""
-        first_user_message: str | None = None
 
         try:
-            with open(path, "rb") as fh:
-                head = fh.read(_HEAD_BYTES).decode("utf-8", errors="replace")
-            for line in head.splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    raw = json.loads(line)
-                except json.JSONDecodeError:
-                    # Boundary partial line — stop.
-                    break
+            for raw in _iter_head_json(path):
                 rtype = raw.get("type") or ""
                 if rtype == "session_meta":
                     payload = raw.get("payload") or {}
@@ -258,18 +251,6 @@ class CodexSessionRecord(Record):
                         originator = str(payload["originator"])
                 elif rtype == "thread.started" and raw.get("thread_id"):
                     session_id = str(raw["thread_id"])
-                elif rtype == "response_item" and first_user_message is None:
-                    payload = raw.get("payload") or {}
-                    if payload.get("type") == "message" and payload.get("role") == "user":
-                        for block in payload.get("content") or []:
-                            if isinstance(block, dict) and block.get("type") in (
-                                "input_text",
-                                "output_text",
-                            ):
-                                text = (block.get("text") or "").strip()
-                                if text and not text.startswith("<"):
-                                    first_user_message = text[:200]
-                                    break
         except OSError:
             pass
 
@@ -282,9 +263,4 @@ class CodexSessionRecord(Record):
             "source_file": str(path),
             "path": str(path),
         }
-        # Only seed last_user_message when we actually found one in the head;
-        # passing None would wedge the lazy stats descriptor (RecordField is a
-        # non-data descriptor — instance __dict__ wins over the lazy parse).
-        if first_user_message:
-            kwargs["last_user_message"] = first_user_message
         return cls(**kwargs)
