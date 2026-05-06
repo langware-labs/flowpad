@@ -1,6 +1,7 @@
 import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/AssetEditorRouter';
 import { WikiResolveView } from '@src/components/assets/editor/WikiResolveView';
 import { InputDialog } from '@src/components/ui/input-dialog';
+import { Button } from '@src/components/ui/button';
 import { getDescriptor } from '@src/components/quick-create';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
 import { InlineSearchResults } from '@src/pages/home-landing/InlineSearchResults';
@@ -9,9 +10,9 @@ import { useToast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext, RecordType } from '@sdk';
+import { dataContext, RecordType, systemTools } from '@sdk';
 import apiClient from '@sdk/client';
-import { BookOpen, ChevronRight, PanelLeft, PanelLeftClose, X } from 'lucide-react';
+import { BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, X } from 'lucide-react';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -20,6 +21,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@src/components/ui/breadcrumb';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AssetFilter, AssetScope } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
@@ -200,7 +202,7 @@ export function AssetsPage() {
   const { toast } = useToast();
   const { currentDock, navigation } = useDockNavigation();
   const { types: allTypes, isLoading: typesLoading } = useAssetTypes();
-  const { indexType } = useSystemTools();
+  const { indexType, busy, resetAndRescan } = useSystemTools();
 
   const [refreshKey, setRefreshKey] = useState(0);
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
@@ -215,6 +217,14 @@ export function AssetsPage() {
   });
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
+
+  useEffect(() => {
+    void systemTools.refreshActivityStatus();
+  }, []);
+
+  const handleRebuildIndex = useCallback(() => {
+    void resetAndRescan();
+  }, [resetAndRescan]);
 
   const handleSearchSubmit = useCallback(() => {
     const q = searchQuery.trim();
@@ -431,6 +441,22 @@ export function AssetsPage() {
               </div>
             )}
           </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 shrink-0"
+                onClick={handleRebuildIndex}
+                disabled={busy}
+                aria-label="Refresh search data"
+                data-testid="rebuild-index"
+              >
+                <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Refresh search data</TooltipContent>
+          </Tooltip>
           <ScopeFilterBar
             scope={assetFilter.scope}
             projectIds={assetFilter.projectIds}

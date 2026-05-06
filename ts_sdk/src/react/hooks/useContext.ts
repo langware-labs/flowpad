@@ -74,6 +74,7 @@ export function useContext() {
     agenticProcess: typeof dataContext.agenticProcess;
     agenticProcessTypeId: typeof dataContext.agenticProcessTypeId;
     activeShellId: typeof dataContext.activeShellId;
+    activeTerminalTargetTypeId: typeof dataContext.activeTerminalTargetTypeId;
     workdir: typeof dataContext.workdir;
     snifferEnabled: typeof dataContext.snifferEnabled;
     isConnected: typeof dataContext.isConnected;
@@ -109,6 +110,7 @@ export function useContext() {
     agenticProcess: dataContext.agenticProcess,
     agenticProcessTypeId: dataContext.agenticProcessTypeId,
     activeShellId: dataContext.activeShellId,
+    activeTerminalTargetTypeId: dataContext.activeTerminalTargetTypeId,
     workdir: dataContext.workdir,
     snifferEnabled: dataContext.snifferEnabled,
     isConnected: dataContext.isConnected,
@@ -154,6 +156,7 @@ export function useContext() {
       agenticProcess: dataContext.agenticProcess,
       agenticProcessTypeId: dataContext.agenticProcessTypeId,
       activeShellId: dataContext.activeShellId,
+      activeTerminalTargetTypeId: dataContext.activeTerminalTargetTypeId,
       workdir: dataContext.workdir,
       snifferEnabled: dataContext.snifferEnabled,
       isConnected: dataContext.isConnected,
@@ -162,8 +165,10 @@ export function useContext() {
     // Only update snapshot if values have changed (to maintain stable reference)
     // For TypeId objects, compare by id instead of reference to avoid race conditions
     const prev = snapshotRef.current;
-    const typeIdChanged = (a: { id: string } | null | undefined, b: { id: string } | null | undefined) =>
-      a?.id !== b?.id;
+    const typeIdChanged = (
+      a: { type?: string; id: string } | null | undefined,
+      b: { type?: string; id: string } | null | undefined,
+    ) => a?.type !== b?.type || a?.id !== b?.id;
 
     if (
       prev.user !== current.user ||
@@ -197,6 +202,7 @@ export function useContext() {
       prev.agenticProcess !== current.agenticProcess ||
       typeIdChanged(prev.agenticProcessTypeId, current.agenticProcessTypeId) ||
       prev.activeShellId !== current.activeShellId ||
+      typeIdChanged(prev.activeTerminalTargetTypeId, current.activeTerminalTargetTypeId) ||
       prev.workdir !== current.workdir ||
       prev.snifferEnabled !== current.snifferEnabled ||
       prev.isConnected !== current.isConnected

@@ -5,6 +5,6 @@ test 1: Double-click to rename a terminal tab
 - validate a new tab named "Terminal 1" (or similar) appears
 - double-click the new tab's name text
 - validate an input field appears for editing the tab name
-- clear the input and type "My Custom Shell"
+- type "My Custom Shell" directly, replacing the selected existing name
 - press Enter to confirm the rename
 - validate the tab now displays "My Custom Shell"

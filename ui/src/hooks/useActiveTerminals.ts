@@ -5,6 +5,7 @@ import {
   dataManager,
   Shell,
   ShellStatus,
+  TypeId,
 } from '@sdk';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
@@ -15,11 +16,11 @@ export type TerminalTabType = 'plain' | 'claude';
  * One row in the tab strip.
  *
  * Strip contract (deliberately simple):
- *   tabsState ← initial REST fetch ← `refresh()`
- *   tabsState ← direct mutations ← `pushTab` / `removeTab` / `updateTab`
+ *   terminalState ← initial REST fetch ← `refresh()`
+ *   terminalState ← direct mutations ← `pushTerminal` / `removeTerminal` / `updateTerminal`
  *
  * No WebSocket subscription, no merge ratchet, no implicit filtering. The list
- * the consumer renders is exactly what's in `tabsState`.
+ * the consumer renders is exactly what's in `terminalState`.
  *
  * Per-row liveness (status badges, names, restart-required) is read from the
  * dataManager entity cache via `Shell.getByIdFromCache` / `AgenticProcess.
@@ -27,6 +28,13 @@ export type TerminalTabType = 'plain' | 'claude';
  * subscriptions, independently of this hook.
  */
 export interface TerminalTab {
+  /** Canonical tab identity. Shell tabs use shell-<id>; process tabs use agentic_process-<id>. */
+  targetTypeId: TypeId;
+  /**
+   * Current transport shell id. This is not the tab identity for process tabs:
+   * AgenticProcess.start/open may replace process.shell_id while the process
+   * tab remains the same targetTypeId.
+   */
   shellId: string;
   processId: string | null;
   tabOrder: number;
@@ -83,6 +91,7 @@ function toShellTab(s: WireShell): TerminalTab {
   const cached = shellFromCache(s.id);
   const isClosing = s.status === ShellStatus.CLOSING;
   return {
+    targetTypeId: new TypeId(Shell.type, s.id),
     shellId: s.id,
     processId: null,
     tabOrder: s.tab_order ?? cached?.tab_order ?? 0,
@@ -102,6 +111,7 @@ function toProcessTab(p: WireProcess): TerminalTab {
   const linkedShell = linkedShellId ? shellFromCache(linkedShellId) : undefined;
   const isClosing = linkedShell?.status === ShellStatus.CLOSING;
   return {
+    targetTypeId: new TypeId(AgenticProcess.type, p.id),
     shellId: linkedShellId,
     processId: p.id,
     tabOrder: linkedShell?.tab_order ?? 0,
@@ -123,24 +133,41 @@ function byTabOrder(a: TerminalTab, b: TerminalTab): number {
   return 0;
 }
 
+export function terminalTargetKey(tabOrTypeId: TerminalTab | TypeId | string): string {
+  if (typeof tabOrTypeId === 'string') return tabOrTypeId;
+  if (tabOrTypeId instanceof TypeId) return tabOrTypeId.toString();
+  return tabOrTypeId.targetTypeId.toString();
+}
+
+export function terminalTransportShellId(tab: TerminalTab): string | null {
+  if (tab.targetTypeId.type === Shell.type) return tab.targetTypeId.id;
+  return tab.agenticProcess?.shell_id ?? tab.shellId ?? null;
+}
+
+export function terminalProcessId(tab: TerminalTab): string | null {
+  return tab.targetTypeId.type === AgenticProcess.type ? tab.targetTypeId.id : null;
+}
+
 // ─── Module-level shared state ──────────────────────────────────────────────
 
-let tabsState: TerminalTab[] = [];
+let terminalState: TerminalTab[] = [];
 let initialFetchStarted = false;
+let activeTerminalsFetchVersion = 0;
 const listeners = new Set<() => void>();
+const closedTerminalKeys = new Set<string>();
 
 function notifyListeners(): void {
   for (const cb of listeners) cb();
 }
 
-function setTabsState(next: TerminalTab[]): void {
-  if (next === tabsState) return;
-  tabsState = next;
+function setTerminalState(next: TerminalTab[]): void {
+  if (next === terminalState) return;
+  terminalState = next;
   notifyListeners();
 }
 
 /**
- * One-shot fetch + write-through. Replaces `tabsState` wholesale with the
+ * One-shot fetch + write-through. Replaces `terminalState` wholesale with the
  * server's view. Also feeds the dataManager cache via `castAndDeepAssign` so
  * per-row entity reads (`shell.status` etc.) stay live.
  *
@@ -150,6 +177,7 @@ function setTabsState(next: TerminalTab[]): void {
 export async function fetchActiveTerminals(): Promise<TerminalTab[]> {
   const computeNodeId = dataContext.computeNode?.id;
   if (!computeNodeId) return [];
+  const fetchVersion = ++activeTerminalsFetchVersion;
   const action = new ActionInfo('active-terminals', 'compute_node', computeNodeId, 'GET');
   const result = await dataManager.callAction<unknown, ActiveTerminalsResponse>(action);
   if (!result) return [];
@@ -163,28 +191,41 @@ export async function fetchActiveTerminals(): Promise<TerminalTab[]> {
   }
   // 2. Build the row list directly from both wire arrays — no join, no merge.
   //    Pure shells become plain rows; visible processes become AI-worker rows.
-  const incoming: TerminalTab[] = [
+  const fetched: TerminalTab[] = [
     ...result.pure_shells.map(toShellTab),
     ...result.visible_processes.map(toProcessTab),
-  ].sort(byTabOrder);
-  setTabsState(incoming);
+  ];
+  if (fetchVersion !== activeTerminalsFetchVersion) return terminalState;
+
+  const fetchedKeys = new Set(fetched.map(terminalTargetKey));
+  for (const key of closedTerminalKeys) {
+    if (!fetchedKeys.has(key)) closedTerminalKeys.delete(key);
+  }
+
+  const incoming = fetched.filter((tab) => !closedTerminalKeys.has(terminalTargetKey(tab))).sort(byTabOrder);
+  setTerminalState(incoming);
   return incoming;
 }
 
-function pushTabShared(tab: TerminalTab): void {
-  setTabsState(
-    tabsState.some((t) => t.shellId === tab.shellId)
-      ? tabsState.map((t) => (t.shellId === tab.shellId ? tab : t))
-      : [...tabsState, tab],
+function pushTerminalShared(tab: TerminalTab): void {
+  const key = terminalTargetKey(tab);
+  closedTerminalKeys.delete(key);
+  setTerminalState(
+    terminalState.some((t) => terminalTargetKey(t) === key)
+      ? terminalState.map((t) => (terminalTargetKey(t) === key ? tab : t))
+      : [...terminalState, tab],
   );
 }
 
-function removeTabShared(shellId: string): void {
-  setTabsState(tabsState.filter((t) => t.shellId !== shellId));
+function removeTerminalShared(target: TerminalTab | TypeId | string): void {
+  const key = terminalTargetKey(target);
+  closedTerminalKeys.add(key);
+  setTerminalState(terminalState.filter((t) => terminalTargetKey(t) !== key));
 }
 
-function updateTabShared(shellId: string, patch: Partial<TerminalTab>): void {
-  setTabsState(tabsState.map((t) => (t.shellId === shellId ? { ...t, ...patch } : t)));
+function updateTerminalShared(target: TerminalTab | TypeId | string, patch: Partial<TerminalTab>): void {
+  const key = terminalTargetKey(target);
+  setTerminalState(terminalState.map((t) => (terminalTargetKey(t) === key ? { ...t, ...patch } : t)));
 }
 
 export interface UseTerminalsResult {
@@ -194,18 +235,18 @@ export interface UseTerminalsResult {
   refresh: () => Promise<void>;
   /** Append (or replace if shellId exists). Call after the consumer creates
    *  a new tab so the strip reflects it without waiting on refresh. */
-  pushTab: (tab: TerminalTab) => void;
+  pushTerminal: (tab: TerminalTab) => void;
   /** Drop a tab. Call after a user-initiated close. */
-  removeTab: (shellId: string) => void;
+  removeTerminal: (target: TerminalTab | TypeId | string) => void;
   /** Patch a single tab in place. */
-  updateTab: (shellId: string, patch: Partial<TerminalTab>) => void;
+  updateTerminal: (target: TerminalTab | TypeId | string, patch: Partial<TerminalTab>) => void;
 }
 
 /**
  * Global tab list. One source, mutated by:
  *   - initial REST fetch (on first subscribe)
  *   - explicit ``refresh()``
- *   - direct mutators: ``pushTab`` / ``removeTab`` / ``updateTab``
+ *   - direct mutators: ``pushTerminal`` / ``removeTerminal`` / ``updateTerminal``
  *
  * No filtering. Consumers that want a scoped view (e.g. per-project) should
  * use ``useProjectTerminals`` or filter ``data`` themselves.
@@ -219,14 +260,14 @@ export function useAllTerminals(): UseTerminalsResult {
     }
     return () => { listeners.delete(onChange); };
   }, []);
-  const getSnapshot = useCallback(() => tabsState, []);
+  const getSnapshot = useCallback(() => terminalState, []);
   const data = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   return {
     data,
     refresh: async () => { await fetchActiveTerminals(); },
-    pushTab: pushTabShared,
-    removeTab: removeTabShared,
-    updateTab: updateTabShared,
+    pushTerminal: pushTerminalShared,
+    removeTerminal: removeTerminalShared,
+    updateTerminal: updateTerminalShared,
   };
 }
 
