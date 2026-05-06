@@ -438,11 +438,28 @@ class ScanActionsMixin:
             )
             if existing:
                 process = existing[0]
+                # Heal pre-existing processes that were persisted before the
+                # atomic-start fix: ensure the linked Shell + PTY are attached
+                # and the process is visible so the tab strip will surface it.
+                if not process.shell_id or not process.visible:
+                    try:
+                        start_resp = await process.start(visible=True)
+                    except Exception as start_err:
+                        logging.exception(
+                            f"ComputeNode {self.id} upsertSessionProcess heal-start error for {process.id}: {start_err}"
+                        )
+                        return ApiFailResponse(
+                            message=f"Process {process.id} found but failed to start: {start_err}"
+                        )
+                    if isinstance(start_resp, ApiFailResponse):
+                        return start_resp
                 return ApiSuccessResponse(
                     data={
                         "id": process.id,
                         "type": process.type,
                         "session_id": process.session_id,
+                        "shell_id": process.shell_id,
+                        "pty_pid": getattr(process, "pty_pid", None),
                         "worker_type": getattr(process.worker_type, "value", process.worker_type),
                         "created": False,
                     }
@@ -498,6 +515,7 @@ class ScanActionsMixin:
                 context_data=context_data,
                 project_id=project_id or None,
                 project_encoded_name=project_encoded_name or None,
+                visible=True,
                 **({"name": session_name} if session_name else {}),
             )
             await process.save(owner=owner)
@@ -526,11 +544,31 @@ class ScanActionsMixin:
                     process.workdir = rec_cwd
                 await process.save()
 
+            # Atomic: spawn the linked Shell + PTY before returning so the
+            # frontend gets a fully-attached row in one round-trip — same
+            # pattern as `_scan_create_process`. Without this the resumed
+            # AgenticProcess has no shell_id, is filtered out of the visible
+            # tab strip, and the route loader silently snaps to a fallback.
+            try:
+                start_resp = await process.start(visible=True)
+            except Exception as start_err:
+                logging.exception(
+                    f"ComputeNode {self.id} upsertSessionProcess start error for {process.id}: {start_err}"
+                )
+                return ApiFailResponse(
+                    message=f"Process {process.id} created but failed to start: {start_err}"
+                )
+
+            if isinstance(start_resp, ApiFailResponse):
+                return start_resp
+
             return ApiSuccessResponse(
                 data={
                     "id": process.id,
                     "type": process.type,
                     "session_id": session_id,
+                    "shell_id": process.shell_id,
+                    "pty_pid": getattr(process, "pty_pid", None),
                     "worker_type": getattr(process.worker_type, "value", process.worker_type),
                     "created": True,
                 }

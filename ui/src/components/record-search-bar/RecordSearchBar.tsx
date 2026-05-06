@@ -7,9 +7,9 @@ import { CornerDownLeft, Search, SlidersHorizontal, X } from 'lucide-react';
 import { KeyboardEvent, useCallback, useRef, useState } from 'react';
 
 const RECORD_TYPES = [
-  'bookmark', 'claude_session', RecordType.SKILL, RecordType.AGENT, 'claude_hook', RecordType.COMMAND,
+  'bookmark', 'claude_session', 'codex_session', RecordType.SKILL, RecordType.AGENT, 'claude_hook', RecordType.COMMAND,
   RecordType.ANNOTATION, 'comment', RecordType.TASK, 'workflow', RecordType.MARKDOWN, RecordType.PLAN,
-  RecordType.CLAUDE_MD, 'claude_memory', 'claude_rules', RecordType.PROJECT,
+  RecordType.CLAUDE_MD, 'claude_memory', 'claude_rules', RecordType.PROJECT, 'codex_project',
 ];
 const TIME_PRESETS = [
   { value: '1h', label: '1h' },
@@ -22,11 +22,15 @@ const STATUSES = ['active', 'closed', 'archived'];
 const TYPE_DISPLAY_NAMES: Record<string, string> = {
   claude_session: 'session',
   claude_hook: 'hook',
+  codex_session: 'codex',
+  codex_project: 'codex project',
 };
 
 const TYPE_COLORS: Record<string, string> = {
   bookmark: 'bg-violet-500/20 text-violet-700 dark:text-violet-300',
   claude_session: 'bg-blue-500/20 text-blue-700 dark:text-blue-300',
+  codex_session: 'bg-green-500/20 text-green-700 dark:text-green-300',
+  codex_project: 'bg-green-700/20 text-green-800 dark:text-green-200',
   skill: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
   agent: 'bg-amber-500/20 text-amber-700 dark:text-amber-300',
   claude_hook: 'bg-orange-500/20 text-orange-700 dark:text-orange-300',

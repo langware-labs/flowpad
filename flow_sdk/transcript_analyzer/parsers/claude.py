@@ -190,12 +190,29 @@ class ClaudeParser:
         result_block = first_block_of_type(content, "tool_result")
         if result_block:
             tool_use_result = raw.get("toolUseResult") or {}
-            file_path = tool_use_result.get("filePath") if isinstance(tool_use_result, dict) else None
+            tur = tool_use_result if isinstance(tool_use_result, dict) else {}
+            file_path = tur.get("filePath")
+            # Claude carries ``durationMs`` on grep-style results and
+            # ``totalDuration`` (rare) on others. Use whichever exists.
+            duration_ms_raw = tur.get("durationMs")
+            if duration_ms_raw is None:
+                duration_ms_raw = tur.get("totalDuration")
+            duration_ms: int | None = None
+            if isinstance(duration_ms_raw, (int, float)):
+                duration_ms = int(round(duration_ms_raw))
+            # ``exitCode`` is rare in claude bash results in practice but
+            # supported for forward-compat.
+            exit_code_raw = tur.get("exitCode")
+            exit_code: int | None = None
+            if isinstance(exit_code_raw, int):
+                exit_code = exit_code_raw
             return ToolResultEntry(
                 tool_use_id=str(result_block.get("tool_use_id") or ""),
                 tool_output=flatten_tool_result(result_block.get("content")),
                 is_error=bool(result_block.get("is_error", False)),
                 file_path=str(file_path) if file_path else None,
+                duration_ms=duration_ms,
+                exit_code=exit_code,
                 **base,
             )
         return UserMessageEntry(text=extract_text(content), **base)

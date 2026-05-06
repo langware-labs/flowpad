@@ -235,12 +235,16 @@ export function useAllTerminals(): UseTerminalsResult {
  * mutators — only ``data`` is filtered. Pass an explicit ``projectId`` to
  * pin (e.g. for collaboration spaces); omit to default to the active project
  * via ``dataContext.project?.id``.
+ *
+ * Tabs whose `projectId` is null have no project affiliation (e.g. a plain
+ * shell created before any project context is set) and are surfaced in every
+ * scoped view — excluding them everywhere would orphan them from the UI.
  */
 export function useProjectTerminals(projectId?: string | null): UseTerminalsResult {
   const all = useAllTerminals();
   const pid = projectId ?? dataContext.project?.id ?? null;
   const data = useMemo(
-    () => (pid == null ? all.data : all.data.filter((t) => t.projectId === pid)),
+    () => (pid == null ? all.data : all.data.filter((t) => t.projectId === pid || t.projectId == null)),
     [all.data, pid],
   );
   return { ...all, data };
