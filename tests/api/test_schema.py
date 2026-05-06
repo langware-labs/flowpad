@@ -85,3 +85,18 @@ async def test_get_builtin_all_schema(bootstrapped_client):
     assert schemas is not None
     assert len(schemas) > 1
     print(f"Retrieved {len(schemas)} schemas")
+
+
+async def test_bootstrap_includes_agent_and_skill_schemas(bootstrapped_client):
+    client = bootstrapped_client
+
+    response = await client.get("/api/v1/graph/bootstrap")
+
+    assert response.status_code == 200, response.text
+    schemas: List[dict[str, Any]] = response.json()["data"]["schemas"]
+    schema_types = {
+        schema.get("properties", {}).get("type", {}).get("const")
+        for schema in schemas
+    }
+    assert "agent" in schema_types
+    assert "skill" in schema_types
