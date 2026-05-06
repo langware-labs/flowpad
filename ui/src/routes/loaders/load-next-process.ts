@@ -20,7 +20,11 @@
  */
 
 import { AgenticProcess, Shell } from '@sdk';
-import { fetchActiveTerminals } from '@src/hooks/useActiveTerminals';
+import {
+  fetchActiveTerminals,
+  terminalProcessId,
+  terminalTransportShellId,
+} from '@src/hooks/useActiveTerminals';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
 import { loadShell, resolveDefaultTab, ShellLoadError } from './load-shell';
 
@@ -159,8 +163,8 @@ export async function loadNextProcess(
       return { loaded: null, cleaned };
     }
 
-    if (tab.agenticProcess) {
-      const processId = tab.agenticProcess.id;
+    const processId = terminalProcessId(tab);
+    if (processId) {
       try {
         const result = await loadProcess(processId);
         return {
@@ -176,13 +180,13 @@ export async function loadNextProcess(
       }
     }
 
-    if (!tab.shell) {
+    const shellId = terminalTransportShellId(tab);
+    if (!shellId || !tab.shell) {
       // Defensive: filterTabs shouldn't yield a tab without either entity.
-      tried.add(tab.shellId);
+      tried.add(tab.targetTypeId.toString());
       continue;
     }
 
-    const shellId = tab.shellId;
     try {
       const shell = await loadShell(shellId);
       return { loaded: { kind: 'shell', shell }, cleaned };

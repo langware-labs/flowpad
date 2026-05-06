@@ -438,6 +438,15 @@ class ScanActionsMixin:
             )
             if existing:
                 process = existing[0]
+                # Re-tag the AgenticProcess to the request body's project_id
+                # when it drifts. The dock-active project is authoritative for
+                # which strip the row should appear in; a stale `project_id`
+                # left over from a prior resume in a different project context
+                # would otherwise cause the freshly-spawned Shell (Fix #30) to
+                # be tagged wrong and `useProjectTerminals` would drop the row.
+                if project_id and process.project_id != project_id:
+                    process._bind_project_id(project_id)
+                    await process.save()
                 # Heal pre-existing processes that were persisted before the
                 # atomic-start fix: ensure the linked Shell + PTY are attached
                 # and the process is visible so the tab strip will surface it.

@@ -51,10 +51,18 @@ test.describe('Terminal Tab Rename', () => {
     // Step 6: validate the rename input appears
     const renameInput = newTab.locator('input[type="text"]');
     await expect(renameInput).toBeVisible({ timeout: 5_000 });
+    await expect(renameInput).toBeFocused();
+    await expect(async () => {
+      const selection = await renameInput.evaluate((input: HTMLInputElement) => ({
+        start: input.selectionStart,
+        end: input.selectionEnd,
+        length: input.value.length,
+      }));
+      expect(selection.start).toBe(0);
+      expect(selection.end).toBe(selection.length);
+    }).toPass({ timeout: 2_000 });
 
-    // Step 7: clear and type new name.
-    // triple-click selects all text so the type() call replaces the whole value.
-    await renameInput.click({ clickCount: 3 });
+    // Step 7: type new name; the selected tab text should be replaced.
     await renameInput.type('My Custom Shell');
     await page.waitForTimeout(200);
     await renameInput.press('Enter');

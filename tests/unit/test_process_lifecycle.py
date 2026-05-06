@@ -20,6 +20,16 @@ from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 # ---------------------------------------------------------------------------
 
 
+def _fake_psutil_proc(pid):
+    """Build a MagicMock that behaves like a psutil.Process with no children."""
+    proc = MagicMock()
+    proc.pid = pid
+    proc.children.return_value = []
+    proc.terminate = MagicMock()
+    proc.kill = MagicMock()
+    return proc
+
+
 @pytest.mark.asyncio
 async def test_terminate_worker_no_pid():
     """terminate_worker() is a no-op when worker_pid is None."""
@@ -29,59 +39,53 @@ async def test_terminate_worker_no_pid():
 
 @pytest.mark.asyncio
 async def test_terminate_worker_already_gone():
-    """terminate_worker() handles ProcessLookupError gracefully."""
+    """terminate_worker() handles NoSuchProcess gracefully when psutil.Process raises."""
+    import psutil
+
     shell = Shell.model_construct(worker_pid=99999)
-    with patch("os.kill", side_effect=ProcessLookupError):
+    with patch("flow_sdk.builtin.shell.psutil.Process", side_effect=psutil.NoSuchProcess(99999)):
         await shell.terminate_worker()  # must not raise
 
 
 @pytest.mark.asyncio
 async def test_terminate_worker_sigterm_sufficient():
-    """terminate_worker() sends SIGTERM; if process exits quickly, no SIGKILL sent."""
-    import signal
+    """terminate_worker() calls psutil terminate(); if process exits quickly, no kill() sent."""
+    proc = _fake_psutil_proc(12345)
 
-    shell = Shell.model_construct(worker_pid=12345)
-    kill_calls = []
+    # wait_procs returns (gone, alive=[]) → no fallback kill
+    async def fake_to_thread(fn, *args, **kwargs):
+        return ([proc], [])
 
-    def fake_kill(pid, sig):
-        kill_calls.append((pid, sig))
-
-    # Process is gone immediately after SIGTERM
-    with patch("os.kill", side_effect=fake_kill), \
-         patch("psutil.pid_exists", return_value=False):
+    with patch("flow_sdk.builtin.shell.psutil.Process", return_value=proc), \
+         patch("flow_sdk.builtin.shell.asyncio.to_thread", side_effect=fake_to_thread):
+        shell = Shell.model_construct(worker_pid=12345)
         await shell.terminate_worker()
 
-    assert (12345, signal.SIGTERM) in kill_calls
-    assert not any(sig == signal.SIGKILL for _, sig in kill_calls)
+    proc.terminate.assert_called_once()
+    proc.kill.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_terminate_worker_sigkill_fallback():
-    """terminate_worker() falls back to SIGKILL when process survives deadline."""
-    import signal
+    """terminate_worker() falls back to .kill() when psutil.wait_procs reports survivors."""
+    proc = _fake_psutil_proc(12345)
+    call_count = {"n": 0}
 
-    shell = Shell.model_construct(worker_pid=12345)
-    kill_calls = []
+    async def fake_to_thread(fn, victims, timeout, *args, **kwargs):
+        call_count["n"] += 1
+        # 1st wait: still alive → triggers kill()
+        # 2nd wait (after kill): now gone
+        if call_count["n"] == 1:
+            return ([], [proc])
+        return ([proc], [])
 
-    def fake_kill(pid, sig):
-        kill_calls.append((pid, sig))
-
-    # Make the deadline expire immediately by returning a time past the deadline
-    time_calls = [0]
-
-    def fake_time():
-        time_calls[0] += 1
-        return 0.0 if time_calls[0] == 1 else 100.0  # deadline=3.0, loop sees 100.0 > deadline
-
-    with patch("os.kill", side_effect=fake_kill), \
-         patch("psutil.pid_exists", return_value=True), \
-         patch("asyncio.get_event_loop") as mock_loop, \
-         patch("asyncio.sleep", new_callable=AsyncMock):
-        mock_loop.return_value.time = fake_time
+    with patch("flow_sdk.builtin.shell.psutil.Process", return_value=proc), \
+         patch("flow_sdk.builtin.shell.asyncio.to_thread", side_effect=fake_to_thread):
+        shell = Shell.model_construct(worker_pid=12345)
         await shell.terminate_worker()
 
-    assert (12345, signal.SIGTERM) in kill_calls
-    assert (12345, signal.SIGKILL) in kill_calls
+    proc.terminate.assert_called_once()
+    proc.kill.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
