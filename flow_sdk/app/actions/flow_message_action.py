@@ -1130,7 +1130,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
         try:
             accept_body = resp.json() or {}
             target = accept_body.get("data")
-            logger.info("[invitation-accept] hub accept response data=%r", target)
+            logger.warning("[invitation-accept] hub accept response data=%r", target)
             fm_prefix = f"{BuiltinEntityType.FLOW_MESSAGE.value}-"
             if isinstance(target, str) and target.startswith(fm_prefix):
                 linked_fm_id = target[len(fm_prefix):]
@@ -1161,7 +1161,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
         try:
             hub_fm = await hub_get(BuiltinEntityType.FLOW_MESSAGE, linked_fm_id)
             attachment_filename = ((hub_fm or {}).get("attachment_filename") or "").strip()
-            logger.info(
+            logger.warning(
                 "[invitation-accept] targeted fm=%s attachment_filename=%r",
                 linked_fm_id, attachment_filename,
             )
@@ -1176,7 +1176,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     # the cursor — this is a one-off, not the normal inbox sync.
     if not targeted_ok:
         try:
-            logger.info("[invitation-accept] targeted unpack skipped — falling back to cursor-less inbox pull")
+            logger.warning("[invitation-accept] targeted unpack skipped — falling back to cursor-less inbox pull")
             raw_messages = await _fetch_raw_messages_from_hub(since=None)
             for raw in (raw_messages or []):
                 try:
