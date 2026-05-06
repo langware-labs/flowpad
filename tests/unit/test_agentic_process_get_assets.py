@@ -455,12 +455,14 @@ async def test_remove_dir_action(tree):
     proc = _make_proc(additional_dirs=[extra, other])
 
     # Stub out save() so the test doesn't need a writable backing store.
+    # AgenticProcess is a strict pydantic model — bypass with object.__setattr__
+    # so the bound method override doesn't trip 'no field "save"'.
     saved: list[None] = []
     async def _fake_save(self):
         saved.append(None)
         return self
     import types
-    proc.save = types.MethodType(_fake_save, proc)
+    object.__setattr__(proc, "save", types.MethodType(_fake_save, proc))
 
     await proc.remove_dir(extra)
     assert proc.additional_dirs == [other]

@@ -24,7 +24,9 @@ def test_parses_all_lines_with_one_warning_for_unknown(claude_jsonl):
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         t = AgentTranscript("claude", claude_jsonl)
-    assert len(t) == 12
+    # 12 raw lines; each assistant turn (1 assistant_message + 2 tool_use)
+    # also emits a synthetic TokenUsageEntry → 12 + 3 = 15 entries.
+    assert len(t) == 15
     # One synthetic unknown line at the end → exactly one warning.
     unknown_warnings = [w for w in caught if "unknown entry type" in str(w.message)]
     assert len(unknown_warnings) == 1
@@ -54,6 +56,8 @@ def test_entry_kind_breakdown(claude_jsonl):
     #   tool_result → 1 TOOL_RESULT
     #   system:stop_hook_summary → 1 SYSTEM
     #   synthetic unknown → 1 UNKNOWN
+    # Each assistant turn (assistant_message + 2 tool_use) carries usage
+    # data that the parser splits out as a separate TokenUsageEntry → 3 token_usage.
     assert counts == {
         "meta": 5,
         "user_message": 1,
@@ -62,6 +66,7 @@ def test_entry_kind_breakdown(claude_jsonl):
         "tool_result": 1,
         "system": 1,
         "unknown": 1,
+        "token_usage": 3,
     }
 
 

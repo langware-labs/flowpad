@@ -122,10 +122,15 @@ def test_fork_factory_sets_fork_session_id():
     assert proc.cli_config.get("fork_session_id") == "src-session-456"
 
 
-def test_fork_factory_does_not_set_session_id():
-    """AgenticProcess.fork() does not pre-assign session_id (new ID will be assigned on start)."""
+def test_fork_factory_pre_assigns_new_session_id():
+    """AgenticProcess.fork() pre-allocates a new session_id for the child process,
+    distinct from the source session_id passed in."""
     proc = AgenticProcess.fork("src-session-456")
-    assert proc.session_id is None
+    assert proc.session_id is not None
+    assert proc.session_id != "src-session-456"
+    # cli_config carries the parent in fork_session_id and the new id in session_id.
+    assert proc.cli_config.get("session_id") == proc.session_id
+    assert proc.cli_config.get("fork_session_id") == "src-session-456"
 
 
 def test_fork_factory_passes_workdir():
@@ -191,6 +196,7 @@ async def test_fork_action_creates_sibling_with_fork_session_id():
         session_id="source-session-abc",
         workdir="/project",
         visible=False,
+        context_entities=[],
     )
     fake_new_proc.save.assert_awaited_once_with(None)
     from flow_sdk.responses.response import ApiSuccessResponse
@@ -215,6 +221,7 @@ async def test_fork_action_visible_false_by_default():
         session_id="src-sess",
         workdir="/project",
         visible=False,
+        context_entities=[],
     )
 
 
@@ -239,6 +246,7 @@ async def test_fork_action_visible_true_when_passed():
         session_id="src-sess",
         workdir="/project",
         visible=True,
+        context_entities=[],
     )
 
 
@@ -287,6 +295,7 @@ async def test_start_promotes_stuck_starting_process_to_live_when_pty_is_attacha
     shell.model_dump.return_value = {"id": "shell-123"}
     shell.ensure_live_compute_node_binding = AsyncMock(return_value=True)
     shell.has_attachable_pty = AsyncMock(return_value=True)
+    shell.worker_alive = AsyncMock(return_value=True)
 
     with patch.object(AgenticProcess, "shell", new=AsyncMock(return_value=shell)), \
          patch.object(AgenticProcess, "save", new=AsyncMock()) as save, \
@@ -297,6 +306,7 @@ async def test_start_promotes_stuck_starting_process_to_live_when_pty_is_attacha
     assert proc.status == ProcessStatus.RUNNING.value
     shell.ensure_live_compute_node_binding.assert_awaited_once_with()
     shell.has_attachable_pty.assert_awaited_once()
+    shell.worker_alive.assert_awaited_once()
     save.assert_awaited_once()
     get_project.assert_not_awaited()
 
