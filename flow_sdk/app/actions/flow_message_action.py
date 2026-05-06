@@ -1111,6 +1111,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
         return ApiFailResponse(message="Not logged in to hub")
 
     accept_url = f"{base}/api/v1/graph/members/accept"
+    linked_fm_id: Optional[str] = None
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(
@@ -1122,6 +1123,17 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             return ApiFailResponse(
                 message=f"Accept failed ({resp.status_code}): {resp.text[:200]}"
             )
+        # Hub returns the unlocked target's typeid (e.g. "flow_message-<uuid>")
+        # under ``data``. We use it to targetedly download just the one bundle
+        # that was just unlocked — sidesteps the inbox-fetch cursor and avoids
+        # unpacking the entire inbox.
+        try:
+            target = (resp.json() or {}).get("data")
+            fm_prefix = f"{BuiltinEntityType.FLOW_MESSAGE.value}-"
+            if isinstance(target, str) and target.startswith(fm_prefix):
+                linked_fm_id = target[len(fm_prefix):]
+        except Exception as parse_err:
+            logger.warning("[invitation-accept] could not parse target typeid: %s", parse_err)
     except Exception as e:
         return ApiFailResponse(message=f"Accept transport error: {e}")
 
@@ -1135,7 +1147,17 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     except Exception as e:
         logger.warning("[invitation-accept] local update failed: %s", e)
 
-    # Now run sync so the conversation just unlocked appears locally.
+    # Targeted bundle download for the just-unlocked FlowMessage so the
+    # Conversation materializes locally without a broad inbox-fetch.
+    if linked_fm_id:
+        try:
+            hub_fm = await hub_get(BuiltinEntityType.FLOW_MESSAGE, linked_fm_id)
+            attachment_filename = ((hub_fm or {}).get("attachment_filename") or "").strip()
+            if attachment_filename:
+                await _download_and_unpack_bundle(linked_fm_id, attachment_filename)
+        except Exception as e:
+            logger.warning("[invitation-accept] bundle download failed: %s", e)
+
     sync_resp = await handle_conversation_sync(someone_typeid)
     sync_data = sync_resp.data if hasattr(sync_resp, "data") else {}
 
