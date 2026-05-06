@@ -460,6 +460,7 @@ async def _send_hub_notification(
             "spec_file_path": spec_file_path,
             "project_id": task.project_id or None,
             "project_name": task.project_name or None,
+            "is_initial_share": True,
         }, action="send")
     except HubError as e:
         # Hub returned non-2xx (e.g. 401 unauthorized) or transport error.
