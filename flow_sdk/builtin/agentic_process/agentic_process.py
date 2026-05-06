@@ -127,6 +127,62 @@ _PROMPT_WORKERS: dict[str, Any] = {}
 _OPEN_LOCKS: dict[str, asyncio.Lock] = {}
 
 
+# Worker statuses for which an OS-pid liveness reconciliation is meaningful.
+# Terminal statuses (COMPLETE, ERROR, INTERRUPTED, INACTIVE) already encode the
+# answer; ``None``/``IDLE`` mean "no work in flight" and shouldn't be flipped.
+_NON_TERMINAL_WORKER_STATUSES = frozenset({
+    WorkerStatus.INITIALIZING,
+    WorkerStatus.WAITING,
+    WorkerStatus.THINKING,
+    WorkerStatus.TOOL_RUNNING,
+    WorkerStatus.TOOL_CALL,
+    WorkerStatus.UNKNOWN,
+})
+
+
+def _shell_worker_pid_alive(shell_id: str) -> bool:
+    """Sync OS-pid liveness check for a shell's last-launched worker process.
+
+    Reads ``<records_root>/shell/shell-@<id>/state.json`` directly so the
+    sync ``_discover_status_from_transcript`` path doesn't need to ``await``
+    a record fetch. Conservative on error — returns ``True`` (assume alive)
+    so transient I/O issues don't flip a healthy worker to ``INACTIVE``.
+    """
+    try:
+        import json as _json
+
+        import psutil as _psutil
+
+        from flow_sdk.fs_store.record import get_default_records_data_root, record_stem
+
+        path = (
+            get_default_records_data_root()
+            / "shell"
+            / record_stem("shell", shell_id)
+            / "state.json"
+        )
+        if not path.exists():
+            return True
+        meta = (_json.loads(path.read_text()) or {}).get("meta") or {}
+        pid_raw = meta.get("worker_pid") or meta.get("process_id")
+        if pid_raw is None:
+            return True
+        try:
+            pid = int(pid_raw)
+        except (TypeError, ValueError):
+            return True
+        if not _psutil.pid_exists(pid):
+            return False
+        try:
+            if _psutil.Process(pid).status() == _psutil.STATUS_ZOMBIE:
+                return False
+        except (_psutil.NoSuchProcess, _psutil.AccessDenied):
+            return False
+        return True
+    except Exception:
+        return True
+
+
 def _get_prompt_lock(process_id: str) -> asyncio.Lock:
     lock = _PROMPT_LOCKS.get(process_id)
     if lock is None:
@@ -2285,6 +2341,14 @@ class AgenticProcess(Entity):
         computed = self._discover_status_from_transcript()
         data["worker_status"] = str(computed) if computed else WorkerStatus.IDLE.value
         data["ready_for_input"] = is_ready_for_input(self, computed)
+        # Surface the live launch command so the UI (run drawer, session info
+        # popover, etc.) can show what was actually spawned. Failure-tolerant:
+        # if a driver hasn't been wired or the cli_config is malformed, omit
+        # the field rather than failing the whole entity serialization.
+        try:
+            data["cmd_line"] = self.cmd_line
+        except Exception:
+            data["cmd_line"] = None
         # Derive per-process execution folders when absent from the row.
         # Rows synced before this field existed have no folder dicts; the
         # record's on-disk layout is deterministic from (type, id), so we
@@ -2314,6 +2378,12 @@ class AgenticProcess(Entity):
         agree with the early exit — without that flag, ``is_ready_for_input``
         would still see ``WAITING`` and the test's ``assert is_ready_for_input
         is True`` would fail despite all artifacts being on disk.
+
+        For visible/PTY processes, falls back to a synchronous OS pid liveness
+        check when the transcript yields a non-terminal status. Codex's TUI
+        doesn't write the standard JSONL transcript, so without this
+        reconciliation ``worker_status`` would stay ``initializing`` forever
+        after the OS process dies (e.g. user kills the codex tab from outside).
         """
         if getattr(self, "_post_tool_idle_complete", False):
             return WorkerStatus.COMPLETE
@@ -2324,9 +2394,21 @@ class AgenticProcess(Entity):
                 ProcessStatus.RUNNING.value,
                 ProcessStatus.STOPPING.value,
             } and (self.session_id or self.shell_id):
-                return WorkerStatus.INITIALIZING
-            return None
-        return self.driver.tail_status(path)
+                derived: WorkerStatus | None = WorkerStatus.INITIALIZING
+            else:
+                return None
+        else:
+            derived = self.driver.tail_status(path)
+
+        if (
+            self.visible
+            and self.shell_id
+            and self.status == ProcessStatus.RUNNING.value
+            and derived in _NON_TERMINAL_WORKER_STATUSES
+            and not _shell_worker_pid_alive(self.shell_id)
+        ):
+            return WorkerStatus.INACTIVE
+        return derived
 
     @action.all(action_name="status")
     async def get_status(self):
