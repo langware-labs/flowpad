@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ import pytest
 from flow_sdk.fs_records.codex import CodexSessionRecord
 from flow_sdk.fs_records.codex.codex_session import _extract_thread_id
 from flow_sdk.fs_store import RecordType
+from flow_sdk.fs_store.fs_ref import FSRef
 
 
 # do not increase timeout without approval
@@ -40,6 +42,40 @@ def test_from_jsonl_rollout_envelope(codex_sandbox: Path):
     assert rec.version == "0.101.0"
     assert rec.originator == "codex_cli_rs"
     assert rec.worker_type == "codex"
+
+
+def test_from_jsonl_reads_long_session_meta_line(tmp_path: Path):
+    session_id = "019cdd6b-49a7-7480-9da1-cccccccccccc"
+    rollout = tmp_path / f"rollout-2026-03-11T17-02-01-{session_id}.jsonl"
+    lines = [
+        {
+            "type": "session_meta",
+            "payload": {
+                "id": session_id,
+                "cwd": "/Users/test/worktree",
+                "cli_version": "0.101.0",
+                "originator": "codex_cli_rs",
+                "base_instructions": "x" * 20000,
+            },
+        },
+        {
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "restore this session"}],
+            },
+        },
+    ]
+    rollout.write_text("\n".join(json.dumps(line) for line in lines), encoding="utf-8")
+
+    rec = CodexSessionRecord.from_jsonl(rollout)
+
+    assert CodexSessionRecord.getId(FSRef(rollout)) == session_id
+    assert rec.session_id == session_id
+    assert rec.cwd == "/Users/test/worktree"
+    assert rec.version == "0.101.0"
+    assert rec.last_user_message == "restore this session"
 
 
 def test_from_jsonl_lazy_stats(codex_sandbox: Path):

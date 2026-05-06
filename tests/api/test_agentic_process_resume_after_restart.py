@@ -244,41 +244,48 @@ async def test_open_registers_on_exit_so_status_updates(bootstrapped_client):
 
 
 @pytest.mark.asyncio
-async def test_open_is_idempotent_when_pty_alive(bootstrapped_client):
+async def test_open_is_idempotent_when_process_alive(bootstrapped_client):
     """
-    When the PTY is genuinely alive, process.open() must be a no-op: returns
-    SUCCESS without spawning a second shell process, and the shell_id is unchanged.
-
-    This is the normal case (no server restart) and must work after the fix.
-
-    After fix: open() detects alive PTY via Shell.start() and returns SUCCESS (no-op).
+    When the worker is genuinely alive, process.open() must be a fast no-op:
+    returns SUCCESS without replacing the running process/session.
     """
+    import time
+
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     cn_id = _compute_node_id(bootstrap)
     session_id = str(uuid.uuid4())
     jsonl_path = _make_fake_jsonl(session_id)
 
     try:
-        process_id, shell_id = await _create_post_restart_state(
+        process_id, _ = await _create_post_restart_state(
             bootstrapped_client, cn_id, session_id
         )
 
-        # Open a real PTY (simulates a genuinely alive shell)
-        shell_open_resp = await bootstrapped_client.post(
-            f"/api/v1/graph/shell/{shell_id}/open",
-            json={"cols": 80, "rows": 24},
-        )
-        assert ApiResponse(**shell_open_resp.json()).status == "SUCCESS", shell_open_resp.text
-
-        # process.open() on a live PTY must be a no-op — returns SUCCESS, same shell_id
-        open_resp = await bootstrapped_client.post(
+        first_resp = await bootstrapped_client.post(
             f"/api/v1/graph/agentic_process/{process_id}/open",
         )
-        open_result = ApiResponse(**open_resp.json())
-        assert open_result.status == "SUCCESS", open_result.message
-        assert open_result.data["shell_id"] == shell_id, (
-            "open() must reuse the existing shell when PTY is alive"
+        first_result = ApiResponse(**first_resp.json())
+        assert first_result.status == "SUCCESS", first_result.message
+        assert first_result.data["id"] == process_id
+        assert first_result.data["session_id"] == session_id
+        assert first_result.data["status"] == "running"
+        assert first_result.data["worker_pid"], "first open must start a worker"
+
+        start = time.perf_counter()
+        second_resp = await bootstrapped_client.post(
+            f"/api/v1/graph/agentic_process/{process_id}/open",
         )
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        second_result = ApiResponse(**second_resp.json())
+
+        assert second_result.status == "SUCCESS", second_result.message
+        assert second_result.data["id"] == process_id
+        assert second_result.data["session_id"] == session_id
+        assert second_result.data["status"] == "running"
+        assert second_result.data["worker_pid"] == first_result.data["worker_pid"], (
+            "second open must reuse the live worker"
+        )
+        assert elapsed_ms < 1000, f"second open took {elapsed_ms:.1f}ms"
 
     finally:
         jsonl_path.unlink(missing_ok=True)

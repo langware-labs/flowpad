@@ -311,6 +311,36 @@ async def test_start_promotes_stuck_starting_process_to_live_when_pty_is_attacha
     get_project.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_start_persists_visible_true_on_running_reattach():
+    """Opening a hidden live process should make it visible without relaunching the worker."""
+    proc = _proc(
+        status=ProcessStatus.RUNNING.value,
+        shell_id="shell-123",
+        session_id="session-123",
+        visible=False,
+    )
+    shell = MagicMock()
+    shell.id = "shell-123"
+    shell.pty_pid = "pty-123"
+    shell.worker_pid = 4321
+    shell.model_dump.return_value = {"id": "shell-123"}
+    shell.ensure_live_compute_node_binding = AsyncMock(return_value=True)
+    shell.has_attachable_pty = AsyncMock(return_value=True)
+    shell.worker_alive = AsyncMock(return_value=True)
+
+    with patch.object(AgenticProcess, "shell", new=AsyncMock(return_value=shell)), \
+         patch.object(AgenticProcess, "save", new=AsyncMock()) as save, \
+         patch.object(AgenticProcess, "get_project", new=AsyncMock()) as get_project:
+        result = await proc.start(visible=True)
+
+    assert isinstance(result, ApiSuccessResponse)
+    assert proc.visible is True
+    assert proc.status == ProcessStatus.RUNNING.value
+    save.assert_awaited_once()
+    get_project.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # inject() — no-op when no shell
 # ---------------------------------------------------------------------------
