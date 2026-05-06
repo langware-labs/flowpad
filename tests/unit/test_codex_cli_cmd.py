@@ -124,6 +124,52 @@ def test_interactive_spawn_respects_non_bypass_permissions():
     assert argv == ["codex"]
 
 
+def test_pty_shell_string_uses_bare_codex_not_codex_exec():
+    """``to_shell_string()`` for ``json_stream=False`` (PTY/visible mode) must
+    mirror ``to_spawn_args()`` — bare ``codex`` interactive TUI, NOT
+    ``codex exec --json …``. Regression: previously ``_build_worker_args``
+    always emitted the headless shape so ``cmd_line`` lied about the launch
+    command on every PTY codex tab.
+    """
+    cmd = CodexCliOptions(
+        workdir="/repo",
+        model="gpt-5.2",
+        add_dirs=["/extra"],
+        json_stream=False,
+        ephemeral=False,
+    )
+    result = cmd.to_shell_string()
+
+    # Bare codex, no `exec` subcommand — matches to_spawn_args().
+    assert "codex --dangerously-bypass-approvals-and-sandbox" in result
+    assert "codex exec" not in result
+    # Headless-only flags must NOT leak into the PTY cmd_line.
+    assert "--skip-git-repo-check" not in result
+    assert "--ephemeral" not in result
+    assert "--json" not in result
+    assert "model_reasoning_effort" not in result
+    # User-set settings still flow through.
+    assert "-m gpt-5.2" in result
+    assert "-C /repo" in result
+    assert "--add-dir /extra" in result
+
+
+def test_pty_shell_string_matches_spawn_argv_token_for_token():
+    """Stronger invariant: ``to_shell_string`` must contain the same tokens
+    (after shell-quoting) as ``to_spawn_args``. Catches future drift."""
+    import shlex
+
+    cmd = CodexCliOptions(
+        workdir="/path with space",
+        model="gpt-5.2",
+        json_stream=False,
+        ephemeral=False,
+    )
+    argv, _ = cmd.to_spawn_args()
+    expected_tail = " ".join(shlex.quote(a) for a in argv)
+    assert cmd.to_shell_string().endswith(expected_tail)
+
+
 def test_to_json_roundtrip():
     cmd = CodexCliOptions(
         session_id="abc",
