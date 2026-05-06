@@ -968,7 +968,7 @@ def _build_reply_flow_message(
 
     reply_fm = FlowMessage.model_validate({
         "text": message,
-        "context": context,
+        "context_entities": context,
         "attachment": [],
         "sender_id": sender_id,
         "sender_name": sender_name,
