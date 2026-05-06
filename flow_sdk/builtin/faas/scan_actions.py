@@ -362,10 +362,28 @@ class ScanActionsMixin:
 
             logging.info(f"ComputeNode {self.id} created AgenticProcess {process.id}")
 
+            # Atomic: spawn the linked Shell + PTY before returning so the
+            # frontend gets a fully-attached row in one round-trip. Without
+            # this the tab strip races a Phase-B refresh and ends up empty.
+            try:
+                start_resp = await process.start(visible=visible)
+            except Exception as start_err:
+                logging.exception(
+                    f"ComputeNode {self.id} createProcess start error for {process.id}: {start_err}"
+                )
+                return ApiFailResponse(
+                    message=f"Process {process.id} created but failed to start: {start_err}"
+                )
+
+            if isinstance(start_resp, ApiFailResponse):
+                return start_resp
+
             return ApiSuccessResponse(
                 data={
                     "id": process.id,
                     "type": process.type,
+                    "shell_id": process.shell_id,
+                    "pty_pid": getattr(process, "pty_pid", None),
                 }
             )
 

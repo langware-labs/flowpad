@@ -41,40 +41,83 @@ export interface TerminalTab {
   agenticProcess?: AgenticProcess;
 }
 
-interface WireTab {
-  shell_id: string;
-  process_id: string | null;
-  tab_order: number;
-  name: string | null;
-  is_disabled: boolean;
-  status_reason: string;
-  project_id: string | null;
-  project_display_name: string | null;
+interface WireShell {
+  id: string;
+  name?: string | null;
+  tab_order?: number | null;
+  status?: string | null;
+  project_id?: string | null;
+}
+
+interface WireProcess {
+  id: string;
+  name?: string | null;
+  shell_id?: string | null;
+  project_id?: string | null;
+  status?: string | null;
 }
 
 interface ActiveTerminalsResponse {
-  shells: unknown[];
-  processes: unknown[];
-  tabs: WireTab[];
+  pure_shells: WireShell[];
+  visible_processes: WireProcess[];
   checked_at: string;
 }
 
-function toTab(t: WireTab): TerminalTab {
+function shellFromCache(id: string): Shell | undefined {
+  return (
+    (Shell as unknown as { getByIdFromCache: (id: string) => Shell | null }).getByIdFromCache(id) ??
+    undefined
+  );
+}
+
+function processFromCache(id: string): AgenticProcess | undefined {
+  return (
+    (AgenticProcess as unknown as {
+      getByIdFromCache: (id: string) => AgenticProcess | null;
+    }).getByIdFromCache(id) ?? undefined
+  );
+}
+
+function toShellTab(s: WireShell): TerminalTab {
+  const cached = shellFromCache(s.id);
   return {
-    shellId: t.shell_id,
-    processId: t.process_id,
-    tabOrder: t.tab_order,
-    name: t.name,
-    type: t.process_id ? 'claude' : 'plain',
-    isDisabled: t.is_disabled,
-    statusReason: t.status_reason,
-    projectId: t.project_id,
-    projectDisplayName: t.project_display_name,
-    shell: ((Shell as unknown as { getByIdFromCache: (id: string) => Shell | null }).getByIdFromCache(t.shell_id)) ?? undefined,
-    agenticProcess: t.process_id
-      ? ((AgenticProcess as unknown as { getByIdFromCache: (id: string) => AgenticProcess | null }).getByIdFromCache(t.process_id)) ?? undefined
-      : undefined,
+    shellId: s.id,
+    processId: null,
+    tabOrder: s.tab_order ?? cached?.tab_order ?? 0,
+    name: s.name ?? cached?.name ?? null,
+    type: 'plain',
+    isDisabled: s.status === 'closing',
+    statusReason: s.status === 'closing' ? 'Closing...' : '',
+    projectId: s.project_id ?? cached?.project_id ?? null,
+    projectDisplayName: null,
+    shell: cached,
   };
+}
+
+function toProcessTab(p: WireProcess): TerminalTab {
+  const cached = processFromCache(p.id);
+  const linkedShellId = p.shell_id ?? cached?.shell_id ?? '';
+  const linkedShell = linkedShellId ? shellFromCache(linkedShellId) : undefined;
+  return {
+    shellId: linkedShellId,
+    processId: p.id,
+    tabOrder: linkedShell?.tab_order ?? 0,
+    name: p.name ?? linkedShell?.name ?? cached?.name ?? null,
+    type: 'claude',
+    isDisabled: linkedShell?.status === 'closing',
+    statusReason: linkedShell?.status === 'closing' ? 'Closing...' : '',
+    projectId: p.project_id ?? cached?.project_id ?? linkedShell?.project_id ?? null,
+    projectDisplayName: null,
+    shell: linkedShell,
+    agenticProcess: cached,
+  };
+}
+
+function byTabOrder(a: TerminalTab, b: TerminalTab): number {
+  if (a.tabOrder !== b.tabOrder) return a.tabOrder - b.tabOrder;
+  // Stable secondary: plain shells before processes when tab_order is equal.
+  if (a.type !== b.type) return a.type === 'plain' ? -1 : 1;
+  return 0;
 }
 
 // ─── Module-level shared state ──────────────────────────────────────────────
@@ -107,13 +150,20 @@ export async function fetchActiveTerminals(): Promise<TerminalTab[]> {
   const action = new ActionInfo('active-terminals', 'compute_node', computeNodeId, 'GET');
   const result = await dataManager.callAction<unknown, ActiveTerminalsResponse>(action);
   if (!result) return [];
-  for (const s of result.shells) {
+  // 1. Hydrate the entity cache so per-row reads (`shell.status`, `process.workerStatus`)
+  //    stay live independently of this hook.
+  for (const s of result.pure_shells) {
     try { dataManager.castAndDeepAssign(s); } catch { /* skip malformed */ }
   }
-  for (const p of result.processes) {
+  for (const p of result.visible_processes) {
     try { dataManager.castAndDeepAssign(p); } catch { /* skip malformed */ }
   }
-  const incoming = result.tabs.map(toTab);
+  // 2. Build the row list directly from both wire arrays — no join, no merge.
+  //    Pure shells become plain rows; visible processes become AI-worker rows.
+  const incoming: TerminalTab[] = [
+    ...result.pure_shells.map(toShellTab),
+    ...result.visible_processes.map(toProcessTab),
+  ].sort(byTabOrder);
   setTabsState(incoming);
   return incoming;
 }
