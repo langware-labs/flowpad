@@ -63,13 +63,11 @@ async def test_conversation_create_under_project_upserts_participants(bootstrapp
     assert not conv.get("task_id")
     assert len(conv["participants"]) == 2
 
-    # Standard records-data location.
+    # Standard records-data location. ``data_path`` is now a derived
+    # @property on ``Conversation`` (not a stored field), so it isn't part
+    # of the API payload — we just verify the canonical path exists on disk.
     expected_jsonl = ConversationRecord.default_jsonl_path(conv_id)
     assert expected_jsonl.exists(), f"expected {expected_jsonl} to exist"
-    assert conv["data_path"] == str(expected_jsonl), (
-        f"Conversation.data_path mismatch: got {conv['data_path']!r}, "
-        f"expected {str(expected_jsonl)!r}"
-    )
 
     # Both emails are now Users in the contact list.
     users = (await bootstrapped_client.get("/api/v1/graph/user")).json()["data"]

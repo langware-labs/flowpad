@@ -60,10 +60,24 @@ class RequestTransactionMiddleware:
         if req_info.target_entity_typeid and req_info.target_entity_typeid.id:
             try:
                 entity_model = SchemaRegistry.get_entity_cls(req_info.target_entity_typeid.type)
-                if entity_model:
+                if entity_model is None:
+                    logging.warning(
+                        f"[Middleware] No entity_model registered for type={req_info.target_entity_typeid.type!r} "
+                        f"(target id={req_info.target_entity_typeid.id})"
+                    )
+                else:
                     target_entity = await entity_model.get_by_typeid(req_info.target_entity_typeid)
+                    if target_entity is None:
+                        logging.warning(
+                            f"[Middleware] entity_model.get_by_typeid returned None for "
+                            f"type={req_info.target_entity_typeid.type!r} id={req_info.target_entity_typeid.id} "
+                            f"uname={getattr(req_info.target_entity_typeid, 'uname', None)!r}"
+                        )
             except Exception as e:
-                logging.debug(f"[Middleware] Failed to load target entity: {e}")
+                logging.warning(
+                    f"[Middleware] Failed to load target entity "
+                    f"type={req_info.target_entity_typeid.type!r} id={req_info.target_entity_typeid.id}: {e!r}"
+                )
 
         # Set auth result - allow all local requests
         req_info.auth_result = AuthResult(

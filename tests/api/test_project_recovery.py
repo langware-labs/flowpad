@@ -109,9 +109,12 @@ async def test_recover_project_action_repoints_and_returns_entity():
     """Happy path: action calls recover_by_path, repoints project_id, saves, returns entity."""
     proc = AgenticProcess(id=str(uuid.uuid4()), workdir="/Users/x/foo")
 
+    # ``_bind_project_id`` constructs a TypeId from this value; needs to be uuid-shaped.
+    recovered_pid = str(uuid.uuid4())
+
     fake_project = MagicMock()
-    fake_project.id = "recovered-project-id"
-    fake_project.model_dump = MagicMock(return_value={"id": "recovered-project-id", "type": "project"})
+    fake_project.id = recovered_pid
+    fake_project.model_dump = MagicMock(return_value={"id": recovered_pid, "type": "project"})
 
     with patch.object(Project, "recover_by_path", new=AsyncMock(return_value=fake_project)) as mock_recover, \
          patch.object(AgenticProcess, "save", new=AsyncMock()) as mock_save:
@@ -119,9 +122,9 @@ async def test_recover_project_action_repoints_and_returns_entity():
 
     mock_recover.assert_awaited_once_with("/Users/x/foo")
     mock_save.assert_awaited_once()
-    assert proc.project_id == "recovered-project-id"
+    assert proc.project_id == recovered_pid
     assert isinstance(result, ApiSuccessResponse)
-    assert result.data == {"project": {"id": "recovered-project-id", "type": "project"}}
+    assert result.data == {"project": {"id": recovered_pid, "type": "project"}}
 
 
 @pytest.mark.asyncio

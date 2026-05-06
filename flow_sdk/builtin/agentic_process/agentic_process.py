@@ -2518,6 +2518,7 @@ class AgenticProcess(Entity):
             name=session_name,
             workdir=workdir,
             tab_order=tab_order,
+            project_id=self.project_id,
         )
         await shell.save()
         return shell
