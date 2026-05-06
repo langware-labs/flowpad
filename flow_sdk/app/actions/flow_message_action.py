@@ -248,16 +248,50 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
 
     # Always download/unpack the specific message's bundle when one exists.
     # The bundle materializes the local FlowMessage (and its Conversation /
-    # optional Task), so the subsequent UI getByTypeId can resolve the FM.
-    # Scenario B has no Task — only the bundle gates the download.
+    # optional Task), so the UI deep link can navigate directly without
+    # needing a separate FM lookup. Scenario B has no Task — only the bundle
+    # gates the download.
     if not repo_url and attachment_filename:
         try:
             await _download_and_unpack_bundle(fm_id, attachment_filename)
         except Exception as e:
             logger.warning("[open_flow_message] failed to materialize bundle (non-fatal): %s", e)
 
+    # Resolve conversation_id / task_id from the now-local FlowMessage so the
+    # UI can navigate directly. Falls back to hub context if the FM didn't
+    # land locally (e.g. no attachment_filename).
+    conversation_id = ""
+    task_id = ""
+    local_fm = await FlowMessage.get_one({"id": fm_id})
+    if local_fm:
+        for ctx in (local_fm.context_entities or []):
+            t = getattr(ctx, "type", None)
+            if t == BuiltinEntityType.CONVERSATION.value and not conversation_id:
+                conversation_id = getattr(ctx, "id", "") or ""
+            elif t == BuiltinEntityType.TASK.value and not task_id:
+                task_id = getattr(ctx, "id", "") or ""
+    else:
+        # Fall back to the hub's context list (string typeids like
+        # "conversation-<uuid>"). Format kept loose to tolerate variations.
+        for raw in ((data or {}).get("context_entities") or []):
+            s = raw if isinstance(raw, str) else str(raw)
+            if s.startswith(f"{BuiltinEntityType.CONVERSATION.value}-") and not conversation_id:
+                conversation_id = s.split("-", 1)[1]
+            elif s.startswith(f"{BuiltinEntityType.TASK.value}-") and not task_id:
+                task_id = s.split("-", 1)[1]
+        # Older hub payloads: task_id sometimes lives in meta or top-level.
+        if not task_id:
+            task_id = (meta.get("task_id") or (data or {}).get("task_id") or "").strip()
+
+    logger.warning(
+        "[open_flow_message] fm_id=%s attachment_filename=%r repo_url=%r conv_id=%s task_id=%s",
+        fm_id, attachment_filename, repo_url, conversation_id, task_id,
+    )
+
     return await handle_notification_deep_link(
         fm_id=fm_id,
+        conversation_id=conversation_id,
+        task_id=task_id,
         project_url=repo_url,
         branch=(meta.get("branch") or (data or {}).get("branch") or "").strip(),
         repo_id=(meta.get("repo_id") or (data or {}).get("repo_id") or "").strip(),

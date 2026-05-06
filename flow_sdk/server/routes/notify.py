@@ -53,29 +53,35 @@ _REDIRECT_HTML = """<!DOCTYPE html>
 
 async def handle_notification_deep_link(
     fm_id: str,
+    conversation_id: str = "",
+    task_id: str = "",
     project_url: str = "",
     branch: str = "",
     repo_id: str = "",
     sender_name: str = "",
     title: str = "",
 ) -> HTMLResponse:
-    """Redirect the browser to HomeLanding with ``action=open&fm=<id>`` params.
+    """Redirect the browser to HomeLanding with ``action=open`` deep-link params.
 
-    The FlowMessage id is the canonical deep-link handle: every cross-user
-    share is a FlowMessage, and Task / Conversation are metadata hung off its
-    ``context_entities``. The UI looks up the FM locally and routes to the
-    task view (when a Task is in context) or the conversation view (when not).
+    The caller (``handle_open_flow_message``) resolves the FM's
+    ``conversation_id`` and ``task_id`` from the just-unpacked bundle and
+    passes them in directly, so the UI can navigate without a separate
+    lookup. ``fm`` is included for traceability / fallback.
 
     ``project_url`` (when present) is a REPO-attachment URL that triggers the
     git pull/clone dialog before navigating into the conversation.
     ``sender_name`` / ``title`` are cosmetic — shown in the brief loading
-    state before the FM materializes locally.
+    state.
     """
     port = _get_ui_port()
 
     params: dict = {"action": "open"}
     if fm_id:
         params["fm"] = fm_id
+    if conversation_id:
+        params["conversation_id"] = conversation_id
+    if task_id:
+        params["task_id"] = task_id
     if project_url:
         params["project_url"] = project_url
     if branch:

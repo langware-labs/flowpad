@@ -1542,6 +1542,7 @@ async def open_notification() -> ApiResponse:
     # _save_local_notification), so we use notification_id as fm_id.
     return await handle_notification_deep_link(
         fm_id=notification_id,
+        task_id=(meta.get("task_id") or (data or {}).get("task_id") or "").strip(),
         project_url=(meta.get("project_url") or (data or {}).get("project_url") or "").strip(),
         branch=(meta.get("branch") or (data or {}).get("branch") or "").strip(),
         repo_id=(meta.get("repo_id") or (data or {}).get("repo_id") or "").strip(),
