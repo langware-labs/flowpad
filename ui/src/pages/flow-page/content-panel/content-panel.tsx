@@ -43,7 +43,11 @@ import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
 import { useContentPanelStore } from '@src/hooks/use-content-panel-store';
 import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
 import { useToast } from '@src/hooks/use-toast';
-import { useAllTerminals } from '@src/hooks/useActiveTerminals';
+import {
+  terminalTargetKey,
+  terminalTransportShellId,
+  useAllTerminals,
+} from '@src/hooks/useActiveTerminals';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
@@ -62,7 +66,7 @@ export function ContentPanel() {
   const { user } = useAuth();
 
   const { flow, agent, computeNode } = useAgentContext();
-  const { project: contextProject, activeShellId: activeSessionId } = useContext();
+  const { project: contextProject } = useContext();
 
   // Sync flow focus and URL dock state to viewer store
   useActiveViewer(flow);
@@ -71,19 +75,11 @@ export function ContentPanel() {
   const terminalsLoading = false;
   const { onTabClick, onTabClose, onTabOpen } = useStandardTabNav();
 
-  /**
-   * Returns the first tab the backend considers alive (not closed/error).
-   * Skips the current shell.
-   */
-  const findAliveShell = useCallback(
-    (currentShellId: string) => terminalTabs.find((t) => t.shellId !== currentShellId && !t.isDisabled),
-    [terminalTabs],
-  );
-
   /** Navigate to a terminal tab's shell or agentic process */
   const navigateToTab = useCallback(
     (tab: (typeof terminalTabs)[number]) => {
-      navigation.openDock(tab.agenticProcess?.dockPointer ?? tab.shell!.dockPointer);
+      const pointer = tab.agenticProcess?.dockPointer ?? tab.shell?.dockPointer;
+      if (pointer) navigation.openDock(pointer);
     },
     [navigation],
   );
@@ -157,25 +153,30 @@ export function ContentPanel() {
     if (terminalsLoading) return;
 
     const pointer = currentDock.pointer;
-    const shellUuid = pointer ? pointer.replace(/^[a-z_]+-/, '') : '';
-
     // No pointer is loader-owned. Let the route loader resolve the default
     // shell/process target so we do not race explicit tab navigation.
     if (!pointer) {
       return;
     }
+    const targetKey = DockPointer.isAgenticProcessPointer(pointer)
+      ? pointer
+      : pointer.startsWith('shell-')
+        ? pointer
+        : `shell-${pointer}`;
 
     // Disabled shell -> redirect to first alive tab.
     // Missing tab here is not enough to conclude disconnection because the
     // tab query can lag behind the loader/navigation path for a newly opened shell.
     // Only toast for unexpected disconnections (ERROR status), not for user-initiated
     // closes (CLOSING status) which are handled by TabbedTerminal's closeShell flow.
-    const tab = terminalTabs.find((t) => t.shellId === shellUuid);
+    const tab = terminalTabs.find((t) => terminalTargetKey(t) === targetKey);
     if (tab?.isDisabled) {
-      if (tab.shell?.status !== ShellStatus.CLOSING) {
+      const transportShellId = terminalTransportShellId(tab);
+      const shell = transportShellId ? (tab.shell ?? null) : null;
+      if (shell?.status !== ShellStatus.CLOSING) {
         toast({ title: 'Shell is disconnected', variant: 'destructive' });
       }
-      const aliveTab = terminalTabs.find((t) => t.shellId !== shellUuid && !t.isDisabled);
+      const aliveTab = terminalTabs.find((t) => terminalTargetKey(t) !== targetKey && !t.isDisabled);
       if (aliveTab) navigateToTab(aliveTab);
     }
   }, [currentDock, navigateToTab, terminalsLoading, terminalTabs, toast]);
