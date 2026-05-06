@@ -22,11 +22,15 @@ class AssistantMessageEntry(TranscriptEntry):
         *,
         text: str,
         thinking: str | None = None,
+        phase: str | None = None,
         **base: Any,
     ) -> None:
         super().__init__(**base)
         self.text = text
         self.thinking = thinking
+        # Codex-specific: ``"final_answer"`` vs ``"commentary"``. Claude
+        # has no equivalent — left None for claude lines.
+        self.phase = phase
 
     def to_flow_data(self) -> list[FlowData]:
         out: list[FlowData] = []
@@ -53,10 +57,17 @@ class AssistantMessageEntry(TranscriptEntry):
         return out
 
     def to_dict(self) -> dict:
-        return {**super().to_dict(), "text": self.text, "thinking": self.thinking}
+        return {
+            **super().to_dict(),
+            "text": self.text,
+            "thinking": self.thinking,
+            "phase": self.phase,
+        }
 
     def _body_lines(self) -> list[str]:
         out: list[str] = []
+        if self.phase:
+            out.append(f"phase: {self.phase}")
         out.extend(render_block("thinking", self.thinking))
         out.extend(render_block("text", self.text))
         return out

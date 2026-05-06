@@ -6,6 +6,7 @@ from typing import Any
 
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 
+from .._helpers import render_block
 from ..entry import EntryKind, TranscriptEntry
 
 
@@ -22,3 +23,6 @@ class SummaryEntry(TranscriptEntry):
 
     def to_dict(self) -> dict:
         return {**super().to_dict(), "summary_text": self.summary_text}
+
+    def _body_lines(self) -> list[str]:
+        return render_block("summary_text", self.summary_text)

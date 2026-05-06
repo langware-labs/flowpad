@@ -17,6 +17,8 @@ from flow_sdk.fs_store.record_types import RecordType
 INDEXABLE_TYPES: list[RecordType] = [
     RecordType.CLAUDE_SESSION,
     RecordType.PROJECT,
+    RecordType.CODEX_SESSION,
+    RecordType.CODEX_PROJECT,
     RecordType.PLAN,
     RecordType.CLAUDE_MD,
     RecordType.CLAUDE_RULES,
@@ -37,6 +39,8 @@ def build_default_indexer() -> FSIndexer:
     # Import locally to keep this module import-light at package-init time.
     from flow_sdk.fs_store.indexer.functions.claude_projects import claude_projects_fn
     from flow_sdk.fs_store.indexer.functions.claude_sessions import claude_sessions_fn
+    from flow_sdk.fs_store.indexer.functions.codex_projects import codex_projects_fn
+    from flow_sdk.fs_store.indexer.functions.codex_sessions import codex_sessions_fn
     from flow_sdk.fs_store.indexer.functions.real_project_cwd import real_project_cwd_fn
     from flow_sdk.fs_store.indexer.functions.claude_plan import claude_plan_fn
     from flow_sdk.fs_store.indexer.functions.claude_md import (
@@ -77,6 +81,8 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn)
     idx.add_function(RecordType.USER_HOME_FOLDER, claude_hook_fn)
     idx.add_function(RecordType.USER_HOME_FOLDER, claude_hook_extras_fn)
+    idx.add_function(RecordType.USER_HOME_FOLDER, codex_projects_fn)
+    idx.add_function(RecordType.USER_HOME_FOLDER, codex_sessions_fn)
 
     # PROJECT (encoded ~/.claude/projects/<dir>) expanders
     idx.add_function(RecordType.PROJECT, claude_sessions_fn)

@@ -22,6 +22,7 @@ from pathlib import Path
 
 from .base_settings import (
     DEFAULT_DB_DRIVER,
+    ENV_CODEX_HOME,
     ENV_DESKTOP_DB,
     ENV_FLOWPAD_CLAUDE_HOME,
     ENV_FS_RECORD_PATH,
@@ -47,10 +48,14 @@ class TestInstanceSettings(BaseInstanceSettings):
         # location the CLI itself writes to. Default stays sandboxed.
         claude_home_env = os.environ.get(ENV_FLOWPAD_CLAUDE_HOME)
         claude_home = Path(claude_home_env) if claude_home_env else sandbox / ".claude"
+        codex_home_env = os.environ.get(ENV_CODEX_HOME)
+        codex_home = Path(codex_home_env) if codex_home_env else sandbox / ".codex"
         flow_home.mkdir(parents=True, exist_ok=True)
         claude_home.mkdir(parents=True, exist_ok=True)
+        codex_home.mkdir(parents=True, exist_ok=True)
         for sub in ("skills", "agents", "projects", "commands", "plans", "workflows", "docs", "tasks"):
             (claude_home / sub).mkdir(parents=True, exist_ok=True)
+        (codex_home / "sessions").mkdir(parents=True, exist_ok=True)
 
         # Tests can still override via FS_RECORD_PATH / SQLITE_DATABASE_PATH for
         # per-test isolation on top of the sandbox.
@@ -98,6 +103,11 @@ class TestInstanceSettings(BaseInstanceSettings):
             claude_mcp_json_path=claude_home / "mcp.json",
             claude_settings_json_path=claude_home / "settings.json",
             claude_managed_settings_path=claude_home / "managed-settings.json",
+            codex_home=codex_home,
+            codex_sessions_dir=codex_home / "sessions",
+            codex_config_path=codex_home / "config.toml",
+            codex_history_path=codex_home / "history.jsonl",
+            codex_session_index_path=codex_home / "session_index.jsonl",
             cloud_user_email=os.environ.get("FLOWPAD_CLOUD_USER_EMAIL") or None,
             cloud_user_pass=os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD") or None,
             cloud_login_timeout_seconds=cls._resolve_login_timeout(),

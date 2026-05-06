@@ -472,11 +472,13 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         # applied below for what we *return*, not for what we *reap*.
         all_processes = await AgenticProcess.get_all()
 
-        # 2. Reap stuck STOPPING — single source of liveness logic on the entity.
-        reaped_any = False
-        for proc in all_processes:
-            if await proc.reap_if_orphaned():
-                reaped_any = True
+        # 2. Reap stuck STOPPING — fan out, processes are independent (each owns
+        # its own shell + save lock), so concurrent reap is safe.
+        reap_results = await asyncio.gather(
+            *(proc.reap_if_orphaned() for proc in all_processes),
+            return_exceptions=True,
+        )
+        reaped_any = any(r is True for r in reap_results)
 
         # 3. Refetch if we reaped, then narrow to visible.
         if reaped_any:

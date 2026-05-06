@@ -31,6 +31,7 @@ class DevInstanceSettings(BaseInstanceSettings):
     def from_env(cls) -> "DevInstanceSettings":
         flow_home = cls._resolve_flow_home()
         claude_home = cls._resolve_claude_home()
+        codex_home = cls._resolve_codex_home()
         records_root = cls._resolve_records_root(flow_home, default_subdir="dev_records")
         db_dir = cls._resolve_db_dir(flow_home, default_subdir="dev_db")
         db_path = cls._resolve_db_path(db_dir)
@@ -71,6 +72,11 @@ class DevInstanceSettings(BaseInstanceSettings):
             claude_mcp_json_path=claude_home / "mcp.json",
             claude_settings_json_path=claude_home / "settings.json",
             claude_managed_settings_path=claude_home / "managed-settings.json",
+            codex_home=codex_home,
+            codex_sessions_dir=codex_home / "sessions",
+            codex_config_path=codex_home / "config.toml",
+            codex_history_path=codex_home / "history.jsonl",
+            codex_session_index_path=codex_home / "session_index.jsonl",
             cloud_user_email=os.environ.get("FLOWPAD_CLOUD_USER_EMAIL") or None,
             cloud_user_pass=os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD") or None,
             cloud_login_timeout_seconds=cls._resolve_login_timeout(),

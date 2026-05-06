@@ -450,24 +450,22 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     async (shellId: string): Promise<void> => {
       const session = sessions.find((s) => s.shellId === shellId);
       if (!session) return;
-      // Optimistic local removal. Background refreshes are intentionally
-      // non-disruptive (they preserve stale rows so the strip doesn't churn
-      // under the user); user-initiated close is the only explicit signal
-      // that a tab should disappear from the strip.
+      // Optimistic local removal so the strip reflects intent immediately.
       removeTab(shellId);
+      // Each row owns its own closer: process rows close the AgenticProcess
+      // (which cascades to the underlying Shell + PTY); plain rows close the
+      // Shell directly. No branching on activeShellId — every tab knows how
+      // to close itself.
+      const target = session.agenticProcess ?? session.shell;
+      if (!target) return;
       try {
-        const sessionProcess = session.shellId === activeShellId ? contextAgenticProcess : undefined;
-        if (sessionProcess) {
-          await sessionProcess.close();
-        } else if (session.shell) {
-          await session.shell.close();
-        }
+        await target.close();
         onTabClose?.(shellId);
       } catch (error) {
         console.error('[TabbedTerminal] Failed to close tab:', shellId, error);
       }
     },
-    [sessions, activeShellId, contextAgenticProcess, onTabClose, removeTab],
+    [sessions, onTabClose, removeTab],
   );
 
   const handleCloseTab = useCallback(

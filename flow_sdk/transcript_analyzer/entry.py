@@ -22,6 +22,7 @@ class EntryKind(str, Enum):
     SYSTEM = "system"
     SUMMARY = "summary"
     META = "meta"
+    TOKEN_USAGE = "token_usage"
     UNKNOWN = "unknown"
 
 
@@ -45,6 +46,8 @@ class TranscriptEntry:
         parent_id: str | None = None,
         is_sidechain: bool = False,
         raw_data: dict | None = None,
+        entry_id: str | None = None,
+        model: str | None = None,
     ) -> None:
         self.id = id
         self.session_id = session_id
@@ -59,6 +62,14 @@ class TranscriptEntry:
         # for ``UnknownEntry``). Existing typed entries extract whatever they
         # need at parse time.
         self.raw_data = raw_data
+        # Worker-side stable id (codex ``response_item.id``, claude
+        # ``message.id``). Distinct from ``self.id`` which the parser may
+        # synthesize when no upstream id is present.
+        self.entry_id = entry_id
+        # Model name when the worker carries one on this line (claude
+        # ``message.model``, codex ``turn_context.model``). Surfaced on
+        # AssistantMessage / TokenUsage lines for analytic filtering.
+        self.model = model
 
     def to_flow_data(self) -> list["FlowData"]:
         """Convert this entry to zero or more ``FlowData`` items.
@@ -84,6 +95,8 @@ class TranscriptEntry:
             "worker": self.worker,
             "parent_id": self.parent_id,
             "is_sidechain": self.is_sidechain,
+            "entry_id": self.entry_id,
+            "model": self.model,
         }
 
     # ── string rendering ─────────────────────────────────────────────────────
@@ -104,6 +117,10 @@ class TranscriptEntry:
         lines.append(f"worker: {self.worker}")
         if self.session_id:
             lines.append(f"session_id: {self.session_id}")
+        if self.entry_id:
+            lines.append(f"entry_id: {self.entry_id}")
+        if self.model:
+            lines.append(f"model: {self.model}")
         if self.parent_id:
             lines.append(f"parent_id: {self.parent_id}")
         if self.is_sidechain:

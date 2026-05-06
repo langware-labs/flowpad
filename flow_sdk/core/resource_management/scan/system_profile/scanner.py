@@ -26,6 +26,12 @@ from ._collectors.session_collector import (
     get_session_info,
     get_session_info_quick,
 )
+from ._collectors.codex_project_collector import get_codex_projects
+from ._collectors.codex_session_collector import (
+    get_codex_session_info,
+    get_codex_session_info_quick,
+    get_recent_codex_sessions,
+)
 from ._collectors.transcript_collector import (
     get_ide_connections,
     get_recent_items,
@@ -187,9 +193,20 @@ def scan_full(session_limit: int = 100, mode: str = "full") -> dict:
     agents = get_agents()
     skills = get_skills()
 
-    # Collect project/session data
-    projects = get_projects()
-    sessions = get_recent_sessions(limit=session_limit, per_project_limit=0)
+    # Collect project/session data — Claude + Codex merged with worker_type.
+    claude_projects = get_projects()
+    for p in claude_projects:
+        p.setdefault("worker_type", "claude_code")
+    codex_projects = get_codex_projects()
+    projects = claude_projects + codex_projects
+    projects.sort(key=lambda x: x.get("modified_at") or "", reverse=True)
+
+    claude_sessions = get_recent_sessions(limit=session_limit, per_project_limit=0)
+    for s in claude_sessions:
+        s.setdefault("worker_type", "claude_code")
+    codex_sessions = get_recent_codex_sessions(limit=session_limit, per_project_limit=0)
+    sessions = claude_sessions + codex_sessions
+    sessions.sort(key=lambda x: x.get("modified_at") or "", reverse=True)
 
     # Collect transcript stats
     ide_connections = get_ide_connections()
@@ -298,6 +315,8 @@ def scan_item(item_type: str, **kwargs) -> list | dict | None:
         "skills": get_skills,
         "projects": get_projects,
         "sessions": lambda: get_recent_sessions(limit=limit, per_project_limit=0),
+        "codexProjects": get_codex_projects,
+        "codexSessions": lambda: get_recent_codex_sessions(limit=limit, per_project_limit=0),
         "ideConnections": get_ide_connections,
     }
 
@@ -455,6 +474,8 @@ _COLLECTORS: dict[str, Any] = {
     "skill": get_skills,
     "project": get_projects,
     "claude_session": lambda: get_recent_sessions(limit=0, per_project_limit=0, quick=True),
+    "codex_project": get_codex_projects,
+    "codex_session": lambda: get_recent_codex_sessions(limit=0, per_project_limit=0, quick=True),
     "plan": get_plans,
     "todo_file": get_todos,
     "claude_md": get_claude_md_files,
@@ -473,9 +494,11 @@ COLLECTORS.update(_COLLECTORS)
 # Parent key mapping for child resources (sessions belong to projects, todos to sessions)
 PARENT_KEY_MAP: dict[str, str] = {
     get_system_resource_type("claude_session"): "project_encoded_name",
+    get_system_resource_type("codex_session"): "project_id",
     get_system_resource_type("todo_file"): "session_id",
     # Also support simple names
     "claude_session": "project_encoded_name",
+    "codex_session": "project_id",
     "todo_file": "session_id",
 }
 

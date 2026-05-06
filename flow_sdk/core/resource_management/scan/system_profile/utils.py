@@ -19,6 +19,16 @@ def _claude_home() -> Path:
     return get_instance_settings().claude_home
 
 
+def _codex_home() -> Path:
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    return get_instance_settings().codex_home
+
+
+def _codex_sessions_dir() -> Path:
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    return get_instance_settings().codex_sessions_dir
+
+
 def _claude_project_dir() -> Path:
     """Project-scope ~/.claude (cwd-anchored). Falls back to user-level on FS errors."""
     try:

@@ -238,7 +238,8 @@ class CodexDriver:
         ``--ephemeral`` should keep this set empty between turns, mirroring
         the Claude driver's ``flow-records-agentic`` invariant.
         """
-        sessions_root = Path.home() / ".codex" / "sessions"
+        from flow_sdk.instance_settings import get_instance_settings
+        sessions_root = get_instance_settings().codex_sessions_dir
         if not sessions_root.is_dir():
             return set()
         return {p.name for p in sessions_root.rglob("rollout-*.jsonl")}
