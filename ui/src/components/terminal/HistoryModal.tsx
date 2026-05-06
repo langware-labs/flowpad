@@ -1,5 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
+import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Search } from 'lucide-react';
@@ -43,6 +44,13 @@ function timeAgo(iso: string | null | undefined): string {
   return `${days}d ago`;
 }
 
+function WorkerIcon({ workerType }: { workerType: WorkerHistoryEntry['worker_type'] }) {
+  if (workerType === 'codex') {
+    return <CodexIcon className="h-3.5 w-3.5 shrink-0 text-emerald-500" />;
+  }
+  return <ClaudeIcon className="h-3.5 w-3.5 shrink-0 text-orange-500" />;
+}
+
 interface HistoryModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -65,7 +73,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
               className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
               onClick={() => {
                 onOpenChange(false);
-                navigation.openSearch(undefined, { record_type: 'claude_session' });
+                navigation.openSearch();
               }}
             >
               <Search className="h-3.5 w-3.5" />
@@ -86,7 +94,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                     className="flex w-full min-w-0 items-center gap-2 overflow-hidden rounded px-2 py-1.5 text-left text-sm hover:bg-muted"
                     onClick={() => onSelect(entry)}
                   >
-                    <ClaudeIcon className="h-3.5 w-3.5 shrink-0 text-orange-500" />
+                    <WorkerIcon workerType={entry.worker_type} />
                     <span className="flex min-w-0 flex-1 flex-col overflow-hidden">
                       <span className="truncate font-medium">{pickLabelFallback(entry)}</span>
                       {subline ? (
