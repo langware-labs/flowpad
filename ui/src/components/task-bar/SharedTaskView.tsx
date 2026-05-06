@@ -43,11 +43,11 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
   const [requestingStatus, setRequestingStatus] = useState(false);
 
   const handleRequestStatus = async () => {
-    if (!task.conversation_id || requestingStatus) return;
+    if (!conversationTypeId?.id || requestingStatus) return;
     setRequestingStatus(true);
     try {
       await sendReply(
-        { task, conversationId: task.conversation_id },
+        { task, conversationId: conversationTypeId.id },
         '',
         undefined,
         { promptText: STATUS_REQUEST_PROMPT_TEXT },
@@ -80,7 +80,7 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
             <p className="text-xs text-muted-foreground">From {senderName}</p>
           )}
         </div>
-        {isAuthor && task.conversation_id && (
+        {isAuthor && conversationTypeId && (
           <button
             type="button"
             onClick={() => void handleRequestStatus()}
