@@ -13,6 +13,7 @@ WS event and persists the bearer token + user.
 from __future__ import annotations
 
 import asyncio
+import logging
 import webbrowser
 from typing import Any
 from urllib.parse import urlparse
@@ -21,9 +22,11 @@ from flow_sdk.api.messages import OAuthMessage, OAuthMessageStatus
 from flow_sdk.api.oauth_api import OAuthProvider
 from flow_sdk.cli.app_config import set_user
 from flow_sdk.cli.auth.cloud_urls import get_login_url
-from flow_sdk.cli.auth.hub_login import set_api_key
+from flow_sdk.cli.auth.hub_login import SERVICE_NAME, _api_key_name, get_api_key, set_api_key
 from flow_sdk.cloud_client import ApiConfig, FlowpadClient
 from flow_sdk.instance_settings import get_instance_settings
+
+logger = logging.getLogger(__name__)
 
 
 def _classify_hub(api_base_url: str | None) -> str:
@@ -110,6 +113,15 @@ async def _finalize_login(token: str, user_info: dict[str, Any]) -> None:
     ))
 
     set_api_key(token)
+    # Read-back verification: if this logs FAILED on a system where the OS
+    # prompt was silently bypassed, the keyring backend is broken (rare).
+    stored_ok = get_api_key() == token
+    logger.info(
+        "api-key write %s — keychain entry: service=%r account=%r",
+        "OK" if stored_ok else "FAILED (read-back mismatch)",
+        SERVICE_NAME,
+        _api_key_name(),
+    )
     # If the keyring write succeeded, mark the secrets-enabled sentinel so
     # is_cloud_login_available() can read the key on subsequent boots.
     # enable_secrets() swallows its own keyring errors and returns a bool,
