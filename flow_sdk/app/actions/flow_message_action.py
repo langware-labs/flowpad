@@ -258,12 +258,12 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
             logger.warning("[open_flow_message] failed to materialize bundle (non-fatal): %s", e)
 
     return await handle_notification_deep_link(
-        task_id=task_id,
+        fm_id=fm_id,
         project_url=repo_url,
         branch=(meta.get("branch") or (data or {}).get("branch") or "").strip(),
         repo_id=(meta.get("repo_id") or (data or {}).get("repo_id") or "").strip(),
         sender_name=(meta.get("sender_name") or (data or {}).get("sender_name") or "").strip(),
-        task_title=(meta.get("task_title") or meta.get("spec_title") or (data or {}).get("task_title") or "").strip(),
+        title=(meta.get("task_title") or meta.get("spec_title") or (data or {}).get("task_title") or "").strip(),
     )
 
 

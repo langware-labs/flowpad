@@ -882,11 +882,14 @@ async def handle_start_conversation_bundle(body: dict, someone_typeid: str) -> A
     message = (body.get("message") or body.get("initial_text") or "").strip() or None
     project_id_val = (body.get("project_id") or "").strip() or None
     project_name_val = (body.get("project_name") or "").strip() or None
+    files = body.get("files") or []
+    if not isinstance(files, list):
+        files = [files]
 
     if not recipient_id:
         return ApiFailResponse(message="recipient_id is required")
-    if not title and not message:
-        return ApiFailResponse(message="title or message is required")
+    if not title and not message and not files:
+        return ApiFailResponse(message="title, message, or files is required")
 
     try:
         recipient_email, resolved_recipient_id = await _resolve_recipient(recipient_id)
@@ -910,10 +913,6 @@ async def handle_start_conversation_bundle(body: dict, someone_typeid: str) -> A
                 project_name_val = proj.name
         except Exception as e:
             logger.warning("[notification_action] project name lookup failed: %s", e)
-
-    files = body.get("files") or []
-    if not isinstance(files, list):
-        files = [files]
 
     return await _share_via_bundle(
         spec=None,
@@ -1539,11 +1538,13 @@ async def open_notification() -> ApiResponse:
     data = await hub_get(BuiltinEntityType.NOTIFICATION, notification_id)
 
     meta = data.get("metadata") or {} if data else {}
+    # Notification.id is the same as the hub FlowMessage id (set in
+    # _save_local_notification), so we use notification_id as fm_id.
     return await handle_notification_deep_link(
+        fm_id=notification_id,
         project_url=(meta.get("project_url") or (data or {}).get("project_url") or "").strip(),
-        task_id=(meta.get("task_id") or (data or {}).get("task_id") or "").strip(),
         branch=(meta.get("branch") or (data or {}).get("branch") or "").strip(),
         repo_id=(meta.get("repo_id") or (data or {}).get("repo_id") or "").strip(),
         sender_name=(meta.get("sender_name") or (data or {}).get("sender_name") or "").strip(),
-        task_title=(meta.get("task_title") or (data or {}).get("task_title") or "").strip(),
+        title=(meta.get("task_title") or (data or {}).get("task_title") or "").strip(),
     )
