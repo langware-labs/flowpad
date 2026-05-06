@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.faas.compute_node import ComputeNode
     from flow_sdk.builtin.shell import Shell
     from flow_sdk.transcript_analyzer import AgentTranscript
+    from flow_sdk.transcript_analyzer.entries.tool_use import ToolUseEntry
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +169,63 @@ def _write_plan_frontmatter(file_path: str, fields: dict) -> None:
         )
         new_content = f"---\n{lines}\n---\n{content}"
     p.write_text(new_content, encoding="utf-8")
+
+
+def _render_codex_plan_markdown(tool_input: dict) -> str:
+    """Render a codex ``update_plan`` tool_input dict to a markdown checklist.
+
+    Codex's plan-mode emits plans as ``{explanation, plan: [{step, status}]}``
+    where ``status`` ∈ ``pending``/``in_progress``/``completed``. We render
+    completed steps as ticked, in-progress with an explicit marker, and
+    pending as unticked.
+    """
+    explanation = str(tool_input.get("explanation") or "").strip()
+    steps = tool_input.get("plan") or []
+    lines: list[str] = ["# Plan", ""]
+    if explanation:
+        lines.append(explanation)
+        lines.append("")
+    if isinstance(steps, list):
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            text = str(step.get("step") or "").strip()
+            status = str(step.get("status") or "").strip().lower()
+            if not text:
+                continue
+            if status == "completed":
+                lines.append(f"- [x] {text}")
+            elif status == "in_progress":
+                lines.append(f"- [ ] **(in progress)** {text}")
+            else:
+                lines.append(f"- [ ] {text}")
+    return "\n".join(lines) + "\n"
+
+
+def _materialize_codex_update_plan(entry: "ToolUseEntry", session_key: str) -> str:
+    """Write a codex ``update_plan`` tool_use to ``<flow_home>/plans/codex/<key>.md``.
+
+    Codex's plan is structured JSON in the ``function_call`` args, not a
+    file claude-style. The flowpad UI's "Open last plan" button still
+    expects a file path, so we render and write each plan update into a
+    flowpad-managed location keyed on the session id (or the agentic
+    process id when the session id is missing). The file is overwritten
+    on every call so step-status updates are visible immediately.
+
+    Returns the absolute path written, or "" if rendering failed.
+    """
+    from flow_sdk.instance_settings import get_instance_settings
+
+    try:
+        plan_dir = get_instance_settings().flow_home / "plans" / "codex"
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        safe_key = (session_key or "session").replace("/", "_").replace("\\", "_")
+        plan_path = plan_dir / f"{safe_key}.md"
+        plan_path.write_text(_render_codex_plan_markdown(entry.tool_input or {}), encoding="utf-8")
+        return str(plan_path)
+    except Exception:
+        logger.exception("AgenticProcess: failed to materialize codex update_plan to disk")
+        return ""
 
 
 async def _index_additional_dir(path: str) -> None:
@@ -1424,8 +1482,14 @@ class AgenticProcess(Entity):
         and return the indexed Markdown.
 
         Resolution order for the path:
-          1. ``self.plan_path`` if already set.
-          2. ``transcript.latest_plan.plan_file_path`` (ExitPlanMode tool_use).
+          1. ``transcript.latest_plan`` — re-resolved every call so codex
+             ``update_plan`` step-status updates are reflected immediately.
+             - Claude (``ExitPlanModeEntry``): use the on-disk
+               ``plan_file_path`` claude already wrote.
+             - Codex (``update_plan`` ``ToolUseEntry``): render the inline
+               structured plan to ``<flow_home>/plans/codex/<session>.md``
+               and use that path.
+          2. ``self.plan_path`` if already set (cache fallback).
           3. Most recent ``plan_mode`` attachment's ``planFilePath`` (Claude
              interactive PTY plan-mode).
 
@@ -1433,24 +1497,34 @@ class AgenticProcess(Entity):
         this keeps ``hasPlan = !!plan_path`` honest. Self-heals: clears a
         stale ``plan_path`` if the file is missing.
         """
+        from flow_sdk.transcript_analyzer.entries.exit_plan_mode import ExitPlanModeEntry
         from flow_sdk.transcript_analyzer.entries.meta import MetaEntry
 
-        plan_file_path = self.plan_path or ""
+        plan_file_path = ""
+
+        if transcript is not None:
+            latest = transcript.latest_plan
+            if isinstance(latest, ExitPlanModeEntry):
+                plan_file_path = latest.plan_file_path
+            elif latest is not None and latest.tool_name == "update_plan":
+                # Codex's plan lives inline in the function_call args; the
+                # UI's plan button expects a file path, so we materialize
+                # the rendered markdown into a flowpad-managed location.
+                plan_file_path = _materialize_codex_update_plan(latest, transcript.session_id or self.id)
+
+        if not plan_file_path:
+            plan_file_path = self.plan_path or ""
 
         if not plan_file_path and transcript is not None:
-            latest = transcript.latest_plan
-            if latest is not None:
-                plan_file_path = latest.plan_file_path
-            if not plan_file_path:
-                # plan_mode attachment fallback (Claude interactive PTY).
-                for e in reversed(transcript.entries):
-                    if not isinstance(e, MetaEntry) or e.meta_kind != "attachment":
-                        continue
-                    att = (e.payload or {}).get("attachment") or {}
-                    if att.get("type") == "plan_mode":
-                        plan_file_path = str(att.get("planFilePath") or "")
-                        if plan_file_path:
-                            break
+            # plan_mode attachment fallback (Claude interactive PTY).
+            for e in reversed(transcript.entries):
+                if not isinstance(e, MetaEntry) or e.meta_kind != "attachment":
+                    continue
+                att = (e.payload or {}).get("attachment") or {}
+                if att.get("type") == "plan_mode":
+                    plan_file_path = str(att.get("planFilePath") or "")
+                    if plan_file_path:
+                        break
 
         if not plan_file_path or not Path(plan_file_path).exists():
             if self.plan_path:

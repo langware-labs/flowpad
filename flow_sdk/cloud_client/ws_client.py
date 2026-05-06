@@ -27,7 +27,7 @@ from flow_sdk.cloud_client.constants import EXPIRY_LEEWAY_SECONDS
 logger = logging.getLogger(__name__)
 
 AUTH_WS_STATUS_CODES = {401, 403, 412, 424}
-AUTH_WS_CLOSE_CODES = {1001, 1008}
+AUTH_WS_CLOSE_CODES = {1008}
 HUB_WS_VERIFY_TIMEOUT_SECONDS = 10.0
 HUB_WS_START_TIMEOUT_SECONDS = 5.0
 HubWsStatus = Literal["disconnected", "connecting", "connected", "verified", "error"]

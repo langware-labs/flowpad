@@ -10,6 +10,7 @@ from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.cloud_client import ApiConfig
 from flow_sdk.cloud_client.ws_client import (
     HubWebSocketAuthError,
+    HubWebSocketManager,
     build_hub_ws_url,
     connect_hub_websocket,
     hub_ws_manager,
@@ -115,3 +116,31 @@ async def test_ws_manager_start_ignores_missing_credentials(monkeypatch, memory_
     await hub_ws_manager.start()
 
     assert not hub_ws_manager.is_running
+
+
+@pytest.mark.asyncio
+async def test_ws_going_away_close_does_not_clear_login(memory_keyring, capture_broadcast):
+    manager = HubWebSocketManager()
+    save_credentials(UserHubCredentials(api_key="token", expires_at=time.time() + 60, user={"id": "u1"}))
+    set_user({"id": "u1"})
+
+    handled = await manager._handle_closed_connection(type("Closed", (), {"code": 1001, "reason": "going away"})())
+
+    assert handled is False
+    assert load_credentials() is not None
+    assert is_logged_in()
+    assert not capture_broadcast
+
+
+@pytest.mark.asyncio
+async def test_ws_policy_violation_close_clears_login(memory_keyring, capture_broadcast):
+    manager = HubWebSocketManager()
+    save_credentials(UserHubCredentials(api_key="token", expires_at=time.time() + 60, user={"id": "u1"}))
+    set_user({"id": "u1"})
+
+    handled = await manager._handle_closed_connection(type("Closed", (), {"code": 1008, "reason": "policy violation"})())
+
+    assert handled is True
+    assert load_credentials() is None
+    assert not is_logged_in()
+    assert any(msg.get("message_type") == "auth_expired_msg" and msg.get("reason") == "rejected" for msg in capture_broadcast)

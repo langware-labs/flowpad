@@ -11,6 +11,23 @@
 
 ## Learnings
 
+### 2026-05-07 — Headless chat surfaces validated post `_scan_create_process` fix
+
+**Real production bug — `flow_sdk/builtin/faas/scan_actions.py` `_scan_create_process`**
+Eagerly called `process.start(visible=visible)` for every new AgenticProcess regardless of `visible`. `start()`/`_perform_open` doesn't branch on `visible`, so headless chats (`EntityChatPanel`→`createProcess`, no `visible` flag → server default `false`) got a PTY-claude REPL spawned anyway. The REPL claimed `session_id` without writing a JSONL, so the next `/prompt` (which routes through `run_print_turn` for `visible=false`) found a stale session and exited non-zero — chat showed "Complete" with no assistant turn. Fix: gate the `start()` call on `if visible:`. Headless processes manage their full lifecycle per-turn via `run_print_turn`. Also deleted the unused `elevate-shell` action and updated 3 tests to pass `visible: true` explicitly when they exercise the PTY lifecycle.
+
+**One shared headless code path for ALL chat surfaces**
+The 7 chat surfaces (agent doc, agent persona, skill doc, skill persona, plain markdown, workflow, spec) all funnel through `EntityChatPanel.handleSend` → `computeNode.createProcess({...})` → server `_scan_create_process` → `run_print_turn`. Validating this shared path at the API level (`POST /createProcess` with `visible:false` → `POST /prompt`) covers all 7 surfaces transitively. Asked Claude for a one-word PONG; got `<flow-chat role="assistant">PONG</flow-chat>` in the stream — full chain works.
+
+**API-level validation beats UI for protocol-level fixes**
+The 4098 dev UI got stuck on the `LoadingScreen` ("Loading . . .") splash mid-session — `useAuth.someone` went null after some interaction (cause unrelated to the fix; possibly stale `flowpad-state` localStorage or cloud session expiry). For protocol/server-side fixes that share one code path across many UI surfaces, a direct API probe is faster and more deterministic than scripting every surface in the browser.
+
+**Stale agentic_process records linger in `~/.flow/records/agentic_process/` and block fresh-create flow on the same target**
+`EntityChatPanel`'s `useProcessesForTarget(targetStr)` auto-picks any existing process matching the target. The pre-fix bug left `worker_status=initializing` rows behind that the chat panel kept rebinding to even after the fix. To exercise the fixed path on a UI target with a stale row, `DELETE /api/v1/graph/agentic_process/<id>` first.
+
+**Two backends/UIs run side-by-side: 4097/9007 (`flowpad-app`) vs 4098/9008 (`flowpad-oss`)**
+The `flowpad-app` ports are a separate clone of the codebase. Fixes landed in `flowpad-oss` (this repo, `.env.local` says 9008/4098) do NOT propagate to the `flowpad-app` instance. If a user repros against 4097, validate the fix against 4098 (where the edit is loaded) — or ask the user to point both at the fixed repo.
+
 ### 2026-05-01 — Full QA cycle, Phases 1-7
 
 **Real production bug — `flow_sdk/fs_records/claude/claude_debug_log.py:256`**
