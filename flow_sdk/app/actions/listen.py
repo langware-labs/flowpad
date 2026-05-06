@@ -18,6 +18,7 @@ request body before dispatching, which makes a second request.json() call hang
 
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional, Tuple
 
 from pydantic import ValidationError
@@ -302,8 +303,14 @@ async def _create_plan_annotation(tool_input: dict, session_id: str) -> None:
 
         # Persist plan_path on the entity — this is the single field the UI
         # button reads. The save() WS broadcast lights up the "Open Plan"
-        # button in real time.
-        if agentic_process and plan_file_path and agentic_process.plan_path != plan_file_path:
+        # button in real time. Gated on file existence so the invariant
+        # ``hasPlan = !!plan_path`` is upheld by every writer.
+        if (
+            agentic_process
+            and plan_file_path
+            and Path(plan_file_path).exists()
+            and agentic_process.plan_path != plan_file_path
+        ):
             agentic_process.plan_path = plan_file_path
             try:
                 await agentic_process.save()

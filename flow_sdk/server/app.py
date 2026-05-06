@@ -45,6 +45,7 @@ from .routes import (
     detection_router,
     navigate_router,
     agent_records_router,
+    transcripts_router,
     directory_router,
     hooks_router,
     search_router,
@@ -170,6 +171,7 @@ server.add_router(compute_register_router)
 server.add_router(debug_router)
 server.add_router(navigate_router)
 server.add_router(agent_records_router)
+server.add_router(transcripts_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)

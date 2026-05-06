@@ -36,6 +36,24 @@ function sessionIdFromResult(result: SearchResult): string {
   return result.record_id.replace(/^claude_session-/, '');
 }
 
+/** Extract the Codex thread_id from a rollout asset_ref or record_id.
+ *
+ * Codex rollouts are named ``rollout-<ISO-ts>-<thread_id>.jsonl`` — the
+ * thread_id is the last 5 hyphen-separated groups of the stem. We mirror the
+ * backend ``_extract_thread_id`` helper here so the UI doesn't need to round-trip.
+ */
+function codexThreadIdFromResult(result: SearchResult): string {
+  if (result.asset_ref) {
+    const stem = (result.asset_ref.split('/').pop() ?? '').replace(/\.jsonl$/i, '');
+    if (stem.startsWith('rollout-')) {
+      const parts = stem.slice('rollout-'.length).split('-');
+      if (parts.length >= 5) return parts.slice(-5).join('-');
+    }
+  }
+  // Fallback: record_id is the thread_id directly (set by CodexSessionRecord.getId).
+  return result.record_id.replace(/^codex_session-/, '');
+}
+
 /** Extract the project encoded name from a session search result's asset_ref */
 function projectEncodedNameFromResult(result: SearchResult): string {
   // asset_ref: "/.../.claude/projects/<project_encoded>/<uuid>.jsonl"
@@ -147,6 +165,25 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   },
   project: {
     dockPointer: (r) => new Project({ id: r.record_id }).searchDockPointer,
+  },
+  codex_session: {
+    primaryAction: async (r, navigation) => {
+      const threadId = codexThreadIdFromResult(r);
+      const p = await AgenticProcess.fromCodexSession(threadId);
+      navigation.openDock(p.dockPointer);
+    },
+    actions: [
+      {
+        icon: FileText,
+        name: 'Transcript',
+        action: (r, navigation) => {
+          // codex/transcript lens (LensViewer.tsx case 'codex/transcript')
+          // expects URL-encoded absolute path. DockPointer.forLensTranscript
+          // applies the encoding when workerType === 'codex'.
+          if (r.asset_ref) navigation.openDock(DockPointer.forLensTranscript('codex', r.asset_ref));
+        },
+      },
+    ],
   },
   claude_session: {
     primaryAction: async (r, navigation) => {

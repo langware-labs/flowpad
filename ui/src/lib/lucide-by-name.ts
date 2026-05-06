@@ -12,5 +12,5 @@ export function lucideByName(iconName: string | null | undefined): LucideIcon {
   if (!iconName) return File;
   const exports = lucideIcons as unknown as Record<string, unknown>;
   const candidate = exports[iconName];
-  return (typeof candidate === 'function' ? candidate : File) as LucideIcon;
+  return (candidate ?? File) as LucideIcon;
 }

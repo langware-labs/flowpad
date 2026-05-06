@@ -8,7 +8,7 @@
  * `process.restart_required` and the top-left Restart button glows.
  */
 
-import { AgenticProcess, dataManager, type Shell } from '@sdk';
+import { AgenticProcess, dataManager, Shell } from '@sdk';
 import { hasWorkerStarted, ProcessStatus, WorkerStatus } from '@sdk/process/agentic-types.js';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
@@ -575,8 +575,15 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
       ? `cd ${quoted(workdir)} && ${claudeCmd}`
       : claudeCmd;
 
+  const linkedShell = process.shell_id
+    ? (Shell as unknown as { getByIdFromCache: (id: string) => Shell | null }).getByIdFromCache(process.shell_id)
+    : null;
+
   const rows: [string, string][] = [
+    ['Process Name', process.name || '(unnamed)'],
     ['Process ID', process.id || 'none'],
+    ['Shell Name', linkedShell?.name || (process.shell_id ? '(unnamed)' : 'none')],
+    ['Shell ID', process.shell_id || 'none'],
     ['Status', process.status || 'unknown'],
     ['CLI worker status', process.workerStatus || 'idle'],
     ['Started', startDisplay],

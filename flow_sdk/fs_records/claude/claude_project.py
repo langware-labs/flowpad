@@ -118,8 +118,11 @@ class ClaudeProjectFsRecord(Record):
 
     @classmethod
     def _is_valid_project_dir(cls, d: Path) -> bool:
-        real = "/" + d.name.lstrip("-").replace("-", "/")
-        return not real.startswith(_TEMP_PATH_PREFIXES)
+        from flow_sdk.fs_records._claude_projects import decode_claude_project_dir  # noqa: PLC0415
+        real = decode_claude_project_dir(d)
+        if real is None:
+            return False
+        return not str(real).startswith(_TEMP_PATH_PREFIXES)
 
     @classmethod
     def _is_valid_mount_path(cls, path: str) -> bool:
@@ -131,12 +134,18 @@ class ClaudeProjectFsRecord(Record):
 
     @classmethod
     def _from_claude_dir(cls, d: Path) -> "ClaudeProjectFsRecord":
+        from flow_sdk.fs_records._claude_projects import decode_claude_project_dir  # noqa: PLC0415
         encoded = d.name
-        real = "/" + encoded.lstrip("-").replace("-", "/")
+        real = decode_claude_project_dir(d)
+        # decode_claude_project_dir only returns None on Windows when the
+        # encoded name lacks a drive letter; _from_claude_dir's callers
+        # filter via _is_valid_project_dir first, so real is non-None here.
+        # Defensive fallback to the naive decode keeps mypy happy.
+        real_str = str(real) if real is not None else "/" + encoded.lstrip("-").replace("-", "/")
         return cls(
             id=_project_id(encoded),
             encoded_path=encoded,
-            real_path=real,
+            real_path=real_str,
             path=str(d),
         )
 

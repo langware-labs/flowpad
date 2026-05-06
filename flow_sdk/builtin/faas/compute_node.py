@@ -444,6 +444,73 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.get(action_name="list-shells")
     async def _list_shells(self): return await self._pty_list_shells()
 
+    @action.get(action_name="active-terminals")
+    async def _active_terminals(self) -> ApiResponse:
+        """Single source of truth for the tab strip.
+
+        Returns two flat, non-overlapping lists. The frontend renders both,
+        with no join: each "AI worker" tab comes from ``visible_processes``
+        and each "plain terminal" tab comes from ``pure_shells``.
+
+        Wire shape: ``{pure_shells, visible_processes, checked_at}``.
+          - ``pure_shells``: Shell entity dicts that are NOT background plumbing
+            for any AgenticProcess. A shell is "pure" iff no AgenticProcess
+            (visible or not) owns it via ``shell_id``. This deliberately drops
+            both visible-process-owned shells (they show up via the process row)
+            and invisible-process-owned orphans.
+          - ``visible_processes``: AgenticProcess entity dicts with
+            ``visible == true``. After ``createProcess`` becomes atomic, every
+            visible process has a populated ``shell_id``.
+        """
+        from flow_sdk.builtin.shell import Shell as ShellEntity
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+
+        # 1. Fetch
+        all_shells = await ShellEntity.get_all()
+        # Reap pass also covers invisible STOPPING rows so they can recover
+        # and re-appear when the user opens them. The visible filter is
+        # applied below for what we *return*, not for what we *reap*.
+        all_processes = await AgenticProcess.get_all()
+
+        # 2. Reap stuck STOPPING — fan out, processes are independent (each owns
+        # its own shell + save lock), so concurrent reap is safe.
+        reap_results = await asyncio.gather(
+            *(proc.reap_if_orphaned() for proc in all_processes),
+            return_exceptions=True,
+        )
+        reaped_any = any(r is True for r in reap_results)
+
+        # 3. Refetch if we reaped, then narrow to visible.
+        if reaped_any:
+            all_processes = await AgenticProcess.get_all()
+        visible_processes = [p for p in all_processes if getattr(p, "visible", False)]
+
+        # 4. Drop background shells: any shell owned by an AgenticProcess
+        # (regardless of visibility) is plumbing for that process and is
+        # represented by the process row instead. Sidecars are already a
+        # subset of "owned by a process" but we keep the explicit set for
+        # readability and to honor the unconditional sidecar exclusion.
+        owned_shell_ids = {p.shell_id for p in all_processes if getattr(p, "shell_id", None)}
+        sidecar_ids = {p.sidecar_shell_id for p in all_processes if getattr(p, "sidecar_shell_id", None)}
+        excluded_shell_ids = owned_shell_ids | sidecar_ids
+
+        pure_shells = [
+            s for s in all_shells
+            if s.status not in ("closed", "error")
+            and s.id not in excluded_shell_ids
+        ]
+
+        # 5. Build response with full entity dicts for cache write-through.
+        pure_shell_dicts = [s.model_dump(mode="json") for s in pure_shells]
+        process_dicts = [p.model_dump(mode="json") for p in visible_processes]
+
+        from datetime import datetime as _dt, timezone as _tz
+        return ApiSuccessResponse(data={
+            "pure_shells": pure_shell_dicts,
+            "visible_processes": process_dicts,
+            "checked_at": _dt.now(tz=_tz.utc).isoformat(),
+        })
+
     @action.get(action_name="session-transcript")
     async def _session_transcript(self): return await self._pty_session_transcript()
 
@@ -664,6 +731,20 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         cmd = await self.run_command("pwd", background=False)
         cwd = (cmd.all_stdout or "").strip()
         return ApiSuccessResponse(data={"cwd": cwd})
+
+    @action.get(action_name="worker-history")
+    async def worker_history_action(self) -> ApiResponse:
+        """Unified Recent Sessions list across every worker (claude, codex, …)."""
+        from flow_sdk.fs_records.worker_history import get_worker_history
+
+        request_info = get_current_request_info()
+        limit_raw = request_info.get_param("limit") if request_info else None
+        try:
+            limit = int(limit_raw) if limit_raw else 10
+        except (TypeError, ValueError):
+            limit = 10
+        entries = await asyncio.to_thread(get_worker_history, limit)
+        return ApiSuccessResponse(data=[e.model_dump(mode="json") for e in entries])
 
     @action.get(action_name="git-ops")
     async def git_ops_action(self) -> ApiResponse:
