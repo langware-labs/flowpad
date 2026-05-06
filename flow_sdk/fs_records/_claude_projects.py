@@ -68,6 +68,28 @@ def _real_path_from_jsonl(project_dir: Path) -> Path | None:
     return None
 
 
+def decode_claude_project_dir(project_dir: Path) -> Path | None:
+    """Resolve the real filesystem path for a ``~/.claude/projects/<encoded>/`` dir.
+
+    Reads ``cwd`` from a session JSONL file when available (authoritative),
+    falling back to the ambiguous encoded-name decode otherwise. The fallback
+    cannot recover the original because Claude's encoder collapses ``/``,
+    ``-``, ``_``, ``.``, and `` `` all to ``-``. Returns ``None`` only on
+    Windows when the encoded name lacks a recognizable drive letter.
+    """
+    real = _real_path_from_jsonl(project_dir)
+    if real is not None:
+        return real
+    encoded = project_dir.name
+    if _IS_WINDOWS:
+        m = _WIN_ENCODED_RE.match(encoded)
+        if not m:
+            return None
+        drive, rest = m.group(1), m.group(2)
+        return Path(f"{drive}:\\" + rest.replace("-", "\\"))
+    return Path("/" + encoded.lstrip("-").replace("-", "/"))
+
+
 def iter_claude_project_paths(include_temp: bool = False) -> Iterator[Path]:
     """Yield the real filesystem path for each known Claude project.
 
@@ -95,23 +117,10 @@ def iter_claude_project_paths(include_temp: bool = False) -> Iterator[Path]:
         if not project_dir.is_dir():
             continue
 
-        real = _real_path_from_jsonl(project_dir)
+        real = decode_claude_project_dir(project_dir)
         if real is None:
-            # Fallback: decode encoded name (correct for paths without hyphens).
-            # On Windows, Claude encodes "C:\Users\<user-name>\proj" as "C-Users-<user-name>-proj"
-            # (drive letter without colon). On Unix, "/Users/foo/bar" becomes
-            # "-Users-foo-bar".
-            encoded = project_dir.name
-            if _IS_WINDOWS:
-                m = _WIN_ENCODED_RE.match(encoded)
-                if m:
-                    drive, rest = m.group(1), m.group(2)
-                    real = Path(f"{drive}:\\" + rest.replace("-", "\\"))
-                else:
-                    # Can't decode on Windows without drive letter — skip
-                    continue
-            else:
-                real = Path("/" + encoded.lstrip("-").replace("-", "/"))
+            # Windows-only: encoded name lacked a drive letter — undecodable.
+            continue
 
         if not include_temp and is_temp_path(real):
             continue

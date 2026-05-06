@@ -39,6 +39,10 @@ from .claude import (  # noqa: F401 — trigger type_registry auto-registration
     ErrorCategory,
     ErrorStatus,
 )
+from .codex import (  # noqa: F401 — trigger type_registry auto-registration
+    CodexProjectFsRecord as CodexProjectFsRecord,
+    CodexSessionRecord as CodexSessionRecord,
+)
 from .environment_record import EnvironmentRecord as EnvironmentRecord
 from .record_error import RecordError as RecordError
 from .relationship import RelationshipRecord as RelationshipRecord

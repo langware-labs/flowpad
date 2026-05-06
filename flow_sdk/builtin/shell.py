@@ -181,15 +181,28 @@ class Shell(Entity):
         expected_exe: str | None,
         expected_session_id: str | None = None,
     ) -> bool:
-        """Return True when cmdline matches the expected executable/session."""
+        """Return True when cmdline matches the expected executable/session.
+
+        Matches expected_exe against either argv[0] OR argv[1] basenames.
+        argv[1] coverage is essential for npm-installed CLI workers like
+        ``codex`` whose installed entrypoint is a Node shebang script —
+        the kernel exec's ``node`` with the script path as argv[1], so a
+        strict argv[0] check would falsely report the worker as dead.
+        """
         if expected_exe:
-            actual_exe = os.path.basename(cmdline[0]) if cmdline else None
-            if actual_exe != os.path.basename(expected_exe):
+            expected_basename = os.path.basename(expected_exe)
+            candidates = [os.path.basename(c) for c in cmdline[:2]] if cmdline else []
+            if expected_basename not in candidates:
                 return False
 
         if expected_session_id:
             actual_session_id = cls._argv_flag_value(cmdline, "--session-id") or cls._argv_flag_value(cmdline, "--resume")
-            if actual_session_id != expected_session_id:
+            # Only fail when cmdline carries an explicit session id that
+            # disagrees with ours. Workers whose interactive mode doesn't
+            # surface session_id on argv (codex TUI) leave actual=None;
+            # absence is not a mismatch — the exe-basename check above is
+            # the primary identity guard.
+            if actual_session_id is not None and actual_session_id != expected_session_id:
                 return False
 
         return True
@@ -566,7 +579,12 @@ class Shell(Entity):
                 for child in children:
                     try:
                         cmdline = child.cmdline()
-                        if cmdline and _os.path.basename(cmdline[0]) == executable:
+                        # argv[0] OR argv[1] — covers Node-shebang npm CLIs
+                        # whose argv[0] is the runtime (e.g. ``node``) and
+                        # argv[1] is the script path (e.g. ``codex``).
+                        if cmdline and any(
+                            _os.path.basename(c) == executable for c in cmdline[:2]
+                        ):
                             return child.pid
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
                         pass

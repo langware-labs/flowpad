@@ -11,7 +11,8 @@ import { useContext } from '@sdk/react/hooks';
 import { sendNotification } from '@sdk/entities/notifications';
 import { createTaskBundle, DeliveryMode } from '@sdk/entities/flow-message';
 import { ActionInfo } from '@sdk/models/ActionInfo';
-import { AgenticProcess, dataManager, oauthService, OAUTH_PROVIDERS, TypeId } from '@sdk';
+import { AgenticProcess, ConversationParticipant, dataManager, oauthService, OAUTH_PROVIDERS, TypeId } from '@sdk';
+import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { loadOptionalTranscript } from '@src/components/conversation/transcript-attachment';
 import { toast } from 'sonner';
 import { Mail, Download, Github, Pencil } from 'lucide-react';
@@ -59,7 +60,7 @@ export function AskForAssistanceDialog({
   const { cloudLoginAvailable } = useContext();
   const { localUser, updateName } = useLocalUser();
   const [mode, setMode] = useState<DeliveryMode>(DeliveryMode.EMAIL);
-  const [recipientId, setRecipientId] = useState('');
+  const [recipients, setRecipients] = useState<ConversationParticipant[]>([]);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [message, setMessage] = useState('');
@@ -77,7 +78,7 @@ export function AskForAssistanceDialog({
     if (open) {
       setTitle(sessionTitle);
       setContent(sessionContent);
-      setRecipientId('');
+      setRecipients([]);
       setMessage('Hi,\nI need some help with this session.\nPlease take a look and let me know.\nThanks!');
       setFiles([]);
       setError(null);
@@ -99,7 +100,8 @@ export function AskForAssistanceDialog({
   };
 
   const handleEmail = async () => {
-    if (!recipientId.trim() || !title.trim() || busy) return;
+    const recipientId = recipients[0]?.email?.trim() ?? '';
+    if (!recipientId || !title.trim() || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -130,7 +132,7 @@ export function AskForAssistanceDialog({
       }
 
       const result = await sendNotification({
-        recipient_id: recipientId.trim(),
+        recipient_id: recipientId,
         spec_title: title.trim(),
         spec_content: content.trim(),
         spec_type: 'session',
@@ -192,7 +194,7 @@ export function AskForAssistanceDialog({
     }
   };
 
-  const canSubmit = recipientId.trim().length > 0 && title.trim().length > 0 && !busy;
+  const canSubmit = recipients.length > 0 && title.trim().length > 0 && !busy;
 
   return (
     <>
@@ -290,13 +292,16 @@ export function AskForAssistanceDialog({
 
             {/* Recipient */}
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Recipient email</label>
-              <Input
-                value={recipientId}
-                onChange={(e) => setRecipientId(e.target.value)}
-                placeholder="user@example.com"
-                autoFocus
+              <label className="text-xs font-medium text-muted-foreground">Recipient</label>
+              <ContactPicker
+                value={recipients}
+                onChange={setRecipients}
+                excludeUserId={localUser?.id}
+                max={1}
                 disabled={busy}
+                enabled={open}
+                placeholder="Search contacts or type an email"
+                testId="ask-assistance-recipient-input"
               />
             </div>
 

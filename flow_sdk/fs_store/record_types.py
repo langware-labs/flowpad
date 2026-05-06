@@ -80,6 +80,10 @@ class RecordType(StrEnum):
     # Claude API usage / rate limit record
     CLAUDE_USAGE = "claude_usage"
 
+    # Codex CLI record types
+    CODEX_SESSION = "codex_session"
+    CODEX_PROJECT = "codex_project"
+
     # CLI log record types
     CLI_LOG = "cli_log"
     CLI_LOG_SETTINGS = "cli_log_settings"

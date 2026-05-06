@@ -20,9 +20,9 @@
  */
 
 import { AgenticProcess, Shell } from '@sdk';
-import { filterTabs } from '@src/hooks/useActiveTerminals';
+import { fetchActiveTerminals } from '@src/hooks/useActiveTerminals';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
-import { fetchShellsAndProcesses, loadShell, resolveDefaultTab, ShellLoadError } from './load-shell';
+import { loadShell, resolveDefaultTab, ShellLoadError } from './load-shell';
 
 // ── public types ────────────────────────────────────────────────────────────
 
@@ -53,6 +53,11 @@ export interface LoadNextProcessOptions {
   /** Candidate ids to skip (process ids and/or shell ids cohabit). Used by
    *  direct-link callers that want to exclude their own already-failed id. */
   excludeIds?: Set<string>;
+  /** When set, only consider tabs whose shell/process belongs to this project_id.
+   *  Mirrors the per-project filter on the visible tab strip — closing the last
+   *  tab in the current project should land on the empty view, not silently
+   *  switch the user to a tab in a different project. */
+  projectId?: string | null;
 }
 
 export interface LoadNextProcessResult {
@@ -142,8 +147,11 @@ export async function loadNextProcess(
   const cleaned: CleanupRecord[] = [];
   const tried = new Set(options.excludeIds ?? []);
 
-  const [shells, processes] = await fetchShellsAndProcesses();
-  const tabs = filterTabs(shells, processes, { visible: true });
+  const allTabs = await fetchActiveTerminals();
+  const projectId = options.projectId ?? null;
+  const tabs = projectId == null
+    ? allTabs
+    : allTabs.filter((t) => t.projectId === projectId);
 
   while (true) {
     const tab = resolveDefaultTab(tabs, tried);

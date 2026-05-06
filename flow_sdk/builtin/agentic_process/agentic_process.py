@@ -25,7 +25,6 @@ from pydantic import SerializationInfo, model_serializer
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.api_types.type_id import TypeId
-from flow_sdk.app.actions.listen import set_plan_auto_approve
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.builtin.agentic_process.cli_drivers import (
     AgenticContext as _AgenticContext,
@@ -50,6 +49,7 @@ from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 if TYPE_CHECKING:
     from flow_sdk.builtin.faas.compute_node import ComputeNode
     from flow_sdk.builtin.shell import Shell
+    from flow_sdk.transcript_analyzer import AgentTranscript
 
 logger = logging.getLogger(__name__)
 
@@ -584,6 +584,12 @@ class AgenticProcess(Entity):
                 with open("/tmp/bench_open.log", "a") as _f:
                     _f.write(f"[BENCH start {_bench_id}] {label}: {(time.perf_counter() - _bench_t0) * 1000:.1f}ms\n")
             _bench("entry")
+            # If we're stuck in STOPPING with a dead worker (orphan from a
+            # crashed close()/exit()), reset to STOPPED before doing anything
+            # else. The rest of this function then sees a startable state
+            # rather than refusing or spawning under stale assumptions.
+            await self.reap_if_orphaned()
+            _bench("after reap_if_orphaned")
             self.session_id = self.session_id or str(uuid4())
             if visible is not None:
                 self.visible = visible
@@ -1286,6 +1292,8 @@ class AgenticProcess(Entity):
             await self.inject(prompt)
             await asyncio.sleep(1.5)
 
+            from flow_sdk.app.actions.listen import set_plan_auto_approve
+
             set_plan_auto_approve(self.id)
             _write_plan_frontmatter(file_path, {"executed": True})
 
@@ -1312,83 +1320,139 @@ class AgenticProcess(Entity):
             logger.exception(f"AgenticProcess {self.id} update-plan error: {e}")
             return ApiFailResponse(message=str(e))
 
-    @action.post(action_name="get-plan")
-    async def get_plan(self) -> ApiSuccessResponse | ApiFailResponse:
-        """Return the latest plan as an indexed Markdown record.
+    def _load_transcript(self) -> "AgentTranscript | None":
+        """Worker-agnostic transcript loader.
 
-        Resolution order for the plan file:
-          1. ``self.plan_path`` if already set (from a prior call or trigger).
-          2. Latest ``ExitPlanMode`` ``planFilePath`` from the session JSONL,
-             via the transcript analyzer. Persisted onto ``plan_path`` so
-             subsequent calls (and reloads) skip the scan.
-          3. Otherwise — no plan yet.
-
-        On success: builds a ``MarkdownRecord`` from the file, indexes it via
-        ``sync_to_db()``, and returns ``{"markdown": rec.meta_dict(),
-        "plan_path": <path>}``. On any race where the file isn't yet flushed,
-        retries once after 100ms before giving up.
+        Resolves the JSONL via the vendor driver (``self.driver.transcript_path``)
+        and parses it through the analyzer. Returns None if no session is
+        attached or the file is missing. Per-request load — no caching;
+        eager parse is fast enough for current sizes.
         """
+        from flow_sdk.transcript_analyzer import AgentTranscript
+
+        try:
+            path = self.driver.transcript_path(self)
+        except Exception:
+            logger.debug("AgenticProcess %s _load_transcript: driver lookup failed", self.id, exc_info=True)
+            return None
+        if path is None or not path.exists():
+            return None
+        try:
+            return AgentTranscript(self.driver.name, path)
+        except Exception:
+            logger.debug("AgenticProcess %s _load_transcript: parse failed", self.id, exc_info=True)
+            return None
+
+    @action.post(action_name="transcript")
+    async def transcript_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Generic transcript surface dispatched by sub-path.
+
+        Loads the JSONL once via the worker-agnostic ``_load_transcript()``
+        and routes on the URL sub-path:
+
+          * ``transcript/plan``   → resolve + persist + return latest plan.
+          * ``transcript/prompts`` → return the user-prompt list.
+
+        New sub-actions hang off the same loader without re-parsing.
+        """
+        request_info = get_current_request_info()
+        sub_path = (request_info.sub_path or "").strip("/").lower() if request_info else ""
+
+        transcript = self._load_transcript()
+
+        if sub_path == "plan":
+            return await self._transcript_plan(transcript)
+        if sub_path in {"prompt", "prompts"}:
+            return self._transcript_prompts(transcript)
+        return ApiFailResponse(message=f"unknown transcript sub-path: {sub_path!r}")
+
+    async def _transcript_plan(
+        self, transcript: "AgentTranscript | None",
+    ) -> ApiSuccessResponse | ApiFailResponse:
+        """Resolve the latest plan, persist ``plan_path`` (existence-gated),
+        and return the indexed Markdown.
+
+        Resolution order for the path:
+          1. ``self.plan_path`` if already set.
+          2. ``transcript.latest_plan.plan_file_path`` (ExitPlanMode tool_use).
+          3. Most recent ``plan_mode`` attachment's ``planFilePath`` (Claude
+             interactive PTY plan-mode).
+
+        Existence on disk is the single gate for persisting ``plan_path`` —
+        this keeps ``hasPlan = !!plan_path`` honest. Self-heals: clears a
+        stale ``plan_path`` if the file is missing.
+        """
+        from flow_sdk.transcript_analyzer.entries.meta import MetaEntry
+
         plan_file_path = self.plan_path or ""
 
-        # Discover via transcript when we don't already know the path.
-        # Two transcript variants emit the plan file path:
-        #   1. ``ExitPlanMode`` tool_use (Claude SDK / non-interactive flow) —
-        #      ``tool_input.planFilePath``.
-        #   2. ``plan_mode`` attachment (interactive PTY plan-mode flow) —
-        #      ``payload.attachment.planFilePath`` on a MetaEntry.
-        # Both surface in the JSONL; we check (1) first, fall back to (2).
-        if not plan_file_path and self.session_id:
-            try:
-                from flow_sdk.transcript_analyzer import AgentTranscript
-                from flow_sdk.transcript_analyzer.entries.meta import MetaEntry
-                from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+        if not plan_file_path and transcript is not None:
+            latest = transcript.latest_plan
+            if latest is not None:
+                plan_file_path = latest.plan_file_path
+            if not plan_file_path:
+                # plan_mode attachment fallback (Claude interactive PTY).
+                for e in reversed(transcript.entries):
+                    if not isinstance(e, MetaEntry) or e.meta_kind != "attachment":
+                        continue
+                    att = (e.payload or {}).get("attachment") or {}
+                    if att.get("type") == "plan_mode":
+                        plan_file_path = str(att.get("planFilePath") or "")
+                        if plan_file_path:
+                            break
 
-                session_rec = ClaudeSessionRecord.get(self.session_id)
-                jsonl = getattr(session_rec, "jsonl_path", None) if session_rec else None
-                if jsonl:
-                    transcript = AgentTranscript("claude", Path(jsonl))
-                    latest = transcript.latest_tool_use("ExitPlanMode")
-                    if latest is not None:
-                        plan_file_path = (latest.tool_input or {}).get("planFilePath", "") or ""
-                    if not plan_file_path:
-                        for e in reversed(transcript.entries):
-                            if not isinstance(e, MetaEntry) or e.meta_kind != "attachment":
-                                continue
-                            att = (e.payload or {}).get("attachment") or {}
-                            if att.get("type") == "plan_mode":
-                                plan_file_path = str(att.get("planFilePath") or "")
-                                if plan_file_path:
-                                    break
-                    if plan_file_path:
-                        self.plan_path = plan_file_path
-                        try:
-                            await self.save()
-                        except Exception:
-                            logger.debug(
-                                "AgenticProcess %s get-plan: save plan_path failed", self.id, exc_info=True
-                            )
-            except Exception:
-                logger.debug("AgenticProcess %s get-plan: transcript scan failed", self.id, exc_info=True)
-
-        if not plan_file_path:
+        if not plan_file_path or not Path(plan_file_path).exists():
+            if self.plan_path:
+                self.plan_path = None
+                try:
+                    await self.save()
+                except Exception:
+                    logger.debug(
+                        "AgenticProcess %s transcript/plan: clear stale plan_path failed", self.id, exc_info=True
+                    )
             return ApiSuccessResponse(data={"markdown": None, "plan_path": None})
 
-        path = Path(plan_file_path)
-        if not path.exists():
-            # Race protection: Claude may have just written the path; brief wait + recheck.
-            await asyncio.sleep(0.1)
-            if not path.exists():
-                return ApiSuccessResponse(data={"markdown": None, "plan_path": plan_file_path})
+        if self.plan_path != plan_file_path:
+            self.plan_path = plan_file_path
+            try:
+                await self.save()
+            except Exception:
+                logger.debug(
+                    "AgenticProcess %s transcript/plan: save plan_path failed", self.id, exc_info=True
+                )
 
         try:
             from flow_sdk.fs_records.markdown_record import MarkdownRecord
 
-            rec = MarkdownRecord.from_file(path)
+            rec = MarkdownRecord.from_file(Path(plan_file_path))
             await rec.sync_to_db()
             return ApiSuccessResponse(data={"markdown": rec.meta_dict(), "plan_path": plan_file_path})
         except Exception as e:
-            logger.exception("AgenticProcess %s get-plan error: %s", self.id, e)
+            logger.exception("AgenticProcess %s transcript/plan error: %s", self.id, e)
             return ApiFailResponse(message=str(e))
+
+    def _transcript_prompts(
+        self, transcript: "AgentTranscript | None",
+    ) -> ApiSuccessResponse:
+        """Return the user-prompt list straight from the transcript.
+
+        Filters applied by ``AgentTranscript.prompts`` (sidechain, empty,
+        Claude Code synthetic markers). Output shape mirrors the entry's
+        ``to_dict()`` envelope so the TS analyzer mirror's ``fromJson``
+        factory can hydrate ``UserMessageEntry`` instances directly.
+        """
+        if transcript is None:
+            return ApiSuccessResponse(data={"prompts": []})
+        return ApiSuccessResponse(data={
+            "prompts": [e.to_dict() for e in transcript.prompts],
+        })
+
+    @action.post(action_name="get-plan")
+    async def get_plan(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Back-compat alias for ``transcript/plan`` — delegates to the new
+        action so existing TS callers (``process.getPlan()``) keep working.
+        """
+        return await self._transcript_plan(self._load_transcript())
 
     # ── State ─────────────────────────────────────────────────────────────────
 
@@ -2181,6 +2245,47 @@ class AgenticProcess(Entity):
         result = await self.start(instruction=instruction, visible=visible)
         _http_bench("after start() return")
         return result
+
+    async def reap_if_orphaned(self, *, grace_seconds: int = 10) -> bool:
+        """Force-complete a stuck STOPPING transition when the worker is gone.
+
+        Same liveness predicates ``os_status`` exposes (``has_attachable_pty``
+        + ``worker_alive``). Writes ``STOPPED`` only when the row is
+        ``STOPPING``, has been in that state for at least ``grace_seconds``
+        (don't race live transitioners), and the worker is demonstrably gone.
+
+        Returns True iff the persisted status was advanced. Idempotent —
+        calling on a non-STOPPING row is a cheap no-op.
+        """
+        from datetime import datetime, timedelta, timezone
+        if self.status != ProcessStatus.STOPPING.value:
+            return False
+        updated = self.updated_date
+        if updated and isinstance(updated, str):
+            try:
+                updated = datetime.fromisoformat(updated.replace("Z", "+00:00"))
+            except Exception:
+                updated = None
+        cutoff = datetime.now(tz=timezone.utc) - timedelta(seconds=grace_seconds)
+        if updated and updated > cutoff:
+            return False
+        shell = await self.shell() if self.shell_id else None
+        has_pty = False
+        alive = False
+        if shell is not None:
+            try:
+                has_pty = bool(await shell.has_attachable_pty())
+            except Exception:
+                has_pty = False
+            try:
+                alive = bool(await shell.worker_alive())
+            except Exception:
+                alive = False
+        if has_pty or alive:
+            return False
+        self.status = ProcessStatus.STOPPED.value
+        await self.save()
+        return True
 
     @action.get(action_name="os-status")
     async def os_status(self) -> ApiSuccessResponse:

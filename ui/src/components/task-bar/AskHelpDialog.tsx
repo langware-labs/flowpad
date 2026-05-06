@@ -7,8 +7,10 @@
  * forward by replying with a PROMPT, which the sender approves headlessly.
  */
 import { useEffect, useState } from 'react';
+import { ConversationParticipant } from '@sdk';
 import { sendNotification } from '@sdk/entities/notifications';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
+import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -30,7 +32,7 @@ interface AskHelpDialogProps {
 
 export function AskHelpDialog({ open, onClose, projectPath }: AskHelpDialogProps) {
   const { localUser } = useLocalUser();
-  const [recipientEmail, setRecipientEmail] = useState('');
+  const [recipients, setRecipients] = useState<ConversationParticipant[]>([]);
   const [taskTitle, setTaskTitle] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -38,14 +40,15 @@ export function AskHelpDialog({ open, onClose, projectPath }: AskHelpDialogProps
 
   useEffect(() => {
     if (open) {
-      setRecipientEmail('');
+      setRecipients([]);
       setTaskTitle('');
       setMessage('');
       setError(null);
     }
   }, [open]);
 
-  const canSubmit = recipientEmail.trim().length > 0 && taskTitle.trim().length > 0 && !busy;
+  const recipientEmail = recipients[0]?.email?.trim() ?? '';
+  const canSubmit = recipientEmail.length > 0 && taskTitle.trim().length > 0 && !busy;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -53,7 +56,7 @@ export function AskHelpDialog({ open, onClose, projectPath }: AskHelpDialogProps
     setError(null);
     try {
       const result = await sendNotification({
-        recipient_id: recipientEmail.trim(),
+        recipient_id: recipientEmail,
         // Empty Spec — backend skips the Spec entity when both fields are blank
         // (Scenario B: "I need help" tasks don't carry a written specification).
         spec_title: '',
@@ -90,13 +93,16 @@ export function AskHelpDialog({ open, onClose, projectPath }: AskHelpDialogProps
 
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-muted-foreground">Recipient email</label>
-            <Input
-              value={recipientEmail}
-              onChange={(e) => setRecipientEmail(e.target.value)}
-              placeholder="user@example.com"
-              autoFocus
+            <label className="text-xs font-medium text-muted-foreground">Recipient</label>
+            <ContactPicker
+              value={recipients}
+              onChange={setRecipients}
+              excludeUserId={localUser?.id}
+              max={1}
               disabled={busy}
+              enabled={open}
+              placeholder="Search contacts or type an email"
+              testId="ask-help-recipient-input"
             />
           </div>
 

@@ -8,6 +8,7 @@ from .system import SystemEntry
 from .tool_result import ToolResultEntry
 from .tool_use import ToolUseEntry
 from .unknown import UnknownEntry
+from .usage import TokenUsageEntry
 from .user_message import UserMessageEntry
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     "MetaEntry",
     "SummaryEntry",
     "SystemEntry",
+    "TokenUsageEntry",
     "ToolResultEntry",
     "ToolUseEntry",
     "UnknownEntry",
