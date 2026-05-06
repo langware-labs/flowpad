@@ -898,3 +898,306 @@ Notes:
 ### Classification
 Real production bug — validation lost during the `context_entities` consolidation refactor (commit `1061ec6`). The fix is a 6-line addition to `_http_add_process`. Recommend bundling with Fix #8 (also backend-side) if convenient.
 
+## 2026-05-06 — terminal/terminal_persistence_on_tab_switch — goHome helper clicks Refresh, not Home
+
+### Symptom
+Test fails inside `goHome(page)`: clicks `[data-sidebar="menu-button"]` nth(1), then expects an h1/h2/h3 matching `/hey /i`. The heading never appears within 15s. Reproduced on both retries.
+
+### RCA
+**Test-issue (stale positional selector).** `ui/tests/manual_regression/terminal/helpers.ts:217-234` (`goHome`) uses `page.locator('[data-sidebar="menu-button"]').nth(1)` and a comment asserting the order is `Back(0), Home(1), Shell(2), Skills(3), Triggers(4)…`. That comment is out of date.
+
+Live DOM at `http://localhost:4098/` (verified in chromium tab 1618622673):
+- nth(0) = ArrowLeft (Back)
+- nth(1) = RefreshCw (**Refresh**) ← what the helper currently clicks → triggers `window.location.reload()`
+- nth(2) = House (Home) ← the actual Home button
+- nth(3) = Inbox
+- nth(4) = Terminal (Shell)
+- nth(5) = BookOpen (Assets)
+- nth(6) = Zap (Triggers)
+
+Source: `ui/src/components/collapsed-sidebar/collapsed-sidebar.tsx:120-140`. The first `SidebarMenuItem` renders **two** `SidebarMenuButton`s side-by-side (Back + Refresh, each `w-1/2`); both carry `data-sidebar="menu-button"`, so they consume nth(0) and nth(1) before any item from `mainNavItems` is rendered.
+
+Two commits drifted the index after the helper was written:
+- `155a4ca` "Rename Assets to Wiki in UI; add Refresh button to collapsed sidebar" — inserted the Refresh button at index 1.
+- `8415095` "inbox 1" — inserted Inbox into `mainNavItems`, further shifting downstream items.
+
+Net effect: clicking nth(1) reloads the page (Refresh), so the URL stays on `/dock/shell/...` and the home `<h1>Hey serans1</h1>` never appears. The 15s wait then fails, exactly as reported.
+
+The home page itself is healthy — `ui/src/pages/home-landing/HomeLanding.tsx:609` still renders an h1 starting with `Hey ` (verified live: heading "Hey serans1" present at `/`).
+
+### Evidence
+- `ui/tests/manual_regression/terminal/helpers.ts:217-221` — the stale `nth(1)` + outdated comment.
+- `ui/tests/manual_regression/terminal/helpers.ts:240-245` — `gotoShellView` uses `nth(2)` for Shell with the same stale assumption (Shell is now actually nth(4)). This will fail next.
+- `ui/src/components/collapsed-sidebar/collapsed-sidebar.tsx:120-140` — current sidebar DOM source of truth.
+- `ui/src/test/manual_regression/terminal/helpers.ts:142-150` — a sibling copy of the helper already uses `await page.goto('/')` for `goHome` with the comment *"Direct navigation is more reliable than hunting the sidebar's first button, whose DOM position drifts when secondary-nav items are added/removed."* This proves a prior author already recognized this brittleness; the active runner copy was never synced.
+
+### Suggested fix (test-issue, not app bug)
+Two viable options for the bug_fixer:
+
+1. **Mirror the sibling helper (preferred — same lesson, already learned):** in `ui/tests/manual_regression/terminal/helpers.ts`, change `goHome` to navigate via `await page.goto('/')` instead of clicking the sidebar. Apply the analogous robust selection to `gotoShellView` — either `await page.goto('/dock/shell/new_terminal')`, or select by lucide icon class (`button[data-sidebar="menu-button"]:has(svg.lucide-terminal)`).
+
+2. **Selector-based (if the test must exercise the click path):** replace the positional locators with non-positional ones, e.g. `page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-house)')` for Home and `:has(svg.lucide-terminal)` for Shell. Avoid relying on `tooltip`/`title`/`aria-label` — the live DOM shows none of them are populated on these buttons.
+
+If preserving "this test exercises sidebar Home click" is important to the scenario, pick option 2. Otherwise option 1 is shorter and matches what the sibling helper already does for the same reason.
+
+### Confidence
+**High.** Both the stale code and the live DOM were observed; the source of truth for the sidebar order matches the live DOM exactly; the home page renders the expected heading; and a sibling helper file already carries the explicit lesson "DOM position drifts when items are added/removed."
+
+### Fixed: no
+
+## 2026-05-06 — agentic-process/process_terminal_shell_tab_navigates_url (#19) — empty shell NOT consumed in fresh repro
+
+### Symptom (as reported)
+Fresh empty shell created via `/dock/shell/new_terminal` → `+ → Claude Code`. Tester's failure trace says the resulting tab bar has only the new Claude tab, original shell tab gone, counter shows "1 active terminal across all projects". Reproduced 2x.
+
+### Live observation (does NOT reproduce)
+Repro in chromium tab 1618622677 (DB had pre-existing state, not freshly cleared):
+1. `/dock/shell/new_terminal` → URL `/dock/shell/shell-f3a29a2d-3c22-4328-9213-33604304a9f0`. Tab bar: 1 tab `tab-shell-f3a29a2d-...`.
+2. `+ → Claude Code` → URL `/dock/shell/agentic_process-8e87e9b0-aa88-4547-bc7a-e1766fa90168`. Tab bar: 4 tabs (the original `tab-shell-f3a29a2d-...` plus 3 from prior state, including `tab-shell-f769d68d-...` for the new Claude).
+3. Cache snapshot: `AgenticProcess.getByIdFromCache("8e87e9b0...")` returns the entity with `shell_id=f769d68d-...`, `visible=true`, `session_id="0f70f5ae-..."`. The original shell `f3a29a2d-...` is NOT the same as the Claude's host shell `f769d68d-...`.
+4. State stable across 15s — no async removal of the original shell.
+
+### Code-side reasoning (why consumption is unlikely)
+- `ui/src/navigation/NavigationActions.ts:308-336` — `openNewClaudeProcess` calls `computeNode.createProcess` which always allocates a NEW shell server-side; the original empty shell is never reused.
+- `ui/src/components/terminal/TabbedTerminal.tsx:266-309` — `startAgenticTab` only calls `pushTab(newTab)` for the new Claude row; never calls `removeTab(originalShellId)`.
+- `flow_sdk/builtin/faas/compute_node.py:447-512` — `_active_terminals` excludes a shell from `pure_shells` only when it's owned by some AgenticProcess (`p.shell_id == s.id`). The original empty shell is not owned by anyone, so it stays pure.
+- `useProjectTerminals` (`ui/src/hooks/useActiveTerminals.ts:239`) filters by `projectId`, but `ProjectsCounterChip` uses `useAllTerminals` (unfiltered). The tester's "1 active terminal across all projects" implies the **unfiltered** store has only 1 row — that would require either a server response missing the original shell OR a `removeTab` call that doesn't exist in current code.
+
+### Hypotheses for the tester's failure
+- (H1, most likely) **Stale state interaction:** the tester's fresh-DB run had project context such that the original shell's `project_id` was null (created before any project was set) while the new Claude's `project_id` was non-null. `useProjectTerminals` then filters the original out of the strip — but does NOT remove it from `useAllTerminals`. The "1 across all projects" line in the report would be inconsistent with this read; the report may be paraphrasing rather than quoting the exact UI.
+- (H2) **Tester reading wrong UI surface:** the failure trace says "tab bar contains only the new agentic-process tab". If the tester captured the bar AFTER project context flipped, the strip uses the project-filtered view. The original shell may have been in `tabsState` but filtered out of `projectTabs`. The strip's project filter is intentional (per `TabbedTerminal.tsx:175-184`).
+- (H3) **Backend reaper closed the empty shell:** `_active_terminals` filters out shells with `status in ("closed","error")`. If `_scan_create_process` shares a lock or save sequence that flips an idle shell's status (unlikely from reading the code), it could happen. No code-trace supports this.
+
+### Distinguishing test
+The right next probe is to repro on a **freshly cleared DB** (matching the tester's environment) and capture: (a) `dataContext.project?.id` at each step, (b) `pure_shells` length from `/active-terminals`, (c) `Shell.getByIdFromCache(<original>)?.project_id` immediately after Claude opens. If (a) is non-null and (c) is null → it's H1/H2 (project filter); if `pure_shells` drops to 0/1 → it's H3 (backend dropped the row).
+
+### Verdict (provisional)
+**Likely a project-filter UX inconsistency rather than a tab-deletion regression.** The TabbedTerminal correctly scopes its strip by project; if the original shell's `project_id` is null and the newly-created Claude pulls a non-null project from `dataContext.project`, the user sees "the original tab disappeared" while it's actually filtered. This is a real UX bug if reproducible, but **NOT a tab-deletion regression** — the entity still exists.
+
+### Suggested next steps for bug_fixer
+1. Repro on a fresh DB; capture the project_ids of both entities. If the original shell has `project_id = null` and the Claude has `project_id != null`, the fix is in `TabbedTerminal.tsx:179-180` — when building the project-scoped strip, also include rows with `project_id == null` (treat as "global / unfiled"), OR set `dataContext.project` to a stable default before any `+ → Claude Code` action so both entities share `project_id`.
+2. Alternatively (scenario-side): the test should wait for the tab to settle into the post-create project context and use `tab-${shellSessionId}` only after that. This may require an explicit project assertion before `+ → Claude Code`.
+3. If repro shows backend `pure_shells` dropping the original — different bug, dig into `_active_terminals` reap path.
+
+### Confidence
+**Medium.** Live observation contradicts the failure trace; the most plausible root cause (project-filter on null project_id) is consistent with the code and not contradicted by what I saw. A fresh-DB repro is needed to confirm. Filing as a real-but-narrow bug pending bug_fixer's repro.
+
+### Fixed: no
+
+## 2026-05-06 — agentic-process/observability_surfaces (#21) — slug-mismatch hypothesis NOT confirmed
+
+### Symptom (as reported)
+Tester reports: PTY Viewer modal shows "Request failed with status code 404"; Open Transcript icon stays disabled after Claude banner paints; ScrollText icon renders (disabled) before any session exists. Tester's "notes" hypothesize the URL slug is a shell id where the route loader expects an agentic_process id; team-lead echoed this as the likely root for #10/#14/#21.
+
+### Live observation
+URL slug after `+ → Claude Code`: `agentic_process-8e87e9b0-aa88-4547-bc7a-e1766fa90168`.
+- `AgenticProcess.getByIdFromCache("8e87e9b0...")` → returns the entity (id, shell_id, visible, session_id all populated).
+- `Shell.getByIdFromCache("8e87e9b0...")` → null.
+- `ui/src/routes/loaders/load-shell.ts:328-332` extracts the id correctly via `DockPointer.extractAgenticProcessId(pointer)`.
+
+**Conclusion: the URL slug carries the AgenticProcess id and the route loader correctly resolves it.** The "slug = shell id" hypothesis does NOT match the live evidence. The URL contract is intact for the create-Claude path.
+
+### Re-reading the failure
+- Test 1 (PTY Viewer 404): the modal title "PTY Viewer 63ac8035" suggests the *modal* is keyed on the AgenticProcess's `shell_id` (the host PTY), not on the AgenticProcess id. If the modal's data fetch GETs `/shell/<shell_id>` but that shell row exists, it should 200. A 404 there suggests a path bug *inside* the PTY Viewer component, not a slug mismatch in the dock route. Check `ui/src/components/terminal/PTYViewer*` for what id it fetches and via which endpoint.
+- Test 2 (Open Transcript stays disabled): per `ProcessToolbar.tsx:76-78`, `hasTranscript = hasSession && hasWorkerStarted(workerStatus) && workerStatus !== WorkerStatus.IDLE`. If `workerStatus` stays IDLE after the PTY starts, the icon stays disabled — that's the gate, not a slug bug. Investigate why `workerStatus` doesn't progress past IDLE for this Claude session.
+- Test 3 (ScrollText rendered before session): the actual code at `ProcessToolbar.tsx:374,377` is `{hasSession && <SessionInfoPopover ...>}` and `{hasSession && <IconToggleButton ... ScrollText />}` — gated. **If the test sees the icon rendered without a session, the icon being seen is NOT from this gated branch.** Possible: a different toolbar path (collapsed sidebar, ProcessTerminal embedded toolbar) renders ScrollText unconditionally. Worth grepping for other ScrollText render sites.
+
+### Verdict
+**Tester's slug-mismatch hypothesis is wrong.** The three failures in #21 are likely independent bugs:
+- PTY Viewer 404 → path/method mismatch in PTY Viewer's data fetch (not a slug bug).
+- Open Transcript disabled → `workerStatus` not progressing past IDLE (worker-status update bug, not slug bug).
+- ScrollText rendered without session → either a non-gated render site exists, or test environment has `dev mode ON` and a dev-only branch shows the icon without `hasSession` gate.
+
+These need separate investigation. Recommend the bug_fixer treat #21 as three sub-issues, not one.
+
+### Confidence
+**High** for "slug is correct"; **medium** for the three-bugs-not-one re-classification (would need to grep all ScrollText render sites and inspect PTY Viewer data fetch).
+
+### Live confirmation (2026-05-06, second pass) — PTY Viewer 404 root cause IDENTIFIED
+
+Reproduced live in tab 1618622677 against the active Claude shell `d747a500-ad82-4420-9369-e7b9bc42fd3e` (status: running, name: "✳ Claude Code").
+
+**Network observation:**
+```
+GET http://localhost:9008/api/v1/graph/shell/d747a500-.../fetch-pty-sequence  →  404
+GET http://127.0.0.1:9008/api/v1/graph/shell/d747a500-...                     →  404
+```
+Response body for both: `{"status":"FAIL","message":"Entity not found, Get failed: shell(id:d747a500-...)","data":null}`
+
+Tested with a second known-running Shell `80cc6bc8-...` (the project-pinned plain shell) — same 404 with same message. **The 404 is systematic for ALL Shell entities, not specific to one.**
+
+**This is NOT a PTY Viewer bug.** The 404 happens upstream — at the graph CRUD route's auth-target resolution. The action handler at `flow_sdk/builtin/shell.py:863` is never even reached. The error originates at `flow_sdk/server/routes/graph.py:111-117` (the `get_by_id` helper):
+```py
+entity = request_info.auth_result.target
+if not entity:
+    raise HTTPException(status_code=404, detail=f"Entity not found, Get failed: {target.type}(id:{target.id})")
+```
+`auth_result.target` is None despite the entity existing in the DB. The auth/middleware layer's pre-resolution of the target entity is broken for Shell entities.
+
+**Direct REST baseline:** `GET /api/v1/graph/agentic_process` with no scope returns `{total: 0, items: []}` — but cached AgenticProcesses appear in the SDK and `Shell.getByIdFromCache` returns full entities. So the SDK's cache is populated through a different path (likely `_active_terminals`'s `castAndDeepAssign`), but the standard graph CRUD endpoint reports the entities don't exist for the requesting auth context.
+
+This explains all three #21 sub-issues:
+1. **PTY Viewer 404** — graph CRUD auth-target lookup fails. The "PTY Viewer 63ac8035" modal title in the tester trace is keyed on `shell_id`; modal opens fine, but the body's `fetchPtySequence` 404s in auth resolution.
+2. **Open Transcript stays disabled** — `ProcessToolbar.tsx:76-78` gates on `hasSession && workerStatus !== IDLE`. The auth-target failure also breaks per-entity subscriptions, so `workerStatus` updates never propagate. The toolbar sees a stale IDLE.
+3. **ScrollText rendered (disabled) before session exists** — same auth lookup issue manifests as: the toolbar mounts because `process` is present in cache, `hasSession` is true (session_id was set when the entity was cached via active-terminals), but the gating chain from line 76-78 produces "rendered but disabled". The tester's interpretation "rendered without a session" is slightly off — the entity HAS a session_id; it's the *transcript* gating that fails because workerStatus subscription is broken.
+
+**This may be the same root as part of #19 and #20 too**: the `useAllTerminals`/`useProjectTerminals` strip is populated from `active-terminals` (which works), but per-entity graph CRUD endpoints (used by everything else) systematically 404. The *appearance* of "tab disappeared" / "info icon missing" / "transcript disabled" all fall out from the same graph-CRUD-auth-broken root.
+
+**Live `active-terminals` snapshot (`http://127.0.0.1:9008/api/v1/graph/compute_node/<id>/active-terminals`):**
+```
+{ pure_count: 1, visible_count: 0 }
+```
+The strip shows 2 tabs but `visible_count: 0` — the second tab (the Claude one) is in the in-memory `tabsState` from a prior `pushTab`, not from the server. After any explicit `refresh()` it would disappear from the strip. **Critical:** every AgenticProcess is being persisted with `visible: false` (matching #20's evidence — server-side `_scan_create_process` may also be omitting `visible=True`, not just `_scan_upsert_session_process`).
+
+### Updated verdict
+**The slug-mismatch hypothesis is still wrong (URL slug correctly carries AgenticProcess id).** But the three sub-issues DO share a root cause — just not the one the tester proposed. **Root cause: graph CRUD auth-target resolution is broken for Shell entities (and likely AgenticProcess too)**, AND a separate issue: AgenticProcess entities persisted with `visible: false`.
+
+Two distinct backend bugs to file:
+
+**B1: Graph CRUD auth-target resolution returns None for existing entities.**
+- Location: `flow_sdk/server/routes/graph.py:111-117` is where the 404 fires; the bug is upstream — wherever `auth_result.target` is set/resolved (search for setters of `request_info.auth_result.target`).
+- Evidence: `GET /api/v1/graph/shell/<id>` returns 404 with `"Entity not found, Get failed"` for shells that exist (verified for two different running shells).
+- Impact: every entity action (`fetch-pty-sequence`, single-entity GETs, save, etc.) breaks. PTY Viewer and likely other surfaces 404.
+
+**B2: AgenticProcess persisted with `visible: false`.**
+- Location: `flow_sdk/builtin/faas/scan_actions.py:494-503` (`_scan_upsert_session_process`) and possibly `_scan_create_process` (line 214 region).
+- Evidence: `active-terminals` returns `visible_processes: []` after running Claude is in the strip.
+- Impact: refreshes drop the Claude tabs from the strip; route loader's self-heal silently snaps to fallback (visible-count=0 → empty strip in fresh DB → no toolbar at all).
+
+### Suggested fix order for bug_fixer
+1. **Fix B1 first** — wider blast radius, will probably make many other tests start passing.
+2. **Fix B2** — already covered in the #19 + #20 RCAs (`useProjectTerminals` null filter + `visible=True` in upsert).
+3. After B1+B2 land, re-test #21 sub-issue 2 (Open Transcript disabled). If still disabled with workerStatus stuck on IDLE, then there's a third independent bug in worker-status propagation.
+
+### Updated confidence
+**High** for the graph-CRUD-auth-target diagnosis (network trace + identical 404 for multiple shells + matching error string from `graph.py:111-117`).
+
+### Fixed: no
+
+## 2026-05-06 — agentic-process/resume_session_from_recent (#20) — Info icon never shown post-resume
+
+### Symptom
+After clicking a recent Claude session entry from History, URL navigates to `/dock/shell/agentic_process-<id>` (passes), but Info icon `button[aria-label="Session info"]` never becomes visible within 30s.
+
+### Code-side reasoning
+- `ProcessToolbar.tsx:71` — `const hasSession = !!process.session_id;`
+- `ProcessToolbar.tsx:374` — `{hasSession && <SessionInfoPopover ...>}` is the only render site for the Info icon.
+- Resume path: `AgenticProcess.fromClaudeSession(sessionId)` → `computeNode.upsertSessionProcess(sessionId)` → `_scan_upsert_session_process` (`flow_sdk/builtin/faas/scan_actions.py:394-541`). Returns `{id, type, session_id, worker_type, created}`. The persisted process has `session_id = sessionId` (line 494-503).
+- So the AgenticProcess **does** have `session_id` set at persistence time.
+
+### Hypothesis: the InteractiveTerminal toolbar isn't mounting because there's no shell yet
+- Unlike `+ → Claude Code` (atomic create — `_scan_create_process` calls `process.start()` before responding, so `shell_id` is populated), `_scan_upsert_session_process` does **NOT** call `process.start()`. The persisted process has `session_id` but **no `shell_id`** until the user/UI explicitly starts the PTY.
+- `InteractiveTerminal` likely refuses to mount its toolbar without a backing Shell entity. The route loader `routeProcessPointer(processId)` may resolve the AgenticProcess but find `shell_id=null`, and downstream the terminal panel has nothing to attach to.
+- Therefore `ProcessToolbar` never mounts, so the gated `<SessionInfoPopover>` is never rendered — *not because `hasSession` is false, but because the parent is absent*.
+
+### Distinguishing test
+On the live failure, capture: (a) the AgenticProcess after URL-nav: does it have `session_id` and `shell_id`? If `session_id` is set but `shell_id` is null → it's the "resume creates entity but doesn't auto-start PTY" hypothesis. If `session_id` is also null → it's an actual upsert bug.
+
+### Verdict (provisional)
+**Likely an intentional lazy-resume design that conflicts with the test's eager assertion.** The resume path creates the AgenticProcess (and stamps `cli_config.resume=True` if a transcript exists on disk) but defers spawning the PTY. The toolbar's `hasSession` gate is correct — the toolbar just hasn't mounted because there's no shell yet.
+
+### Suggested next steps for bug_fixer
+1. Confirm with cache snapshot whether the resumed process has `shell_id == null`.
+2. If yes — three options:
+   - (Scenario fix) The test should wait for / trigger PTY start (e.g. click into the panel, or send an opening keystroke) before asserting Info icon visibility.
+   - (UX fix) Auto-spawn PTY on first navigation to a resumed process (would unify with `+ → Claude Code` atomic-create UX).
+   - (Toolbar fix) Render `SessionInfoPopover` even when no shell is mounted yet, since `process.session_id` is sufficient for the popover content.
+
+### Confidence
+**Medium.** Hypothesis is consistent with the divergent backend paths (`_scan_create_process` atomic vs `_scan_upsert_session_process` non-atomic), but I have not live-reproed the resume flow yet.
+
+### Live confirmation (2026-05-06, second pass)
+
+I called `window.AgenticProcess.fromClaudeSession("0f70f5ae-39e6-47c8-9ad4-23d33f9a9712")` directly from the page console (tab 1618622677) — same code path the History modal uses. The returned (and server-fetched) AgenticProcess:
+
+- `id: "50c6d016-cb22-4563-a7ed-9f8221a9b04b"`
+- `session_id: "0f70f5ae-39e6-47c8-9ad4-23d33f9a9712"` ✓ (populated)
+- **`shell_id: undefined`** ← confirms hypothesis
+- **`visible: false`** ← stronger finding than hypothesis predicted
+- `status: "new"`
+- `cli_config: {}` (no resume flag set, because no on-disk transcript existed for this just-created session)
+- `worker_type: "claude_code"`
+- `project_id: "4a6741fe-..."` (set from `dataContext.project`)
+
+Idempotent on second call — same process id, same `visible=false`, same empty `cli_config`.
+
+Then I navigated `/dock/shell/agentic_process-50c6d016-...` and observed:
+- URL: `/dock/shell/agentic_process-50c6d016-cb22-4563-a7ed-9f8221a9b04b` ✓ (matches resumed entity)
+- `dataContext.activeShellId: "d747a500-..."` ← **NOT the resumed process's shell**, it's an unrelated shell from prior state.
+- Tab strip: `[tab-shell-80cc6bc8-..., tab-shell-d747a500-...]` — neither corresponds to the resumed AgenticProcess (which has `shell_id=undefined`, so it produces no `tab-` row).
+- An Info icon IS visible — but it belongs to the *fallback* tab (the unrelated shell), NOT the resumed session.
+
+This is the route loader's self-heal at `ui/src/components/terminal/TabbedTerminal.tsx:251-257`: when the active shell is not in the visible strip, `useEffect` picks `visibleSessions[0]` and `navigation.openDockPointer(...)`s to it. The URL path *says* `agentic_process-50c6d016` but the actual mounted panel is for an entirely different shell.
+
+**In a fresh-DB environment (tester's setup), `visibleSessions` is empty → no fallback → no Info icon. That matches the failure trace exactly.**
+
+### Verdict (UPGRADED to high confidence)
+**This is a real backend regression / lazy-resume bug.** `_scan_upsert_session_process` creates an `AgenticProcess` with `visible=false` and `shell_id=null`, so:
+- `_active_terminals` excludes it from `visible_processes` (filter: `visible == true` at `compute_node.py:486`).
+- TabbedTerminal's strip never shows a tab for the resumed process.
+- The route navigates the user to a URL that resolves to an invisible/headless entity.
+- In a populated-DB environment, the route loader silently snaps to a fallback tab — the user thinks they're looking at the resumed session but they're actually viewing something else (a worse failure mode than the test's "Info icon missing").
+- In a fresh-DB environment, there's no fallback — empty terminal panel area.
+
+**The bug is in the resume path, not the toolbar.** Two fixes available:
+
+1. **Backend (preferred — matches `+ → Claude Code` atomic UX):** in `_scan_upsert_session_process` (`flow_sdk/builtin/faas/scan_actions.py:494-503`), set `visible=True` on the AgenticProcess at persist time, and call `process.start()` before responding (mirroring `_scan_create_process`). This unifies the resume UX with the create UX.
+2. **Frontend (less correct — works around backend):** in `useResumeInTerminal` / `NavigationActions.openClaudeSession` after `fromClaudeSession` returns, explicitly call `process.start()` (or some equivalent that flips `visible=true` and allocates `shell_id`) before navigating.
+
+I recommend option 1 — the backend already has the atomic-spawn pattern in `_scan_create_process`; reusing it here is a small, well-scoped change.
+
+### Note on the route-loader fallback
+The silent-snap-to-fallback behavior at `TabbedTerminal.tsx:251-257` is also a UX hazard worth flagging separately: it lets the URL diverge from the actually-mounted entity, which would silently mis-pass tests that only check URL content. Bug_fixer may want to file this as a follow-up issue.
+
+### Fixed: no
+
+## 2026-05-06 — terminal/terminal_tab_rename (#28) — rename POST 404s, downstream of B1
+
+### Symptom
+After Fix #23 unblocked the test environment, qa-tester-1 reproduced 2x: triple-click the rename input + type "My Custom Shell" + Enter, but tab text remains the auto-generated name (e.g. "Tab 3"). The rename input closes (commit fired) but the new name is not applied.
+
+### RCA
+**Downstream symptom of B1 (the graph CRUD auth-target bug from #21).** Not a separate rename-handler bug.
+
+The rename click chain (`TabbedTerminal.tsx:514-545`) is correct:
+- `handleNameKeyDown` on Enter → `handleNameBlur` → `onTabRename(session, editingName.trim())`.
+- `onTabRename` skips no-ops (`shell.name === newName`), rejects TypeId-formatted strings, then calls `void shell.updateDisplay({ name: newName, is_pty: false })` (`TabbedTerminal.tsx:537`).
+- `Shell.updateDisplay` (`ts_sdk/src/entities/shell.ts:375-381`):
+  ```ts
+  await dataManager.callAction(new ActionInfo('update-display', Shell.type, this.id, 'POST'));
+  Object.assign(this, fields);
+  dataManager.notifyEntityChanged(this);
+  ```
+
+The first line POSTs to `/api/v1/graph/shell/<id>/update-display`. **That request 404s with the same auth-target failure pattern as #21's PTY Viewer 404**. Because the call is `await`-ed and throws, the in-memory `Object.assign` and the `notifyEntityChanged` never run — the cache is never updated, so the tab span keeps the old name.
+
+### Live confirmation (2026-05-06, tab 1618622677)
+
+Called directly from the page console:
+```
+const sh = await window.Shell.getById('bea836e0-1b4d-4d5b-b3b2-d8e16db940cb');
+await sh.updateDisplay({ name: 'RCA Test Rename ' + Date.now() });
+```
+
+Network trace shows:
+```
+POST .../graph/shell/<id>/update-display  →  404
+{"status":"FAIL","message":"Entity not found: shell-bea836e0-...","data":null}
+```
+
+`oldName: "Tab 1"`, no `newName` set on the entity.
+
+Note: the error message format here (`"Entity not found: shell-<id>"`) is the `align_typeid` form (`flow_sdk/request_context/request_utils.py:78`) — slightly different from the `get_by_typeid` form (`"Entity not found, Get failed: shell(id:<id>)"`) seen on `fetch-pty-sequence` GET. Both are different exit branches in the same auth-resolution code path, both produce the same observable failure, both fall under B1.
+
+### Verdict
+**Test is correct. App is correct (the rename UX wiring is fine).** The bug is the same B1 graph-CRUD-auth-target regression. Fix B1 → rename will work without further changes to TabbedTerminal or Shell.
+
+### Suggested action for bug_fixer
+**Do not spawn a separate rename Fix.** This will resolve when B1's Fix lands (the new #25). After B1 is fixed, qa-tester-1 should re-run terminal_tab_rename. If it still fails, investigate then (most likely candidates: the rename click chain itself, or the `notifyEntityChanged` propagation to `useActiveTerminals` consumers — but neither is reachable until B1 is unblocked).
+
+### Confidence
+**High.** Live network trace shows the exact same 404 pattern as #21's PTY Viewer/fetch-pty-sequence and Shell GET — same auth-target resolution failure, same misleading "Entity not found" message for entities that exist. Rename can't possibly succeed until B1 is fixed.
+
+### Fixed: no
+
+

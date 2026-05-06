@@ -4,3 +4,4 @@ export * from './ui/view-types';
 export * from './utils';
 export * from './vfs-path';
 export * from './claude-transcript';
+export * as AgentTranscript from './agent-transcript';

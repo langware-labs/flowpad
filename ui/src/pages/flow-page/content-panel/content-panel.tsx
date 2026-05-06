@@ -43,7 +43,7 @@ import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
 import { useContentPanelStore } from '@src/hooks/use-content-panel-store';
 import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
 import { useToast } from '@src/hooks/use-toast';
-import { useActiveTerminals } from '@src/hooks/useActiveTerminals';
+import { useAllTerminals } from '@src/hooks/useActiveTerminals';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
@@ -67,7 +67,8 @@ export function ContentPanel() {
   // Sync flow focus and URL dock state to viewer store
   useActiveViewer(flow);
 
-  const { tabs: terminalTabs, isLoading: terminalsLoading } = useActiveTerminals();
+  const { data: terminalTabs } = useAllTerminals();
+  const terminalsLoading = false;
   const { onTabClick, onTabClose, onTabOpen } = useStandardTabNav();
 
   /**

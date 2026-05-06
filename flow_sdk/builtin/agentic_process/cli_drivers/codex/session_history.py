@@ -54,7 +54,8 @@ def find_codex_session_jsonl(thread_id: str) -> Path | None:
     Codex names files ``rollout-<timestamp>-<thread_id>.jsonl``; we just
     glob-search for the suffix.
     """
-    sessions_root = Path.home() / ".codex" / "sessions"
+    from flow_sdk.instance_settings import get_instance_settings
+    sessions_root = get_instance_settings().codex_sessions_dir
     if not sessions_root.is_dir():
         return None
     suffix = f"-{thread_id}.jsonl"

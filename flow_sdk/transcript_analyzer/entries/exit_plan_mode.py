@@ -8,6 +8,7 @@ under ``~/.claude/plans/``.
 
 from __future__ import annotations
 
+from .._helpers import render_block
 from .tool_use import ToolUseEntry
 
 
@@ -27,3 +28,10 @@ class ExitPlanModeEntry(ToolUseEntry):
         treat absence as "not available" rather than an error.
         """
         return str(self.tool_input.get("planFilePath", "") or "")
+
+    def _body_lines(self) -> list[str]:
+        out: list[str] = [f"tool_name: {self.tool_name}", f"tool_use_id: {self.tool_use_id}"]
+        if self.plan_file_path:
+            out.append(f"plan_file_path: {self.plan_file_path}")
+        out.extend(render_block("plan", self.plan_text))
+        return out
