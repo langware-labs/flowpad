@@ -6,7 +6,7 @@ import {
   Shell,
   ShellStatus,
 } from '@sdk';
-import { useCallback, useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
 /** Discriminator for tab type. */
 export type TerminalTabType = 'plain' | 'claude';
@@ -187,7 +187,7 @@ function updateTabShared(shellId: string, patch: Partial<TerminalTab>): void {
   setTabsState(tabsState.map((t) => (t.shellId === shellId ? { ...t, ...patch } : t)));
 }
 
-export interface UseActiveTerminalsResult {
+export interface UseTerminalsResult {
   data: TerminalTab[];
   /** Re-fetch from server and replace the list. Call after any action that
    *  may have changed the strip on the backend. */
@@ -201,7 +201,16 @@ export interface UseActiveTerminalsResult {
   updateTab: (shellId: string, patch: Partial<TerminalTab>) => void;
 }
 
-export function useActiveTerminals(): UseActiveTerminalsResult {
+/**
+ * Global tab list. One source, mutated by:
+ *   - initial REST fetch (on first subscribe)
+ *   - explicit ``refresh()``
+ *   - direct mutators: ``pushTab`` / ``removeTab`` / ``updateTab``
+ *
+ * No filtering. Consumers that want a scoped view (e.g. per-project) should
+ * use ``useProjectTerminals`` or filter ``data`` themselves.
+ */
+export function useAllTerminals(): UseTerminalsResult {
   const subscribe = useCallback((onChange: () => void) => {
     listeners.add(onChange);
     if (!initialFetchStarted) {
@@ -219,4 +228,20 @@ export function useActiveTerminals(): UseActiveTerminalsResult {
     removeTab: removeTabShared,
     updateTab: updateTabShared,
   };
+}
+
+/**
+ * Project-scoped derived view of ``useAllTerminals``. Same shared store and
+ * mutators — only ``data`` is filtered. Pass an explicit ``projectId`` to
+ * pin (e.g. for collaboration spaces); omit to default to the active project
+ * via ``dataContext.project?.id``.
+ */
+export function useProjectTerminals(projectId?: string | null): UseTerminalsResult {
+  const all = useAllTerminals();
+  const pid = projectId ?? dataContext.project?.id ?? null;
+  const data = useMemo(
+    () => (pid == null ? all.data : all.data.filter((t) => t.projectId === pid)),
+    [all.data, pid],
+  );
+  return { ...all, data };
 }
