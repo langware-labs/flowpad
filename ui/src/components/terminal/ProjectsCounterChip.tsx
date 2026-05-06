@@ -1,7 +1,7 @@
 import { ContextEntitiesEnum, dataContext, Project } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { useActiveTerminals, type TerminalTab } from '@src/hooks/useActiveTerminals';
+import { useAllTerminals, type TerminalTab } from '@src/hooks/useActiveTerminals';
 import { Layers } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
@@ -27,7 +27,7 @@ function resolveProjectName(projectId: string): string {
 
 export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ currentProjectId }) => {
   const [open, setOpen] = useState(false);
-  const { data: tabs } = useActiveTerminals();
+  const { data: tabs } = useAllTerminals();
 
   const { rows, total } = useMemo(() => {
     const byProject = new Map<string, TerminalTab[]>();

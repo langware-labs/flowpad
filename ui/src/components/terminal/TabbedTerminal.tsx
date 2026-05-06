@@ -13,7 +13,7 @@ import {
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
-import { useActiveTerminals } from '@src/hooks/useActiveTerminals';
+import { useProjectTerminals } from '@src/hooks/useActiveTerminals';
 import { useContext } from '@src/hooks/useContext';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
@@ -172,17 +172,16 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     agenticProcess: contextAgenticProcess,
     project: contextProject,
   } = useContext();
-  // The strip presents exactly what the hook returns. Initial fetch + direct
-  // mutations (pushTab/removeTab) own the list. Per-row liveness flows through
-  // the entity cache (shell.status, agenticProcess.status, etc.).
-  // The `spawnProjectId`/`contextProject` is kept only as a label for
-  // ProjectsCounterChip — never to filter the strip.
+  // Project-scoped strip: ``useProjectTerminals`` derives a filtered view of
+  // the global tabsState by ``projectId``. ``spawnProjectId`` overrides for
+  // CollaborationSpace strips that pin to a different project; otherwise the
+  // hook defaults to ``dataContext.project?.id``.
   const tabsProjectId = spawnProjectId ?? contextProject?.id ?? null;
-  const { data: allTabs, removeTab, pushTab, refresh: refreshTabs } = useActiveTerminals();
+  const { data: projectTabs, removeTab, pushTab, refresh: refreshTabs } = useProjectTerminals(spawnProjectId);
   const sessions = useMemo(() => {
-    if (collaborationRoomId == null) return allTabs;
-    return allTabs.filter((t) => t.shell?.collaboration_room_id === collaborationRoomId);
-  }, [allTabs, collaborationRoomId]);
+    if (collaborationRoomId == null) return projectTabs;
+    return projectTabs.filter((t) => t.shell?.collaboration_room_id === collaborationRoomId);
+  }, [projectTabs, collaborationRoomId]);
   const _perfLoggedRef = useRef(false);
   if (!_perfLoggedRef.current) {
     _perfLoggedRef.current = true;
