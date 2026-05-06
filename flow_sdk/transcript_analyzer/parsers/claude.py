@@ -19,6 +19,7 @@ from ..entries import (
     MetaEntry,
     SummaryEntry,
     SystemEntry,
+    TokenUsageEntry,
     ToolResultEntry,
     ToolUseEntry,
     UnknownEntry,
@@ -45,6 +46,7 @@ _META_TYPES = frozenset({
     "file-history-snapshot",
     "queue-operation",
     "custom-title",
+    "ai-title",
     "pr-link",
     "attachment",
     "permission-mode",
@@ -86,7 +88,7 @@ class ClaudeParser:
         )
 
         if rtype == "assistant":
-            return [self._parse_assistant(raw, base)]
+            return self._parse_assistant(raw, base)
         if rtype == "user":
             return [self._parse_user(raw, base)]
         if rtype == "system":
@@ -117,9 +119,15 @@ class ClaudeParser:
 
     # ── assistant / user dispatchers ─────────────────────────────────────────
 
-    def _parse_assistant(self, raw: dict, base: dict) -> TranscriptEntry:
+    def _parse_assistant(self, raw: dict, base: dict) -> list[TranscriptEntry]:
         message = raw.get("message") or {}
         content = message.get("content") or []
+        msg_id = str(message.get("id") or "") or None
+        model = str(message.get("model") or "") or None
+        envelope: dict[str, str] = {}
+        if msg_id:
+            envelope["entry_id"] = msg_id
+
         tool_block = first_block_of_type(content, "tool_use")
         if tool_block:
             tool_name = str(tool_block.get("name") or "")
@@ -127,15 +135,54 @@ class ClaudeParser:
                 tool_name=tool_name,
                 tool_use_id=str(tool_block.get("id") or ""),
                 tool_input=tool_block.get("input") or {},
+                **envelope,
                 **base,
             )
             if tool_name == "ExitPlanMode":
-                return ExitPlanModeEntry(**tool_kwargs)
-            return ToolUseEntry(**tool_kwargs)
+                main: TranscriptEntry = ExitPlanModeEntry(**tool_kwargs)
+            else:
+                main = ToolUseEntry(**tool_kwargs)
+        else:
+            text = extract_text(content)
+            thinking = extract_thinking(content)
+            main = AssistantMessageEntry(
+                text=text,
+                thinking=thinking,
+                model=model,
+                **envelope,
+                **base,
+            )
 
-        text = extract_text(content)
-        thinking = extract_thinking(content)
-        return AssistantMessageEntry(text=text, thinking=thinking, **base)
+        out: list[TranscriptEntry] = [main]
+        usage_entry = self._maybe_token_usage(message, base, model=model)
+        if usage_entry is not None:
+            out.append(usage_entry)
+        return out
+
+    def _maybe_token_usage(
+        self,
+        message: dict,
+        base: dict,
+        *,
+        model: str | None,
+    ) -> TokenUsageEntry | None:
+        usage = message.get("usage")
+        if not isinstance(usage, dict):
+            return None
+        # Cached input may be reported as either ``cache_read_input_tokens``
+        # (read hit) or ``cache_creation_input_tokens`` (write). Prefer the
+        # read count when both are present (more meaningful for cost).
+        cached = usage.get("cache_read_input_tokens")
+        if cached is None:
+            cached = usage.get("cache_creation_input_tokens")
+        usage_base = {**base, "id": f"{base['id']}:usage"}
+        return TokenUsageEntry(
+            input_tokens=usage.get("input_tokens"),
+            output_tokens=usage.get("output_tokens"),
+            cached_input_tokens=cached,
+            model=model,
+            **usage_base,
+        )
 
     def _parse_user(self, raw: dict, base: dict) -> TranscriptEntry:
         message = raw.get("message") or {}

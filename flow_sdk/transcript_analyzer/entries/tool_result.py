@@ -10,6 +10,7 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowElementType,
 )
 
+from .._helpers import render_block
 from ..entry import EntryKind, TranscriptEntry
 
 
@@ -60,3 +61,14 @@ class ToolResultEntry(TranscriptEntry):
             "file_path": self.file_path,
             "tool_name": self.tool_name,
         }
+
+    def _body_lines(self) -> list[str]:
+        out: list[str] = [f"tool_use_id: {self.tool_use_id}"]
+        if self.tool_name:
+            out.append(f"tool_name: {self.tool_name}")
+        if self.is_error:
+            out.append("is_error: true")
+        if self.file_path:
+            out.append(f"file_path: {self.file_path}")
+        out.extend(render_block("tool_output", self.tool_output))
+        return out

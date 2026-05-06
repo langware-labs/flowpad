@@ -15,6 +15,7 @@ from typing import Any
 
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 
+from .._helpers import compact_payload, render_block
 from ..entry import EntryKind, TranscriptEntry
 
 
@@ -36,3 +37,8 @@ class SystemEntry(TranscriptEntry):
 
     def to_dict(self) -> dict:
         return {**super().to_dict(), "subtype": self.subtype, "payload": self.payload}
+
+    def _body_lines(self) -> list[str]:
+        out: list[str] = [f"subtype: {self.subtype}"]
+        out.extend(render_block("payload", compact_payload(self.payload)))
+        return out

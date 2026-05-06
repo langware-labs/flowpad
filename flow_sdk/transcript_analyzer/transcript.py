@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator
 
-from .entries import ExitPlanModeEntry, ToolUseEntry, UserMessageEntry
+from .entries import ExitPlanModeEntry, MetaEntry, ToolUseEntry, UserMessageEntry
 from .entry import EntryKind, TranscriptEntry
 from .parsers import get_parser_class
 
@@ -153,3 +153,54 @@ class AgentTranscript:
     def to_flow_data(self) -> list["FlowData"]:
         """Concatenated ``FlowData`` stream from every entry."""
         return [fd for e in self.entries for fd in e.to_flow_data()]
+
+    # ── string rendering ─────────────────────────────────────────────────────
+
+    def to_string(self) -> str:
+        """Human-readable rendering of every entry, in order.
+
+        Header summarizes worker, session id, path, entry count, and any
+        first-class fields surfaced from the leading ``session_meta`` line
+        (codex: cwd, git, cli_version, originator, model_provider). Each
+        entry is rendered via :meth:`TranscriptEntry.to_string` and joined
+        by a blank line for skim-readability.
+        """
+        header_lines: list[str] = [
+            f"# Transcript ({self.worker_type}) — {len(self.entries)} entries",
+            f"# session_id: {self.session_id or '<unknown>'}",
+            f"# path: {self.path}",
+        ]
+        meta = self._session_meta_payload()
+        if meta:
+            for label, key in (
+                ("cwd", "cwd"),
+                ("cli_version", "cli_version"),
+                ("originator", "originator"),
+                ("model_provider", "model_provider"),
+            ):
+                v = meta.get(key)
+                if v:
+                    header_lines.append(f"# {label}: {v}")
+            git = meta.get("git") if isinstance(meta.get("git"), dict) else None
+            if isinstance(git, dict):
+                for label, key in (
+                    ("git.branch", "branch"),
+                    ("git.commit", "commit_hash"),
+                    ("git.repo", "repository_url"),
+                ):
+                    v = git.get(key)
+                    if v:
+                        header_lines.append(f"# {label}: {v}")
+        bodies = [e.to_string() for e in self.entries]
+        return "\n\n".join(["\n".join(header_lines), *bodies])
+
+    def _session_meta_payload(self) -> dict | None:
+        """Locate the leading ``session_meta`` MetaEntry and return its payload.
+
+        Returns ``None`` for transcripts that don't have one (claude
+        rollouts, codex stream-event shape).
+        """
+        for e in self.entries[:5]:
+            if isinstance(e, MetaEntry) and e.meta_kind == "session_meta":
+                return e.payload
+        return None

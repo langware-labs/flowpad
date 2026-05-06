@@ -4,6 +4,7 @@ import {
   dataContext,
   dataManager,
   Shell,
+  ShellStatus,
 } from '@sdk';
 import { useCallback, useSyncExternalStore } from 'react';
 
@@ -80,14 +81,15 @@ function processFromCache(id: string): AgenticProcess | undefined {
 
 function toShellTab(s: WireShell): TerminalTab {
   const cached = shellFromCache(s.id);
+  const isClosing = s.status === ShellStatus.CLOSING;
   return {
     shellId: s.id,
     processId: null,
     tabOrder: s.tab_order ?? cached?.tab_order ?? 0,
     name: s.name ?? cached?.name ?? null,
     type: 'plain',
-    isDisabled: s.status === 'closing',
-    statusReason: s.status === 'closing' ? 'Closing...' : '',
+    isDisabled: isClosing,
+    statusReason: isClosing ? 'Closing...' : '',
     projectId: s.project_id ?? cached?.project_id ?? null,
     projectDisplayName: null,
     shell: cached,
@@ -98,14 +100,15 @@ function toProcessTab(p: WireProcess): TerminalTab {
   const cached = processFromCache(p.id);
   const linkedShellId = p.shell_id ?? cached?.shell_id ?? '';
   const linkedShell = linkedShellId ? shellFromCache(linkedShellId) : undefined;
+  const isClosing = linkedShell?.status === ShellStatus.CLOSING;
   return {
     shellId: linkedShellId,
     processId: p.id,
     tabOrder: linkedShell?.tab_order ?? 0,
     name: p.name ?? linkedShell?.name ?? cached?.name ?? null,
     type: 'claude',
-    isDisabled: linkedShell?.status === 'closing',
-    statusReason: linkedShell?.status === 'closing' ? 'Closing...' : '',
+    isDisabled: isClosing,
+    statusReason: isClosing ? 'Closing...' : '',
     projectId: p.project_id ?? cached?.project_id ?? linkedShell?.project_id ?? null,
     projectDisplayName: null,
     shell: linkedShell,

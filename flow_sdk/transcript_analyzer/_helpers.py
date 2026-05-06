@@ -35,6 +35,63 @@ def render_block(label: str, value: Any) -> list[str]:
     return [f"{label}: {value}"]
 
 
+# Keys whose values are large/noisy and dominate to_string() output without
+# adding analytic value. ``compact_payload`` walks nested dicts and replaces
+# these keys' values with ``[truncated, len=N] <head…>``.
+_NOISY_KEYS: frozenset[str] = frozenset({
+    "base_instructions",
+    "user_instructions",
+    "developer_instructions",
+    "encrypted_content",
+    "last_agent_message",
+})
+
+# Threshold above which any string under a payload — even when not on the
+# noisy-keys list — is truncated. Catches the multi-KB system-prompt-style
+# blocks that codex's developer messages embed inside ``content[*].text``.
+_LONG_TEXT_THRESHOLD = 2000
+
+
+def _truncate_str(value: str, max_chars: int = 200) -> str:
+    n = len(value)
+    head = value[:max_chars].replace("\n", "\\n")
+    return f"[truncated, len={n}] {head}…"
+
+
+def compact_payload(payload: Any, max_chars: int = 200) -> Any:
+    """Return a copy of ``payload`` with known-noisy / oversized values truncated.
+
+    Recurses through nested dicts and lists so ``session_meta.payload.base_instructions.text``
+    and ``content[*].text`` paths are both caught. Originals are never mutated.
+    Truncation rules:
+      * Any string value whose key is in :data:`_NOISY_KEYS` → truncated.
+      * Any string value longer than :data:`_LONG_TEXT_THRESHOLD` chars → truncated.
+    """
+    if isinstance(payload, dict):
+        out: dict[str, Any] = {}
+        for k, v in payload.items():
+            if k in _NOISY_KEYS and isinstance(v, str):
+                out[k] = _truncate_str(v, max_chars)
+            elif k in _NOISY_KEYS and isinstance(v, dict):
+                inner = dict(v)
+                txt = inner.get("text")
+                if isinstance(txt, str):
+                    inner["text"] = _truncate_str(txt, max_chars)
+                out[k] = inner
+            elif isinstance(v, str) and len(v) > _LONG_TEXT_THRESHOLD:
+                out[k] = _truncate_str(v, max_chars)
+            elif isinstance(v, dict):
+                out[k] = compact_payload(v, max_chars)
+            elif isinstance(v, list):
+                out[k] = [compact_payload(x, max_chars) if isinstance(x, (dict, list)) else x for x in v]
+            else:
+                out[k] = v
+        return out
+    if isinstance(payload, list):
+        return [compact_payload(x, max_chars) if isinstance(x, (dict, list)) else x for x in payload]
+    return payload
+
+
 def extract_text(content: Any) -> str:
     """Flatten a Claude/anthropic-style ``content`` field to plain text.
 

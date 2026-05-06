@@ -253,12 +253,86 @@ def get_claude_worker_history(limit: int) -> list[WorkerHistoryEntry]:
 
 
 def get_codex_worker_history(limit: int) -> list[WorkerHistoryEntry]:
-    raise NotImplementedError("codex worker history not yet implemented")
+    """Return the most-recent N Codex sessions, newest first.
+
+    Walks ``$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl``, sorts by mtime
+    desc, and parses only the top-N for envelope + lazy stats. Mirrors the
+    Claude provider's stat-then-parse pattern.
+    """
+    from flow_sdk.fs_records.codex.codex_session import CodexSessionRecord
+    from flow_sdk.instance_settings import get_instance_settings
+
+    sessions_root = get_instance_settings().codex_sessions_dir
+    if not sessions_root.is_dir():
+        return []
+
+    candidates: list[tuple[float, Path]] = []
+    for jsonl in sessions_root.rglob("rollout-*.jsonl"):
+        try:
+            candidates.append((jsonl.stat().st_mtime, jsonl))
+        except OSError:
+            continue
+    candidates.sort(key=lambda x: -x[0])
+    candidates = candidates[: limit + 5]
+
+    process_index = _build_agentic_process_index()
+
+    result: list[WorkerHistoryEntry] = []
+    seen: set[str] = set()
+
+    for mtime, jsonl_path in candidates:
+        try:
+            session = CodexSessionRecord.from_jsonl(jsonl_path)
+        except Exception as e:
+            logger.debug("[worker_history] codex from_jsonl failed for %s: %s", jsonl_path, e)
+            continue
+
+        sid = session.session_id
+        if not sid or sid in seen:
+            continue
+        seen.add(sid)
+
+        sd = object.__getattribute__(session, "__dict__")
+        cwd = sd.get("cwd") or None
+
+        message_count: Optional[int] = None
+        last_user_message: Optional[str] = None
+        try:
+            mc = session.message_count or 0
+            message_count = mc if mc > 0 else None
+            last_user_message = session.last_user_message
+        except Exception as e:
+            logger.debug("[worker_history] codex stats read failed for %s: %s", sid, e)
+
+        name = _pick_name(
+            custom_title=None,
+            slug=None,
+            last_user_message=last_user_message,
+            display=None,
+            session_id=sid,
+        )
+
+        result.append(
+            WorkerHistoryEntry(
+                worker_type=WorkerType.CODEX,
+                worker_id=sid,
+                project_id=_project_id_for(cwd, None),
+                project_name=_basename(cwd),
+                project_cwd=cwd,
+                last_active_time=datetime.fromtimestamp(mtime, tz=timezone.utc),
+                name=name,
+                git_branch=None,
+                message_count=message_count,
+                agentic_process_id=process_index.get(sid),
+            )
+        )
+
+    return result
 
 
 WORKER_HISTORY_PROVIDERS: dict[WorkerType, WorkerHistoryProvider] = {
     WorkerType.CLAUDE: get_claude_worker_history,
-    # WorkerType.CODEX: get_codex_worker_history,  # future
+    WorkerType.CODEX: get_codex_worker_history,
 }
 
 
