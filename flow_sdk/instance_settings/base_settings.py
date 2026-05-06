@@ -26,6 +26,7 @@ ENV_DESKTOP_DB = "DESKTOP_DB"
 ENV_SQLITE_DATABASE_PATH = "SQLITE_DATABASE_PATH"
 ENV_FS_RECORD_PATH = "FS_RECORD_PATH"
 ENV_FLOWPAD_CLAUDE_HOME = "FLOWPAD_CLAUDE_HOME"
+ENV_CODEX_HOME = "CODEX_HOME"
 
 DEFAULT_PROD_PORT = 9007
 DEFAULT_DB_DRIVER = "sqlite"
@@ -81,6 +82,13 @@ class BaseInstanceSettings:
     claude_settings_json_path: Path
     claude_managed_settings_path: Path
 
+    # Codex (~/.codex). User-level — shared across instances unless overridden.
+    codex_home: Path
+    codex_sessions_dir: Path
+    codex_config_path: Path
+    codex_history_path: Path
+    codex_session_index_path: Path
+
     # ---- Defaults / runtime ----
     default_compute_provider: str = "local-machine"
     auth_provider: str = "custom"
@@ -105,6 +113,7 @@ class BaseInstanceSettings:
         """Build the prod-default instance from current env."""
         flow_home = cls._resolve_flow_home()
         claude_home = cls._resolve_claude_home()
+        codex_home = cls._resolve_codex_home()
         records_root = cls._resolve_records_root(flow_home, default_subdir="records")
         db_dir = cls._resolve_db_dir(flow_home, default_subdir="db")
         db_path = cls._resolve_db_path(db_dir)
@@ -145,6 +154,11 @@ class BaseInstanceSettings:
             claude_mcp_json_path=claude_home / "mcp.json",
             claude_settings_json_path=claude_home / "settings.json",
             claude_managed_settings_path=claude_home / "managed-settings.json",
+            codex_home=codex_home,
+            codex_sessions_dir=codex_home / "sessions",
+            codex_config_path=codex_home / "config.toml",
+            codex_history_path=codex_home / "history.jsonl",
+            codex_session_index_path=codex_home / "session_index.jsonl",
             cloud_user_email=os.environ.get("FLOWPAD_CLOUD_USER_EMAIL") or None,
             cloud_user_pass=os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD") or None,
             cloud_login_timeout_seconds=cls._resolve_login_timeout(),
@@ -172,6 +186,11 @@ class BaseInstanceSettings:
     def _resolve_claude_home() -> Path:
         env = os.environ.get(ENV_FLOWPAD_CLAUDE_HOME)
         return Path(env) if env else Path.home() / ".claude"
+
+    @staticmethod
+    def _resolve_codex_home() -> Path:
+        env = os.environ.get(ENV_CODEX_HOME)
+        return Path(env) if env else Path.home() / ".codex"
 
     @staticmethod
     def _resolve_records_root(flow_home: Path, default_subdir: str) -> Path:

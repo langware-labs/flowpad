@@ -17,12 +17,12 @@ import {
   type Shell,
   TypeId,
 } from '@sdk';
-import { filterTabs } from '@src/hooks/useActiveTerminals';
+import { fetchActiveTerminals } from '@src/hooks/useActiveTerminals';
 import { toast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation';
 import { redirect } from 'react-router';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
-import { fetchShellsAndProcesses, loadShell, resolveDefaultTab, ShellLoadError } from './load-shell';
+import { loadShell, resolveDefaultTab, ShellLoadError } from './load-shell';
 import { loadConversation } from './load-conversation';
 
 function recoveryUrl(projectId: string, roomId: string | null): string {
@@ -106,8 +106,8 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
     // No tab in the URL. If the room already has visible tabs, redirect
     // into the previously-active / first one so the xterm pane isn't blank.
     if (roomId) {
-      const [shells, processes] = await fetchShellsAndProcesses();
-      const tabs = filterTabs(shells, processes, { visible: true, collaborationRoomId: roomId });
+      const allTabs = await fetchActiveTerminals();
+      const tabs = allTabs.filter((t) => t.shell?.collaboration_room_id === roomId);
       const tab = resolveDefaultTab(tabs);
       if (tab) {
         const pointer = (tab.agenticProcess ?? tab.shell!).dockPointer.pointer;

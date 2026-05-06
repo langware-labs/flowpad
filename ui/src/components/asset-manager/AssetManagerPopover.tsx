@@ -277,7 +277,7 @@ export function AssetManagerPopover({
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent
         align="end"
-        className="w-96 p-0"
+        className="flex max-h-[calc(100vh-6rem)] w-96 flex-col p-0"
         data-testid="asset-manager-popover"
       >
         {/* Header */}
@@ -345,7 +345,7 @@ export function AssetManagerPopover({
         </div>
 
         {mode === 'list' ? (
-          <>
+          <div className="flex min-h-0 flex-1 flex-col">
             <div className="flex items-center gap-1.5 border-b bg-muted/20 px-2 py-1.5">
               <Search className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
               <input
@@ -368,7 +368,7 @@ export function AssetManagerPopover({
               </select>
               <ArrowDownAZ className="h-3 w-3 flex-shrink-0 text-muted-foreground" aria-hidden />
             </div>
-            <div className="max-h-80 overflow-y-auto" data-testid="asset-manager-list">
+            <div className="min-h-0 flex-1 overflow-y-auto" data-testid="asset-manager-list">
               {filteredDirs.map((path) => (
                 <DirRow
                   key={`dir|${path}`}
@@ -393,9 +393,9 @@ export function AssetManagerPopover({
             </div>
 
             {footer}
-          </>
+          </div>
         ) : mode === 'add' ? (
-          <div>
+          <div className="flex min-h-0 flex-1 flex-col">
             <div className="border-b px-3 py-2">
               <input
                 autoFocus
@@ -407,7 +407,7 @@ export function AssetManagerPopover({
                 data-testid="asset-manager-search"
               />
             </div>
-            <div className="max-h-72 overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto">
               {addModeRows.length === 0 && (
                 <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
                   No matches.
@@ -425,7 +425,7 @@ export function AssetManagerPopover({
             </div>
           </div>
         ) : (
-          <div>
+          <div className="flex min-h-0 flex-1 flex-col">
             <div className="border-b px-3 py-2">
               <input
                 autoFocus
@@ -437,7 +437,7 @@ export function AssetManagerPopover({
                 data-testid="asset-manager-project-search"
               />
             </div>
-            <div className="max-h-80 overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto">
               {filteredProjects.length === 0 && (
                 <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
                   No projects.

@@ -454,8 +454,16 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    *
    * @param sessionId - The Claude CLI session UUID
    * @param cwd - Optional working directory (resolved from session record if omitted)
+   * @param projectId - Optional project_id to stamp on the process. Pass the
+   *   session's *intrinsic* project (e.g. ``WorkerHistoryEntry.project_id``)
+   *   when restoring a session from history; the active dataContext project is
+   *   used as a fallback only when the caller cannot derive a better value.
    */
-  static async fromClaudeSession(sessionId: string, cwd?: string): Promise<AgenticProcess> {
+  static async fromClaudeSession(
+    sessionId: string,
+    cwd?: string,
+    projectId?: string | null,
+  ): Promise<AgenticProcess> {
     const { dataContext } = await import('../FlowSync/context');
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.fromClaudeSession] No compute node');
@@ -473,12 +481,45 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
     // upsertSessionProcess is idempotent: finds existing process or creates a new one.
     // Backend sets cli_config.resume=true if the transcript exists on disk.
+    const resolvedProjectId = projectId ?? dataContext.project?.id;
     const { processId } = await computeNode.upsertSessionProcess(sessionId, {
       ...(resolvedCwd ? { workdir: resolvedCwd } : {}),
-      projectId: dataContext.project?.id,
+      ...(resolvedProjectId ? { projectId: resolvedProjectId } : {}),
     });
     const process = await AgenticProcess.getById(processId);
     if (!process) throw new Error(`[AgenticProcess.fromClaudeSession] Process ${processId} not found`);
+    return process;
+  }
+
+  /**
+   * Get or create an AgenticProcess linked to a Codex CLI session (rollout thread).
+   * Mirrors fromClaudeSession but for the Codex worker. Resolves the rollout's
+   * working directory from CodexSessionRecord when not supplied; the backend
+   * stamps cli_config.resume=true so the next start() spawns
+   * ``codex exec resume <thread_id>``.
+   *
+   * @param sessionId - The Codex thread_id (UUID from session_meta.payload.id)
+   * @param cwd - Optional working directory (resolved from rollout if omitted)
+   * @param projectId - Optional intrinsic project_id; falls back to active project.
+   */
+  static async fromCodexSession(
+    sessionId: string,
+    cwd?: string,
+    projectId?: string | null,
+  ): Promise<AgenticProcess> {
+    const { dataContext } = await import('../FlowSync/context');
+    const computeNode = dataContext.computeNode;
+    if (!computeNode) throw new Error('[AgenticProcess.fromCodexSession] No compute node');
+
+    const resolvedCwd = cwd; // backend resolves from CodexSessionRecord when null
+    const resolvedProjectId = projectId ?? dataContext.project?.id;
+    const { processId } = await computeNode.upsertSessionProcess(sessionId, {
+      ...(resolvedCwd ? { workdir: resolvedCwd } : {}),
+      ...(resolvedProjectId ? { projectId: resolvedProjectId } : {}),
+      workerType: 'codex',
+    });
+    const process = await AgenticProcess.getById(processId);
+    if (!process) throw new Error(`[AgenticProcess.fromCodexSession] Process ${processId} not found`);
     return process;
   }
 
@@ -775,13 +816,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /**
    * Fetch the plan as a Markdown entity.
    *
-   * Server-side resolves the plan file path from ``plan_path`` (preferred)
-   * or by scanning the transcript for the latest ``ExitPlanMode.planFilePath``,
-   * reads the file, builds a saved+indexed ``Markdown`` entity, and returns
-   * it. Returns ``null`` if no plan has been produced yet.
+   * Calls the ``transcript/plan`` sub-action — the server resolves the
+   * plan file path (existence-gated), persists ``plan_path``, indexes the
+   * file as a Markdown record, and returns it. Returns ``null`` if no
+   * plan has been produced yet.
    */
   async getPlan(): Promise<import('../entities/markdown.js').Markdown | null> {
-    const actionInfo = new ActionInfo('get-plan', AgenticProcess.type, this.id, 'POST');
+    const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
+    actionInfo.subpath = 'plan';
     const response = await dataManager.callAction<
       unknown,
       { markdown?: Record<string, unknown> | null; plan_path?: string | null }
@@ -791,6 +833,32 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return dataManager.updateEntityFromJson<import('../entities/markdown').Markdown>(
       response.markdown as Record<string, unknown>,
     );
+  }
+
+  /**
+   * Fetch the canonical user-prompt list from the JSONL transcript.
+   *
+   * Calls ``transcript/prompts`` — the server walks the parsed transcript
+   * and returns ``UserMessageEntry``-shaped dicts. Filters: drop sub-agent
+   * (``is_sidechain``) lines, drop empty/whitespace text, drop the
+   * ``[Request interrupted by user for tool use]`` synthetic. Hydrates
+   * each entry via the analyzer's ``fromJson`` factory.
+   */
+  async getPrompts(): Promise<import('../transcript-analyzer').UserMessageEntry[]> {
+    const { fromJson, UserMessageEntry } = await import('../transcript-analyzer');
+    const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
+    actionInfo.subpath = 'prompts';
+    const response = await dataManager.callAction<
+      unknown,
+      { prompts?: Record<string, unknown>[] | null }
+    >(actionInfo);
+    const raw = response?.prompts ?? [];
+    const out: import('../transcript-analyzer').UserMessageEntry[] = [];
+    for (const r of raw) {
+      const entry = fromJson(r);
+      if (entry instanceof UserMessageEntry) out.push(entry);
+    }
+    return out;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1595,10 +1663,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     rows?: number;
   }): Promise<boolean> {
     const { Shell } = await import('../entities/shell');
-    if (this.status === ProcessStatus.STOPPING) {
-      throw new Error('Process is stopping');
-    }
-
+    // No client-side STOPPING guard. The server's ``open`` action runs
+    // ``reap_if_orphaned()`` at entry: if the row is stuck in STOPPING with
+    // a dead worker, it's reset to STOPPED and the start proceeds normally.
+    // If it's a *live* transitioner (within the 10s grace), the server will
+    // refuse with a useful response — let the server be the authority.
+    //
     // No client-side lifecycle fast path. The backend ``open`` action is the
     // single oracle for reattach-vs-recover-vs-fresh. The dedupe that *did*
     // matter — "I'm already on this same pty_id, don't reopen the WS" — is

@@ -566,6 +566,23 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create a dock pointer for the transcript lens, dispatching by worker.
+   *
+   * - claude: ref is `<projectEncodedName>/<sessionId>` (legacy claude viewer).
+   * - codex (and other workers): ref is the URL-encoded absolute path to the
+   *   rollout JSONL — the generic viewer fetches it via `useTranscript`.
+   */
+  static forLensTranscript(
+    workerType: 'claude' | 'codex',
+    ref: string,
+    layout: Layout = Layout.DOCK,
+    options?: Record<string, string>,
+  ): DockPointer {
+    const safeRef = workerType === 'claude' ? ref : encodeURIComponent(ref);
+    return DockPointer.forLens(workerType, 'transcript', safeRef, layout, options);
+  }
+
+  /**
    * Create dock pointer for settings viewer
    * @param fieldName - Optional field name to scroll to / highlight
    * @param filter - Optional search filter string

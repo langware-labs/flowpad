@@ -34,6 +34,7 @@ import {
   QueuePanel,
   SideTabId,
   SideWindow,
+  SimpleDirTree,
   parseSideTabIdList,
   parseSideTabId,
   type PromptEntry,
@@ -482,34 +483,72 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     return process.onPlan({ validate: true }, () => {});
   }, [process]);
 
+  // Canonical user-prompt list comes from the JSONL transcript via the
+  // ``transcript/prompts`` server action — that's what Claude actually saw,
+  // so it survives hook misses and WS drops that historically made the
+  // annotation+trace merge unreliable. Annotations remain as an auxiliary
+  // index for terminal-row anchoring (click-to-scroll).
+  const [transcriptPrompts, setTranscriptPrompts] = useState<
+    Array<{ uuid: string; time: string; text: string }>
+  >([]);
+
+  useEffect(() => {
+    if (!process) return;
+    let cancelled = false;
+    const fetchPrompts = async () => {
+      try {
+        const ums = await process.getPrompts();
+        if (cancelled) return;
+        setTranscriptPrompts(
+          ums.map((e) => ({ uuid: e.id, time: e.timestamp, text: e.text })),
+        );
+      } catch {
+        // Silent — annotations still drive the gutter; the list just
+        // stays empty until the next refresh.
+      }
+    };
+    void fetchPrompts();
+    // Status transitions (e.g. RUNNING → READY) are a coarse signal that
+    // the JSONL likely grew. Re-fetch on each.
+    const unsub = process.on('status', () => { void fetchPrompts(); });
+    return () => { cancelled = true; unsub(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [process?.id]);
+
+  // Build a {timestamp → absRow} index from prompt annotations so we can
+  // attach click-to-scroll behavior to transcript prompts whose annotation
+  // exists. Missing annotations are graceful — the prompt still renders.
+  const promptAnnotationIndex = useMemo<Array<{ time: number; absRow: number }>>(() => {
+    const idx: Array<{ time: number; absRow: number }> = [];
+    for (const el of rawAnnotationElements) {
+      if (el.kind !== 'prompt' || !el.annotation || el.absRow == null) continue;
+      const iso = el.annotation.created_date as unknown as string;
+      const t = Date.parse(iso);
+      if (!Number.isFinite(t)) continue;
+      idx.push({ time: t, absRow: el.absRow });
+    }
+    idx.sort((a, b) => a.time - b.time);
+    return idx;
+  }, [rawAnnotationElements]);
+
   const mergedPrompts = useMemo<PromptEntry[]>(() => {
-    const annotationPrompts: PromptEntry[] = rawAnnotationElements
-      .filter((el) => el.kind === 'prompt' && el.annotation)
-      .map((el) => ({
-        absRow: el.absRow ?? null,
-        text: (el.annotation!.content as string) ?? '',
-        time: (el.annotation!.created_date as unknown as string) ?? '',
-        source: 'annotation' as const,
-      }));
-
-    const tracePrompts: PromptEntry[] = gutterEntries
-      .filter((e) => e.event?.event_type === 'UserMessage')
-      .map((e) => ({
-        absRow: e.absRow ?? null,
-        text: e.event.summary ?? '',
-        time: e.event.timestamp ?? '',
-        source: 'trace' as const,
-      }))
-      .filter((tp) => tp.text.trim() !== '' && !tp.text.startsWith('[Image: source:'));
-
-    const annotationTexts = annotationPrompts.map((p) => p.text.trim().slice(0, 60).toLowerCase());
-    const dedupedTrace = tracePrompts.filter((tp) => {
-      const needle = tp.text.trim().slice(0, 60).toLowerCase();
-      return !annotationTexts.some((at) => at.includes(needle) || needle.includes(at));
+    const ABS_ROW_TOLERANCE_MS = 1000;
+    return transcriptPrompts.map((tp) => {
+      let absRow: number | null = null;
+      const t = Date.parse(tp.time);
+      if (Number.isFinite(t)) {
+        let bestDelta = ABS_ROW_TOLERANCE_MS;
+        for (const a of promptAnnotationIndex) {
+          const d = Math.abs(a.time - t);
+          if (d <= bestDelta) {
+            bestDelta = d;
+            absRow = a.absRow;
+          }
+        }
+      }
+      return { absRow, text: tp.text, time: tp.time, source: 'transcript' as const };
     });
-
-    return [...annotationPrompts, ...dedupedTrace].sort((a, b) => a.time.localeCompare(b.time));
-  }, [rawAnnotationElements, gutterEntries]);
+  }, [transcriptPrompts, promptAnnotationIndex]);
 
   const timeGutterRows = useTimeGutter(ptySyncSnapshot.vt, viewportY, rows, ptySyncSnapshot.version);
 
@@ -1377,6 +1416,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                   <InputFilesPanel
                     computeNodeTypeId={inputDirInfo.computeNodeTypeId}
                     inputDirAbsPath={inputDirInfo.absPath}
+                  />
+                )}
+                {activeSideTab === SideTabId.Dir && inputDirInfo && (process?.workdir || shellRef.current?.workdir) && (
+                  <SimpleDirTree
+                    computeNodeTypeId={inputDirInfo.computeNodeTypeId}
+                    topLevel={process?.workdir ?? shellRef.current?.workdir ?? ''}
                   />
                 )}
               </SideWindow>

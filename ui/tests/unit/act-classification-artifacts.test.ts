@@ -2,15 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { getArtifactPaths, TaskType } from '@src/components/task-bar/task-utils';
 
 describe('getArtifactPaths for skill_creation tasks', () => {
-  it('returns SKILL.md artifact when output_dir and folderName are in metadata', () => {
+  it('returns SKILL.md artifact when output_dir and folder_name are set', () => {
     const task = {
       task_type: TaskType.SKILL_CREATION,
       status: 'done',
-      metadata: {
-        output_dir: '/home/user/.flow/sessions/abc123',
-        folderName: 'my-new-skill',
-        skillScope: 'user',
-      },
+      output_dir: '/home/user/.flow/sessions/abc123',
+      folder_name: 'my-new-skill',
+      skill_scope: 'user',
     } as any;
 
     const artifacts = getArtifactPaths(task);
@@ -20,15 +18,13 @@ describe('getArtifactPaths for skill_creation tasks', () => {
     expect(skillArtifact!.skillDockPath).toContain('my-new-skill');
   });
 
-  it('returns SKILL.md artifact when skillPath is explicitly set', () => {
+  it('returns SKILL.md artifact when skill_path is explicitly set', () => {
     const task = {
       task_type: TaskType.SKILL_CREATION,
       status: 'done',
-      metadata: {
-        skillPath: '/home/user/.flow/sessions/abc123/my-skill/SKILL.md',
-        folderName: 'my-skill',
-        skillScope: 'user',
-      },
+      skill_path: '/home/user/.flow/sessions/abc123/my-skill/SKILL.md',
+      folder_name: 'my-skill',
+      skill_scope: 'user',
     } as any;
 
     const artifacts = getArtifactPaths(task);
@@ -37,15 +33,10 @@ describe('getArtifactPaths for skill_creation tasks', () => {
     expect(skillArtifact!.path).toBe('/home/user/.flow/sessions/abc123/my-skill/SKILL.md');
   });
 
-  it('returns no SKILL.md when output_dir is missing and no skillPath', () => {
+  it('returns no SKILL.md when output_dir is missing and no skill_path', () => {
     const task = {
       task_type: TaskType.SKILL_CREATION,
       status: 'done',
-      metadata: {
-        processId: 'p1',
-        sessionId: 's1',
-        command: 'create-skill',
-      },
     } as any;
 
     const artifacts = getArtifactPaths(task);
@@ -57,11 +48,9 @@ describe('getArtifactPaths for skill_creation tasks', () => {
     const task = {
       task_type: TaskType.SKILL_CREATION,
       status: 'done',
-      metadata: {
-        output_dir: '/home/user/.flow/sessions/abc123',
-        folderName: 'test-skill',
-        skillScope: 'user',
-      },
+      output_dir: '/home/user/.flow/sessions/abc123',
+      folder_name: 'test-skill',
+      skill_scope: 'user',
     } as any;
 
     const artifacts = getArtifactPaths(task);
@@ -75,9 +64,7 @@ describe('getArtifactPaths for skill_creation tasks', () => {
     const task = {
       task_type: TaskType.CLASSIFICATION,
       status: 'done',
-      metadata: {
-        classificationPath: '/home/user/.flow/sessions/abc/classification.json',
-      },
+      classification_path: '/home/user/.flow/sessions/abc/classification.json',
     } as any;
 
     const artifacts = getArtifactPaths(task);

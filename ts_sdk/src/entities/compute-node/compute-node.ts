@@ -166,21 +166,22 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    */
   async upsertSessionProcess(
     sessionId: string,
-    options?: { workdir?: string; projectId?: string },
-  ): Promise<{ processId: string; created: boolean }> {
+    options?: { workdir?: string; projectId?: string; workerType?: 'claude' | 'codex' },
+  ): Promise<{ processId: string; created: boolean; workerType?: string }> {
     const action = new ActionInfo('upsertSessionProcess', ComputeNode.type, this.id, 'POST');
     action.bodyParameters = {
       sessionId,
       ...(options?.workdir ? { workdir: options.workdir } : {}),
       ...(options?.projectId ? { projectId: options.projectId } : {}),
+      ...(options?.workerType ? { workerType: options.workerType } : {}),
     };
 
     const response = await dataManager.callAction<
       void,
-      { id: string; type: string; session_id: string; created: boolean }
+      { id: string; type: string; session_id: string; created: boolean; worker_type?: string }
     >(action);
 
-    return { processId: response.id, created: response.created };
+    return { processId: response.id, created: response.created, workerType: response.worker_type };
   }
 
   // ============================================================
