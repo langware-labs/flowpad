@@ -244,14 +244,13 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
         "",
     )
 
-    task_id = (meta.get("task_id") or (data or {}).get("task_id") or "").strip()
     attachment_filename = ((data or {}).get("attachment_filename") or "").strip()
 
-    # Always download/unpack the specific message's bundle — even if the task exists
-    # locally. The bundle may carry new conversation pointers (e.g. a reply) that
-    # need to be merged into the local conversation; skipping it would leave the
-    # UI showing only previous messages.
-    if not repo_url and task_id and attachment_filename:
+    # Always download/unpack the specific message's bundle when one exists.
+    # The bundle materializes the local FlowMessage (and its Conversation /
+    # optional Task), so the subsequent UI getByTypeId can resolve the FM.
+    # Scenario B has no Task — only the bundle gates the download.
+    if not repo_url and attachment_filename:
         try:
             await _download_and_unpack_bundle(fm_id, attachment_filename)
         except Exception as e:
