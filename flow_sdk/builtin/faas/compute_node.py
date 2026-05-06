@@ -740,35 +740,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     # -- shell record actions ----------------------------------------------------
 
-    @action.post(action_name="elevate-shell")
-    async def _elevate_shell(self) -> ApiResponse:
-        """Elevate a running shell to a Claude session via AgenticProcess.start()."""
-        from uuid import uuid4
-
-        from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
-
-        request_info = get_current_request_info()
-        body = await request_info.get_post_data()
-
-        shell_id = body.get("shell_id")
-        if not shell_id:
-            return ApiFailResponse(message="shell_id is required")
-
-        resume_session_id = body.get("resume_session_id")
-        cmd = ClaudeCliOptions(
-            model=body.get("model"),
-            permission_mode=body.get("permission_mode", "bypassPermissions"),
-            resume=bool(resume_session_id),
-        )
-        agentic_process = AgenticProcess(
-            shell_id=shell_id,
-            session_id=resume_session_id or str(uuid4()),
-            cli_config=cmd.to_json(),
-        )
-        await agentic_process.save(owner=request_info.someone_typeid if request_info else None)
-        return await agentic_process.start()
-
     @action.post(action_name="clear-debug-errors")
     async def clear_debug_errors_action(self) -> ApiResponse:
         """Delete all Claude debug logs and error records."""

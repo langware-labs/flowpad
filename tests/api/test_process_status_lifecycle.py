@@ -34,7 +34,10 @@ async def _create_process(client, compute_node_id: str) -> tuple[None, str]:
     """Create a process directly on the compute node, return (None, process_id)."""
     resp = await client.post(
         f"/api/v1/graph/compute_node/{compute_node_id}/createProcess",
-        json={"context": {"compute_node_id": f"compute_node-{compute_node_id}"}},
+        json={
+            "context": {"compute_node_id": f"compute_node-{compute_node_id}"},
+            "visible": True,
+        },
     )
     assert resp.status_code == 200, resp.text
     process_id = ApiResponse(**resp.json()).data["id"]
