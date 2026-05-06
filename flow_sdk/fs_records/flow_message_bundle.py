@@ -195,6 +195,10 @@ async def _pack_conversation_attachment(
         "id": conv.id,
         "project_id": sender_project_id,
         "project_name": sender_project_name,
+        # participants drive the reply-recipient resolver on the receiver side
+        # (see _resolve_reply_recipient_email): when there's no Task, the reply
+        # routes to the participant whose email isn't the local user's.
+        "participants": list(conv.participants or []),
     }
     (conv_dir / "header.json").write_text(
         json.dumps(conv_header, default=_json_default, ensure_ascii=False),
@@ -509,6 +513,7 @@ async def unpack_bundle(
                         conv_header = _read_entity_header(entry_dir) or {}
                         bundle_remote_project_id = conv_header.get("project_id") or None
                         bundle_remote_project_name = conv_header.get("project_name") or None
+                        bundle_participants = conv_header.get("participants") or None
                         # Copy conversation.jsonl to a permanent location before the
                         # temp dir is cleaned up — _create_conversation_from_disk
                         # stores data_path pointing at task_dir, so it must survive.
@@ -533,6 +538,7 @@ async def unpack_bundle(
                             project_id=None,
                             remote_project_id=bundle_remote_project_id,
                             remote_project_name=bundle_remote_project_name,
+                            participants=bundle_participants,
                         )
                         if conv:
                             conversation_id = conv.id
