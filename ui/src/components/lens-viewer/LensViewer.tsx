@@ -7,6 +7,7 @@ import { ClaudeErrorsViewer } from './ClaudeErrorsViewer';
 import { ClaudeTasksViewer } from './ClaudeTasksViewer';
 import { ClaudeTranscriptViewer } from './claude-transcript-viewer';
 import { FsRecordsScannerViewer } from './FsRecordsScannerViewer';
+import { GenericTranscriptViewer } from './generic-transcript-viewer';
 import { HeartbeatEventsViewer } from './HeartbeatEventsViewer';
 import { TriggerLogViewer } from './TriggerLogViewer';
 
@@ -60,6 +61,18 @@ export function LensViewer() {
           selectedTimestamp={currentDock?.options?.ts}
         />
       );
+    }
+    case 'codex/transcript': {
+      // ref is the URL-encoded absolute path to the rollout JSONL.
+      const path = decodeURIComponent(lensParts.ref || '');
+      if (!path) {
+        return (
+          <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
+            <p>Invalid transcript ref: expected an absolute path</p>
+          </div>
+        );
+      }
+      return <GenericTranscriptViewer workerType="codex" path={path} />;
     }
     case 'claude/tasks':
       return (

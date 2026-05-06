@@ -25,7 +25,6 @@ from pydantic import SerializationInfo, model_serializer
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.api_types.type_id import TypeId
-from flow_sdk.app.actions.listen import set_plan_auto_approve
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.builtin.agentic_process.cli_drivers import (
     AgenticContext as _AgenticContext,
@@ -1292,6 +1291,8 @@ class AgenticProcess(Entity):
             prompt = f"Update the plan in {file_path} based on comments marked as <plan-note>...</plan-note>, if any, then execute plan"
             await self.inject(prompt)
             await asyncio.sleep(1.5)
+
+            from flow_sdk.app.actions.listen import set_plan_auto_approve
 
             set_plan_auto_approve(self.id)
             _write_plan_frontmatter(file_path, {"executed": True})

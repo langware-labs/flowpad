@@ -28,6 +28,7 @@ on the envelope.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from ..entries import (
@@ -155,6 +156,94 @@ class CodexParser:
                 return value
         return value
 
+    # Codex's ``function_call_output.output`` may begin with a preamble of
+    # the form (any subset, in order):
+    #   Chunk ID: <id>
+    #   Wall time: <secs> seconds
+    #   Process exited with code <code>
+    #   Original token count: <n>
+    #   Output:
+    # The body follows the ``Output:`` marker. The grammar is lenient: we
+    # only consume lines that match these patterns; the first non-matching
+    # line (or an explicit ``Output:`` marker) terminates the preamble.
+    _PREAMBLE_PATTERNS = (
+        ("chunk_id", re.compile(r"^Chunk ID:\s*([\w-]+)$")),
+        ("wall_time", re.compile(r"^Wall time:\s*([\d.]+)\s*seconds$")),
+        ("exit_code", re.compile(r"^Process exited with code\s*(-?\d+)$")),
+        ("token_count", re.compile(r"^Original token count:\s*(\d+)$")),
+    )
+
+    @classmethod
+    def _parse_codex_output_preamble(cls, text: str) -> tuple[dict, str]:
+        """Strip the codex output preamble; return ({fields}, body).
+
+        Returns ``({}, text)`` when no preamble is detected — preserves the
+        old behavior for transcripts that don't carry the preamble.
+        """
+        if not text:
+            return {}, text
+        lines = text.split("\n")
+        fields: dict[str, Any] = {}
+        i = 0
+        consumed_any = False
+        while i < len(lines):
+            line = lines[i]
+            if line == "Output:":
+                consumed_any = True
+                i += 1
+                break
+            matched = False
+            for key, pat in cls._PREAMBLE_PATTERNS:
+                m = pat.match(line)
+                if not m:
+                    continue
+                matched = True
+                consumed_any = True
+                raw_value = m.group(1)
+                if key == "wall_time":
+                    try:
+                        fields["duration_ms"] = round(float(raw_value) * 1000)
+                    except ValueError:
+                        pass
+                elif key == "exit_code":
+                    try:
+                        fields["exit_code"] = int(raw_value)
+                    except ValueError:
+                        pass
+                elif key == "token_count":
+                    try:
+                        fields["output_token_count"] = int(raw_value)
+                    except ValueError:
+                        pass
+                # ``chunk_id`` is captured for completeness but not surfaced.
+                break
+            if not matched:
+                # First non-preamble line: stop without consuming it (so we
+                # don't lose body text when there's no ``Output:`` marker).
+                break
+            i += 1
+        if not consumed_any:
+            return {}, text
+        body = "\n".join(lines[i:])
+        return fields, body
+
+    @staticmethod
+    def _codex_duration_to_ms(value: Any) -> int | None:
+        """Codex ``event_msg.exec_command_end.duration`` is ``{secs, nanos}``.
+
+        Returns total milliseconds, or None when the shape isn't recognized.
+        """
+        if isinstance(value, dict):
+            secs = value.get("secs")
+            nanos = value.get("nanos")
+            if isinstance(secs, (int, float)) or isinstance(nanos, (int, float)):
+                total_ns = (secs or 0) * 1_000_000_000 + (nanos or 0)
+                return int(round(total_ns / 1_000_000))
+        if isinstance(value, (int, float)):
+            # Fallback: assume already milliseconds.
+            return int(round(value))
+        return None
+
     def _make_token_usage(self, payload: dict, base: dict) -> TokenUsageEntry:
         info = payload.get("info") if isinstance(payload, dict) else None
         if not isinstance(info, dict):
@@ -209,6 +298,7 @@ class CodexParser:
             cmd = str(item.get("command") or "")
             output = str(item.get("aggregated_output") or "")
             exit_code = item.get("exit_code")
+            duration_ms = self._codex_duration_to_ms(item.get("duration"))
             tool_use_id = str(item.get("id") or base["id"])
             use_base = {**base, "id": f"{tool_use_id}:tool_use"}
             result_base = {**base, "id": f"{tool_use_id}:tool_result"}
@@ -225,6 +315,8 @@ class CodexParser:
                     is_error=isinstance(exit_code, int) and exit_code != 0,
                     file_path=None,
                     tool_name="shell",
+                    duration_ms=duration_ms,
+                    exit_code=exit_code if isinstance(exit_code, int) else None,
                     **result_base,
                 ),
             ]
@@ -259,10 +351,17 @@ class CodexParser:
         if ptype == "function_call_output":
             call_id = str(payload.get("call_id") or "")
             output = payload.get("output")
+            raw_text = "" if output is None else str(output)
+            preamble, body = self._parse_codex_output_preamble(raw_text)
+            exit_code = preamble.get("exit_code")
             return [ToolResultEntry(
                 tool_use_id=call_id or str(eid or base["id"]),
-                tool_output="" if output is None else str(output),
+                tool_output=body,
+                is_error=isinstance(exit_code, int) and exit_code != 0,
                 tool_name=self._call_tool_name.get(call_id),
+                duration_ms=preamble.get("duration_ms"),
+                exit_code=exit_code,
+                output_token_count=preamble.get("output_token_count"),
                 **envelope,
                 **base,
             )]
@@ -281,10 +380,17 @@ class CodexParser:
         if ptype == "custom_tool_call_output":
             call_id = str(payload.get("call_id") or "")
             output = payload.get("output")
+            raw_text = "" if output is None else str(output)
+            preamble, body = self._parse_codex_output_preamble(raw_text)
+            exit_code = preamble.get("exit_code")
             return [ToolResultEntry(
                 tool_use_id=call_id or str(eid or base["id"]),
-                tool_output="" if output is None else str(output),
+                tool_output=body,
+                is_error=isinstance(exit_code, int) and exit_code != 0,
                 tool_name=self._call_tool_name.get(call_id),
+                duration_ms=preamble.get("duration_ms"),
+                exit_code=exit_code,
+                output_token_count=preamble.get("output_token_count"),
                 **envelope,
                 **base,
             )]
@@ -344,10 +450,17 @@ class CodexParser:
         if ptype == "tool_search_output":
             call_id = str(payload.get("call_id") or "")
             output = payload.get("output")
+            raw_text = "" if output is None else str(output)
+            preamble, body = self._parse_codex_output_preamble(raw_text)
+            exit_code = preamble.get("exit_code")
             return [ToolResultEntry(
                 tool_use_id=call_id or str(eid or base["id"]),
-                tool_output="" if output is None else str(output),
+                tool_output=body,
+                is_error=isinstance(exit_code, int) and exit_code != 0,
                 tool_name=self._call_tool_name.get(call_id, "tool_search"),
+                duration_ms=preamble.get("duration_ms"),
+                exit_code=exit_code,
+                output_token_count=preamble.get("output_token_count"),
                 **envelope,
                 **base,
             )]
@@ -440,11 +553,14 @@ class CodexParser:
                 or ""
             )
             exit_code = payload.get("exit_code")
+            duration_ms = self._codex_duration_to_ms(payload.get("duration"))
             return [ToolResultEntry(
                 tool_use_id=call_id or base["id"],
                 tool_output=str(output),
                 is_error=isinstance(exit_code, int) and exit_code != 0,
                 tool_name=self._call_tool_name.get(call_id),
+                duration_ms=duration_ms,
+                exit_code=exit_code if isinstance(exit_code, int) else None,
                 **base,
             )]
         if etype == "view_image_tool_call":

@@ -177,8 +177,10 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
         icon: FileText,
         name: 'Transcript',
         action: (r, navigation) => {
-          const threadId = codexThreadIdFromResult(r);
-          navigation.openLens('codex', 'transcript', threadId);
+          // codex/transcript lens (LensViewer.tsx case 'codex/transcript')
+          // expects URL-encoded absolute path. DockPointer.forLensTranscript
+          // applies the encoding when workerType === 'codex'.
+          if (r.asset_ref) navigation.openDock(DockPointer.forLensTranscript('codex', r.asset_ref));
         },
       },
     ],
