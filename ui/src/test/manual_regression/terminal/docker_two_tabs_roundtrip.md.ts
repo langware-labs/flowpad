@@ -35,7 +35,6 @@ test.describe('Docker — two tabs roundtrip', () => {
       .poll(() => page.locator('[data-testid^="tab-shell-"]').count(), { timeout: 15_000 })
       .toBeGreaterThan(initialTabs);
 
-    const tabAIcon = page.locator('[data-testid^="shell-sandbox-icon-"], [data-testid^="tab-shell-"]').last();
     await page.waitForTimeout(3_000); // let bash prompt land
     const tabAId = await page.evaluate(() => {
       const active = document.querySelector('[data-testid="terminal-panel"][data-active="true"]');

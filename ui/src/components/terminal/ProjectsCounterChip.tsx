@@ -17,7 +17,7 @@ interface Row {
 }
 
 function tabProjectId(tab: TerminalTab): string | null {
-  return tab.shell?.project_id ?? tab.agenticProcess?.project_id ?? null;
+  return tab.projectId ?? tab.shell?.project_id ?? tab.agenticProcess?.project_id ?? null;
 }
 
 function resolveProjectName(projectId: string): string {

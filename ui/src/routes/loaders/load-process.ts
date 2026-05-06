@@ -89,6 +89,7 @@ export async function loadProcess(
   }
 
   dataContext.setActiveShellId(shell.id);
+  dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));
   dataContext.setWorkdir(
     process.workdir ?? shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null,
   );

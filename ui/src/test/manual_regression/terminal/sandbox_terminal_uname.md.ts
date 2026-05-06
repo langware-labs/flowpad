@@ -33,16 +33,17 @@ test.describe('Sandbox terminal — uname -a', () => {
     }
 
     // Click the Cloud button — this creates a sandbox Shell and navigates to it.
-    const sandboxIconsBefore = await page.locator('[data-testid^="shell-sandbox-icon-"]').count();
+    const providerIconsBefore = await page.locator('[data-testid^="tab-provider-icon-"]').count();
     await sandboxButton.click();
 
     // Wait for the new sandbox tab to render.
     await expect
-      .poll(async () => page.locator('[data-testid^="shell-sandbox-icon-"]').count(), { timeout: 15_000 })
-      .toBeGreaterThan(sandboxIconsBefore);
+      .poll(async () => page.locator('[data-testid^="tab-provider-icon-"]').count(), { timeout: 15_000 })
+      .toBeGreaterThan(providerIconsBefore);
 
-    const newIcon = page.locator('[data-testid^="shell-sandbox-icon-"]').last();
-    const shellId = (await newIcon.getAttribute('data-testid'))!.replace('shell-sandbox-icon-', '');
+    const newIcon = page.locator('[data-testid^="tab-provider-icon-"]').last();
+    await expect(newIcon).toHaveAttribute('data-provider', 'shell');
+    const shellId = (await newIcon.getAttribute('data-testid'))!.replace('tab-provider-icon-', '');
     const sandboxTab = page.locator(`[data-testid="tab-shell-${shellId}"]`);
 
     // Explicitly click the new tab — Cloud-button openShell may leave focus on
