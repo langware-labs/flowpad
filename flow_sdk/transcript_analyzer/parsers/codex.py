@@ -31,6 +31,8 @@ import json
 import re
 from typing import Any
 
+from flow_sdk._compat import StrEnum
+
 from ..entries import (
     AssistantMessageEntry,
     MetaEntry,
@@ -45,7 +47,56 @@ from ..entries import (
 from ..entry import TranscriptEntry
 
 
-class CodexParser:
+class CodexLineType(StrEnum):
+    THREAD_STARTED = "thread.started"
+    TURN_STARTED = "turn.started"
+    TURN_COMPLETED = "turn.completed"
+    ITEM_STARTED = "item.started"
+    ITEM_COMPLETED = "item.completed"
+    SESSION_META = "session_meta"
+    RESPONSE_ITEM = "response_item"
+    EVENT_MSG = "event_msg"
+    TURN_CONTEXT = "turn_context"
+    COMPACTED = "compacted"
+    TOKEN_COUNT = "token_count"
+    TASK_STARTED = "task_started"
+    TASK_COMPLETE = "task_complete"
+
+
+class CodexResponseItemType(StrEnum):
+    MESSAGE = "message"
+    FUNCTION_CALL = "function_call"
+    FUNCTION_CALL_OUTPUT = "function_call_output"
+    CUSTOM_TOOL_CALL = "custom_tool_call"
+    CUSTOM_TOOL_CALL_OUTPUT = "custom_tool_call_output"
+    REASONING = "reasoning"
+    WEB_SEARCH_CALL = "web_search_call"
+    TOOL_SEARCH_CALL = "tool_search_call"
+    TOOL_SEARCH_OUTPUT = "tool_search_output"
+
+
+class CodexMessageRole(StrEnum):
+    USER = "user"
+    ASSISTANT = "assistant"
+    DEVELOPER = "developer"
+    SYSTEM = "system"
+
+
+def _coerce_line_type(value: object) -> CodexLineType | None:
+    try:
+        return CodexLineType(str(value or ""))
+    except ValueError:
+        return None
+
+
+def _coerce_response_item_type(value: object) -> CodexResponseItemType | None:
+    try:
+        return CodexResponseItemType(str(value or ""))
+    except ValueError:
+        return None
+
+
+class _CodexParserBase:
     worker_type = "codex"
 
     def __init__(self, session_id: str = "") -> None:
@@ -61,28 +112,27 @@ class CodexParser:
         # ``AssistantMessageEntry`` and ``TokenUsageEntry`` envelopes.
         self._current_model: str | None = None
 
-    def feed(self, raw: dict, line_index: int) -> list[TranscriptEntry]:
-        rtype = raw.get("type") or ""
-
+    def _capture_common_state(self, raw: dict, rtype: CodexLineType | None) -> None:
         # Capture session id whenever it shows up.
-        if rtype == "thread.started":
+        if rtype is CodexLineType.THREAD_STARTED:
             tid = str(raw.get("thread_id") or "")
             if tid:
                 self.session_id = tid
-        elif rtype == "session_meta":
+        elif rtype is CodexLineType.SESSION_META:
             payload = raw.get("payload") or {}
             sid = str(payload.get("id") or "")
             if sid and not self.session_id:
                 self.session_id = sid
 
         # Capture model from turn_context for downstream assistant lines.
-        if rtype == "turn_context":
+        if rtype is CodexLineType.TURN_CONTEXT:
             payload = raw.get("payload") or {}
             m = payload.get("model")
             if m:
                 self._current_model = str(m)
 
-        base = dict(
+    def _base(self, raw: dict, rtype: str, line_index: int) -> dict[str, Any]:
+        return dict(
             id=self._synth_id(raw, rtype, line_index),
             session_id=self.session_id,
             timestamp=str(raw.get("timestamp") or ""),
@@ -90,43 +140,21 @@ class CodexParser:
             parent_id=None,
         )
 
-        # ── Stream-event shape ──────────────────────────────────────────────
-        if rtype.startswith("thread.") or rtype.startswith("turn."):
-            return [SystemEntry(subtype=rtype, payload=raw, **base)]
-        if rtype == "item.started":
-            item = raw.get("item") or {}
-            return [MetaEntry(meta_kind="item.started", payload=item, **base)]
-        if rtype == "item.completed":
-            return self._parse_item_completed(raw, base)
-
-        # ── Rollout shape ───────────────────────────────────────────────────
-        if rtype == "session_meta":
-            return [MetaEntry(meta_kind="session_meta", payload=raw.get("payload") or {}, **base)]
-        if rtype == "response_item":
-            return self._parse_response_item(raw, base)
-        if rtype == "event_msg":
-            return self._parse_event_msg(raw, base)
-        if rtype == "turn_context":
-            return [SystemEntry(subtype="turn_context", payload=raw.get("payload") or raw, **base)]
-        if rtype == "compacted":
-            return self._parse_compacted(raw, base)
-        if rtype == "token_count":
-            payload = raw.get("payload") or raw
-            return [self._make_token_usage(payload, base)]
-        if rtype in {"task_started", "task_complete"}:
-            return [SystemEntry(subtype=rtype, payload=raw.get("payload") or raw, **base)]
-
-        return [UnknownEntry(raw_data=raw, **base)]
+    def _unknown(self, raw: dict, rtype: str, line_index: int) -> list[TranscriptEntry]:
+        return [UnknownEntry(raw_data=raw, **self._base(raw, rtype, line_index))]
 
     # ── helpers ──────────────────────────────────────────────────────────────
 
     def _synth_id(self, raw: dict, rtype: str, line_index: int) -> str:
-        item = raw.get("item") if rtype in ("item.completed", "item.started") else None
+        item = raw.get("item") if rtype in (
+            CodexLineType.ITEM_COMPLETED.value,
+            CodexLineType.ITEM_STARTED.value,
+        ) else None
         if isinstance(item, dict):
             iid = item.get("id")
             if iid:
                 return str(iid)
-        if rtype == "response_item":
+        if rtype == CodexLineType.RESPONSE_ITEM.value:
             payload = raw.get("payload") or {}
             pid = payload.get("id") if isinstance(payload, dict) else None
             if pid:
@@ -135,7 +163,12 @@ class CodexParser:
         return f"{thread}:{line_index}"
 
     @staticmethod
-    def _join_text_blocks(content: Any, *, kinds: tuple[str, ...] = ("input_text", "output_text")) -> str:
+    def _join_text_blocks(
+        content: Any,
+        *,
+        kinds: tuple[str, ...] = ("input_text", "output_text"),
+        skip_angle_blocks: bool = False,
+    ) -> str:
         if not isinstance(content, list):
             return ""
         parts: list[str] = []
@@ -143,7 +176,10 @@ class CodexParser:
             if isinstance(block, dict) and block.get("type") in kinds:
                 t = block.get("text")
                 if t:
-                    parts.append(str(t))
+                    text = str(t)
+                    if skip_angle_blocks and text.lstrip().startswith("<"):
+                        continue
+                    parts.append(text)
         return "\n".join(parts)
 
     @staticmethod
@@ -328,15 +364,15 @@ class CodexParser:
 
     def _parse_response_item(self, raw: dict, base: dict) -> list[TranscriptEntry]:
         payload = raw.get("payload") or {}
-        ptype = payload.get("type")
+        ptype = _coerce_response_item_type(payload.get("type"))
         eid = payload.get("id")
         envelope: dict[str, Any] = {}
         if eid:
             envelope["entry_id"] = str(eid)
 
-        if ptype == "message":
+        if ptype is CodexResponseItemType.MESSAGE:
             return self._parse_response_message(payload, base, envelope)
-        if ptype == "function_call":
+        if ptype is CodexResponseItemType.FUNCTION_CALL:
             tool_name = str(payload.get("name") or "")
             call_id = str(payload.get("call_id") or "")
             if call_id and tool_name:
@@ -348,7 +384,7 @@ class CodexParser:
                 **envelope,
                 **base,
             )]
-        if ptype == "function_call_output":
+        if ptype is CodexResponseItemType.FUNCTION_CALL_OUTPUT:
             call_id = str(payload.get("call_id") or "")
             output = payload.get("output")
             raw_text = "" if output is None else str(output)
@@ -365,7 +401,7 @@ class CodexParser:
                 **envelope,
                 **base,
             )]
-        if ptype == "custom_tool_call":
+        if ptype is CodexResponseItemType.CUSTOM_TOOL_CALL:
             tool_name = str(payload.get("name") or "custom_tool")
             call_id = str(payload.get("call_id") or "")
             if call_id and tool_name:
@@ -377,7 +413,7 @@ class CodexParser:
                 **envelope,
                 **base,
             )]
-        if ptype == "custom_tool_call_output":
+        if ptype is CodexResponseItemType.CUSTOM_TOOL_CALL_OUTPUT:
             call_id = str(payload.get("call_id") or "")
             output = payload.get("output")
             raw_text = "" if output is None else str(output)
@@ -394,7 +430,7 @@ class CodexParser:
                 **envelope,
                 **base,
             )]
-        if ptype == "reasoning":
+        if ptype is CodexResponseItemType.REASONING:
             summary = payload.get("summary") or []
             thinking_parts: list[str] = []
             if isinstance(summary, list):
@@ -418,7 +454,7 @@ class CodexParser:
                 **envelope,
                 **base,
             )]
-        if ptype == "web_search_call":
+        if ptype is CodexResponseItemType.WEB_SEARCH_CALL:
             action = payload.get("action") or {}
             tool_input: dict[str, Any] = {}
             if isinstance(action, dict):
@@ -436,7 +472,7 @@ class CodexParser:
                 **envelope,
                 **base,
             )]
-        if ptype == "tool_search_call":
+        if ptype is CodexResponseItemType.TOOL_SEARCH_CALL:
             tool_input = self._safe_json(payload.get("arguments") or {}) or {}
             call_id = str(payload.get("call_id") or eid or base["id"])
             self._call_tool_name[call_id] = "tool_search"
@@ -447,7 +483,7 @@ class CodexParser:
                 **envelope,
                 **base,
             )]
-        if ptype == "tool_search_output":
+        if ptype is CodexResponseItemType.TOOL_SEARCH_OUTPUT:
             call_id = str(payload.get("call_id") or "")
             output = payload.get("output")
             raw_text = "" if output is None else str(output)
@@ -466,7 +502,7 @@ class CodexParser:
             )]
 
         return [MetaEntry(
-            meta_kind=f"response_item:{ptype}",
+            meta_kind=f"response_item:{payload.get('type') or ''}",
             payload=payload,
             **envelope,
             **base,
@@ -478,17 +514,25 @@ class CodexParser:
         base: dict,
         envelope: dict[str, Any],
     ) -> list[TranscriptEntry]:
-        role = str(payload.get("role") or "")
+        role_raw = str(payload.get("role") or "")
+        try:
+            role = CodexMessageRole(role_raw)
+        except ValueError:
+            role = None
         content = payload.get("content") or []
-        if role == "user":
-            text = self._join_text_blocks(content, kinds=("input_text",)).strip()
+        if role is CodexMessageRole.USER:
+            text = self._join_text_blocks(
+                content,
+                kinds=("input_text",),
+                skip_angle_blocks=True,
+            ).strip()
             return [UserMessageEntry(
                 text=text,
-                role="user",
+                role=CodexMessageRole.USER.value,
                 **envelope,
                 **base,
             )]
-        if role == "assistant":
+        if role is CodexMessageRole.ASSISTANT:
             text = self._join_text_blocks(content, kinds=("output_text",)).strip()
             phase = payload.get("phase")
             return [AssistantMessageEntry(
@@ -498,15 +542,15 @@ class CodexParser:
                 **envelope,
                 **base,
             )]
-        if role in ("developer", "system"):
+        if role in (CodexMessageRole.DEVELOPER, CodexMessageRole.SYSTEM):
             return [SystemEntry(
-                subtype=f"{role}_message",
+                subtype=f"{role.value}_message",
                 payload=payload,
                 **envelope,
                 **base,
             )]
         return [MetaEntry(
-            meta_kind=f"response_item:message:{role}",
+            meta_kind=f"response_item:message:{role_raw}",
             payload=payload,
             **envelope,
             **base,
@@ -587,3 +631,105 @@ class CodexParser:
             payload=payload,
             **base,
         )]
+
+
+class CodexStreamParser(_CodexParserBase):
+    """Parser for process-local ``codex exec --json`` stream transcripts."""
+
+    def feed(self, raw: dict, line_index: int) -> list[TranscriptEntry]:
+        rtype_raw = str(raw.get("type") or "")
+        rtype = _coerce_line_type(rtype_raw)
+        self._capture_common_state(raw, rtype)
+        base = self._base(raw, rtype_raw, line_index)
+
+        if rtype in {
+            CodexLineType.THREAD_STARTED,
+            CodexLineType.TURN_STARTED,
+            CodexLineType.TURN_COMPLETED,
+        }:
+            return [SystemEntry(subtype=rtype.value, payload=raw, **base)]
+        if rtype is CodexLineType.ITEM_STARTED:
+            item = raw.get("item") or {}
+            return [MetaEntry(meta_kind=CodexLineType.ITEM_STARTED.value, payload=item, **base)]
+        if rtype is CodexLineType.ITEM_COMPLETED:
+            return self._parse_item_completed(raw, base)
+        return [UnknownEntry(raw_data=raw, **base)]
+
+
+class CodexRolloutParser(_CodexParserBase):
+    """Parser for Codex rollout JSONL under ``~/.codex/sessions``."""
+
+    def feed(self, raw: dict, line_index: int) -> list[TranscriptEntry]:
+        rtype_raw = str(raw.get("type") or "")
+        rtype = _coerce_line_type(rtype_raw)
+        self._capture_common_state(raw, rtype)
+        base = self._base(raw, rtype_raw, line_index)
+
+        if rtype is CodexLineType.SESSION_META:
+            return [MetaEntry(
+                meta_kind=CodexLineType.SESSION_META.value,
+                payload=raw.get("payload") or {},
+                **base,
+            )]
+        if rtype is CodexLineType.RESPONSE_ITEM:
+            return self._parse_response_item(raw, base)
+        if rtype is CodexLineType.EVENT_MSG:
+            return self._parse_event_msg(raw, base)
+        if rtype is CodexLineType.TURN_CONTEXT:
+            return [SystemEntry(
+                subtype=CodexLineType.TURN_CONTEXT.value,
+                payload=raw.get("payload") or raw,
+                **base,
+            )]
+        if rtype is CodexLineType.COMPACTED:
+            return self._parse_compacted(raw, base)
+        if rtype is CodexLineType.TOKEN_COUNT:
+            payload = raw.get("payload") or raw
+            return [self._make_token_usage(payload, base)]
+        if rtype in {CodexLineType.TASK_STARTED, CodexLineType.TASK_COMPLETE}:
+            return [SystemEntry(
+                subtype=rtype.value,
+                payload=raw.get("payload") or raw,
+                **base,
+            )]
+        return [UnknownEntry(raw_data=raw, **base)]
+
+
+class CodexParser:
+    """Backwards-compatible Codex parser that auto-detects the JSONL shape."""
+
+    worker_type = "codex"
+
+    def __init__(self, session_id: str = "") -> None:
+        self.session_id = session_id
+        self._delegate: _CodexParserBase | None = None
+
+    def feed(self, raw: dict, line_index: int) -> list[TranscriptEntry]:
+        if self._delegate is None:
+            self._delegate = self._select_delegate(raw)
+        entries = self._delegate.feed(raw, line_index)
+        self.session_id = self._delegate.session_id
+        return entries
+
+    def _select_delegate(self, raw: dict) -> _CodexParserBase:
+        rtype = _coerce_line_type(raw.get("type"))
+        if rtype in {
+            CodexLineType.THREAD_STARTED,
+            CodexLineType.TURN_STARTED,
+            CodexLineType.TURN_COMPLETED,
+            CodexLineType.ITEM_STARTED,
+            CodexLineType.ITEM_COMPLETED,
+        }:
+            return CodexStreamParser(session_id=self.session_id)
+        if rtype in {
+            CodexLineType.SESSION_META,
+            CodexLineType.RESPONSE_ITEM,
+            CodexLineType.EVENT_MSG,
+            CodexLineType.TURN_CONTEXT,
+            CodexLineType.COMPACTED,
+            CodexLineType.TOKEN_COUNT,
+            CodexLineType.TASK_STARTED,
+            CodexLineType.TASK_COMPLETE,
+        }:
+            return CodexRolloutParser(session_id=self.session_id)
+        return CodexRolloutParser(session_id=self.session_id)

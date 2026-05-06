@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Iterator
 
 from .entries import ExitPlanModeEntry, MetaEntry, ToolUseEntry, UserMessageEntry
 from .entry import EntryKind, TranscriptEntry
+from .formats import TranscriptFormat
 from .parsers import get_parser_class
 
 # User-message texts that are synthetic (Claude Code injects them on user
@@ -38,10 +39,14 @@ class AgentTranscript:
         path: Path | str,
         *,
         session_id: str = "",
+        transcript_format: TranscriptFormat | str | None = None,
     ) -> None:
         self.worker_type = worker_type
         self.path = Path(path)
-        parser_cls = get_parser_class(worker_type)
+        self.transcript_format = (
+            TranscriptFormat(transcript_format) if transcript_format else None
+        )
+        parser_cls = get_parser_class(worker_type, self.transcript_format)
         self._parser = parser_cls(session_id=session_id)
         self.entries: list[TranscriptEntry] = self._parse()
 

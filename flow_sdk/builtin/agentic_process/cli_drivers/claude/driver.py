@@ -19,6 +19,8 @@ from uuid import uuid4
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
     WorkerDriver,
+    WorkerCLIOptions,
+    restart_payload_from_cli_options,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
@@ -29,6 +31,11 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
 )
 from flow_sdk.fs_records.agent_status import WorkerStatus, _tail_status
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
+from flow_sdk.transcript_analyzer import (
+    TranscriptDescriptor,
+    TranscriptFormat,
+    TranscriptSource,
+)
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
@@ -77,6 +84,13 @@ class ClaudeDriver:
         if agents_json:
             cmd.agents_json = agents_json
         return cmd
+
+    def restart_snapshot(
+        self,
+        process: "AgenticProcess",
+        options: WorkerCLIOptions,
+    ) -> dict:
+        return restart_payload_from_cli_options(options)
 
     # ── Per-turn execution ───────────────────────────────────────────────────
 
@@ -201,15 +215,26 @@ class ClaudeDriver:
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 
-    def transcript_path(self, process: "AgenticProcess") -> Path | None:
+    def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Path to the Claude session JSONL — None when no session_id yet."""
         if not process.session_id:
             return None
         from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
         record = ClaudeSessionRecord.get(process.session_id)
         if record and record.jsonl_path:
-            return Path(record.jsonl_path)
+            path = Path(record.jsonl_path)
+            if path.exists():
+                return TranscriptDescriptor(
+                    path=path,
+                    format=TranscriptFormat.CLAUDE_JSONL,
+                    source=TranscriptSource.WORKER_SESSION,
+                    session_id=process.session_id,
+                )
         return None
+
+    def transcript_path(self, process: "AgenticProcess") -> Path | None:
+        descriptor = self.transcript_descriptor(process)
+        return descriptor.path if descriptor else None
 
     def tail_status(self, transcript_path: Path) -> WorkerStatus:
         """Map the tail of the Claude JSONL to a WorkerStatus."""

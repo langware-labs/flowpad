@@ -7,6 +7,7 @@ its own sub-package (``claude/``, ``codex/``).
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
+    AgenticProcessContextKey,
     AgenticWorker,
     WorkerCLIOptions,
     WorkerDriver,
@@ -17,6 +18,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
 
 __all__ = [
     "AgenticContext",
+    "AgenticProcessContextKey",
     "AgenticWorker",
     "WorkerCLIOptions",
     "WorkerDriver",

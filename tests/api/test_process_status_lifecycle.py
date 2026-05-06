@@ -7,6 +7,25 @@ import pytest
 from flow_sdk.responses.response import ApiResponse
 
 
+PRE_PROMPT_WORKER_STATUSES = {
+    "idle",
+    "initializing",
+    "init",
+    "empty",
+    "waiting",
+}
+
+TRANSCRIPT_DERIVED_WORKER_STATUSES = (
+    *PRE_PROMPT_WORKER_STATUSES,
+    "thinking",
+    "tool_call",
+    "tool_running",
+    "running",
+    "complete",
+    "inactive",
+)
+
+
 def _get_default_compute_node_id(bootstrap_payload: dict) -> str:
     return bootstrap_payload["data"]["default_compute_node"]["id"]
 
@@ -45,10 +64,10 @@ async def test_process_status_running_after_atomic_create(bootstrapped_client):
 
     entity = await _get_process_entity(bootstrapped_client, process_id)
     assert entity.get("status") == "running", f"Expected running after atomic-start, got {entity.get('status')}"
-    # Worker is transcript-derived; pre-prompt it can be idle/init/empty/waiting.
-    assert entity.get("worker_status") in {
-        "idle", "init", "empty", "waiting",
-    }, f"Expected pre-prompt worker_status, got {entity.get('worker_status')}"
+    # Worker is transcript-derived; pre-prompt it can be idle/initializing/waiting.
+    assert entity.get("worker_status") in PRE_PROMPT_WORKER_STATUSES, (
+        f"Expected pre-prompt worker_status, got {entity.get('worker_status')}"
+    )
 
 
 @pytest.mark.asyncio
@@ -70,18 +89,9 @@ async def test_process_status_after_start(bootstrapped_client):
 
     entity = await _get_process_entity(bootstrapped_client, process_id)
     assert entity.get("status") == "running", f"Expected running lifecycle status after open, got {entity.get('status')}"
-    assert entity.get("worker_status") in (
-        "idle",
-        "init",
-        "empty",
-        "waiting",
-        "thinking",
-        "tool_call",
-        "tool_running",
-        "running",
-        "complete",
-        "inactive",
-    ), f"Expected transcript-derived worker_status, got {entity.get('worker_status')}"
+    assert entity.get("worker_status") in TRANSCRIPT_DERIVED_WORKER_STATUSES, (
+        f"Expected transcript-derived worker_status, got {entity.get('worker_status')}"
+    )
 
     # Clean up
     await bootstrapped_client.post(
@@ -137,9 +147,9 @@ async def test_process_status_full_lifecycle(bootstrapped_client):
 
     entity = await _get_process_entity(bootstrapped_client, process_id)
     assert entity.get("status") == "running", f"Step 1: Expected running after atomic-start, got {entity.get('status')}"
-    assert entity.get("worker_status") in {
-        "idle", "init", "empty", "waiting",
-    }, f"Step 1: Expected pre-prompt worker_status, got {entity.get('worker_status')}"
+    assert entity.get("worker_status") in PRE_PROMPT_WORKER_STATUSES, (
+        f"Step 1: Expected pre-prompt worker_status, got {entity.get('worker_status')}"
+    )
 
     # 2. Open shell → idempotent reattach; lifecycle stays running.
     resp = await bootstrapped_client.post(
@@ -152,18 +162,9 @@ async def test_process_status_full_lifecycle(bootstrapped_client):
 
     entity = await _get_process_entity(bootstrapped_client, process_id)
     assert entity.get("status") == "running", f"Step 2: Expected running lifecycle status, got {entity.get('status')}"
-    assert entity.get("worker_status") in (
-        "idle",
-        "init",
-        "empty",
-        "waiting",
-        "thinking",
-        "tool_call",
-        "tool_running",
-        "running",
-        "complete",
-        "inactive",
-    ), f"Step 2: Expected transcript-derived worker_status, got {entity.get('worker_status')}"
+    assert entity.get("worker_status") in TRANSCRIPT_DERIVED_WORKER_STATUSES, (
+        f"Step 2: Expected transcript-derived worker_status, got {entity.get('worker_status')}"
+    )
 
     # Verify session_id and shell_id are set
     assert entity.get("session_id"), "session_id should be set while running"

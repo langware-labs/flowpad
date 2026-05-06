@@ -97,7 +97,14 @@ def _drain(ws, *, max_messages: int = 50) -> None:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def _setup_running_process(tc) -> str:
+WORKER_TYPES = ["claude_code", "codex"]
+
+
+def _worker_family(worker_type: str) -> str:
+    return "claude" if worker_type in {"claude", "claude_code", "claude_code_cli"} else worker_type
+
+
+def _setup_running_process(tc, worker_type: str) -> str:
     """Create an AgenticProcess via direct entity save. Forces status=RUNNING
     with ``last_started_hash`` SYNCED to the current snapshot so the initial
     ``restart_required`` is False — only a subsequent tracked-field mutation
@@ -108,7 +115,7 @@ def _setup_running_process(tc) -> str:
 
     async def _create() -> str:
         from flow_sdk.builtin.agentic_process import AgenticProcess
-        proc = AgenticProcess(id=str(uuid.uuid4()))
+        proc = AgenticProcess(id=str(uuid.uuid4()), worker_type=worker_type)
         # NEW state — save-hook is a no-op (gate: status != RUNNING).
         await proc.save()
         # Now force RUNNING and capture the snapshot. The save-hook is
@@ -130,43 +137,32 @@ def _resync_hash(tc, proc_id: str) -> None:
     This mirrors what ``AgenticProcess.start()`` does on the success path,
     without needing a real PTY.
     """
-    # Pull the current entity to compute the live snapshot.
-    resp = tc.get(f"/api/v1/graph/agentic_process/{proc_id}")
-    assert resp.status_code == 200, resp.text
-    data = resp.json()["data"]
+    async def _sync() -> None:
+        from flow_sdk.builtin.agentic_process import AgenticProcess
 
-    # Compute snapshot using the same algorithm as the entity's _restart_snapshot.
-    import hashlib
-    import json as _json
-    payload = {
-        "cli_config": data.get("cli_config") or {},
-        "workdir": data.get("workdir"),
-        "additional_dirs": sorted(data.get("additional_dirs") or []),
-        "embedded_asset_refs": sorted(
-            str(r) for r in (data.get("embedded_asset_refs") or [])
-        ),
-        "embedded_agent_ids": sorted(data.get("embedded_agent_ids") or []),
-        "worker_type": str(data.get("worker_type")) if data.get("worker_type") else None,
-        "shell_mode": data.get("shell_mode"),
-        "session_id": data.get("session_id"),
-    }
-    digest = hashlib.md5(
-        _json.dumps(payload, sort_keys=True, default=str).encode()
-    ).hexdigest()
+        proc = await AgenticProcess.get_by_id(proc_id)
+        assert proc is not None
+        proc.last_started_hash = proc._restart_snapshot()
+        proc.restart_required = False
+        await proc.save()
 
-    resp = tc.put(
-        f"/api/v1/graph/agentic_process/{proc_id}",
-        json={"last_started_hash": digest, "restart_required": False},
-    )
-    assert resp.status_code == 200, resp.text
+    asyncio.run(_sync())
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Tracked-field mutations — each must flip restart_required from False → True.
 # ──────────────────────────────────────────────────────────────────────────────
 
-TRACKED_MUTATIONS: list[tuple[str, dict[str, Any]]] = [
-    # cli_config sub-fields (any change ⇒ snapshot mismatch)
+GENERIC_TRACKED_MUTATIONS: list[tuple[str, dict[str, Any]]] = [
+    ("workdir",                    {"workdir": "/tmp/restart_required_test"}),
+    ("additional_dirs",            {"additional_dirs": ["/tmp/restart_required_extra"]}),
+    ("embedded_agent_ids",         {"embedded_agent_ids": ["legacy_persona"]}),
+    ("shell_mode",                 {"shell_mode": True}),
+    ("session_id",                 {"session_id": str(uuid.uuid4())}),
+]
+
+
+CLAUDE_TRACKED_MUTATIONS: list[tuple[str, dict[str, Any]]] = [
     ("cli_config.chrome",          {"cli_config": {"chrome": True}}),
     ("cli_config.debug",           {"cli_config": {"debug": True}}),
     ("cli_config.permission_mode", {"cli_config": {"permission_mode": "plan"}}),
@@ -178,27 +174,70 @@ TRACKED_MUTATIONS: list[tuple[str, dict[str, Any]]] = [
     ("cli_config.print_mode",      {"cli_config": {"print_mode": True}}),
     ("cli_config.env_vars",        {"cli_config": {"env_vars": {"FOO": "bar"}}}),
     ("cli_config.agents_json",     {"cli_config": {"agents_json": {"x": {"description": "y"}}}}),
-    # Top-level entity fields
-    ("workdir",                    {"workdir": "/tmp/restart_required_test"}),
-    ("additional_dirs",            {"additional_dirs": ["/tmp/restart_required_extra"]}),
-    ("embedded_agent_ids",         {"embedded_agent_ids": ["legacy_persona"]}),
-    ("shell_mode",                 {"shell_mode": True}),
-    ("session_id",                 {"session_id": str(uuid.uuid4())}),
 ]
+
+
+CODEX_TRACKED_MUTATIONS: list[tuple[str, dict[str, Any]]] = [
+    ("cli_config.permission_mode", {"cli_config": {"permission_mode": "default"}}),
+    ("cli_config.model",           {"cli_config": {"model": "gpt-5.2"}}),
+    ("cli_config.env_vars",        {"cli_config": {"env_vars": {"FOO": "bar"}}}),
+    ("cli_config.agents_json",     {"cli_config": {"agents_json": {"x": {"description": "y"}}}}),
+    ("cli_config.skill_names",     {"cli_config": {"skill_names": ["reviewer"]}}),
+    ("cli_config.json_stream",     {"cli_config": {"json_stream": False}}),
+    ("cli_config.ephemeral",       {"cli_config": {"ephemeral": False}}),
+    ("visible",                    {"visible": True}),
+]
+
+
+def _tracked_mutations(worker_type: str) -> list[tuple[str, dict[str, Any]]]:
+    family = _worker_family(worker_type)
+    worker_mutations = {
+        "claude": CLAUDE_TRACKED_MUTATIONS,
+        "codex": CODEX_TRACKED_MUTATIONS,
+    }[family]
+    return GENERIC_TRACKED_MUTATIONS + worker_mutations
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Negative fields — must NOT flip restart_required.
 # ──────────────────────────────────────────────────────────────────────────────
 
-NEGATIVE_MUTATIONS: list[tuple[str, dict[str, Any]]] = [
+GENERIC_NEGATIVE_MUTATIONS: list[tuple[str, dict[str, Any]]] = [
     ("name",            {"name": "renamed"}),
     ("tags",            {"tags": ["a", "b"]}),
     ("labels",          {"labels": ["x"]}),
-    ("visible",         {"visible": True}),
     ("target_vfs_path", {"target_vfs_path": "markdown-deadbeef-dead-beef-dead-beefdeadbeef"}),
     ("plan_path",       {"plan_path": "/tmp/some-plan.md"}),
     ("queue",           {"queue": {"jobs": []}}),
+]
+
+
+CLAUDE_NEGATIVE_MUTATIONS: list[tuple[str, dict[str, Any]]] = [
+    ("visible", {"visible": True}),
+]
+
+
+CODEX_NEGATIVE_MUTATIONS: list[tuple[str, dict[str, Any]]] = [
+    ("cli_config.chrome",        {"cli_config": {"chrome": True}}),
+    ("cli_config.debug",         {"cli_config": {"debug": True}}),
+    ("cli_config.worktree",      {"cli_config": {"worktree": True}}),
+    ("cli_config.output_format", {"cli_config": {"output_format": "stream-json"}}),
+]
+
+
+def _negative_mutations(worker_type: str) -> list[tuple[str, dict[str, Any]]]:
+    family = _worker_family(worker_type)
+    worker_mutations = {
+        "claude": CLAUDE_NEGATIVE_MUTATIONS,
+        "codex": CODEX_NEGATIVE_MUTATIONS,
+    }[family]
+    return GENERIC_NEGATIVE_MUTATIONS + worker_mutations
+
+
+NEGATIVE_CASES = [
+    (worker_type, label, payload)
+    for worker_type in WORKER_TYPES
+    for label, payload in _negative_mutations(worker_type)
 ]
 
 
@@ -209,13 +248,14 @@ NEGATIVE_MUTATIONS: list[tuple[str, dict[str, Any]]] = [
 
 # do not increase timeout without approval
 @pytest.mark.timeout(30)
-def test_restart_required_full_cycle():
+@pytest.mark.parametrize("worker_type", WORKER_TYPES)
+def test_restart_required_full_cycle(worker_type: str):
     """Walk every tracked field: mutate → flag ON → restart-equivalent → flag OFF."""
     from starlette.testclient import TestClient
     from flow_sdk.server.app import app
 
     with TestClient(app) as tc:
-        proc_id = _setup_running_process(tc)
+        proc_id = _setup_running_process(tc, worker_type)
 
         # Watch the entity for targeted updates.
         conn_id = str(uuid.uuid4())
@@ -233,7 +273,7 @@ def test_restart_required_full_cycle():
             resp = tc.get(f"/api/v1/graph/agentic_process/{proc_id}")
             assert resp.json()["data"]["restart_required"] is False
 
-            for label, payload in TRACKED_MUTATIONS:
+            for label, payload in _tracked_mutations(worker_type):
                 # Mutate.
                 resp = tc.put(f"/api/v1/graph/agentic_process/{proc_id}", json=payload)
                 assert resp.status_code == 200, f"[{label}] PUT failed: {resp.text}"
@@ -258,14 +298,18 @@ def test_restart_required_full_cycle():
 
 # do not increase timeout without approval
 @pytest.mark.timeout(30)
-@pytest.mark.parametrize("label,payload", NEGATIVE_MUTATIONS, ids=[p[0] for p in NEGATIVE_MUTATIONS])
-def test_negative_field_does_not_flip(label: str, payload: dict[str, Any]):
+@pytest.mark.parametrize(
+    "worker_type,label,payload",
+    NEGATIVE_CASES,
+    ids=[f"{worker_type}:{label}" for worker_type, label, _ in NEGATIVE_CASES],
+)
+def test_negative_field_does_not_flip(worker_type: str, label: str, payload: dict[str, Any]):
     """Mutating a non-tracked field must NOT flip restart_required."""
     from starlette.testclient import TestClient
     from flow_sdk.server.app import app
 
     with TestClient(app) as tc:
-        proc_id = _setup_running_process(tc)
+        proc_id = _setup_running_process(tc, worker_type)
 
         conn_id = str(uuid.uuid4())
         with tc.websocket_connect(f"/api/v1/connect/ws/{conn_id}") as ws:
@@ -299,7 +343,8 @@ def test_negative_field_does_not_flip(label: str, payload: dict[str, Any]):
 
 # do not increase timeout without approval
 @pytest.mark.timeout(30)
-def test_not_running_gate_blocks_flip():
+@pytest.mark.parametrize("worker_type", WORKER_TYPES)
+def test_not_running_gate_blocks_flip(worker_type: str):
     """When status != RUNNING, mutating a tracked field must NOT flip the flag."""
     from starlette.testclient import TestClient
     from flow_sdk.server.app import app
@@ -308,7 +353,7 @@ def test_not_running_gate_blocks_flip():
 
         async def _create() -> str:
             from flow_sdk.builtin.agentic_process import AgenticProcess
-            proc = AgenticProcess(id=str(uuid.uuid4()))
+            proc = AgenticProcess(id=str(uuid.uuid4()), worker_type=worker_type)
             await proc.save()
             return proc.id
 
@@ -335,13 +380,13 @@ def test_not_running_gate_blocks_flip():
             # Tracked-field mutation. status is NEW so the gate blocks the flip.
             resp = tc.put(
                 f"/api/v1/graph/agentic_process/{proc_id}",
-                json={"cli_config": {"chrome": True}},
+                json={"cli_config": {"model": "restart-gate-model"}},
             )
             assert resp.status_code == 200
 
             msg = _wait_for_proc_update(
                 ws, proc_id,
-                matches=lambda d: (d.get("cli_config") or {}).get("chrome") is True,
+                matches=lambda d: (d.get("cli_config") or {}).get("model") == "restart-gate-model",
             )
             assert msg["data"]["restart_required"] is False, (
                 "Process not running — flag should not flip"
@@ -350,7 +395,8 @@ def test_not_running_gate_blocks_flip():
 
 # do not increase timeout without approval
 @pytest.mark.timeout(30)
-def test_external_set_via_api():
+@pytest.mark.parametrize("worker_type", WORKER_TYPES)
+def test_external_set_via_api(worker_type: str):
     """External callers can set restart_required directly via PUT (e.g. signaling
     that an external dependency changed). The save-hook only flips ON; clearing
     is at the caller's discretion."""
@@ -361,7 +407,7 @@ def test_external_set_via_api():
 
         async def _create() -> str:
             from flow_sdk.builtin.agentic_process import AgenticProcess
-            proc = AgenticProcess(id=str(uuid.uuid4()))
+            proc = AgenticProcess(id=str(uuid.uuid4()), worker_type=worker_type)
             await proc.save()
             return proc.id
 
@@ -402,13 +448,14 @@ def test_external_set_via_api():
 
 # do not increase timeout without approval
 @pytest.mark.timeout(30)
-def test_no_op_save_does_not_flip():
+@pytest.mark.parametrize("worker_type", WORKER_TYPES)
+def test_no_op_save_does_not_flip(worker_type: str):
     """Saving with no actual config change must not flip the flag."""
     from starlette.testclient import TestClient
     from flow_sdk.server.app import app
 
     with TestClient(app) as tc:
-        proc_id = _setup_running_process(tc)
+        proc_id = _setup_running_process(tc, worker_type)
         # Bring last_started_hash in sync with current state so a no-op save
         # does not mismatch the snapshot.
         _resync_hash(tc, proc_id)
@@ -438,13 +485,14 @@ def test_no_op_save_does_not_flip():
 
 # do not increase timeout without approval
 @pytest.mark.timeout(30)
-def test_two_consecutive_mutations_stays_true():
+@pytest.mark.parametrize("worker_type", WORKER_TYPES)
+def test_two_consecutive_mutations_stays_true(worker_type: str):
     """Two tracked mutations without a restart between: flag stays True."""
     from starlette.testclient import TestClient
     from flow_sdk.server.app import app
 
     with TestClient(app) as tc:
-        proc_id = _setup_running_process(tc)
+        proc_id = _setup_running_process(tc, worker_type)
 
         conn_id = str(uuid.uuid4())
         with tc.websocket_connect(f"/api/v1/connect/ws/{conn_id}") as ws:
@@ -458,30 +506,30 @@ def test_two_consecutive_mutations_stays_true():
 
             tc.put(
                 f"/api/v1/graph/agentic_process/{proc_id}",
-                json={"cli_config": {"chrome": True}},
+                json={"workdir": "/tmp/restart_required_first"},
             )
             msg = _wait_for_proc_update(
                 ws, proc_id,
-                matches=lambda d: (d.get("cli_config") or {}).get("chrome") is True
-                and "debug" not in (d.get("cli_config") or {}),
+                matches=lambda d: d.get("workdir") == "/tmp/restart_required_first",
             )
             assert msg["data"]["restart_required"] is True
 
             # Second mutation without a restart in between.
             tc.put(
                 f"/api/v1/graph/agentic_process/{proc_id}",
-                json={"cli_config": {"chrome": True, "debug": True}},
+                json={"additional_dirs": ["/tmp/restart_required_second"]},
             )
             msg = _wait_for_proc_update(
                 ws, proc_id,
-                matches=lambda d: (d.get("cli_config") or {}).get("debug") is True,
+                matches=lambda d: d.get("additional_dirs") == ["/tmp/restart_required_second"],
             )
             assert msg["data"]["restart_required"] is True
 
 
 # do not increase timeout without approval
 @pytest.mark.timeout(30)
-def test_in_start_lifecycle_suppresses_hook():
+@pytest.mark.parametrize("worker_type", WORKER_TYPES)
+def test_in_start_lifecycle_suppresses_hook(worker_type: str):
     """While ``_in_start_lifecycle`` is True, save() must NOT auto-flip
     restart_required even if the snapshot differs. This is the guard the
     real ``start()`` uses to suppress its own intermediate saves.
@@ -489,7 +537,7 @@ def test_in_start_lifecycle_suppresses_hook():
     async def _drive():
         from flow_sdk.builtin.agentic_process import AgenticProcess
 
-        proc = AgenticProcess(id=str(uuid.uuid4()))
+        proc = AgenticProcess(id=str(uuid.uuid4()), worker_type=worker_type)
         await proc.save()
 
         # Force RUNNING with stale hash so ANY save would normally flip the flag.
@@ -499,7 +547,7 @@ def test_in_start_lifecycle_suppresses_hook():
         proc._set_start_lifecycle(True)
         try:
             # Even with a snapshot mismatch, the guard suppresses the flip.
-            proc.cli_config = {"chrome": True}
+            proc.workdir = "/tmp/restart_required_lifecycle_1"
             await proc.save()
             assert proc.restart_required is False, (
                 "save inside start_lifecycle should not flip the flag"
@@ -508,7 +556,7 @@ def test_in_start_lifecycle_suppresses_hook():
             proc._set_start_lifecycle(False)
 
         # Once outside the lifecycle, the next save flips it.
-        proc.cli_config = {"chrome": True, "debug": True}
+        proc.workdir = "/tmp/restart_required_lifecycle_2"
         await proc.save()
         assert proc.restart_required is True, (
             "save outside start_lifecycle with mismatched snapshot must flip"

@@ -17,6 +17,7 @@ export default defineConfig(({ mode }) => {
       __DEPLOY_ENV__: JSON.stringify(env.DEPLOY_ENV || 'local'),
       __IS_PACKAGE__: JSON.stringify(!!isPackage),
       __FLOWPAD_DEV__: JSON.stringify(env.FLOWPAD_DEV === 'true'),
+      __CHECK_REFRESH_TOKEN__: JSON.stringify(env.VITE_CHECK_REFRESH_TOKEN === 'true'),
     },
     build: {
       sourcemap: true,

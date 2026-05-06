@@ -15,6 +15,8 @@ from typing import Any, Optional
 
 import httpx
 
+from flow_sdk.cloud_client import ApiConfig, FlowpadClient
+from flow_sdk.cloud_client.client_hooks import HubAuthExpiredError
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
 logger = logging.getLogger(__name__)
@@ -111,15 +113,6 @@ def hub_graph_url(
     return f"{base}{full_path}"
 
 
-def _auth_headers() -> dict[str, str]:
-    import os
-    api_key = os.environ.get("FLOWPAD_CLOUD_API_KEY") or None
-    if not api_key:
-        from flow_sdk.cli.auth.hub_login import get_api_key
-        api_key = get_api_key()
-    return {"Authorization": f"Bearer {api_key}"} if api_key else {}
-
-
 async def hub_get(
     entity_type: BuiltinEntityType,
     entity_id: str | None = None,
@@ -149,9 +142,9 @@ async def hub_get(
         return None
     try:
         timeout = httpx.Timeout(connect=10, write=10, read=600, pool=5) if raw else httpx.Timeout(10)
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with FlowpadClient(ApiConfig.from_env()) as client:
             logger.info("[hub] GET %s params=%s", url, params)
-            resp = await client.get(url, headers=_auth_headers(), params=params or {})
+            resp = await client.request("GET", url, params=params or {}, timeout=timeout)
             if resp.status_code == 200:
                 result = resp.content if raw else resp.json().get("data") or {}
                 return result
@@ -193,15 +186,18 @@ async def hub_post(
         return None
     timeout = httpx.Timeout(connect=10, write=600, read=60, pool=5) if files else httpx.Timeout(10)
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with FlowpadClient(ApiConfig.from_env()) as client:
             logger.info(
                 "[hub] POST %s files=%s payload_keys=%s",
                 url, bool(files), list(payload.keys()) if not files and payload else None,
             )
             if files:
-                resp = await client.post(url, headers=_auth_headers(), files=files)
+                resp = await client.request("POST", url, files=files, timeout=timeout)
             else:
-                resp = await client.post(url, json=payload, headers=_auth_headers())
+                resp = await client.request("POST", url, json=payload, timeout=timeout)
+    except HubAuthExpiredError as e:
+        logger.warning("[hub] POST %s auth expired: %s", url, e)
+        raise HubError(401, "auth expired")
     except Exception as e:
         logger.warning("[hub] POST %s transport error: %s", url, e)
         raise HubError(0, str(e))
@@ -229,12 +225,15 @@ async def hub_put(
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping PUT %s/%s", entity_type, entity_id)
         return None
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with FlowpadClient(ApiConfig.from_env()) as client:
             logger.info(
                 "[hub] PUT %s payload_keys=%s",
                 url, list(payload.keys()) if payload else None,
             )
-            resp = await client.put(url, json=payload, headers=_auth_headers())
+            resp = await client.request("PUT", url, json=payload, timeout=10)
+    except HubAuthExpiredError as e:
+        logger.warning("[hub] PUT %s auth expired: %s", url, e)
+        raise HubError(401, "auth expired")
     except Exception as e:
         logger.warning("[hub] PUT %s transport error: %s", url, e)
         raise HubError(0, str(e))
@@ -243,5 +242,4 @@ async def hub_put(
     reason = _extract_reason(resp)
     logger.warning("[hub] PUT %s returned %s: %s", url, resp.status_code, resp.text[:200])
     raise HubError(resp.status_code, reason)
-
 

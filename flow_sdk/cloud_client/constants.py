@@ -1,0 +1,5 @@
+"""Hub client constants."""
+
+MAX_HUB_ERRORS_PER_WINDOW = 10
+WINDOW_SECONDS = 60.0
+EXPIRY_LEEWAY_SECONDS = 5.0

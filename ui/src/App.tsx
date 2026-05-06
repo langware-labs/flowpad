@@ -1,10 +1,10 @@
 import '@src/styles/highlightjs.css';
 import { trackEvent } from '@src/utils/analytics';
-import { config, dataContext, navigator } from '@sdk';
+import { cloudManager, config, dataContext, navigator } from '@sdk';
 import { useAuth, useGlobalEvents, useWarnings } from '@sdk/react/hooks';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Toaster as Sonner } from 'sonner';
+import { Toaster as Sonner, toast } from 'sonner';
 import { Toaster } from '@src/components/ui/toaster';
 import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { useEffect, useRef, useState } from 'react';
@@ -192,6 +192,32 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
       console.log('Auth error:', error);
     }
   }, [error]);
+
+  useEffect(() => {
+    const handleHubClientError = (msg: Record<string, unknown>) => {
+      const method = String(msg.method ?? '').trim();
+      const path = String(msg.path ?? '').trim();
+      const status = String(msg.status_code ?? '').trim();
+      const message = String(msg.message ?? 'Hub client error');
+      const suppressedCount = Number(msg.suppressed_count ?? 0);
+
+      if (suppressedCount > 0) {
+        toast.warning('Hub errors suppressed', {
+          description: `${suppressedCount} hub errors were suppressed in the current window.`,
+        });
+        return;
+      }
+
+      toast.error('Hub client error', {
+        description: `${method} ${path} -> ${status}: ${message}`.trim(),
+      });
+    };
+
+    cloudManager.on('hub_client_error', handleHubClientError);
+    return () => {
+      cloudManager.off('hub_client_error', handleHubClientError);
+    };
+  }, []);
 
   // Show error screen if bootstrap failed
   if (error) {

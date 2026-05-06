@@ -1097,26 +1097,20 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     # Hub exposes accept as GET /api/v1/graph/members/accept?invitation-id=X.
     # We use the same path via hub_get with no entity_type prefix.
     from flow_sdk.utils.hub import hub_base_url as _hub_base
-    import httpx
     base = _hub_base()
     if not base:
         return ApiFailResponse(message="Hub not configured")
 
-    try:
-        from flow_sdk.cli.auth.hub_login import get_api_key
-        api_key = get_api_key()
-    except Exception:
-        api_key = None
-    if not api_key:
-        return ApiFailResponse(message="Not logged in to hub")
-
     accept_url = f"{base}/api/v1/graph/members/accept"
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
+        from flow_sdk.cloud_client import ApiConfig, FlowpadClient
+
+        async with FlowpadClient(ApiConfig.from_env()) as client:
+            resp = await client.request(
+                "GET",
                 accept_url,
                 params={"invitation-id": inv_id},
-                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=10,
             )
         if resp.status_code != 200:
             return ApiFailResponse(
