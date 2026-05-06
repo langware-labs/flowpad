@@ -898,3 +898,51 @@ Notes:
 ### Classification
 Real production bug — validation lost during the `context_entities` consolidation refactor (commit `1061ec6`). The fix is a 6-line addition to `_http_add_process`. Recommend bundling with Fix #8 (also backend-side) if convenient.
 
+## 2026-05-06 — terminal/terminal_persistence_on_tab_switch — goHome helper clicks Refresh, not Home
+
+### Symptom
+Test fails inside `goHome(page)`: clicks `[data-sidebar="menu-button"]` nth(1), then expects an h1/h2/h3 matching `/hey /i`. The heading never appears within 15s. Reproduced on both retries.
+
+### RCA
+**Test-issue (stale positional selector).** `ui/tests/manual_regression/terminal/helpers.ts:217-234` (`goHome`) uses `page.locator('[data-sidebar="menu-button"]').nth(1)` and a comment asserting the order is `Back(0), Home(1), Shell(2), Skills(3), Triggers(4)…`. That comment is out of date.
+
+Live DOM at `http://localhost:4098/` (verified in chromium tab 1618622673):
+- nth(0) = ArrowLeft (Back)
+- nth(1) = RefreshCw (**Refresh**) ← what the helper currently clicks → triggers `window.location.reload()`
+- nth(2) = House (Home) ← the actual Home button
+- nth(3) = Inbox
+- nth(4) = Terminal (Shell)
+- nth(5) = BookOpen (Assets)
+- nth(6) = Zap (Triggers)
+
+Source: `ui/src/components/collapsed-sidebar/collapsed-sidebar.tsx:120-140`. The first `SidebarMenuItem` renders **two** `SidebarMenuButton`s side-by-side (Back + Refresh, each `w-1/2`); both carry `data-sidebar="menu-button"`, so they consume nth(0) and nth(1) before any item from `mainNavItems` is rendered.
+
+Two commits drifted the index after the helper was written:
+- `155a4ca` "Rename Assets to Wiki in UI; add Refresh button to collapsed sidebar" — inserted the Refresh button at index 1.
+- `8415095` "inbox 1" — inserted Inbox into `mainNavItems`, further shifting downstream items.
+
+Net effect: clicking nth(1) reloads the page (Refresh), so the URL stays on `/dock/shell/...` and the home `<h1>Hey serans1</h1>` never appears. The 15s wait then fails, exactly as reported.
+
+The home page itself is healthy — `ui/src/pages/home-landing/HomeLanding.tsx:609` still renders an h1 starting with `Hey ` (verified live: heading "Hey serans1" present at `/`).
+
+### Evidence
+- `ui/tests/manual_regression/terminal/helpers.ts:217-221` — the stale `nth(1)` + outdated comment.
+- `ui/tests/manual_regression/terminal/helpers.ts:240-245` — `gotoShellView` uses `nth(2)` for Shell with the same stale assumption (Shell is now actually nth(4)). This will fail next.
+- `ui/src/components/collapsed-sidebar/collapsed-sidebar.tsx:120-140` — current sidebar DOM source of truth.
+- `ui/src/test/manual_regression/terminal/helpers.ts:142-150` — a sibling copy of the helper already uses `await page.goto('/')` for `goHome` with the comment *"Direct navigation is more reliable than hunting the sidebar's first button, whose DOM position drifts when secondary-nav items are added/removed."* This proves a prior author already recognized this brittleness; the active runner copy was never synced.
+
+### Suggested fix (test-issue, not app bug)
+Two viable options for the bug_fixer:
+
+1. **Mirror the sibling helper (preferred — same lesson, already learned):** in `ui/tests/manual_regression/terminal/helpers.ts`, change `goHome` to navigate via `await page.goto('/')` instead of clicking the sidebar. Apply the analogous robust selection to `gotoShellView` — either `await page.goto('/dock/shell/new_terminal')`, or select by lucide icon class (`button[data-sidebar="menu-button"]:has(svg.lucide-terminal)`).
+
+2. **Selector-based (if the test must exercise the click path):** replace the positional locators with non-positional ones, e.g. `page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-house)')` for Home and `:has(svg.lucide-terminal)` for Shell. Avoid relying on `tooltip`/`title`/`aria-label` — the live DOM shows none of them are populated on these buttons.
+
+If preserving "this test exercises sidebar Home click" is important to the scenario, pick option 2. Otherwise option 1 is shorter and matches what the sibling helper already does for the same reason.
+
+### Confidence
+**High.** Both the stale code and the live DOM were observed; the source of truth for the sidebar order matches the live DOM exactly; the home page renders the expected heading; and a sibling helper file already carries the explicit lesson "DOM position drifts when items are added/removed."
+
+### Fixed: no
+
+

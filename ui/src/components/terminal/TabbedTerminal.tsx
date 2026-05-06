@@ -1037,9 +1037,16 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                 entry.project_id ?? undefined,
               );
               navigation.openDockPointer(process.dockPointer);
+            } else if (entry.worker_type === 'codex') {
+              const process = await AgenticProcess.fromCodexSession(
+                entry.worker_id,
+                entry.project_cwd ?? undefined,
+                entry.project_id ?? undefined,
+              );
+              navigation.openDockPointer(process.dockPointer);
             }
           } catch (err) {
-            console.error('[TabbedTerminal] Failed to open Claude session from history:', err);
+            console.error('[TabbedTerminal] Failed to open session from history:', err);
           } finally {
             void refreshTabs();
           }

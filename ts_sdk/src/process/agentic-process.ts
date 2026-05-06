@@ -492,6 +492,38 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
+   * Get or create an AgenticProcess linked to a Codex CLI session (rollout thread).
+   * Mirrors fromClaudeSession but for the Codex worker. Resolves the rollout's
+   * working directory from CodexSessionRecord when not supplied; the backend
+   * stamps cli_config.resume=true so the next start() spawns
+   * ``codex exec resume <thread_id>``.
+   *
+   * @param sessionId - The Codex thread_id (UUID from session_meta.payload.id)
+   * @param cwd - Optional working directory (resolved from rollout if omitted)
+   * @param projectId - Optional intrinsic project_id; falls back to active project.
+   */
+  static async fromCodexSession(
+    sessionId: string,
+    cwd?: string,
+    projectId?: string | null,
+  ): Promise<AgenticProcess> {
+    const { dataContext } = await import('../FlowSync/context');
+    const computeNode = dataContext.computeNode;
+    if (!computeNode) throw new Error('[AgenticProcess.fromCodexSession] No compute node');
+
+    const resolvedCwd = cwd; // backend resolves from CodexSessionRecord when null
+    const resolvedProjectId = projectId ?? dataContext.project?.id;
+    const { processId } = await computeNode.upsertSessionProcess(sessionId, {
+      ...(resolvedCwd ? { workdir: resolvedCwd } : {}),
+      ...(resolvedProjectId ? { projectId: resolvedProjectId } : {}),
+      workerType: 'codex',
+    });
+    const process = await AgenticProcess.getById(processId);
+    if (!process) throw new Error(`[AgenticProcess.fromCodexSession] Process ${processId} not found`);
+    return process;
+  }
+
+  /**
    * Check if content is already in AMD format.
    * @internal
    */

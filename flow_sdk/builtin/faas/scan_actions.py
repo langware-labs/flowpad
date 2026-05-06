@@ -392,21 +392,25 @@ class ScanActionsMixin:
             return ApiFailResponse(message=str(e))
 
     async def _scan_upsert_session_process(self) -> ApiResponse:
-        """Find or create an AgenticProcess for a given Claude Code session ID.
+        """Find or create an AgenticProcess for a given session ID.
 
-        If a process with matching session_id exists, return it.
-        Otherwise, create a new AgenticProcess with session_id pre-set.
+        Idempotent on ``session_id``: if a process already exists, returns it.
+        Otherwise creates a new AgenticProcess with ``session_id`` pre-set and
+        flips ``cli_config.resume=True`` when a transcript is found on disk.
+
+        Supports both Claude (default) and Codex via ``workerType``.
 
         POST body (camelCase):
-            sessionId: str - Claude Code session ID
-            workdir: str | None - Working directory
-            projectId: str | None - Project ID for context
+            sessionId:  str           — session/thread ID
+            workdir:    str | None    — working directory
+            projectId:  str | None    — project ID for context
+            workerType: str | None    — "claude" (default) or "codex"
 
-        Returns:
-            AgenticProcess data with { id, type, session_id, created }
+        Returns: { id, type, session_id, created, worker_type }
         """
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
+        from flow_sdk.flowpad_types.enums import WorkerType
 
         request_info = get_current_request_info()
         if not request_info or not request_info.request:
@@ -423,6 +427,10 @@ class ScanActionsMixin:
 
             workdir = body.get("workdir")
             project_id = body.get("projectId")
+            worker_type_raw = (body.get("workerType") or "claude").lower()
+            is_codex = worker_type_raw in ("codex",)
+            cli_factory_key = "codex" if is_codex else "claude"
+            wt_enum = WorkerType.CODEX if is_codex else WorkerType.CLAUDE_CODE
 
             # Try to find existing process by session_id
             existing = await AgenticProcess.get_all(
@@ -435,21 +443,29 @@ class ScanActionsMixin:
                         "id": process.id,
                         "type": process.type,
                         "session_id": process.session_id,
+                        "worker_type": getattr(process.worker_type, "value", process.worker_type),
                         "created": False,
                     }
                 )
 
-            # Resolve workdir + project + project_encoded_name from ClaudeSessionRecord
+            # Resolve workdir + project + project_encoded_name from the session record.
             project_encoded_name = None
             session_name: str | None = None
+            session_rec = None
             try:
                 from flow_sdk.builtin.project import Project
-                from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
 
-                session_rec = ClaudeSessionRecord.get(session_id)
+                if is_codex:
+                    from flow_sdk.fs_records.codex import CodexSessionRecord
+                    session_rec = CodexSessionRecord.get(session_id)
+                else:
+                    from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+                    session_rec = ClaudeSessionRecord.get(session_id)
+
                 if session_rec:
-                    if session_rec.cwd and not workdir:
-                        workdir = session_rec.cwd
+                    rec_cwd = getattr(session_rec, "cwd", None)
+                    if rec_cwd and not workdir:
+                        workdir = rec_cwd
                     project_encoded_name = getattr(session_rec, "project_encoded_name", None)
                     rec_name = getattr(session_rec, "name", None) or ""
                     if rec_name and rec_name != session_id:
@@ -477,6 +493,7 @@ class ScanActionsMixin:
 
             process = AgenticProcess(
                 session_id=session_id,
+                worker_type=wt_enum,
                 use_worker_history=True,
                 context_data=context_data,
                 project_id=project_id or None,
@@ -486,28 +503,35 @@ class ScanActionsMixin:
             await process.save(owner=owner)
 
             logging.info(
-                f"ComputeNode {self.id} upserted AgenticProcess {process.id} for session {session_id} (created). "
+                f"ComputeNode {self.id} upserted AgenticProcess {process.id} for "
+                f"session {session_id} worker_type={cli_factory_key} (created). "
                 f"session_id on saved object={process.session_id}"
             )
 
-            # Set resume flag if transcript exists on disk (O(1) with workdir, O(P) fallback).
+            # Set resume flag if transcript exists on disk.
             # Once resume=True is stored we skip this check on subsequent calls.
-            if not process.cli_config.get("resume"):
-                record = ClaudeSessionRecord.get(session_id, project=process.workdir)
-                if record:
-                    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import factory as _cli_factory
-                    _cmd = _cli_factory(process.cli_config, worker_type="claude")
-                    _cmd.resume = True
-                    process.cli_config = _cmd.to_json()
-                    if not process.workdir and record.cwd:
-                        process.workdir = record.cwd
-                    await process.save()
+            if not process.cli_config.get("resume") and session_rec is not None:
+                from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+                    factory as _cli_factory,
+                )
+                _cmd = _cli_factory(process.cli_config, worker_type=cli_factory_key)
+                _cmd.resume = True
+                # Codex resume needs the thread_id passed as the cli session_id
+                # (Claude already reads it from process.session_id at args-build time).
+                if is_codex:
+                    _cmd.session_id = session_id
+                process.cli_config = _cmd.to_json()
+                rec_cwd = getattr(session_rec, "cwd", None)
+                if not process.workdir and rec_cwd:
+                    process.workdir = rec_cwd
+                await process.save()
 
             return ApiSuccessResponse(
                 data={
                     "id": process.id,
                     "type": process.type,
                     "session_id": session_id,
+                    "worker_type": getattr(process.worker_type, "value", process.worker_type),
                     "created": True,
                 }
             )
