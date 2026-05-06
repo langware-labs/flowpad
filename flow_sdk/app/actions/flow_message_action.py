@@ -1128,10 +1128,17 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
         # that was just unlocked — sidesteps the inbox-fetch cursor and avoids
         # unpacking the entire inbox.
         try:
-            target = (resp.json() or {}).get("data")
+            accept_body = resp.json() or {}
+            target = accept_body.get("data")
+            logger.info("[invitation-accept] hub accept response data=%r", target)
             fm_prefix = f"{BuiltinEntityType.FLOW_MESSAGE.value}-"
             if isinstance(target, str) and target.startswith(fm_prefix):
                 linked_fm_id = target[len(fm_prefix):]
+            elif isinstance(target, dict):
+                t_type = (target.get("type") or "").strip()
+                t_id = (target.get("id") or target.get("identifier") or "").strip()
+                if t_type == BuiltinEntityType.FLOW_MESSAGE.value and t_id:
+                    linked_fm_id = t_id
         except Exception as parse_err:
             logger.warning("[invitation-accept] could not parse target typeid: %s", parse_err)
     except Exception as e:
@@ -1149,14 +1156,35 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
 
     # Targeted bundle download for the just-unlocked FlowMessage so the
     # Conversation materializes locally without a broad inbox-fetch.
+    targeted_ok = False
     if linked_fm_id:
         try:
             hub_fm = await hub_get(BuiltinEntityType.FLOW_MESSAGE, linked_fm_id)
             attachment_filename = ((hub_fm or {}).get("attachment_filename") or "").strip()
+            logger.info(
+                "[invitation-accept] targeted fm=%s attachment_filename=%r",
+                linked_fm_id, attachment_filename,
+            )
             if attachment_filename:
-                await _download_and_unpack_bundle(linked_fm_id, attachment_filename)
+                targeted_ok = await _download_and_unpack_bundle(linked_fm_id, attachment_filename)
         except Exception as e:
             logger.warning("[invitation-accept] bundle download failed: %s", e)
+
+    # Fallback: if targeted unpack didn't happen (parse failed, no attachment,
+    # or unpack returned False), do a cursor-less inbox pull so the just-unlocked
+    # share lands regardless of any prior `last_fetch` cursor. We DON'T touch
+    # the cursor — this is a one-off, not the normal inbox sync.
+    if not targeted_ok:
+        try:
+            logger.info("[invitation-accept] targeted unpack skipped — falling back to cursor-less inbox pull")
+            raw_messages = await _fetch_raw_messages_from_hub(since=None)
+            for raw in (raw_messages or []):
+                try:
+                    await _process_single_hub_message(raw)
+                except Exception as e:
+                    logger.warning("[invitation-accept] fallback fm=%s failed: %s", (raw.get("id") or "?"), e)
+        except Exception as e:
+            logger.warning("[invitation-accept] inbox-fetch fallback failed: %s", e)
 
     sync_resp = await handle_conversation_sync(someone_typeid)
     sync_data = sync_resp.data if hasattr(sync_resp, "data") else {}
