@@ -19,6 +19,15 @@ class AttachmentType(str, Enum):
     PROMPT = "prompt"
 
 
+# VFS subpath prefixes for binary attachment storage. Sender and receiver use
+# the same layout so /fs/download/ resolves identically on both sides:
+#   FILE  attachments → data/<filename>
+#   PROMPT-with-file  → prompt/<filename>
+# Inline-text PROMPT attachments don't use a prefix — their `data` is the text.
+FILE_VFS_PREFIX = "data/"
+PROMPT_FILE_VFS_PREFIX = "prompt/"
+
+
 class Attachment(BaseModel):
     """A single item attached to a FlowMessage.
 
@@ -79,7 +88,7 @@ class FlowMessage(Entity):
                     att["local_path"] = storage.get_storage_path(att.get("data", ""))
                 elif att.get("attachment_type") == AttachmentType.PROMPT.value:
                     raw = att.get("data", "")
-                    if raw and raw.startswith("prompt/"):
+                    if raw and raw.startswith(PROMPT_FILE_VFS_PREFIX):
                         att["local_path"] = storage.get_storage_path(raw)
         return data
 

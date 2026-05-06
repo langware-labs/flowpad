@@ -4,7 +4,7 @@
 (POST cloud /login with ``FLOWPAD_CLOUD_USER_EMAIL`` /
 ``FLOWPAD_CLOUD_USER_PASSWORD``) or browser-mode (open the system browser
 to the cloud's login form, wait for the cloud's redirect to
-``/api/v1/cloud/post_login``).
+``/auth/login_callback``).
 
 Both paths converge on ``_finalize_login``, which broadcasts the success
 WS event and persists the bearer token + user.
@@ -71,7 +71,7 @@ async def _login_by_window(port: int, timeout: float) -> dict[str, Any]:
     state.login_result = None
     asyncio.create_task(_wait_or_timeout(timeout))
 
-    url = get_login_url(f"http://127.0.0.1:{port}/api/v1/cloud/post_login")
+    url = get_login_url(f"http://127.0.0.1:{port}/auth/login_callback")
     await asyncio.to_thread(webbrowser.open, url)
     return {"status": "started", "url": url}
 

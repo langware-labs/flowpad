@@ -6,8 +6,8 @@ Endpoints covered (defined in flow_sdk/server/routes/cloud.py):
   - POST /api/v1/cloud/login             -> env-mode {status:"logged_in"} or browser-mode {status:"started", url}
   - POST /api/v1/cloud/logout            -> {cloud_logout_url}
   - POST /api/v1/cloud/refresh-token     -> "local_dev_token_refresh" string
-  - GET  /api/v1/cloud/login_callback    -> success/error HTML page (replaces old /post_login)
-  - GET  /api/v1/cloud/logout_callback   -> success HTML page (replaces old /post_logout)
+  - GET  /auth/login_callback            -> success/error HTML page
+  - GET  /api/v1/cloud/logout_callback   -> success HTML page
   - GET  /api/v1/graph/bootstrap         -> desktop_info.cloud_login_available
 
 Mocked targets (existing module paths still in use after the refactor):
@@ -112,13 +112,13 @@ async def test_login_chokepoint_failure_returns_400(client):
 
 
 # ---------------------------------------------------------------------------
-# GET /api/v1/cloud/login_callback (cloud redirect target — replaces old /post_login)
+# GET /auth/login_callback (cloud redirect target)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_login_callback_returns_success_html(client):
-    """GET /api/v1/cloud/login_callback?flowpad-api-key=<key> returns 200 with success HTML."""
+    """GET /auth/login_callback?flowpad-api-key=<key> returns 200 with success HTML."""
     with (
         patch(
             "flow_sdk.cli.auth.hub_login.validate_api_key_async",
@@ -128,7 +128,7 @@ async def test_login_callback_returns_success_html(client):
         patch("flow_sdk.cli.app_config.set_user"),
     ):
         response = await client.get(
-            f"/api/v1/cloud/login_callback?flowpad-api-key={TEST_API_KEY}"
+            f"/auth/login_callback?flowpad-api-key={TEST_API_KEY}"
         )
 
     assert response.status_code == 200
@@ -137,7 +137,7 @@ async def test_login_callback_returns_success_html(client):
 
 @pytest.mark.asyncio
 async def test_login_callback_full_flow_finalizes_login(client):
-    """GET /api/v1/cloud/login_callback validates key, persists creds, signals login_received."""
+    """GET /auth/login_callback validates key, persists creds, signals login_received."""
     from flow_sdk.server import state
 
     with (
@@ -154,7 +154,7 @@ async def test_login_callback_full_flow_finalizes_login(client):
         state.login_received.clear()
 
         response = await client.get(
-            f"/api/v1/cloud/login_callback?flowpad-api-key={TEST_API_KEY}"
+            f"/auth/login_callback?flowpad-api-key={TEST_API_KEY}"
         )
 
     assert response.status_code == 200
@@ -168,8 +168,8 @@ async def test_login_callback_full_flow_finalizes_login(client):
 
 @pytest.mark.asyncio
 async def test_login_callback_missing_key_returns_400(client):
-    """GET /api/v1/cloud/login_callback with no key returns 400 + Login Failed HTML."""
-    response = await client.get("/api/v1/cloud/login_callback")
+    """GET /auth/login_callback with no key returns 400 + Login Failed HTML."""
+    response = await client.get("/auth/login_callback")
 
     assert response.status_code == 400
     assert "Login Failed" in response.text
@@ -178,13 +178,13 @@ async def test_login_callback_missing_key_returns_400(client):
 
 @pytest.mark.asyncio
 async def test_login_callback_invalid_key_returns_400(client):
-    """GET /api/v1/cloud/login_callback with a key that fails validation returns 400."""
+    """GET /auth/login_callback with a key that fails validation returns 400."""
     with patch(
         "flow_sdk.cli.auth.hub_login.validate_api_key_async",
         new=AsyncMock(side_effect=Exception("Invalid API key")),
     ):
         response = await client.get(
-            f"/api/v1/cloud/login_callback?flowpad-api-key={TEST_API_KEY}"
+            f"/auth/login_callback?flowpad-api-key={TEST_API_KEY}"
         )
 
     assert response.status_code == 400
@@ -194,7 +194,7 @@ async def test_login_callback_invalid_key_returns_400(client):
 
 @pytest.mark.asyncio
 async def test_login_callback_invalidates_bootstrap_cache(client):
-    """GET /api/v1/cloud/login_callback clears the bootstrap cache so the next fetch reflects logged-in state."""
+    """GET /auth/login_callback clears the bootstrap cache so the next fetch reflects logged-in state."""
     import flow_sdk.server.routes.bootstrap as bootstrap_mod
 
     bootstrap_mod._bootstrap_cache = {"some": "stale_data"}
@@ -208,7 +208,7 @@ async def test_login_callback_invalidates_bootstrap_cache(client):
         patch("flow_sdk.cli.app_config.set_user"),
     ):
         response = await client.get(
-            f"/api/v1/cloud/login_callback?flowpad-api-key={TEST_API_KEY}"
+            f"/auth/login_callback?flowpad-api-key={TEST_API_KEY}"
         )
 
     assert response.status_code == 200
@@ -217,7 +217,7 @@ async def test_login_callback_invalidates_bootstrap_cache(client):
 
 @pytest.mark.asyncio
 async def test_login_callback_broadcasts_oauth_message(client):
-    """GET /api/v1/cloud/login_callback broadcasts an OAuthMessage with provider=flowpad_cloud + status=success."""
+    """GET /auth/login_callback broadcasts an OAuthMessage with provider=flowpad_cloud + status=success."""
     broadcast_calls: list[dict] = []
 
     async def _capture(message: str) -> None:
@@ -233,7 +233,7 @@ async def test_login_callback_broadcasts_oauth_message(client):
         patch("flow_sdk.server.routes.websocket.broadcast", side_effect=_capture),
     ):
         response = await client.get(
-            f"/api/v1/cloud/login_callback?flowpad-api-key={TEST_API_KEY}"
+            f"/auth/login_callback?flowpad-api-key={TEST_API_KEY}"
         )
 
     assert response.status_code == 200
