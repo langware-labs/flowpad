@@ -39,6 +39,27 @@ function formatTime(timestamp: string | undefined): string {
   return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
+/**
+ * Headless-run drafts come back wrapped as ``Claude said: "<reply>"`` (see
+ * ``flow_sdk/app/actions/headless_run.py:_wrap_as_claude_quote``). Detect that
+ * exact shape and split it so the bubble can render the quoted middle in
+ * ``<em>``. As soon as the user edits the draft and breaks the pattern, this
+ * returns ``null`` and the message falls through to plain rendering — so the
+ * italic styling only applies until the user has made the message their own.
+ *
+ * Returns ``null`` for any non-matching content.
+ */
+const CLAUDE_QUOTE_PREFIX = 'Claude said: "';
+const CLAUDE_QUOTE_SUFFIX = '"';
+
+function parseClaudeQuote(content: string): { prefix: string; quoted: string } | null {
+  if (!content.startsWith(CLAUDE_QUOTE_PREFIX) || !content.endsWith(CLAUDE_QUOTE_SUFFIX)) return null;
+  if (content.length <= CLAUDE_QUOTE_PREFIX.length + CLAUDE_QUOTE_SUFFIX.length) return null;
+  const inner = content.slice(CLAUDE_QUOTE_PREFIX.length, -CLAUDE_QUOTE_SUFFIX.length);
+  const unescaped = inner.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+  return { prefix: 'Claude said:', quoted: unescaped };
+}
+
 export function MessageBubble({
   message,
   flowMessageId,
@@ -124,11 +145,22 @@ export function MessageBubble({
           {time && <span className="text-[10px] text-muted-foreground">{time}</span>}
           <MessageChips flowMessageId={flowMessageId} />
         </div>
-        {message.content && message.content !== PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT && (
-          <div className={`text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
-            {message.content}
-          </div>
-        )}
+        {message.content && message.content !== PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT && (() => {
+          const claudeQuote = parseClaudeQuote(message.content);
+          if (claudeQuote) {
+            return (
+              <div className={`text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
+                <span className="font-medium text-muted-foreground">{claudeQuote.prefix}</span>{' '}
+                <em className="italic text-foreground/85">&ldquo;{claudeQuote.quoted}&rdquo;</em>
+              </div>
+            );
+          }
+          return (
+            <div className={`text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
+              {message.content}
+            </div>
+          );
+        })()}
         {showPromptRow && (
           <PromptApprovalRow
             attachments={promptAttachments}
