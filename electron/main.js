@@ -67,7 +67,7 @@ log.info('Flowpad starting...');
 // Configuration
 const BACKEND_PORT = 9007;
 const BACKEND_URL = `http://localhost:${BACKEND_PORT}`;
-const FLOWPAD_CLOUD_URL = process.env.FLOWPAD_CLOUD_URL || 'https://app.flowpad.ai';
+const FLOWPAD_CLOUD_URL = process.env.FLOWPAD_CLOUD_URL || 'http://localhost:5173';
 const HEALTH_CHECK_INTERVAL = 500; // ms
 const MAX_HEALTH_CHECKS = 60; // 30 seconds max wait
 
@@ -90,7 +90,8 @@ function handleDeepLink(url) {
     // host = "task", pathname = "/<id>"  (or just "" for the root)
     const typePart = parsed.hostname || '';
     const idPart = parsed.pathname && parsed.pathname !== '/' ? parsed.pathname : '';
-    const localUrl = typePart ? `${BACKEND_URL}/${typePart}${idPart}` : BACKEND_URL;
+    const tail = `${parsed.search}${parsed.hash}`;
+    const localUrl = typePart ? `${BACKEND_URL}/${typePart}${idPart}${tail}` : `${BACKEND_URL}${tail}`;
 
     if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
