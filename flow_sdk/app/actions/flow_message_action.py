@@ -878,15 +878,26 @@ async def conversation_sync() -> ApiResponse:
 
 
 async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiResponse:
-    """Accept a pending invitation on the hub, then sync conversations to
-    materialize the now-accessible conversation locally.
+    """Accept a pending invitation on the hub and download just the unlocked bundle.
+
+    Three steps, no broad inbox sync:
+      1. POST hub ``/members/accept`` — grants reader role on the linked FlowMessage.
+      2. Mark the local Invitation as accepted so the strip's pending block
+         drops the row on its next refetch.
+      3. Targeted bundle download for the just-unlocked FlowMessage. ``unpack_bundle``
+         materializes the local Conversation + appends pointers to its
+         ``conversation.jsonl``. The strip's local refetch then sees the new
+         Conversation row.
+
+    Catching up on other accessible FlowMessages is the strip "Refresh" button's
+    job (``conversation-sync`` action) — running it here would redownload every
+    accessible bundle and double the latency.
     """
     inv_id = (body.get("invitation_id") or "").strip()
     if not inv_id:
         return ApiFailResponse(message="invitation_id required")
 
     # Hub exposes accept as GET /api/v1/graph/members/accept?invitation-id=X.
-    # We use the same path via hub_get with no entity_type prefix.
     from flow_sdk.utils.hub import hub_base_url as _hub_base
     import httpx
     base = _hub_base()
@@ -933,7 +944,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     except Exception as e:
         return ApiFailResponse(message=f"Accept transport error: {e}")
 
-    # Mark local invitation as accepted (best-effort) before sync.
+    # Mark local invitation as accepted (best-effort).
     try:
         from flow_sdk.builtin.invitation import Invitation as LocalInvitation
         existing = await LocalInvitation.get_one({"id": inv_id})
@@ -943,24 +954,23 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     except Exception as e:
         logger.warning("[invitation-accept] local update failed: %s", e)
 
-    # Targeted bundle download: the unlocked FlowMessage's bundle carries the
-    # Conversation entity that needs to land locally. Sidesteps the inbox-fetch
-    # cursor and avoids unpacking the entire inbox.
+    # Targeted bundle download — exactly one FM materialized (the one just
+    # unlocked by the accept). Avoids the cursor-less inbox fetch that would
+    # redownload every accessible bundle and add ~10s of latency.
+    bundle_unpacked = False
     if linked_fm_id:
         try:
             hub_fm = await hub_get(BuiltinEntityType.FLOW_MESSAGE, linked_fm_id)
             attachment_filename = ((hub_fm or {}).get("attachment_filename") or "").strip()
             if attachment_filename:
-                await _download_and_unpack_bundle(linked_fm_id, attachment_filename)
+                bundle_unpacked = await _download_and_unpack_bundle(linked_fm_id, attachment_filename)
         except Exception as e:
             logger.warning("[invitation-accept] bundle download failed: %s", e)
 
-    sync_resp = await handle_conversation_sync(someone_typeid)
-    sync_data = sync_resp.data if hasattr(sync_resp, "data") else {}
-
     return ApiSuccessResponse(data={
         "invitation_id": inv_id,
-        "synced": sync_data,
+        "flow_message_id": linked_fm_id,
+        "bundle_unpacked": bundle_unpacked,
     })
 
 

@@ -887,14 +887,14 @@ async def handle_start_conversation_bundle(body: dict, someone_typeid: str) -> A
         files = [files]
 
     if not recipient_id:
-        return ApiFailResponse(message="recipient_id is required")
+        return ApiFailResponse(message="recipient_id is required", status_code=400)
     if not title and not message and not files:
-        return ApiFailResponse(message="title, message, or files is required")
+        return ApiFailResponse(message="title, message, or files is required", status_code=400)
 
     try:
         recipient_email, resolved_recipient_id = await _resolve_recipient(recipient_id)
     except ValueError as e:
-        return ApiFailResponse(message=str(e))
+        return ApiFailResponse(message=str(e), status_code=400)
 
     sender_id, sender_name = await User.local_sender_identity(body.get("sender_name"))
 

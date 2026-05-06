@@ -201,10 +201,18 @@ export interface AcceptInvitationParams {
 
 export interface AcceptInvitationResult {
   invitation_id: string;
-  synced: SyncFromHubResult;
+  /** Id of the FlowMessage whose bundle was downloaded and unpacked, if any. */
+  flow_message_id?: string | null;
+  /** True when the targeted bundle download materialized the local Conversation. */
+  bundle_unpacked: boolean;
 }
 
-/** Accept a pending invitation on the hub, then sync to materialize the conversation. */
+/** Accept a pending invitation on the hub and download just the unlocked bundle.
+ *
+ * Does NOT pull other accessible FlowMessages — that's the Refresh button's job
+ * (``syncFromHub``). Keeps accept latency to ~one HTTP round-trip + one bundle
+ * download.
+ */
 export async function acceptInvitation(
   params: AcceptInvitationParams,
 ): Promise<AcceptInvitationResult> {

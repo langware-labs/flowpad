@@ -2,6 +2,7 @@ import {
   Conversation,
   ConversationParticipant,
   createProjectConversation,
+  getErrorMessagesFromAxios,
   startBundleConversation,
 } from '@sdk';
 import { sendReply } from '@sdk/entities/notifications';
@@ -130,7 +131,10 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
       }
       onClose();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to create conversation';
+      // Axios errors carry the backend's `message` field on `error.response.data`;
+      // `err.message` would just be "Request failed with status code 400".
+      const fromAxios = await getErrorMessagesFromAxios(err);
+      const msg = fromAxios || (err instanceof Error ? err.message : '') || 'Failed to create conversation';
       setError(msg);
     } finally {
       setBusy(false);
