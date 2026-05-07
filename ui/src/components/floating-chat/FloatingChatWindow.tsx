@@ -1,11 +1,8 @@
-import { useAgentContext } from '@src/contexts/agent-context';
 import { BASE_PATH } from '@src/constants/basePath';
 import { Button } from '@src/components/ui/button';
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { ProcessType } from '@sdk';
-import { cn } from '@src/lib/utils';
 import { X } from 'lucide-react';
-import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useFloatingChat } from './FloatingChatContext';
@@ -18,11 +15,12 @@ interface Bounds {
   height: number;
 }
 
-const STORAGE_KEY = 'flowpad.floatingChat.bounds';
-const MIN_W = 360;
-const MIN_H = 360;
-const DEFAULT_W = 640;
-const DEFAULT_H = 600;
+// v2: bumped defaults + new chrome — abandon old saved bounds.
+const STORAGE_KEY = 'flowpad.floatingChat.bounds.v2';
+const MIN_W = 420;
+const MIN_H = 420;
+const DEFAULT_W = 860;
+const DEFAULT_H = 660;
 const MARGIN = 16;
 const ANIM_MS = 240;
 
@@ -67,10 +65,6 @@ function clampToViewport(b: Bounds): Bounds {
   return { x, y, width, height };
 }
 
-function isAbsoluteUrl(url: string) {
-  return /^https?:\/\//i.test(url);
-}
-
 /**
  * Global floating Flowpad Assistant chat. Renders in a portal at document.body
  * so it floats above all routed content. Draggable by the title bar; resizable
@@ -84,9 +78,6 @@ function isAbsoluteUrl(url: string) {
 export function FloatingChatWindow() {
   const { open, closeChat, triggerRect } = useFloatingChat();
   const { target, isLoading } = useFlowpadAssistantProject();
-  const { agent } = useAgentContext();
-  const siteConfig = agent?.site_config;
-  const { resolvedTheme } = useTheme();
 
   const [bounds, setBounds] = useState<Bounds>(() =>
     clampToViewport(loadBounds() ?? defaultBounds()),
@@ -190,14 +181,10 @@ export function FloatingChatWindow() {
   if (phase === 'closed') return null;
   if (typeof document === 'undefined') return null;
 
-  const branded = siteConfig?.branding?.logo_url;
-  const logoSrc = branded
-    ? isAbsoluteUrl(branded)
-      ? branded
-      : `${BASE_PATH}${branded}`
-    : 'logo.png';
-  const invert =
-    !!branded && resolvedTheme === 'dark' && !!siteConfig?.branding?.use_brightness_filter;
+  // Use the same dedicated round Flowpad icon as the trigger button for visual
+  // continuity. siteConfig branding stays out of this surface — see the button
+  // component for the rationale.
+  const logoSrc = `${BASE_PATH}flowpad-icon.png`;
 
   // Compute the entrance/exit transform that starts at the trigger button's
   // rect and ends at identity (the centered window position).
@@ -229,7 +216,15 @@ export function FloatingChatWindow() {
           setPhase('closed');
         }
       }}
-      className="fixed z-50 flex flex-col overflow-hidden rounded-lg border border-border bg-background shadow-xl"
+      className={[
+        'fixed z-50 flex flex-col overflow-hidden rounded-lg bg-background',
+        // Light-blue accent border + ring so the panel pops off any background.
+        'border border-sky-400/70 ring-1 ring-sky-400/30',
+        'dark:border-sky-400/50 dark:ring-sky-400/20',
+        // Theme-aware shadow: warmer/softer on light, glowing/larger on dark.
+        'shadow-[0_18px_50px_-12px_rgba(56,189,248,0.45),0_8px_24px_-8px_rgba(2,132,199,0.35)]',
+        'dark:shadow-[0_22px_60px_-12px_rgba(56,189,248,0.55),0_10px_32px_-10px_rgba(56,189,248,0.45)]',
+      ].join(' ')}
       style={{
         left: bounds.x,
         top: bounds.y,
@@ -256,7 +251,7 @@ export function FloatingChatWindow() {
         <img
           src={logoSrc}
           alt=""
-          className={cn('h-5 w-5 flex-shrink-0 object-contain', invert && 'brightness-0 invert')}
+          className="h-5 w-5 flex-shrink-0 object-contain"
         />
         <span className="flex-1 truncate text-xs font-medium">Flowpad Assistant</span>
         <Button
@@ -284,6 +279,7 @@ export function FloatingChatWindow() {
             historyLabel="Chat history"
             pastSessionsLabel="Past chats"
             noPastSessionsLabel="No past chats"
+            placeholder="What can flowpad do for you ?"
           />
         ) : (
           <div className="flex flex-1 items-center justify-center px-4 text-center text-xs text-muted-foreground">

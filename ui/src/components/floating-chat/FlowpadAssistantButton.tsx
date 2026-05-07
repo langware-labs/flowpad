@@ -1,14 +1,8 @@
-import { useAgentContext } from '@src/contexts/agent-context';
 import { Button } from '@src/components/ui/button';
 import { BASE_PATH } from '@src/constants/basePath';
 import { cn } from '@src/lib/utils';
-import { useTheme } from 'next-themes';
 import { useRef } from 'react';
 import { useFloatingChat } from './FloatingChatContext';
-
-function isAbsoluteUrl(url: string) {
-  return /^https?:\/\//i.test(url);
-}
 
 /**
  * Round flowpad-logo button that toggles the global floating Flowpad Assistant chat.
@@ -16,23 +10,16 @@ function isAbsoluteUrl(url: string) {
  *
  * Captures its on-screen rect on click so the floating window can animate from
  * the button position into center (and back to it on close).
+ *
+ * The button always renders the dedicated round Flowpad icon
+ * (`ui/public/flowpad-icon.png`) — agents may ship their own wordmark via
+ * `site_config.branding.logo_url`, but a wide wordmark crops badly inside a
+ * 32×32 round chip, so we keep the assistant button visually anchored to the
+ * Flowpad brand here regardless of the active agent.
  */
 export function FlowpadAssistantButton() {
-  const { agent } = useAgentContext();
-  const siteConfig = agent?.site_config;
-  const { resolvedTheme } = useTheme();
   const { open, toggle } = useFloatingChat();
   const ref = useRef<HTMLButtonElement | null>(null);
-
-  const branded = siteConfig?.branding?.logo_url;
-  const src = branded
-    ? isAbsoluteUrl(branded)
-      ? branded
-      : `${BASE_PATH}${branded}`
-    : 'logo.png';
-
-  const invert =
-    !!branded && resolvedTheme === 'dark' && !!siteConfig?.branding?.use_brightness_filter;
 
   return (
     <Button
@@ -53,9 +40,9 @@ export function FlowpadAssistantButton() {
       )}
     >
       <img
-        src={src}
-        alt={siteConfig?.branding?.company_name || 'Flowpad Assistant'}
-        className={cn('h-full w-full object-contain', invert && 'brightness-0 invert')}
+        src={`${BASE_PATH}flowpad-icon.png`}
+        alt="Flowpad Assistant"
+        className="h-full w-full object-contain"
       />
     </Button>
   );
