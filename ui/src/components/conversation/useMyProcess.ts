@@ -148,6 +148,26 @@ export function useMyProcess({ task, conversationId, senderName }: UseMyProcessO
         const existing = await dataManager.getByTypeId<AgenticProcess>(
           new TypeId(AgenticProcess.type, myProcessId),
         ).catch(() => null);
+        // Diagnostic: log when we're about to open an AP whose creator is
+        // not the local user. This means the leak is still happening — the
+        // ownership check is here only to surface the problem, not to
+        // patch around it. Once the leak source is fixed, this branch
+        // should never fire. ``created_by`` is a bare UUID (see
+        // flow_sdk/db/drivers/db_driver.py), not a `user-<uuid>` typeid.
+        if (
+          existing
+          && !!localUser?.id
+          && typeof existing.created_by === 'string'
+          && existing.created_by !== localUser.id
+        ) {
+          console.warn(
+            '[useMyProcess] task.my_process_id points at a foreign AgenticProcess. ' +
+            'This means a sender-side process id is leaking into a receiver task. ' +
+            `task=${taskId} my_process_id=${myProcessId} ` +
+            `existing.created_by=${existing.created_by} ` +
+            `localUser.id=${localUser.id}`,
+          );
+        }
         if (existing) {
           await existing.start();
           navigation.openDock(existing.dockPointer);

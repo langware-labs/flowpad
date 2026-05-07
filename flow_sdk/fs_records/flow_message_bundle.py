@@ -488,13 +488,18 @@ async def unpack_bundle(
                             # Strip sender-local fields that are meaningless on the
                             # receiver: `project_root` is the sender's filesystem
                             # path; `project_name` mirrors the sender's local
-                            # Project name. Remote provenance now lives on the
-                            # Conversation (see CONVERSATION branch below), not the
-                            # Task — so we don't propagate `project_id` /
-                            # `project_name` onto the receiver's task either.
+                            # Project name; `my_process_id` is the sender's
+                            # AgenticProcess id (defense in depth — the pack side
+                            # also drops it from `_TASK_FIELDS`, but we re-strip
+                            # here so older bundles on the hub and senders running
+                            # stale code can't leak it through). Remote provenance
+                            # now lives on the Conversation (see CONVERSATION
+                            # branch below), not the Task — so we don't propagate
+                            # `project_id` / `project_name` onto the receiver's
+                            # task either.
                             task_payload = {
                                 k: v for k, v in task_data.items()
-                                if k not in ("project_root", "project_name")
+                                if k not in ("project_root", "project_name", "my_process_id")
                             }
                             task_payload.update({
                                 "id": task_id,
