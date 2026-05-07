@@ -4,6 +4,8 @@ export type { SideTabDescriptor } from './SideWindowTypes';
 export { GitPanel } from './GitPanel';
 export { PromptIndexPanel } from './PromptIndexPanel';
 export type { PromptEntry } from './PromptIndexPanel';
+export { usePromptsForProcess } from './usePromptsForProcess';
+export type { TranscriptPrompt, UsePromptsForProcessResult } from './usePromptsForProcess';
 export { InputFilesPanel } from './InputFilesPanel';
 export { QueuePanel } from './QueuePanel';
 export { SimpleDirTree } from './SimpleDirTree';

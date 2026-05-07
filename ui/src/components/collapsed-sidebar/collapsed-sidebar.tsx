@@ -1,4 +1,5 @@
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
+import { FlowpadAssistantButton } from '@src/components/floating-chat';
 import { useDevMode } from '@src/contexts/dev-mode-context';
 import { Button } from '@src/components/ui/button';
 import { useNavigationState } from '@src/hooks/use-navigation-state';
@@ -202,6 +203,7 @@ export function CollapsedSidebar() {
             <Bug className="h-4 w-4" />
           </Button>
         )}
+        <FlowpadAssistantButton />
         <ThemeToggle />
         <UserDropdown />
       </div>

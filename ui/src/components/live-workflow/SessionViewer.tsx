@@ -10,6 +10,7 @@ import {
 } from '@sdk';
 import { useContext, useEntityData, useProject } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { usePendingSessionIds } from '@src/store/pending-actions-store';
 import { Plus } from 'lucide-react';
 import { filterClosedTabs, getNextSessionNumber, getSessionDisplayName, mergeSessionTabs, sessionTabsCache } from './sessionTabUtils';
 import { SessionActionButtons } from './SessionActionButtons';
@@ -315,6 +316,9 @@ export function SessionViewer() {
   // Track dirty (none for sessions)
   const dirtyIds = useMemo(() => new Set<string>(), []);
 
+  // Track pending-action ids (recently became ready-for-input) for this project's tabs.
+  const pendingIds = usePendingSessionIds(currentProject?.typeId?.id ?? null);
+
   // Convert session tabs to tab bar format
   const tabEntries = useMemo(() => {
     return sessionTabs.map((tab, index) => ({
@@ -405,6 +409,7 @@ export function SessionViewer() {
           sessions={tabEntries}
           activeSessionId={null}
           dirtySessionIds={dirtyIds}
+          pendingSessionIds={pendingIds}
           onCloseTab={handleCloseTab}
           onAddTab={handleAddSession}
           onSelectTab={handleSelectTab}
@@ -432,6 +437,7 @@ export function SessionViewer() {
         sessions={tabEntries}
         activeSessionId={activeTabId ?? processId}
         dirtySessionIds={dirtyIds}
+        pendingSessionIds={pendingIds}
         onCloseTab={handleCloseTab}
         onAddTab={handleAddSession}
         onSelectTab={handleSelectTab}

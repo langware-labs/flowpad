@@ -5,8 +5,8 @@ import { cn } from '@src/lib/utils';
 import { useTriggerLog } from '@src/hooks/useTriggerLog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { StatusIndicator } from '@src/components/agentic-progress/shared/status-indicator';
-import { AgenticProcess, Trigger, TypeId, type ITrigger, type ProcessStatus } from '@sdk';
-import { useProcessesForTarget } from '@src/components/entity-chat-panel';
+import { AgenticProcess, ProcessType, Trigger, TypeId, type ITrigger, type ProcessStatus } from '@sdk';
+import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { ExternalLink } from 'lucide-react';
 import { useMemo } from 'react';
 
@@ -38,12 +38,15 @@ export function TriggerInvocationsPanel({ trigger }: Props) {
   const { navigation } = useDockNavigation();
 
   // Subscribe to all agentic processes this trigger spawned so each row can show
-  // live status. Shares the generic `useProcessesForTarget` hook with EntityChatPanel.
+  // live status. Shares the generic `useProcessesForTarget` hook with EntityExecutionPanel.
   const targetStr = useMemo(
     () => (trigger?.id ? new TypeId(Trigger.type, trigger.id).toString() : ''),
     [trigger?.id],
   );
-  const { processes } = useProcessesForTarget(targetStr, { enabled: !!trigger?.id });
+  const { processes } = useProcessesForTarget(targetStr, {
+    enabled: !!trigger?.id,
+    processType: ProcessType.Execution,
+  });
 
   const processById = useMemo(() => {
     const map = new Map<string, AgenticProcess>();

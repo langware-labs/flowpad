@@ -297,7 +297,7 @@ async def test_clean_claude_pty_stress(bootstrapped_client):
         await process.save([])
 
         try:
-            start_resp = await process.start()
+            start_resp = await process.start_pty()
             shell_id = process.shell_id
             assert shell_id, (
                 f"[iter {i}] process.start() did not set shell_id; "

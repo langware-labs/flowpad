@@ -633,6 +633,153 @@ class FsRecordsActionsMixin:
             "duration_ms": result.duration_ms,
         })
 
+    async def _handle_fs_records_discover_by_path(
+        self,
+        record_type: str,
+        request_info,
+    ) -> ApiResponse:
+        """POST /fs-records/{type}/discover?path=<P>
+
+        Find-or-recover a single record by absolute path. Scans the file on
+        disk, syncs the resulting record to the entity DB, and returns its
+        metadata. Idempotent: a second call hits the cache.
+
+        Used by the frontend's `useEntityByPath` hook to recover a record
+        when the bulk list query misses (e.g. just-created workflow file).
+
+        Returns 404 if the file doesn't exist on disk OR doesn't match the
+        requested type's discovery rules.
+        """
+        import flow_sdk.fs_records  # noqa: F401 — trigger auto-registration
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
+        from flow_sdk.fs_store.record_list import RecordList  # noqa: PLC0415
+
+        qp = request_info.request.query_params
+        raw_path = (qp.get("path") or "").strip()
+        if not raw_path:
+            return ApiFailResponse(
+                message="Missing required 'path' query parameter",
+                status_code=400,
+            )
+
+        record_cls = _SR.get_record_cls(record_type)
+        if record_cls is None:
+            return ApiFailResponse(
+                message=f"Unknown record type '{record_type}'. Available: {_SR.get_all_record_types()}",
+                status_code=400,
+            )
+
+        # Expand ~ and resolve to a Path. Don't require the file to exist yet —
+        # we'll let the discovery layer decide.
+        expanded = str(Path(raw_path).expanduser())
+        target_norm = _normalize_asset_path(expanded)
+
+        # Inline match helper — looks up the record list by asset_ref
+        # equivalence. Returns the matched record even if its source is
+        # missing on disk: the caller now reads ``entity.orphan`` to
+        # distinguish stale-but-known-rows from never-existed paths.
+        # 404 is reserved for "no record at all"; orphans are SUCCESS.
+        def _find_in(record_list: "RecordList") -> "Record | None":  # type: ignore[name-defined]
+            for rec in record_list:
+                ref = getattr(rec, "asset_ref", None) or getattr(rec, "_asset_ref", None)
+                ref_path = getattr(ref, "path", None) if ref is not None else None
+                if ref_path is None:
+                    ref_path = str(ref) if ref else ""
+                if _normalize_asset_path(ref_path) == target_norm:
+                    return rec
+            return None
+
+        # Pass 1: try the existing index (shadow tree). Fast path.
+        record_list = RecordList(record_class=record_cls)
+        try:
+            found = _find_in(record_list)
+        except Exception as e:
+            return ApiFailResponse(
+                message=f"Failed to scan {record_type}: {e}",
+                status_code=500,
+            )
+
+        # Pass 2: on miss, force a fresh FSIndexer scan of the user's
+        # workflow / agent / skill / plan directories. The base
+        # ``Record.discover()`` walks ``records_root / <type> /`` (the
+        # **shadow** tree), so a brand-new file on disk is invisible
+        # until the indexer materialises it. This is the recovery path
+        # for ``useEntityByPath``: file exists on disk, isn't yet in
+        # the index → re-index this single type, then look again.
+        if found is None:
+            try:
+                from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
+                    IndexerOptions,
+                    get_shared_indexer,
+                )
+                from flow_sdk.fs_store.record_types import RecordType as _RT  # noqa: PLC0415
+                rt = _RT(record_type)
+                indexer = get_shared_indexer()
+                await indexer.index(IndexerOptions(types=[rt]))
+            except Exception as e:
+                return ApiFailResponse(
+                    message=f"Re-index failed for {record_type}: {e}",
+                    status_code=500,
+                )
+            # Fresh RecordList — `RecordList(MUTABLE)` re-discovers per call,
+            # but instantiating a new one is the cleanest reset.
+            record_list = RecordList(record_class=record_cls)
+            try:
+                found = _find_in(record_list)
+            except Exception as e:
+                return ApiFailResponse(
+                    message=f"Failed to scan {record_type} after reindex: {e}",
+                    status_code=500,
+                )
+
+        if found is None:
+            return ApiFailResponse(
+                message=f"No {record_type} found at path: {raw_path}",
+                status_code=404,
+            )
+
+        # Sync to DB so future bulk queries pick it up. Idempotent.
+        # Skip when the source is missing on disk — `sync_to_db` rebuilds
+        # the entity row from the Record's fields, which would clobber the
+        # `orphan` / `orphan_since` flags the FSIndexer set on this row.
+        # Orphan state is the indexer's responsibility; discover just reads.
+        _ar_for_sync = getattr(found, "asset_ref", None)
+        _ar_path_for_sync = getattr(_ar_for_sync, "path", None) if _ar_for_sync is not None else None
+        _alive_on_disk = bool(_ar_path_for_sync and Path(str(_ar_path_for_sync)).expanduser().exists())
+        if _alive_on_disk:
+            try:
+                await found.sync_to_db()
+            except Exception as e:
+                # Log but don't fail — sync may legitimately fail for read-only sources.
+                logging.debug(f"[fs-records] sync_to_db on discover skipped for {record_type}: {e}")
+
+        data = found.meta_dict()
+        _ar = getattr(found, "asset_ref", None)
+        _ar_path = getattr(_ar, "path", None) if _ar is not None else None
+        if _ar_path:
+            data["asset_ref"] = _ar_path
+
+        # Merge entity-level fields the Record's meta_dict doesn't know about
+        # (orphan / orphan_since live on the Entity row, not the Record).
+        # The frontend's `<MissingAssetCard>` reads these to differentiate
+        # stale-but-known rows from never-existed paths.
+        try:
+            from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
+            _ent_cls = _SR.get_entity_cls(record_type)
+            if _ent_cls is not None:
+                _ent = await _ent_cls.get_by_id(found.id)  # type: ignore[attr-defined]
+                if _ent is not None:
+                    data["orphan"] = bool(getattr(_ent, "orphan", False))
+                    _since = getattr(_ent, "orphan_since", None)
+                    if _since is not None:
+                        # datetime → ISO 8601 string for the wire
+                        data["orphan_since"] = _since.isoformat() if hasattr(_since, "isoformat") else str(_since)
+                    else:
+                        data["orphan_since"] = None
+        except Exception as e:
+            logging.debug(f"[fs-records] merge entity orphan fields skipped for {record_type}: {e}")
+        return ApiSuccessResponse(data=data)
+
 
     async def _handle_fs_records_activity_status(self, request_info) -> ApiResponse:
         """Return the currently-running scan/index activity for this compute node, if any.
@@ -727,6 +874,13 @@ class FsRecordsActionsMixin:
 
         if not segments:
             return ApiFailResponse(message="Record type is required in URL path", status_code=400)
+
+        # Discover-or-recover by path: POST /fs-records/{type}/discover?path=...
+        if len(segments) == 2 and segments[1] == "discover" and method == "post":
+            return await self._handle_fs_records_discover_by_path(
+                record_type=segments[0],
+                request_info=request_info,
+            )
 
         record_type = segments[0]
         uid = segments[1] if len(segments) > 1 else None
@@ -1086,3 +1240,13 @@ class FsRecordsActionsMixin:
         except Exception as e:
             logging.warning(f"[fs-records] Failed to broadcast DataOp: {e}")
 
+
+def _normalize_asset_path(p: str) -> str:
+    """Lower-precision path comparison. Strips trailing slash + leading slash
+    so file/folder shapes match consistently."""
+    if not p:
+        return ""
+    p = p.rstrip("/")
+    if p.startswith("/"):
+        p = p[1:]
+    return p

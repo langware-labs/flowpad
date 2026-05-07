@@ -6,9 +6,9 @@ import { useRunOnFile } from '@src/components/assets/editor/run/useRunOnFile';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
 import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
-import { useProcessesForTarget } from '@src/components/entity-chat-panel';
+import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
-import { dataContext, FrontMatterFsRef } from '@sdk';
+import { dataContext, FrontMatterFsRef, ProcessType } from '@sdk';
 import type { APIEntity, FSRef } from '@sdk';
 import { History } from 'lucide-react';
 
@@ -39,7 +39,7 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
   const editorRef =
     assetRef && localTypeId ? new FrontMatterFsRef(assetRef, localTypeId) : fsRef;
 
-  const [activeSideTab, setActiveSideTab] = useState<string>('chat');
+  const [activeSideTab, setActiveSideTab] = useState<string>('editor');
 
   const { runWithAsset, isStarting, processEntry, mcpModal } = useRunOnFile({
     targetVfsPath: chatTarget,
@@ -49,6 +49,7 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
 
   const { processes: pastRunProcesses } = useProcessesForTarget(chatTarget ?? '', {
     enabled: !!chatTarget,
+    processType: ProcessType.Execution,
   });
 
   const runHistory = useMemo<ProcessEntry[]>(() => {
