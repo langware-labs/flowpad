@@ -19,11 +19,14 @@ interface Bounds {
 }
 
 const STORAGE_KEY = 'flowpad.floatingChat.bounds';
-const MIN_W = 320;
+const MIN_W = 360;
 const MIN_H = 360;
-const DEFAULT_W = 420;
-const DEFAULT_H = 560;
+const DEFAULT_W = 640;
+const DEFAULT_H = 600;
 const MARGIN = 16;
+const ANIM_MS = 240;
+
+type Phase = 'closed' | 'opening' | 'open' | 'closing';
 
 function loadBounds(): Bounds | null {
   try {
@@ -48,9 +51,11 @@ function defaultBounds(): Bounds {
   if (typeof window === 'undefined') {
     return { x: 0, y: 0, width: DEFAULT_W, height: DEFAULT_H };
   }
-  const x = Math.max(MARGIN, window.innerWidth - DEFAULT_W - MARGIN);
-  const y = Math.max(MARGIN, window.innerHeight - DEFAULT_H - MARGIN);
-  return { x, y, width: DEFAULT_W, height: DEFAULT_H };
+  const width = Math.min(DEFAULT_W, window.innerWidth - MARGIN * 2);
+  const height = Math.min(DEFAULT_H, window.innerHeight - MARGIN * 2);
+  const x = Math.max(MARGIN, Math.round((window.innerWidth - width) / 2));
+  const y = Math.max(MARGIN, Math.round((window.innerHeight - height) / 2));
+  return { x, y, width, height };
 }
 
 function clampToViewport(b: Bounds): Bounds {
@@ -70,9 +75,14 @@ function isAbsoluteUrl(url: string) {
  * Global floating Flowpad Assistant chat. Renders in a portal at document.body
  * so it floats above all routed content. Draggable by the title bar; resizable
  * via the bottom-right corner. Position and size persist in localStorage.
+ *
+ * Open/close is animated: on open, the window scales up from the trigger
+ * button's on-screen rect into its centered position; on close, it scales
+ * back into the button. The transform-origin / starting transform are derived
+ * from the `triggerRect` captured at click time.
  */
 export function FloatingChatWindow() {
-  const { open, closeChat } = useFloatingChat();
+  const { open, closeChat, triggerRect } = useFloatingChat();
   const { target, isLoading } = useFlowpadAssistantProject();
   const { agent } = useAgentContext();
   const siteConfig = agent?.site_config;
@@ -82,14 +92,33 @@ export function FloatingChatWindow() {
     clampToViewport(loadBounds() ?? defaultBounds()),
   );
 
+  // Animation phase. Mount lifecycle is gated on `phase !== 'closed'` so the
+  // node stays in the DOM while the close transition runs.
+  const [phase, setPhase] = useState<Phase>('closed');
+
+  useEffect(() => {
+    if (open) {
+      // Mount with starting (button-anchored) transform, then on the next frame
+      // flip to the final transform so the CSS transition fires.
+      setPhase('opening');
+      const id = requestAnimationFrame(() => {
+        // Two RAFs ensure the initial styles paint before transitioning.
+        requestAnimationFrame(() => setPhase('open'));
+      });
+      return () => cancelAnimationFrame(id);
+    }
+    // Close: only run the closing transition if we were actually mounted.
+    setPhase((prev) => (prev === 'closed' ? 'closed' : 'closing'));
+  }, [open]);
+
   // Re-clamp into the viewport when the window is opened or the browser resized.
   useEffect(() => {
-    if (!open) return;
+    if (phase === 'closed') return;
     setBounds((prev) => clampToViewport(prev));
     const onResize = () => setBounds((prev) => clampToViewport(prev));
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [open]);
+  }, [phase]);
 
   // Persist whenever bounds settle.
   useEffect(() => {
@@ -134,17 +163,21 @@ export function FloatingChatWindow() {
   }, []);
 
   // CSS `resize: both` mutates the element's inline style; mirror the size
-  // back into React state so we can persist it.
+  // back into React state so we can persist it. Skip during opening/closing
+  // so the entrance animation doesn't fight the observer.
   const containerRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => {
-    if (!open) return;
+    if (phase !== 'open') return;
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        const cr = entry.contentRect;
-        const w = Math.round(cr.width);
-        const h = Math.round(cr.height);
+        // Use borderBoxSize so the reading matches our inline `width`/`height`
+        // (Tailwind sets box-sizing: border-box globally). Reading contentRect
+        // would feedback-loop with the border/padding subtracted each tick.
+        const box = entry.borderBoxSize?.[0];
+        const w = Math.round(box?.inlineSize ?? entry.contentRect.width);
+        const h = Math.round(box?.blockSize ?? entry.contentRect.height);
         setBounds((prev) =>
           prev.width === w && prev.height === h ? prev : clampToViewport({ ...prev, width: w, height: h }),
         );
@@ -152,9 +185,9 @@ export function FloatingChatWindow() {
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [open]);
+  }, [phase]);
 
-  if (!open) return null;
+  if (phase === 'closed') return null;
   if (typeof document === 'undefined') return null;
 
   const branded = siteConfig?.branding?.logo_url;
@@ -166,12 +199,36 @@ export function FloatingChatWindow() {
   const invert =
     !!branded && resolvedTheme === 'dark' && !!siteConfig?.branding?.use_brightness_filter;
 
+  // Compute the entrance/exit transform that starts at the trigger button's
+  // rect and ends at identity (the centered window position).
+  const isAtRest = phase === 'open';
+  const buttonRect = triggerRect;
+  let startTransform = 'scale(0.1)';
+  if (buttonRect) {
+    const buttonCx = buttonRect.x + buttonRect.width / 2;
+    const buttonCy = buttonRect.y + buttonRect.height / 2;
+    const winCx = bounds.x + bounds.width / 2;
+    const winCy = bounds.y + bounds.height / 2;
+    const dx = buttonCx - winCx;
+    const dy = buttonCy - winCy;
+    const sx = buttonRect.width / Math.max(1, bounds.width);
+    const sy = buttonRect.height / Math.max(1, bounds.height);
+    const s = Math.max(0.05, Math.min(sx, sy));
+    startTransform = `translate(${dx}px, ${dy}px) scale(${s})`;
+  }
+
   return createPortal(
     <div
       ref={containerRef}
       role="dialog"
       aria-label="Flowpad Assistant"
       data-testid="floating-chat-window"
+      onTransitionEnd={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (phase === 'closing' && e.propertyName === 'transform') {
+          setPhase('closed');
+        }
+      }}
       className="fixed z-50 flex flex-col overflow-hidden rounded-lg border border-border bg-background shadow-xl"
       style={{
         left: bounds.x,
@@ -180,7 +237,12 @@ export function FloatingChatWindow() {
         height: bounds.height,
         minWidth: MIN_W,
         minHeight: MIN_H,
-        resize: 'both',
+        resize: isAtRest ? 'both' : 'none',
+        transformOrigin: 'center center',
+        transform: isAtRest ? 'translate(0, 0) scale(1)' : startTransform,
+        opacity: isAtRest ? 1 : 0,
+        transition: `transform ${ANIM_MS}ms cubic-bezier(0.16, 1, 0.3, 1), opacity ${ANIM_MS}ms ease`,
+        willChange: 'transform, opacity',
       }}
     >
       <div

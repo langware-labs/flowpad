@@ -372,7 +372,7 @@ class ScanActionsMixin:
             # next ``/prompt`` to land on a stale session and emit nothing.
             if visible:
                 try:
-                    start_resp = await process.start(visible=visible)
+                    start_resp = await process.start_pty(visible=visible)
                 except Exception as start_err:
                     logging.exception(
                         f"ComputeNode {self.id} createProcess start error for {process.id}: {start_err}"
@@ -537,7 +537,7 @@ class ScanActionsMixin:
                 # and the process is visible so the tab strip will surface it.
                 if not process.shell_id or not process.visible:
                     try:
-                        start_resp = await process.start(visible=True)
+                        start_resp = await process.start_pty(visible=True)
                     except Exception as start_err:
                         logging.exception(
                             f"ComputeNode {self.id} upsertSessionProcess heal-start error for {process.id}: {start_err}"
@@ -610,7 +610,7 @@ class ScanActionsMixin:
             # AgenticProcess has no shell_id, is filtered out of the visible
             # tab strip, and the route loader silently snaps to a fallback.
             try:
-                start_resp = await process.start(visible=True)
+                start_resp = await process.start_pty(visible=True)
             except Exception as start_err:
                 logging.exception(
                     f"ComputeNode {self.id} upsertSessionProcess start error for {process.id}: {start_err}"
