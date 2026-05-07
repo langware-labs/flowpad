@@ -733,6 +733,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.post(action_name="upsertSessionProcess")
     async def upsert_session_process(self): return await self._scan_upsert_session_process()
 
+    @action.get(action_name="findSession")
+    async def find_session(self): return await self._scan_find_session()
+
     # -- fs-records action (implementation in FsRecordsActionsMixin) -------------
 
     @action.all(action_name="fs-records", methods=["get", "post", "put", "delete"])
