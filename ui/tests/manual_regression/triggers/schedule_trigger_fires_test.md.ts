@@ -18,8 +18,13 @@ test('schedule trigger test button fires job and shows invocation', async ({ pag
 
   await dismissSetupModal(page);
 
-  // Create a schedule trigger via API first
+  // Create a schedule trigger via API first.
+  // TriggersView filters by t.project_id === project?.id, so a trigger with
+  // no project_id is invisible in the UI even though the API returned 200.
+  // Fetch the @local project id from bootstrap and pass it explicitly.
   const triggerId: string = await page.evaluate(async () => {
+    const boot = await fetch('http://localhost:9008/api/v1/graph/bootstrap').then((r) => r.json());
+    const projectId = boot?.data?.default_project?.id ?? null;
     const res = await fetch('http://localhost:9008/api/v1/graph/trigger', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -30,6 +35,7 @@ test('schedule trigger test button fires job and shows invocation', async ({ pag
         sched_trigger_type: 'cron',
         scope: 'user',
         enabled: true,
+        project_id: projectId,
       }),
     });
     const json = await res.json();
