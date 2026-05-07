@@ -11,6 +11,28 @@
 
 ## Learnings
 
+### 2026-05-07 — Full QA cycle (all 8 phases) on v0.2.20-process-fixes
+
+**Claude rotates `Try "..."` placeholder text in empty prompt** — broke `tests/long_tests/test_clean_claude_pty_stress.py` and `ui/tests/long_tests/clean_claude_pty.test.ts`. Both invariant extractors now treat any `^Try\b.*"` content as empty prompt.
+
+**Stress test stability under 50 cold Claude PTY spawns** — three issues fixed in `test_clean_claude_pty_stress.py`:
+1. `process.start()` raised `RuntimeError("No project found")` mid-loop because `get_project()`'s @local-project fallback intermittently fails. Fix: pass `project_id=local_project.id` explicitly.
+2. Fixed `SETTLE_SLEEP=1.5` was too tight under load — first PTY byte sometimes lagged. Replaced with poll loop up to `PTY_OUTPUT_DEADLINE=5.0`.
+3. Full Claude banner renders progressively under stress; single-retry insufficient. Replaced with poll loop up to `INVARIANT_DEADLINE=5.0`. Net: 50/50 iterations clean.
+
+**`INDEXABLE_TYPES` order shifts break position-based test slices** — `test_index_all_returns_total` hard-coded `limit_types=7` based on SKILL being at position 7. SKILL drifted to index 8 (position 9). Fix: derive position dynamically via `INDEXABLE_TYPES.index(RecordType.SKILL)+1`.
+
+**Codex agent invents own classification schema** — `test_agentic_process_classify_with_agent[codex]` saw `{intent, complexity, domain, task_type, outcome}` instead of `{category, ...}`. Extended fallback to promote `outcome`/`intent`/`task_type`/`domain` → `category`.
+
+**`DirectoryTree.tsx` selectedPath sync was async-coupled** — selection only synced after `expandParentsForPath` async folder load completed. In `directory-tree.test.tsx` where `loadFolderContents` doesn't resolve, selection never propagated. Fix: call `tree.selectItem(selectedPath)` synchronously alongside expansion.
+
+**Phase 8 manual regression — 41 failures across memo-panel(10), terminal(15), general(5), triggers(4), agentic-process(3), search(3), skills(1)**. Patterns:
+- `element(s) not found` / `toBeVisible failed` — selector drift in memo-panel, general, terminal
+- triggers: `strict mode violation` — `text=Schedule Triggers` matches 2 elements (UI duplicated)
+- skills: 404 on `user-<uuid>` from `store.ts`
+- agentic-process: `page.waitForURL` timeout — navigation never resolves
+Each needs individual triage; not blocked by anything from phases 1-7.
+
 ### 2026-05-07 — Headless chat surfaces validated post `_scan_create_process` fix
 
 **Real production bug — `flow_sdk/builtin/faas/scan_actions.py` `_scan_create_process`**

@@ -149,6 +149,12 @@ function extractInvariants(screenRows: string[]): Invariants {
     const after = screenRows[promptRowIdx].split('❯')[1] ?? '';
     // Strip cursor blocks (█ and similar box-drawing), nbsp (\xa0), spaces
     promptContent = after.replace(/[\u2580-\u259f\u2588\xa0 ]+/g, '').trim();
+    // Claude rotates a placeholder hint when the input is empty
+    // (e.g. `Try "edit <file> to..."`, `Try "refactor <file>"`). Treat any
+    // `Try "..."` placeholder as empty \u2014 only real leaked input matters.
+    if (/^Try\b.*"/.test(promptContent)) {
+      promptContent = '';
+    }
   }
 
   return { separatorFound, promptFound, bypassFound, promptContent };
