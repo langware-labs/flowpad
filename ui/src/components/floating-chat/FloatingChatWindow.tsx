@@ -77,7 +77,7 @@ function clampToViewport(b: Bounds): Bounds {
  */
 export function FloatingChatWindow() {
   const { open, closeChat, triggerRect, restoredFromStorage } = useFloatingChat();
-  const { target, isLoading } = useFlowpadAssistantProject();
+  const { project: flowpadAssistantProject, target, isLoading } = useFlowpadAssistantProject();
 
   const [bounds, setBounds] = useState<Bounds>(() =>
     clampToViewport(loadBounds() ?? defaultBounds()),
@@ -233,8 +233,10 @@ export function FloatingChatWindow() {
         // Light-blue accent border + ring so the panel pops off any background.
         'border border-sky-400/70 ring-1 ring-sky-400/30',
         'dark:border-sky-400/50 dark:ring-sky-400/20',
-        // Theme-aware shadow: warmer/softer on light, glowing/larger on dark.
-        'shadow-[0_18px_50px_-12px_rgba(56,189,248,0.45),0_8px_24px_-8px_rgba(2,132,199,0.35)]',
+        // Theme-aware shadow: light theme uses a deeper blue-grey drop +
+        // softer sky bloom so the panel reads off white backgrounds without
+        // the cast looking like a flat black drop. Dark stays glowing-blue.
+        'shadow-[0_22px_50px_-10px_rgba(15,23,42,0.30),0_12px_28px_-8px_rgba(30,64,175,0.28),0_0_0_1px_rgba(56,189,248,0.18)]',
         'dark:shadow-[0_22px_60px_-12px_rgba(56,189,248,0.55),0_10px_32px_-10px_rgba(56,189,248,0.45)]',
       ].join(' ')}
       style={{
@@ -298,6 +300,12 @@ export function FloatingChatWindow() {
             noPastSessionsLabel="No past chats"
             placeholder="What can flowpad do for you ?"
             dense
+            // Pin newly-spawned chat processes to the Flowpad Assistant
+            // project so the asset manager and workdir are sourced from
+            // the assistant — not whatever project the user happens to
+            // have active in the dock (e.g. flowpad-oss).
+            defaultProjectId={flowpadAssistantProject?.id ?? null}
+            defaultWorkdir={flowpadAssistantProject?.fs_storage_mount_path ?? null}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center px-4 text-center text-xs text-muted-foreground">

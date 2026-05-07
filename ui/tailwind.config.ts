@@ -142,11 +142,11 @@ export default {
         'pending-glow': {
           '0%, 100%': {
             boxShadow:
-              '0 0 0 1px hsl(var(--primary) / 0.55), 0 0 6px 0 hsl(var(--primary) / 0.45), inset 0 0 4px hsl(var(--primary) / 0.20)',
+              '0 0 0 1px hsl(var(--primary) / 0.40), 0 0 4px 0 hsl(var(--primary) / 0.30)',
           },
           '50%': {
             boxShadow:
-              '0 0 0 1px hsl(var(--primary) / 0.85), 0 0 10px 1px hsl(var(--primary) / 0.65), inset 0 0 6px hsl(var(--primary) / 0.30)',
+              '0 0 0 1px hsl(var(--primary) / 0.65), 0 0 8px 0 hsl(var(--primary) / 0.50)',
           },
         },
       },
@@ -158,7 +158,7 @@ export default {
         'subtle-pulse': 'subtle-pulse 4s ease-in-out infinite',
         typing: 'typing 1.5s steps(20, end), blink 0.75s step-end infinite',
         'float-background': 'float-background 15s ease infinite',
-        'pending-glow': 'pending-glow 2.4s ease-in-out infinite',
+        'pending-glow': 'pending-glow 3.6s ease-in-out infinite',
       },
     },
   },

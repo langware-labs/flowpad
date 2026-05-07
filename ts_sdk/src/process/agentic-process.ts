@@ -9,6 +9,7 @@
  */
 
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { isApiError } from '../ApiResponse';
 import { IEntity } from '../IEntity';
 import { FSRef, type FSRefJson } from '../fs/FSRef';
 import { ClaudeCliOptions } from '../cli_workers';
@@ -398,37 +399,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Open (or create) an AgenticProcess for a Claude CLI session ID.
-   *
-   * Uses ComputeNode.upsertSessionProcess to find an existing process linked
-   * to this session, or create one if none exists (without starting a PTY).
-   * Returns the process so the caller can navigate to its dockPointer.
-   *
-   * @param sessionId - Claude CLI session UUID
-   */
-  static async open(sessionId: string): Promise<AgenticProcess> {
-    const { dataContext } = await import('../FlowSync/context');
-    const computeNode = dataContext.computeNode;
-    if (!computeNode) throw new Error('[AgenticProcess.open] No compute node');
-    const { processId } = await computeNode.upsertSessionProcess(sessionId);
-    const process = await AgenticProcess.getById(processId);
-    if (!process) throw new Error(`[AgenticProcess.open] Process ${processId} not found after upsert`);
-    return process;
-  }
-
-  /**
-   * Find or create an AgenticProcess by worker session ID.
-   * Uses upsertSessionProcess — returns the existing process if one already
-   * has this session_id, otherwise creates a new one.
-   *
-   * @param workerType - 'claude' (reserved for future worker types)
-   * @param sessionId  - The Claude CLI session UUID
-   */
-  static async fromWorkerSessionId(workerType: 'claude', sessionId: string): Promise<AgenticProcess> {
-    return AgenticProcess.open(sessionId);
-  }
-
-  /**
    * Open (or create) an AgenticProcess for a Record and ensure it has a live PTY.
    *
    * If an entity already exists for the given record ID it is reused;
@@ -457,79 +427,31 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Get or create an AgenticProcess linked to a Claude CLI session.
-   * Resolves the session's working directory from ClaudeSessionRecord if not provided.
-   * Sets session_id so the process can be resumed via start().
+   * Resolve a worker/session/thread id to a ready-to-use AgenticProcess.
    *
-   * @param sessionId - The Claude CLI session UUID
-   * @param cwd - Optional working directory (resolved from session record if omitted)
-   * @param projectId - Optional project_id to stamp on the process. Pass the
-   *   session's *intrinsic* project (e.g. ``WorkerHistoryEntry.project_id``)
-   *   when restoring a session from history; the active dataContext project is
-   *   used as a fallback only when the caller cannot derive a better value.
+   * Single round-trip: backend auto-discovers worker_type (Claude or Codex),
+   * resolves cwd + project from the on-disk session record, upserts the
+   * AgenticProcess (heals existing or creates+starts a new one), and returns
+   * the full entity dict. We hydrate the dataManager cache directly — no
+   * follow-up `getById` needed.
+   *
+   * @param workerId - Claude session id, Codex thread id, or any future worker id.
+   * @returns The AgenticProcess entity, or `null` if no on-disk session matches.
    */
-  static async fromClaudeSession(
-    sessionId: string,
-    cwd?: string,
-    projectId?: string | null,
-  ): Promise<AgenticProcess> {
-    const { dataContext } = await import('../FlowSync/context');
+  static async getByWorkerId(workerId: string): Promise<AgenticProcess | null> {
     const computeNode = dataContext.computeNode;
-    if (!computeNode) throw new Error('[AgenticProcess.fromClaudeSession] No compute node');
+    if (!computeNode) throw new Error('[AgenticProcess.getByWorkerId] No compute node');
 
-    // Resolve workdir from the session record on disk.
-    // Best-effort: empty sessions have no JSONL yet, so cwd may be null.
-    // upsertSessionProcess is idempotent — if the process already exists it is
-    // returned immediately without needing workdir at all.
-    let resolvedCwd = cwd;
-    if (!resolvedCwd) {
-      const { ClaudeSessionRecord } = await import('../resource_management/fs_records/claude/claude-session.js');
-      const record = await ClaudeSessionRecord.discover(sessionId).catch(() => null);
-      resolvedCwd = record?.cwd ?? undefined;
+    const action = new ActionInfo('terminals', 'compute_node', computeNode.id, 'GET');
+    action.subpath = `get_by_worker_id/${workerId}`;
+    try {
+      const data = await dataManager.callAction<void, IAgenticProcess | null>(action);
+      if (!data) return null;
+      return dataManager.castAndDeepAssign<AgenticProcess>(data) as AgenticProcess;
+    } catch (e) {
+      if (isApiError(e) && e.response?.status === 404) return null;
+      throw e;
     }
-
-    // upsertSessionProcess is idempotent: finds existing process or creates a new one.
-    // Backend sets cli_config.resume=true if the transcript exists on disk.
-    const resolvedProjectId = projectId ?? dataContext.project?.id;
-    const { processId } = await computeNode.upsertSessionProcess(sessionId, {
-      ...(resolvedCwd ? { workdir: resolvedCwd } : {}),
-      ...(resolvedProjectId ? { projectId: resolvedProjectId } : {}),
-    });
-    const process = await AgenticProcess.getById(processId);
-    if (!process) throw new Error(`[AgenticProcess.fromClaudeSession] Process ${processId} not found`);
-    return process;
-  }
-
-  /**
-   * Get or create an AgenticProcess linked to a Codex CLI session (rollout thread).
-   * Mirrors fromClaudeSession but for the Codex worker. Resolves the rollout's
-   * working directory from CodexSessionRecord when not supplied; the backend
-   * stamps cli_config.resume=true so the next start() spawns
-   * ``codex exec resume <thread_id>``.
-   *
-   * @param sessionId - The Codex thread_id (UUID from session_meta.payload.id)
-   * @param cwd - Optional working directory (resolved from rollout if omitted)
-   * @param projectId - Optional intrinsic project_id; falls back to active project.
-   */
-  static async fromCodexSession(
-    sessionId: string,
-    cwd?: string,
-    projectId?: string | null,
-  ): Promise<AgenticProcess> {
-    const { dataContext } = await import('../FlowSync/context');
-    const computeNode = dataContext.computeNode;
-    if (!computeNode) throw new Error('[AgenticProcess.fromCodexSession] No compute node');
-
-    const resolvedCwd = cwd; // backend resolves from CodexSessionRecord when null
-    const resolvedProjectId = projectId ?? dataContext.project?.id;
-    const { processId } = await computeNode.upsertSessionProcess(sessionId, {
-      ...(resolvedCwd ? { workdir: resolvedCwd } : {}),
-      ...(resolvedProjectId ? { projectId: resolvedProjectId } : {}),
-      workerType: 'codex',
-    });
-    const process = await AgenticProcess.getById(processId);
-    if (!process) throw new Error(`[AgenticProcess.fromCodexSession] Process ${processId} not found`);
-    return process;
   }
 
   /**

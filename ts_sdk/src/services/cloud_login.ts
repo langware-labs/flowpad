@@ -36,7 +36,8 @@ async function _dataContext() {
 }
 async function _currentUserKey() {
   if (!_contextEntitiesEnumCache) await _dataContext();
-  return _contextEntitiesEnumCache.CurrentUserTypeId;
+  // CloudManager owns the cloud slot only; local user is independent.
+  return _contextEntitiesEnumCache.CloudUserTypeId;
 }
 
 export interface CloudLoginResult {

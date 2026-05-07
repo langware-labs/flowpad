@@ -83,73 +83,14 @@ const DesktopSetupModalHandler = () => {
   );
 };
 
-// Simple error display component for bootstrap failures
-// Uses error.type: 'config' | 'network' | 'server' set by navigator.error()
-const BootstrapError = ({ message }: { message?: string }) => (
-  <div
-    style={{
-      display: 'flex',
-      minHeight: '100vh',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: '#f9fafb',
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-    }}
-  >
-    <div
-      style={{
-        width: '100%',
-        maxWidth: '28rem',
-        borderRadius: '0.5rem',
-        background: 'white',
-        padding: '2rem',
-        textAlign: 'center',
-        boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
-      }}
-    >
-      <div
-        style={{
-          margin: '0 auto 1rem',
-          display: 'flex',
-          height: '4rem',
-          width: '4rem',
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderRadius: '50%',
-          background: '#fed7aa',
-          fontSize: '2rem',
-        }}
-      >
-        ⚠️
-      </div>
-      <h1 style={{ marginBottom: '0.5rem', fontSize: '1.5rem', fontWeight: 'bold', color: '#111827' }}>
-        Connection Error
-      </h1>
-      <p style={{ marginBottom: '0.5rem', color: '#4b5563' }}>
-        {message || 'The FlowPad backend server is not responding.'}
-      </p>
-      <button
-        onClick={() => window.location.reload()}
-        style={{
-          padding: '0.5rem 1rem',
-          background: '#3b82f6',
-          color: 'white',
-          border: 'none',
-          borderRadius: '0.375rem',
-          cursor: 'pointer',
-          fontSize: '0.875rem',
-          marginTop: '1rem',
-        }}
-      >
-        Retry Connection
-      </button>
-    </div>
-  </div>
-);
+// Bootstrap-error UX is handled by the router's root `errorElement`
+// (`<ErrorScreen/>` in `router.tsx`). The root loader (`loadRoot`) re-throws
+// service-unavailable / network / config errors before any React tree mounts,
+// so a parallel inline error UI here is no longer needed.
 
 // Component that handles auth logic
 const AppContent = ({ children }: { children: React.ReactNode }) => {
-  const { user, someone, error } = useAuth();
+  const { user, someone } = useAuth();
   const analyticsTrackingRef = useRef(false);
 
   const GlobalEvents = () => {
@@ -187,13 +128,6 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
     });
   }, [someone, user]);
 
-  // Handle auth errors - log them for debugging
-  useEffect(() => {
-    if (error) {
-      console.log('Auth error:', error);
-    }
-  }, [error]);
-
   useEffect(() => {
     const handleHubClientError = (msg: Record<string, unknown>) => {
       const method = String(msg.method ?? '').trim();
@@ -219,11 +153,6 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
       cloudManager.off('hub_client_error', handleHubClientError);
     };
   }, []);
-
-  // Show error screen if bootstrap failed
-  if (error) {
-    return <BootstrapError message={error.message} />;
-  }
 
   return (
     <QueryClientProvider client={queryClient}>

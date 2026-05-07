@@ -23,7 +23,18 @@ export function getProxy<T extends Manageable & { [key: string | symbol]: any }>
       const oldValue = target[property];
       const result = Reflect.set(target, property, value, receiver);
       if (result && oldValue !== value) {
-        if (property !== 'dirty' && property !== '_dirty') {
+        // Skip dirty + notify for internal fields. Underscore-prefixed
+        // properties (e.g. `_flowDataStream` lazy-init holder, `_dirty`,
+        // `_data` caches) are private to the entity — they are not part
+        // of the persisted schema and consumers do not subscribe to them.
+        // Firing notifyPropertyChanged for them is what triggered the
+        // render-phase "Cannot update component while rendering different
+        // component" warning: a getter-with-side-effects (e.g. `flowDataStream`)
+        // mutated `_flowDataStream` during a sibling component's render and
+        // synchronously dispatched setState across all subscribers.
+        const isInternal =
+          typeof property === 'string' && property.startsWith('_');
+        if (!isInternal && property !== 'dirty') {
           target.dirty = true;
           dataManager.notifyPropertyChanged(target.typeId, property as string);
         }

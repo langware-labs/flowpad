@@ -2,6 +2,7 @@ import AgentLayout from '@src/components/agent-layout/agent-layout';
 import ErrorScreen from '@src/components/agent-layout/error-screen/error-screen';
 import { ApiKeysView } from '@src/components/api-keys-view/api-keys-view';
 import DeveloperLayout from '@src/components/developer-layout/developer-layout';
+import { FloatingChatWindow } from '@src/components/floating-chat';
 import { HooksView } from '@src/components/hooks-view/hooks-view';
 import { SessionsView } from '@src/components/sessions-view/sessions-view';
 import { BASE_PATH } from '@src/constants/basePath';
@@ -9,11 +10,32 @@ import AgentRedirect from '@src/pages/agent-redirect';
 import FlowPage from '@src/pages/flow-page/flow-page';
 import LandingPage from '@src/pages/landing-page/landing-page';
 import NotFound from '@src/pages/NotFound';
-import { createBrowserRouter, createRoutesFromElements, Navigate, Route, type ShouldRevalidateFunctionArgs } from 'react-router';
+import App from '@src/App';
+import { createBrowserRouter, createRoutesFromElements, Navigate, Outlet, Route, type ShouldRevalidateFunctionArgs } from 'react-router';
+
+/**
+ * Root layout — sits inside the loader-gated subtree so `<App>` and every
+ * entity-touching hook it contains (useAuth, useGlobalEvents, …) only mount
+ * after `loadRoot` has resolved (i.e. SDK schemas + bootstrap are ready).
+ *
+ * `<FloatingChatWindow>` lives here because its descendants call
+ * react-router hooks (`useNavigate()`); placing it inside `<App>` keeps it
+ * below `<RouterProvider>` while still letting `FloatingChatProvider` (in
+ * `<App>`) own the open/close state across route changes.
+ */
+function RootLayout() {
+  return (
+    <App>
+      <Outlet />
+      <FloatingChatWindow />
+    </App>
+  );
+}
 
 // Import loaders
 import { loadHomePage } from './routes/loaders/home-loader';
 import { loadAgentApp } from './routes/loaders/main-loader';
+import { loadRoot } from './routes/loaders/root-loader';
 
 function shouldRevalidateDockShell({
   currentUrl,
@@ -34,6 +56,8 @@ export const router = createBrowserRouter(
   createRoutesFromElements(
     <Route
       path="/"
+      element={<RootLayout />}
+      loader={loadRoot}
       errorElement={<ErrorScreen />}
       HydrateFallback={() => (
         <div className="flex min-h-screen items-center justify-center">

@@ -13,7 +13,8 @@ import {
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
-import { usePendingSessionIds } from '@src/store/pending-actions-store';
+import { toast } from '@src/hooks/use-toast';
+import { acknowledgePending, formatTimeAgo, useLastStatusChange, usePendingSessionIds } from '@src/store/pending-actions-store';
 import {
   closeTerminalTargets,
   terminalProcessId,
@@ -126,6 +127,7 @@ const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: str
   const isAlive = isProcessRunning(process.status ?? ProcessStatus.NEW);
   const status = getDisplayStatus(process) ?? ProcessStatus.NEW;
   const workerSessionId = process.session_id ?? null;
+  const lastStatusChangedAt = useLastStatusChange(process.id ?? null);
 
   return (
     <div className="min-w-[220px] space-y-1.5">
@@ -135,6 +137,14 @@ const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: str
           className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${isAlive ? 'bg-emerald-500' : 'bg-muted-foreground'}`}
         />
         <span className="text-[11px] font-semibold capitalize text-foreground">{status}</span>
+        {lastStatusChangedAt !== null && (
+          <span
+            className="text-[10px] text-muted-foreground"
+            data-testid="tab-status-ago"
+          >
+            {formatTimeAgo(lastStatusChangedAt)}
+          </span>
+        )}
       </div>
       {workdir && (
         <p className="max-w-[240px] truncate font-mono text-[10px] text-muted-foreground" title={workdir}>
@@ -856,7 +866,11 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                         ? 'cursor-pointer border-primary bg-background text-foreground'
                         : 'cursor-pointer border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
                   } ${isPending ? 'animate-pending-glow rounded-md' : ''}`}
-                  onClick={() => !isDisabled && selectTab(targetKey)}
+                  onClick={() => {
+                    if (isDisabled) return;
+                    selectTab(targetKey);
+                    acknowledgePending(sessionProcessId);
+                  }}
                   data-testid={tabTestId}
                   data-terminal-target={targetKey}
                 >
@@ -1112,20 +1126,13 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
             try {
               if (entry.agentic_process_id) {
                 await navigation.openShellProcess(entry.agentic_process_id);
-              } else if (entry.worker_type === 'claude') {
-                const process = await AgenticProcess.fromClaudeSession(
-                  entry.worker_id,
-                  entry.project_cwd ?? undefined,
-                  entry.project_id ?? undefined,
-                );
-                navigation.openDockPointer(process.dockPointer);
-              } else if (entry.worker_type === 'codex') {
-                const process = await AgenticProcess.fromCodexSession(
-                  entry.worker_id,
-                  entry.project_cwd ?? undefined,
-                  entry.project_id ?? undefined,
-                );
-                navigation.openDockPointer(process.dockPointer);
+              } else {
+                const process = await AgenticProcess.getByWorkerId(entry.worker_id);
+                if (!process) {
+                  toast({ title: 'Session not found', description: `Session ${entry.worker_id} is not in Claude or Codex history.`, variant: 'destructive' });
+                } else {
+                  navigation.openDockPointer(process.dockPointer);
+                }
               }
             } catch (err) {
               console.error('[TabbedTerminal] Failed to open session from history:', err);

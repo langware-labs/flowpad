@@ -89,7 +89,12 @@ export enum ContextEntitiesEnum {
   CurrentFlowTypeId = 'CurrentFlowTypeId',
   CurrentProjectTypeId = 'CurrentProjectTypeId',
   CurrentComputeNodeTypeId = 'CurrentComputeNodeTypeId',
-  CurrentUserTypeId = 'CurrentUserTypeId',
+  // Two distinct user identities — desktop (local bootstrap, HTTP-cookie auth)
+  // vs cloud (Hub login). They are independent: cloud transitions must never
+  // mutate the local slot, and vice versa. `someone` (the "is the dock ready
+  // to render" gate) is bound to the *local* slot only.
+  LocalUserTypeId = 'LocalUserTypeId',
+  CloudUserTypeId = 'CloudUserTypeId',
   CurrentActiveEntityTypeId = 'CurrentActiveEntityTypeId',
   CurrentDomainTypeId = 'CurrentDomainTypeId',
   CurrentVisitorTypeId = 'CurrentVisitorTypeId',
@@ -121,7 +126,8 @@ class DataContext extends EventEmitter {
     [ContextEntitiesEnum.CurrentFlowTypeId, null],
     [ContextEntitiesEnum.CurrentProjectTypeId, null],
     [ContextEntitiesEnum.CurrentComputeNodeTypeId, null],
-    [ContextEntitiesEnum.CurrentUserTypeId, null],
+    [ContextEntitiesEnum.LocalUserTypeId, null],
+    [ContextEntitiesEnum.CloudUserTypeId, null],
     [ContextEntitiesEnum.CurrentActiveEntityTypeId, null],
     [ContextEntitiesEnum.CurrentDomainTypeId, null],
     [ContextEntitiesEnum.CurrentVisitorTypeId, null],
@@ -322,8 +328,15 @@ class DataContext extends EventEmitter {
     return this.getContextEntity(ContextEntitiesEnum.CurrentActiveEntityTypeId);
   }
 
+  /**
+   * "Is the desktop user known?" gate — bound to the *local* slot only.
+   *
+   * Cloud login is independent and must NEVER cause `someone` to flip back to
+   * null. AgentLayout's loading guard reads this; we want it stable as long as
+   * the local desktop has bootstrapped, regardless of cloud transitions.
+   */
   get someone(): TypeId | null {
-    return this.userTypeId || this.visitorTypeId;
+    return this.localUserTypeId || this.visitorTypeId;
   }
 
   activeOntology: OntologyData | null = null;
@@ -344,6 +357,10 @@ class DataContext extends EventEmitter {
       activeEntityTypeId: computed,
       workspaceTypeId: computed,
       userTypeId: computed,
+      localUser: computed,
+      cloudUser: computed,
+      localUserTypeId: computed,
+      cloudUserTypeId: computed,
       flowTypeId: computed,
       projectTypeId: computed,
       computeNodeTypeId: computed,
@@ -403,14 +420,15 @@ class DataContext extends EventEmitter {
     });
 
     if (user && user.typeId) {
-      // User entity is already in dataManager cache
-      // Just set the TypeId in context
-      await this.setContextEntityTypeId(ContextEntitiesEnum.CurrentUserTypeId, user.typeId);
+      // User entity is already in dataManager cache. authManager owns the
+      // *local* slot — cloud login goes through CloudManager into the cloud
+      // slot, which is independent.
+      await this.setContextEntityTypeId(ContextEntitiesEnum.LocalUserTypeId, user.typeId);
       // Clear visitor when user logs in
       await this.setContextEntityTypeId(ContextEntitiesEnum.CurrentVisitorTypeId, null);
     } else {
-      // User logged out
-      await this.setContextEntityTypeId(ContextEntitiesEnum.CurrentUserTypeId, null);
+      // Local user logged out
+      await this.setContextEntityTypeId(ContextEntitiesEnum.LocalUserTypeId, null);
     }
     // setContextEntityTypeId already emits CONTEXT_CHANGED
   }
@@ -470,7 +488,9 @@ class DataContext extends EventEmitter {
   activeEntityTypeId2ContextEnum(typeId: TypeId): ContextEntitiesEnum | null {
     switch (typeId.type) {
       case User.type:
-        return ContextEntitiesEnum.CurrentUserTypeId;
+        // Active-entity highlight maps to the local desktop user; cloud user
+        // is informational only and handled separately by CloudManager.
+        return ContextEntitiesEnum.LocalUserTypeId;
       case Workspace.type:
         return ContextEntitiesEnum.CurrentWorkspaceTypeId;
       case Flow.type:
@@ -490,8 +510,19 @@ class DataContext extends EventEmitter {
     }
   }
 
+  /** Alias for the local user — what callers historically meant by "the user". */
   get user(): User | null {
-    return this.getContextEntity(ContextEntitiesEnum.CurrentUserTypeId) as User | null;
+    return this.localUser;
+  }
+
+  /** Local desktop user (set by local bootstrap / authManager). */
+  get localUser(): User | null {
+    return this.getContextEntity(ContextEntitiesEnum.LocalUserTypeId) as User | null;
+  }
+
+  /** Cloud-logged-in user (set by CloudManager); independent of local user. */
+  get cloudUser(): User | null {
+    return this.getContextEntity(ContextEntitiesEnum.CloudUserTypeId) as User | null;
   }
 
   get workspace(): Workspace | null {
@@ -586,8 +617,17 @@ class DataContext extends EventEmitter {
     return entity ?? null;
   }
 
+  /** Alias for `localUserTypeId` — what callers historically meant by "the user TypeId". */
   get userTypeId(): TypeId | null {
-    return this.getContextEntityTypeId(ContextEntitiesEnum.CurrentUserTypeId) ?? null;
+    return this.localUserTypeId;
+  }
+
+  get localUserTypeId(): TypeId | null {
+    return this.getContextEntityTypeId(ContextEntitiesEnum.LocalUserTypeId) ?? null;
+  }
+
+  get cloudUserTypeId(): TypeId | null {
+    return this.getContextEntityTypeId(ContextEntitiesEnum.CloudUserTypeId) ?? null;
   }
 
   get workspaceTypeId(): TypeId | null {

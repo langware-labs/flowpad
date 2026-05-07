@@ -197,18 +197,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
       }
       if (!p) {
         try {
-          p =
-            peekEntry.worker_type === 'codex'
-              ? await AgenticProcess.fromCodexSession(
-                  peekEntry.worker_id,
-                  peekEntry.project_cwd ?? undefined,
-                  peekEntry.project_id ?? undefined,
-                )
-              : await AgenticProcess.fromClaudeSession(
-                  peekEntry.worker_id,
-                  peekEntry.project_cwd ?? undefined,
-                  peekEntry.project_id ?? undefined,
-                );
+          p = await AgenticProcess.getByWorkerId(peekEntry.worker_id);
         } catch (err) {
           console.error('[HistoryModal] Failed to resolve process for peek:', err);
           p = null;

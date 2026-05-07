@@ -540,6 +540,27 @@ class AgenticProcess(Entity):
         ),
     )
 
+    @model_validator(mode="after")
+    def _bubble_process_type_from_context_data(self) -> "AgenticProcess":
+        """Lift `process_type` from `context_data` onto the top-level field.
+
+        The chat panel queries `useProcessesForTarget(target, { processType })`
+        which filters on top-level `process_type`. Older entities (and any
+        creation path that didn't pop the value out of `context_data`) carry
+        the value at `context_data.process_type` instead, leaving the top-level
+        field None and the toolbar history dropdown empty. This validator
+        bubbles the nested value up on every load + construction so existing
+        rows surface correctly without a one-off migration.
+        """
+        if self.process_type is None and isinstance(self.context_data, dict):
+            nested = self.context_data.get("process_type")
+            if nested:
+                try:
+                    self.process_type = ProcessType(nested)
+                except (ValueError, TypeError):
+                    pass
+        return self
+
     # ── Construction ──────────────────────────────────────────────────────────
 
     @classmethod

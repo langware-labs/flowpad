@@ -457,11 +457,14 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 return ApiFailResponse(message="terminals/close requires POST", status_code=405)
             body = await request_info.get_post_data() if request_info else {}
             return await self._terminal_close(body, background_tasks)
+        if sub_path.startswith("get_by_worker_id/"):
+            if request_info and not request_info.is_get:
+                return ApiFailResponse(message="terminals/get_by_worker_id requires GET", status_code=405)
+            worker_id = sub_path[len("get_by_worker_id/"):]
+            if not worker_id:
+                return ApiFailResponse(message="worker id required", status_code=400)
+            return await self._scan_get_by_worker_id(worker_id)
         return ApiFailResponse(message=f"unknown terminals sub-path: {sub_path!r}", status_code=400)
-
-    @action.get(action_name="active-terminals")
-    async def _active_terminals_removed(self) -> ApiResponse:
-        return ApiFailResponse(message="active-terminals was removed; use terminals/list", status_code=410)
 
     async def _terminal_list(self) -> ApiResponse:
         """Single source of truth for the tab strip.

@@ -10,7 +10,6 @@ import {
   AgenticProcess,
   ContextEntitiesEnum,
   dataContext,
-  initSdk,
   Project,
   QueryRequest,
   systemTools,
@@ -78,16 +77,9 @@ export async function loadAgentApp(args: LoaderArgs) {
   const t = new TimeIt(`loadAgentApp(${params['*'] || params.viewType || '/'})`);
   _perfLog(`loadAgentApp start (${params['*'] || params.viewType || '?'})`);
 
-  await initSdk(params);
-  t.time('initSdk');
-
-  // Check if service is unavailable - throw error so ErrorBoundary catches it.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const bootstrapError = dataContext.bootstrapError as any;
-  if (bootstrapError?.isServiceUnavailable || bootstrapError?.type === 'network') {
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw dataContext.bootstrapError;
-  }
+  // SDK init + bootstrap-error gating now happen in the root loader
+  // (`./root-loader.ts`); by the time we get here, schemas are registered
+  // and any fatal bootstrap error has already routed to <ErrorScreen/>.
 
   const { processId, viewType } = params;
   const pointer = params['*'] || '';

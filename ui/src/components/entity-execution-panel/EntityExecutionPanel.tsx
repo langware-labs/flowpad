@@ -22,12 +22,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
-import { History, MessageSquarePlus, Settings } from 'lucide-react';
+import { History, MessageSquarePlus, Settings, Trash2, X } from 'lucide-react';
+import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExecutionSettingsPopover } from './ExecutionSettingsPopover';
 import { CompactExecutionInput } from './CompactExecutionInput';
 import { groupTurnEvents } from '@src/components/floating-chat/groupTurnEvents';
 import { ToolEntryRow } from '@src/components/floating-chat/ToolEntryRow';
+import {
+  buildHistorySubline,
+  pickHistoryTitle,
+  timeAgo as historyTimeAgo,
+  WorkerIcon as HistoryWorkerIcon,
+} from './history-row';
+import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { useDerivedWorkerStatus } from './hooks/useDerivedWorkerStatus';
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
@@ -85,6 +93,16 @@ interface EntityExecutionPanelProps {
    * Assistant chat opts in.
    */
   dense?: boolean;
+  /**
+   * Override the project that newly-spawned processes are tagged with and
+   * the workdir they run in. Defaults to the user's currently-active project
+   * (`useProject()`). The floating Flowpad Assistant chat passes the
+   * Flowpad-Assistant project here so its workdir, project_id, and the
+   * settings popover's asset-manager all scope to the assistant project,
+   * not whatever the user happens to be looking at.
+   */
+  defaultProjectId?: string | null;
+  defaultWorkdir?: string | null;
 }
 
 /**
@@ -116,6 +134,8 @@ export function EntityExecutionPanel({
   headerLabel,
   placeholder,
   dense = false,
+  defaultProjectId,
+  defaultWorkdir,
 }: EntityExecutionPanelProps) {
   const targetStr = target ?? '';
 
@@ -128,6 +148,19 @@ export function EntityExecutionPanel({
       return tb - ta;
     });
   }, [processes]);
+
+  // Worker-history join — same backend action that powers the terminal's
+  // full HistoryModal. The dropdown rows merge each AgenticProcess with its
+  // matching entry to display the rich info (subject, project, branch, msg
+  // count, worker icon) instead of bare ids and timestamps.
+  const { entries: workerHistoryEntries } = useWorkerHistory(30);
+  const workerHistoryByProcessId = useMemo(() => {
+    const map = new Map<string, WorkerHistoryEntry>();
+    for (const entry of workerHistoryEntries) {
+      if (entry.agentic_process_id) map.set(entry.agentic_process_id, entry);
+    }
+    return map;
+  }, [workerHistoryEntries]);
 
   // 2. User-selected process overrides the default "latest-wins" pick. `null` means auto-latest
   //    or, when combined with startNewSession(), a fresh one on the next send.
@@ -201,8 +234,15 @@ export function EntityExecutionPanel({
   // rules.
   const turnGroups = useMemo(() => (dense ? groupTurnEvents(items) : []), [dense, items]);
 
-  // 4. Project workdir + id (lazy-create inputs).
-  const { project } = useProject();
+  // 4. Project workdir + id (lazy-create inputs). Caller-supplied defaults
+  // take precedence so surfaces like the floating Flowpad Assistant chat can
+  // pin the process to a specific project (Flowpad Assistant) instead of
+  // following the user's active project (e.g. `local`).
+  const { project: activeProject } = useProject();
+  const effectiveProjectId =
+    defaultProjectId !== undefined ? defaultProjectId : (activeProject?.id ?? null);
+  const effectiveWorkdir =
+    defaultWorkdir !== undefined ? defaultWorkdir : (activeProject?.fs_storage_mount_path ?? undefined);
 
   // 5. In-flight tracking for the send button gate.
   const [sending, setSending] = useState(false);
@@ -261,8 +301,8 @@ export function EntityExecutionPanel({
           const computeNode = await ComputeNode.getById('@local');
           if (!computeNode) throw new Error('No local compute node');
           const newProcess = await computeNode.createProcess({
-            workdir: project?.fs_storage_mount_path ?? undefined,
-            projectId: pendingProjectId ?? project?.id,
+            workdir: effectiveWorkdir ?? undefined,
+            projectId: pendingProjectId ?? effectiveProjectId ?? undefined,
             targetVfsPath: targetStr,
             processType,
             outputFormat: 'stream-json',
@@ -287,7 +327,7 @@ export function EntityExecutionPanel({
     } finally {
       setSending(false);
     }
-  }, [activeProcess, sending, targetStr, project, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType]);
+  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType]);
 
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
   useEffect(() => {
@@ -295,6 +335,53 @@ export function EntityExecutionPanel({
   }, [messages.length]);
 
   const showEmptyState = !activeProcess && !listLoading && !sending;
+
+  // ── Past-chats deletion ────────────────────────────────────────────────────
+  // Two flows share a single ConfirmDialog: per-row trash (kind='one') and the
+  // top-of-list "Clear all" (kind='all'). The dialog stages the action; on
+  // confirm we call AgenticProcess.delete() which fires DELETE on the entity
+  // and the data-manager's WS handler removes it from `useEntitiesQuery`
+  // results — the dropdown rerenders without the deleted rows automatically.
+  // If the deleted process is the active session, we also clear `selectedProcessId`
+  // and `localProcess` so the panel falls back to the latest remaining one.
+  const [pendingDelete, setPendingDelete] = useState<
+    | null
+    | { kind: 'one'; id: string; title: string }
+    | { kind: 'all'; count: number }
+  >(null);
+
+  const handleDeleteOne = useCallback((id: string, title: string) => {
+    setPendingDelete({ kind: 'one', id, title });
+  }, []);
+
+  const handleClearAll = useCallback(() => {
+    setPendingDelete({ kind: 'all', count: sortedProcesses.length });
+  }, [sortedProcesses.length]);
+
+  const performDelete = useCallback(async () => {
+    if (!pendingDelete) return;
+    const idsToDelete =
+      pendingDelete.kind === 'one'
+        ? [pendingDelete.id]
+        : sortedProcesses.map((p) => p.id).filter((id): id is string => !!id);
+
+    // Clear active picks that point at to-be-deleted ids so the panel doesn't
+    // try to render a process that no longer exists between the WS deletion
+    // event and the next query refresh.
+    if (idsToDelete.includes(selectedProcessId ?? '')) setSelectedProcessId(null);
+    if (idsToDelete.includes(localProcess?.id ?? '')) setLocalProcess(null);
+    if (pendingDelete.kind === 'all') setForceNew(false);
+
+    for (const id of idsToDelete) {
+      const proc = sortedProcesses.find((p) => p.id === id);
+      if (!proc) continue;
+      try {
+        await proc.delete();
+      } catch (err) {
+        console.error('[EntityExecutionPanel] delete failed for', id, err);
+      }
+    }
+  }, [pendingDelete, sortedProcesses, selectedProcessId, localProcess?.id]);
 
   // CLI-mode processes don't get entity patches mid-turn, so fall back to a
   // derivation over flowDataStream events. See useDerivedWorkerStatus.
@@ -340,9 +427,12 @@ export function EntityExecutionPanel({
       )}
       <ExecutionHistoryHeader
         processes={sortedProcesses}
+        workerHistoryByProcessId={workerHistoryByProcessId}
         activeId={activeProcess?.id ?? null}
         onNewSession={startNewSession}
         onPickSession={selectSession}
+        onDeleteSession={handleDeleteOne}
+        onClearAll={handleClearAll}
         cursorLine={cursorLine ?? null}
         newSessionLabel={newSessionLabel}
         historyLabel={historyLabel}
@@ -354,7 +444,7 @@ export function EntityExecutionPanel({
             onAttach={handleAttach}
             onDetach={handleDetach}
             activeProcess={activeProcess}
-            projectId={activeProcess ? (activeProcess.project_id ?? null) : (pendingProjectId ?? project?.id ?? null)}
+            projectId={activeProcess ? (activeProcess.project_id ?? null) : (pendingProjectId ?? effectiveProjectId ?? null)}
             onProjectChange={setPendingProjectId}
             trigger={
               <button
@@ -402,6 +492,25 @@ export function EntityExecutionPanel({
             ))}
       </AutoScrollContainer>
       <CompactExecutionInput onSend={handleSend} disabled={sendDisabled} statusSlot={statusSlot} placeholder={placeholder} />
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(o) => { if (!o) setPendingDelete(null); }}
+        variant="destructive"
+        title={
+          pendingDelete?.kind === 'all'
+            ? `Clear all past chats?`
+            : `Delete this chat?`
+        }
+        description={
+          pendingDelete?.kind === 'all'
+            ? `This will permanently delete ${pendingDelete.count} chat session${pendingDelete.count === 1 ? '' : 's'} for this surface. The conversation transcripts saved on disk are kept; only the process records are removed. This cannot be undone.`
+            : pendingDelete?.kind === 'one'
+              ? `This will permanently delete "${pendingDelete.title}". The conversation transcript saved on disk is kept; only the process record is removed. This cannot be undone.`
+              : ''
+        }
+        confirmLabel={pendingDelete?.kind === 'all' ? 'Delete all' : 'Delete'}
+        onConfirm={() => { void performDelete(); }}
+      />
     </div>
   );
 }
@@ -411,6 +520,7 @@ export type { AgenticProcess, FlowData, TypeId };
 
 function ExecutionHistoryHeader({
   processes,
+  workerHistoryByProcessId,
   activeId,
   onNewSession,
   onPickSession,
@@ -422,6 +532,7 @@ function ExecutionHistoryHeader({
   noPastSessionsLabel,
 }: {
   processes: AgenticProcess[];
+  workerHistoryByProcessId: Map<string, WorkerHistoryEntry>;
   activeId: string | null;
   onNewSession: () => void;
   onPickSession: (id: string) => void;
@@ -478,22 +589,47 @@ function ExecutionHistoryHeader({
             <div className="px-2 py-1.5 text-[11px] text-muted-foreground">{noPastSessionsLabel}</div>
           ) : (
             processes.map((p) => {
-              const when = p.updated_date || p.created_date;
-              const ts = when ? new Date(when) : null;
+              const entry = p.id ? workerHistoryByProcessId.get(p.id) : undefined;
+              const title = pickHistoryTitle(p, entry);
+              const subline = buildHistorySubline(entry);
+              // `updated_date` / `created_date` can come through as either an
+              // ISO string or a Date depending on how the entity was hydrated;
+              // normalize to ISO so `timeAgo` can parse uniformly.
+              const lastActiveRaw = entry?.last_active_time ?? p.updated_date ?? p.created_date ?? null;
+              const lastActive: string | null =
+                lastActiveRaw == null
+                  ? null
+                  : typeof lastActiveRaw === 'string'
+                    ? lastActiveRaw
+                    : lastActiveRaw instanceof Date
+                      ? lastActiveRaw.toISOString()
+                      : String(lastActiveRaw);
+              const isActive = p.id === activeId;
               return (
                 <DropdownMenuItem
                   key={p.id}
                   onSelect={() => p.id && onPickSession(p.id)}
-                  data-active={p.id === activeId ? 'true' : 'false'}
+                  data-active={isActive ? 'true' : 'false'}
                   className="flex flex-col items-start gap-0.5"
                 >
-                  <span className="text-xs">
-                    {ts ? ts.toLocaleString() : 'Unknown time'}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">
-                    {p.displayName}
-                    {p.id === activeId ? ' · current' : ''}
-                  </span>
+                  <div className="flex w-full items-center gap-1.5">
+                    <HistoryWorkerIcon
+                      workerType={entry?.worker_type ?? p.worker_type ?? null}
+                      className="h-3 w-3 shrink-0"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium">
+                      {title}
+                    </span>
+                    <span className="flex-shrink-0 text-[10px] text-muted-foreground tabular-nums">
+                      {historyTimeAgo(lastActive)}
+                    </span>
+                  </div>
+                  {(subline || isActive) && (
+                    <span className="text-[10px] text-muted-foreground">
+                      {subline}
+                      {isActive ? `${subline ? ' · ' : ''}current` : ''}
+                    </span>
+                  )}
                 </DropdownMenuItem>
               );
             })

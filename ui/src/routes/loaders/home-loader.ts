@@ -1,4 +1,4 @@
-import { ContextEntitiesEnum, dataContext, initSdk, TypeId } from '@sdk';
+import { ContextEntitiesEnum, dataContext, TypeId } from '@sdk';
 import type { LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { TimeIt } from '@src/utils/timeit';
 
@@ -22,21 +22,11 @@ async function ensureComputeNodeLoaded(): Promise<void> {
   }
 }
 
-export async function loadHomePage(args: LoaderArgs) {
-  const { params } = args;
+export async function loadHomePage(_args: LoaderArgs) {
   const t = new TimeIt('Home load');
 
-  await initSdk(params);
-  t.time('initSdk');
-
-  // Check if service is unavailable - throw error so ErrorBoundary catches it
-  if (
-    dataContext.bootstrapError &&
-    (dataContext.bootstrapError as { isServiceUnavailable?: boolean })?.isServiceUnavailable
-  ) {
-    throw new Error(dataContext.bootstrapError.message || 'Service unavailable');
-  }
-
+  // SDK init + bootstrap-error gating now happen in the root loader
+  // (`./root-loader.ts`).
   await ensureComputeNodeLoaded();
   t.time('ensureComputeNode');
 

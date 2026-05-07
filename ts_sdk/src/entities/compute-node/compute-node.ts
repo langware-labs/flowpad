@@ -9,6 +9,7 @@
  */
 
 import { APIEntity, dataManager, registerEntity } from '../../APIEntity';
+import { isApiError } from '../../ApiResponse';
 import { TypeId } from '../../models/TypeId';
 import type { IAgenticProcess } from '../../process/agentic-process';
 import { ConnectionManager } from '../../websocket';
@@ -35,10 +36,13 @@ import { GitRepo } from '../git-repo';
 /** Callback for when a new machine session is detected */
 export type MachineSessionCallback = (sessionId: string, session: Shell) => void;
 
+/** CLI worker kind (Claude Code vs Codex) shared across resolver APIs. */
+export type WorkerKind = 'claude' | 'codex';
+
 /** Descriptor returned by {@link ComputeNode.findSession} on hit. */
 export interface FindSessionResult {
   session_id: string;
-  worker_type: 'claude' | 'codex';
+  worker_type: WorkerKind;
   transcript_path: string | null;
   /** Encoded project dir name under `~/.claude/projects/`. Null for codex. */
   project_encoded_name: string | null;
@@ -166,43 +170,10 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   }
 
   /**
-   * Find or create an AgenticProcess for a given Claude Code session ID.
-   *
-   * If a process with matching session_id exists, returns it.
-   * Otherwise creates a new AgenticProcess with the session ID pre-set
-   * so the session viewer can load JSONL history.
-   *
-   * @param sessionId - Claude Code session ID
-   * @param options - Optional workdir and projectId
-   * @returns Promise with processId and whether it was newly created
-   */
-  async upsertSessionProcess(
-    sessionId: string,
-    options?: { workdir?: string; projectId?: string; workerType?: 'claude' | 'codex' },
-  ): Promise<{ processId: string; created: boolean; workerType?: string }> {
-    const action = new ActionInfo('upsertSessionProcess', ComputeNode.type, this.id, 'POST');
-    action.bodyParameters = {
-      sessionId,
-      ...(options?.workdir ? { workdir: options.workdir } : {}),
-      ...(options?.projectId ? { projectId: options.projectId } : {}),
-      ...(options?.workerType ? { workerType: options.workerType } : {}),
-    };
-
-    const response = await dataManager.callAction<
-      void,
-      { id: string; type: string; session_id: string; created: boolean; worker_type?: string }
-    >(action);
-
-    return { processId: response.id, created: response.created, workerType: response.worker_type };
-  }
-
-  /**
    * Resolve a session id to its on-disk descriptor (Claude or Codex).
    *
-   * Pure read-only lookup: never creates an AgenticProcess. Used by the
-   * "find then open" restore flow — caller shows an error toast on null,
-   * otherwise routes to {@link AgenticProcess.fromClaudeSession} /
-   * {@link AgenticProcess.fromCodexSession} using `worker_type`.
+   * Pure read-only lookup: never creates an AgenticProcess. Use
+   * `AgenticProcess.getByWorkerId(id)` for the find+open flow.
    *
    * @param sessionId - UUID/thread id.
    * @param workerType - Optional hint to skip the other indexer.
@@ -210,7 +181,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    */
   async findSession(
     sessionId: string,
-    workerType?: 'claude' | 'codex',
+    workerType?: WorkerKind,
   ): Promise<FindSessionResult | null> {
     const action = new ActionInfo('findSession', ComputeNode.type, this.id, 'GET');
     action.queryParameters = {
@@ -220,7 +191,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     try {
       return await dataManager.callAction<void, FindSessionResult>(action);
     } catch (e) {
-      if ((e as { response?: { status?: number } })?.response?.status === 404) return null;
+      if (isApiError(e) && e.response?.status === 404) return null;
       throw e;
     }
   }

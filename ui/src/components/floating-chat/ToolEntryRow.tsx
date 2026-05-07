@@ -9,7 +9,6 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
-  Loader2,
   Sparkles,
   Wrench,
 } from 'lucide-react';
@@ -43,42 +42,51 @@ export function ToolEntryRow({ events }: ToolEntryRowProps) {
 
   if (totalCount === 0) return null;
 
+  // Compact chip: a tiny pill that signals "agent is alive and doing things".
+  // Visual goal is heartbeat / breadcrumb, not a primary CTA. Click expands
+  // to the full per-event list, but expansion is intentionally low-affordance
+  // (no chevron in the resting state — discovery is by hover).
+  const headlineDetail = latest?.detail ?? '';
   return (
     <div
       data-testid="dense-tool-row"
-      className="my-1 rounded-md border border-sky-400/20 bg-sky-50/40 px-2 py-1.5 text-xs dark:border-sky-400/15 dark:bg-sky-950/20"
+      // Column so the expanded list drops BELOW the chip, indented slightly,
+      // instead of stretching to the right and turning the chip into a giant
+      // strip. `items-start` keeps the chip pill content-sized.
+      className="my-0.5 flex flex-col items-start gap-1"
     >
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-2 text-left"
         data-testid="dense-tool-row-toggle"
         aria-expanded={expanded}
+        title={
+          latest
+            ? `${totalCount} event${totalCount === 1 ? '' : 's'} · ${latest.label}${headlineDetail ? ` · ${headlineDetail}` : ''}`
+            : `${totalCount} event${totalCount === 1 ? '' : 's'}`
+        }
+        className={[
+          'inline-flex max-w-full items-center gap-1 rounded-full border px-1.5 py-px',
+          'text-[10px] leading-none text-muted-foreground/80',
+          'border-sky-400/15 bg-sky-50/30 hover:border-sky-400/30 hover:text-foreground/80',
+          'dark:border-sky-400/10 dark:bg-sky-950/20 dark:hover:border-sky-400/25',
+          'transition-colors',
+        ].join(' ')}
       >
-        {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-        )}
         <OneLinerIcon kind={latest?.icon ?? 'tool'} inFlight={latest?.inFlight ?? false} />
-        <span className="font-medium tabular-nums text-muted-foreground">
-          {totalCount} {totalCount === 1 ? 'event' : 'events'}
-        </span>
-        {latest?.label && (
-          <span className="truncate text-muted-foreground">
-            <span className="opacity-50">·</span> {latest.label}
-            {latest.detail && (
-              <>
-                <span className="opacity-50"> ·</span>{' '}
-                <span className="font-mono text-[11px] text-foreground/70">{latest.detail}</span>
-              </>
-            )}
-          </span>
+        <span className="tabular-nums">{totalCount}</span>
+        {headlineDetail && (
+          <>
+            <span className="opacity-30">·</span>
+            <span className="max-w-[220px] truncate font-mono text-[10px] text-foreground/60">
+              {headlineDetail}
+            </span>
+          </>
         )}
       </button>
 
       {expanded && (
-        <ul className="mt-2 flex flex-col gap-1 border-t border-sky-400/15 pt-2 dark:border-sky-400/10">
+        <ul className="ml-3 flex max-w-full flex-col gap-0.5 rounded-md border border-sky-400/15 bg-sky-50/20 px-2 py-1 dark:border-sky-400/10 dark:bg-sky-950/15">
           {pairs.map((pair, i) => (
             <ToolPairItem key={`pair-${i}`} pair={pair} />
           ))}
@@ -95,19 +103,16 @@ export function ToolEntryRow({ events }: ToolEntryRowProps) {
 }
 
 function OneLinerIcon({ kind, inFlight }: { kind: OneLiner['icon']; inFlight: boolean }) {
-  if (inFlight) {
-    return <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-sky-500" />;
-  }
-  if (kind === 'reasoning') {
-    return <Sparkles className="h-3.5 w-3.5 flex-shrink-0 text-violet-500" />;
-  }
-  if (kind === 'error') {
-    return <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 text-red-500" />;
-  }
-  if (kind === 'status') {
-    return <Activity className="h-3.5 w-3.5 flex-shrink-0 text-amber-500" />;
-  }
-  return <Wrench className="h-3.5 w-3.5 flex-shrink-0 text-sky-500" />;
+  // Tiny — the chip is "it's alive" candy, not an information surface.
+  const cls = 'h-2.5 w-2.5 flex-shrink-0';
+  // In-flight = a TOOL_CALL has no matching TOOL_RESULT yet. Use the same
+  // tool icon as the resting state and animate a soft pulse rather than a
+  // spinning loader so the chip feels like a heartbeat, not "busy/loading".
+  if (inFlight) return <Wrench className={`${cls} animate-pulse text-sky-500`} />;
+  if (kind === 'reasoning') return <Sparkles className={`${cls} text-violet-500`} />;
+  if (kind === 'error') return <AlertTriangle className={`${cls} text-red-500`} />;
+  if (kind === 'status') return <Activity className={`${cls} text-amber-500`} />;
+  return <Wrench className={`${cls} text-sky-500`} />;
 }
 
 function ToolPairItem({ pair }: { pair: ToolPair }) {
@@ -133,12 +138,17 @@ function ToolPairItem({ pair }: { pair: ToolPair }) {
         ) : (
           <ChevronRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
         )}
-        {inFlight ? (
-          <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin text-sky-500" />
-        ) : isError ? (
+        {/* In-flight = no matching TOOL_RESULT in this bucket. We show a soft
+         * pulse on the same wrench icon, not a circular spinner — keeps the
+         * "alive" cue consistent with the chip and avoids the false impression
+         * of a stuck request when the matching result actually landed in a
+         * different turn-bucket (cross-bucket pairing isn't done today). */}
+        {isError ? (
           <AlertTriangle className="h-3 w-3 flex-shrink-0 text-red-500" />
         ) : (
-          <Wrench className="h-3 w-3 flex-shrink-0 text-sky-500" />
+          <Wrench
+            className={`h-3 w-3 flex-shrink-0 text-sky-500${inFlight ? ' animate-pulse' : ''}`}
+          />
         )}
         <span className="font-medium">{describeToolName(toolName)}</span>
         {summary && (
@@ -231,28 +241,36 @@ function PayloadBlock({ label, value }: { label: string; value: unknown }) {
 
 function describeLatest(events: FlowData[], pairs: ToolPair[]): OneLiner | null {
   if (events.length === 0) return null;
-  // Prefer the latest tool call so the row reads like "Read · src/foo.ts".
+  // Two-pass walk so the chip prefers a TOOL_CALL one-liner (e.g.
+  // "Bash · ls -la") even when the actual last event in the buffer is a
+  // hook STATUS like "PostToolUse". Hook events trail every tool call but
+  // make for a poor one-line summary on the chip; the user wants the
+  // command/path/url to read.
   for (let i = events.length - 1; i >= 0; i--) {
     const evt = events[i];
-    if (evt.elementType === FlowElementTypes.TOOL_CALL) {
-      const id = (evt.data as { tool_call_id?: string } | undefined)?.tool_call_id;
-      const matchingPair = pairs.find((p) => {
-        const pid = (p.call.data as { tool_call_id?: string } | undefined)?.tool_call_id;
-        return pid && pid === id;
-      });
-      const inFlight = !!matchingPair && matchingPair.result === null;
-      const toolName = evt.attributes['tool-name'] || 'Tool';
-      return {
-        icon: 'tool',
-        label: describeToolName(toolName),
-        detail: describeToolInput(evt.data),
-        inFlight,
-      };
-    }
-    if (evt.elementType === FlowElementTypes.TOOL_RESULT) continue; // skip — pair'd
+    if (evt.elementType !== FlowElementTypes.TOOL_CALL) continue;
+    const id = (evt.data as { tool_call_id?: string } | undefined)?.tool_call_id;
+    const matchingPair = pairs.find((p) => {
+      const pid = (p.call.data as { tool_call_id?: string } | undefined)?.tool_call_id;
+      return pid && pid === id;
+    });
+    const inFlight = !!matchingPair && matchingPair.result === null;
+    const toolName = evt.attributes['tool-name'] || 'Tool';
+    return {
+      icon: 'tool',
+      label: describeToolName(toolName),
+      detail: describeToolInput(evt.data),
+      inFlight,
+    };
+  }
+  // No tool calls in the bucket — fall back to the latest reasoning /
+  // status / error entry. The label alone is the chip detail; we never
+  // dump the payload here (long JSON kills the chip layout).
+  for (let i = events.length - 1; i >= 0; i--) {
+    const evt = events[i];
     if (DENSE_OTHER.has(evt.elementType)) {
       const { icon, label } = describeOther(evt);
-      return { icon, label, detail: extractText(evt), inFlight: false };
+      return { icon, label, detail: label, inFlight: false };
     }
   }
   return null;
