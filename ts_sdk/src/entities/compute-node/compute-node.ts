@@ -35,6 +35,18 @@ import { GitRepo } from '../git-repo';
 /** Callback for when a new machine session is detected */
 export type MachineSessionCallback = (sessionId: string, session: Shell) => void;
 
+/** Descriptor returned by {@link ComputeNode.findSession} on hit. */
+export interface FindSessionResult {
+  session_id: string;
+  worker_type: 'claude' | 'codex';
+  transcript_path: string | null;
+  /** Encoded project dir name under `~/.claude/projects/`. Null for codex. */
+  project_encoded_name: string | null;
+  cwd: string | null;
+  project_id: string | null;
+  session_name: string | null;
+}
+
 /**
  * Convert a VFS-relative path to an OS absolute path.
  * VFS paths are relative (no leading slash, no drive letter) like "Users/gadi/Flowpad workspace".
@@ -182,6 +194,35 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     >(action);
 
     return { processId: response.id, created: response.created, workerType: response.worker_type };
+  }
+
+  /**
+   * Resolve a session id to its on-disk descriptor (Claude or Codex).
+   *
+   * Pure read-only lookup: never creates an AgenticProcess. Used by the
+   * "find then open" restore flow — caller shows an error toast on null,
+   * otherwise routes to {@link AgenticProcess.fromClaudeSession} /
+   * {@link AgenticProcess.fromCodexSession} using `worker_type`.
+   *
+   * @param sessionId - UUID/thread id.
+   * @param workerType - Optional hint to skip the other indexer.
+   * @returns Descriptor on hit, `null` on 404 (session not found in either history).
+   */
+  async findSession(
+    sessionId: string,
+    workerType?: 'claude' | 'codex',
+  ): Promise<FindSessionResult | null> {
+    const action = new ActionInfo('findSession', ComputeNode.type, this.id, 'GET');
+    action.queryParameters = {
+      session_id: sessionId,
+      ...(workerType ? { worker_type: workerType } : {}),
+    };
+    try {
+      return await dataManager.callAction<void, FindSessionResult>(action);
+    } catch (e) {
+      if ((e as { response?: { status?: number } })?.response?.status === 404) return null;
+      throw e;
+    }
   }
 
   // ============================================================

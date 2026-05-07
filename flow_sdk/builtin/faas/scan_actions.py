@@ -637,3 +637,115 @@ class ScanActionsMixin:
         except Exception as e:
             logging.exception(f"ComputeNode {self.id} upsertSessionProcess error: {e}")
             return ApiFailResponse(message=str(e))
+
+    async def _scan_find_session(self) -> ApiResponse:
+        """Look up a session by id across Claude and Codex on-disk history.
+
+        Pure read-only resolver: returns the descriptor a caller needs to render
+        the transcript and open the session, without creating an AgenticProcess.
+
+        Query params (camelCase or snake_case both accepted via get_param):
+            session_id: required — UUID/thread id.
+            worker_type: optional — "claude" | "codex" to skip the other lookup.
+
+        Returns ApiSuccessResponse with:
+            session_id, worker_type, transcript_path, project_encoded_name
+            (claude only — None for codex), cwd, project_id, session_name.
+
+        Returns ApiFailResponse(status_code=404) when not found in either history.
+        """
+        from flow_sdk.builtin.project import Project
+
+        request_info = get_current_request_info()
+        if not request_info or not request_info.request:
+            return ApiFailResponse(message="No request info available")
+
+        session_id = request_info.get_param("session_id") or request_info.get_param("sessionId")
+        if not session_id:
+            return ApiFailResponse(message="session_id is required", status_code=400)
+
+        worker_hint_raw = (
+            request_info.get_param("worker_type")
+            or request_info.get_param("workerType")
+            or ""
+        )
+        worker_hint = worker_hint_raw.lower() or None
+        if worker_hint and worker_hint not in ("claude", "codex"):
+            return ApiFailResponse(
+                message=f"worker_type must be 'claude' or 'codex' (got {worker_hint_raw!r})",
+                status_code=400,
+            )
+
+        try:
+            rec = None
+            worker_type: str | None = None
+
+            if worker_hint != "codex":
+                from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+
+                rec = ClaudeSessionRecord.get(session_id)
+                if rec is not None:
+                    worker_type = "claude"
+
+            if rec is None and worker_hint != "claude":
+                from flow_sdk.fs_records.codex import CodexSessionRecord
+
+                rec = CodexSessionRecord.get(session_id)
+                if rec is not None:
+                    worker_type = "codex"
+
+            if rec is None:
+                return ApiFailResponse(
+                    message=f"Session {session_id} not found in Claude or Codex history",
+                    status_code=404,
+                )
+
+            cwd = getattr(rec, "cwd", None) or None
+            rec_name = getattr(rec, "name", None) or None
+            session_name = (
+                rec_name if rec_name and rec_name != session_id else None
+            )
+            transcript_path = (
+                getattr(rec, "jsonl_path", None)
+                or getattr(rec, "source_file", None)
+                or None
+            )
+            project_encoded_name = (
+                getattr(rec, "project_encoded_name", None) or None
+                if worker_type == "claude"
+                else None
+            )
+
+            project_id: str | None = None
+            if cwd:
+                try:
+                    project = await Project.recover_by_path(cwd)
+                    if project:
+                        project_id = project.id
+                        if worker_type == "claude":
+                            project_encoded_name = (
+                                project.project_encoded_name or project_encoded_name
+                            )
+                except Exception:
+                    logging.debug(
+                        "ComputeNode %s findSession project recover failed for %s",
+                        self.id,
+                        session_id,
+                        exc_info=True,
+                    )
+
+            return ApiSuccessResponse(
+                data={
+                    "session_id": session_id,
+                    "worker_type": worker_type,
+                    "transcript_path": str(transcript_path) if transcript_path else None,
+                    "project_encoded_name": project_encoded_name,
+                    "cwd": cwd,
+                    "project_id": project_id,
+                    "session_name": session_name,
+                }
+            )
+
+        except Exception as e:
+            logging.exception(f"ComputeNode {self.id} findSession error: {e}")
+            return ApiFailResponse(message=str(e))
