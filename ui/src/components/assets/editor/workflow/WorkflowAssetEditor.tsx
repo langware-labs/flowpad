@@ -19,12 +19,11 @@ import {
   AlertDialogTitle,
 } from '@src/components/ui/alert-dialog';
 import { useToast } from '@src/hooks/use-toast';
-import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import {
   AgenticProcess,
   FSRef,
   ProcessType,
-  QueryRequest,
   Workflow,
   dataContext,
 } from '@sdk';
@@ -39,27 +38,26 @@ interface WorkflowAssetEditorProps {
   workflow?: Workflow;
 }
 
-const stripLeadingSlash = (p: string | undefined | null): string =>
-  p ? (p.startsWith('/') ? p.slice(1) : p) : '';
-
 /**
  * Unified editor for workflow `.md` files. Mounted from both the wiki
  * (`AssetEditorRouter`) and the Workflows sidebar (`WorkflowsPage`) — one
  * surface, two entry points. Wraps `MarkdownEditor` and injects a `Run`
  * toolbar button + a `Runs` tab into its side drawer.
+ *
+ * Resolution: when mounted via `AssetEditorRouter`, the surrounding
+ * `<EntityResolutionGate>` has already resolved the workflow and passes it
+ * via `providedWorkflow`. Direct mounts (e.g. `WorkflowsPage`) also pass the
+ * pre-resolved entity. As a fallback for any future caller that omits the
+ * prop, `useEntityByPath` resolves it from `fsRef`.
  */
 export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: WorkflowAssetEditorProps) {
   const { toast } = useToast();
 
-  const request = useMemo(() => new QueryRequest({ type: Workflow.type }), []);
-  const { data: workflows = [] } = useEntitiesQuery<Workflow>(request, {
-    enabled: !providedWorkflow,
-  });
-  const resolvedWorkflow = useMemo(() => {
-    if (providedWorkflow) return providedWorkflow;
-    const key = stripLeadingSlash(fsRef.path);
-    return workflows.find((w) => stripLeadingSlash(w.asset_ref) === key) ?? null;
-  }, [providedWorkflow, workflows, fsRef.path]);
+  const { entity: discoveredWorkflow } = useEntityByPath<Workflow>(
+    providedWorkflow ? null : Workflow.type,
+    providedWorkflow ? null : fsRef,
+  );
+  const resolvedWorkflow = providedWorkflow ?? discoveredWorkflow;
 
   const [activeSideTab, setActiveSideTab] = useState<string>('editor');
   const [processEntry, setProcessEntry] = useState<ProcessEntry | null>(null);
@@ -167,13 +165,11 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
     [doRun, toast],
   );
 
-  if (!resolvedWorkflow) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Loading workflow…
-      </div>
-    );
-  }
+  // The gate (`AssetEditorRouter`) only mounts us once the workflow is
+  // resolved; direct mounts (`WorkflowsPage`) pass `providedWorkflow`. The
+  // `useEntityByPath` fallback above covers stragglers — render nothing
+  // while it settles.
+  if (!resolvedWorkflow) return null;
 
   const isRunning = !!processEntry;
 

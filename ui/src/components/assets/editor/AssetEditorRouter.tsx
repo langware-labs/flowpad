@@ -1,7 +1,8 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { FSRef, RecordType } from '@sdk';
+import { Agent, FSRef, RecordType, Skill, Workflow } from '@sdk';
 import { RefreshCw } from 'lucide-react';
 import { useMemo } from 'react';
+import { EntityResolutionGate } from './EntityResolutionGate';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { AgentAssetEditor } from './agent/AgentAssetEditor';
@@ -62,17 +63,43 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
 
   switch (assetType) {
     case RecordType.SKILL:
-      return <SkillAssetEditor fsRef={fsRef} />;
+      return (
+        <EntityResolutionGate<Skill>
+          type={Skill.type}
+          fsRef={fsRef}
+          typeLabel="skill"
+          render={(skill) => <SkillAssetEditor fsRef={fsRef} skill={skill} />}
+        />
+      );
     case RecordType.AGENT:
-      return <AgentAssetEditor fsRef={fsRef} />;
+      return (
+        <EntityResolutionGate<Agent>
+          type={Agent.type}
+          fsRef={fsRef}
+          typeLabel="agent"
+          render={(agent) => <AgentAssetEditor fsRef={fsRef} agent={agent} />}
+        />
+      );
     case 'workflow':
-      return <WorkflowAssetEditor fsRef={fsRef} />;
+      return (
+        <EntityResolutionGate<Workflow>
+          type={Workflow.type}
+          fsRef={fsRef}
+          typeLabel="workflow"
+          render={(workflow) => <WorkflowAssetEditor fsRef={fsRef} workflow={workflow} />}
+        />
+      );
     case RecordType.MARKDOWN:
     case RecordType.CLAUDE_MD:
     case 'claude_memory':
     case 'claude_rules':
     case RecordType.COMMAND:
     case RecordType.PLAN:
+      // Plain markdown is intentionally NOT wrapped in EntityResolutionGate.
+      // Files like a raw `CLAUDE.md` may have no backing first-class entity,
+      // and `PlainMarkdownAssetEditor` already tolerates `entity=null` (the
+      // Run button just disables with a "no backing entity" tooltip). Wrapping
+      // here would regress to a `not_found` card for those files.
       return <PlainMarkdownAssetEditor fsRef={fsRef} assetType={assetType} />;
     default:
       return (

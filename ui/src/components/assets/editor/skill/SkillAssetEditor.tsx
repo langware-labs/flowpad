@@ -7,6 +7,12 @@ import { useCallback } from 'react';
 interface SkillAssetEditorProps {
   /** FSRef to the skill folder. SKILL.md is resolved via child(). */
   fsRef: FSRef;
+  /**
+   * Pre-resolved skill entity. Passed by `<EntityResolutionGate>` from
+   * `AssetEditorRouter`. When omitted (direct-mount callers), the editor
+   * falls back to `useEntityByPath` for backwards compatibility.
+   */
+  skill?: Skill;
 }
 
 /**
@@ -16,8 +22,12 @@ interface SkillAssetEditorProps {
  *     send symlinks the live skill folder under the process's assets dir
  *     so Claude Code discovers it via --add-dir at startup.
  */
-export function SkillAssetEditor({ fsRef }: SkillAssetEditorProps) {
-  const { entity: skill } = useEntityByPath<Skill>(Skill.type, fsRef);
+export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEditorProps) {
+  const { entity: discoveredSkill } = useEntityByPath<Skill>(
+    providedSkill ? null : Skill.type,
+    providedSkill ? null : fsRef,
+  );
+  const skill = providedSkill ?? discoveredSkill;
   const editorRef = skill?.doc ?? fsRef.child('SKILL.md');
   const sourcePath = skill?.asset_ref ?? fsRef.path;
   const loadSkill = useCallback(
