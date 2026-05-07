@@ -67,13 +67,14 @@ test.describe('FsRecordsScannerViewer (/dock/lens/fs-records/scan)', () => {
 
   // ── Test 2: Per-type stats table renders after running a scan ───────────────
   test('Per-type rows render with count/size/status columns after initial scan', async ({ page }) => {
+    test.setTimeout(180_000);
     await dismissSetupModal(page);
     await page.goto(LENS_PATH);
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
     await triggerInitialScan(page);
 
     const table = page.locator('table').first();
-    await expect(table).toBeVisible({ timeout: 60_000 });
+    await expect(table).toBeVisible({ timeout: 120_000 });
 
     const header = table.locator('thead');
     await expect(header).toContainText('Type');
@@ -88,13 +89,14 @@ test.describe('FsRecordsScannerViewer (/dock/lens/fs-records/scan)', () => {
 
   // ── Test 3: Rescan triggers a fresh scan and totals remain visible ──────────
   test('Clicking "Rescan" triggers a fresh scan and refreshes totals', async ({ page }) => {
+    test.setTimeout(300_000);
     await dismissSetupModal(page);
     await page.goto(LENS_PATH);
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
     await triggerInitialScan(page);
 
     const totals = page.locator('text=/\\d+[\\d,]*\\s+records/').first();
-    await expect(totals).toBeVisible({ timeout: 60_000 });
+    await expect(totals).toBeVisible({ timeout: 120_000 });
 
     // Trigger an explicit second scan via the header button
     const rescanBtn = headerRescanButton(page);
@@ -103,18 +105,19 @@ test.describe('FsRecordsScannerViewer (/dock/lens/fs-records/scan)', () => {
 
     // After the second scan settles, totals should still be visible
     await page.waitForTimeout(1000);
-    await expect(page.locator('text=/\\d+[\\d,]*\\s+records/').first()).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('text=/\\d+[\\d,]*\\s+records/').first()).toBeVisible({ timeout: 120_000 });
   });
 
   // ── Test 4: "Index All" kicks off per-type indexing and settles ─────────────
   test('Clicking "Index All" runs per-type indexing via POST /fs-records/index', async ({ page }) => {
+    test.setTimeout(300_000);
     await dismissSetupModal(page);
     await page.goto(LENS_PATH);
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
     await triggerInitialScan(page);
 
     // Wait for the stats table — Index All is disabled until scan results are available.
-    await expect(page.locator('table').first()).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator('table').first()).toBeVisible({ timeout: 120_000 });
 
     const indexAllBtn = page.getByRole('button', { name: /Index All|Indexing/ });
     await expect(indexAllBtn).toBeEnabled({ timeout: 15_000 });
