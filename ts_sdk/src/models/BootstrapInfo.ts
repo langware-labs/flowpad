@@ -89,4 +89,5 @@ export interface BootstrapInfo {
   desktop_info?: LmInfo;
   sniffer_hook?: AgentHook;
   scan_info?: ScanInfo;
+  records_data_dir?: string;
 }
