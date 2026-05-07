@@ -1,7 +1,7 @@
 import { ReactNode } from 'react';
 import { APIEntity, FSRef } from '@sdk';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
-import { NotFoundCard } from './NotFoundCard';
+import { MissingAssetCard } from './MissingAssetCard';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 
@@ -22,7 +22,9 @@ interface EntityResolutionGateProps<T extends APIEntity<T>> {
  * Drives `useEntityByPath` and renders the right state:
  *   - `querying` / `discovering` → spinner with phase-specific label
  *   - `resolved` → delegates to `render(entity)`
- *   - `not_found` → `<NotFoundCard>` (terminal; explicit retry)
+ *   - `missing_asset` → `<MissingAssetCard>` (terminal; explicit retry).
+ *     When the hook surfaces a stale orphan via ``entity``, it's forwarded
+ *     to the card so the user sees id / orphan_since.
  *   - `error` → inline error card with Retry button
  *
  * Use from editor wrappers to remove ad-hoc "isLoading ? spinner : null"
@@ -51,8 +53,11 @@ export function EntityResolutionGate<T extends APIEntity<T>>({
     );
   }
 
-  if (state === 'not_found') {
-    return <NotFoundCard typeLabel={typeLabel} fsRef={fsRef} onRetry={retry} />;
+  if (state === 'missing_asset') {
+    // ``entity`` is populated when there's a stale orphan row; null when
+    // the path resolves to nothing at all. Forward either way — the card
+    // renders the orphan-detail line only when ``entity`` is truthy.
+    return <MissingAssetCard typeLabel={typeLabel} fsRef={fsRef} onRetry={retry} entity={entity} />;
   }
 
   // error

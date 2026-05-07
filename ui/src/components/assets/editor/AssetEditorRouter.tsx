@@ -99,7 +99,7 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
       // Files like a raw `CLAUDE.md` may have no backing first-class entity,
       // and `PlainMarkdownAssetEditor` already tolerates `entity=null` (the
       // Run button just disables with a "no backing entity" tooltip). Wrapping
-      // here would regress to a `not_found` card for those files.
+      // here would regress to a missing-asset card for those files.
       return <PlainMarkdownAssetEditor fsRef={fsRef} assetType={assetType} />;
     default:
       return (

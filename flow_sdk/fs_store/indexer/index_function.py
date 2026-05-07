@@ -243,6 +243,9 @@ class FSIndexer:
         # Anything in valid_map[type] - seen_ids[type] is an orphan: a DB row whose
         # source no longer exists on disk.
         seen_ids: dict[RecordType, set[str]] = {}
+        # Per-type list of entity ids that were successfully parsed+synced this run.
+        # Used post-loop to clear orphan=False on rows whose source reappeared.
+        seen_alive_ids: dict[RecordType, list[str]] = {}
         fts_batch: list = []
         current_rt: RecordType | None = None
         seen_progress_at: dict[RecordType, float] = {}
@@ -328,6 +331,13 @@ class FSIndexer:
                     asset_ts = info.record_cls.asset_hash_for_ref(ref)
                     if asset_ts and asset_ts <= last_ts:
                         acc["skipped"] += 1
+                        # Even when skipping the parse, the file is alive on
+                        # disk this pass. Add to seen_alive_ids so a previous
+                        # orphan flag gets cleared. Without this, restoring a
+                        # file would only clear orphan if its mtime forced a
+                        # re-parse — i.e. flaky.
+                        if ref_id:
+                            seen_alive_ids.setdefault(ref.record_type, []).append(str(ref_id))
                         # Throttled sub_progress even for skips.
                         now = time.perf_counter()
                         if now - seen_progress_at.get(ref.record_type, 0.0) >= _PROGRESS_THROTTLE_S:
@@ -345,6 +355,9 @@ class FSIndexer:
                         rec_id = getattr(rec, "id", None)
                         if rec_id:
                             seen_ids.setdefault(ref.record_type, set()).add(str(rec_id))
+                            # After each successful target sync, ensure orphan flag is cleared.
+                            # Cheap to call: _mark_orphans_in_db skips rows already orphan=False.
+                            seen_alive_ids.setdefault(ref.record_type, []).append(str(rec_id))
                     acc["indexed"] += len(records)
                 except Exception:
                     acc["errors"] += 1
@@ -414,6 +427,9 @@ class FSIndexer:
                 )
                 acc["orphans_found"] = len(ids)
                 acc["orphan_ids"] = list(ids)
+                # Non-destructive: always mark orphan=True so callers can see stale rows.
+                # Idempotent — _mark_orphans_in_db only updates rows that need to change.
+                await self._mark_orphans_in_db(rt, list(ids), orphaned=True)
                 db_removed = 0
                 disk_removed = 0
 
@@ -434,6 +450,11 @@ class FSIndexer:
                         orphans_db_removed=db_removed,
                         orphans_disk_removed=disk_removed,
                     ))
+
+            # Clear orphan=False on any record that was successfully resynced this pass
+            # (covers the "file reappeared" case).
+            for rt, ids in seen_alive_ids.items():
+                await self._mark_orphans_in_db(rt, ids, orphaned=False)
 
         # Emit one type_complete per unique type at the end (DFS interleaves
         # mean we can't know a type is "done" mid-loop without a second pass).
@@ -537,6 +558,64 @@ class FSIndexer:
             if ids:
                 out[type_name] = ids
         return out
+
+    async def _mark_orphans_in_db(
+        self,
+        rt: "RecordType",
+        ids: list[str],
+        orphaned: bool,
+    ) -> int:
+        """Set ``orphan`` (and ``orphan_since``) on a list of entity ids.
+
+        Non-destructive companion to ``_apply_orphan_action``: instead of
+        deleting the row, mark it stale (or clear the mark when the source
+        has returned). Idempotent — skips rows already in the requested state.
+
+        Returns the count of rows that actually changed.
+        """
+        if not ids:
+            return 0
+
+        from datetime import datetime, timezone  # noqa: PLC0415
+        from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        type_name = str(rt)
+        changed = 0
+        now = datetime.now(timezone.utc)
+
+        # Resolve the entity class so get_one filters by id+type (a base
+        # Entity.get_one would scope to type='entity' and miss the row).
+        entity_cls = SchemaRegistry.get_entity_cls(type_name) or Entity
+
+        for eid in ids:
+            try:
+                entity = await entity_cls.get_by_id(eid)
+                if entity is None:
+                    continue
+                current = bool(getattr(entity, "orphan", False))
+                if current == orphaned:
+                    continue  # already in desired state — nothing to do
+                entity.orphan = orphaned
+                if orphaned:
+                    # Preserve the original orphan_since on repeated False→True (shouldn't happen
+                    # because of the early-return above, but defensive).
+                    if getattr(entity, "orphan_since", None) is None:
+                        entity.orphan_since = now
+                else:
+                    entity.orphan_since = None
+                # Persist via the driver directly — entity.save() would re-run
+                # _store(), which calls record.upsert_main_ref and would re-create
+                # the source file we just decided is missing.
+                from flow_sdk.db.db_entity import DBEntity  # noqa: PLC0415
+                await DBEntity.save(entity, None)
+                changed += 1
+            except Exception as e:
+                import logging  # noqa: PLC0415
+                logging.debug(f"[FSIndexer] _mark_orphans_in_db skipped {type_name}:{eid}: {e}")
+                continue
+
+        return changed
 
     async def _apply_orphan_action(
         self,
