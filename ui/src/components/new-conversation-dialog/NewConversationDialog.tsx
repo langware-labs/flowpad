@@ -1,15 +1,16 @@
 import {
   Conversation,
   ConversationParticipant,
-  createHubConversation,
   createProjectConversation,
-  dataManager,
-  TypeId,
+  getErrorMessagesFromAxios,
+  startBundleConversation,
 } from '@sdk';
+import { sendReply } from '@sdk/entities/notifications';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
 import { Button } from '@src/components/ui/button';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
+import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import {
@@ -38,6 +39,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   const [projectId, setProjectId] = useState<string>('');
   const [participants, setParticipants] = useState<ConversationParticipant[]>([]);
   const [initialMessage, setInitialMessage] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
   const [senderName, setSenderName] = useState('');
   const [editingName, setEditingName] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -48,6 +50,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     if (!open) return;
     setParticipants([]);
     setInitialMessage('');
+    setFiles([]);
     setError(null);
     setEditingName(false);
     setProjectId(ctx.project?.id ?? projects[0]?.id ?? '');
@@ -58,9 +61,9 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     if (localUser?.name) setSenderName(localUser.name);
   }, [localUser?.name]);
 
-  // Hub-aware mode: any participant addressed by email triggers the
-  // hub-mirrored flow (createHubConversation). Otherwise we keep the
-  // existing local-only path.
+  // Cross-user mode: any participant addressed by email triggers the bundle
+  // delivery flow (startBundleConversation). Otherwise we keep the
+  // project-local-only path.
   const hasEmailParticipant = participants.some(
     (p) => !!p.email && p.email.includes('@'),
   );
@@ -73,7 +76,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     return `${myLabel}, ${others}`;
   }, [participants, myLabel]);
 
-  // Hub-mirrored conversations don't require a Project; local-only ones do.
+  // Cross-user bundle conversations don't require a Project; local-only ones do.
   const canCreate = !busy && (hasEmailParticipant || !!projectId) && participants.length > 0;
 
   const handleCreate = async () => {
@@ -81,48 +84,57 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     setBusy(true);
     setError(null);
     try {
+      const hasFiles = files.length > 0;
+      const message = initialMessage.trim();
+
+      let conversationId: string | null;
+      let projectIdForNav: string | null = null;
+
       if (hasEmailParticipant) {
-        const result = await createHubConversation({
-          participants: participants
-            .filter((p) => !!p.email)
-            .map((p) => ({ address: p.email!, address_type: 'email' as const })),
-          initial_text: initialMessage.trim() || undefined,
+        // Bundle delivery — same path as share_task / AskForAssistance, just
+        // without a Task/Spec. Backend stamps project_id on the local
+        // Conversation at create time and includes it as remote_project_id in
+        // the bundle for the receiver's project-mapping flow.
+        const recipient = participants.find((p) => !!p.email)?.email || '';
+        // ``message`` is sent as the initial-message body when there are no
+        // file attachments. With files, defer to the follow-up sendReply so
+        // attachments ride a single FormData call.
+        const result = await startBundleConversation({
+          recipient_id: recipient,
+          message: hasFiles ? undefined : (message || undefined),
+          project_id: projectId || null,
           sender_name: senderName.trim() || null,
         });
-        // Feature 2: persist the user's chosen project on the conversation so
-        // the footer reads it on refresh, and so Approve & Execute on incoming
-        // prompts skips the picker. The hub-mirrored creation path doesn't
-        // accept a project_id directly, so we stamp it on the local entity
-        // after materialisation. The chosen project is whichever was selected
-        // in the dropdown (defaulted to the active project when the dialog
-        // opened).
-        if (projectId) {
-          try {
-            const conv = await dataManager
-              .getByTypeId<Conversation>(new TypeId(Conversation.type, result.conversation_id))
-              .catch(() => null);
-            if (conv && conv.project_id !== projectId) {
-              conv.project_id = projectId;
-              await conv.save();
-            }
-          } catch {
-            // non-fatal — the user can re-pick from the gate or status bar.
-          }
+        conversationId = result.conversation_id ?? null;
+        if (!conversationId) {
+          throw new Error(result.email_error || 'Failed to start conversation');
         }
-        navigation.openDock(DockPointer.forConversation(result.conversation_id));
-        onClose();
       } else {
         const result = await createProjectConversation({
           project_id: projectId,
           participants,
         });
-        navigation.openDock(
-          DockPointer.forProject(result.project_id, { conversationId: result.conversation_id }),
-        );
-        onClose();
+        conversationId = result.conversation_id;
+        projectIdForNav = result.project_id;
       }
+
+      if (hasFiles && conversationId) {
+        await sendReply({ conversationId }, message, files);
+      }
+
+      if (projectIdForNav && conversationId) {
+        navigation.openDock(
+          DockPointer.forProject(projectIdForNav, { conversationId }),
+        );
+      } else if (conversationId) {
+        navigation.openDock(DockPointer.forConversation(conversationId));
+      }
+      onClose();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to create conversation';
+      // Axios errors carry the backend's `message` field on `error.response.data`;
+      // `err.message` would just be "Request failed with status code 400".
+      const fromAxios = await getErrorMessagesFromAxios(err);
+      const msg = fromAxios || (err instanceof Error ? err.message : '') || 'Failed to create conversation';
       setError(msg);
     } finally {
       setBusy(false);
@@ -180,28 +192,26 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
             </div>
           )}
 
-          {/* Project — only for local-only conversations. Hidden when the
-              recipient is identified by email (the hub-mirrored flow does
-              not require a Project parent). */}
-          {!hasEmailParticipant && (
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                Project
-              </label>
-              <Select value={projectId} onValueChange={setProjectId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a project" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((p) => (
-                    <SelectItem key={p.id} value={p.id ?? ''}>
-                      {p.displayName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          {/* Project — required for project-local conversations, optional for
+              cross-user bundle conversations (stamped on the local Conversation
+              and shipped as remote_project_id for the receiver's mapping). */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+              Project{hasEmailParticipant ? ' (optional)' : ''}
+            </label>
+            <Select value={projectId} onValueChange={setProjectId}>
+              <SelectTrigger>
+                <SelectValue placeholder={hasEmailParticipant ? 'No project' : 'Select a project'} />
+              </SelectTrigger>
+              <SelectContent>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id ?? ''}>
+                    {p.displayName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           {/* Participants */}
           <div className="flex flex-col gap-1.5">
@@ -229,6 +239,14 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
               placeholder={hasEmailParticipant ? 'Say hi…' : 'Optional'}
               data-testid="initial-message-input"
             />
+          </div>
+
+          {/* Attachments */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+              Attachments
+            </label>
+            <FileAttachmentPicker files={files} onChange={setFiles} disabled={busy} />
           </div>
 
           {error && <p className="text-xs text-destructive">{error}</p>}

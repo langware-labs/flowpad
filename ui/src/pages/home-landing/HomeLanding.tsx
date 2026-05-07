@@ -84,59 +84,68 @@ export function HomeLanding() {
   const { navigation } = useDockNavigation();
   useProjects();
 
-  // Incoming task dialog — driven by URL params (email deep-link) or WS events
+  // Incoming task dialog — driven by URL params (email deep-link) or WS events.
+  // Deep link shape:
+  //   ?action=open&fm=<id>[&conversation_id=...&task_id=...&project_url=...&...]
+  // The backend's /open handler unpacks the bundle and resolves
+  // conversation_id / task_id from the FM's context, so we navigate directly
+  // off the URL params — no FM lookup needed on the UI side.
   const { pendingTask, setPendingTask } = useIncomingTaskStore();
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('task_action') === 'open') {
-      const taskId = params.get('task_id') || '';
-      const taskTitle = params.get('task_title') || 'Shared task';
-      const senderName = params.get('sender_name') || 'Someone';
-      const projectUrl = params.get('project_url') || undefined;
-      const branch = params.get('branch') || undefined;
-      const repoId = params.get('repo_id') || undefined;
-      if (taskId) {
-        // Clean URL so refreshing doesn't re-trigger
-        const url = new URL(window.location.href);
-        url.searchParams.delete('task_action');
-        url.searchParams.delete('task_id');
-        url.searchParams.delete('task_title');
-        url.searchParams.delete('sender_name');
-        url.searchParams.delete('project_url');
-        url.searchParams.delete('branch');
-        url.searchParams.delete('repo_id');
-        window.history.replaceState(null, '', url.toString());
+    if (params.get('action') !== 'open') return;
+    const fmId = params.get('fm') || '';
+    const convId = params.get('conversation_id') || '';
+    const taskId = params.get('task_id') || '';
+    const title = params.get('title') || 'Shared';
+    const senderName = params.get('sender_name') || 'Someone';
+    const projectUrl = params.get('project_url') || undefined;
+    const branch = params.get('branch') || undefined;
+    const repoId = params.get('repo_id') || undefined;
 
-        if (projectUrl) {
-          // Has a REPO attachment — show pull/clone dialog
-          setPendingTask({ taskId, taskTitle, senderName, projectUrl, branch, repoId });
-        } else {
-          void (async () => {
-            try {
-              const { dataManager, Task, TypeId } = await import('@sdk');
-              const task = await dataManager
-                .getByTypeId<import('@sdk').Task>(new TypeId(Task.type, taskId))
-                .catch(() => null);
-              const convTypeId = task?.firstContextOfType?.('conversation');
-              const convId = convTypeId?.id ?? task?.conversation_id ?? null;
-              if (convId) {
-                navigation.openDock(
-                  resolveConversationDockPointer({
-                    conversationId: convId,
-                    taskId: task?.id ?? taskId,
-                    projectId: task?.project_id ?? null,
-                  }),
-                );
-                return;
-              }
-            } catch {
-              // fall through
-            }
-            navigation.openDock(DockPointer.fromUrl('tasks', `task-${taskId}`));
-          })();
-        }
-      }
+    // Clean URL so refreshing doesn't re-trigger
+    const url = new URL(window.location.href);
+    for (const key of ['action', 'fm', 'conversation_id', 'task_id', 'title', 'sender_name', 'project_url', 'branch', 'repo_id']) {
+      url.searchParams.delete(key);
     }
+    window.history.replaceState(null, '', url.toString());
+
+    if (projectUrl && taskId) {
+      // REPO attachment — show pull/clone dialog before navigating in.
+      setPendingTask({ taskId, taskTitle: title, senderName, projectUrl, branch, repoId });
+      return;
+    }
+
+    void (async () => {
+      if (convId) {
+        // Resolve project_id from the local Task (if any) for the dock pointer.
+        let projectId: string | null = null;
+        if (taskId) {
+          const { dataManager, Task, TypeId } = await import('@sdk');
+          const task = await dataManager
+            .getByTypeId<import('@sdk').Task>(new TypeId(Task.type, taskId))
+            .catch(() => null);
+          projectId = task?.project_id ?? null;
+        }
+        navigation.openDock(
+          resolveConversationDockPointer({
+            conversationId: convId,
+            taskId: taskId || null,
+            projectId,
+          }),
+        );
+        return;
+      }
+
+      // Last resort: no convId in the deep link. If we have a taskId, open the
+      // tasks dock; otherwise stay on home and let the strip surface the share
+      // once inbox-fetch lands the FM. ``fmId`` is unused here but kept in the
+      // URL params for diagnostics / future fallback.
+      void fmId;
+      if (taskId) {
+        navigation.openDock(DockPointer.fromUrl('tasks', `task-${taskId}`));
+      }
+    })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const { projects: claudeProjects, isLoading: isLoadingClaudeProjects } = useClaudeProjectList();
