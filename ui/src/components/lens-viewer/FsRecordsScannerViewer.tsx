@@ -46,8 +46,7 @@ interface ScanResult {
   scan_ms: number;
 }
 
-import type { ActivityProgress } from '@src/components/search-index/ActivityProgressModal';
-type IndexProgress = ActivityProgress;
+import type { IndexProgressTable } from '@sdk';
 
 function fmtBytes(n: number): string {
   if (n === 0) return '—';
@@ -220,7 +219,7 @@ export function FsRecordsScannerViewer() {
   const [showNonEmpty, setShowNonEmpty] = useState(false);
 
   // Global system tools state (index / clear)
-  const { currentActivity, activityProgress, clearIndex, indexType: indexTypeFromHook, indexTypes } = useSystemTools();
+  const { currentActivity, progressTable, clearIndex, indexType: indexTypeFromHook, indexTypes } = useSystemTools();
   const clearing = currentActivity === 'clear';
   const indexingAll = currentActivity === 'index';
 
@@ -229,7 +228,28 @@ export function FsRecordsScannerViewer() {
   const [progressModalOpen, setProgressModalOpen] = useState(false);
 
   // Scan progress state (local — viewer-only)
-  const [scanProgress, setScanProgress] = useState<IndexProgress | null>(null);
+  const [scanProgress, setScanProgress] = useState<IndexProgressTable | null>(null);
+
+  // Build a snapshot of the current per-type scan state. Mirrors the backend
+  // scan() output: total=0 (unknown), each row's done==total (already counted).
+  const buildScanTable = useCallback(
+    (types: string[], counts: Record<string, number>, current: string | null): IndexProgressTable => ({
+      job_name: 'scan',
+      rows: types.map((t) => ({
+        type_name: t,
+        done: counts[t] ?? 0,
+        total: counts[t] ?? 0,
+        errors: 0,
+        skipped: 0,
+      })),
+      current,
+      done: Object.values(counts).reduce((s, n) => s + n, 0),
+      total: 0,
+      text: current === null && Object.keys(counts).length === types.length ? 'complete' : null,
+      ts: new Date().toISOString(),
+    }),
+    [],
+  );
   const [scanModalOpen, setScanModalOpen] = useState(false);
 
   const handleClearIndex = useCallback(async () => {
@@ -256,10 +276,8 @@ export function FsRecordsScannerViewer() {
       );
 
       // 2. Scan each type individually, showing progress
-      const done: string[] = [];
-      const pending = [...types];
       const counts: Record<string, number> = {};
-      setScanProgress({ total: types.length, done: [], current: null, pending: [...types], counts });
+      setScanProgress(buildScanTable(types, counts, null));
 
       const typeResults: TypeStats[] = [];
       let grandTotal = 0;
@@ -267,8 +285,7 @@ export function FsRecordsScannerViewer() {
 
       for (const typeName of types) {
         if (cancelledRef.current) return;
-        pending.splice(pending.indexOf(typeName), 1);
-        setScanProgress({ total: types.length, done: [...done], current: typeName, pending: [...pending], counts: { ...counts } });
+        setScanProgress(buildScanTable(types, counts, typeName));
 
         try {
           const detail = await apiClient.get<TypeDetail>(`${SCAN_PATH}?type=${encodeURIComponent(typeName)}&trigger=${trigger}`);
@@ -282,11 +299,9 @@ export function FsRecordsScannerViewer() {
           typeResults.push({ type: typeName, count: 0, total_bytes: 0, avg_bytes: 0, scan_ms: 0, error: 'scan failed' });
           counts[typeName] = 0;
         }
-
-        done.push(typeName);
       }
 
-      setScanProgress({ total: types.length, done: [...done], current: null, pending: [], counts: { ...counts } });
+      setScanProgress(buildScanTable(types, counts, null));
 
       if (!cancelledRef.current) {
         setResult({ types: typeResults, grand_total: grandTotal, scan_ms: Math.round(performance.now() - tStart) });
@@ -298,7 +313,7 @@ export function FsRecordsScannerViewer() {
     } finally {
       setScanning(false);
     }
-  }, []);
+  }, [buildScanTable]);
 
   useEffect(() => {
     return () => {
@@ -432,17 +447,17 @@ export function FsRecordsScannerViewer() {
       {scanProgress && (
         <div className="shrink-0 border-b px-5 py-2">
           <ActivityProgressBar
-            progress={scanProgress}
+            table={scanProgress}
             onClick={() => setScanModalOpen(true)}
           />
         </div>
       )}
 
       {/* Index progress bar */}
-      {currentActivity === 'index' && activityProgress && (
+      {currentActivity === 'index' && progressTable && (
         <div className="shrink-0 border-b px-5 py-2">
           <ActivityProgressBar
-            progress={activityProgress}
+            table={progressTable}
             onClick={() => setProgressModalOpen(true)}
           />
         </div>
@@ -608,7 +623,7 @@ export function FsRecordsScannerViewer() {
       <ActivityProgressModal
         open={scanModalOpen}
         onOpenChange={setScanModalOpen}
-        progress={scanProgress}
+        table={scanProgress}
         title="Scan Progress"
       />
 
@@ -616,7 +631,7 @@ export function FsRecordsScannerViewer() {
       <ActivityProgressModal
         open={progressModalOpen}
         onOpenChange={setProgressModalOpen}
-        progress={activityProgress}
+        table={progressTable}
         title="Indexing Progress"
       />
     </div>

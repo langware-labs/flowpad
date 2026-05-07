@@ -1,46 +1,27 @@
 """In-process activity tracker for long-running scan/index jobs.
 
-Tracks per-job and per-sub-activity progress so that multiple HTTP requests
-can observe the same running job and duplicate starts can be rejected.
+Holds the latest ``IndexProgressTable`` snapshot from the indexer plus the
+duplicate-prevention metadata (``job_name``, ``entity_id``, ``started_at``,
+``timeout_seconds``). Multiple HTTP requests can observe the same running
+job and duplicate starts can be rejected.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+
+from flow_sdk.fs_store.indexer import IndexProgressTable, TypeProgressRow
 
 
 @dataclass
 class InProcessActivity:
-    """Tracks progress of a long-running job (scan or index) on a ComputeNode.
-
-    Two levels of counters:
-    - Job-level (done/skipped/errors/total): how many sub-activities (record types)
-      have been processed so far out of the total.
-    - Sub-activity level (sub_*): per-record counters within the current type.
-
-    Call make_flow_data(sub_activity_name) to build a FlowData dict for
-    broadcasting over WebSocket.
-    """
+    """Tracks the live state of a scan/index job on a ComputeNode."""
 
     job_name: str
-    entity_id: str  # typeid string of the owning compute node
+    entity_id: str
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     timeout_seconds: int = 600
-
-    # Job-level counters (emitted as progress_report with sub_activity_name=None)
-    done: int = 0
-    skipped: int = 0
-    errors: int = 0
-    total: int = 0
-    text: str | None = None
-
-    # Current sub-activity state (emitted as progress_report with sub_activity_name set)
-    sub_activity_name: str | None = None
-    sub_done: int = 0
-    sub_skipped: int = 0
-    sub_errors: int = 0
-    sub_total: int = 0
-    sub_text: str | None = None
+    latest_table: IndexProgressTable | None = None
 
     @property
     def is_timed_out(self) -> bool:
@@ -48,42 +29,32 @@ class InProcessActivity:
 
     @property
     def is_complete(self) -> bool:
-        return self.total > 0 and (self.done + self.skipped + self.errors) >= self.total
+        t = self.latest_table
+        if t is None:
+            return False
+        return t.text == "complete" or (t.total > 0 and t.done >= t.total)
 
-    def make_flow_data(self, sub_activity_name: str | None = None) -> dict:
-        """Build a FlowData dict for broadcasting.
+    def make_flow_data(self) -> dict:
+        """Build a ``progress_report`` flow_data envelope from ``latest_table``.
 
-        sub_activity_name=None  → job-level report (done = number of types completed)
-        sub_activity_name=str   → sub-activity report (done = records processed in that type)
-
-        All events include a ``ts`` field with the current UTC ISO-8601 timestamp
-        so consumers can measure inter-event gaps and debug apparent hangs.
+        Returns an empty seed envelope (``rows=[]``, ``done=0``, ``total=0``) if
+        no table has arrived yet — keeps the wire shape uniform across the
+        very first emit and any later refreshActivityStatus replay.
         """
-        ts = datetime.now(timezone.utc).isoformat()
-        if sub_activity_name is None:
-            return {
-                "element_type": "progress_report",
-                "attributes": {
-                    "job_name": self.job_name,
-                    "sub_activity_name": None,
-                    "done": self.done,
-                    "skipped": self.skipped,
-                    "errors": self.errors,
-                    "total": self.total,
-                    "text": self.text,
-                    "ts": ts,
-                },
-            }
-        return {
-            "element_type": "progress_report",
-            "attributes": {
+        if self.latest_table is None:
+            attrs: dict = {
                 "job_name": self.job_name,
-                "sub_activity_name": sub_activity_name,
-                "done": self.sub_done,
-                "skipped": self.sub_skipped,
-                "errors": self.sub_errors,
-                "total": self.sub_total,
-                "text": self.sub_text,
-                "ts": ts,
-            },
-        }
+                "rows": [],
+                "current": None,
+                "done": 0,
+                "total": 0,
+                "text": None,
+                "ts": datetime.now(timezone.utc).isoformat(),
+            }
+        else:
+            attrs = asdict(self.latest_table)
+            # asdict turns the rows tuple into a list of dicts — that's what
+            # the WS consumer expects (JSON arrays).
+            attrs["rows"] = [asdict(r) if not isinstance(r, dict) else r
+                             for r in attrs["rows"]]
+        return {"element_type": "progress_report", "attributes": attrs}

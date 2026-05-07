@@ -58,7 +58,7 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
     fs_storage_mount_path: str | None = APIField(default=None)
     home_dir: str | None = APIField(default=None)
 
-    def _start_activity(self, job_name: str, total: int = 0, timeout_seconds: int = 600):
+    def _start_activity(self, job_name: str, timeout_seconds: int = 600):
         """Register a new in-process activity, raising RuntimeError if one is already running."""
         from flow_sdk.builtin.faas.in_process_activity import InProcessActivity  # noqa: PLC0415
 
@@ -69,7 +69,6 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
         activity = InProcessActivity(
             job_name=job_name,
             entity_id=str(self.typeid),
-            total=total,
             timeout_seconds=timeout_seconds,
         )
         _COMPUTE_ACTIVITIES[key] = activity
