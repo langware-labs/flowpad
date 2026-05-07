@@ -139,6 +139,16 @@ export default {
             backgroundPosition: '0% 0%',
           },
         },
+        'pending-glow': {
+          '0%, 100%': {
+            boxShadow:
+              '0 0 0 1px hsl(var(--primary) / 0.55), 0 0 6px 0 hsl(var(--primary) / 0.45), inset 0 0 4px hsl(var(--primary) / 0.20)',
+          },
+          '50%': {
+            boxShadow:
+              '0 0 0 1px hsl(var(--primary) / 0.85), 0 0 10px 1px hsl(var(--primary) / 0.65), inset 0 0 6px hsl(var(--primary) / 0.30)',
+          },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -148,6 +158,7 @@ export default {
         'subtle-pulse': 'subtle-pulse 4s ease-in-out infinite',
         typing: 'typing 1.5s steps(20, end), blink 0.75s step-end infinite',
         'float-background': 'float-background 15s ease infinite',
+        'pending-glow': 'pending-glow 2.4s ease-in-out infinite',
       },
     },
   },

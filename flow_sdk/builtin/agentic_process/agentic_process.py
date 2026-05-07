@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 from uuid import uuid4
 
-from pydantic import SerializationInfo, model_serializer
+from pydantic import SerializationInfo, model_serializer, model_validator
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField

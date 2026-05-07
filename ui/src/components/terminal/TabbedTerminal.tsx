@@ -13,6 +13,7 @@ import {
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
+import { usePendingSessionIds } from '@src/store/pending-actions-store';
 import {
   closeTerminalTargets,
   terminalProcessId,
@@ -783,6 +784,11 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     <TerminalOpenerToolbar openers={openers} isTabCreationPending={isTabCreationPending} />
   ) : null;
 
+  // PendingAction set: process ids that recently became ready-for-input.
+  // Global scope here — the strip's own filtering already pins which tabs render,
+  // so non-rendered ids in this set are inert.
+  const pendingProcessIds = usePendingSessionIds();
+
   return (
     <div className={`flex h-full ${className}`}>
       {/* Main terminal area */}
@@ -835,6 +841,8 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                   ? `tab-shell-${session.targetTypeId.id}`
                   : `tab-shell-${targetKey}`;
               const indicatorKey = session.targetTypeId.type === Shell.type ? session.targetTypeId.id : targetKey;
+              const sessionProcessId = terminalProcessId(session);
+              const isPending = sessionProcessId ? pendingProcessIds.has(sessionProcessId) : false;
 
               const tabContent = (
                 <div
@@ -847,7 +855,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                       : activeTargetKey === targetKey
                         ? 'cursor-pointer border-primary bg-background text-foreground'
                         : 'cursor-pointer border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
-                  } `}
+                  } ${isPending ? 'animate-pending-glow rounded-md' : ''}`}
                   onClick={() => !isDisabled && selectTab(targetKey)}
                   data-testid={tabTestId}
                   data-terminal-target={targetKey}

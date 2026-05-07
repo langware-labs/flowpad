@@ -222,7 +222,7 @@ class ScanActionsMixin:
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
         from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions
-        from flow_sdk.flowpad_types.enums import WorkerType
+        from flow_sdk.flowpad_types.enums import ProcessType, WorkerType
 
         try:
             request_info = get_current_request_info()
@@ -246,6 +246,19 @@ class ScanActionsMixin:
             project_id = context_data.pop("project_id", None)
             # VFS path of the attached entity (trigger, markdown, …); stored on the process for the runs drawer / chat panel queries.
             target_vfs_path = context_data.pop("target_vfs_path", None)
+            # Lift `process_type` out of `context_data` so it lands on the
+            # top-level field declared in the AgenticProcess schema. The
+            # `useProcessesForTarget` filter on the chat-panel queries
+            # `match: { process_type: 'chat' }` against the top-level field;
+            # leaving it nested in `context_data.process_type` makes the chat
+            # toolbar's history dropdown show empty even when sessions exist.
+            process_type_raw = context_data.pop("process_type", None)
+            process_type: ProcessType | None = None
+            if process_type_raw:
+                try:
+                    process_type = ProcessType(process_type_raw)
+                except (ValueError, TypeError):
+                    process_type = None
 
             fork_session = bool(context_data.pop("fork_session", False))
             resume_session_id = context_data.pop("resume_session_id", None)
@@ -325,6 +338,7 @@ class ScanActionsMixin:
                 additional_dirs=additional_dirs,
                 project_id=project_id or None,
                 target_vfs_path=target_vfs_path or None,
+                process_type=process_type,
             )
             if resume_session_id and not fork_session:
                 process.session_id = resume_session_id
