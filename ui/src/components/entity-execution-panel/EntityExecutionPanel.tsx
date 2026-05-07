@@ -73,6 +73,8 @@ interface EntityExecutionPanelProps {
   emptyStateText?: string;
   /** Optional header label rendered above the panel (e.g. "Agent execution"). Hidden when omitted. */
   headerLabel?: string;
+  /** Placeholder for the composer textbox. Defaults to "Ask about this doc…". */
+  placeholder?: string;
 }
 
 /**
@@ -102,6 +104,7 @@ export function EntityExecutionPanel({
   noPastSessionsLabel = 'No past executions',
   emptyStateText = 'Ask about this document. The conversation will persist.',
   headerLabel,
+  placeholder,
 }: EntityExecutionPanelProps) {
   const targetStr = target ?? '';
 
@@ -367,7 +370,7 @@ export function EntityExecutionPanel({
           />
         ))}
       </AutoScrollContainer>
-      <CompactExecutionInput onSend={handleSend} disabled={sendDisabled} statusSlot={statusSlot} />
+      <CompactExecutionInput onSend={handleSend} disabled={sendDisabled} statusSlot={statusSlot} placeholder={placeholder} />
     </div>
   );
 }

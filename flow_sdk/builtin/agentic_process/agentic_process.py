@@ -341,7 +341,7 @@ async def _index_session_on_close(session_id: str, pty_title: str | None = None)
 async def _poll_for_completion(agentic_process_id: str, _session_id: str | None) -> None:
     """Background task: poll the transcript until terminal worker_status, then save.
 
-    Called from AgenticProcess.start() after launching the worker. The
+    Called from AgenticProcess.start_pty() after launching the worker. The
     transcript path and tail-status calculation are driver-owned so Claude and
     Codex visible processes follow the same status flow.
     """
@@ -509,7 +509,7 @@ class AgenticProcess(Entity):
         default=False,
         description=(
             "True iff a worker-relevant field changed since the last successful "
-            "start() while status==RUNNING. UI surfaces this as a 'Restart' affordance. "
+            "start_pty() while status==RUNNING. UI surfaces this as a 'Restart' affordance. "
             "Set automatically by the save-hook; can also be set externally via API."
         ),
     )
@@ -517,7 +517,7 @@ class AgenticProcess(Entity):
         default=None,
         description=(
             "MD5 of the worker-relevant config fields captured at the last "
-            "successful start(). Compared against the current snapshot on each "
+            "successful start_pty(). Compared against the current snapshot on each "
             "save() to detect drift."
         ),
     )
@@ -571,7 +571,7 @@ class AgenticProcess(Entity):
         workdir: str | None = None,
         **kwargs,
     ) -> "AgenticProcess":
-        """Factory: pre-bake resume cli_config. start() injects --resume <session_id>.
+        """Factory: pre-bake resume cli_config. start_pty() injects --resume <session_id>.
 
         Fork chain is walked automatically to find the nearest transcript on disk.
         """
@@ -588,7 +588,7 @@ class AgenticProcess(Entity):
         workdir: str | None = None,
         **kwargs,
     ) -> "AgenticProcess":
-        """Factory: pre-bake the cli_config that ``start()`` turns into
+        """Factory: pre-bake the cli_config that ``start_pty()`` turns into
         ``claude --resume <parent> --fork-session --session-id <new>``.
 
         Three things must all be set for ``ClaudeCliOptions.to_spawn_args``
@@ -682,20 +682,26 @@ class AgenticProcess(Entity):
         instruction: str | None = None,
         visible: bool | None = None,
     ) -> ApiSuccessResponse | ApiFailResponse:
-        """Open (or reopen) this AgenticProcess — starts fresh or resumes automatically.
+        """Spawn (or reattach to) this AgenticProcess's PTY worker.
+
+        This is the PTY entry point — it always materialises a Shell + spawns
+        an interactive ``claude`` PTY process, regardless of ``self.visible``.
+        The visibility flag is a routing concern handled by :meth:`prompt`,
+        not here. For headless one-shot turns, call ``prompt(instruction)``
+        directly so the print-mode driver runs (no PTY).
 
         Covers all cases:
         - Fresh open (no previous session): spawns Claude with --session-id.
-        - Reopen after server restart (stale shell, dead PTY): Shell.start() detects
-          the dead PTY, cleans up, and spawns Claude with --resume.
-        - Idempotent call on live process: Shell.start() detects alive PTY and returns
-          without re-spawning.
+        - Reopen after server restart (stale shell, dead PTY): Shell.start_pty()
+          detects the dead PTY, cleans up, and spawns Claude with --resume.
+        - Idempotent call on live process: Shell.start_pty() detects alive PTY
+          and returns without re-spawning.
 
         Body runs under a per-process ``_OPEN_LOCKS`` lock so two concurrent
         refresh-driven open calls (e.g. two browser tabs) can't both run
         recovery on the same process and double-spawn Claude.
         """
-        # Suppress the restart-required auto-flag while start() mutates fields
+        # Suppress the restart-required auto-flag while start_pty() mutates fields
         # (status, session_id are tracked, but those mutations are not "drift").
         # Cleared on success after we capture the new snapshot.
         self._set_start_lifecycle(True)
@@ -705,12 +711,23 @@ class AgenticProcess(Entity):
         finally:
             self._set_start_lifecycle(False)
 
+    async def start(
+        self,
+        instruction: str | None = None,
+        visible: bool | None = None,
+    ) -> ApiSuccessResponse | ApiFailResponse:
+        """Back-compat alias for :meth:`start_pty`. Prefer ``start_pty`` —
+        the bare ``start`` reads as a generic lifecycle word but this method
+        only ever spawns a PTY worker (visibility doesn't gate that)."""
+        return await self.start_pty(instruction=instruction, visible=visible)
+
     async def _perform_open(
         self,
         instruction: str | None,
         visible: bool | None,
     ) -> ApiSuccessResponse | ApiFailResponse:
-        """Body of ``start``/``open`` — runs while the per-process open lock
+        """Body of ``start_pty`` (the legacy ``start``/HTTP ``open`` aliases route
+        here) — runs while the per-process open lock
         is held. All lifecycle decisions (reattach vs recover vs fresh) live
         here; the caller is responsible for the lock and the start-lifecycle
         flag."""
@@ -812,7 +829,7 @@ class AgenticProcess(Entity):
 
             if self.shell_mode:
                 # Legacy path — zsh intermediary
-                await shell.start(on_exit=on_exit)
+                await shell.start_pty(on_exit=on_exit)
                 worker_is_alive = await shell.worker_alive()
                 if not worker_is_alive:
                     execution_info = await shell.launch(cmd, instruction=instruction)
@@ -823,7 +840,7 @@ class AgenticProcess(Entity):
             else:
                 # Direct path — Claude IS the PTY process (no zsh intermediary)
                 spawn_argv, spawn_env = cmd.to_spawn_args(instruction=instruction)
-                spawned = await shell.start(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
+                spawned = await shell.start_pty(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
                 if not spawned:
                     worker_is_alive = await shell.worker_alive()
                 if not worker_is_alive:
@@ -853,12 +870,12 @@ class AgenticProcess(Entity):
             return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=is_resume))
 
         except asyncio.CancelledError:
-            logger.warning("AgenticProcess %s start cancelled (status=%s shell_id=%s)", self.id, self.status, self.shell_id)
+            logger.warning("AgenticProcess %s start_pty cancelled (status=%s shell_id=%s)", self.id, self.status, self.shell_id)
             self.status = ProcessStatus.FAILED.value
             await self.save()
             raise
         except Exception as e:
-            logger.exception(f"AgenticProcess {self.id} start error: {e}")
+            logger.exception(f"AgenticProcess {self.id} start_pty error: {e}")
             self.shell_id = None
             self.status = ProcessStatus.FAILED.value
             await self.save()
@@ -917,7 +934,7 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="restart")
     async def http_restart(self) -> ApiSuccessResponse | ApiFailResponse:
-        """exit() + start(). Shell entity is preserved and reused."""
+        """exit() + start_pty(). Shell entity is preserved and reused."""
         exit_result = await self.exit()
         if isinstance(exit_result, ApiFailResponse) and "No active shell" not in exit_result.message:
             return exit_result
@@ -1035,7 +1052,7 @@ class AgenticProcess(Entity):
 
         Routing:
           ``visible=True`` + worker alive (PTY) → write to PTY stdin (continues session)
-          ``visible=True`` + worker dead        → ``start(instruction)`` (PTY relaunch)
+          ``visible=True`` + worker dead        → ``start_pty(instruction)`` (PTY relaunch)
           ``visible=False`` (headless)          → ``self.driver.run_print_turn(...)``
                                                   — vendor-specific print-mode that
                                                   handles multi-step tool sequences.
@@ -1066,11 +1083,11 @@ class AgenticProcess(Entity):
         - bytes: sent directly to the PTY without modification (use for control
           sequences like b"\\x1b" where appending \\r would break the intent)
 
-        Requires start() to have been called first.
+        Requires start_pty() to have been called first.
         """
         shell = await self.shell()
         if not shell:
-            raise ValueError("No shell linked — call start() first")
+            raise ValueError("No shell linked — call start_pty() first")
         if isinstance(data, bytes):
             await shell.write_raw(data)
         else:
@@ -2171,7 +2188,7 @@ class AgenticProcess(Entity):
         """Build the launch options used for worker restart comparison.
 
         This mirrors the persisted/process-derived CLI inputs used by
-        ``start()`` but intentionally excludes runtime-only env injection.
+        ``start_pty()`` but intentionally excludes runtime-only env injection.
         """
         driver = self._restart_driver()
         if driver is None:
@@ -2227,7 +2244,7 @@ class AgenticProcess(Entity):
         """Stable hash over finalized generic + worker launch inputs.
 
         Mismatch against ``last_started_hash`` (captured at last successful
-        ``start()``) means the live worker is running with stale config —
+        ``start_pty()``) means the live worker is running with stale config —
         ``restart_required`` flips True via the ``save()`` hook below.
         """
         import hashlib
@@ -2239,10 +2256,10 @@ class AgenticProcess(Entity):
         ).hexdigest()
 
     def _set_start_lifecycle(self, value: bool) -> None:
-        """Mark whether ``start()`` is currently mutating this entity.
+        """Mark whether ``start_pty()`` is currently mutating this entity.
 
         While True the ``save()`` hook skips the auto-flag-flip so intermediate
-        saves inside ``start()`` (status, session_id) don't trip the detector.
+        saves inside ``start_pty()`` (status, session_id) don't trip the detector.
         """
         object.__getattribute__(self, "__dict__")["_in_start_lifecycle"] = bool(value)
 
@@ -2256,12 +2273,12 @@ class AgenticProcess(Entity):
 
         On every save, if the process is RUNNING and the worker-relevant
         snapshot differs from ``last_started_hash``, flip the flag. Skipped
-        during ``start()`` itself (intermediate saves there are bookkeeping,
+        during ``start_pty()`` itself (intermediate saves there are bookkeeping,
         not config drift) — see ``_set_start_lifecycle``.
 
         External callers can still set ``restart_required`` directly; the
         hook only flips it ON, never explicitly clears it (clearing happens
-        only on successful ``start()``).
+        only on successful ``start_pty()``).
         """
         if (
             not self._is_in_start_lifecycle()
@@ -2447,7 +2464,7 @@ class AgenticProcess(Entity):
     # ── Advanced API ──────────────────────────────────────────────────────────
 
     async def shell(self) -> "Shell | None":
-        """The Shell entity for this process. None until start() is called.
+        """The Shell entity for this process. None until start_pty() is called.
 
         Async method — requires Shell.get_by_id() DB lookup.
         Use for reading raw PTY output, attaching WS viewers, inspecting worker PID.
@@ -2463,7 +2480,7 @@ class AgenticProcess(Entity):
         return shell.compute_node if shell else None
 
     async def set_session_id(self, session_id: str) -> None:
-        """Bind this process to an existing Claude session before start()."""
+        """Bind this process to an existing Claude session before start_pty()."""
         self.session_id = session_id
         await self.save()
 
@@ -2562,7 +2579,10 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="open")
     async def _http_open(self) -> ApiSuccessResponse | ApiFailResponse:
-        """HTTP: Start PTY and move lifecycle status to starting/running.
+        """HTTP: invoke :meth:`start_pty` and move lifecycle status to starting/running.
+
+        Action name kept as ``open`` for back-compat with existing UI / TS SDK
+        clients; the underlying behaviour is PTY spawn (``start_pty``).
 
         POST body: {instruction?, visible?, session_id?}
         """

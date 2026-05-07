@@ -82,7 +82,7 @@ class Shell(Entity):
         binding hasn't been resolved yet AND we have no uname hint — purely to
         avoid breaking ephemeral sessions that still use a raw local id. For
         every other path (including sandbox shells) the real CN + provider are
-        used, so `Shell.start()` routes to the correct provider.
+        used, so `Shell.start_pty()` routes to the correct provider.
         """
         if self._bound_compute_node is not None:
             return self._bound_compute_node
@@ -255,11 +255,11 @@ class Shell(Entity):
     async def open(cls, workdir=None, **kwargs) -> "Shell":
         """Create + start PTY immediately. Returns a ready shell."""
         shell = cls(workdir=workdir, **kwargs)
-        await shell.start()
+        await shell.start_pty()
         return shell
 
     async def __aenter__(self) -> "Shell":
-        await self.start()
+        await self.start_pty()
         return self
 
     async def __aexit__(self, *_) -> None:
@@ -267,7 +267,7 @@ class Shell(Entity):
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
-    async def start(
+    async def start_pty(
         self,
         rows: int = 24,
         cols: int = 80,
@@ -331,6 +331,12 @@ class Shell(Entity):
         await self.save()
         return True
 
+    async def start(self, *args, **kwargs) -> bool:
+        """Back-compat alias for :meth:`start_pty`. Prefer ``start_pty`` —
+        ``start`` reads as a generic lifecycle word but this method only ever
+        spawns the PTY."""
+        return await self.start_pty(*args, **kwargs)
+
     async def stop(self) -> None:
         """Kill PTY but keep the Shell entity. Tab entry remains.
 
@@ -343,9 +349,9 @@ class Shell(Entity):
         await self.save()
 
     async def restart(self) -> None:
-        """stop() then start(). Preserves workdir, env, tab_order."""
+        """stop() then start_pty(). Preserves workdir, env, tab_order."""
         await self.stop()
-        await self.start()
+        await self.start_pty()
 
     async def terminate_worker(self) -> None:
         """Gracefully kill the Claude worker and wait for full reap.
@@ -418,7 +424,7 @@ class Shell(Entity):
         """
         pty_handle = self.compute_node.get_pty(self.id)
         if not pty_handle:
-            raise RuntimeError("No PTY session — call start() first")
+            raise RuntimeError("No PTY session — call start_pty() first")
         await self._wait_for_shell_ready()
         await pty_handle.write(f"{text}\r".encode())
 
@@ -430,7 +436,7 @@ class Shell(Entity):
         """
         pty_handle = self.compute_node.get_pty(self.id)
         if not pty_handle:
-            raise RuntimeError("No PTY session — call start() first")
+            raise RuntimeError("No PTY session — call start_pty() first")
         await pty_handle.write(data)
 
     async def read(self) -> bytes:
@@ -733,7 +739,7 @@ class Shell(Entity):
         if working_dir:
             self.workdir = working_dir
         try:
-            await self.start(
+            await self.start_pty(
                 rows=body.get("rows", 24),
                 cols=body.get("cols", 80),
                 connection_id=body.get("connection_id"),
