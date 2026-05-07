@@ -4,6 +4,7 @@ import { Conversation, dataManager, FlowMessage, QueryFilter, QueryRequest, sync
 import { useEntitiesQuery, useEntity } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { openInboxMessage } from '@src/components/inbox-view/inbox-api';
+import { markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { MessageComposer } from './MessageComposer';
 import { useApproveAndExecutePty } from './useApproveAndExecutePty';
@@ -138,6 +139,30 @@ export function ConversationView({
     () => buildConversationItems(pointers, draftMessages, backfilledIds),
     [pointers, backfilledIds, draftMessages],
   );
+
+  // Read-ack emission: when the conversation panel is open, batch-mark all
+  // current pointers as `received`. The hub honors monotonicity + sender-skip
+  // server-side, so re-acking already-received or own-sent messages is a
+  // cheap no-op. Debounced 250ms to coalesce bursts (e.g. catch-up).
+  const ackedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (pointers.length === 0) return;
+    const candidates = pointers
+      .map((p) => p.id)
+      .filter((id) => id && !ackedRef.current.has(id));
+    if (candidates.length === 0) return;
+    const handle = setTimeout(() => {
+      candidates.forEach((id) => ackedRef.current.add(id));
+      void markFlowMessagesReceived(candidates).catch(() => {
+        // Network/hub failure shouldn't crash the UI. Reset our tracker so
+        // the next pointer change will retry.
+        candidates.forEach((id) => ackedRef.current.delete(id));
+      });
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [pointers.map((p) => p.id).join(',')]);
+
+  const conversationStatusVisible = conversation?.message_status_visible ?? true;
 
   const [hubSyncing, setHubSyncing] = useState(false);
   const handleRefresh = useCallback(async () => {
