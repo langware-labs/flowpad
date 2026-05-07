@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Paperclip, Pencil } from 'lucide-react';
+import { Paperclip, Pencil, Play } from 'lucide-react';
 import type { Attachment } from '@sdk/entities/flow-message';
 import {
   Dialog,
@@ -9,7 +9,6 @@ import {
   DialogTrigger,
 } from '@src/components/ui/dialog';
 import { fileAttachmentUrl } from './attachment-url';
-import { EntityChip } from './EntityChip';
 
 interface PromptApprovalRowProps {
   /** Every PROMPT attachment on the message — the row splits inline text from prompt files. */
@@ -160,17 +159,21 @@ export function PromptApprovalRow({
       })}
 
       {onApprove && (
-        <EntityChip
-          entity={{ type: 'prompt', name: 'Approve & Execute' }}
+        <button
+          type="button"
           onClick={onApprove}
           title="Approve this prompt and run it in the shared session"
-        />
+          className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/60 bg-emerald-500/15 px-2.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-500/25 dark:text-emerald-300"
+        >
+          <Play className="h-3 w-3" />
+          Approve & Execute
+        </button>
       )}
       {!onApprove && onEdit && (
         <button
           type="button"
           onClick={onEdit}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/5 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15 dark:text-emerald-300"
+          className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/5 px-2.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-500/15 dark:text-emerald-300"
         >
           <Pencil className="h-3 w-3" />
           Edit

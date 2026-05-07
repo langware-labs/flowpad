@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@src/components/ui/select';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { resolveConversationDockPointer } from '@src/navigation/conversation-route-resolver';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { MessageSquarePlus, Pencil } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -122,12 +122,11 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
         await sendReply({ conversationId }, message, files);
       }
 
-      if (projectIdForNav && conversationId) {
-        navigation.openDock(
-          DockPointer.forProject(projectIdForNav, { conversationId }),
-        );
-      } else if (conversationId) {
-        navigation.openDock(DockPointer.forConversation(conversationId));
+      if (conversationId) {
+        navigation.openDock(resolveConversationDockPointer({
+          conversationId,
+          projectId: projectIdForNav,
+        }));
       }
       onClose();
     } catch (err: unknown) {

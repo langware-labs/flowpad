@@ -3,7 +3,7 @@ import { sendReply } from '@sdk/entities/notifications';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { useToast } from '@src/hooks/use-toast';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { resolveConversationDockPointer } from '@src/navigation/conversation-route-resolver';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
@@ -101,9 +101,10 @@ export function CommunityAssistanceDialog({ open, onClose }: CommunityAssistance
         });
       }
 
-      navigation.openDock(
-        DockPointer.forProject(projectId, { conversationId: conv.conversation_id }),
-      );
+      navigation.openDock(resolveConversationDockPointer({
+        conversationId: conv.conversation_id,
+        projectId,
+      }));
       onClose();
     } finally {
       setBusy(false);

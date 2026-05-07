@@ -1381,6 +1381,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         # Build BootstrapInfo using Pydantic model
         schemas = get_public_schema()
         _t.time("get_public_schema")
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         bootstrap_info = BootstrapInfo(
             schemas=schemas,
             user=entity_to_dict(user),
@@ -1397,6 +1398,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             desktop_info=desktop_info,
             scan_info=scan_info,
             sniffer_hook=entity_to_dict(sniffer_hook) if sniffer_hook else None,
+            records_root=str(get_instance_settings().records_root),
         )
 
         _t.done(0.5)
