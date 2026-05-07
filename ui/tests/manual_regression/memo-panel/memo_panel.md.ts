@@ -20,7 +20,14 @@ import { expect, test } from '@playwright/test';
 const prefix = 'MPTest-' + Date.now().toString(36);
 
 async function setup(page) {
-  await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
+  await page.addInitScript(() => {
+    localStorage.setItem('llm-setup-modal-seen', 'true');
+    // Dismiss the discover/index Welcome modal — its Radix overlay intercepts
+    // pointer events and blocks clicks on home-landing buttons. The condition
+    // that opens it is gated on `flowpad-index-approved` (localStorage) or
+    // `flowpad-scan-dismissed` (sessionStorage), per HomeLanding.tsx.
+    localStorage.setItem('flowpad-index-approved', '1');
+  });
   await page.goto('/');
   await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 }
@@ -37,7 +44,7 @@ async function openMemoPanel(page) {
 
 async function seedMemo(page, title) {
   const res = await page.evaluate(async (t) => {
-    const r = await fetch('http://localhost:9007/api/v1/graph/memo', {
+    const r = await fetch('http://localhost:9008/api/v1/graph/memo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title: t, memo_type: 'note', status: 'open' }),
@@ -49,7 +56,7 @@ async function seedMemo(page, title) {
 
 async function deleteMemoById(page, id) {
   await page.evaluate(async (memoId) => {
-    await fetch('http://localhost:9007/api/v1/graph/memo/' + memoId, { method: 'DELETE' });
+    await fetch('http://localhost:9008/api/v1/graph/memo/' + memoId, { method: 'DELETE' });
   }, id);
 }
 
@@ -81,7 +88,7 @@ test('create memo inside iframe shows it in memo list', async ({ page }) => {
 
   // Cleanup
   const entity = await page.evaluate(async (t) => {
-    const r = await fetch('http://localhost:9007/api/v1/graph/memo');
+    const r = await fetch('http://localhost:9008/api/v1/graph/memo');
     const json = await r.json();
     return (json.data || []).find((m) => m.title === t);
   }, title);
@@ -165,7 +172,7 @@ test('memo created in iframe persists in backend', async ({ page }) => {
 
   // Verify via REST
   const found = await page.evaluate(async (t) => {
-    const r = await fetch('http://localhost:9007/api/v1/graph/memo');
+    const r = await fetch('http://localhost:9008/api/v1/graph/memo');
     const json = await r.json();
     return (json.data || []).find((m) => m.title === t);
   }, title);
@@ -196,7 +203,7 @@ test('pressing Enter in input creates memo', async ({ page }) => {
     .toBeVisible({ timeout: 10_000 });
 
   const found = await page.evaluate(async (t) => {
-    const r = await fetch('http://localhost:9007/api/v1/graph/memo');
+    const r = await fetch('http://localhost:9008/api/v1/graph/memo');
     const json = await r.json();
     return (json.data || []).find((m) => m.title === t);
   }, title);

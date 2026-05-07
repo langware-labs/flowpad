@@ -122,8 +122,6 @@ execution_context_var: ContextVar[ExecutionContext] = ContextVar("execution_cont
 
 
 def set_execution_context(execution_context: ExecutionContext | None):
-    if execution_context is None:
-        return
     execution_context_var.set(execution_context)
 
 

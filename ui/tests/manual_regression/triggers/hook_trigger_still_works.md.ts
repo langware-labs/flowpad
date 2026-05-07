@@ -20,13 +20,23 @@ test('hook triggers render correctly — no regression after merge', async ({ pa
   await dismissSetupModal(page);
   await gotoTriggers(page);
 
-  // Check if any hook triggers exist (system triggers from discover)
-  const hookSection = page.locator('text=Hook Triggers');
-  const hasHookTriggers = await hookSection.isVisible({ timeout: 3_000 }).catch(() => false);
+  // Check if any hook triggers exist (system triggers from discover). The
+  // section header AND the empty-state text both contain "hook triggers" —
+  // use exact match on the header span to disambiguate.
+  const hookSection = page.getByText('Hook Triggers', { exact: true }).first();
+  const hasHookSection = await hookSection.isVisible({ timeout: 3_000 }).catch(() => false);
+  // Detect empty state explicitly: section header visible AND a "No hook
+  // triggers" placeholder exists ⇒ skip the click-and-validate flow.
+  const hasEmptyState = await page
+    .getByText(/No hook triggers/i)
+    .first()
+    .isVisible({ timeout: 1_000 })
+    .catch(() => false);
+  const hasHookTriggers = hasHookSection && !hasEmptyState;
 
   if (!hasHookTriggers) {
     // No hook triggers in this environment — just verify the page loads without crash
-    await page.locator('text=Schedule Triggers').waitFor({ state: 'visible', timeout: 10_000 });
+    await page.getByText('Schedule Triggers', { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 });
     const criticalErrors = errors.filter(e =>
       !e.includes('favicon') && !e.includes('ResizeObserver') && !e.includes('net::ERR_'),
     );
@@ -34,8 +44,8 @@ test('hook triggers render correctly — no regression after merge', async ({ pa
     return;
   }
 
-  // Select the first hook trigger
-  const firstHookItem = page.locator('text=Hook Triggers').locator('..').locator('[class*="cursor-pointer"]').first();
+  // Select the first hook trigger — anchor on the exact section header.
+  const firstHookItem = hookSection.locator('..').locator('[class*="cursor-pointer"]').first();
   await firstHookItem.waitFor({ state: 'visible', timeout: 5_000 });
   await firstHookItem.click();
 

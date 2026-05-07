@@ -38,6 +38,16 @@ def _invalidate_caches():
     Closing here on a fresh event loop leaks aiosqlite worker threads.
     """
     try:
+        from flow_sdk.request_context.execution_context import set_execution_context
+        set_execution_context(None)
+    except Exception:
+        pass
+    try:
+        import flow_sdk.server.middleware.request_transaction_middleware as request_middleware
+        request_middleware._LOCAL_USER_CACHE = None
+    except Exception:
+        pass
+    try:
         from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
         invalidate_bootstrap_cache()
     except Exception:
@@ -81,6 +91,7 @@ def _rebind_session_db_driver():
             DBRelationship._db = driver
         except Exception:
             pass
+    _invalidate_caches()
     yield
 
 
@@ -210,10 +221,8 @@ async def bootstrapped_client(client):
 @pytest_asyncio.fixture
 async def user(bootstrapped_client):
     """The @local user entity, fetched via the graph API after bootstrap."""
-    response = await bootstrapped_client.get("/api/v1/graph/user")
+    response = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     assert response.status_code == 200, response.text
     res = ApiResponse(**response.json())
-    users = res.data
-    assert users and len(users) >= 1, "No users found after bootstrap"
-    local_user = users[0]
-    return User(**local_user)
+    assert res.data and res.data.get("user"), "No user found after bootstrap"
+    return User(**res.data["user"])

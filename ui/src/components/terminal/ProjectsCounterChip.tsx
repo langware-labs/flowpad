@@ -29,7 +29,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ curren
   const [open, setOpen] = useState(false);
   const { data: tabs } = useAllTerminals();
 
-  const { rows, total } = useMemo(() => {
+  const { rows, projectTotal, terminalTotal } = useMemo(() => {
     const byProject = new Map<string, TerminalTab[]>();
     for (const tab of tabs) {
       const pid = tabProjectId(tab);
@@ -49,12 +49,14 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ curren
       if (b.tabs.length !== a.tabs.length) return b.tabs.length - a.tabs.length;
       return a.name.localeCompare(b.name);
     });
-    const total = rows.reduce((sum, r) => sum + r.tabs.length, 0);
-    return { rows, total };
+    const terminalTotal = rows.reduce((sum, r) => sum + r.tabs.length, 0);
+    return { rows, projectTotal: rows.length, terminalTotal };
   }, [tabs, currentProjectId]);
 
-  const isEmpty = total === 0;
-  const tooltipText = `${total} active terminal${total === 1 ? '' : 's'} across all projects`;
+  const isEmpty = projectTotal === 0;
+  const tooltipText = `${projectTotal} active project${projectTotal === 1 ? '' : 's'} with ${terminalTotal} terminal${
+    terminalTotal === 1 ? '' : 's'
+  }`;
 
   const chipClass = `mx-1 inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border bg-background px-2 text-xs font-medium tabular-nums hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-1 focus:ring-ring ${
     isEmpty ? 'cursor-default opacity-50 hover:bg-background hover:text-foreground' : ''
@@ -73,7 +75,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ curren
               aria-label={tooltipText}
             >
               <Layers className="h-3 w-3" />
-              {total}
+              {projectTotal}
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">{tooltipText}</TooltipContent>
@@ -109,7 +111,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ curren
                 aria-label={tooltipText}
               >
                 <Layers className="h-3 w-3" />
-                {total}
+                {projectTotal}
               </button>
             </PopoverTrigger>
           </TooltipTrigger>

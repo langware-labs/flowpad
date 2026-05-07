@@ -1,94 +1,81 @@
-# TraceGutter — Hook Events & Historical Transcript in the Terminal Left Gutter
+# TraceGutter - FlowData Trace Events in the Terminal Left Gutter
 
 ## Overview
 
-TraceGutter is the left gutter alongside the terminal that shows hook events and historical transcript entries. It was renamed from SnifferGutter.
+TraceGutter is the left gutter next to the interactive terminal. It renders
+agent trace events against terminal rows.
 
-Two data sources are merged into a unified timeline:
+The terminal has two parallel channels:
 
-1. **Live sniffer events** — hook events captured in real time, anchored to a terminal row via `absRow`.
-2. **Historical transcript entries** — past session entries fetched from the backend, with `absRow = null` (no cursor position available).
+1. **PTY I/O channel** - `Shell` / `PtyConnection` delivers terminal bytes to xterm and accepts user keystrokes. This is the interactive terminal itself.
+2. **FlowData trace channel** - `AgenticProcess.flowDataStream` delivers history, live worker stream events, and hook/sniffer events for trace UI.
 
-Both are mapped to the unified `ClaudeTraceEvent` type before rendering.
+The trace gutter does not parse prompt text out of PTY bytes. PTY output is only
+used for row coordinates through `PtySyncSession`.
 
-## ClaudeTraceEvent (unified type)
+## Current Data Model
+
+### FlowData Sources
+
+`AgenticProcess.flowDataStream` is the source of truth for the left gutter.
+
+| Source | How it enters the stream | Notes |
+|--------|--------------------------|-------|
+| History | `process.loadHistory()` calls the backend `get-history` action. The active driver reads the JSONL transcript and converts entries to `FlowData`. | Marked `FlowDataSource.History`. |
+| Live stream | Print/headless worker output and SDK streaming ingest append `FlowData` as the process runs. | Marked as live stream source. |
+| Sniffer/hooks | `listen.py` converts hook payloads to canonical `FlowData` and routes a copy to the matching `AgenticProcess`. | Used for hook-level telemetry such as `UserPromptSubmit`, tool hooks, notifications. |
+| Optimistic user echo | Some API/execute paths append user-message `FlowData` before backend confirmation. | This is not the interactive PTY keystroke path. |
+
+### TraceEvent
 
 **File:** `ui/src/types/trace-event.ts`
 
-### TraceEventSource
-
-```ts
-type TraceEventSource = 'transcript' | 'sniffer';
-```
-
-### ClaudeTraceEvent interface
+The renderer consumes vendor-neutral `TraceEvent`, mapped from `FlowData`:
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | `string` | Unique identifier |
-| `idx` | `number?` | Sniffer sequence index (undefined for transcript events) |
-| `timestamp` | `string` | ISO timestamp |
-| `source` | `TraceEventSource` | `'sniffer'` or `'transcript'` |
-| `session_id` | `string` | Claude session UUID |
-| `event_type` | `string` | Event name (e.g. `PreToolUse`, `UserMessage`, `System:init`) |
-| `summary` | `string?` | Short text summary |
-| `tool_name` | `string?` | Tool name for tool_use events |
-| `tool_input` | `Record<string, any>?` | Tool input for tool_use events |
-| `absRow` | `number?` | Absolute terminal row (only set during rendering, not in the type's data flow) |
-| `raw` | `Record<string, any>` | Raw event data (parsed JSON for sniffer, entry object for transcript) |
-| `transcript_path` | `string?` | Transcript file path (sniffer only) |
-| `webhook_type` | `string?` | Webhook type (sniffer only) |
-| `hook_data` | `Record<string, any>?` | Hook payload (sniffer only) |
-| `layer` | `EventLayer?` | Event layer (sniffer only) |
-| `warning` | `string?` | Warning message (sniffer only) |
-| `error` | `string?` | Error message (sniffer only) |
+| `id` | `string` | Derived from `FlowData.index` and timestamp. |
+| `timestamp` | `string` | `FlowData.timestamp`. |
+| `source` | `FlowDataSource` | History, stream, sniffer, etc. |
+| `session_id` | `string` | Current `AgenticProcess.session_id`. |
+| `event_type` | `string` | `attributes.subtype`, then `attributes["tool-name"]`, then `elementType`. |
+| `element_type` | `string?` | Original `FlowData.elementType`. |
+| `tool_name` | `string?` | `attributes["tool-name"]`. |
+| `raw` | `Record<string, any>` | Object data, or `{ value }` for scalar data. |
+| `attributes` | `Record<string, string>?` | Original FlowData attributes. |
 
-### TranscriptEntryData interface
+There is no separate `ClaudeTraceEvent` or `session-transcript` path in the
+current gutter implementation.
 
-Represents a single entry from the backend transcript endpoint:
+## Frontend Flow
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `entry_type` | `string` | `user`, `assistant`, `system`, `progress`, etc. |
-| `entry_uuid` | `string` | Unique entry ID |
-| `timestamp` | `string` | ISO timestamp |
-| `session_id` | `string` | Session UUID |
-| `subtype` | `string?` | Subtype for system entries |
-| `parent_uuid` | `string?` | Parent entry UUID |
-| `is_sidechain` | `boolean?` | Whether this is a sidechain entry |
-| `message` | `object?` | Contains `content`, `model`, `stop_reason`, `usage` |
-| `data` | `Record<string, any>?` | Extra data |
+### `useAgenticProcessStream`
 
-### Mapper functions
+**File:** `ui/src/hooks/use-agentic-process-stream.ts`
 
-#### `mapSnifferToTraceEvent(event: SnifferEvent): ClaudeTraceEvent`
+Subscribes to `process.flowDataStream` with `useSyncExternalStore`. The stable
+snapshot is load-bearing: it prevents array-reference churn from causing render
+loops in terminal tooltip/layout code.
 
-- Parses `event.raw_line` via `JSON.parse`; falls back to `{ raw_line: event.raw_line }` on parse failure
-- Maps all SnifferEvent fields directly, preserving `idx`, `layer`, `warning`, `error`
+### `useFlowDataTrace`
 
-#### `mapTranscriptToTraceEvents(entry: TranscriptEntryData, sessionId: string): ClaudeTraceEvent[]`
+**File:** `ui/src/hooks/use-flow-data-trace.ts`
 
-Maps one transcript entry to one or more trace events:
+1. Calls `process.loadHistory()` once per process id.
+2. Subscribes to the same `process.flowDataStream` used for live events.
+3. Maps every `FlowData` item through `mapFlowDataToTraceEvent()`.
+4. Sorts by timestamp.
+5. Counts history vs live events from `FlowData.source`.
 
-| Entry type | Condition | Result |
-|------------|-----------|--------|
-| `assistant` | Has `tool_use` content blocks | One event per tool block. `event_type = block.name`. ID: `transcript-<entry_uuid>-tool-<i>` |
-| `assistant` | Text only (no tool blocks) | Single event. `event_type = 'AssistantMessage'`. Summary extracted from text content (first 80 chars). |
-| `user` | — | Single event. `event_type = 'UserMessage'`. Summary extracted from content. |
-| `system` | — | Single event. `event_type = 'System:<subtype>'` or `'System:unknown'` if no subtype. |
-| All others | — | Single event. `event_type = entry.entry_type` or `'Unknown'`. |
-
-All transcript events have `source = 'transcript'`, `idx = undefined`, and `raw` set to the entry object itself.
-
-## useTraceGutter hook
+### `useTraceGutter`
 
 **File:** `ui/src/components/terminal/interactive-terminal/use-trace-gutter.ts`
 
-### Signature
+Signature:
 
 ```ts
 function useTraceGutter(
-  workerSessionId: string | undefined | null,
+  process: AgenticProcess | null,
   terminalReady: boolean,
   ptySyncSession: PtySyncSession,
   replayComplete: boolean,
@@ -99,141 +86,130 @@ function useTraceGutter(
   historicalCount: number;
   liveCount: number;
   sessionStartTime: string | null;
-  allEvents: ClaudeTraceEvent[];
+  allEvents: TraceEvent[];
 }
 ```
 
-### TraceGutterEntry
+Behavior:
 
-```ts
-interface TraceGutterEntry {
-  absRow: number | null;
-  event: ClaudeTraceEvent;
-}
+1. Reads `TraceEvent[]` from `useFlowDataTrace(process)`.
+2. Waits for terminal readiness and replay completion.
+3. Deduplicates by event id.
+4. Buckets each event timestamp through `ptySyncSession.bucketTimestamp(ts)`.
+5. Returns `TraceGutterEntry[]` for rendering.
+
+Bucketing is pure inside `useMemo`; the hook does not keep an anchor map in
+React state.
+
+## Row Mapping
+
+`PtySyncSession` maintains terminal row coordinates from the PTY channel:
+
+- `processChunk()` records output chunks and terminal row progression.
+- `buildSegmentsFromAnchors()` can rebuild time-to-row segments from prompt anchors.
+- `bucketTimestamp(ts)` maps a trace event timestamp to an absolute xterm row.
+
+The important split:
+
+- PTY bytes establish terminal coordinates.
+- FlowData events establish trace data.
+- TraceGutter combines them only at render time by timestamp bucketing.
+
+## Backend Flow
+
+### History
+
+`AgenticProcess.loadHistory()` calls the backend `get-history` action.
+
+Backend path:
+
+1. `AgenticProcess.get_history_action()`
+2. active driver `load_history(process)`
+3. driver reads worker transcript JSONL
+4. transcript entries are converted to `FlowData`
+5. frontend ingests those items into `process.flowDataStream`
+
+### Hook/Sniffer Fan-Out
+
+`flow_sdk/app/actions/listen.py` handles hook webhooks.
+
+For hook events:
+
+1. Convert hook payload to canonical `FlowData`.
+2. Broadcast to the global `@sniffer` `AgentHook` for the global sniffer panel.
+3. Route a copy to the source `AgenticProcess` when `FLOWPAD_EXECUTION_SCOPE` or session metadata identifies it.
+
+The terminal TraceGutter reads the per-process copy, not the global sniffer
+panel state.
+
+## Prompt Index
+
+Prompts are a special case. The prompt index is not sourced from the trace
+gutter event list.
+
+Canonical prompt text comes from the transcript-specific action:
+
+```text
+POST /api/v1/graph/agentic_process/{id}/transcript/prompts
 ```
 
-### Event anchoring via PtySegment bucketing
+Frontend path:
 
-Both sniffer and transcript events are positioned by calling `ptySyncSession.bucketTimestamp(ts)`, which delegates to `bucketEventToAbsRow(ts, segments)` in `PtySegment.ts`. This finds the segment whose `[startTime, endTime]` contains `ts` and returns the corresponding absolute row. If no segment contains the timestamp, the last segment is used as a fallback.
+1. `InteractiveTerminal` calls `process.getPrompts()`.
+2. `AgenticProcess.getPrompts()` creates `ActionInfo('transcript', AgenticProcess.type, id, 'POST')`.
+3. It sets `actionInfo.subpath = 'prompts'`.
+4. The response is hydrated into `UserMessageEntry[]` through the transcript analyzer.
 
-**Sniffer events** — bucketed immediately as they arrive (no `replayComplete` requirement):
+Backend path:
 
-1. New events are detected via `processedSnifferRef` (Set of already-handled event IDs)
-2. Each event's timestamp is bucketed via `ptySyncSession.bucketTimestamp(ts)` and stored in `anchorMapRef`
-3. `anchorVersion` is bumped to trigger gutter re-render
+1. `AgenticProcess.transcript_action()` receives action `transcript` with sub-path `prompts`.
+2. `_load_transcript()` resolves the active driver's JSONL transcript path.
+3. `AgentTranscript(worker_type, path)` parses the transcript.
+4. `_transcript_prompts()` returns `[e.to_dict() for e in transcript.prompts]`.
 
-**Transcript events** — bucketed after `replayComplete` is true, then re-bucketed whenever `snapshotVersion` changes (i.e. segments were rebuilt by `buildSegmentsFromAnchors`):
+`AgentTranscript.prompts` filters out:
 
-1. When `snapshotVersion` changes, all entries — **both transcript and sniffer** — are cleared from `anchorMapRef`. Sniffer IDs are also removed from `processedSnifferRef` so they are re-bucketed with the updated segments.
-2. Events without an anchor are bucketed via `ptySyncSession.bucketTimestamp(ts)` and stored in `anchorMapRef`
-3. `anchorVersion` is bumped if any bucket was added or if segments changed
+- sidechain user entries
+- empty or whitespace-only text
+- Claude Code synthetic interrupt markers such as `[Request interrupted by user for tool use]`
 
-### Merging
+Prompt annotations are auxiliary row anchors:
 
-All events from `useClaudeSessionTrace` (which merges live sniffer events + historical transcript entries) are sorted by `event.timestamp` ascending. The final `entries` array maps each event to its `absRow` from `anchorMapRef`.
+1. `listen.py` sees `UserPromptSubmit`.
+2. It creates an `Annotation` with `labels=["prompt:"]`, `session_id`, and truncated prompt content.
+3. `useAnnotationGutter()` queries annotations and resolves prompt rows by searching xterm text.
+4. `InteractiveTerminal` matches transcript prompts to nearby prompt annotations within 1000 ms.
+5. If an annotation exists, the prompt can scroll to its terminal row. If it is missing, the prompt still renders from the transcript endpoint.
 
-### Cleanup
-
-When `workerSessionId` changes, `anchorMapRef`, `processedSnifferRef`, and `lastSnapshotVersionRef` are all cleared via an effect cleanup function.
-
-## useSessionTranscript hook
-
-**File:** `ui/src/hooks/use-session-transcript.ts`
-
-### Signature
-
-```ts
-function useSessionTranscript(sessionId: string | null): {
-  entries: TranscriptEntryData[];
-  isLoading: boolean;
-}
-```
-
-### Behavior
-
-- Fetches `GET /api/v1/graph/compute_node/@local/session-transcript?session_id=<id>`
-- Caches responses by `sessionId` in a `cacheRef` (never invalidated during component lifetime)
-- Returns empty array when `sessionId` is null
-- On cache hit, returns cached data immediately without a network request
-- On fetch failure, logs a warning and returns the previous entries
-
-## Backend endpoint
-
-**Endpoint:** `GET /api/v1/graph/compute_node/@local/session-transcript`
-
-**Query parameters:**
-- `session_id` (required) — Claude session UUID
-- `project` (optional) — Absolute project path for O(1) lookup
-
-**Handler:** `flow_sdk/builtin/faas/compute_node.py` — `@action.get(action_name="session-transcript")`
-
-**Logic:**
-1. Reads `session_id` from query params; returns `ApiFailResponse` if missing
-2. Looks up `ClaudeSessionRecord.discover_one(session_id, project=...)`
-3. If not found, returns `ApiSuccessResponse(data=[])` (empty list, not a failure)
-4. Returns `ApiSuccessResponse(data=record.to_transcript_dicts())`
-
-**Data source:** `ClaudeSessionRecord.to_transcript_dicts(include_raw_json=False)` in `flow_sdk/fs_records/claude/claude_session.py`:
-- Calls `self.filtered_entries` which excludes noisy entry types (`file-history-snapshot`, `progress`) via `EXCLUDED_ENTRY_TYPES`
-- Serializes each entry via `.to_dict()` and strips the `raw_json` field to reduce response size
-
-**Response format:** Standard `ApiResponse` with `data` as a flat list of entry dicts:
-```json
-{ "status": "SUCCESS", "data": [ { "entry_type": "user", "entry_uuid": "...", ... }, ... ] }
-```
-
-The frontend reads `json?.data ?? []` to extract the entries array.
-
-## TraceGutter component
+## TraceGutter Rendering
 
 **File:** `ui/src/components/terminal/interactive-terminal/TraceGutter.tsx`
 
-### Props
+Props:
 
 | Prop | Type | Description |
 |------|------|-------------|
-| `entries` | `TraceGutterEntry[]` | Merged trace entries from `useTraceGutter` |
-| `cellHeight` | `number` | Terminal cell height in pixels |
-| `viewportY` | `number` | Current viewport scroll offset |
-| `rows` | `number` | Visible terminal rows |
-| `totalTraceEvents` | `number` | Total event count |
-| `historicalCount` | `number` | Count of historical transcript events |
-| `liveCount` | `number` | Count of live sniffer events |
+| `entries` | `TraceGutterEntry[]` | FlowData trace events with resolved rows. |
+| `cellHeight` | `number` | Terminal cell height in pixels. |
+| `viewportY` | `number` | Current viewport scroll offset. |
+| `rows` | `number` | Visible terminal rows. |
+| `totalTraceEvents` | `number` | Total event count. |
+| `historicalCount` | `number` | Count with `FlowDataSource.History`. |
+| `liveCount` | `number` | Count from non-history sources. |
 
-### Layout constants
+Collapsed mode renders row dots for visible entries. Expanded mode lays out an
+overlay list with collision avoidance for events that bucket to the same row.
 
-- `GUTTER_WIDTH = 48` — constant width so the terminal never refits
-- `PANEL_WIDTH = 220` — width of the expanded overlay panel
-
-### Rendering modes
-
-**Collapsed (default):** A dot column showing icons for row-anchored events. Only entries with `absRow` in the viewport range are shown as dots. Historical entries (`absRow = null`) are counted in the badge but NOT shown as dots.
-
-- `EventCountBadge` at top: shows `liveCount` when no historical events, or `historicalCount + liveCount` format when historical > 0
-- `GutterDot` per row group: shows an icon for the last event in that row, with a count badge if multiple events share the same row
-- Tooltip on hover: single event shows `EventTooltipContent`; multiple events show a list with icons and one-liners
-
-**Expanded:** Clicking the dot column toggles an absolutely-positioned overlay panel (does NOT affect flex layout, so xterm never refits).
-
-- `computeLayout()` performs collision-avoidance: each entry gets a `displayRow >= naturalRow` and `displayRow >= previousDisplayRow + 1`
-- Bracket connectors drawn between events that share the same `naturalRow`
-- `ExpandedEventLine` shows icon + truncated event type (max 14 chars) + one-liner summary
-- Tooltip on hover for full event details
-
-## Bug fix: dedup in liveTraceEntries
-
-The sniffer may return duplicate event objects (same `id`). The `liveTraceEntries` memo deduplicates by event id using `seen = new Set<string>()` to prevent duplicate gutter entries.
-
-**Test:** `ui/tests/react/use-trace-gutter.test.ts` — `"duplicate sniffer event ids produce only one entry"`
-
-## File map
+## File Map
 
 | File | Purpose |
 |------|---------|
-| `ui/src/components/terminal/interactive-terminal/TraceGutter.tsx` | Left gutter component |
-| `ui/src/components/terminal/interactive-terminal/use-trace-gutter.ts` | Hook — merges sniffer + transcript |
-| `ui/src/types/trace-event.ts` | `ClaudeTraceEvent`, mapper functions |
-| `ui/src/hooks/use-session-transcript.ts` | Transcript fetch + cache hook |
-| `flow_sdk/builtin/faas/compute_node.py` | Backend `session-transcript` endpoint |
-| `flow_sdk/fs_records/claude/claude_session.py` | `to_transcript_dicts()` method |
-| `ui/tests/react/use-trace-gutter.test.ts` | Hook unit tests |
+| `ui/src/components/terminal/interactive-terminal/TraceGutter.tsx` | Left gutter component. |
+| `ui/src/components/terminal/interactive-terminal/use-trace-gutter.ts` | Buckets per-process FlowData trace events to terminal rows. |
+| `ui/src/hooks/use-flow-data-trace.ts` | Loads history and maps `AgenticProcess.flowDataStream` to `TraceEvent[]`. |
+| `ui/src/hooks/use-agentic-process-stream.ts` | Stable `useSyncExternalStore` subscription to `flowDataStream`. |
+| `ui/src/types/trace-event.ts` | Vendor-neutral `TraceEvent` and FlowData mapper. |
+| `ts_sdk/src/process/agentic-process.ts` | `loadHistory()`, `getPrompts()`, and `getPlan()` frontend actions. |
+| `flow_sdk/builtin/agentic_process/agentic_process.py` | Backend `get-history` and `transcript/{plan,prompts}` actions. |
+| `flow_sdk/transcript_analyzer/transcript.py` | `AgentTranscript.prompts` filtering logic. |
+| `flow_sdk/app/actions/listen.py` | Hook conversion, sniffer broadcast, per-process FlowData routing, prompt annotations. |

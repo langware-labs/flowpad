@@ -362,21 +362,27 @@ class ScanActionsMixin:
 
             logging.info(f"ComputeNode {self.id} created AgenticProcess {process.id}")
 
-            # Atomic: spawn the linked Shell + PTY before returning so the
-            # frontend gets a fully-attached row in one round-trip. Without
-            # this the tab strip races a Phase-B refresh and ends up empty.
-            try:
-                start_resp = await process.start(visible=visible)
-            except Exception as start_err:
-                logging.exception(
-                    f"ComputeNode {self.id} createProcess start error for {process.id}: {start_err}"
-                )
-                return ApiFailResponse(
-                    message=f"Process {process.id} created but failed to start: {start_err}"
-                )
+            # Visible (PTY) processes spawn the linked Shell here so the
+            # frontend gets a fully-attached row in one round-trip; otherwise
+            # the tab strip races a Phase-B refresh and ends up empty.
+            #
+            # Headless (visible=False) processes manage their lifecycle
+            # per-turn via ``run_print_turn`` — pre-spawning a PTY here would
+            # claim a session_id without ever writing a JSONL, leaving the
+            # next ``/prompt`` to land on a stale session and emit nothing.
+            if visible:
+                try:
+                    start_resp = await process.start(visible=visible)
+                except Exception as start_err:
+                    logging.exception(
+                        f"ComputeNode {self.id} createProcess start error for {process.id}: {start_err}"
+                    )
+                    return ApiFailResponse(
+                        message=f"Process {process.id} created but failed to start: {start_err}"
+                    )
 
-            if isinstance(start_resp, ApiFailResponse):
-                return start_resp
+                if isinstance(start_resp, ApiFailResponse):
+                    return start_resp
 
             return ApiSuccessResponse(
                 data={
