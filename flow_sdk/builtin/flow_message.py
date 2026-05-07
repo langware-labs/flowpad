@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, ClassVar, Optional
@@ -65,6 +66,13 @@ class FlowMessage(Entity):
     conversation_id: Optional[str] = APIField(None, description="ID of the parent Conversation, or None for legacy messages")
     is_read: bool = APIField(default=False)
     is_archived: bool = APIField(default=False)
+    # Receipt state — mirrors the hub-side schema. Monotonic:
+    # created → delivered → received. Stamped only by the hub on
+    # mark_delivered / mark_received actions; the bridge propagates updates
+    # to the local row via data_op_msg(update).
+    delivery_status: str = APIField(default="created")
+    delivered_at: Optional[datetime] = APIField(default=None)
+    received_at: Optional[datetime] = APIField(default=None)
     # NOTE: ``context`` (list[TypeId]) was renamed and consolidated into the
     # unified ``context_entities`` on the base ``Entity``. Read via
     # ``msg.context_entities`` / ``msg.first_context_of_type('task')``.

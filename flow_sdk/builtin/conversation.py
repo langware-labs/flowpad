@@ -35,6 +35,10 @@ class Conversation(Entity):
     message_count: int = APIField(0)
     message_ids: Optional[str] = APIField(None)  # JSON-encoded [{"typeid": ..., "ts": ...}]
     participants: list[dict] = APIField(default_factory=list)  # [{user_id, email, name}]
+    # When False, hub suppresses delivery_status fan-out to the original
+    # sender (delivered/received UPDATE frames are filtered by hub-side
+    # Conversation._fanout_status_update). Co-recipients still see them.
+    message_status_visible: bool = APIField(default=True)
     # NOTE: task_id moved into ``context_entities``. Use
     # ``conv.first_context_of_type('task')`` to read it back.
     _api_visible: ClassVar[bool] = True
