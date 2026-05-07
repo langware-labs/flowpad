@@ -2,6 +2,7 @@ import { useCallback, useState, type ReactNode } from 'react';
 import {
   AgenticProcess,
   ComputeNode,
+  ProcessType,
   type AssetDescriptor,
 } from '@sdk';
 import { enableMcp, isMcpAvailable } from '@src/components/assets/utils';
@@ -44,7 +45,7 @@ const MCP_SERVER = 'flow-sdk-mcp';
 /**
  * Hook that owns the "Run an asset on this file" flow for the generic markdown
  * editor. Mirrors the lazy-create + attach + prompt pattern used by
- * `EntityChatPanel` (chat tab) and the spawn pattern used by
+ * `EntityExecutionPanel` (chat tab) and the spawn pattern used by
  * `WorkflowAssetEditor` (workflow runs):
  *
  *   1. Verify `flow-sdk-mcp` is enabled; if not, surface the modal.
@@ -81,6 +82,7 @@ export function useRunOnFile({
         workdir: project?.fs_storage_mount_path ?? undefined,
         projectId: project?.id,
         targetVfsPath,
+        processType: ProcessType.Execution,
         outputFormat: 'stream-json',
         permissionMode: 'bypassPermissions',
       });

@@ -95,7 +95,7 @@ async def _fire_schedule_job(trigger_id: str) -> None:
                     visible=False,
                 )
                 await proc.save()
-                await proc.start(instruction=entity.instruction, visible=False)
+                await proc.start_pty(instruction=entity.instruction, visible=False)
                 process_id = proc.id
             except Exception as e:
                 logger.error(f"Schedule trigger {entity.name}: failed to spawn process: {e}")

@@ -15,7 +15,7 @@ export interface MdSideTabDescriptor {
 }
 
 export const MD_SIDE_TABS: Record<MdSideTabId, MdSideTabDescriptor> = {
-  chat:      { id: 'chat',      label: 'Chat',      icon: MessageSquare, description: 'Chat about this document' },
+  chat:      { id: 'chat',      label: 'Chat',      icon: MessageSquare, description: 'Chat process keyed on this doc' },
   backlinks: { id: 'backlinks', label: 'Backlinks', icon: Link2,         description: 'Documents that link here' },
 };
 
