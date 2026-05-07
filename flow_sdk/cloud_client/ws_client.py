@@ -7,7 +7,7 @@ import json
 import logging
 import uuid
 from contextlib import asynccontextmanager
-from typing import Any, Literal
+from typing import Any, Awaitable, Callable, Literal
 from urllib.parse import urlsplit, urlunsplit
 
 import websockets
@@ -22,6 +22,10 @@ from flow_sdk.cli.auth.credentials import UserHubCredentials, load_credentials
 from flow_sdk.cloud_client.auth_state import invalidate_hub_login
 from flow_sdk.cloud_client.client import ApiConfig
 from flow_sdk.cloud_client.constants import EXPIRY_LEEWAY_SECONDS
+
+InboundHandler = Callable[[dict], Awaitable[None]]
+HUB_WS_REQUEST_DEFAULT_TIMEOUT_SECONDS = 10.0
+HUB_WS_OUTBOUND_QUEUE_MAX = 256
 
 
 logger = logging.getLogger(__name__)
@@ -145,6 +149,67 @@ class HubWebSocketManager:
         self._status: HubWsStatus = "disconnected"
         self._last_error: str | None = None
         self._connected_event: asyncio.Event | None = None
+        # Inbound dispatcher: message_type → handler. Replaces the prior
+        # debug-log-only sink. Handlers are awaited inside the reader loop;
+        # heavy work should be offloaded to its own task.
+        self._inbound_handlers: dict[str, InboundHandler] = {}
+        # Outbound queue + per-request future map for send_request correlation.
+        # Both are recreated on each reconnect cycle so prior pending frames
+        # don't leak across sessions.
+        self._outbound: asyncio.Queue[dict] | None = None
+        self._pending_requests: dict[str, asyncio.Future[dict]] = {}
+
+    def register_handler(self, message_type: str, handler: InboundHandler) -> None:
+        """Register an inbound handler. Last writer wins; pass None to remove."""
+        if handler is None:
+            self._inbound_handlers.pop(message_type, None)
+            return
+        self._inbound_handlers[message_type] = handler
+
+    def send(self, message: dict) -> None:
+        """Enqueue a message for delivery to the hub WS.
+
+        Fire-and-forget. If the WS is not currently connected the message is
+        held in the queue and flushed on reconnect (up to ``HUB_WS_OUTBOUND_QUEUE_MAX``
+        — additional sends raise ``asyncio.QueueFull``). Messages without a
+        ``message_id`` get one assigned in-place.
+        """
+        if "message_id" not in message:
+            message["message_id"] = str(uuid.uuid4())
+        if self._outbound is None:
+            self._outbound = asyncio.Queue(maxsize=HUB_WS_OUTBOUND_QUEUE_MAX)
+        self._outbound.put_nowait(message)
+
+    async def send_request(
+        self,
+        message: dict,
+        *,
+        timeout: float = HUB_WS_REQUEST_DEFAULT_TIMEOUT_SECONDS,
+    ) -> dict:
+        """Enqueue a message and await the matching ``response_msg``.
+
+        Returns the response payload (the ``content`` field of the
+        ``response_msg`` if present, else the full frame). Raises
+        ``asyncio.TimeoutError`` on no response within ``timeout``, or
+        ``HubWebSocketError``/connection-closed on disconnect mid-request.
+        """
+        message_id = message.get("message_id") or str(uuid.uuid4())
+        message["message_id"] = message_id
+        future: asyncio.Future[dict] = asyncio.Future()
+        self._pending_requests[message_id] = future
+        try:
+            self.send(message)
+            response = await asyncio.wait_for(future, timeout=timeout)
+        finally:
+            self._pending_requests.pop(message_id, None)
+        return response
+
+    def _fail_pending(self, exc: BaseException) -> None:
+        """Cancel/fault all in-flight send_request futures (used on disconnect)."""
+        for fut in list(self._pending_requests.values()):
+            if not fut.done():
+                fut.set_exception(exc)
+        self._pending_requests.clear()
 
     @property
     def is_running(self) -> bool:
@@ -245,6 +310,16 @@ class HubWebSocketManager:
         if current_task is not task:
             task.cancel()
 
+    async def _reader_loop(self, websocket) -> None:
+        async for raw_message in websocket:
+            await self._handle_message(raw_message)
+
+    async def _writer_loop(self, websocket) -> None:
+        assert self._outbound is not None
+        while True:
+            message = await self._outbound.get()
+            await websocket.send(json.dumps(message))
+
     async def _run_forever(self) -> None:
         backoff = self.reconnect_initial_seconds
         try:
@@ -256,21 +331,50 @@ class HubWebSocketManager:
                         self._set_state("verified" if self._verified else "connected", connected=True, error=None)
                         if self._connected_event:
                             self._connected_event.set()
-                        async for raw_message in websocket:
-                            await self._handle_message(raw_message)
+                        # Fresh queue per connection — prior queued frames from
+                        # a dead session don't leak across reconnects.
+                        self._outbound = asyncio.Queue(maxsize=HUB_WS_OUTBOUND_QUEUE_MAX)
+                        reader_task = asyncio.create_task(self._reader_loop(websocket))
+                        writer_task = asyncio.create_task(self._writer_loop(websocket))
+                        try:
+                            done, pending = await asyncio.wait(
+                                {reader_task, writer_task},
+                                return_when=asyncio.FIRST_COMPLETED,
+                            )
+                        finally:
+                            for task in (reader_task, writer_task):
+                                if not task.done():
+                                    task.cancel()
+                            for task in (reader_task, writer_task):
+                                try:
+                                    await task
+                                except (asyncio.CancelledError, ConnectionClosed, ConnectionClosedError):
+                                    pass
+                                except Exception:
+                                    pass
+                        # Surface a non-cancel exception from whichever task
+                        # finished first so the outer except blocks classify it.
+                        for task in done:
+                            exc = task.exception()
+                            if exc and not isinstance(exc, asyncio.CancelledError):
+                                raise exc
                 except asyncio.CancelledError:
                     raise
                 except HubWebSocketLoginRequiredError as exc:
+                    self._fail_pending(exc)
                     self._set_state("disconnected", connected=False, verified=False, error=str(exc))
                     return
                 except HubWebSocketAuthError as exc:
+                    self._fail_pending(exc)
                     self._set_state("error", connected=False, verified=False, error=str(exc))
                     return
                 except (ConnectionClosedError, ConnectionClosed) as exc:
+                    self._fail_pending(exc)
                     if await self._handle_closed_connection(exc):
                         return
                     self._set_state("disconnected", connected=False, verified=False, error=None)
                 except Exception as exc:
+                    self._fail_pending(exc)
                     logger.info("Hub WS listener disconnected: %s", exc)
                     self._set_state("error", connected=False, verified=False, error=str(exc))
 
@@ -278,6 +382,8 @@ class HubWebSocketManager:
                     await asyncio.sleep(backoff)
                     backoff = min(backoff * 2, self.reconnect_max_seconds)
         finally:
+            self._fail_pending(RuntimeError("Hub WebSocket session ended."))
+            self._outbound = None
             if asyncio.current_task() is self._task:
                 self._task = None
             if self._stop_requested:
@@ -347,16 +453,36 @@ class HubWebSocketManager:
         }
 
     async def _handle_message(self, raw_message: Any) -> None:
-        # No registered consumers — debug-only sink. Skip the JSON parse
-        # entirely when DEBUG isn't being captured.
-        if not isinstance(raw_message, str) or not logger.isEnabledFor(logging.DEBUG):
+        if not isinstance(raw_message, str):
             return
         try:
             message = json.loads(raw_message)
         except json.JSONDecodeError:
             logger.debug("Ignoring non-JSON hub WS message: %r", raw_message[:200])
             return
-        logger.debug("Received hub WS message: %s", message.get("message_type"))
+        if not isinstance(message, dict):
+            return
+        message_type = message.get("message_type")
+
+        # Correlate response_msg back to send_request awaiters first.
+        if message_type == "response_msg":
+            response_id = message.get("response_message_id") or message.get("message_id")
+            future = self._pending_requests.pop(response_id, None) if response_id else None
+            if future and not future.done():
+                # Resolve with `content` when the hub wraps a payload, otherwise
+                # the full frame so callers can inspect status/error fields.
+                future.set_result(message.get("content") if "content" in message else message)
+                return
+
+        handler = self._inbound_handlers.get(message_type) if message_type else None
+        if handler is None:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("Hub WS: no handler for message_type=%r", message_type)
+            return
+        try:
+            await handler(message)
+        except Exception:
+            logger.exception("Hub WS inbound handler raised for message_type=%s", message_type)
 
 
 hub_ws_manager = HubWebSocketManager()
