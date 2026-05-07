@@ -9,11 +9,34 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Awaitable, Callable, Protocol
 
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.indexer.progress_table import (
+    IndexProgressTable,
+    TypeProgressRow,
+)
 from flow_sdk.fs_store.record_types import RecordType
+
+
+# DFS waypoints the walker visits to reach leaf record types. Either they
+# don't materialize records at all (USER_HOME_FOLDER, SYSTEM_ROOT, FOLDER,
+# CWD_ROOT) or they're expansion nodes used to reach indexable children
+# (PROJECT, REAL_PROJECT_CWD). Filtered out of progress tables so the user
+# sees only types they recognize. Per-type accumulators in IndexResult still
+# include them — this filter is presentation-only.
+_PROGRESS_HIDDEN_TYPES: set[RecordType] = {
+    RecordType.USER_HOME_FOLDER,
+    RecordType.SYSTEM_ROOT,
+    RecordType.REAL_PROJECT_CWD,
+    RecordType.CWD_ROOT,
+    RecordType.PROJECT,
+    RecordType.FOLDER,
+}
+
+_PROGRESS_THROTTLE_S = 0.2
 
 
 class OrphanAction(str, Enum):
@@ -32,28 +55,7 @@ class OrphanAction(str, Enum):
     DELETE = "delete"
 
 
-@dataclass(frozen=True, slots=True)
-class ProgressEvent:
-    """Lifecycle signal emitted by scan() / index()."""
-    stage: str                   # "scan_start" | "type_complete" | "scan_end"
-                                 # | "index_start" | "index_end"
-                                 # | "type_start" | "type_progress"
-                                 # | "type_orphans"
-    record_type: RecordType | None = None
-    count: int = 0
-    total_bytes: int = 0
-    indexed: int = 0
-    errors: int = 0
-    duration_ms: float = 0.0
-    sub_done: int = 0
-    sub_total: int = 0
-    # Orphan stats — only populated on stage="type_orphans".
-    orphans_found: int = 0
-    orphans_db_removed: int = 0
-    orphans_disk_removed: int = 0
-
-
-ProgressCallback = Callable[[ProgressEvent], Awaitable[None]]
+ProgressCallback = Callable[[IndexProgressTable], Awaitable[None]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,17 +190,18 @@ class FSIndexer:
 
         Always runs a full scan; when `opts.types` is set, only FSRefs of
         those types get parsed via `Record.from_fsref` and written to DB.
+
+        Progress is reported as ``IndexProgressTable`` snapshots: an initial
+        snapshot with totals known and ``done=0``, throttled updates at
+        ~5/s as records are processed, and a terminal snapshot with
+        ``text="complete"`` and ``current=None``.
         """
         opts = opts if opts is not None else IndexerOptions()
         t0 = time.perf_counter()
-
         on_progress = opts.on_progress
-        if on_progress is not None:
-            await on_progress(ProgressEvent(stage="index_start"))
 
-        # Inner scan emits its own type_complete burst — suppress so it
-        # doesn't flood the outer index activity with "done" ticks before
-        # real indexing work begins.
+        # Inner scan suppresses its own progress emission — we drive the
+        # whole index activity from this method's snapshot loop.
         scan_opts = IndexerOptions(
             verbose=opts.verbose,
             limit=opts.limit,
@@ -231,14 +234,31 @@ class FSIndexer:
         for tn in type_names:
             valid_map[tn] = await _load_updated_map(driver, tn)
 
-        # Per-type totals (so sub_total is known up front for the UI).
+        # Pre-flight per-type totals: known up front because scan() materialized
+        # everything before we entered the per-record loop. Only counts types
+        # the per-record loop will actually index (skips scaffold types like
+        # USER_HOME_FOLDER / FOLDER that have no record_cls or from_fsref).
         per_type_totals: dict[RecordType, int] = {}
         for ref in targets:
             if ref.record_type is None:
                 continue
+            info = SchemaRegistry.get(str(ref.record_type))
+            if info is None or info.record_cls is None:
+                continue
+            if not hasattr(info.record_cls, "from_fsref"):
+                continue
             per_type_totals[ref.record_type] = per_type_totals.get(ref.record_type, 0) + 1
 
-        per_type_counts: dict[RecordType, dict[str, float]] = {}
+        # Per-type accumulators. Mutated in place during the loop; the table
+        # snapshot reads from these dicts on every emit.
+        per_type_counts: dict[RecordType, dict[str, Any]] = {
+            rt: {
+                "indexed": 0, "errors": 0, "duration_ms": 0.0, "skipped": 0,
+                "orphans_found": 0, "orphans_db_removed": 0, "orphans_disk_removed": 0,
+                "orphan_ids": [],
+            }
+            for rt in per_type_totals
+        }
         # Per-type set of entity ids we touched in this run (parsed or skipped-fresh).
         # Anything in valid_map[type] - seen_ids[type] is an orphan: a DB row whose
         # source no longer exists on disk.
@@ -248,35 +268,51 @@ class FSIndexer:
         seen_alive_ids: dict[RecordType, list[str]] = {}
         fts_batch: list = []
         current_rt: RecordType | None = None
-        seen_progress_at: dict[RecordType, float] = {}
-        _PROGRESS_THROTTLE_S = 0.2
+        last_emit_at = 0.0
 
-        async def _emit_type_complete(rt: RecordType) -> None:
+        def make_table(text: str | None = None) -> IndexProgressTable:
+            rows: list[TypeProgressRow] = []
+            for rt, total in per_type_totals.items():
+                if rt in _PROGRESS_HIDDEN_TYPES:
+                    continue
+                acc = per_type_counts[rt]
+                done = int(acc["indexed"]) + int(acc["skipped"])
+                rows.append(TypeProgressRow(
+                    type_name=str(rt),
+                    done=done,
+                    total=total,
+                    errors=int(acc["errors"]),
+                    skipped=int(acc["skipped"]),
+                ))
+            rows.sort(key=lambda r: -r.total)
+            current_name = (
+                str(current_rt) if current_rt is not None
+                and current_rt not in _PROGRESS_HIDDEN_TYPES
+                else None
+            )
+            return IndexProgressTable(
+                job_name="index",
+                rows=tuple(rows),
+                current=current_name,
+                done=sum(r.done for r in rows),
+                total=sum(r.total for r in rows),
+                text=text,
+                ts=datetime.now(timezone.utc).isoformat(),
+            )
+
+        async def emit(text: str | None = None, force: bool = False) -> None:
+            nonlocal last_emit_at
             if on_progress is None:
                 return
-            acc = per_type_counts.get(rt, {"indexed": 0, "errors": 0, "duration_ms": 0.0, "skipped": 0})
-            await on_progress(ProgressEvent(
-                stage="type_complete",
-                record_type=rt,
-                indexed=int(acc["indexed"]),
-                errors=int(acc["errors"]),
-                duration_ms=round(float(acc["duration_ms"]), 2),
-                sub_done=int(acc["indexed"]) + int(acc.get("skipped", 0)),
-                sub_total=per_type_totals.get(rt, 0),
-            ))
-
-        async def _emit_sub_progress(rt: RecordType) -> None:
-            if on_progress is None:
+            now = time.perf_counter()
+            if not force and now - last_emit_at < _PROGRESS_THROTTLE_S:
                 return
-            acc = per_type_counts[rt]
-            await on_progress(ProgressEvent(
-                stage="type_progress",
-                record_type=rt,
-                indexed=int(acc["indexed"]),
-                errors=int(acc["errors"]),
-                sub_done=int(acc["indexed"]) + int(acc.get("skipped", 0)),
-                sub_total=per_type_totals.get(rt, 0),
-            ))
+            last_emit_at = now
+            await on_progress(make_table(text=text))
+
+        # Initial snapshot — totals known, all done=0. Lets the UI render the
+        # full table immediately instead of waiting for the first record.
+        await emit(force=True)
 
         # Hoist a single DB session over the entire per-record loop + FTS
         # flush. The driver's `_session_ctx` contextvar handshake makes
@@ -295,22 +331,8 @@ class FSIndexer:
                 if not hasattr(info.record_cls, "from_fsref"):
                     continue
 
-                # On type-boundary transitions emit ``type_progress`` (NOT type_complete) —
-                # DFS interleaves types, so the same type can re-appear later. Final
-                # type_complete events fire post-loop, once per unique type.
-                if ref.record_type != current_rt:
-                    current_rt = ref.record_type
-                    if on_progress is not None and current_rt not in seen_progress_at:
-                        await on_progress(ProgressEvent(
-                            stage="type_start",
-                            record_type=current_rt,
-                            sub_done=0,
-                            sub_total=per_type_totals.get(current_rt, 0),
-                        ))
-
-                acc = per_type_counts.setdefault(
-                    ref.record_type, {"indexed": 0, "errors": 0, "duration_ms": 0.0, "skipped": 0}
-                )
+                current_rt = ref.record_type
+                acc = per_type_counts[ref.record_type]
 
                 # Per-type cap: once we've indexed `limit_per_type` records of this
                 # type, skip further refs of the same type.
@@ -338,11 +360,7 @@ class FSIndexer:
                         # re-parse — i.e. flaky.
                         if ref_id:
                             seen_alive_ids.setdefault(ref.record_type, []).append(str(ref_id))
-                        # Throttled sub_progress even for skips.
-                        now = time.perf_counter()
-                        if now - seen_progress_at.get(ref.record_type, 0.0) >= _PROGRESS_THROTTLE_S:
-                            seen_progress_at[ref.record_type] = now
-                            await _emit_sub_progress(ref.record_type)
+                        await emit()
                         continue
 
                 t_start = time.perf_counter()
@@ -363,11 +381,7 @@ class FSIndexer:
                     acc["errors"] += 1
                 acc["duration_ms"] += (time.perf_counter() - t_start) * 1000
 
-                # Throttled sub_progress during a type.
-                now = time.perf_counter()
-                if now - seen_progress_at.get(ref.record_type, 0.0) >= _PROGRESS_THROTTLE_S:
-                    seen_progress_at[ref.record_type] = now
-                    await _emit_sub_progress(ref.record_type)
+                await emit()
 
             # Batch FTS commit — still inside the shared session.
             if fts_batch:
@@ -423,7 +437,11 @@ class FSIndexer:
 
             for rt, ids in orphan_records.items():
                 acc = per_type_counts.setdefault(
-                    rt, {"indexed": 0, "errors": 0, "duration_ms": 0.0, "skipped": 0}
+                    rt, {
+                        "indexed": 0, "errors": 0, "duration_ms": 0.0, "skipped": 0,
+                        "orphans_found": 0, "orphans_db_removed": 0, "orphans_disk_removed": 0,
+                        "orphan_ids": [],
+                    }
                 )
                 acc["orphans_found"] = len(ids)
                 acc["orphan_ids"] = list(ids)
@@ -442,26 +460,12 @@ class FSIndexer:
                 acc["orphans_db_removed"] = db_removed
                 acc["orphans_disk_removed"] = disk_removed
 
-                if on_progress is not None:
-                    await on_progress(ProgressEvent(
-                        stage="type_orphans",
-                        record_type=rt,
-                        orphans_found=len(ids),
-                        orphans_db_removed=db_removed,
-                        orphans_disk_removed=disk_removed,
-                    ))
-
             # Clear orphan=False on any record that was successfully resynced this pass
             # (covers the "file reappeared" case).
             for rt, ids in seen_alive_ids.items():
                 await self._mark_orphans_in_db(rt, ids, orphaned=False)
 
-        # Emit one type_complete per unique type at the end (DFS interleaves
-        # mean we can't know a type is "done" mid-loop without a second pass).
-        for rt in per_type_counts.keys():
-            await _emit_type_complete(rt)
-
-        # Build per-type result (events already emitted inline above).
+        # Build per-type result for the IndexResult return value.
         per_type: dict[RecordType, PerTypeIndexResult] = {}
         for rt, acc in per_type_counts.items():
             per_type[rt] = PerTypeIndexResult(
@@ -478,13 +482,11 @@ class FSIndexer:
 
         duration = (time.perf_counter() - t0) * 1000
 
-        if opts.on_progress is not None:
-            await opts.on_progress(ProgressEvent(
-                stage="index_end",
-                indexed=sum(p.indexed for p in per_type.values()),
-                errors=sum(p.errors for p in per_type.values()),
-                duration_ms=duration,
-            ))
+        # Terminal snapshot — current=None, text="complete". Authoritative
+        # signal; consumers can clear UI state on this.
+        current_rt = None
+        if on_progress is not None:
+            await on_progress(make_table(text="complete"))
 
         return IndexResult(
             per_type=per_type,
@@ -689,7 +691,7 @@ class FSIndexer:
                     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
                     from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
 
-                    entity = await Entity.get_one(QueryFilter.parse({"id": eid}))
+                    entity = await Entity.get_one(QueryFilter.parse({"id": eid}, type_name))
                     if entity is not None:
                         if hasattr(driver, "fts_delete"):
                             try:
@@ -734,16 +736,58 @@ class FSIndexer:
     async def scan(
         self, opts: IndexerOptions | None = None
     ) -> list[FSRef]:
-        opts = opts if opts is not None else IndexerOptions()
-        t0 = time.perf_counter()
+        """DFS over registered FSRef nodes.
 
-        if opts.on_progress is not None:
-            await opts.on_progress(ProgressEvent(stage="scan_start"))
+        Progress is reported as ``IndexProgressTable`` snapshots with
+        ``total=0`` (unknown — discovery IS the count). Each visited
+        node increments its type's row; the table is re-broadcast at most
+        every 200 ms. Final snapshot has ``current=None, text="complete"``.
+        """
+        opts = opts if opts is not None else IndexerOptions()
+        on_progress = opts.on_progress
 
         roots_for_walk = list(opts.roots) if opts.roots is not None else self._roots
         stack: list[FSRef] = list(reversed(roots_for_walk))
         visited: list[FSRef] = []
         seen: set[tuple[str, RecordType | None]] = set()
+        per_type_counts: dict[RecordType, int] = {}
+        current_rt: RecordType | None = None
+        last_emit_at = 0.0
+
+        def make_table(text: str | None = None) -> IndexProgressTable:
+            rows = [
+                TypeProgressRow(type_name=str(rt), done=count, total=count)
+                for rt, count in per_type_counts.items()
+                if rt not in _PROGRESS_HIDDEN_TYPES
+            ]
+            rows.sort(key=lambda r: -r.done)
+            current_name = (
+                str(current_rt) if current_rt is not None
+                and current_rt not in _PROGRESS_HIDDEN_TYPES
+                else None
+            )
+            return IndexProgressTable(
+                job_name="scan",
+                rows=tuple(rows),
+                current=current_name,
+                done=sum(r.done for r in rows),
+                total=0,  # 0 = unknown for scan; UI hides percentage
+                text=text,
+                ts=datetime.now(timezone.utc).isoformat(),
+            )
+
+        async def emit(text: str | None = None, force: bool = False) -> None:
+            nonlocal last_emit_at
+            if on_progress is None:
+                return
+            now = time.perf_counter()
+            if not force and now - last_emit_at < _PROGRESS_THROTTLE_S:
+                return
+            last_emit_at = now
+            await on_progress(make_table(text=text))
+
+        await emit(force=True)
+
         while stack:
             node = stack.pop()
             key = (node.path, node.record_type)
@@ -753,37 +797,19 @@ class FSIndexer:
             visited.append(node)
             if opts.verbose:
                 print(f"[indexer] visit type={node.record_type} path={node.path}")
+            if node.record_type is not None:
+                per_type_counts[node.record_type] = per_type_counts.get(node.record_type, 0) + 1
+                current_rt = node.record_type
             fns = self._functions.get(node.record_type, []) if node.record_type is not None else []
             for fn in fns:
                 children = await fn([node], opts)
                 stack.extend(reversed(children))
             if opts.limit is not None and len(visited) >= opts.limit:
                 break
+            await emit()
 
-        # Emit per-type completion events (aggregate by record_type)
-        if opts.on_progress is not None:
-            by_type: dict[RecordType, dict[str, int]] = {}
-            for n in visited:
-                if n.record_type is None:
-                    continue
-                b = by_type.setdefault(n.record_type, {"count": 0, "total_bytes": 0})
-                b["count"] += 1
-                try:
-                    b["total_bytes"] += n._path.stat().st_size
-                except OSError:
-                    pass
-            for rt, b in by_type.items():
-                await opts.on_progress(ProgressEvent(
-                    stage="type_complete",
-                    record_type=rt,
-                    count=b["count"],
-                    total_bytes=b["total_bytes"],
-                ))
-            duration = (time.perf_counter() - t0) * 1000
-            await opts.on_progress(ProgressEvent(
-                stage="scan_end",
-                count=len(visited),
-                duration_ms=duration,
-            ))
+        current_rt = None
+        if on_progress is not None:
+            await on_progress(make_table(text="complete"))
 
         return visited

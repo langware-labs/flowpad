@@ -285,10 +285,14 @@ async def reindex_records_by_type(record_type: str):
     # Delete entities whose records no longer exist on disk
     from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
     stale = await Entity.get_all(QueryFilter(type=record_type))
+    from flow_sdk.db import get_db_driver  # noqa: PLC0415
+    driver = get_db_driver()
     deleted = 0
     for ent in stale:
         if ent.id not in live_ids:
             try:
+                if hasattr(driver, "fts_delete"):
+                    await driver.fts_delete(ent.id)
                 await ent.delete()
                 deleted += 1
             except Exception:

@@ -182,7 +182,7 @@ The webhook listener (`POST /api/v1/webhook/listen`) that drives real-time entit
 ---
 
 ### [System Tools (Frontend)](data-management/system-tools.md)
-`SystemToolsService` — the TypeScript SDK service for backup, archive, restore, clear, scan, and index operations. Extends `EventEmitter` to emit `'state_changed'` whenever `currentActivity`, `activityProgress`, or `scanInfo` changes. `useSystemTools()` hook provides `useSyncExternalStore`-based subscription so all components share the same activity state. Includes `resetAndRescan()` compound operation (archive → clear → scan → index) exposed as the refresh button in `SearchView`. Shared UI: `ActivityProgressBar` and `ActivityProgressModal` in `ui/src/components/search-index/ActivityProgressModal.tsx`.
+`SystemToolsService` — the TypeScript SDK service for backup, archive, restore, clear, scan, and index operations. Extends `EventEmitter` to emit `'state_changed'` whenever `currentActivity`, `progressTable`, or `scanInfo` changes. `useSystemTools()` hook provides `useSyncExternalStore`-based subscription so all components share the same activity state. Includes `resetAndRescan()` compound operation (archive → clear → scan → index) exposed as the refresh button in `SearchView`. Shared UI: `ActivityProgressBar` and `ActivityProgressModal` in `ui/src/components/search-index/ActivityProgressModal.tsx`.
 
 **Key source files:** `ts_sdk/src/services/system-tools-service.ts`, `ui/src/hooks/use-system-tools.ts`, `ui/src/components/search-index/ActivityProgressModal.tsx`
 
