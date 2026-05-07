@@ -161,7 +161,7 @@ export function useMyProcess({ task, conversationId, senderName }: UseMyProcessO
         ? undefined
         : await buildReceiverContextPrompt(task, conversationId, senderName);
       const { process: spawned } = await AgenticProcess.spawn(
-        { workdir },
+        { workdir, projectId: task.project_id ?? undefined },
         { instruction, visible: true },
       );
       const t = await dataManager.getByTypeId<Task>(new TypeId(Task.type, taskId));

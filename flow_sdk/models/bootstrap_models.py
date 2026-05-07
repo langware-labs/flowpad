@@ -74,7 +74,7 @@ class BootstrapInfo(BaseModel):
     desktop_info: Optional[LmInfo] = None
     sniffer_hook: Optional[Dict[str, Any]] = None
     scan_info: Optional[Dict[str, Any]] = None
-    records_data_dir: Optional[str] = None
+    records_root: Optional[str] = None
 
 
 __all__ = ["AppPaths", "EnvInfo", "LmInfo", "BootstrapInfo"]

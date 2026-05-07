@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { dataManager, Project, TypeId } from '@sdk';
+import { dataManager, Project, TypeId, ViewType } from '@sdk';
 import type { ITask } from '@sdk/entities/task';
 import type { IConversation } from '@sdk/entities/conversation';
 import { useContext } from '@src/hooks/useContext';
@@ -42,7 +42,7 @@ export function useProjectMappingGate(
 ) {
   const { mapping, loaded: mappingLoaded } = useProjectMapping();
   const ctx = useContext();
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
   const autoApplyAttemptedRef = useRef<Set<string>>(new Set());
   const autoMapAttemptedRef = useRef<Set<string>>(new Set());
 
@@ -130,6 +130,13 @@ export function useProjectMappingGate(
     // *next* incoming message from the same remote sender, which the user
     // hasn't asked for.
     if (isRemapTo(activeProjectId)) {
+      // But only treat it as a user-driven remap when the user is *actually
+      // looking at a project view*. When we just navigated into a SHELL
+      // (Open Claude Code → /dock/shell/agentic_process-…), the route loader
+      // sets ctx.project from process.project_id as a side-effect — not a
+      // user pick. Bouncing them to the project home would override the
+      // navigation they just took.
+      if (currentDock?.viewType === ViewType.SHELL) return;
       navigateToProjectHome(activeProjectId);
       return;
     }
@@ -143,7 +150,7 @@ export function useProjectMappingGate(
         await persistRemoteToLocalMapping(remoteProjectId, project.id);
       }
     })();
-  }, [mappingLoaded, remoteProjectId, subjectKey, activeProjectId, existingLocalProjectId, mapping]);
+  }, [mappingLoaded, remoteProjectId, subjectKey, activeProjectId, existingLocalProjectId, mapping, currentDock?.viewType]);
 
   // Direct pick (gate's own dialog → onPicked). The picker only opens when
   // unmapped, so this is always a first-time map — no remap branch needed.
