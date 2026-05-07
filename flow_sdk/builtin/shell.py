@@ -190,8 +190,10 @@ class Shell(Entity):
         strict argv[0] check would falsely report the worker as dead.
         """
         if expected_exe:
-            expected_basename = os.path.basename(expected_exe)
-            candidates = [os.path.basename(c) for c in cmdline[:2]] if cmdline else []
+            # Strip extension + casefold so stored "claude" matches Windows
+            # psutil cmdline "claude.exe" / "claude.EXE". Linux unaffected.
+            expected_basename = os.path.splitext(os.path.basename(expected_exe))[0].casefold()
+            candidates = [os.path.splitext(os.path.basename(c))[0].casefold() for c in cmdline[:2]] if cmdline else []
             if expected_basename not in candidates:
                 return False
 
@@ -578,6 +580,7 @@ class Shell(Entity):
 
         if shell_pid is None:
             return None
+        expected = _os.path.splitext(_os.path.basename(executable))[0].casefold()
         deadline = asyncio.get_event_loop().time() + timeout
         while asyncio.get_event_loop().time() < deadline:
             try:
@@ -589,7 +592,8 @@ class Shell(Entity):
                         # whose argv[0] is the runtime (e.g. ``node``) and
                         # argv[1] is the script path (e.g. ``codex``).
                         if cmdline and any(
-                            _os.path.basename(c) == executable for c in cmdline[:2]
+                            _os.path.splitext(_os.path.basename(c))[0].casefold() == expected
+                            for c in cmdline[:2]
                         ):
                             return child.pid
                     except (psutil.NoSuchProcess, psutil.AccessDenied):
