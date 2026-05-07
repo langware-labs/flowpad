@@ -79,6 +79,41 @@ export function TaskChips({
   const ProcessIcon = pickProcessIcon(iconKey);
   const claudeTooltip = isStartLabel ? 'Start Claude Code session' : 'Open Claude Code';
 
+  // Process button visibility is independent of contextEntities: we want
+  // "Start Claude Code session" to show *before* any process exists, and
+  // ``my_process_id`` is unset until then — so projecting it through
+  // ``contextEntities`` (which is what drives the rest of the row) would
+  // hide the start affordance entirely.
+  const showProcessButton = !!task.id && !exclude.has(ChipKey.process(task.id));
+  const processButton = showProcessButton ? (
+    <TooltipProvider key={ChipKey.process(task.id ?? '')}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={() => {
+              const action = () => openOrStartRef.current();
+              if (ensureMapped) ensureMapped(action);
+              else void action();
+            }}
+            disabled={busy}
+            aria-label={claudeTooltip}
+            className="inline-flex h-6 w-6 items-center justify-center rounded text-orange-500 transition-colors hover:bg-orange-500/10 disabled:opacity-50"
+          >
+            {ProcessIcon ? (
+              <ProcessIcon className="h-3.5 w-3.5" />
+            ) : (
+              <ClaudeIcon className="h-3.5 w-3.5" />
+            )}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-[11px]">
+          {busy ? 'Starting…' : claudeTooltip}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  ) : null;
+
   // Drive the rest of the row from contextEntities. Order matches the order
   // the entity exposes (direct projections first, then the private array).
   const chips = task.contextEntities;
@@ -99,41 +134,16 @@ export function TaskChips({
         />
       )}
 
+      {processButton}
+
       {chips.map((typeId) => {
         const key = ChipKey.forTypeId(typeId);
         if (exclude.has(key)) return null;
 
-        // Special: my_process_id → orange ClaudeIcon button with start/open.
+        // Skip: my_process_id is rendered above as the orange ProcessButton —
+        // don't render a second generic chip for the same process.
         if (typeId.type === AgenticProcess.type && typeId.id === task.my_process_id) {
-          if (exclude.has(ChipKey.process(task.id))) return null;
-          return (
-            <TooltipProvider key={key}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const action = () => openOrStartRef.current();
-                      if (ensureMapped) ensureMapped(action);
-                      else void action();
-                    }}
-                    disabled={busy}
-                    aria-label={claudeTooltip}
-                    className="inline-flex h-6 w-6 items-center justify-center rounded text-orange-500 transition-colors hover:bg-orange-500/10 disabled:opacity-50"
-                  >
-                    {ProcessIcon ? (
-                      <ProcessIcon className="h-3.5 w-3.5" />
-                    ) : (
-                      <ClaudeIcon className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-[11px]">
-                  {busy ? 'Starting…' : claudeTooltip}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          );
+          return null;
         }
 
         // Skip: shared_process_id is rendered by ConversationChips.
