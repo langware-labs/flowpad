@@ -179,6 +179,7 @@ export function ConversationView({
                 timestamp={item.timestamp}
                 task={task}
                 onApproveAndExecute={canApproveAndExecute ? runApprove : undefined}
+                conversationStatusVisible={conversation?.message_status_visible !== false}
               />
             ) : (
               <FlowMessageBubble
@@ -190,6 +191,7 @@ export function ConversationView({
                 task={task}
                 isDraft
                 onDraftSent={() => void refetch()}
+                conversationStatusVisible={conversation?.message_status_visible !== false}
               />
             ),
           )}

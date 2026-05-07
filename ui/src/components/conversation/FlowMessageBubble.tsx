@@ -23,6 +23,9 @@ interface FlowMessageBubbleProps {
   isDraft?: boolean;
   /** Called after the draft was sent or discarded so the parent can refetch. */
   onDraftSent?: () => void;
+  /** Parent conversation's `message_status_visible` flag — passed straight
+   *  through to the receipt indicator. Defaults to true. */
+  conversationStatusVisible?: boolean;
 }
 
 export function FlowMessageBubble({
@@ -32,6 +35,7 @@ export function FlowMessageBubble({
   onApproveAndExecute,
   isDraft,
   onDraftSent,
+  conversationStatusVisible = true,
 }: FlowMessageBubbleProps) {
   const { data: fm } = useEntity<FlowMessage>(
     new TypeId(FlowMessage.type, messageId),
@@ -139,6 +143,7 @@ export function FlowMessageBubble({
       } : undefined}
       onApproveAndExecute={onApproveAndExecute ? (idx) => onApproveAndExecute(messageId, idx) : undefined}
       footer={footer}
+      conversationStatusVisible={conversationStatusVisible}
     />
   );
 }
