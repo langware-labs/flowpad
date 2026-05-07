@@ -739,11 +739,19 @@ class FsRecordsActionsMixin:
             )
 
         # Sync to DB so future bulk queries pick it up. Idempotent.
-        try:
-            await found.sync_to_db()
-        except Exception as e:
-            # Log but don't fail — sync may legitimately fail for read-only sources.
-            logging.debug(f"[fs-records] sync_to_db on discover skipped for {record_type}: {e}")
+        # Skip when the source is missing on disk — `sync_to_db` rebuilds
+        # the entity row from the Record's fields, which would clobber the
+        # `orphan` / `orphan_since` flags the FSIndexer set on this row.
+        # Orphan state is the indexer's responsibility; discover just reads.
+        _ar_for_sync = getattr(found, "asset_ref", None)
+        _ar_path_for_sync = getattr(_ar_for_sync, "path", None) if _ar_for_sync is not None else None
+        _alive_on_disk = bool(_ar_path_for_sync and Path(str(_ar_path_for_sync)).expanduser().exists())
+        if _alive_on_disk:
+            try:
+                await found.sync_to_db()
+            except Exception as e:
+                # Log but don't fail — sync may legitimately fail for read-only sources.
+                logging.debug(f"[fs-records] sync_to_db on discover skipped for {record_type}: {e}")
 
         data = found.meta_dict()
         _ar = getattr(found, "asset_ref", None)

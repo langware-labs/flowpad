@@ -17,6 +17,8 @@ interface SessionTabBarProps {
   activeSessionId: string | null;
   /** Set of session IDs that have unsaved changes */
   dirtySessionIds?: Set<string>;
+  /** Set of session IDs that recently became ready-for-input (PendingAction). */
+  pendingSessionIds?: Set<string>;
   /** Callback when a tab close button is clicked */
   onCloseTab: (sessionId: string) => Promise<void>;
   /** Callback when a session is renamed */
@@ -46,6 +48,7 @@ export function SessionTabBar({
   sessions,
   activeSessionId,
   dirtySessionIds = new Set(),
+  pendingSessionIds = new Set(),
   onCloseTab,
   onRenameSession,
   onAddTab,
@@ -171,6 +174,7 @@ export function SessionTabBar({
           const displayName = session.name || 'Untitled Session';
           const isEditing = editingSessionId === session.id;
           const isDirty = session.id ? dirtySessionIds.has(session.id) : false;
+          const isPending = session.id ? pendingSessionIds.has(session.id) : false;
 
           return (
             <div
@@ -179,7 +183,7 @@ export function SessionTabBar({
                 isActive
                   ? 'border-primary bg-background text-foreground'
                   : 'border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
+              } ${isPending ? 'animate-pending-glow rounded-md' : ''}`}
               draggable={!!session.id}
               onDragStart={(e) => {
                 if (!session.id) return;
