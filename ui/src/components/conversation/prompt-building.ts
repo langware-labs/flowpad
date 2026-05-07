@@ -87,7 +87,26 @@ export async function buildMergedPrompt(flowMessage: FlowMessage): Promise<strin
     );
   }
 
-  return [...inlineParts, ...promptFilePaths, ...fileContext].join('\n\n');
+  const recordsDataDir = dataManager.recordsDataDir;
+  const contextLines: string[] = [];
+  for (const tid of flowMessage.contextEntities) {
+    if (!tid?.type || !tid?.id || tid.type === FlowMessage.type) continue;
+    if (recordsDataDir) {
+      const recordPath = `${recordsDataDir}/${tid.type}/${tid.type}-@${tid.id}/data.json`;
+      contextLines.push(`- ${tid.toUrlString()} (${tid.type}) — read: ${recordPath}`);
+    } else {
+      contextLines.push(`- ${tid.toUrlString()} (${tid.type}) — fetch: GET http://localhost:9007/api/v1/graph/${tid.type}/${tid.id}`);
+    }
+  }
+  const contextSection: string[] = [];
+  if (contextLines.length > 0) {
+    const verb = recordsDataDir ? 'read each one as JSON' : 'fetch each one with curl/HTTP';
+    contextSection.push(
+      `Flowpad entities in this conversation's context — ${verb} to inspect its fields when needed:\n${contextLines.join('\n')}`,
+    );
+  }
+
+  return [...inlineParts, ...promptFilePaths, ...fileContext, ...contextSection].join('\n\n');
 }
 
 /** POST `approve-prompt`, then refetch the FlowMessage and nudge cache subscribers

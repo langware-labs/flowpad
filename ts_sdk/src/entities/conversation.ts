@@ -82,19 +82,24 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   }
 
   /**
-   * Deep-link to the dedicated conversation view at `/dock/conversation/<id>`.
+   * Deep-link route priority: task > project > standalone. Mirrors
+   * ``resolveConversationDockPointer`` in the UI so every entry point
+   * (inbox, recent strip, chips, deep links) lands on the same URL.
    *
-   * The previous "project-nested" form (`/dock/project/<projectId>/conversation/<id>`)
-   * broke for cross-user conversations: the receiver doesn't have the sender's
-   * Project entity locally, so the project loader 404s before the route
-   * renders. The standalone form resolves the task + project from the
-   * conversation itself and works on both sides.
+   * Project-nested form is only emitted when ``project_id`` is set —
+   * for cross-user conversations that's the *receiver's* local project
+   * id (null until they map), so the loader never 404s.
    */
   override get dockPointer(): DockPointerData {
-    if (this.id) {
-      return new DockPointerData(ViewType.CONVERSATION, this.id);
+    if (!this.id) return new DockPointerData(ViewType.INBOX);
+    const taskId = this.firstContextOfType('task')?.id;
+    if (taskId) {
+      return new DockPointerData(ViewType.TASKS, `${taskId}/conversation/${this.id}`);
     }
-    return new DockPointerData(ViewType.INBOX);
+    if (this.project_id) {
+      return new DockPointerData(ViewType.PROJECT, `${this.project_id}/conversation/${this.id}`);
+    }
+    return new DockPointerData(ViewType.CONVERSATION, this.id);
   }
 
   get conversationMessageIds(): ConversationMessagePointer[] {

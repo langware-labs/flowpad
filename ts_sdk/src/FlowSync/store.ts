@@ -84,6 +84,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   private watchedQueries: WatchQueryMap<T> = new WatchQueryMap<T>();
   private streamingRequestsCount: number = 0;
   scanInfo: ScanInfo | null = null;
+  recordsDataDir: string | null = null;
 
   constructor() {
     super();
@@ -193,6 +194,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     try {
       const info = await this.callAction<null, BootstrapInfo>(actionInfo);
       if (info.scan_info) this.setScanInfo(info.scan_info);
+      if (info.records_data_dir) this.recordsDataDir = info.records_data_dir;
       return info;
     } catch (error: any) {
       console.error('Error calling bootstrap action:', error);
