@@ -3,6 +3,7 @@ import {
   ComputeNode,
   FlowElementTypes,
   isBusy,
+  ProcessType,
   type StatusBearingProcess,
   TypeId,
   type FlowData,
@@ -10,7 +11,7 @@ import {
 import { useEntity } from '@sdk/react/hooks';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
 import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
-import ChatMessage from './chat-message/chat-message';
+import ExecutionMessage from './execution-message/execution-message';
 import { useProject } from '@src/hooks/useProject';
 import { cn } from '@src/lib/utils';
 import {
@@ -23,21 +24,28 @@ import {
 } from '@src/components/ui/dropdown-menu';
 import { History, MessageSquarePlus, Settings } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChatSettingsPopover } from './ChatSettingsPopover';
-import { CompactChatInput } from './CompactChatInput';
+import { ExecutionSettingsPopover } from './ExecutionSettingsPopover';
+import { CompactExecutionInput } from './CompactExecutionInput';
 import { useDerivedWorkerStatus } from './hooks/useDerivedWorkerStatus';
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 
-interface EntityChatPanelProps {
+interface EntityExecutionPanelProps {
   /**
-   * VFS path the chat is keyed to, stored as-is in
+   * VFS path the session is keyed to, stored as-is in
    * `AgenticProcess.target_vfs_path`. Either an entity TypeId string
    * (`"agent-<uuid>"`, `"plan-<uuid>"`, …) or a `<typeid>/<sub_path>` form
-   * (`"compute_node-<id>/Users/.../foo.md"` for a per-doc chat). Null
-   * disables chat (send is guarded on non-empty target).
+   * (`"compute_node-<id>/Users/.../foo.md"` for a per-document session). Null
+   * disables the panel (send is guarded on non-empty target).
    */
   target: string | null;
+  /**
+   * Discriminator for the AgenticProcess this panel owns. Threaded into both
+   * the `useProcessesForTarget` filter (so chat & execution panels for the
+   * same target don't see each other's history) and the lazy `createProcess`
+   * call (so newly-spawned processes get tagged correctly).
+   */
+  processType: ProcessType;
   className?: string;
   /**
    * Invoked once, right after the backing `AgenticProcess` is created and before
@@ -48,17 +56,32 @@ interface EntityChatPanelProps {
   onProcessCreated?: (process: AgenticProcess) => Promise<void> | void;
   /**
    * Caret line (1-indexed, on-disk) from the host editor. Rendered as a left-side
-   * "line N" badge in the chat header. Null/undefined hides the badge.
+   * "line N" badge in the panel header. Null/undefined hides the badge.
    */
   cursorLine?: number | null;
+  /** Tooltip for the settings button. Defaults to "Settings". */
+  settingsLabel?: string;
+  /** Tooltip for the new-session button. Defaults to "New execution". */
+  newSessionLabel?: string;
+  /** Tooltip for the history button. Defaults to "Execution history". */
+  historyLabel?: string;
+  /** Header label inside the history dropdown. Defaults to "Past executions". */
+  pastSessionsLabel?: string;
+  /** Empty-state text shown inside the history dropdown. Defaults to "No past executions". */
+  noPastSessionsLabel?: string;
+  /** Empty-state body shown when no process exists yet. */
+  emptyStateText?: string;
+  /** Optional header label rendered above the panel (e.g. "Agent execution"). Hidden when omitted. */
+  headerLabel?: string;
 }
 
 /**
- * Compact chat panel attached to an arbitrary host entity (markdown file, trigger, …).
+ * Compact execution panel attached to an arbitrary host entity (markdown file,
+ * trigger, …); drives a single AgenticProcess keyed by `target`.
  *
  * Process lifecycle:
  *   - Queries AgenticProcess by `target_vfs_path === target`.
- *   - If a process already exists, reuse it (chat persistence survives reloads).
+ *   - If a process already exists, reuse it (session persistence survives reloads).
  *   - If none, create one lazily on the first send via `computeNode.createProcess({
  *       targetVfsPath, outputFormat: "stream-json" })`. Print-mode processes
  *     don't spawn a PTY, so no `start({headless})` needed.
@@ -66,11 +89,24 @@ interface EntityChatPanelProps {
  *     `prompt` action on AgenticProcess; FlowData flows into `process.flowDataStream`
  *     and renders via `useProcessStream`.
  */
-export function EntityChatPanel({ target, className, onProcessCreated, cursorLine }: EntityChatPanelProps) {
+export function EntityExecutionPanel({
+  target,
+  processType,
+  className,
+  onProcessCreated,
+  cursorLine,
+  settingsLabel = 'Settings',
+  newSessionLabel = 'New execution',
+  historyLabel = 'Execution history',
+  pastSessionsLabel = 'Past executions',
+  noPastSessionsLabel = 'No past executions',
+  emptyStateText = 'Ask about this document. The conversation will persist.',
+  headerLabel,
+}: EntityExecutionPanelProps) {
   const targetStr = target ?? '';
 
   // 1. Pull all processes attached to this target; sort newest-first for picker + auto-select.
-  const { processes, isLoading: listLoading } = useProcessesForTarget(targetStr);
+  const { processes, isLoading: listLoading } = useProcessesForTarget(targetStr, { processType });
   const sortedProcesses = useMemo(() => {
     return [...processes].sort((a, b) => {
       const ta = new Date(a.updated_date || a.created_date || 0).getTime();
@@ -80,7 +116,7 @@ export function EntityChatPanel({ target, className, onProcessCreated, cursorLin
   }, [processes]);
 
   // 2. User-selected process overrides the default "latest-wins" pick. `null` means auto-latest
-  //    or, when combined with startNewChat(), a fresh one on the next send.
+  //    or, when combined with startNewSession(), a fresh one on the next send.
   const [selectedProcessId, setSelectedProcessId] = useState<string | null>(null);
   const [forceNew, setForceNew] = useState(false);
 
@@ -110,8 +146,8 @@ export function EntityChatPanel({ target, className, onProcessCreated, cursorLin
   //    Rather than setState'ing selectedProcessId/forceNew from an effect once the
   //    query catches up (which cascades into a re-render chain), derive both
   //    effective values directly. localProcess is reset only by the user-driven
-  //    callbacks below (startNewChat / selectChat) — no effect-driven cleanup,
-  //    which previously fired a setState during another EntityChatPanel render
+  //    callbacks below (startNewSession / selectSession) — no effect-driven cleanup,
+  //    which previously fired a setState during another EntityExecutionPanel render
   //    and tripped React's "cannot update while rendering" warning.
   const createInFlightRef = useRef(false);
   const [localProcess, setLocalProcess] = useState<AgenticProcess | null>(null);
@@ -128,7 +164,7 @@ export function EntityChatPanel({ target, className, onProcessCreated, cursorLin
   useEffect(() => {
     if (!activeProcess) return;
     void activeProcess.loadHistory().catch((err) => {
-      console.error('[EntityChatPanel] loadHistory failed', err);
+      console.error('[EntityExecutionPanel] loadHistory failed', err);
     });
   }, [activeProcess?.id]);
 
@@ -156,7 +192,7 @@ export function EntityChatPanel({ target, className, onProcessCreated, cursorLin
   const [pendingAttachedRefs, setPendingAttachedRefs] = useState<string[]>([]);
   const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
 
-  const startNewChat = useCallback(() => {
+  const startNewSession = useCallback(() => {
     setSelectedProcessId(null);
     setLocalProcess(null);
     setForceNew(true);
@@ -164,7 +200,7 @@ export function EntityChatPanel({ target, className, onProcessCreated, cursorLin
     setPendingProjectId(null);
   }, []);
 
-  const selectChat = useCallback((processId: string) => {
+  const selectSession = useCallback((processId: string) => {
     setSelectedProcessId(processId);
     setLocalProcess(null);
     setForceNew(false);
@@ -209,12 +245,13 @@ export function EntityChatPanel({ target, className, onProcessCreated, cursorLin
             workdir: project?.fs_storage_mount_path ?? undefined,
             projectId: pendingProjectId ?? project?.id,
             targetVfsPath: targetStr,
+            processType,
             outputFormat: 'stream-json',
           });
           if (onProcessCreated) await onProcessCreated(newProcess);
           for (const ref of pendingAttachedRefs) {
             try { await newProcess.embeddedAssets.attach(ref); }
-            catch (err) { console.error('[EntityChatPanel] attach on create failed', ref, err); }
+            catch (err) { console.error('[EntityExecutionPanel] attach on create failed', ref, err); }
           }
           setLocalProcess(newProcess);
           proc = newProcess;
@@ -227,11 +264,11 @@ export function EntityChatPanel({ target, className, onProcessCreated, cursorLin
 
       await proc.prompt(text);
     } catch (err) {
-      console.error('[EntityChatPanel] prompt failed', err);
+      console.error('[EntityExecutionPanel] prompt failed', err);
     } finally {
       setSending(false);
     }
-  }, [activeProcess, sending, targetStr, project, onProcessCreated, pendingProjectId, pendingAttachedRefs]);
+  }, [activeProcess, sending, targetStr, project, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType]);
 
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
   useEffect(() => {
@@ -258,7 +295,7 @@ export function EntityChatPanel({ target, className, onProcessCreated, cursorLin
     <span
       title={getStatusLabel(indicatorProcess)}
       className="flex items-center"
-      data-testid="entity-chat-status"
+      data-testid="entity-execution-status"
     >
       <ProcessStatusIndicator
         process={indicatorProcess}
@@ -272,16 +309,28 @@ export function EntityChatPanel({ target, className, onProcessCreated, cursorLin
   return (
     <div
       className={cn('flex h-full min-h-0 flex-col bg-background', className)}
-      data-testid="entity-chat-panel"
+      data-testid="entity-execution-panel"
     >
-      <ChatHistoryHeader
+      {headerLabel && (
+        <div
+          className="flex-shrink-0 border-b px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
+          data-testid="entity-execution-header-label"
+        >
+          {headerLabel}
+        </div>
+      )}
+      <ExecutionHistoryHeader
         processes={sortedProcesses}
         activeId={activeProcess?.id ?? null}
-        onNewChat={startNewChat}
-        onPickChat={selectChat}
+        onNewSession={startNewSession}
+        onPickSession={selectSession}
         cursorLine={cursorLine ?? null}
+        newSessionLabel={newSessionLabel}
+        historyLabel={historyLabel}
+        pastSessionsLabel={pastSessionsLabel}
+        noPastSessionsLabel={noPastSessionsLabel}
         settingsSlot={
-          <ChatSettingsPopover
+          <ExecutionSettingsPopover
             attachedRefs={effectiveAttachedRefs}
             onAttach={handleAttach}
             onDetach={handleDetach}
@@ -291,9 +340,9 @@ export function EntityChatPanel({ target, className, onProcessCreated, cursorLin
             trigger={
               <button
                 type="button"
-                title="Chat settings"
+                title={settingsLabel}
                 className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                data-testid="entity-chat-settings"
+                data-testid="entity-execution-settings"
               >
                 <Settings className="h-3.5 w-3.5" />
               </button>
@@ -304,11 +353,11 @@ export function EntityChatPanel({ target, className, onProcessCreated, cursorLin
       <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
         {showEmptyState && (
           <div className="p-3 text-[11px] text-muted-foreground">
-            Ask about this document. The conversation will persist.
+            {emptyStateText}
           </div>
         )}
         {messages.map((m) => (
-          <ChatMessage
+          <ExecutionMessage
             key={m.id ?? m.timestamp}
             flowData={m}
             isUser={
@@ -318,7 +367,7 @@ export function EntityChatPanel({ target, className, onProcessCreated, cursorLin
           />
         ))}
       </AutoScrollContainer>
-      <CompactChatInput onSend={handleSend} disabled={sendDisabled} statusSlot={statusSlot} />
+      <CompactExecutionInput onSend={handleSend} disabled={sendDisabled} statusSlot={statusSlot} />
     </div>
   );
 }
@@ -326,32 +375,40 @@ export function EntityChatPanel({ target, className, onProcessCreated, cursorLin
 // Re-export so outer callers can thread SDK types without a second import.
 export type { AgenticProcess, FlowData, TypeId };
 
-function ChatHistoryHeader({
+function ExecutionHistoryHeader({
   processes,
   activeId,
-  onNewChat,
-  onPickChat,
+  onNewSession,
+  onPickSession,
   cursorLine,
   settingsSlot,
+  newSessionLabel,
+  historyLabel,
+  pastSessionsLabel,
+  noPastSessionsLabel,
 }: {
   processes: AgenticProcess[];
   activeId: string | null;
-  onNewChat: () => void;
-  onPickChat: (id: string) => void;
+  onNewSession: () => void;
+  onPickSession: (id: string) => void;
   cursorLine: number | null;
   settingsSlot?: React.ReactNode;
+  newSessionLabel: string;
+  historyLabel: string;
+  pastSessionsLabel: string;
+  noPastSessionsLabel: string;
 }) {
   const iconBtn =
     'flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
   return (
     <div
       className="flex flex-shrink-0 items-center gap-0.5 border-b px-2 py-1"
-      data-testid="entity-chat-header"
+      data-testid="entity-execution-header"
     >
       {cursorLine != null && (
         <span
           className="text-[11px] tabular-nums text-muted-foreground"
-          data-testid="entity-chat-line-badge"
+          data-testid="entity-execution-line-badge"
         >
           line {cursorLine}
         </span>
@@ -359,10 +416,10 @@ function ChatHistoryHeader({
       <div className="flex-1" />
       <button
         type="button"
-        onClick={onNewChat}
-        title="New chat"
+        onClick={onNewSession}
+        title={newSessionLabel}
         className={iconBtn}
-        data-testid="entity-chat-new"
+        data-testid="entity-execution-new"
       >
         <MessageSquarePlus className="h-3.5 w-3.5" />
       </button>
@@ -370,21 +427,21 @@ function ChatHistoryHeader({
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            title="Chat history"
+            title={historyLabel}
             disabled={processes.length === 0}
             className={iconBtn}
-            data-testid="entity-chat-history"
+            data-testid="entity-execution-history"
           >
             <History className="h-3.5 w-3.5" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-72" data-testid="entity-chat-history-menu">
+        <DropdownMenuContent align="end" className="w-72" data-testid="entity-execution-history-menu">
           <DropdownMenuLabel className="text-[11px] font-medium text-muted-foreground">
-            Past chats
+            {pastSessionsLabel}
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
           {processes.length === 0 ? (
-            <div className="px-2 py-1.5 text-[11px] text-muted-foreground">No past chats</div>
+            <div className="px-2 py-1.5 text-[11px] text-muted-foreground">{noPastSessionsLabel}</div>
           ) : (
             processes.map((p) => {
               const when = p.updated_date || p.created_date;
@@ -392,7 +449,7 @@ function ChatHistoryHeader({
               return (
                 <DropdownMenuItem
                   key={p.id}
-                  onSelect={() => p.id && onPickChat(p.id)}
+                  onSelect={() => p.id && onPickSession(p.id)}
                   data-active={p.id === activeId ? 'true' : 'false'}
                   className="flex flex-col items-start gap-0.5"
                 >

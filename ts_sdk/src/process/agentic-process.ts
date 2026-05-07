@@ -25,6 +25,7 @@ import { InstructionFile } from '../models/workflow/InstructionFile';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
+import type { ProcessType } from './process-types';
 import { ProcessIconKey, ProcessStatus, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
 import type {
   TranscriptFormat as TranscriptFormatType,
@@ -164,6 +165,8 @@ export interface IAgenticProcess extends IEntity {
   shell_mode?: boolean;
   /** CLI worker vendor (e.g. 'claude', 'codex'). Drives icon selection. */
   worker_type?: string | null;
+  /** Discriminates how this process is being used (chat vs execution). */
+  process_type?: ProcessType | null;
   /** Shell entity ID linked to this process */
   shell_id?: string | null;
   /** Whether this process is visible in the tabs view */
@@ -187,7 +190,7 @@ export interface IAgenticProcess extends IEntity {
   project_encoded_name?: string | null;
   /** CollaborationRoom this process was spawned in, if any */
   collaboration_room_id?: string | null;
-  /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats (e.g. per-doc chat keyed on the file path). */
+  /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped processes, or "<typeid>/<sub_path>" for surface-scoped processes (e.g. a per-doc process keyed on the file path). */
   target_vfs_path?: string | null;
   /**
    * True when a worker-relevant field changed since the last successful start()
@@ -651,6 +654,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** CLI worker vendor (e.g. 'claude', 'codex'). Drives icon selection. */
   worker_type?: string | null;
 
+  /** Discriminates how this process is being used (chat vs execution). */
+  process_type?: ProcessType | null;
+
   /** Shell entity ID linked to this process */
   shell_id?: string | null;
 
@@ -666,7 +672,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** CollaborationRoom this process was spawned in, if any */
   collaboration_room_id: string | null = null;
 
-  /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats (e.g. per-doc chat keyed on the file path). */
+  /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped processes, or "<typeid>/<sub_path>" for surface-scoped processes (e.g. a per-doc process keyed on the file path). */
   target_vfs_path: string | null = null;
 
   /**
@@ -947,6 +953,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.use_worker_history = entity.use_worker_history;
     this.shell_mode = entity.shell_mode;
     this.worker_type = entity.worker_type ?? null;
+    this.process_type = entity.process_type ?? null;
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;
     this.sidecar_shell_id = entity.sidecar_shell_id;
@@ -1357,7 +1364,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Symlink a skill folder into this process's assets dir so Claude Code
    * discovers it at startup. `sourcePath` is the absolute path of the skill
    * folder (parent of SKILL.md). Live edits to the source SKILL.md flow
-   * through to the next chat — no re-materialization needed.
+   * through to the next session — no re-materialization needed.
    */
   async loadEmbeddedSkill(sourcePath: string): Promise<void> {
     const actionInfo = new ActionInfo('load-embedded-skill', AgenticProcess.type, this.id, 'POST');

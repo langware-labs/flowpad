@@ -6,7 +6,7 @@ import {
   workflowRunStore,
   type ProcessEntry,
 } from '@src/components/workflows-view/workflow-run-store';
-import { useProcessesForTarget } from '@src/components/entity-chat-panel';
+import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { RunButton } from '@src/components/assets/editor/run/RunButton';
 import { Button } from '@src/components/ui/button';
 import {
@@ -23,6 +23,7 @@ import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import {
   AgenticProcess,
   FSRef,
+  ProcessType,
   QueryRequest,
   Workflow,
   dataContext,
@@ -60,7 +61,7 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
     return workflows.find((w) => stripLeadingSlash(w.asset_ref) === key) ?? null;
   }, [providedWorkflow, workflows, fsRef.path]);
 
-  const [activeSideTab, setActiveSideTab] = useState<string>('chat');
+  const [activeSideTab, setActiveSideTab] = useState<string>('editor');
   const [processEntry, setProcessEntry] = useState<ProcessEntry | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [showMcpModal, setShowMcpModal] = useState(false);
@@ -83,6 +84,7 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
   );
   const { processes: pastRunProcesses } = useProcessesForTarget(targetStr, {
     enabled: !!targetStr,
+    processType: ProcessType.Execution,
   });
 
   const runHistory = useMemo<ProcessEntry[]>(() => {
@@ -121,6 +123,7 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
       workdir,
       visible: false,
       target_vfs_path: resolvedWorkflow.typeId.toString(),
+      process_type: ProcessType.Execution,
     }).save([resolvedWorkflow.typeId]);
 
     void process.prompt(instruction);
