@@ -17,7 +17,7 @@ test.describe('Current Activity — Recent Sessions', () => {
   // ── Test 1: Activity panel is present ─────────────────────────────────────
   test('home page has a current activity panel', async ({ page }) => {
     await gotoHome(page);
-    const strip = page.locator('[data-testid="project-activity-strip"]');
+    const strip = page.locator('[data-testid="recent-conversations-strip"]');
     await expect(strip).toBeVisible({ timeout: 10_000 });
   });
 
@@ -29,7 +29,7 @@ test.describe('Current Activity — Recent Sessions', () => {
     });
 
     await gotoHome(page);
-    const strip = page.locator('[data-testid="project-activity-strip"]');
+    const strip = page.locator('[data-testid="recent-conversations-strip"]');
     await expect(strip).toBeVisible({ timeout: 10_000 });
 
     // Wait for the panel to settle
@@ -52,7 +52,7 @@ test.describe('Current Activity — Recent Sessions', () => {
     // within the last 3 hours. If none exist, the panel is empty — which is also valid.
     await gotoHome(page);
 
-    const strip = page.locator('[data-testid="project-activity-strip"]');
+    const strip = page.locator('[data-testid="recent-conversations-strip"]');
     await expect(strip).toBeVisible({ timeout: 10_000 });
 
     // Give time for session data to load from the project scan
@@ -88,7 +88,7 @@ test.describe('Current Activity — Recent Sessions', () => {
     await page.goto('/dock/home');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
-    const strip = page.locator('[data-testid="project-activity-strip"]');
+    const strip = page.locator('[data-testid="recent-conversations-strip"]');
     await expect(strip).toBeVisible({ timeout: 10_000 });
 
     // The panel should not show sessions from 4+ hours ago without live events.
@@ -121,7 +121,7 @@ test.describe('Current Activity — Recent Sessions', () => {
   test('current activity strip renders empty state gracefully', async ({ page }) => {
     await gotoHome(page);
 
-    const strip = page.locator('[data-testid="project-activity-strip"]');
+    const strip = page.locator('[data-testid="recent-conversations-strip"]');
     await expect(strip).toBeVisible({ timeout: 10_000 });
 
     // The strip should always be visible — it should never crash or disappear

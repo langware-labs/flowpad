@@ -286,9 +286,12 @@ export function HomeLanding() {
   const paths = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths, []);
 
   const apiUrl = useMemo(() => {
-    // Derive API URL from the current window location or use default
-    const port = '9007';
-    return `http://${window.location.hostname}:${port}`;
+    // __API_URL__ is the vite-time define populated from LOCAL_SERVER_PORT in
+    // .env.local. Falls back to a derived hostname-based URL only if the
+    // define somehow resolves to an empty string (packaged build).
+    const fromDefine = (typeof __API_URL__ === 'string' && __API_URL__) || '';
+    if (fromDefine) return fromDefine;
+    return `${window.location.protocol}//${window.location.host}`;
   }, []);
   const currentProjectPath = useMemo(
     () => normalizePath(currentProject?.fs_storage_mount_path || currentProject?.name || ''),
@@ -652,8 +655,17 @@ export function HomeLanding() {
                   <Users className="h-3 w-3" />
                   Community assistance
                 </button>
+                <button
+                  type="button"
+                  data-testid="open-memo-panel-btn"
+                  className="inline-flex h-6 items-center gap-1 rounded-full border border-amber-600/60 bg-transparent px-2.5 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-50 dark:border-amber-400/60 dark:text-amber-400 dark:hover:bg-amber-950/40"
+                  onClick={() => setMemoPanelOpen(true)}
+                >
+                  Memo panel
+                </button>
               </div>
             </div>
+            <MemoIframeModal open={memoPanelOpen} onOpenChange={setMemoPanelOpen} apiUrl={apiUrl} />
 
             <div className="w-full max-w-3xl">
               <MiniDesktop />

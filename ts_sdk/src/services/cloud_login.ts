@@ -282,7 +282,15 @@ class CloudManager extends EventEmitter {
   }
 
   private async _setLoggedIn(userDict: Record<string, unknown>): Promise<User> {
-    const cloudUser = new User(userDict);
+    // Reuse the cached User instance when one already exists for this id —
+    // ``new User(userDict)`` would unconditionally re-register via the
+    // APIEntity ctor (APIEntity.ts:338) and trip ``store.ts:616`` whenever
+    // ``_setLoggedIn`` runs more than once for the same identity (cloud
+    // bootstrap + UserDropdown's effect + StrictMode replay → 3 calls in
+    // dev). ``updateEntityFromJson`` deep-assigns into the cached instance
+    // on hit and only constructs on miss, keeping subscriptions intact.
+    const dm = await _dataManager();
+    const cloudUser = dm.updateEntityFromJson<User>({ type: User.type, ...userDict });
     // Idempotent: re-broadcasts of the same user are no-ops.
     if (this._isLoggedIn && this._currentUser?.typeId?.toString() === cloudUser.typeId?.toString()) {
       return this._currentUser;
