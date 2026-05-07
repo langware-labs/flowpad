@@ -618,7 +618,7 @@ class AgenticProcess(Entity):
         return proc
 
     async def __aenter__(self) -> "AgenticProcess":
-        await self.start()
+        await self.start_pty()
         return self
 
     async def __aexit__(self, *_) -> None:
@@ -677,7 +677,7 @@ class AgenticProcess(Entity):
         self.shell_id = stale_shell_id if preserve_shell_id else None
         self.sidecar_shell_id = None
 
-    async def start(
+    async def start_pty(
         self,
         instruction: str | None = None,
         visible: bool | None = None,
@@ -921,7 +921,7 @@ class AgenticProcess(Entity):
         exit_result = await self.exit()
         if isinstance(exit_result, ApiFailResponse) and "No active shell" not in exit_result.message:
             return exit_result
-        return await self.start()
+        return await self.start_pty()
 
     def add_context_entities(self, *type_ids: "TypeId | None") -> bool:
         """Append TypeIds to ``context_entities``, deduped by (type, id). In-place.
@@ -1056,7 +1056,7 @@ class AgenticProcess(Entity):
         if await self.is_running():
             await self.send(instruction)
             return ApiSuccessResponse(data={"status": "sent"})
-        return await self.start(instruction=instruction)
+        return await self.start_pty(instruction=instruction)
 
 
     async def send(self, data: str | bytes) -> None:
@@ -2574,7 +2574,7 @@ class AgenticProcess(Entity):
         session_id_override = body.get("session_id") or body.get("worker_session_id")
         if session_id_override:
             self.session_id = session_id_override
-        return await self.start(instruction=instruction, visible=visible)
+        return await self.start_pty(instruction=instruction, visible=visible)
 
     async def reap_if_orphaned(self, *, grace_seconds: int = 10) -> bool:
         """Force-complete a stuck STOPPING transition when the worker is gone.

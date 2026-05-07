@@ -159,7 +159,7 @@ async def test_process_close_deletes_shell():
 
 @pytest.mark.asyncio
 async def test_process_restart_preserves_shell_id():
-    """http_restart() calls exit() + start(); shell entity survives so same shell_id reused."""
+    """http_restart() calls exit() + start_pty(); shell entity survives so same shell_id reused."""
     process = AgenticProcess.model_construct(
         id="proc-3",
         shell_id="shell-3",
@@ -178,9 +178,9 @@ async def test_process_restart_preserves_shell_id():
 
     with patch("flow_sdk.builtin.shell.Shell.get_by_id", return_value=mock_shell), \
          patch.object(AgenticProcess, "save", new_callable=AsyncMock), \
-         patch.object(AgenticProcess, "start", new_callable=AsyncMock, return_value=start_result):
+         patch.object(AgenticProcess, "start_pty", new_callable=AsyncMock, return_value=start_result):
         result = await process.http_restart()
 
     assert isinstance(result, ApiSuccessResponse)
-    # shell entity survived exit — same shell_id going into start()
+    # shell entity survived exit — same shell_id going into start_pty()
     assert process.shell_id == "shell-3"

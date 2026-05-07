@@ -1,10 +1,18 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { FloatingChatWindow } from './FloatingChatWindow';
 
+export interface TriggerRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 interface FloatingChatContextValue {
   open: boolean;
-  toggle: () => void;
-  openChat: () => void;
+  triggerRect: TriggerRect | null;
+  toggle: (rect?: TriggerRect | null) => void;
+  openChat: (rect?: TriggerRect | null) => void;
   closeChat: () => void;
 }
 
@@ -12,13 +20,24 @@ const FloatingChatContext = createContext<FloatingChatContextValue | null>(null)
 
 export function FloatingChatProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
-  const toggle = useCallback(() => setOpen((v) => !v), []);
-  const openChat = useCallback(() => setOpen(true), []);
+  const [triggerRect, setTriggerRect] = useState<TriggerRect | null>(null);
+
+  const openChat = useCallback((rect?: TriggerRect | null) => {
+    if (rect) setTriggerRect(rect);
+    setOpen(true);
+  }, []);
   const closeChat = useCallback(() => setOpen(false), []);
+  const toggle = useCallback(
+    (rect?: TriggerRect | null) => {
+      if (rect) setTriggerRect(rect);
+      setOpen((v) => !v);
+    },
+    [],
+  );
 
   const value = useMemo<FloatingChatContextValue>(
-    () => ({ open, toggle, openChat, closeChat }),
-    [open, toggle, openChat, closeChat],
+    () => ({ open, triggerRect, toggle, openChat, closeChat }),
+    [open, triggerRect, toggle, openChat, closeChat],
   );
 
   return (
