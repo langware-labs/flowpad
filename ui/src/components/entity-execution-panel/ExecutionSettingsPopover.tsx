@@ -11,13 +11,13 @@ import {
 import { AssetManagerPopover } from '@src/components/asset-manager';
 
 /**
- * Chat-flavored asset manager. Wraps the reusable `AssetManagerPopover` and
- * adds a chat-specific Project selector in the footer.
+ * Execution-flavored asset manager. Wraps the reusable `AssetManagerPopover`
+ * and adds a Project selector in the footer.
  *
- * Props are kept stable for the existing chat callers — the implementation
- * delegates to `AssetManagerPopover` for the asset list and attach/detach.
+ * Props are kept stable for existing callers — the implementation delegates
+ * to `AssetManagerPopover` for the asset list and attach/detach.
  */
-interface ChatSettingsPopoverProps {
+interface ExecutionSettingsPopoverProps {
   /** `agent-<id>` / `skill-<id>` strings — serialized TypeIds. */
   attachedRefs: string[];
   onAttach: (ref: string) => void | Promise<void>;
@@ -29,7 +29,7 @@ interface ChatSettingsPopoverProps {
   trigger: React.ReactNode;
 }
 
-export function ChatSettingsPopover({
+export function ExecutionSettingsPopover({
   attachedRefs,
   onAttach,
   onDetach,
@@ -37,7 +37,7 @@ export function ChatSettingsPopover({
   projectId,
   onProjectChange,
   trigger,
-}: ChatSettingsPopoverProps) {
+}: ExecutionSettingsPopoverProps) {
   const projectsQuery = useMemo(() => new QueryRequest({ type: Project.type }), []);
   const { data: projects = [] } = useEntitiesQuery<Project>(projectsQuery);
   const projectLocked = !!activeProcess;
@@ -50,7 +50,7 @@ export function ChatSettingsPopover({
       onDetach={onDetach}
       trigger={trigger}
       footer={
-        <div className="space-y-1.5 px-3 py-2" data-testid="chat-settings-project-section">
+        <div className="space-y-1.5 px-3 py-2" data-testid="execution-settings-project-section">
           <div className="flex items-center justify-between">
             <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
               Project
@@ -68,10 +68,10 @@ export function ChatSettingsPopover({
           >
             <SelectTrigger
               className="h-7 text-xs"
-              data-testid="chat-settings-project"
+              data-testid="execution-settings-project"
               title={
                 projectLocked
-                  ? 'Project is fixed after the first message — start a new chat to change it.'
+                  ? 'Project is fixed after the first message — start a new session to change it.'
                   : undefined
               }
             >

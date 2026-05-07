@@ -41,19 +41,19 @@ interface MarkdownEditorProps {
   fsRef: FSRef;
   /**
    * Serialized TypeId of the entity this markdown belongs to (e.g. `"plan-<id>"`).
-   * Keys Chat + Backlinks tabs. Null disables chat persistence on this file.
+   * Keys Editor + Backlinks tabs. Null disables editor persistence on this file.
    */
   chatTarget: string | null;
   /** Optional asset-specific toolbar actions rendered in the header */
   toolbar?: React.ReactNode;
-  /** Appended to the side drawer after Chat + Backlinks. */
+  /** Appended to the side drawer after Editor + Backlinks. */
   extraSideTabs?: ExtraSideTab[];
   /** Controlled active side-drawer tab id. */
   activeSideTab?: string;
   /** Fires when the active side-drawer tab changes (including internal clicks). */
   onActiveSideTabChange?: (id: string) => void;
-  /** Forwarded to the Chat tab — runs once after its backing process is created. */
-  chatOnProcessCreated?: (process: import('@sdk').AgenticProcess) => Promise<void> | void;
+  /** Forwarded to the Editor tab — runs once after its backing process is created. */
+  onChatProcessCreated?: (process: import('@sdk').AgenticProcess) => Promise<void> | void;
 }
 
 /**
@@ -72,7 +72,7 @@ export function MarkdownEditor({
   extraSideTabs,
   activeSideTab,
   onActiveSideTabChange,
-  chatOnProcessCreated,
+  onChatProcessCreated,
 }: MarkdownEditorProps) {
   return (
     <MarkdownEditorContent
@@ -83,7 +83,7 @@ export function MarkdownEditor({
       extraSideTabs={extraSideTabs}
       activeSideTab={activeSideTab}
       onActiveSideTabChange={onActiveSideTabChange}
-      chatOnProcessCreated={chatOnProcessCreated}
+      onChatProcessCreated={onChatProcessCreated}
     />
   );
 }
@@ -98,7 +98,7 @@ function MarkdownEditorContent({
   extraSideTabs,
   activeSideTab,
   onActiveSideTabChange,
-  chatOnProcessCreated,
+  onChatProcessCreated,
 }: {
   fsRef: FSRef;
   sourcePath: string;
@@ -107,7 +107,7 @@ function MarkdownEditorContent({
   extraSideTabs?: ExtraSideTab[];
   activeSideTab?: string;
   onActiveSideTabChange?: (id: string) => void;
-  chatOnProcessCreated?: MarkdownEditorProps['chatOnProcessCreated'];
+  onChatProcessCreated?: MarkdownEditorProps['onChatProcessCreated'];
 }) {
   const { navigation, currentDock } = useDockNavigation();
   const [viewMode, setViewMode] = useState<ViewMode>(readStoredMode);
@@ -280,7 +280,7 @@ function MarkdownEditorContent({
           extraTabs={extraSideTabs}
           activeTab={activeSideTab}
           onActiveTabChange={onActiveSideTabChange}
-          chatOnProcessCreated={chatOnProcessCreated}
+          onChatProcessCreated={onChatProcessCreated}
           cursorLine={cursorLine}
         >
           {viewMode === 'markdown' ? (

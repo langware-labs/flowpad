@@ -40,7 +40,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude import (
 )
 from flow_sdk.core import Entity, action
 from flow_sdk.core.flow.streaming.response_handler import StreamingResponseHandler
-from flow_sdk.flowpad_types.enums import WorkerType
+from flow_sdk.flowpad_types.enums import ProcessType, WorkerType
 from flow_sdk.fs_records.agent_status import WorkerStatus, is_terminal as is_worker_terminal
 from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
 from flow_sdk.fs_store.fs_ref import FSRef
@@ -496,6 +496,14 @@ class AgenticProcess(Entity):
     shell_id: str | None = APIField(default=None)
     sidecar_shell_id: str | None = APIField(default=None)
     visible: bool = APIField(default=False, description="Whether this process is visible in the tabs view")
+    process_type: ProcessType | None = APIField(
+        default=None,
+        description=(
+            "Discriminator for how this process is used. CHAT = conversational "
+            "editor companion; EXECUTION = runs an embedded asset or workflow. "
+            "Null for legacy rows pre-dating this field."
+        ),
+    )
     queue: dict | None = APIField(default=None)
     restart_required: bool = APIField(
         default=False,

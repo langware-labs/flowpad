@@ -20,6 +20,9 @@ from flow_sdk.flowpad_types.enums.entity_enums import (
     RelationshipDirection,
 )
 
+# Re-export process enums
+from flow_sdk.flowpad_types.enums.process_enums import ProcessType
+
 # Re-export trace enums
 from flow_sdk.flowpad_types.enums.trace_enums import TraceLevel, TraceType
 
@@ -45,6 +48,8 @@ __all__ = [
     "WorkerType",
     "WorkerTaskStatus",
     "WorkerCapability",
+    # Process enums
+    "ProcessType",
     # Trace enums
     "TraceType",
     "TraceLevel",
