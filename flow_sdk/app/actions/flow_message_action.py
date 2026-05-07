@@ -644,6 +644,47 @@ async def inbox_update() -> ApiResponse:
         return ApiFailResponse(message=f"Update failed: {str(e)}")
 
 
+@action.post(action_name="mark_received", types=[BuiltinEntityType.FLOW_MESSAGE.value])
+async def mark_received_action() -> ApiResponse:
+    """UI-side read-ack: forwards the batch to the hub via the WS bridge.
+
+    Body: ``{flow_message_ids: list[str]}``. The hub honors monotonicity +
+    sender-skip server-side, so re-acking already-received or own-sent
+    messages is a cheap no-op. Returns the hub's ``{updated, skipped}``
+    payload unchanged when the bridge is verified, or a graceful no-op
+    when the hub WS is offline.
+    """
+    try:
+        request_info = get_current_request_info()
+        if not request_info:
+            return ApiFailResponse(message="No request info")
+        body = await request_info.get_post_data() or {}
+        ids = body.get("flow_message_ids") or []
+        if not isinstance(ids, list) or not all(isinstance(x, str) for x in ids):
+            return ApiFailResponse(message="flow_message_ids must be a list of strings", status_code=400)
+        if not ids:
+            return ApiSuccessResponse(data={"updated": [], "skipped": []})
+
+        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge
+        from flow_sdk.cloud_client.ws_client import hub_ws_manager
+
+        if not hub_ws_manager.is_connected:
+            # Bridge not connected — degrade gracefully. The next reconnect's
+            # catch-up cycle will re-emit acks for any unprocessed messages.
+            return ApiSuccessResponse(data={"updated": [], "skipped": [
+                {"id": i, "reason": "hub_ws_offline"} for i in ids
+            ]})
+
+        result = await hub_ws_bridge.mark_received(flow_message_ids=ids, timeout=5.0)
+        # Hub returns the raw ApiResponse shape: {"status": "...", "data": {...}}
+        if isinstance(result, dict) and "data" in result and isinstance(result["data"], dict):
+            return ApiSuccessResponse(data=result["data"])
+        return ApiSuccessResponse(data=result if isinstance(result, dict) else {})
+    except Exception as e:
+        logger.error("[flow_message_action] mark_received error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"mark_received failed: {str(e)}")
+
+
 async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     """Promote a draft FlowMessage to a real reply.
 
@@ -899,27 +940,21 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
 
     # Hub exposes accept as GET /api/v1/graph/members/accept?invitation-id=X.
     from flow_sdk.utils.hub import hub_base_url as _hub_base
-    import httpx
     base = _hub_base()
     if not base:
         return ApiFailResponse(message="Hub not configured")
 
-    try:
-        from flow_sdk.cli.auth.hub_login import get_api_key
-        api_key = get_api_key()
-    except Exception:
-        api_key = None
-    if not api_key:
-        return ApiFailResponse(message="Not logged in to hub")
-
     accept_url = f"{base}/api/v1/graph/members/accept"
     linked_fm_id: Optional[str] = None
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(
+        from flow_sdk.cloud_client import ApiConfig, FlowpadClient
+
+        async with FlowpadClient(ApiConfig.from_env()) as client:
+            resp = await client.request(
+                "GET",
                 accept_url,
                 params={"invitation-id": inv_id},
-                headers={"Authorization": f"Bearer {api_key}"},
+                timeout=10,
             )
         if resp.status_code != 200:
             return ApiFailResponse(

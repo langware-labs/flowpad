@@ -7,7 +7,7 @@ to the cloud's login form, wait for the cloud's redirect to
 ``/auth/login_callback``).
 
 Both paths converge on ``_finalize_login``, which broadcasts the success
-WS event and persists the bearer token + user.
+WS event and persists the hub credential payload + user mirror.
 """
 
 from __future__ import annotations
@@ -20,9 +20,10 @@ from urllib.parse import urlparse
 from flow_sdk.api.messages import OAuthMessage, OAuthMessageStatus
 from flow_sdk.api.oauth_api import OAuthProvider
 from flow_sdk.cli.app_config import set_user
+from flow_sdk.cli.auth.credentials import UserHubCredentials, save_credentials
 from flow_sdk.cli.auth.cloud_urls import get_login_url
-from flow_sdk.cli.auth.hub_login import set_api_key
 from flow_sdk.cloud_client import ApiConfig, FlowpadClient
+from flow_sdk.cloud_client.api.auth import LoginData
 from flow_sdk.instance_settings import get_instance_settings
 
 
@@ -58,9 +59,9 @@ async def cloud_login() -> dict[str, Any]:
 
 
 async def _login_by_api(email: str, password: str) -> dict[str, Any]:
-    token, user_info = await _post_cloud_login(email, password)
-    await _finalize_login(token, user_info)
-    return {"status": "logged_in", "user": user_info}
+    login_data = await _post_cloud_login(email, password)
+    await _finalize_login(login_data)
+    return {"status": "logged_in", "user": login_data.user}
 
 
 async def _login_by_window(port: int, timeout: float) -> dict[str, Any]:
@@ -83,43 +84,49 @@ async def _wait_or_timeout(timeout: float) -> None:
         await _broadcast_oauth_error(f"Login timed out after {int(timeout)}s — please try again")
 
 
-async def _post_cloud_login(email: str, password: str) -> tuple[str, dict[str, Any]]:
-    """POST cloud /login. Returns ``(token, user_info)`` from the LoginData payload."""
+async def _post_cloud_login(email: str, password: str) -> LoginData:
+    """POST cloud /login and return the full LoginData payload."""
     config = ApiConfig.from_env()
     async with FlowpadClient(config) as client:
         data = await client.post("/login", {"email": email, "password": password})
-    if not isinstance(data, dict) or not data.get("token") or not data.get("user"):
+    login_data = LoginData.model_validate(data)
+    if not login_data.token or not login_data.user:
         raise ValueError(f"login response missing token/user: {data!r}")
-    return data["token"], data["user"]
+    return login_data
 
 
-async def _finalize_login(token: str, user_info: dict[str, Any]) -> None:
+async def _finalize_login(login_data: LoginData) -> None:
     """Broadcast SUCCESS first (UI un-blocks immediately), then persist locally.
 
-    set_api_key may trigger an OS keychain prompt that blocks for seconds —
+    save_credentials may trigger an OS keychain prompt that blocks for seconds —
     don't make WS subscribers wait on it. The WS payload carries user_info,
     so the UI doesn't need the keyring read to render logged-in state.
     """
     from flow_sdk.server import state
     from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
 
+    user_info = login_data.user
     await _broadcast_oauth(OAuthMessage(
         oauth_request_id=OAuthProvider.FLOWPAD_CLOUD,
         status=OAuthMessageStatus.SUCCESS,
         user=user_info,
     ))
 
-    set_api_key(token)
-    # If the keyring write succeeded, mark the secrets-enabled sentinel so
-    # is_cloud_login_available() can read the key on subsequent boots.
-    # enable_secrets() swallows its own keyring errors and returns a bool,
-    # so we don't need a try/except here.
+    save_credentials(UserHubCredentials.from_login_data(login_data))
+    # Sentinel flag so is_cloud_login_available() reads the key on next boot.
     from flow_sdk.cli.auth.secrets import enable_secrets
     enable_secrets()
     set_user(user_info)
     state.login_result = {"success": True, "user": user_info, "message": "Login successful"}
     state.login_received.set()
     invalidate_bootstrap_cache()
+
+    try:
+        from flow_sdk.cloud_client.ws_client import hub_ws_manager
+
+        await hub_ws_manager.restart()
+    except Exception:
+        pass
 
 
 async def _broadcast_oauth(msg: OAuthMessage) -> None:
@@ -144,11 +151,18 @@ def clear_cloud_credentials() -> None:
     Used by ``/api/v1/cloud/logout``, ``/api/v1/cloud/logout_callback``, and the
     legacy ``flowpad_cloud/disconnect`` action handler — single owner.
     """
-    from flow_sdk.cli.auth.hub_login import delete_api_key
+    from flow_sdk.cli.auth.credentials import clear_credentials
     from flow_sdk.server import state
     from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
 
-    delete_api_key()
+    try:
+        from flow_sdk.cloud_client.ws_client import hub_ws_manager
+
+        hub_ws_manager.request_stop()
+    except Exception:
+        pass
+
+    clear_credentials()
     set_user({})
     state.login_result = None
     state.login_received.clear()

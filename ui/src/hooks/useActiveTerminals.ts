@@ -152,9 +152,7 @@ export function terminalProcessId(tab: TerminalTab): string | null {
 
 let terminalState: TerminalTab[] = [];
 let initialFetchStarted = false;
-let activeTerminalsFetchVersion = 0;
 const listeners = new Set<() => void>();
-const closedTerminalKeys = new Set<string>();
 
 function notifyListeners(): void {
   for (const cb of listeners) cb();
@@ -177,8 +175,8 @@ function setTerminalState(next: TerminalTab[]): void {
 export async function fetchActiveTerminals(): Promise<TerminalTab[]> {
   const computeNodeId = dataContext.computeNode?.id;
   if (!computeNodeId) return [];
-  const fetchVersion = ++activeTerminalsFetchVersion;
-  const action = new ActionInfo('active-terminals', 'compute_node', computeNodeId, 'GET');
+  const action = new ActionInfo('terminals', 'compute_node', computeNodeId, 'GET');
+  action.subpath = 'list';
   const result = await dataManager.callAction<unknown, ActiveTerminalsResponse>(action);
   if (!result) return [];
   // 1. Hydrate the entity cache so per-row reads (`shell.status`, `process.workerStatus`)
@@ -195,21 +193,43 @@ export async function fetchActiveTerminals(): Promise<TerminalTab[]> {
     ...result.pure_shells.map(toShellTab),
     ...result.visible_processes.map(toProcessTab),
   ];
-  if (fetchVersion !== activeTerminalsFetchVersion) return terminalState;
-
-  const fetchedKeys = new Set(fetched.map(terminalTargetKey));
-  for (const key of closedTerminalKeys) {
-    if (!fetchedKeys.has(key)) closedTerminalKeys.delete(key);
-  }
-
-  const incoming = fetched.filter((tab) => !closedTerminalKeys.has(terminalTargetKey(tab))).sort(byTabOrder);
+  const incoming = fetched.sort(byTabOrder);
   setTerminalState(incoming);
   return incoming;
 }
 
+export interface TerminalCloseResponse {
+  accepted: string[];
+  missing: string[];
+  invalid: string[];
+}
+
+export async function closeTerminalTargets(
+  targets: Array<TerminalTab | TypeId | string>,
+): Promise<TerminalCloseResponse> {
+  const keys = targets.map(terminalTargetKey);
+  const computeNodeId = dataContext.computeNode?.id;
+  if (!computeNodeId || keys.length === 0) {
+    return { accepted: [], missing: keys, invalid: [] };
+  }
+  const action = new ActionInfo('terminals', 'compute_node', computeNodeId, 'POST');
+  action.subpath = 'close';
+  action.bodyParameters = { targets: keys };
+  const result = await dataManager.callAction<{ targets: string[] }, TerminalCloseResponse>(action);
+  const accepted = result?.accepted ?? [];
+  if (accepted.length > 0) {
+    const closed = new Set(accepted);
+    setTerminalState(terminalState.filter((tab) => !closed.has(terminalTargetKey(tab))));
+  }
+  return {
+    accepted,
+    missing: result?.missing ?? [],
+    invalid: result?.invalid ?? [],
+  };
+}
+
 function pushTerminalShared(tab: TerminalTab): void {
   const key = terminalTargetKey(tab);
-  closedTerminalKeys.delete(key);
   setTerminalState(
     terminalState.some((t) => terminalTargetKey(t) === key)
       ? terminalState.map((t) => (terminalTargetKey(t) === key ? tab : t))
@@ -219,7 +239,6 @@ function pushTerminalShared(tab: TerminalTab): void {
 
 function removeTerminalShared(target: TerminalTab | TypeId | string): void {
   const key = terminalTargetKey(target);
-  closedTerminalKeys.add(key);
   setTerminalState(terminalState.filter((t) => terminalTargetKey(t) !== key));
 }
 

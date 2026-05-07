@@ -19,6 +19,7 @@ from .entries import (
     UserMessageEntry,
 )
 from .entry import EntryKind, TranscriptEntry
+from .formats import TranscriptDescriptor, TranscriptFormat, TranscriptSource
 from .transcript import AgentTranscript
 
 __all__ = [
@@ -29,9 +30,12 @@ __all__ = [
     "MetaEntry",
     "SummaryEntry",
     "SystemEntry",
+    "TranscriptDescriptor",
     "ToolResultEntry",
     "ToolUseEntry",
     "TranscriptEntry",
+    "TranscriptFormat",
+    "TranscriptSource",
     "UnknownEntry",
     "UserMessageEntry",
 ]

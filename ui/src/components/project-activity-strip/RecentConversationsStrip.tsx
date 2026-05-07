@@ -15,8 +15,10 @@ import { NewConversationDialog } from '@src/components/new-conversation-dialog/N
 import { DockPointer } from '@src/navigation/DockPointer';
 import { resolveConversationDockPointer } from '@src/navigation/conversation-route-resolver';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useProject } from '@src/hooks/useProject';
+import { Checkbox } from '@src/components/ui/checkbox';
 import { Archive, MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { bulkUpdateMessages } from '@src/components/inbox-view/inbox-api';
 import { formatTimeAgo } from './project-activity-utils';
 
@@ -29,11 +31,14 @@ interface RecentConversationsStripProps {
 
 export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: RecentConversationsStripProps) {
   const { navigation } = useDockNavigation();
+  const { project: currentProject } = useProject();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadConflicts, setUploadConflicts] = useState<UploadConflict[] | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [newConvOpen, setNewConvOpen] = useState(false);
+  const [allProjects, setAllProjects] = useState(true);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
 
   const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
   const { data: conversations = [], refetch, isLoading } = useEntitiesQuery<Conversation>(request);
@@ -51,17 +56,51 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
   );
 
   const sorted = useMemo(() => {
-    const list = [...conversations];
+    const currentProjectId = currentProject?.id ?? null;
+    const list = conversations.filter((c) => {
+      if (allProjects) return true;
+      return currentProjectId != null && c.project_id === currentProjectId;
+    });
     list.sort((a, b) => {
       const ta = a.updated_date ? new Date(a.updated_date).getTime() : 0;
       const tb = b.updated_date ? new Date(b.updated_date).getTime() : 0;
       return tb - ta;
     });
     return list;
-  }, [conversations]);
+  }, [conversations, allProjects, currentProject?.id]);
 
   const visible = sorted.slice(0, visibleCount);
   const hasMore = sorted.length > visibleCount;
+
+  // Drop selections that are no longer visible (e.g. after toggling the
+  // project filter or when an entity disappears from the list).
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      if (prev.size === 0) return prev;
+      const visibleIds = new Set(sorted.map((c) => c.id).filter((id): id is string => !!id));
+      const next = new Set<string>();
+      for (const id of prev) if (visibleIds.has(id)) next.add(id);
+      return next.size === prev.size ? prev : next;
+    });
+  }, [sorted]);
+
+  const toggleSelected = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleOpenAllSelected = () => {
+    const byId = new Map(sorted.filter((c) => c.id).map((c) => [c.id as string, c]));
+    for (const id of selectedIds) {
+      const conv = byId.get(id);
+      if (conv) navigation.openDock(conv.dockPointer);
+    }
+    setSelectedIds(new Set());
+  };
 
   const [hubSyncing, setHubSyncing] = useState(false);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
@@ -174,6 +213,19 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
               {sorted.length}
             </span>
           )}
+          <label
+            className="ml-2 flex cursor-pointer items-center gap-1 text-[11px] text-muted-foreground select-none"
+            title={currentProject ? undefined : 'No active project'}
+            data-testid="recent-conversations-all-projects"
+          >
+            <Checkbox
+              className="h-3 w-3"
+              checked={allProjects}
+              onCheckedChange={(v) => setAllProjects(v === true)}
+              disabled={!currentProject}
+            />
+            <span>All projects</span>
+          </label>
         </div>
         <div className="flex items-center gap-1">
           <input
@@ -284,12 +336,48 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
         </div>
       )}
 
+      {selectedIds.size > 0 && (
+        <div
+          className="flex items-center justify-between gap-2 border-b border-border/50 bg-muted/30 px-3 py-1.5"
+          data-testid="recent-conversations-selection-bar"
+        >
+          <span className="text-[11px] text-muted-foreground">
+            {selectedIds.size} selected
+          </span>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="rounded border border-border px-2 py-0.5 text-[11px] font-medium hover:bg-muted"
+              data-testid="recent-conversations-clear-selection"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenAllSelected}
+              className="rounded bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
+              data-testid="recent-conversations-open-selected"
+            >
+              Open all
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* List */}
       <div className="pb-1">
         {visible.length === 0 ? (
           <div className="px-3 pb-3 text-xs text-muted-foreground">No conversations</div>
         ) : (
-          visible.map((conv) => <ConversationRow key={conv.id} conv={conv} />)
+          visible.map((conv) => (
+            <ConversationRow
+              key={conv.id}
+              conv={conv}
+              selected={!!conv.id && selectedIds.has(conv.id)}
+              onToggleSelected={() => conv.id && toggleSelected(conv.id)}
+            />
+          ))
         )}
       </div>
 
@@ -315,7 +403,15 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
   );
 }
 
-function ConversationRow({ conv }: { conv: Conversation }) {
+function ConversationRow({
+  conv,
+  selected,
+  onToggleSelected,
+}: {
+  conv: Conversation;
+  selected: boolean;
+  onToggleSelected: () => void;
+}) {
   const { navigation } = useDockNavigation();
   const projectTypeId = useMemo(
     () => (conv.project_id ? new TypeId(Project.type, conv.project_id) : null),
@@ -362,6 +458,18 @@ function ConversationRow({ conv }: { conv: Conversation }) {
       data-conversation-id={conv.id}
       data-project-id={conv.project_id ?? ''}
     >
+      <div
+        className="mt-0.5 flex shrink-0 items-center"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Checkbox
+          className="h-3.5 w-3.5"
+          checked={selected}
+          onCheckedChange={onToggleSelected}
+          aria-label="Select conversation"
+          data-testid="conversation-row-checkbox"
+        />
+      </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-1.5">
           <span className="truncate text-xs font-medium" data-testid="conversation-from">

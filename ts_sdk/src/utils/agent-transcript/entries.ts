@@ -9,6 +9,8 @@
  * a `switch (entry.kind)` block to narrow types.
  */
 
+import type { TranscriptFormat, TranscriptSource } from '../../transcript-analyzer';
+
 export type EntryKind =
   | 'user_message'
   | 'assistant_message'
@@ -147,6 +149,8 @@ export interface ParsedTranscript {
   worker_type: string;
   session_id: string;
   path: string;
+  transcript_format: TranscriptFormat | null;
+  transcript_source: TranscriptSource | null;
   header: TranscriptHeader;
   entries: GenericEntry[];
 }

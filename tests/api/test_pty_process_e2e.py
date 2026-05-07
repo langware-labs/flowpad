@@ -29,7 +29,10 @@ async def test_open_pty_creates_pty_session(bootstrapped_client):
     # Create process directly on the compute node
     response = await bootstrapped_client.post(
         f"/api/v1/graph/compute_node/{compute_node_id}/createProcess",
-        json={"context": {"compute_node_id": f"compute_node-{compute_node_id}"}},
+        json={
+            "context": {"compute_node_id": f"compute_node-{compute_node_id}"},
+            "visible": True,
+        },
     )
     assert response.status_code == 200, response.text
     process_data = ApiResponse(**response.json())

@@ -26,7 +26,11 @@ async def _get_local_user_cached():
     if _LOCAL_USER_CACHE is not None:
         return _LOCAL_USER_CACHE
     from flow_sdk.builtin.user import User
-    user = await User.get_one({"uname": "local"})
+    try:
+        from flow_sdk.server.routes.bootstrap import get_or_create_local_user
+        user = await get_or_create_local_user()
+    except Exception:
+        user = await User.get_one({"uname": "local"})
     if user is not None:
         _LOCAL_USER_CACHE = user
     return user

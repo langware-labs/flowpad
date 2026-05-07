@@ -30,7 +30,12 @@ import {
   systemTools,
   TypeId,
 } from '@sdk';
-import { terminalProcessId, terminalTransportShellId, type TerminalTab } from '@src/hooks/useActiveTerminals';
+import {
+  closeTerminalTargets,
+  terminalProcessId,
+  terminalTransportShellId,
+  type TerminalTab,
+} from '@src/hooks/useActiveTerminals';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { toast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation';
@@ -309,8 +314,7 @@ async function buildShellCleanupForRoute(e: ShellLoadError): Promise<CleanupReco
     case 'error_status':
       return { kind: 'shell_error_status', shellId: e.shellId, title: 'Shell unavailable', description: e.errorMessage ?? 'Shell error' };
     case 'start_failed': {
-      const cached = Shell.getByIdFromCache<Shell>(e.shellId);
-      await cached?.close().catch(() => {});
+      await closeTerminalTargets([new TypeId(Shell.type, e.shellId)]).catch(() => {});
       const desc = describeProcessStartError(e.cause ?? e);
       return { kind: 'shell_start_failed', shellId: e.shellId, title: desc.title, description: desc.description };
     }

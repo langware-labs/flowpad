@@ -26,6 +26,10 @@ import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
 import { ProcessIconKey, ProcessStatus, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
+import type {
+  TranscriptFormat as TranscriptFormatType,
+  TranscriptSource as TranscriptSourceType,
+} from '../transcript-analyzer';
 
 // ---------------------------------------------------------------------------
 // Auto-recovery dispatcher — mirrors Shell's static-listener pattern at
@@ -861,6 +865,51 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       if (entry instanceof UserMessageEntry) out.push(entry);
     }
     return out;
+  }
+
+  /**
+   * Fetch the parsed worker transcript from the process-specific transcript source.
+   */
+  async getTranscript(): Promise<import('../transcript-analyzer').AgentTranscript> {
+    const {
+      AgentTranscript,
+      TranscriptFormat,
+      TranscriptSource,
+      fromJson,
+    } = await import('../transcript-analyzer');
+    const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
+    actionInfo.subpath = 'full';
+    const response = await dataManager.callAction<
+      unknown,
+      {
+        worker_type?: string | null;
+        session_id?: string | null;
+        path?: string | null;
+        transcript_path?: string | null;
+        transcript_format?: string | null;
+        transcript_source?: string | null;
+        entries?: Record<string, unknown>[] | null;
+      }
+    >(actionInfo);
+    const rawEntries = response?.entries ?? [];
+    const entries = rawEntries.map((entry) => fromJson(entry));
+    const format = Object.values(TranscriptFormat).includes(response?.transcript_format as never)
+      ? response?.transcript_format as TranscriptFormatType
+      : null;
+    const source = Object.values(TranscriptSource).includes(response?.transcript_source as never)
+      ? response?.transcript_source as TranscriptSourceType
+      : null;
+    const path = response?.path ?? response?.transcript_path ?? '';
+    return new AgentTranscript(
+      response?.worker_type ?? this.worker_type ?? '',
+      entries,
+      response?.session_id ?? this.session_id ?? '',
+      {
+        path,
+        transcript_format: format,
+        transcript_source: source,
+      },
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────

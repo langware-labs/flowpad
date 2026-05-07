@@ -102,12 +102,20 @@ const instructionsQueryFilter = new QueryFilter({
   },
 });
 
+function cloudConnectionLabel(): string {
+  if (cloudManager.hubWsVerified) return 'connection verified';
+  if (cloudManager.hubWsConnected) return 'connected';
+  if (cloudManager.hubWsStatus === 'connecting') return 'connecting';
+  return 'not connected';
+}
+
 function cloudLoginTooltip(loggedIn: boolean, email?: string): string {
   const url = cloudManager.cloudUrl;
   if (loggedIn) {
-    if (email && url) return `${email} is logged into ${url}`;
-    if (email) return `${email} is logged in`;
-    return url ? `Logged in to ${url}` : 'Logged in';
+    const connection = cloudConnectionLabel();
+    if (email && url) return `${email} is logged into ${url} (${connection})`;
+    if (email) return `${email} is logged in (${connection})`;
+    return url ? `Logged in to ${url} (${connection})` : `Logged in (${connection})`;
   }
   return url ? `Not logged in (${url})` : 'Not logged in';
 }
@@ -117,6 +125,7 @@ export function UserDropdown() {
   const { user } = useAuth();
   const { isConnected } = useConnectionStatus();
   const { cloudLoginAvailable } = useContext();
+  const [, setCloudStatusVersion] = useState(0);
   const agentTypeId = useMemo(() => (agentId ? new TypeId(Agent.type, agentId) : null), [agentId]);
   const { data: agent } = useEntity<Agent>(agentTypeId, {
     query: user ? agentQuery : new ExpansionRequest({}),
@@ -174,6 +183,15 @@ export function UserDropdown() {
     const handler = () => setIsAccountDialogOpen(false);
     window.addEventListener('close-account-dialog', handler);
     return () => window.removeEventListener('close-account-dialog', handler);
+  }, []);
+
+  useEffect(() => {
+    const bump = () => setCloudStatusVersion((v) => v + 1);
+    cloudManager.on('cloud_status_changed', bump);
+    void cloudManager.refreshStatus();
+    return () => {
+      cloudManager.off('cloud_status_changed', bump);
+    };
   }, []);
 
   const handleSaveRules = useCallback(

@@ -16,6 +16,8 @@ type MessageType =
   | 'pty_output_msg'
   | 'flow_data_msg'
   | 'llm_config_msg'
+  | 'hub_client_error_msg'
+  | 'auth_expired_msg'
   | 'ui_command';
 
 function convertToWebSocketUrl(url: string) {
@@ -87,6 +89,20 @@ export interface OAuthMessage extends BaseMessage {
   status: 'success' | 'error';
   message?: string | null;
   user?: Record<string, any> | null;
+}
+
+export interface HubClientErrorMessage extends BaseMessage {
+  message_type: 'hub_client_error_msg';
+  status_code: number;
+  method: string;
+  path: string;
+  message: string;
+  suppressed_count?: number;
+}
+
+export interface AuthExpiredMessage extends BaseMessage {
+  message_type: 'auth_expired_msg';
+  reason: string;
 }
 
 /**
@@ -355,6 +371,12 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'llm_config_msg') {
       return this.onLlmConfigMessage(data as LlmConfigMessage);
     }
+    if (data.message_type === 'hub_client_error_msg') {
+      return this.onHubClientErrorMessage(data as HubClientErrorMessage);
+    }
+    if (data.message_type === 'auth_expired_msg') {
+      return this.onAuthExpiredMessage(data as AuthExpiredMessage);
+    }
     if (data.message_type === 'ui_command') {
       return this.onUiCommandMessage(data as UiCommandMessage);
     }
@@ -423,6 +445,12 @@ export class ConnectionManager extends EventEmitter {
   }
   onLlmConfigMessage(data: LlmConfigMessage) {
     this.emit('on_llm_config_msg', data);
+  }
+  onHubClientErrorMessage(data: HubClientErrorMessage) {
+    this.emit('on_hub_client_error_msg', data);
+  }
+  onAuthExpiredMessage(data: AuthExpiredMessage) {
+    this.emit('on_auth_expired_msg', data);
   }
   onPtyOutputMessage(data: PtyOutputMessage) {
     this.emit('on_pty_output_msg', data);

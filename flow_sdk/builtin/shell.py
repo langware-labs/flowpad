@@ -641,7 +641,8 @@ class Shell(Entity):
     async def active(cls, compute_node_typeid: str | None = None) -> list["Shell"]:
         """All non-closed shells ordered by tab_order."""
         all_shells = await cls.get_all()
-        shells = [s for s in all_shells if s.status != ShellStatus.CLOSED.value]
+        hidden_statuses = {ShellStatus.CLOSING.value, ShellStatus.CLOSED.value, ShellStatus.ERROR.value}
+        shells = [s for s in all_shells if s.status not in hidden_statuses]
         shells.sort(key=lambda s: s.tab_order)
         return shells
 

@@ -336,17 +336,23 @@ async def test_set_env_merges_with_existing():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_active_excludes_closed_shells():
-    """active() omits shells with status='closed'."""
+async def test_active_excludes_hidden_shells():
+    """active() omits shells that are closing, closed, or errored."""
     running = Shell(id=str(uuid.uuid4()), status="running", tab_order=1)
     await running.save()
+    closing = Shell(id=str(uuid.uuid4()), status="closing", tab_order=0)
+    await closing.save()
     closed = Shell(id=str(uuid.uuid4()), status="closed", tab_order=0)
     await closed.save()
+    errored = Shell(id=str(uuid.uuid4()), status="error", tab_order=0)
+    await errored.save()
 
     active = await Shell.active()
     ids = [s.id for s in active]
     assert running.id in ids
+    assert closing.id not in ids
     assert closed.id not in ids
+    assert errored.id not in ids
 
 
 @pytest.mark.asyncio

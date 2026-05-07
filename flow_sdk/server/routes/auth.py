@@ -34,12 +34,18 @@ async def login_callback(
     try:
         from flow_sdk.cli.auth.cloud_login import _finalize_login
         from flow_sdk.cli.auth.hub_login import validate_api_key_async
+        from flow_sdk.cloud_client.api.auth import LoginData
 
         if not flowpad_api_key:
             raise ValueError("No API key provided. Expected 'flowpad-api-key' parameter.")
 
         user_info = await validate_api_key_async(flowpad_api_key)
-        await _finalize_login(flowpad_api_key, user_info)
+        await _finalize_login(LoginData(
+            token=flowpad_api_key,
+            expires=None,
+            refresh_token=None,
+            user=user_info,
+        ))
 
         if next and next.startswith("/"):
             return RedirectResponse(url=next, status_code=302)
