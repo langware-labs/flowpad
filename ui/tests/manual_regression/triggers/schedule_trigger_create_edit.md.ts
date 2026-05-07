@@ -67,15 +67,22 @@ test('create, edit, and delete a schedule trigger', async ({ page }) => {
   await page.locator('text=Test Daily Schedule').first().click();
   await page.waitForTimeout(500);
 
+  // The CronForm name input binds to React state via onChange. fill()
+  // dispatches the right event but `clear()` followed by `fill()` can race
+  // a re-render that resets the value from the trigger entity. Triple-click
+  // to select all + type to ensure the input handler sees a single update.
   const editNameInput = page.locator('input[placeholder="Today"]').first();
-  await editNameInput.clear();
-  await editNameInput.fill('Test Daily Edited');
+  await editNameInput.click({ clickCount: 3 });
+  await editNameInput.press('Backspace');
+  await editNameInput.type('Test Daily Edited', { delay: 20 });
 
   const saveBtn = page.locator('button[type="submit"]:has-text("Save")');
+  await saveBtn.waitFor({ state: 'visible', timeout: 5_000 });
+  await expect(saveBtn).toBeEnabled({ timeout: 5_000 });
   await saveBtn.click();
 
-  // Verify updated name
-  await page.locator('text=Test Daily Edited').first().waitFor({ state: 'visible', timeout: 10_000 });
+  // Verify updated name appears in the left list (refetched after PATCH).
+  await page.locator('text=Test Daily Edited').first().waitFor({ state: 'visible', timeout: 15_000 });
 
   // Step 6: Cleanup via API
   if (createdIds.length) {
