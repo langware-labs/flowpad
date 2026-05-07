@@ -7,6 +7,7 @@ import {
   type ProcessEntry,
 } from '@src/components/workflows-view/workflow-run-store';
 import { useProcessesForTarget } from '@src/components/entity-chat-panel';
+import { RunButton } from '@src/components/assets/editor/run/RunButton';
 import { Button } from '@src/components/ui/button';
 import {
   AlertDialog,
@@ -27,7 +28,7 @@ import {
   dataContext,
 } from '@sdk';
 import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
-import { History, Loader2, Play } from 'lucide-react';
+import { History } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 interface WorkflowAssetEditorProps {
@@ -174,10 +175,11 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
   const isRunning = !!processEntry;
 
   const toolbar = (
-    <Button
-      size="sm"
+    <RunButton
       onClick={() => void handleRun()}
-      disabled={isRunning || isStarting || !resolvedWorkflow.asset_ref}
+      isRunning={isRunning}
+      isStarting={isStarting}
+      disabled={!resolvedWorkflow.asset_ref}
       title={
         !resolvedWorkflow.asset_ref
           ? 'No file linked'
@@ -185,14 +187,7 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
             ? 'Workflow running…'
             : 'Run workflow'
       }
-    >
-      {isRunning || isStarting ? (
-        <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-      ) : (
-        <Play className="mr-1 h-4 w-4" />
-      )}
-      {isRunning ? 'Running…' : isStarting ? 'Starting…' : 'Run'}
-    </Button>
+    />
   );
 
   const runsTab: ExtraSideTab = {
