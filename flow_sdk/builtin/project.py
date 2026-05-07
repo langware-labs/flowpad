@@ -11,6 +11,7 @@ from pydantic import ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider
+from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.flowpad_types.enums import AuthRole
 from flow_sdk.api.api_types.api_field import APIField
@@ -118,6 +119,10 @@ class Project(Entity):
                 logging.warning(
                     f"Project: could not create mount path {self.fs_storage_mount_path!r}: {e}"
                 )
+        if self.fs_storage_mount_path:
+            self.fs_storage_mount_path = canonical_posix_path(
+                self.fs_storage_mount_path
+            )
         return self
 
     @classmethod
@@ -137,7 +142,7 @@ class Project(Entity):
             if name and os.path.isabs(name):
                 mount_path = name
         if mount_path:
-            return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{mount_path}"))
+            return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{canonical_posix_path(mount_path)}"))
         rid = data.get("id") or ""
         if rid and is_valid_uuid(rid):
             return rid
@@ -163,10 +168,15 @@ class Project(Entity):
         if not path:
             return None
 
-        # Phase 1: existing Project at this exact mount path.
+        # Canonicalize so Windows path quirks (slash style, drive case,
+        # trailing sep, NFC) don't cause us to miss an existing match and
+        # mint a duplicate Project in Phase 3.
+        path = canonical_posix_path(path)
+
+        # Phase 1: existing Project at this exact (canonical) mount path.
         existing = await cls.get_all()
         for proj in existing:
-            if proj.fs_storage_mount_path and proj.fs_storage_mount_path == path:
+            if proj.fs_storage_mount_path and canonical_posix_path(proj.fs_storage_mount_path) == path:
                 return proj
 
         # Phase 2: Claude Code's project directory at ~/.claude/projects/<encoded>/.
@@ -187,7 +197,7 @@ class Project(Entity):
                 # Re-query for the materialized Project entity by mount path.
                 materialized = await cls.get_all()
                 for p in materialized:
-                    if p.fs_storage_mount_path == path:
+                    if p.fs_storage_mount_path and canonical_posix_path(p.fs_storage_mount_path) == path:
                         return p
             except Exception as e:
                 logging.warning(f"Project.recover_by_path: phase 2 failed for {path}: {e}")
