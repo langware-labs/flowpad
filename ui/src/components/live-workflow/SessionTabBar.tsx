@@ -1,5 +1,6 @@
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { acknowledgePending } from '@src/store/pending-actions-store';
 import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
@@ -108,6 +109,7 @@ export function SessionTabBar({
   // Handle tab click - navigate to session
   const handleTabClick = (sessionId: string) => {
     onSelectTab?.(sessionId);
+    acknowledgePending(sessionId);
   };
 
   // Handle close button click (navigation is handled by the parent via onCloseTab)

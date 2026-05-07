@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { toast } from '@src/hooks/use-toast';
 import { TranscriptStats } from './TranscriptStats';
 import { TranscriptEntryItem } from './TranscriptEntryItem';
 import { ChatEntryItem } from './ChatEntryItem';
@@ -506,8 +507,11 @@ export function ClaudeTranscriptViewer({ projectEncodedName, sessionId, selected
     return { ...base, role: 'system', raw: entry };
   };
 
-  const handleOpenInTerminal = useCallback(() => {
-    void navigation.openClaudeSession(sessionId);
+  const handleOpenInTerminal = useCallback(async () => {
+    const p = await navigation.openWorkerSession(sessionId);
+    if (!p) {
+      toast({ title: 'Session not found', description: `Session ${sessionId} is not in Claude or Codex history.`, variant: 'destructive' });
+    }
   }, [navigation, sessionId]);
 
   const handleOpenTaskLink = useMemo(() => {

@@ -94,8 +94,8 @@ async def test_upsert_session_process(bootstrapped_client):
     assert result.status == "SUCCESS", f"upsertSessionProcess failed: {result.message}"
 
     upsert_data = result.data
-    assert upsert_data["created"] is True
     assert upsert_data["session_id"] == test_session_id
+    assert upsert_data["type"] == "agentic_process"
 
     # Verify the process exists and has correct session_id
     process_id = upsert_data["id"]
@@ -105,14 +105,13 @@ async def test_upsert_session_process(bootstrapped_client):
     process_entity = entity_data.data
     assert process_entity["session_id"] == test_session_id
 
-    # Calling upsertSessionProcess again should return same process (not create new)
+    # Calling upsertSessionProcess again is idempotent on session_id — same AP id.
     response = await bootstrapped_client.post(
         f"/api/v1/graph/compute_node/{compute_node_id}/upsertSessionProcess",
         json={"sessionId": test_session_id},
     )
     assert response.status_code == 200, response.text
     result2 = ApiResponse(**response.json())
-    assert result2.data["created"] is False
     assert result2.data["id"] == process_id
 
 
@@ -151,7 +150,6 @@ async def test_upsert_session_process_heals_existing_workdir(
     )
     assert healed.status_code == 200, healed.text
     healed_data = ApiResponse(**healed.json()).data
-    assert healed_data["created"] is False
     assert healed_data["id"] == process_id
 
     response = await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{process_id}")
@@ -294,6 +292,86 @@ async def test_find_session_404(bootstrapped_client):
     response = await bootstrapped_client.get(
         f"/api/v1/graph/compute_node/{compute_node_id}/findSession",
         params={"session_id": "00000000-0000-0000-0000-000000000000"},
+    )
+    assert response.status_code == 404, response.text
+    result = ApiResponse(**response.json())
+    assert result.status == "FAIL"
+    assert "not found" in (result.message or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_get_by_worker_id_claude(bootstrapped_client, tmp_path):
+    """terminals/get_by_worker_id auto-discovers a Claude session and upserts an AP."""
+    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+    compute_node_id = _get_default_compute_node_id(bootstrap.json())
+
+    session_id = str(uuid.uuid4())
+    cwd = str(tmp_path / "get-by-worker-claude")
+    Path(cwd).mkdir(parents=True, exist_ok=True)
+    jsonl_path = _write_fake_claude_jsonl(session_id, cwd=cwd)
+
+    try:
+        response = await bootstrapped_client.get(
+            f"/api/v1/graph/compute_node/{compute_node_id}/terminals/get_by_worker_id/{session_id}",
+        )
+        assert response.status_code == 200, response.text
+        result = ApiResponse(**response.json())
+        assert result.status == "SUCCESS", result.message
+
+        data = result.data
+        assert data["type"] == "agentic_process"
+        assert data["session_id"] == session_id
+        assert data["workdir"] == cwd
+        # Worker type is the enum string for claude on AgenticProcess.
+        assert data["worker_type"] in ("claude_code", "claude")
+        # Atomic upsert spawned the linked Shell.
+        assert data["shell_id"]
+
+        # Idempotent: second call returns the same AP id.
+        response2 = await bootstrapped_client.get(
+            f"/api/v1/graph/compute_node/{compute_node_id}/terminals/get_by_worker_id/{session_id}",
+        )
+        assert response2.status_code == 200, response2.text
+        data2 = ApiResponse(**response2.json()).data
+        assert data2["id"] == data["id"]
+    finally:
+        jsonl_path.unlink(missing_ok=True)
+
+
+@pytest.mark.asyncio
+async def test_get_by_worker_id_codex(bootstrapped_client, tmp_path):
+    """terminals/get_by_worker_id auto-discovers a Codex thread and upserts an AP."""
+    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+    compute_node_id = _get_default_compute_node_id(bootstrap.json())
+
+    thread_id = str(uuid.uuid4())
+    cwd = str(tmp_path / "get-by-worker-codex")
+    Path(cwd).mkdir(parents=True, exist_ok=True)
+    rollout_path = _write_fake_codex_rollout(thread_id, cwd=cwd)
+
+    try:
+        response = await bootstrapped_client.get(
+            f"/api/v1/graph/compute_node/{compute_node_id}/terminals/get_by_worker_id/{thread_id}",
+        )
+        assert response.status_code == 200, response.text
+        data = ApiResponse(**response.json()).data
+        assert data["type"] == "agentic_process"
+        assert data["session_id"] == thread_id
+        assert data["workdir"] == cwd
+        assert data["worker_type"] == "codex"
+        assert data["shell_id"]
+    finally:
+        rollout_path.unlink(missing_ok=True)
+
+
+@pytest.mark.asyncio
+async def test_get_by_worker_id_404(bootstrapped_client):
+    """terminals/get_by_worker_id returns 404 + FAIL for unknown ids."""
+    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+    compute_node_id = _get_default_compute_node_id(bootstrap.json())
+
+    response = await bootstrapped_client.get(
+        f"/api/v1/graph/compute_node/{compute_node_id}/terminals/get_by_worker_id/00000000-0000-0000-0000-000000000000",
     )
     assert response.status_code == 404, response.text
     result = ApiResponse(**response.json())

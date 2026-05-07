@@ -1,5 +1,4 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { FloatingChatWindow } from './FloatingChatWindow';
 
 export interface TriggerRect {
   x: number;
@@ -68,10 +67,16 @@ export function FloatingChatProvider({ children }: { children: React.ReactNode }
     [open, triggerRect, initialOpen, toggle, openChat, closeChat],
   );
 
+  // The actual <FloatingChatWindow /> is mounted from a layout route inside
+  // the router (see `router.tsx`'s root layout) — NOT here. The window's
+  // descendants (AssetRow, MessageComposer, …) call react-router hooks like
+  // `useNavigate()`, which throw when the component is rendered as a sibling
+  // of <RouterProvider>. Keeping the provider at the App level preserves
+  // open/close state across route changes; rendering the window below the
+  // RouterProvider gives its descendants the Router context they need.
   return (
     <FloatingChatContext.Provider value={value}>
       {children}
-      <FloatingChatWindow />
     </FloatingChatContext.Provider>
   );
 }

@@ -275,6 +275,18 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
     return;
   } catch (e) {
     if (!(e instanceof ShellLoadError)) throw e;
+
+    // Pointer wasn't a Shell id — try resolving it as a Claude/Codex worker
+    // session id via the backend before falling back to "next process". This
+    // is the URL-deep-link path: /dock/shell/<worker-session-uuid>.
+    if (e.kind === 'not_found') {
+      const recovered = await AgenticProcess.getByWorkerId(shellId).catch(() => null);
+      if (recovered) {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        throw replace(`/dock/shell/${recovered.dockPointer.pointer}`);
+      }
+    }
+
     // See routeProcessPointer for rationale on `replace`.
     const directCleanup = await buildShellCleanupForRoute(e);
     const next = await loadNextProcess({
