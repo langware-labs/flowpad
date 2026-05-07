@@ -159,3 +159,21 @@ export async function createTaskBundle(params: CreateTaskBundleParams): Promise<
   const res = await dataManager.callAction<CreateTaskBundleParams, CreateTaskBundleResult>(action);
   return res!;
 }
+
+export interface MarkResult {
+  updated?: string[];
+  skipped?: Array<{ id: string; reason: string; current?: string }>;
+}
+
+/**
+ * Batch read-ack: tells the local server (which forwards to the hub) that
+ * the listed FlowMessages have been seen by the current user. Hub flips
+ * their `delivery_status` to "received" and fans an UPDATE frame back to
+ * the sender (subject to the parent conversation's `message_status_visible`).
+ */
+export async function markFlowMessagesReceived(flow_message_ids: string[]): Promise<MarkResult | null> {
+  if (flow_message_ids.length === 0) return null;
+  const action = new ActionInfo('mark_received', 'flow_message', null, 'POST');
+  action.bodyParameters = { flow_message_ids };
+  return dataManager.callAction<{ flow_message_ids: string[] }, MarkResult>(action);
+}
