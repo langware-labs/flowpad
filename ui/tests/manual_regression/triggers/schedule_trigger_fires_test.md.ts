@@ -20,7 +20,7 @@ test('schedule trigger test button fires job and shows invocation', async ({ pag
 
   // Create a schedule trigger via API first
   const triggerId: string = await page.evaluate(async () => {
-    const res = await fetch('http://localhost:9007/api/v1/graph/trigger', {
+    const res = await fetch('http://localhost:9008/api/v1/graph/trigger', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

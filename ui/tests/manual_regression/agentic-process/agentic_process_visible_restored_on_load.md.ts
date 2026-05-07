@@ -46,7 +46,7 @@ test('agentic process with visible=false is recovered when navigating to shell U
   // Step 3: fetch the process's own shell_id
   const shellId = await page.evaluate(
     async ({ id }) => {
-      const res = await fetch(`http://localhost:9007/api/v1/graph/agentic_process/${id}`);
+      const res = await fetch(`http://localhost:9008/api/v1/graph/agentic_process/${id}`);
       const json = await res.json();
       return json?.data?.shell_id as string | null;
     },
@@ -57,7 +57,7 @@ test('agentic process with visible=false is recovered when navigating to shell U
   // Step 4: set visible=false via API (simulates the bug scenario)
   const patchRes = await page.evaluate(
     async ({ id }) => {
-      const res = await fetch(`http://localhost:9007/api/v1/graph/agentic_process/${id}`, {
+      const res = await fetch(`http://localhost:9008/api/v1/graph/agentic_process/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ visible: false }),

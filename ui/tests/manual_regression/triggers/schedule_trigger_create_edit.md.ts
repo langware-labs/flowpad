@@ -51,7 +51,7 @@ test('create, edit, and delete a schedule trigger', async ({ page }) => {
 
   // Capture the trigger ID for cleanup
   const triggerId = await page.evaluate(async () => {
-    const res = await fetch('http://localhost:9007/api/v1/graph/trigger');
+    const res = await fetch('http://localhost:9008/api/v1/graph/trigger');
     const json = await res.json();
     const triggers = json?.data ?? [];
     const t = triggers.find((tr: any) => tr.name === 'Test Daily Schedule');

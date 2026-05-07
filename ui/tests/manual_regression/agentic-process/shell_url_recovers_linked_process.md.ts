@@ -49,7 +49,7 @@ test('navigating to shell URL with linked agentic process redirects to agentic_p
   // (the process has a dedicated PTY shell, separate from the user's interactive shell)
   const shellId = await page.evaluate(
     async ({ id }) => {
-      const res = await fetch(`http://localhost:9007/api/v1/graph/agentic_process/${id}`);
+      const res = await fetch(`http://localhost:9008/api/v1/graph/agentic_process/${id}`);
       const json = await res.json();
       return json?.data?.shell_id as string | null;
     },
