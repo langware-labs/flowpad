@@ -1398,7 +1398,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             desktop_info=desktop_info,
             scan_info=scan_info,
             sniffer_hook=entity_to_dict(sniffer_hook) if sniffer_hook else None,
-            records_data_dir=str(get_instance_settings().records_data_dir),
+            records_root=str(get_instance_settings().records_root),
         )
 
         _t.done(0.5)
