@@ -76,7 +76,7 @@ function clampToViewport(b: Bounds): Bounds {
  * from the `triggerRect` captured at click time.
  */
 export function FloatingChatWindow() {
-  const { open, closeChat, triggerRect } = useFloatingChat();
+  const { open, closeChat, triggerRect, restoredFromStorage } = useFloatingChat();
   const { target, isLoading } = useFlowpadAssistantProject();
 
   const [bounds, setBounds] = useState<Bounds>(() =>
@@ -85,16 +85,24 @@ export function FloatingChatWindow() {
 
   // Animation phase. Mount lifecycle is gated on `phase !== 'closed'` so the
   // node stays in the DOM while the close transition runs.
-  const [phase, setPhase] = useState<Phase>('closed');
+  // If `open` was restored from localStorage (the user reloaded with the chat
+  // open), start in the resting `open` phase and skip the entrance animation
+  // — there's no triggerRect to animate from after a refresh.
+  const [phase, setPhase] = useState<Phase>(() =>
+    restoredFromStorage && open ? 'open' : 'closed',
+  );
 
   useEffect(() => {
     if (open) {
-      // Mount with starting (button-anchored) transform, then on the next frame
-      // flip to the final transform so the CSS transition fires.
-      setPhase('opening');
+      // Already at rest from a restored-open initial mount? Don't replay the
+      // animation — the window is just sitting there as the user left it.
+      setPhase((prev) => {
+        if (prev === 'open') return prev;
+        return 'opening';
+      });
       const id = requestAnimationFrame(() => {
         // Two RAFs ensure the initial styles paint before transitioning.
-        requestAnimationFrame(() => setPhase('open'));
+        requestAnimationFrame(() => setPhase((prev) => (prev === 'closed' ? prev : 'open')));
       });
       return () => cancelAnimationFrame(id);
     }
@@ -178,8 +186,12 @@ export function FloatingChatWindow() {
     return () => ro.disconnect();
   }, [phase]);
 
-  if (phase === 'closed') return null;
   if (typeof document === 'undefined') return null;
+  // Note: the dialog stays mounted in the closed phase too (with `display: none`)
+  // so the inner <EntityExecutionPanel>'s state — picked session, in-flight
+  // localProcess, attached refs — survives close→reopen cycles. Only a full
+  // refresh resets it.
+  const isClosed = phase === 'closed';
 
   // Use the same dedicated round Flowpad icon as the trigger button for visual
   // continuity. siteConfig branding stays out of this surface — see the button
@@ -238,6 +250,11 @@ export function FloatingChatWindow() {
         opacity: isAtRest ? 1 : 0,
         transition: `transform ${ANIM_MS}ms cubic-bezier(0.16, 1, 0.3, 1), opacity ${ANIM_MS}ms ease`,
         willChange: 'transform, opacity',
+        // Keep the node mounted across close/open so the inner panel's session
+        // state survives. `display: none` removes it from the layout cleanly
+        // and stops it from intercepting clicks.
+        display: isClosed ? 'none' : undefined,
+        pointerEvents: isClosed ? 'none' : undefined,
       }}
     >
       <div
@@ -280,6 +297,7 @@ export function FloatingChatWindow() {
             pastSessionsLabel="Past chats"
             noPastSessionsLabel="No past chats"
             placeholder="What can flowpad do for you ?"
+            dense
           />
         ) : (
           <div className="flex flex-1 items-center justify-center px-4 text-center text-xs text-muted-foreground">

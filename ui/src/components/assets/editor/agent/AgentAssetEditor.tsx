@@ -7,6 +7,12 @@ import { useCallback } from 'react';
 interface AgentAssetEditorProps {
   /** FSRef to the agent .md file. */
   fsRef: FSRef;
+  /**
+   * Pre-resolved agent entity. Passed by `<EntityResolutionGate>` from
+   * `AssetEditorRouter`. When omitted, the editor falls back to
+   * `useEntityByPath` for backwards compatibility with direct-mount callers.
+   */
+  agent?: Agent;
 }
 
 /**
@@ -20,8 +26,12 @@ interface AgentAssetEditorProps {
  *     send calls `loadEmbeddedAgent` so subsequent turns adopt the agent
  *     persona (see compose_prompt single-agent branch).
  */
-export function AgentAssetEditor({ fsRef }: AgentAssetEditorProps) {
-  const { entity: agent } = useEntityByPath<Agent>(Agent.type, fsRef);
+export function AgentAssetEditor({ fsRef, agent: providedAgent }: AgentAssetEditorProps) {
+  const { entity: discoveredAgent } = useEntityByPath<Agent>(
+    providedAgent ? null : Agent.type,
+    providedAgent ? null : fsRef,
+  );
+  const agent = providedAgent ?? discoveredAgent;
   // Prefer the entity-derived doc (built from agent.asset_ref) once the entity
   // resolves. Falls back to the URL-derived fsRef while loading. Both resolve
   // to the same file post mount-path fix, but the entity-derived ref is the

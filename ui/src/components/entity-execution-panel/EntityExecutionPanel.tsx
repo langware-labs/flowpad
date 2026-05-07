@@ -26,6 +26,8 @@ import { History, MessageSquarePlus, Settings } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExecutionSettingsPopover } from './ExecutionSettingsPopover';
 import { CompactExecutionInput } from './CompactExecutionInput';
+import { groupTurnEvents } from '@src/components/floating-chat/groupTurnEvents';
+import { ToolEntryRow } from '@src/components/floating-chat/ToolEntryRow';
 import { useDerivedWorkerStatus } from './hooks/useDerivedWorkerStatus';
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
@@ -75,6 +77,14 @@ interface EntityExecutionPanelProps {
   headerLabel?: string;
   /** Placeholder for the composer textbox. Defaults to "Ask about this doc…". */
   placeholder?: string;
+  /**
+   * Render TOOL_CALL/TOOL_RESULT/REASONING/STATUS/ERROR events as compact
+   * "dense" rows between text messages, with an expand toggle that reveals
+   * the full payload. Default false — the asset-editor surfaces (Skill,
+   * Agent, Trigger, …) intentionally stay text-only. The floating Flowpad
+   * Assistant chat opts in.
+   */
+  dense?: boolean;
 }
 
 /**
@@ -105,6 +115,7 @@ export function EntityExecutionPanel({
   emptyStateText = 'Ask about this document. The conversation will persist.',
   headerLabel,
   placeholder,
+  dense = false,
 }: EntityExecutionPanelProps) {
   const targetStr = target ?? '';
 
@@ -184,6 +195,11 @@ export function EntityExecutionPanel({
       );
     });
   }, [items]);
+  // Dense layout: keep the same filtered messages but interleave them with
+  // grouped non-text events (tool calls, reasoning, status, errors) rendered
+  // as expandable summary rows. See `groupTurnEvents` for the partitioning
+  // rules.
+  const turnGroups = useMemo(() => (dense ? groupTurnEvents(items) : []), [dense, items]);
 
   // 4. Project workdir + id (lazy-create inputs).
   const { project } = useProject();
@@ -359,16 +375,31 @@ export function EntityExecutionPanel({
             {emptyStateText}
           </div>
         )}
-        {messages.map((m) => (
-          <ExecutionMessage
-            key={m.id ?? m.timestamp}
-            flowData={m}
-            isUser={
-              m.elementType === FlowElementTypes.USER_MESSAGE ||
-              (m.attributes && m.attributes.role === 'user')
-            }
-          />
-        ))}
+        {dense
+          ? turnGroups.map((g) =>
+              g.kind === 'message' ? (
+                <ExecutionMessage
+                  key={`msg-${g.flowData.id ?? g.flowData.timestamp ?? g.index}`}
+                  flowData={g.flowData}
+                  isUser={
+                    g.flowData.elementType === FlowElementTypes.USER_MESSAGE ||
+                    (g.flowData.attributes && g.flowData.attributes.role === 'user')
+                  }
+                />
+              ) : (
+                <ToolEntryRow key={`dense-${g.index}`} events={g.events} />
+              ),
+            )
+          : messages.map((m) => (
+              <ExecutionMessage
+                key={m.id ?? m.timestamp}
+                flowData={m}
+                isUser={
+                  m.elementType === FlowElementTypes.USER_MESSAGE ||
+                  (m.attributes && m.attributes.role === 'user')
+                }
+              />
+            ))}
       </AutoScrollContainer>
       <CompactExecutionInput onSend={handleSend} disabled={sendDisabled} statusSlot={statusSlot} placeholder={placeholder} />
     </div>

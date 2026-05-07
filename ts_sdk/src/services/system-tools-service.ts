@@ -17,6 +17,16 @@ export interface IndexTypeResult {
   indexed: number;
 }
 
+/** Returned by `systemTools.discoverByPath()`. */
+export interface DiscoverByPathResult {
+  type: string;
+  id: string;
+  asset_ref: string;
+  name?: string;
+  /** Other fields per the record's `meta_dict()` shape — caller should typecast as needed. */
+  [key: string]: unknown;
+}
+
 export interface DatabasePaths {
   db_path: string;
   backup_folder: string;
@@ -403,6 +413,29 @@ export class SystemToolsService extends EventEmitter {
     );
     void dataManager.refreshScanInfo();
     return res as unknown as IndexTypeResult;
+  }
+
+  /**
+   * Discover-or-recover a single record by absolute path.
+   *
+   * POSTs to `/fs-records/{type}/discover?path=...`. The backend scans
+   * just this one file (not the whole type), syncs it to the entity DB
+   * if missing, and returns the entity metadata.
+   *
+   * Used by `useEntityByPath` to recover when the bulk list query misses
+   * (file just created, or backend hasn't auto-scanned yet).
+   *
+   * Throws if the path doesn't exist on disk or doesn't match the type's
+   * discovery rules — caller should treat that as a terminal "not found"
+   * state, not a transient error.
+   */
+  async discoverByPath(typeName: string, path: string): Promise<DiscoverByPathResult> {
+    const url =
+      `${FS_RECORDS_BASE}/${encodeURIComponent(typeName)}` +
+      `/discover?path=${encodeURIComponent(path)}`;
+    const res = await apiClient.post<DiscoverByPathResult>(url);
+    void dataManager.refreshScanInfo();
+    return res as unknown as DiscoverByPathResult;
   }
 
   /** Sequentially index the supplied types, emitting per-step 'index' activity updates. */
