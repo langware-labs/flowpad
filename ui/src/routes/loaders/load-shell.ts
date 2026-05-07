@@ -20,6 +20,7 @@
 
 import {
   AgenticProcess,
+  connectionManager,
   ContextEntitiesEnum,
   dataContext,
   dataManager,
@@ -332,6 +333,22 @@ async function buildShellCleanupForRoute(e: ShellLoadError): Promise<CleanupReco
  */
 export async function loadShellRoute(pointer: string | undefined): Promise<void> {
   _perfLog(`loadShellRoute(${pointer || 'no-pointer'}) start`);
+
+  // Gate on the FlowSync WS being OPEN. The dispatch chain below
+  // (loadProcess → process.start → shell.attachPty → _reattach → callActionOverWS)
+  // throws synchronously when the socket isn't connected, which on cold tabs
+  // races against initSdk's fire-and-forget connect. 5 s budget; on timeout we
+  // surface a toast and fall through (the existing redirect-on-failure chain
+  // still applies if the downstream WS call ultimately fails).
+  try {
+    await connectionManager.waitForConnected(5000);
+  } catch {
+    toast({
+      title: 'No realtime connection',
+      description: 'Terminal may be unresponsive until the connection recovers.',
+      variant: 'destructive',
+    });
+  }
 
   if (pointer === 'new_terminal') {
     await routeNewTerminal();

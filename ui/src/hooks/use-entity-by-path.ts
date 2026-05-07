@@ -9,17 +9,21 @@ const stripLeadingSlash = (p: string | undefined | null): string =>
 /**
  * Discriminator for entity-by-path resolution lifecycle.
  *
- * - `querying`     — bulk list fetch in flight (initial load)
- * - `discovering`  — bulk miss → calling `systemTools.discoverByPath`
- * - `resolved`     — entity available
- * - `not_found`    — terminal: 404 from discoverByPath (file isn't on disk for this type)
- * - `error`        — transient error; `retry()` available
+ * - `querying`      — bulk list fetch in flight (initial load)
+ * - `discovering`   — bulk miss → calling `systemTools.discoverByPath`
+ * - `resolved`      — entity available
+ * - `missing_asset` — terminal: either 404 from discoverByPath (file isn't
+ *                     on disk for this type) OR the matched entity is flagged
+ *                     `orphan === true` by the backend FSIndexer (stale row,
+ *                     file gone). When a stale orphan is involved, ``entity``
+ *                     is populated so the gate can show details.
+ * - `error`         — transient error; `retry()` available
  */
 export type EntityResolutionState =
   | 'querying'
   | 'discovering'
   | 'resolved'
-  | 'not_found'
+  | 'missing_asset'
   | 'error';
 
 export interface UseEntityByPathOptions {
@@ -32,6 +36,11 @@ export interface UseEntityByPathOptions {
 }
 
 export interface UseEntityByPathResult<T> {
+  /**
+   * Resolved entity, OR the stale orphan when ``state === 'missing_asset'``
+   * and the bulk/discover lookup turned up a row whose backend ``orphan``
+   * flag is true. Null when the path resolves to nothing at all.
+   */
   entity: T | null;
   isLoading: boolean;
   state: EntityResolutionState;
@@ -56,8 +65,15 @@ type NotFound = typeof NOT_FOUND;
  *   2. discoverByPath fallback — when the bulk list misses (file just created,
  *      or skipped by an earlier scan), POST `/fs-records/{type}/discover?path=...`
  *      to find-or-recover the single record. The backend returns the entity row
- *      or 404; we treat 404 as terminal `not_found` (cached so we don't loop) and
- *      other failures as transient `error` (retryable).
+ *      or 404; we treat 404 as terminal `missing_asset` (cached so we don't
+ *      loop) and other failures as transient `error` (retryable).
+ *
+ * Orphan handling: the bulk-list React-Query data still includes orphan rows
+ * (no client-side filter — surface decision is per-render-path). When a
+ * matched / discovered entity has ``orphan === true``, this hook drops it
+ * from the resolved-render path and reports ``missing_asset`` instead, while
+ * still surfacing the stale entity through ``entity`` so the gate's card can
+ * show id / orphan_since.
  *
  * Used by the asset editors to bind chat / per-entity affordances to the real
  * entity TypeId instead of a path-keyed pseudo. Skill entities key on the
@@ -128,7 +144,11 @@ export function useEntityByPath<T extends APIEntity<T>>(
 
   // Bulk has settled (not loading anymore) and we still don't have a match — fire discover.
   const bulkSettled = enabled && !bulkLoading;
-  const shouldDiscover = enabled && autoDiscover && bulkSettled && !bulkMatch && !bulkError;
+  // Treat an orphan match the same as "no match" for discover-eligibility:
+  // the file is gone, so discoverByPath would 404 anyway. Skip the round-trip.
+  const bulkMatchIsOrphan = !!(bulkMatch && (bulkMatch as { orphan?: boolean }).orphan === true);
+  const shouldDiscover =
+    enabled && autoDiscover && bulkSettled && !bulkMatch && !bulkError;
 
   const {
     data: discoverData,
@@ -147,8 +167,8 @@ export function useEntityByPath<T extends APIEntity<T>>(
         return inst ?? NOT_FOUND;
       } catch (err: unknown) {
         // apiClient (axios) throws AxiosError; status lives at error.response.status.
-        // Treat 404 as terminal `not_found` (cache it so we don't loop on every render).
-        // All other statuses bubble as transient `error`.
+        // Treat 404 as terminal `missing_asset` (cache it so we don't loop on
+        // every render). All other statuses bubble as transient `error`.
         const status = (err as { response?: { status?: number }; status?: number })?.response?.status
           ?? (err as { status?: number })?.status;
         if (status === 404) return NOT_FOUND;
@@ -156,12 +176,14 @@ export function useEntityByPath<T extends APIEntity<T>>(
       }
     },
     enabled: shouldDiscover,
-    staleTime: Infinity, // not_found result is path-stable; only retry() should refetch
+    staleTime: Infinity, // missing-asset result is path-stable; only retry() should refetch
     retry: false,
   });
 
   const discoverEntity = discoverData && discoverData !== NOT_FOUND ? (discoverData as T) : null;
   const discoverNotFound = discoverData === NOT_FOUND;
+  const discoverEntityIsOrphan =
+    !!(discoverEntity && (discoverEntity as { orphan?: boolean }).orphan === true);
 
   const retry = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: bulkKey });
@@ -171,20 +193,27 @@ export function useEntityByPath<T extends APIEntity<T>>(
   // Derive resolution state.
   const state: EntityResolutionState = useMemo(() => {
     if (!enabled) return 'querying';
-    if (bulkMatch || discoverEntity) return 'resolved';
+    // Orphan-bearing matches drop OUT of the resolved path — render-level
+    // missing_asset surface, not the editor.
+    if (bulkMatch && !bulkMatchIsOrphan) return 'resolved';
+    if (discoverEntity && !discoverEntityIsOrphan) return 'resolved';
+    if (bulkMatchIsOrphan) return 'missing_asset';
     if (bulkLoading || bulkFetching) return 'querying';
     if (bulkError) return 'error';
-    if (discoverNotFound) return 'not_found';
+    if (discoverNotFound) return 'missing_asset';
+    if (discoverEntityIsOrphan) return 'missing_asset';
     if (discoverError) return 'error';
     if (shouldDiscover && (discoverLoading || discoverFetching)) return 'discovering';
     if (shouldDiscover) return 'discovering';
-    // autoDiscover disabled and bulk missed → terminal not_found
-    if (!autoDiscover && bulkSettled && !bulkMatch) return 'not_found';
+    // autoDiscover disabled and bulk missed → terminal missing_asset
+    if (!autoDiscover && bulkSettled && !bulkMatch) return 'missing_asset';
     return 'querying';
   }, [
     enabled,
     bulkMatch,
+    bulkMatchIsOrphan,
     discoverEntity,
+    discoverEntityIsOrphan,
     bulkLoading,
     bulkFetching,
     bulkError,
@@ -197,7 +226,22 @@ export function useEntityByPath<T extends APIEntity<T>>(
     bulkSettled,
   ]);
 
-  const entity = bulkMatch ?? discoverEntity;
+  // ``entity`` semantics:
+  //   - resolved      → the live entity
+  //   - missing_asset → the stale orphan (if any) so the gate can show id /
+  //                     orphan_since; null when nothing was ever found
+  //   - else          → null
+  const resolvedEntity = bulkMatch && !bulkMatchIsOrphan
+    ? bulkMatch
+    : discoverEntity && !discoverEntityIsOrphan
+      ? discoverEntity
+      : null;
+  const orphanEntity = bulkMatchIsOrphan
+    ? bulkMatch
+    : discoverEntityIsOrphan
+      ? discoverEntity
+      : null;
+  const entity = state === 'missing_asset' ? orphanEntity : resolvedEntity;
   const isLoading = state === 'querying' || state === 'discovering';
   const error = (bulkError ?? discoverError) as Error | undefined;
 

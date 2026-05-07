@@ -675,23 +675,18 @@ class FsRecordsActionsMixin:
         target_norm = _normalize_asset_path(expanded)
 
         # Inline match helper — looks up the record list by asset_ref
-        # equivalence AND verifies the file/folder still exists on disk.
-        # This prevents returning a stale orphan row when the source has
-        # been deleted (caller relies on 404 for "file gone" semantics).
+        # equivalence. Returns the matched record even if its source is
+        # missing on disk: the caller now reads ``entity.orphan`` to
+        # distinguish stale-but-known-rows from never-existed paths.
+        # 404 is reserved for "no record at all"; orphans are SUCCESS.
         def _find_in(record_list: "RecordList") -> "Record | None":  # type: ignore[name-defined]
             for rec in record_list:
                 ref = getattr(rec, "asset_ref", None) or getattr(rec, "_asset_ref", None)
                 ref_path = getattr(ref, "path", None) if ref is not None else None
                 if ref_path is None:
                     ref_path = str(ref) if ref else ""
-                if _normalize_asset_path(ref_path) != target_norm:
-                    continue
-                # Existence guard: orphan rows whose source is gone
-                # should be treated as "not found" so the UI can show
-                # the not_found card and the user can retry.
-                if not Path(ref_path).expanduser().exists():
-                    continue
-                return rec
+                if _normalize_asset_path(ref_path) == target_norm:
+                    return rec
             return None
 
         # Pass 1: try the existing index (shadow tree). Fast path.
@@ -755,6 +750,26 @@ class FsRecordsActionsMixin:
         _ar_path = getattr(_ar, "path", None) if _ar is not None else None
         if _ar_path:
             data["asset_ref"] = _ar_path
+
+        # Merge entity-level fields the Record's meta_dict doesn't know about
+        # (orphan / orphan_since live on the Entity row, not the Record).
+        # The frontend's `<MissingAssetCard>` reads these to differentiate
+        # stale-but-known rows from never-existed paths.
+        try:
+            from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
+            _ent_cls = _SR.get_entity_cls(record_type)
+            if _ent_cls is not None:
+                _ent = await _ent_cls.get_by_id(found.id)  # type: ignore[attr-defined]
+                if _ent is not None:
+                    data["orphan"] = bool(getattr(_ent, "orphan", False))
+                    _since = getattr(_ent, "orphan_since", None)
+                    if _since is not None:
+                        # datetime → ISO 8601 string for the wire
+                        data["orphan_since"] = _since.isoformat() if hasattr(_since, "isoformat") else str(_since)
+                    else:
+                        data["orphan_since"] = None
+        except Exception as e:
+            logging.debug(f"[fs-records] merge entity orphan fields skipped for {record_type}: {e}")
         return ApiSuccessResponse(data=data)
 
 

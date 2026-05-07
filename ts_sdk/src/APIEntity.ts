@@ -53,6 +53,14 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   namespace?: string;
   tags?: string[];
   system?: boolean;
+  /**
+   * Backend FSIndexer flag: true when the on-disk Record this entity points
+   * at can no longer be located. ``deepAssign`` in the constructor copies
+   * this off the wire JSON; subclasses don't need to redeclare.
+   */
+  orphan?: boolean;
+  /** ISO 8601 timestamp of the last ``orphan = true`` transition; null otherwise. */
+  orphan_since?: string | null;
   created_by?: string;
   created_date?: Date;
   updated_by?: string;

@@ -1325,50 +1325,38 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return entity;
   }
 
-  // // Whitelist of fields that should always be converted to TypeId
-  // private static TYPEID_FIELD_WHITELIST = new Set([
-  //   'created_by',
-  //   'updated_by',
-  //   'parent_id',
-  //   'workspace_id',
-  //   'user_id',
-  //   'owner_id',
-  //   'install_target',
-  // ]);
-
-  // // Helper to check if a field should be converted to TypeId
-  // private shouldConvertToTypeId(target: any, key: string): boolean {
-  //   // First check: is it in the whitelist?
-  //   if (DataManager.TYPEID_FIELD_WHITELIST.has(key)) {
-  //     return true;
-  //   }
-
-  //   // Second check: does the entity's schema indicate this is a TypeId field?
-  //   // Check if target has a schema and if the field ends with _id or _by
-  //   if (target && typeof target === 'object' && 'getType' in target) {
-  //     try {
-  //       const schema = this.getSchema(target.getType());
-  //       if (schema) {
-  //         const property = schema.getProperty(key);
-  //         // Check if property has format: "type_id" or similar marker
-  //         if (property && (property as any).format === 'type_id') {
-  //           return true;
-  //         }
-  //       }
-  //     } catch (e) {
-  //       // Schema might not be loaded yet, continue
-  //     }
-  //   }
-
-  //   // Default: don't convert
-  //   return false;
-  // }
+  /**
+   * Field-name whitelist for the TypeId auto-coercion in `deepAssign`.
+   *
+   * The default heuristic — "if the value looks like a TypeId string, treat it
+   * as one" — corrupts plain-string fields whose values happen to match the
+   * `<type>-<id>` shape. The canonical example is `target_vfs_path` on
+   * `AgenticProcess` / `Run`: the Python schema declares it `str | None`, the
+   * on-disk record stores it as the string `"project-<uuid>"`, but
+   * `deepAssign` would otherwise wrap it into a TypeId object — breaking
+   * `useProcessesForTarget` queries (string match on the server, object
+   * mismatch on the client validator) and silently disabling the chat
+   * toolbar's history.
+   *
+   * The list below names every field whose value should NEVER be promoted to
+   * a TypeId, regardless of how it looks. Add new entries here when a plain
+   * string id field is introduced and its values can collide with the TypeId
+   * shape. Reference IDs (project_id, created_by, …) are intentionally NOT in
+   * this set — current consumers rely on the auto-coercion for those.
+   */
+  private static TYPEID_COERCION_DENYLIST: ReadonlySet<string> = new Set([
+    'target_vfs_path',
+  ]);
 
   public deepAssign(target: any, source: any) {
     for (const key in source) {
       // Check if source[key] is a TypeId FIRST, before checking if it's an object
       // This handles TypeId objects in arrays (like auth_scopes) where the key is just an index
-      if (source[key] && isTypeId(source[key])) {
+      if (
+        source[key] &&
+        isTypeId(source[key]) &&
+        !DataManager.TYPEID_COERCION_DENYLIST.has(key)
+      ) {
         target[key] = new TypeId(source[key]);
       } else if (typeof source[key] === 'object' && source[key] !== null) {
         // For objects/arrays, recursively deep assign
