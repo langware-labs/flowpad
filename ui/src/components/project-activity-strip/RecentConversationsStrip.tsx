@@ -14,8 +14,9 @@ import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
+import { Archive, MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
+import { bulkUpdateMessages } from '@src/components/inbox-view/inbox-api';
 import { formatTimeAgo } from './project-activity-utils';
 
 const VISIBLE_COUNT = 5;
@@ -63,6 +64,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
 
   const [hubSyncing, setHubSyncing] = useState(false);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  const [archivingAll, setArchivingAll] = useState(false);
 
   const handleRefresh = async () => {
     setHubSyncing(true);
@@ -77,6 +79,21 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
       await Promise.all([refetch(), refetchInvitations()]);
     } finally {
       setHubSyncing(false);
+    }
+  };
+
+  const handleArchiveAll = async () => {
+    // Mirrors InboxView's "Archive all" — flips ``is_archived: true`` on every
+    // FlowMessage server-side. ``ConversationRow`` hides rows whose latest
+    // message is archived, so the strip empties out as the entity-update
+    // events arrive. Refetch is a belt-and-suspenders trigger in case the
+    // live subscription misses a flip.
+    setArchivingAll(true);
+    try {
+      await bulkUpdateMessages({ is_archived: true });
+      void refetch();
+    } finally {
+      setArchivingAll(false);
     }
   };
 
@@ -172,6 +189,16 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
             data-testid="upload-message-button"
           >
             <Upload className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+            onClick={() => void handleArchiveAll()}
+            disabled={archivingAll || sorted.length === 0}
+            title="Archive all conversations"
+            data-testid="archive-all-conversations-button"
+          >
+            <Archive className="h-3.5 w-3.5" />
           </button>
           <button
             type="button"
@@ -298,6 +325,11 @@ function ConversationRow({ conv }: { conv: Conversation }) {
     return last ? new TypeId(FlowMessage.type, last.id) : null;
   }, [conv.message_ids]);
   const { data: latestMessage } = useEntity<FlowMessage>(latestMessageTypeId);
+
+  // Hide rows whose latest message has been archived. ``Archive all`` flips
+  // ``is_archived`` on every FlowMessage; per-row hiding is what makes the
+  // button visibly empty the strip (mirrors ``InboxView``'s behaviour).
+  if (latestMessage?.is_archived) return null;
 
   const title = taskTypeId ? `Task ${taskTypeId.id.slice(0, 8)}` : 'Conversation';
   const messageCount = conv.message_count ?? 0;

@@ -52,22 +52,34 @@ _REDIRECT_HTML = """<!DOCTYPE html>
 
 
 async def handle_notification_deep_link(
-    task_id: str,
+    fm_id: str,
+    conversation_id: str = "",
+    task_id: str = "",
     project_url: str = "",
     branch: str = "",
     repo_id: str = "",
     sender_name: str = "",
-    task_title: str = "",
+    title: str = "",
 ) -> HTMLResponse:
-    """Redirect the browser to HomeLanding with task_action=open params.
+    """Redirect the browser to HomeLanding with ``action=open`` deep-link params.
 
-    project_url: repo URL from a REPO attachment (flow_message path) or task
-                 metadata (notification path).  When empty the UI navigates
-                 directly to the task without a git pull/clone dialog.
+    The caller (``handle_open_flow_message``) resolves the FM's
+    ``conversation_id`` and ``task_id`` from the just-unpacked bundle and
+    passes them in directly, so the UI can navigate without a separate
+    lookup. ``fm`` is included for traceability / fallback.
+
+    ``project_url`` (when present) is a REPO-attachment URL that triggers the
+    git pull/clone dialog before navigating into the conversation.
+    ``sender_name`` / ``title`` are cosmetic — shown in the brief loading
+    state.
     """
     port = _get_ui_port()
 
-    params: dict = {"task_action": "open"}
+    params: dict = {"action": "open"}
+    if fm_id:
+        params["fm"] = fm_id
+    if conversation_id:
+        params["conversation_id"] = conversation_id
     if task_id:
         params["task_id"] = task_id
     if project_url:
@@ -78,8 +90,8 @@ async def handle_notification_deep_link(
         params["repo_id"] = repo_id
     if sender_name:
         params["sender_name"] = sender_name
-    if task_title:
-        params["task_title"] = task_title
+    if title:
+        params["title"] = title
 
     redirect_url = f"http://localhost:{port}/dock/home?{urlencode(params)}"
     return HTMLResponse(content=_REDIRECT_HTML.format(redirect_url=redirect_url))

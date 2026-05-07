@@ -232,6 +232,7 @@ async def _create_conversation_from_disk(
     project_id: str | None = None,
     remote_project_id: str | None = None,
     remote_project_name: str | None = None,
+    participants: list[dict] | None = None,
 ) -> Conversation | None:
     """Create a Conversation entity from conversation.jsonl on disk (recipient side).
 
@@ -260,6 +261,7 @@ async def _create_conversation_from_disk(
         project_id=project_id,
         remote_project_id=remote_project_id,
         remote_project_name=remote_project_name,
+        participants=participants,
         someone_typeid=owner_typeid,
     )
 
