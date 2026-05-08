@@ -22,12 +22,14 @@ export type TerminalTabType = 'plain' | 'claude';
  *   terminalState ← debounced refetch ← Shell / AgenticProcess create+delete
  *                                       events on the WebSocket
  *
- * Cross-session sync: Shell and AgenticProcess create/delete events from the
- * WebSocket trigger a debounced re-fetch of `terminals/list`. This is what
- * surfaces external mutations (CLI, REST POST, another browser window,
- * backend bg tasks) in the open dock without a manual refresh. `update` ops
- * are intentionally NOT refetched — the strip's identity (which shells exist)
- * only changes on create/delete; per-row liveness comes from the entity cache.
+ * Cross-session sync: Shell and AgenticProcess WebSocket events (create,
+ * update, delete) trigger a debounced re-fetch of `terminals/list`. This is
+ * what surfaces external mutations (CLI, REST POST, another browser window,
+ * backend bg tasks) in the open dock without a manual refresh. Update events
+ * are included because AgenticProcess.visible toggles via an update op (the
+ * backend filters APs by `visible=true` when building the strip) and Shell
+ * status transitions can also affect strip membership. The 100ms debounce
+ * keeps the refetch rate bounded under bursts.
  *
  * Per-row liveness (status badges, names, restart-required) is read from the
  * dataManager entity cache via `Shell.getByIdFromCache` / `AgenticProcess.
@@ -182,19 +184,26 @@ function scheduleTerminalsRefetch(): void {
   }, 100);
 }
 
-/** Subscribe (once, module-scoped) to Shell + AgenticProcess create/delete
- *  WebSocket events and refetch the strip when they fire. `update` ops are
- *  intentionally excluded — per-entity SDK subs already keep cached fields
- *  (status, name, tab_order) warm; the strip's identity only changes on
- *  create/delete. The listener lives for the lifetime of the app — never
- *  unsubscribed — matching the same pattern as `pending-actions-store`. */
+/** Subscribe (once, module-scoped) to Shell + AgenticProcess WebSocket events
+ *  and refetch the strip when they fire. We listen to all three ops:
+ *
+ *  - create/delete: change strip identity directly.
+ *  - update: can also change strip membership — most importantly,
+ *    AgenticProcess.visible toggles via an update op (the backend's
+ *    `terminals/list` only surfaces APs with `visible=true`, so the
+ *    transition is invisible to a refetch unless update events trigger one).
+ *    Shell status transitions (e.g. → CLOSING) also affect strip rendering.
+ *
+ *  The 100ms debounce in `scheduleTerminalsRefetch` keeps the rate bounded
+ *  even under bursts of status flickers. The listener lives for the lifetime
+ *  of the app — never unsubscribed — matching the same pattern as
+ *  `pending-actions-store`. */
 function ensureWsSubscription(): void {
   if (wsSubscribed) return;
   wsSubscribed = true;
   subscribeToEntityOps(
     [Shell.type, AgenticProcess.type],
     () => scheduleTerminalsRefetch(),
-    { ops: ['create', 'delete'] },
   );
 }
 

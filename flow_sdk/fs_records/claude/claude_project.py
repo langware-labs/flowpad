@@ -1,12 +1,19 @@
-"""ClaudeProjectFsRecord — represents a Claude Code project directory.
+"""ProjectFsRecord — single record type for any project directory.
 
-Two discovery sources are merged:
+Represents a project working directory regardless of provenance. Both Claude
+and Codex indexer functions converge on this single record by **canonical
+posix cwd**, with provenance flags marking which source(s) saw the path:
 
-1. ``records_root/project/`` — projects created via the API (POST /graph/project)
-2. ``~/.claude/projects/<encoded-path>/`` — projects opened by Claude CLI
+    rec.cwd              — canonical posix path (the natural key, unique)
+    rec.claude_project   — Claude has session data at this cwd
+    rec.codex_project    — Codex has session data at this cwd
+    rec.last_indexed_at  — timestamp of the most recent indexer pass
 
-Both sources are surfaced by ``discover()`` (id-based dedup) and looked up
-O(1) by ``get()``.
+The id is a random ``uuid4`` and is **not** derived from the path. Lookup
+happens via :py:meth:`find_by_cwd` and create-or-update via
+:py:meth:`upsert_for_cwd`. The id is stable once assigned but is opaque.
+
+``ClaudeProjectFsRecord`` is kept as a backward-compat alias.
 """
 
 from __future__ import annotations
@@ -15,10 +22,12 @@ import json
 import os
 import shutil
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import ClassVar
 
 from flow_sdk.fs_store import Record, RecordType
+from flow_sdk.fs_store.path_utils import canonical_posix_path
 from .claude_session import ClaudeSessionRecord
 
 _TEMP_PATH_PREFIXES = ("/tmp/", "/var/folders/", "/private/var/folders/", "/private/tmp/")
@@ -31,11 +40,7 @@ def _claude_projects_dir() -> Path:
 
 
 def _flow_records_norm_prefixes() -> tuple[str, ...]:
-    """Prefixes (against os.path.normpath of mount_path) identifying system
-    artifacts. Resolved per-call from InstanceSettings.user_home so test-mode
-    sandboxing works correctly. The stored paths use a buggy double-slash form
-    (/Users/foo//flow/records/...) which normpath collapses; we check both.
-    """
+    """Prefixes (against os.path.normpath of mount_path) identifying system artifacts."""
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
     home_str = str(get_instance_settings().user_home)
     return (
@@ -44,15 +49,29 @@ def _flow_records_norm_prefixes() -> tuple[str, ...]:
     )
 
 
-def _project_id(encoded: str) -> str:
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{encoded}"))
+def _decode_claude_encoded(d: Path) -> str | None:
+    """Decode a Claude-encoded project dir name into a real path string.
+
+    Lazy-imports the canonical decoder to avoid circular import via
+    ``flow_sdk.fs_records._claude_projects``.
+    """
+    from flow_sdk.fs_records._claude_projects import decode_claude_project_dir  # noqa: PLC0415
+    real = decode_claude_project_dir(d)
+    if real is None:
+        return None
+    return str(real)
 
 
-class ClaudeProjectFsRecord(Record):
-    """A Claude Code project — a working directory with associated sessions.
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
-    Backed by either ``records_root/project/`` (API-created) or
-    ``~/.claude/projects/<encoded-cwd>/`` (Claude CLI-created).
+
+class ProjectFsRecord(Record):
+    """A project directory (one record per canonical cwd).
+
+    Provenance flags (``claude_project``, ``codex_project``) capture which
+    indexer source(s) have observed this cwd. Both can be true. The ID is a
+    random uuid4 — fetch by ``cwd`` (the natural key), not by id derivation.
     """
 
     _record_type: ClassVar[str] = RecordType.PROJECT
@@ -61,15 +80,21 @@ class ClaudeProjectFsRecord(Record):
     def __init__(self, **kwargs):
         if "type" not in kwargs:
             kwargs["type"] = RecordType.PROJECT
+        # Force uuid4: do NOT let the base class derive an identity-key uuid5.
+        if "id" not in kwargs:
+            kwargs["id"] = str(uuid.uuid4())
         super().__init__(**kwargs)
-        encoded_path = self.data.get("encoded_path", "")
-        if encoded_path:
-            if not self.name:
-                self.name = self.data.get("real_path", "") or encoded_path
-            # External-source records (from ~/.claude/projects/) are read-only;
-            # records_root records (API-created, no encoded_path) are writable.
+        # Display name fallback: cwd or legacy real_path.
+        cwd = self.data.get("cwd") or self.data.get("real_path") or kwargs.get("cwd")
+        if cwd and not self.name:
+            self.name = cwd
+        # records_root-backed records are writable; external-source records
+        # (constructed in-memory from ~/.claude/projects/) carry a read-only ref.
+        if kwargs.get("_external_source"):
             from flow_sdk.fs_store.fs_ref import FSRef
             object.__setattr__(self, "_asset_ref", FSRef("/", read_only=True))
+
+    # ─── Properties ────────────────────────────────────────────────────────
 
     @property
     def search_title(self) -> str | None:
@@ -77,175 +102,336 @@ class ClaudeProjectFsRecord(Record):
 
     @property
     def search_description(self) -> str | None:
-        return self.data.get("real_path") or None
+        return self.cwd or self.data.get("real_path") or None
+
+    @property
+    def cwd(self) -> str:
+        """Canonical posix path. Falls back to canonical(real_path) for legacy rows."""
+        cwd = self.data.get("cwd")
+        if cwd:
+            return cwd
+        real = self.data.get("real_path")
+        if real:
+            return canonical_posix_path(real)
+        return ""
+
+    @property
+    def is_claude_project(self) -> bool:
+        return bool(self.data.get("claude_project"))
+
+    @property
+    def is_codex_project(self) -> bool:
+        return bool(self.data.get("codex_project"))
+
+    @property
+    def last_indexed_at(self) -> str | None:
+        return self.data.get("last_indexed_at")
 
     @property
     def session_count(self) -> int:
-        """Count of JSONL session files under this project's ``~/.claude/projects/`` dir.
+        """Total session count across providers."""
+        return self.claude_session_count + self.codex_session_count
 
-        Works for both discovery sources: Phase 2 records carry ``_path`` pointing at the
-        project dir; Phase 1 records_root records carry ``encoded_path`` and we resolve
-        it against ``_CLAUDE_PROJECTS_DIR``. Returns 0 when no session dir exists.
-        """
-        project_dir: Path | None = None
+    @property
+    def claude_session_count(self) -> int:
+        if not self.is_claude_project:
+            return 0
+        encoded = self.data.get("encoded_path") or ""
+        # Some legacy rows have a `_path` pointing at the project dir directly.
         path_attr = getattr(self, "_path", None) or self.source_file
         if path_attr:
             candidate = Path(path_attr)
             if candidate.is_dir():
-                project_dir = candidate
+                return sum(1 for _ in candidate.glob("*.jsonl"))
+        if encoded:
+            candidate = _claude_projects_dir() / encoded
+            if candidate.is_dir():
+                return sum(1 for _ in candidate.glob("*.jsonl"))
+        return 0
+
+    @property
+    def codex_session_count(self) -> int:
+        if not self.is_codex_project:
+            return 0
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+        sessions_root = get_instance_settings().codex_sessions_dir
+        if not sessions_root.is_dir():
+            return 0
+        target = self.cwd
+        if not target:
+            return 0
+        count = 0
+        for p in sessions_root.rglob("rollout-*.jsonl"):
+            try:
+                with open(p, "rb") as fh:
+                    head = fh.read(8192).decode("utf-8", errors="replace")
+            except OSError:
+                continue
+            for line in head.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                except json.JSONDecodeError:
+                    break
+                if raw.get("type") == "session_meta":
+                    payload = raw.get("payload") or {}
+                    if payload.get("cwd") == target:
+                        count += 1
+                    break
+        return count
+
+    @property
+    def sessions(self) -> list[ClaudeSessionRecord]:
+        """Claude-side sessions (legacy convenience — was Claude-only)."""
+        if not self.is_claude_project:
+            return []
+        project_dir = Path(self.path or self.source_file) if (self.path or self.source_file) else None
         if project_dir is None:
             encoded = self.data.get("encoded_path") or ""
             if encoded:
                 candidate = _claude_projects_dir() / encoded
                 if candidate.is_dir():
                     project_dir = candidate
-        if project_dir is None:
-            return 0
-        return sum(1 for _ in project_dir.glob("*.jsonl"))
-
-    @property
-    def sessions(self) -> list[ClaudeSessionRecord]:
-        """Return all sessions in this project as ``ClaudeSessionRecord``."""
-        project_dir = Path(self.path or self.source_file) if (self.path or self.source_file) else None
-        if not project_dir or not project_dir.is_dir():
+        if project_dir is None or not project_dir.is_dir():
             return []
         return [
             ClaudeSessionRecord.from_jsonl(f)
             for f in sorted(project_dir.glob("*.jsonl"))
         ]
 
-    # -- External source: ~/.claude/projects/ --
+    # ─── Validation ────────────────────────────────────────────────────────
 
     @classmethod
-    def _is_valid_project_dir(cls, d: Path) -> bool:
-        from flow_sdk.fs_records._claude_projects import decode_claude_project_dir  # noqa: PLC0415
-        real = decode_claude_project_dir(d)
-        if real is None:
+    def _is_valid_cwd(cls, cwd: str) -> bool:
+        """Reject system/temp paths."""
+        if not cwd or not cwd.startswith("/"):
             return False
-        return not str(real).startswith(_TEMP_PATH_PREFIXES)
-
-    @classmethod
-    def _is_valid_mount_path(cls, path: str) -> bool:
-        """Return False for system/temp paths that should never appear as user projects."""
-        if path.startswith(_TEMP_PATH_PREFIXES):
+        if cwd.startswith(_TEMP_PATH_PREFIXES):
             return False
-        normalized = os.path.normpath(path) + os.sep
+        normalized = os.path.normpath(cwd) + os.sep
         return not normalized.startswith(_flow_records_norm_prefixes())
 
     @classmethod
-    def _from_claude_dir(cls, d: Path) -> "ClaudeProjectFsRecord":
-        from flow_sdk.fs_records._claude_projects import decode_claude_project_dir  # noqa: PLC0415
-        encoded = d.name
-        real = decode_claude_project_dir(d)
-        # decode_claude_project_dir only returns None on Windows when the
-        # encoded name lacks a drive letter; _from_claude_dir's callers
-        # filter via _is_valid_project_dir first, so real is non-None here.
-        # Defensive fallback to the naive decode keeps mypy happy.
-        real_str = str(real) if real is not None else "/" + encoded.lstrip("-").replace("-", "/")
-        return cls(
-            id=_project_id(encoded),
-            encoded_path=encoded,
-            real_path=real_str,
-            path=str(d),
-        )
+    def _is_valid_project_dir(cls, d: Path) -> bool:
+        """Backward-compat: callers checking a Claude-encoded dir."""
+        real = _decode_claude_encoded(d)
+        if real is None:
+            return False
+        return not real.startswith(_TEMP_PATH_PREFIXES)
 
     @classmethod
-    async def from_fsref(cls, ref) -> list["ClaudeProjectFsRecord"]:
-        """Indexer entry point — construct from an FSRef emitted by claude_projects_fn."""
-        return [cls._from_claude_dir(ref._path)]
+    def _is_valid_mount_path(cls, path: str) -> bool:
+        """Backward-compat: same as ``_is_valid_cwd`` over a mount-path string."""
+        return cls._is_valid_cwd(path)
+
+    # ─── Lookup / upsert (the new API) ─────────────────────────────────────
+
+    @classmethod
+    def find_by_cwd(cls, cwd: str) -> "ProjectFsRecord | None":
+        """Find a record at the given canonical cwd in records_root.
+
+        Scans ``records_root/project/`` linearly; cheap because project counts
+        are small (<<1k). Falls back to canonicalising legacy rows whose
+        ``cwd`` field is empty but ``real_path`` is set.
+        """
+        if not cwd:
+            return None
+        canonical = canonical_posix_path(cwd)
+        from flow_sdk.fs_store.record import (  # noqa: PLC0415
+            get_default_records_root,
+            _NAME_SEP,
+            _META_JSON,
+            _migrate_old_format,
+        )
+        type_dir = get_default_records_root() / RecordType.PROJECT
+        if not type_dir.is_dir():
+            return None
+        for entry in sorted(type_dir.iterdir()):
+            if not entry.is_dir() or _NAME_SEP not in entry.name:
+                continue
+            meta_file = entry / _META_JSON
+            if not meta_file.exists() and _migrate_old_format(entry) is None:
+                continue
+            try:
+                rec = cls.load_record(entry)
+            except (json.JSONDecodeError, OSError, ValueError):
+                continue
+            if rec.cwd == canonical:
+                return rec
+        return None
+
+    @classmethod
+    async def upsert_for_cwd(
+        cls,
+        cwd: str,
+        *,
+        claude_project: bool | None = None,
+        codex_project: bool | None = None,
+        encoded_path: str | None = None,
+    ) -> "ProjectFsRecord":
+        """Find or create a project record at the given cwd.
+
+        Existing rows have their flags merged (only updates when the incoming
+        flag is not None). ``last_indexed_at`` always refreshes.
+        """
+        canonical = canonical_posix_path(cwd)
+        existing = cls.find_by_cwd(canonical)
+        if existing is not None:
+            changed = False
+            if claude_project is not None and existing.data.get("claude_project") != claude_project:
+                existing.data["claude_project"] = claude_project
+                changed = True
+            if codex_project is not None and existing.data.get("codex_project") != codex_project:
+                existing.data["codex_project"] = codex_project
+                changed = True
+            if encoded_path and not existing.data.get("encoded_path"):
+                existing.data["encoded_path"] = encoded_path
+                changed = True
+            # Backfill cwd on legacy rows that lack it.
+            if not existing.data.get("cwd"):
+                existing.data["cwd"] = canonical
+                changed = True
+            existing.data["last_indexed_at"] = _now_iso()
+            if changed or existing.data.get("last_indexed_at"):
+                try:
+                    await existing.save()
+                except Exception:
+                    pass
+            return existing
+
+        # Create fresh
+        kwargs = {
+            "cwd": canonical,
+            "claude_project": bool(claude_project),
+            "codex_project": bool(codex_project),
+            "last_indexed_at": _now_iso(),
+            "name": canonical,
+        }
+        if encoded_path:
+            kwargs["encoded_path"] = encoded_path
+        rec = cls(**kwargs)
+        try:
+            await rec.save()
+        except Exception:
+            pass
+        return rec
+
+    # ─── Indexer entry point ───────────────────────────────────────────────
+
+    # ─── Provenance detection (path-structure based, env-portable) ─────────
+
+    @classmethod
+    def _is_claude_encoded_ref(cls, ref_path: Path) -> bool:
+        """Detect Claude provenance by FSRef path structure: parent is
+        ``.claude/projects/`` regardless of which HOME the test or runtime
+        is using. Robust to real-user homes and to temp-dir test homes.
+        """
+        parent = ref_path.parent
+        return parent.name == "projects" and parent.parent.name == ".claude"
+
+    @classmethod
+    async def from_fsref(cls, ref) -> list["ProjectFsRecord"]:
+        """Indexer entry — upsert by canonical cwd inferred from the FSRef.
+
+        Provenance is inferred from the FSRef path structure:
+          * ``.../.claude/projects/<encoded>`` → Claude (decode encoded → real cwd)
+          * Otherwise → Codex (path IS the absolute cwd already)
+        """
+        ref_path = Path(ref._path)
+        if cls._is_claude_encoded_ref(ref_path):
+            real = _decode_claude_encoded(ref_path)
+            if real is None or not cls._is_valid_cwd(real):
+                return []
+            rec = await cls.upsert_for_cwd(
+                real,
+                claude_project=True,
+                encoded_path=ref_path.name,
+            )
+            return [rec]
+        # Codex (or any non-Claude origin) — path is already the cwd.
+        ref_str = str(ref_path)
+        if not cls._is_valid_cwd(ref_str):
+            return []
+        rec = await cls.upsert_for_cwd(ref_str, codex_project=True)
+        return [rec]
 
     @classmethod
     def getId(cls, ref) -> str:
-        """Id = `_project_id(encoded_name)` = uuid5(DNS, "project:<encoded>").
+        """Stable id derived from the canonical cwd — used by the indexer
+        framework for FSRef-keyed dedup BEFORE ``from_fsref`` is invoked.
 
-        Matches `_from_claude_dir` which sets `self.id = _project_id(encoded)`.
-        Uses DNS namespace + encoded-name prefix (NOT the path-based default)."""
-        import uuid
-        return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{ref._path.name}"))
+        We use ``uuid5`` here purely as a deterministic dedup key for the
+        framework's per-FSRef cache; the persisted record's id remains the
+        ``uuid4`` set in ``__init__``. The two id-spaces are separate.
+        """
+        ref_path = Path(ref._path)
+        if cls._is_claude_encoded_ref(ref_path):
+            real = _decode_claude_encoded(ref_path)
+            cwd_key = real or str(ref_path)
+        else:
+            cwd_key = str(ref_path)
+        cwd_key = canonical_posix_path(cwd_key) if cwd_key else str(ref_path)
+        return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project-fsref:{cwd_key}"))
+
+    # ─── Discovery ─────────────────────────────────────────────────────────
 
     @classmethod
-    def discover(cls, scope=None, **kwargs) -> list["ClaudeProjectFsRecord"]:
-        """Discover projects from records_root and ``~/.claude/projects/``.
+    def discover(cls, scope=None, **kwargs) -> list["ProjectFsRecord"]:
+        """Return all PROJECT records persisted under records_root.
 
-        Skips records_root projects whose ``fs_storage_mount_path`` points at a
-        system/temp location (e.g. agentic process output dirs). External-source
-        entries from ``~/.claude/projects/`` are filtered via ``_is_valid_project_dir``.
+        The on-the-fly external scan (reading ``~/.claude/projects/`` directly
+        without touching records_root) has been removed. The indexer is now
+        the only writer; ``discover()`` is a pure read of what's persisted.
+        Run an indexer pass to populate after a fresh DB.
         """
-        from flow_sdk.fs_store.record import get_default_records_root, _NAME_SEP, _META_JSON, _migrate_old_format  # noqa: PLC0415
-        import json as _json  # noqa: PLC0415
-
-        record_type = str(getattr(cls, "_record_type", ""))
+        from flow_sdk.fs_store.record import (  # noqa: PLC0415
+            get_default_records_root,
+            _NAME_SEP,
+            _META_JSON,
+            _migrate_old_format,
+        )
+        type_dir = get_default_records_root() / RecordType.PROJECT
+        if not type_dir.is_dir():
+            return []
+        results: list[ProjectFsRecord] = []
         limit = kwargs.get("limit")
-        results: list[ClaudeProjectFsRecord] = []
-        seen_ids: set[str] = set()
-
-        # Phase 1: records_root — filter out system-path garbage projects
-        type_dir = get_default_records_root() / record_type
-        if type_dir.is_dir():
-            for entry in sorted(type_dir.iterdir()):
-                if not entry.is_dir() or _NAME_SEP not in entry.name:
-                    continue
-                meta_file = entry / _META_JSON
-                if not meta_file.exists() and _migrate_old_format(entry) is None:
-                    continue
-                mount_path = cls._read_mount_path(entry)
-                if mount_path and not cls._is_valid_mount_path(mount_path):
-                    continue
-                try:
-                    rec = cls.load_record(entry)
-                    seen_ids.add(rec.id)
-                    results.append(rec)
-                    if limit is not None and len(results) >= limit:
-                        return results
-                except (_json.JSONDecodeError, OSError, ValueError):
-                    continue
-
-        # Phase 2: ~/.claude/projects/ (deduped by id)
-        projects_dir = _claude_projects_dir()
-        if projects_dir.is_dir():
-            for d in sorted(projects_dir.iterdir()):
-                if not d.is_dir() or not cls._is_valid_project_dir(d):
-                    continue
-                rec = cls._from_claude_dir(d)
-                if rec.id in seen_ids:
-                    continue
-                seen_ids.add(rec.id)
-                results.append(rec)
-                if limit is not None and len(results) >= limit:
-                    return results
-
+        for entry in sorted(type_dir.iterdir()):
+            if not entry.is_dir() or _NAME_SEP not in entry.name:
+                continue
+            meta_file = entry / _META_JSON
+            if not meta_file.exists() and _migrate_old_format(entry) is None:
+                continue
+            mount_path = cls._read_mount_path(entry)
+            if mount_path and not cls._is_valid_mount_path(mount_path):
+                continue
+            try:
+                rec = cls.load_record(entry)
+            except (json.JSONDecodeError, OSError, ValueError):
+                continue
+            results.append(rec)
+            if limit is not None and len(results) >= limit:
+                break
         return results
 
     @classmethod
     async def clean_temp_projects(cls) -> int:
-        """Remove temp-path project entries from both discovery sources and the DB index.
+        """Remove records pointing at temp paths from both records_root and the
+        Claude on-disk encoded-name dirs (best-effort cleanup of stale data).
 
-        Source 1: ``~/.claude/projects/<encoded>/`` — identified via encoded dir name.
-        Source 2: ``records_root/project/<dir>/`` — identified via fs_storage_mount_path
-                  in metadata.json.
-
-        Returns the total number of directories removed.
+        Returns total directories removed.
         """
         removed = 0
 
-        # Source 1: ~/.claude/projects/
-        projects_dir = _claude_projects_dir()
-        if projects_dir.is_dir():
-            for d in list(projects_dir.iterdir()):
-                if d.is_dir() and not cls._is_valid_project_dir(d):
-                    rec = cls._from_claude_dir(d)
-                    await rec.unindex()
-                    shutil.rmtree(d, ignore_errors=True)
-                    removed += 1
-
-        # Source 2: records_root/project/
-        from flow_sdk.fs_store.record import get_default_records_root
+        # Source 1: records_root/project/ — by mount_path or cwd
+        from flow_sdk.fs_store.record import get_default_records_root  # noqa: PLC0415
         records_project_dir = get_default_records_root() / RecordType.PROJECT
         if records_project_dir.is_dir():
             for d in list(records_project_dir.iterdir()):
                 if not d.is_dir():
                     continue
-                mount_path = cls._read_mount_path(d)
+                mount_path = cls._read_mount_path(d) or cls._read_cwd(d)
                 if mount_path and not cls._is_valid_mount_path(mount_path):
                     try:
                         rec = cls.load_record(d)
@@ -255,11 +441,19 @@ class ClaudeProjectFsRecord(Record):
                     shutil.rmtree(d, ignore_errors=True)
                     removed += 1
 
+        # Source 2: ~/.claude/projects/<encoded>/ — by decoded path
+        projects_dir = _claude_projects_dir()
+        if projects_dir.is_dir():
+            for d in list(projects_dir.iterdir()):
+                if d.is_dir() and not cls._is_valid_project_dir(d):
+                    shutil.rmtree(d, ignore_errors=True)
+                    removed += 1
+
         return removed
 
     @classmethod
     def _read_mount_path(cls, record_dir: Path) -> str | None:
-        """Read fs_storage_mount_path from a records_root project directory."""
+        """Read fs_storage_mount_path from a project records-root dir (legacy)."""
         for filename, key in (("metadata.json", "data"), ("state.json", "meta")):
             f = record_dir / filename
             if f.exists():
@@ -271,17 +465,30 @@ class ClaudeProjectFsRecord(Record):
         return None
 
     @classmethod
-    def get(cls, uid: str, **kwargs) -> "ClaudeProjectFsRecord | None":
-        """Find a Claude-project record by UUID: records_root first, then ~/.claude/projects/."""
-        rec = super().get(uid, **kwargs)
-        if rec is not None:
-            return rec
-        projects_dir = _claude_projects_dir()
-        if not projects_dir.is_dir():
-            return None
-        for d in projects_dir.iterdir():
-            if not d.is_dir() or not cls._is_valid_project_dir(d):
-                continue
-            if _project_id(d.name) == uid:
-                return cls._from_claude_dir(d)
+    def _read_cwd(cls, record_dir: Path) -> str | None:
+        """Read cwd from a project records-root dir (new format)."""
+        for filename, key in (("metadata.json", "data"), ("state.json", "meta")):
+            f = record_dir / filename
+            if f.exists():
+                try:
+                    obj = json.loads(f.read_text())
+                    return obj.get(key, {}).get("cwd")
+                except Exception:
+                    pass
         return None
+
+    @classmethod
+    def get(cls, uid: str, **kwargs) -> "ProjectFsRecord | None":
+        """Find a record by id (records_root only)."""
+        return super().get(uid, **kwargs)
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Backward-compat alias
+# ──────────────────────────────────────────────────────────────────────────
+# ``ClaudeProjectFsRecord`` is retained as a name alias so existing imports
+# continue to resolve. The class is the consolidated ``ProjectFsRecord``
+# with provenance flags; "ClaudeProjectFsRecord" is no longer Claude-only.
+# Phase 7 will retire this alias once all callers are migrated.
+
+ClaudeProjectFsRecord = ProjectFsRecord

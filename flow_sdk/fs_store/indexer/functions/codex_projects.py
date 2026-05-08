@@ -1,12 +1,14 @@
-"""Indexer function: USER_HOME_FOLDER -> CODEX_PROJECT.
+"""Indexer function: USER_HOME_FOLDER -> PROJECT (Codex provenance).
 
 Codex doesn't shard sessions per-project on disk; the project list lives in
 ``[projects.*]`` keys of ``<home>/.codex/config.toml`` plus the union of
 ``session_meta.payload.cwd`` values from rollout JSONLs.
 
-Emits one CODEX_PROJECT node per distinct cwd. The FSRef path is the
-absolute project cwd itself (not under ``.codex``), so downstream readers can
-treat it like any other project root.
+Emits one ``RecordType.PROJECT`` node per distinct cwd. The FSRef path is
+the absolute project cwd itself (not under ``.codex``); ``ProjectFsRecord.
+from_fsref`` upserts by canonical cwd with ``codex_project=True``. If a
+Claude indexer pass already produced a row for the same cwd, the upsert
+merges the flags onto the existing row.
 """
 
 from __future__ import annotations
@@ -65,7 +67,7 @@ async def codex_projects_fn(
             out.append(
                 FSRef(
                     Path(cwd),
-                    record_type=RecordType.CODEX_PROJECT,
+                    record_type=RecordType.PROJECT,  # consolidated
                     parent=node,
                 )
             )
@@ -82,7 +84,7 @@ async def codex_projects_fn(
             out.append(
                 FSRef(
                     Path(cwd),
-                    record_type=RecordType.CODEX_PROJECT,
+                    record_type=RecordType.PROJECT,  # consolidated
                     parent=node,
                 )
             )

@@ -127,88 +127,120 @@ class Project(Entity):
 
     @classmethod
     def allocate_id(cls, data: dict) -> str:
-        """Deterministic UUID5 keyed on the project work directory.
+        """Always return a random UUID4.
 
-        The deterministic ID takes priority over any client-provided id, because
-        the frontend always assigns a random UUID4 to new entities before saving.
-        Only fall back to the provided id (or a fresh UUID4) when no mount path
-        is available to derive a stable key from.
+        The Project entity's identity is opaque. The natural key — what makes
+        two Project rows "the same project" — is the canonical
+        ``fs_storage_mount_path`` (i.e., ``cwd``). Dedup happens via
+        :py:meth:`find_by_cwd`, NOT via id derivation. Callers that need to
+        find-or-create a Project for a given path go through
+        :py:meth:`from_record` (which dedupes) or query
+        ``find_by_cwd`` directly.
         """
         import uuid
         from flow_sdk.fs_store.identifier import is_valid_uuid
-        mount_path = data.get("fs_storage_mount_path") or data.get("real_path")
-        if not mount_path:
-            name = data.get("name", "")
-            if name and os.path.isabs(name):
-                mount_path = name
-        if mount_path:
-            return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{canonical_posix_path(mount_path)}"))
         rid = data.get("id") or ""
         if rid and is_valid_uuid(rid):
             return rid
         return str(uuid.uuid4())
 
     @classmethod
+    async def find_by_cwd(cls, cwd: str) -> "Project | None":
+        """Find an existing Project whose ``fs_storage_mount_path`` matches the
+        given canonical posix cwd. Returns the first match, or ``None``.
+
+        This is the natural key for project dedup. Callers that mint a fresh
+        Project should always check find_by_cwd first; idempotent upsert is
+        ``find_by_cwd or save-new``.
+        """
+        if not cwd:
+            return None
+        canonical = canonical_posix_path(cwd)
+        existing = await cls.get_all()
+        for proj in existing:
+            mp = proj.fs_storage_mount_path
+            if mp and canonical_posix_path(mp) == canonical:
+                return proj
+        return None
+
+    @classmethod
     async def recover_by_path(cls, path: str) -> "Project | None":
-        """Recover (or materialize) a Project for ``path`` in three phases.
+        """Recover (or materialize) a Project for ``path``.
 
         Used by ``AgenticProcess.recover_project_action`` to resurrect orphaned
         processes whose ``project_id`` references a deleted project. ``path`` is
         typically ``AgenticProcess.workdir``.
 
-        Phase 1 — exact-match an existing Project by ``fs_storage_mount_path``.
-        Phase 2 — materialize from ``~/.claude/projects/<encoded>/`` if Claude Code
-                  knows the dir, via ``ClaudeProjectFsRecord._from_claude_dir`` +
-                  ``sync_to_db`` (which calls ``Entity.from_record``).
-        Phase 3 — construct a fresh Project from the path; ``Project.allocate_id``
-                  yields a deterministic uuid5.
+        Phase 1 — exact-match an existing Project by canonical mount_path
+                  (delegates to ``find_by_cwd``).
+        Phase 2 — construct a fresh Project from the path with a uuid4 id.
 
         Returns ``None`` only when ``path`` is empty/falsy.
         """
         if not path:
             return None
 
-        # Canonicalize so Windows path quirks (slash style, drive case,
-        # trailing sep, NFC) don't cause us to miss an existing match and
-        # mint a duplicate Project in Phase 3.
-        path = canonical_posix_path(path)
+        canonical = canonical_posix_path(path)
 
-        # Phase 1: existing Project at this exact (canonical) mount path.
-        existing = await cls.get_all()
-        for proj in existing:
-            if proj.fs_storage_mount_path and canonical_posix_path(proj.fs_storage_mount_path) == path:
-                return proj
+        # Phase 1: existing project at this canonical cwd.
+        existing = await cls.find_by_cwd(canonical)
+        if existing is not None:
+            return existing
 
-        # Phase 2: Claude Code's project directory at ~/.claude/projects/<encoded>/.
-        # Note: ClaudeProjectFsRecord.id is uuid5("project:<encoded>"), but the
-        # Project entity Entity.from_record materializes uses the path-based
-        # uuid5("project:<mount_path>") via Project.allocate_id. So we look up
-        # the materialized entity by mount path, not by record id.
-        from flow_sdk.fs_records.claude.claude_project import (
-            ClaudeProjectFsRecord,
-            _claude_projects_dir,
-        )
-        encoded = path.replace("/", "-")
-        claude_dir = _claude_projects_dir() / encoded
-        if claude_dir.is_dir() and ClaudeProjectFsRecord._is_valid_project_dir(claude_dir):
-            try:
-                rec = ClaudeProjectFsRecord._from_claude_dir(claude_dir)
-                await rec.sync_to_db(notify=False)
-                # Re-query for the materialized Project entity by mount path.
-                materialized = await cls.get_all()
-                for p in materialized:
-                    if p.fs_storage_mount_path and canonical_posix_path(p.fs_storage_mount_path) == path:
-                        return p
-            except Exception as e:
-                logging.warning(f"Project.recover_by_path: phase 2 failed for {path}: {e}")
-
-        # Phase 3: construct a fresh Project from the path.
+        # Phase 2: construct a fresh Project. Identity is a fresh uuid4
+        # — the dedup property comes from the canonical mount_path lookup
+        # above, not from id derivation.
         proj = cls.model_validate({
-            "fs_storage_mount_path": path,
-            "name": os.path.basename(path.rstrip(os.sep)) or path,
+            "fs_storage_mount_path": canonical,
+            "name": os.path.basename(canonical.rstrip(os.sep)) or canonical,
         })
         proj.id = cls.allocate_id(proj.model_dump())
         await proj.save()
+        return proj
+
+    @classmethod
+    async def from_record(cls, record, notify: bool = True):  # type: ignore[override]
+        """Create or update a Project from a Record's meta_dict.
+
+        Overrides ``Entity.from_record`` to dedup by canonical mount_path
+        (the natural key) instead of by id (which is now an opaque uuid4).
+        Without this override, every call would mint a new entity since the
+        base implementation looks up by ``allocate_id``-derived id.
+        """
+        data = record.meta_dict()
+        mount_path = data.get("fs_storage_mount_path") or data.get("real_path")
+        if not mount_path:
+            name = data.get("name", "")
+            if name and os.path.isabs(name):
+                mount_path = name
+
+        canonical_mp = canonical_posix_path(mount_path) if mount_path else None
+        existing: Project | None = None
+        if canonical_mp:
+            existing = await cls.find_by_cwd(canonical_mp)
+
+        if existing is not None:
+            # Update in place — apply meta fields the entity understands.
+            for k, v in data.items():
+                if k in ("id", "type"):
+                    continue
+                if hasattr(existing, k):
+                    try:
+                        setattr(existing, k, v)
+                    except Exception:
+                        pass
+            # Ensure the canonical form is what's stored.
+            existing.fs_storage_mount_path = canonical_mp
+            await existing.save(notify=notify)
+            return existing
+
+        # Net-new project: fresh uuid4 id, canonical mount path.
+        create_kwargs = {k: v for k, v in data.items() if k != "id"}
+        if canonical_mp:
+            create_kwargs["fs_storage_mount_path"] = canonical_mp
+        proj = cls(**create_kwargs)
+        proj.id = cls.allocate_id(create_kwargs)
+        await proj.save(notify=notify)
         return proj
 
     @property

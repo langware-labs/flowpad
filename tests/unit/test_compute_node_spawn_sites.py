@@ -66,7 +66,7 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
         async def save(self, owner=None):
             captured["__saved_owner"] = owner
 
-        async def start(self, visible=False):
+        async def start_pty(self, visible=False, **kwargs):
             captured["__started_visible"] = visible
             return ApiSuccessResponse(data={"id": self.id})
 
@@ -114,7 +114,7 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
         async def save(self, owner=None):
             captured["__saved_owner"] = owner
 
-        async def start(self, visible=False):
+        async def start_pty(self, visible=False, **kwargs):
             captured["__started_visible"] = visible
             return ApiSuccessResponse(data={"id": self.id})
 
@@ -125,7 +125,7 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
     assert resp.status == "SUCCESS"
     assert resp.data["id"] == "headless-1"
     assert captured["visible"] is False
-    # Critical: start() must NOT be called for headless processes.
+    # Critical: start_pty() must NOT be called for headless processes.
     assert "__started_visible" not in captured
 
 
@@ -165,16 +165,30 @@ async def test_scan_upsert_session_process_creates_fresh_when_no_existing():
         async def save(self, owner=None):
             captured["__saved_owner"] = owner
 
-        async def start(self, visible=False):
+        async def start_pty(self, visible=False, **kwargs):
             captured["__started_visible"] = visible
             return ApiSuccessResponse(data={"id": self.id})
+
+        def model_dump(self, mode=None):
+            return {
+                "id": self.id,
+                "type": self.type,
+                "session_id": self.session_id,
+                "cli_config": self.cli_config,
+                "workdir": self.workdir,
+                "shell_id": self.shell_id,
+                "visible": self.visible,
+                "worker_type": self.worker_type,
+            }
 
     with patch(_PATCH_REQ_SCAN, return_value=info), \
          patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
         resp = await node._scan_upsert_session_process()
 
     assert resp.status == "SUCCESS", resp
-    assert resp.data["created"] is True
+    # Production returns ``process.model_dump(mode="json")`` directly — there's
+    # no ``created`` flag injection in the response (AgenticProcess has no such
+    # field). The fresh-vs-resume distinction is verified via captured kwargs.
     assert resp.data["session_id"] == "sess-new-1"
     assert captured["session_id"] == "sess-new-1"
     assert captured["use_worker_history"] is True
@@ -197,6 +211,19 @@ async def test_scan_upsert_session_process_returns_existing_on_resume():
     existing.visible = True
     existing.worker_type = "claude"
     existing.pty_pid = None
+    # ``_scan_upsert_session_process`` returns ``process.model_dump(mode="json")``
+    # to the caller; configure the mock to produce a real dict so the response
+    # has ``data["id"] == "existing-id"`` instead of a recursive MagicMock.
+    existing.model_dump.return_value = {
+        "id": "existing-id",
+        "type": "agentic_process",
+        "session_id": "sess-existing",
+        "shell_id": "shell-1",
+        "visible": True,
+        "worker_type": "claude",
+        "pty_pid": None,
+        "created": False,
+    }
 
     class FakeProc:
         constructed = False
@@ -216,5 +243,7 @@ async def test_scan_upsert_session_process_returns_existing_on_resume():
     assert resp.data["id"] == "existing-id"
     assert resp.data["type"] == "agentic_process"
     assert resp.data["session_id"] == "sess-existing"
-    assert resp.data["created"] is False
+    # Production returns ``process.model_dump(mode="json")`` directly; no
+    # ``created`` flag is injected. The "no new construction" property is
+    # verified via FakeProc.constructed below.
     assert FakeProc.constructed is False, "Should not construct a new entity on resume hit"

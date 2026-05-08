@@ -118,7 +118,7 @@ async def test_fire_schedule_job_spawns_with_expected_fields(monkeypatch):
         captured["proc"] = self
         return self
 
-    async def fake_start(self, instruction=None, visible=None):
+    async def fake_start_pty(self, instruction=None, visible=None, **kwargs):
         captured["start_instruction"] = instruction
         captured["start_visible"] = visible
         return None
@@ -129,7 +129,8 @@ async def test_fire_schedule_job_spawns_with_expected_fields(monkeypatch):
     monkeypatch.setattr(Trigger, "get_by_id", classmethod(lambda cls, tid: fake_get_by_id(tid)))
     monkeypatch.setattr(Trigger, "update", fake_update)
     monkeypatch.setattr(AgenticProcess, "save", fake_save)
-    monkeypatch.setattr(AgenticProcess, "start", fake_start)
+    # Production calls ``proc.start_pty(...)`` (was ``proc.start`` pre-refactor).
+    monkeypatch.setattr(AgenticProcess, "start_pty", fake_start_pty)
 
     from flow_sdk.fs_records import trigger_log as tl_mod
     monkeypatch.setattr(tl_mod.TriggerLogRecord, "append_entry", staticmethod(fake_append_entry))
