@@ -524,6 +524,8 @@ function ExecutionHistoryHeader({
   activeId,
   onNewSession,
   onPickSession,
+  onDeleteSession,
+  onClearAll,
   cursorLine,
   settingsSlot,
   newSessionLabel,
@@ -536,6 +538,8 @@ function ExecutionHistoryHeader({
   activeId: string | null;
   onNewSession: () => void;
   onPickSession: (id: string) => void;
+  onDeleteSession: (id: string, title: string) => void;
+  onClearAll: () => void;
   cursorLine: number | null;
   settingsSlot?: React.ReactNode;
   newSessionLabel: string;
@@ -581,9 +585,30 @@ function ExecutionHistoryHeader({
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-72" data-testid="entity-execution-history-menu">
-          <DropdownMenuLabel className="text-[11px] font-medium text-muted-foreground">
-            {pastSessionsLabel}
-          </DropdownMenuLabel>
+          <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+            <span className="text-[11px] font-medium text-muted-foreground">
+              {pastSessionsLabel}
+            </span>
+            {processes.length > 0 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  // Stop the click from bubbling into the dropdown (which would
+                  // try to treat it as an item-select and close the menu before
+                  // the confirm dialog can mount).
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onClearAll();
+                }}
+                className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                title="Clear all past chats"
+                data-testid="entity-execution-history-clear-all"
+              >
+                <Trash2 className="h-3 w-3" />
+                Clear all
+              </button>
+            )}
+          </div>
           <DropdownMenuSeparator />
           {processes.length === 0 ? (
             <div className="px-2 py-1.5 text-[11px] text-muted-foreground">{noPastSessionsLabel}</div>
@@ -610,7 +635,7 @@ function ExecutionHistoryHeader({
                   key={p.id}
                   onSelect={() => p.id && onPickSession(p.id)}
                   data-active={isActive ? 'true' : 'false'}
-                  className="flex flex-col items-start gap-0.5"
+                  className="group flex flex-col items-start gap-0.5 pr-1"
                 >
                   <div className="flex w-full items-center gap-1.5">
                     <HistoryWorkerIcon
@@ -623,6 +648,23 @@ function ExecutionHistoryHeader({
                     <span className="flex-shrink-0 text-[10px] text-muted-foreground tabular-nums">
                       {historyTimeAgo(lastActive)}
                     </span>
+                    {p.id && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          // Block the row's onSelect — clicking the trash
+                          // should NOT also load the session into the panel.
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onDeleteSession(p.id!, title);
+                        }}
+                        className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-muted-foreground/40 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-data-[active=true]:opacity-60"
+                        title="Delete this chat"
+                        data-testid={`entity-execution-history-delete-${p.id}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
                   </div>
                   {(subline || isActive) && (
                     <span className="text-[10px] text-muted-foreground">

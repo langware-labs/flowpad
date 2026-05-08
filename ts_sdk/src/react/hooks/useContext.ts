@@ -50,6 +50,9 @@ export function useContext() {
     activeEntityTypeId: typeof dataContext.activeEntityTypeId;
     workspaceTypeId: typeof dataContext.workspaceTypeId;
     userTypeId: typeof dataContext.userTypeId;
+    localUser: typeof dataContext.localUser;
+    cloudUser: typeof dataContext.cloudUser;
+    currentUser: typeof dataContext.currentUser;
     flowTypeId: typeof dataContext.flowTypeId;
     visitorTypeId: typeof dataContext.visitorTypeId;
     someone: typeof dataContext.someone;
@@ -86,6 +89,9 @@ export function useContext() {
     activeEntityTypeId: dataContext.activeEntityTypeId,
     workspaceTypeId: dataContext.workspaceTypeId,
     userTypeId: dataContext.userTypeId,
+    localUser: dataContext.localUser,
+    cloudUser: dataContext.cloudUser,
+    currentUser: dataContext.currentUser,
     flowTypeId: dataContext.flowTypeId,
     visitorTypeId: dataContext.visitorTypeId,
     someone: dataContext.someone,
@@ -132,6 +138,9 @@ export function useContext() {
       activeEntityTypeId: dataContext.activeEntityTypeId,
       workspaceTypeId: dataContext.workspaceTypeId,
       userTypeId: dataContext.userTypeId,
+      localUser: dataContext.localUser,
+      cloudUser: dataContext.cloudUser,
+      currentUser: dataContext.currentUser,
       flowTypeId: dataContext.flowTypeId,
       visitorTypeId: dataContext.visitorTypeId,
       someone: dataContext.someone,
@@ -172,6 +181,9 @@ export function useContext() {
 
     if (
       prev.user !== current.user ||
+      prev.localUser !== current.localUser ||
+      prev.cloudUser !== current.cloudUser ||
+      prev.currentUser !== current.currentUser ||
       prev.workspace !== current.workspace ||
       prev.flow !== current.flow ||
       prev.activeEntity !== current.activeEntity ||

@@ -1,4 +1,4 @@
-import { ContextEntitiesEnum, dataContext, TypeId } from '@sdk';
+import { ContextEntitiesEnum, dataContext, initSdk, TypeId } from '@sdk';
 import type { LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { TimeIt } from '@src/utils/timeit';
 
@@ -22,15 +22,21 @@ async function ensureComputeNodeLoaded(): Promise<void> {
   }
 }
 
-export async function loadHomePage(_args: LoaderArgs) {
+export async function loadHomePage(args: LoaderArgs) {
+  const { params } = args;
   const t = new TimeIt('Home load');
 
-  // SDK init + bootstrap-error gating now happen in the root loader
-  // (`./root-loader.ts`).
+  // React Router runs root + child loaders in parallel; this idempotent
+  // re-await on the memoised `initPromise` (see ts_sdk/src/main.ts:25-30)
+  // guarantees schemas are registered before any entity construction in
+  // the home view. Cheap on warm calls, the actual gate on cold load.
+  await initSdk(params);
+  t.time('initSdk');
+
   await ensureComputeNodeLoaded();
   t.time('ensureComputeNode');
 
-  t.done(0.5); // warn if total > 500ms
+  t.done(1.2); // warn if total > 1200ms
 
   // Project setup is handled by initSdk -> initContext -> setupProject
   // If no projects exist, user will be shown project setup screen

@@ -1,4 +1,4 @@
-import { Avatar, AvatarFallback } from '@src/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@src/components/ui/avatar';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import {
@@ -122,7 +122,7 @@ function cloudLoginTooltip(loggedIn: boolean, email?: string): string {
 
 export function UserDropdown() {
   const { agentId } = useParams();
-  const { user } = useAuth();
+  const { user, currentUser } = useAuth();
   const { isConnected } = useConnectionStatus();
   const { cloudLoginAvailable } = useContext();
   const [, setCloudStatusVersion] = useState(0);
@@ -271,7 +271,7 @@ export function UserDropdown() {
             <DialogTitle>Account Details</DialogTitle>
             <DialogDescription>View your account information and user details</DialogDescription>
           </DialogHeader>
-          {user && <AccountInfo user={user} />}
+          {currentUser && <AccountInfo user={currentUser} />}
         </DialogContent>
       </Dialog>
 
@@ -289,8 +289,11 @@ export function UserDropdown() {
                     title={!isConnected ? 'Service unavailable' : undefined}
                     data-testid="agent-page-user-avatar"
                   >
+                    {currentUser?.picture && (
+                      <AvatarImage src={currentUser.picture} alt={currentUser.name ?? currentUser.email ?? ''} />
+                    )}
                     <AvatarFallback>
-                      {(user.name || user.email?.split('@')[0] || '?')
+                      {(currentUser?.name || currentUser?.email?.split('@')[0] || '?')
                         .split(/[\s._-]+/)
                         .map((n: string) => n[0])
                         .join('')
@@ -304,7 +307,7 @@ export function UserDropdown() {
                 </div>
                     </DropdownMenuTrigger>
                   </TooltipTrigger>
-                  <TooltipContent side="top">{cloudLoginTooltip(cloudLoginAvailable, user?.email)}</TooltipContent>
+                  <TooltipContent side="top">{cloudLoginTooltip(cloudLoginAvailable, currentUser?.email)}</TooltipContent>
                   <DropdownMenuContent align="end">
                 {isOwner && agentId && (
                   <>
@@ -335,6 +338,10 @@ export function UserDropdown() {
                   <UserIcon className="mr-2 h-4 w-4" />
                   Account Details
                 </DropdownMenuItem>
+                {/* Logout below = *cloud* logout. A local-only user (no cloud
+                    login) is anonymous — the Login branch should fire. If you
+                    see Logout without being cloud-logged-in, cloudLoginAvailable
+                    is stale (cloudManager state didn't match /cloud/status). */}
                 {cloudLoginAvailable ? (
                   <>
                     <DropdownMenuItem onClick={handleOpenFlowpadCloud} className="cursor-pointer">
