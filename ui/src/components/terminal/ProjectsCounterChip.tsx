@@ -33,6 +33,11 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ curren
     const byProject = new Map<string, TerminalTab[]>();
     for (const tab of tabs) {
       const pid = tabProjectId(tab);
+      // Project consolidation (Path A, 2026-05-09): every Shell carries a
+      // real ``project_id``. The historical skip-on-null guard here is
+      // retained as defensive code only — it should be unreachable now.
+      // Phase 7 removes it once we've verified no legacy null tabs reach
+      // the chip in production traces.
       if (!pid) continue;
       const bucket = byProject.get(pid);
       if (bucket) bucket.push(tab);

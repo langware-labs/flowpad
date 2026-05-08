@@ -362,6 +362,10 @@ export class NavigationActions {
           : dataContext.project?.fs_storage_mount_path) ||
         undefined;
       const newShell = Shell.create(cn, { name, workdir: cwd });
+      // Project consolidation (Path A, 2026-05-09): every Shell carries a
+      // real ``project_id``. Prefer the caller-pinned project, then the
+      // active dock project; the backend's Shell.save defaults to the
+      // bootstrap ``@local`` project if both are absent.
       const pinnedProjectId = options?.projectId ?? dataContext.project?.id ?? null;
       if (pinnedProjectId) newShell.project_id = pinnedProjectId;
       await newShell.save(cn.typeId);

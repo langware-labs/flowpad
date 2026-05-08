@@ -5,6 +5,7 @@ import DeveloperLayout from '@src/components/developer-layout/developer-layout';
 import { FloatingChatWindow } from '@src/components/floating-chat';
 import { HooksView } from '@src/components/hooks-view/hooks-view';
 import { SessionsView } from '@src/components/sessions-view/sessions-view';
+import { WorkflowTracePreviewPage } from '@src/components/workflow-trace/WorkflowTracePreviewPage';
 import { BASE_PATH } from '@src/constants/basePath';
 import AgentRedirect from '@src/pages/agent-redirect';
 import FlowPage from '@src/pages/flow-page/flow-page';
@@ -102,6 +103,9 @@ export const router = createBrowserRouter(
         <Route path="main/api-keys" element={<ApiKeysView />} />
         {/* Connections route hidden until OAuth flow is fully implemented */}
         <Route path="hooks" element={<HooksView />} />
+        {/* Workflow trace viewer preview — iteration surface for Phase 3.
+            Mounts WorkflowTraceViewer standalone with a process id from URL. */}
+        <Route path="trace/:runId" element={<WorkflowTracePreviewPage />} />
       </Route>
 
       {/* Global catch-all */}

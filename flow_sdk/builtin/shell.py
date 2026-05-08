@@ -253,6 +253,31 @@ class Shell(Entity):
 
     # ── Construction ──────────────────────────────────────────────────────────
 
+    async def save(self, *args, **kwargs):  # type: ignore[override]
+        """Persist this Shell, defaulting ``project_id`` to the bootstrap
+        ``@local`` Project when none was supplied.
+
+        Project consolidation (Path A, 2026-05-09) — every Shell carries a
+        real ``project_id`` so the tab strip, projects-counter chip, and
+        ``useProjectTerminals`` filter never see ``None`` for a tab's project.
+        Callers that want a specific project (per-project shell, sandbox-
+        scoped run, collaboration room) keep passing ``project_id`` explicitly;
+        callers that don't (CLI spawns, REST POSTs, legacy code paths,
+        tests) get the local default automatically.
+        """
+        if not self.project_id:
+            try:
+                from flow_sdk.builtin.project import Project  # noqa: PLC0415
+                local = await Project.get_by_prop("uname", "local", "project")
+                if local is not None and getattr(local, "id", None):
+                    self.project_id = local.id
+            except Exception:
+                # Never block save on the project lookup — fall through with
+                # ``project_id=None``. Phase 6 cleanup tolerates the legacy
+                # null path defensively.
+                pass
+        return await super().save(*args, **kwargs)
+
     @classmethod
     async def open(cls, workdir=None, **kwargs) -> "Shell":
         """Create + start PTY immediately. Returns a ready shell."""

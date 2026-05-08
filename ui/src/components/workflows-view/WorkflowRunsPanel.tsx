@@ -54,6 +54,8 @@ interface WorkflowRunsPanelProps {
   entries: ProcessEntry[];
   currentEntry: ProcessEntry | null;
   computeNodeId: string | undefined;
+  /** Called when a row is clicked. Receives the process id. */
+  onSelectRun?: (processId: string) => void;
 }
 
 /**
@@ -61,7 +63,12 @@ interface WorkflowRunsPanelProps {
  * drawer chrome — so it can be dropped into any container (today: a tab panel
  * inside the markdown side drawer).
  */
-export function WorkflowRunsPanel({ entries, currentEntry, computeNodeId }: WorkflowRunsPanelProps) {
+export function WorkflowRunsPanel({
+  entries,
+  currentEntry,
+  computeNodeId,
+  onSelectRun,
+}: WorkflowRunsPanelProps) {
   return (
     <div className="h-full overflow-y-auto py-1" data-testid="workflow-runs-panel">
       {entries.length === 0 && (
@@ -76,6 +83,7 @@ export function WorkflowRunsPanel({ entries, currentEntry, computeNodeId }: Work
           label={runLabel(entry, entries.length - idx)}
           isCurrent={currentEntry?.process.id === entry.process.id}
           computeNodeId={computeNodeId}
+          onSelectRun={onSelectRun}
         />
       ))}
     </div>
@@ -87,11 +95,13 @@ function WorkflowRunItem({
   label,
   isCurrent,
   computeNodeId,
+  onSelectRun,
 }: {
   entry: ProcessEntry;
   label: string;
   isCurrent: boolean;
   computeNodeId: string | undefined;
+  onSelectRun?: (processId: string) => void;
 }) {
   const { navigation } = useDockNavigation();
   const { data: live } = useEntity<AgenticProcess>(entry.process.typeId ?? null);
@@ -112,14 +122,38 @@ function WorkflowRunItem({
 
   const transcriptPointer = transcriptPointerForProcess(process);
 
+  // Whole-row click opens the trace viewer. Inner buttons stop propagation
+  // so they keep working independently.
+  const handleRowClick = onSelectRun
+    ? () => onSelectRun(process.id)
+    : undefined;
+
   return (
     <div
-      className={`group flex items-center gap-1 px-2 py-1.5 ${isCurrent ? 'bg-muted/50' : ''}`}
+      className={`group flex items-center gap-1 px-2 py-1.5 ${
+        isCurrent ? 'bg-muted/50' : ''
+      } ${handleRowClick ? 'cursor-pointer hover:bg-muted/40' : ''}`}
+      onClick={handleRowClick}
+      role={handleRowClick ? 'button' : undefined}
+      tabIndex={handleRowClick ? 0 : undefined}
+      onKeyDown={
+        handleRowClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleRowClick();
+              }
+            }
+          : undefined
+      }
+      data-testid="workflow-run-row"
     >
       <ProcessStatusLine
         process={process}
         secondary={label}
-        onOpenInTerminal={handleOpenInTerminal}
+        onOpenInTerminal={() => {
+          handleOpenInTerminal();
+        }}
         size="sm"
         className="min-w-0 flex-1"
       />
@@ -130,7 +164,10 @@ function WorkflowRunItem({
           size="icon"
           className="h-5 w-5 flex-shrink-0"
           title="Open transcript"
-          onClick={() => navigation.openDock(transcriptPointer)}
+          onClick={(e) => {
+            e.stopPropagation();
+            navigation.openDock(transcriptPointer);
+          }}
           data-testid="run-row-open-transcript"
         >
           <FileText className="h-3 w-3" />
@@ -143,7 +180,10 @@ function WorkflowRunItem({
           size="icon"
           className="h-5 w-5 flex-shrink-0"
           title="Open output folder"
-          onClick={() => void handleOpenFolder()}
+          onClick={(e) => {
+            e.stopPropagation();
+            void handleOpenFolder();
+          }}
         >
           <FolderOpen className="h-3 w-3" />
         </Button>

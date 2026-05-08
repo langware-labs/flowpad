@@ -72,6 +72,20 @@ class Project(Entity):
         default_factory=list,
         description="Collaboration participants: [{member_id, name, joined_at, last_seen_at}]",
     )
+    # ── Indexer-denormalized fields (project consolidation, Path A 2026-05-09) ──
+    # Written by the indexer at adopt time via ``Project.from_record`` so the
+    # frontend can render activity hints (session count, last activity) without
+    # querying records. Records remain backend-only.
+    session_count: int = APIField(
+        default=0,
+        description="Total session count across providers (Claude + Codex) at this project's cwd. "
+                    "Denormalized from the matching ProjectFsRecord at indexer-write time.",
+    )
+    last_session_at: str | None = APIField(
+        default=None,
+        description="ISO timestamp of the most recent session activity at this project's cwd, "
+                    "denormalized from the matching ProjectFsRecord. Null if no sessions yet.",
+    )
     _api_visible: ClassVar[bool] = True
     _icon: ClassVar[str] = "FolderOpen"
 
@@ -206,9 +220,23 @@ class Project(Entity):
         (the natural key) instead of by id (which is now an opaque uuid4).
         Without this override, every call would mint a new entity since the
         base implementation looks up by ``allocate_id``-derived id.
+
+        Path source priority (first non-empty wins):
+          1. ``fs_storage_mount_path`` — explicit field on the record's meta
+          2. ``cwd`` — what ``ProjectFsRecord`` exposes (the natural key)
+          3. ``real_path`` — legacy claude-project metadata
+          4. ``name`` if it's an absolute path
+
+        With (2) in place, the indexer-driven flow auto-adopts: each
+        ``ProjectFsRecord`` written by ``upsert_for_cwd`` gets a matching
+        ``Project`` entity created (or updated) on ``rec.sync_to_db()``.
         """
         data = record.meta_dict()
-        mount_path = data.get("fs_storage_mount_path") or data.get("real_path")
+        mount_path = (
+            data.get("fs_storage_mount_path")
+            or data.get("cwd")
+            or data.get("real_path")
+        )
         if not mount_path:
             name = data.get("name", "")
             if name and os.path.isabs(name):
@@ -231,6 +259,11 @@ class Project(Entity):
                         pass
             # Ensure the canonical form is what's stored.
             existing.fs_storage_mount_path = canonical_mp
+            # Denormalize indexer-supplied activity hints (Path A).
+            if "session_count" in data:
+                existing.session_count = int(data.get("session_count") or 0)
+            if "last_session_at" in data:
+                existing.last_session_at = data.get("last_session_at")
             await existing.save(notify=notify)
             return existing
 
@@ -238,6 +271,12 @@ class Project(Entity):
         create_kwargs = {k: v for k, v in data.items() if k != "id"}
         if canonical_mp:
             create_kwargs["fs_storage_mount_path"] = canonical_mp
+        # Drop record-only fields the Project entity doesn't carry — provenance
+        # flags stay on ProjectFsRecord (backend only). Only denormalized
+        # activity hints surface on the entity.
+        for record_only in ("claude_project", "codex_project", "encoded_path",
+                            "last_indexed_at", "real_path", "cwd"):
+            create_kwargs.pop(record_only, None)
         proj = cls(**create_kwargs)
         proj.id = cls.allocate_id(create_kwargs)
         await proj.save(notify=notify)
