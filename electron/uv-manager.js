@@ -10,6 +10,34 @@ const IS_WIN = process.platform === 'win32';
 const IS_MAC = process.platform === 'darwin';
 const PATH_SEP = IS_WIN ? ';' : ':';
 
+/**
+ * Decide whether to spawn `cmd` through cmd.exe on Windows.
+ *
+ * - Bare command names (e.g. `'uv'`, `'flow'`) need shell:true on Windows so
+ *   cmd.exe resolves them via PATH and so App Exec aliases work.
+ * - Full paths to `.cmd`/`.bat` need shell:true — Node won't run those without
+ *   a shell.
+ * - Full paths to `.exe` must NOT use shell:true — cmd.exe splits the command
+ *   string on whitespace, which breaks paths like
+ *   `C:\Users\avi tal\.local\bin\flow.exe` (the binary becomes `C:\Users\avi`).
+ *   Node's CreateProcess handles spaces in the .exe path natively.
+ */
+function needsShellOnWin(cmd) {
+  if (!IS_WIN) return false;
+  if (!/[\\/]/.test(cmd)) return true;     // bare name → PATH lookup needs shell
+  if (/\.exe$/i.test(cmd)) return false;   // direct .exe → spawn handles spaces
+  return true;                             // .cmd/.bat or extensionless full path
+}
+
+/**
+ * Quote a Windows command path for safe inclusion in a cmd.exe command line
+ * (only relevant when shell:true is in use). For bare names with no spaces
+ * this is a no-op.
+ */
+function quoteWinCmd(cmd) {
+  return /\s/.test(cmd) ? `"${cmd}"` : cmd;
+}
+
 // PyPI package name — `uv tool install flowpad`
 const PYPI_PACKAGE = 'flowpad';
 
@@ -128,12 +156,14 @@ class UvManager {
       ...options.env,
     };
     this.log.info(`[uv] Running: ${cmd} ${args.join(' ')}`);
+    const useShell = needsShellOnWin(cmd);
+    const cmdToRun = useShell ? quoteWinCmd(cmd) : cmd;
     try {
-      const { stdout, stderr } = await execFileAsync(cmd, args, {
+      const { stdout, stderr } = await execFileAsync(cmdToRun, args, {
         env,
         timeout: options.timeout || 60000,
         cwd: options.cwd || os.homedir(),
-        shell: IS_WIN,               // needed for .cmd wrappers & App Exec links
+        shell: useShell,             // shell only when bare-name or .cmd/.bat
         windowsHide: true,            // don't flash a console window
       });
       if (stdout.trim()) this.log.info(`[uv] ${stdout.trim()}`);
@@ -531,12 +561,17 @@ class UvManager {
         env.LANG = process.env.LANG || 'en_US.UTF-8';
       }
 
-      const child = spawn(this._flowBin, ['start'], {
+      // shell:true on Windows breaks paths with spaces (e.g.
+      // "C:\Users\avi tal\…\flow.exe" gets split on the space). Use shell
+      // only when actually needed — see needsShellOnWin().
+      const useShell = needsShellOnWin(this._flowBin);
+      const cmdToRun = useShell ? quoteWinCmd(this._flowBin) : this._flowBin;
+      const child = spawn(cmdToRun, ['start'], {
         env,
         cwd: os.homedir(),
         detached: false,
         stdio: ['ignore', 'pipe', 'pipe'],
-        shell: IS_WIN,       // needed for .cmd wrappers on Windows
+        shell: useShell,
         windowsHide: true,   // don't flash a console window
       });
 
