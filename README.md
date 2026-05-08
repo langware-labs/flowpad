@@ -8,14 +8,14 @@ A local-first AI development environment powered by Claude Code. Run AI-assisted
 
 Download the latest release for your platform:
 
-| Platform | Download |
-|----------|----------|
-| **macOS (Apple Silicon)** | [Flowpad-arm64.dmg](https://github.com/langware-labs/flowpad/releases/latest/download/Flowpad-arm64.dmg) |
-| **macOS (Intel)** | [Flowpad-x64.dmg](https://github.com/langware-labs/flowpad/releases/latest/download/Flowpad-x64.dmg) |
-| **Windows** | [Flowpad Setup.exe](https://github.com/langware-labs/flowpad/releases/latest/download/Flowpad.Setup.exe) |
+| Platform | Download                                                                                                          |
+|----------|-------------------------------------------------------------------------------------------------------------------|
+| **macOS (Apple Silicon)** | [Flowpad-arm64.dmg](https://github.com/langware-labs/flowpad/releases/latest/download/Flowpad-arm64.dmg)          |
+| **macOS (Intel)** | [Flowpad-x64.dmg](https://github.com/langware-labs/flowpad/releases/latest/download/Flowpad-x64.dmg)              |
+| **Windows** | [Flowpad-Setup.exe](https://github.com/langware-labs/flowpad/releases/latest/download/Flowpad-Setup.exe)          |
 | **Linux (AppImage)** | [Flowpad-x64.AppImage](https://github.com/langware-labs/flowpad/releases/latest/download/Flowpad-x86_64.AppImage) |
-| **Linux (deb)** | [Flowpad-x64.deb](https://github.com/langware-labs/flowpad/releases/latest/download/Flowpad-amd64.deb) |
-| **Linux (rpm)** | [Flowpad-x64.rpm](https://github.com/langware-labs/flowpad/releases/latest/download/Flowpad-x86_64.rpm) |
+| **Linux (deb)** | [Flowpad-x64.deb](https://github.com/langware-labs/flowpad/releases/latest/download/Flowpad-amd64.deb)            |
+| **Linux (rpm)** | [Flowpad-x64.rpm](https://github.com/langware-labs/flowpad/releases/latest/download/Flowpad-x86_64.rpm)           |
 
 The desktop app handles everything automatically — no Python or other dependencies required. On first launch it installs the backend from PyPI and starts it for you.
 
