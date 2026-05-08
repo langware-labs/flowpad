@@ -7,6 +7,7 @@ import {
   ShellStatus,
   TypeId,
 } from '@sdk';
+import { subscribeToEntityOps } from '@sdk/react/hooks';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
 /** Discriminator for tab type. */
@@ -15,12 +16,18 @@ export type TerminalTabType = 'plain' | 'claude';
 /**
  * One row in the tab strip.
  *
- * Strip contract (deliberately simple):
+ * Strip contract:
  *   terminalState ← initial REST fetch ← `refresh()`
- *   terminalState ← direct mutations ← `pushTerminal` / `removeTerminal` / `updateTerminal`
+ *   terminalState ← direct mutations  ← `pushTerminal` / `removeTerminal` / `updateTerminal`
+ *   terminalState ← debounced refetch ← Shell / AgenticProcess create+delete
+ *                                       events on the WebSocket
  *
- * No WebSocket subscription, no merge ratchet, no implicit filtering. The list
- * the consumer renders is exactly what's in `terminalState`.
+ * Cross-session sync: Shell and AgenticProcess create/delete events from the
+ * WebSocket trigger a debounced re-fetch of `terminals/list`. This is what
+ * surfaces external mutations (CLI, REST POST, another browser window,
+ * backend bg tasks) in the open dock without a manual refresh. `update` ops
+ * are intentionally NOT refetched — the strip's identity (which shells exist)
+ * only changes on create/delete; per-row liveness comes from the entity cache.
  *
  * Per-row liveness (status badges, names, restart-required) is read from the
  * dataManager entity cache via `Shell.getByIdFromCache` / `AgenticProcess.
@@ -152,6 +159,8 @@ export function terminalProcessId(tab: TerminalTab): string | null {
 
 let terminalState: TerminalTab[] = [];
 let initialFetchStarted = false;
+let wsSubscribed = false;
+let wsRefetchTimer: ReturnType<typeof setTimeout> | null = null;
 const listeners = new Set<() => void>();
 
 function notifyListeners(): void {
@@ -162,6 +171,31 @@ function setTerminalState(next: TerminalTab[]): void {
   if (next === terminalState) return;
   terminalState = next;
   notifyListeners();
+}
+
+/** Coalesce bursty WS events into one refetch (e.g. a loop of REST creates). */
+function scheduleTerminalsRefetch(): void {
+  if (wsRefetchTimer) return;
+  wsRefetchTimer = setTimeout(() => {
+    wsRefetchTimer = null;
+    void fetchActiveTerminals();
+  }, 100);
+}
+
+/** Subscribe (once, module-scoped) to Shell + AgenticProcess create/delete
+ *  WebSocket events and refetch the strip when they fire. `update` ops are
+ *  intentionally excluded — per-entity SDK subs already keep cached fields
+ *  (status, name, tab_order) warm; the strip's identity only changes on
+ *  create/delete. The listener lives for the lifetime of the app — never
+ *  unsubscribed — matching the same pattern as `pending-actions-store`. */
+function ensureWsSubscription(): void {
+  if (wsSubscribed) return;
+  wsSubscribed = true;
+  subscribeToEntityOps(
+    [Shell.type, AgenticProcess.type],
+    () => scheduleTerminalsRefetch(),
+    { ops: ['create', 'delete'] },
+  );
 }
 
 /**
@@ -273,6 +307,7 @@ export interface UseTerminalsResult {
 export function useAllTerminals(): UseTerminalsResult {
   const subscribe = useCallback((onChange: () => void) => {
     listeners.add(onChange);
+    ensureWsSubscription();
     if (!initialFetchStarted) {
       initialFetchStarted = true;
       void fetchActiveTerminals();
