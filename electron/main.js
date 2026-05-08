@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const log = require('electron-log');
 const UvManager = require('./uv-manager');
@@ -64,6 +65,68 @@ log.transports.file.level = 'info';
 log.transports.console.level = 'debug';
 log.info('Flowpad starting...');
 
+// ----------------------------------------------------------------------------
+// Electron desktop wrapper auto-update.
+// ----------------------------------------------------------------------------
+function setupElectronAutoUpdater() {
+  if (!app.isPackaged) {
+    log.info('[electron-updater] skipped: app is not packaged');
+    return;
+  }
+
+  autoUpdater.logger = log;
+  // Download silently in the background — only ask the user before the
+  // restart/install step.
+  autoUpdater.autoDownload = true;
+
+  autoUpdater.on('checking-for-update', () => {
+    log.info('[electron-updater] checking for update...');
+  });
+  autoUpdater.on('update-available', (info) => {
+    log.info(`[electron-updater] update available: ${info.version}`);
+  });
+  autoUpdater.on('update-not-available', (info) => {
+    log.info(`[electron-updater] up to date. current=${app.getVersion()} latest=${info && info.version}`);
+  });
+  autoUpdater.on('download-progress', (p) => {
+    log.info(`[electron-updater] download ${Math.round(p.percent)}% (${p.transferred}/${p.total})`);
+  });
+  autoUpdater.on('error', (err) => {
+    log.error('[electron-updater] error:', err);
+  });
+
+  autoUpdater.on('update-downloaded', async (info) => {
+    log.info(`[electron-updater] update downloaded: ${info.version}`);
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      log.warn('[electron-updater] mainWindow missing; will install on quit');
+      return;
+    }
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      buttons: ['Restart now', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'FlowPad update ready',
+      message: `FlowPad ${info.version} is ready to install.`,
+      detail: 'Restart FlowPad now to apply the update.',
+    });
+    if (result.response === 0) {
+      log.info('[electron-updater] user accepted, quitting to install');
+      isQuitting = true;
+      autoUpdater.quitAndInstall();
+    } else {
+      log.info('[electron-updater] user deferred install');
+    }
+  });
+
+  // Run after startup, without blocking the app.
+  setTimeout(() => {
+    autoUpdater.checkForUpdates().catch((err) => {
+      log.error('[electron-updater] check failed:', err);
+    });
+  }, 5000);
+}
+
 // Configuration
 const BACKEND_PORT = 9007;
 const BACKEND_URL = `http://localhost:${BACKEND_PORT}`;
@@ -73,6 +136,7 @@ const MAX_HEALTH_CHECKS = 60; // 30 seconds max wait
 
 let mainWindow = null;
 let uvManager = null;
+let isQuitting = false;
 
 // Deep link that arrived before the window was ready to navigate.
 let pendingDeepLink = null;
@@ -298,6 +362,9 @@ async function startApp() {
   log.info(`Loading UI from ${startUrl}`);
   mainWindow.loadURL(startUrl);
 
+  // Electron wrapper auto-update
+  setupElectronAutoUpdater();
+
   // Open DevTools in development
   if (isDev) {
     mainWindow.webContents.openDevTools();
@@ -321,8 +388,6 @@ async function startApp() {
 }
 // App lifecycle events
 app.whenReady().then(startApp);
-
-let isQuitting = false;
 
 app.on('window-all-closed', () => {
   log.info('All windows closed');

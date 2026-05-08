@@ -118,5 +118,11 @@
       }
     ]
   },
-  "publish": null
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "langware-labs",
+      "repo": "flowpad"
+    }
+  ]
 }
