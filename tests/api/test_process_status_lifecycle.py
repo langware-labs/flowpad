@@ -35,16 +35,20 @@ async def _get_process_status(client, process_id: str) -> str:
 
 
 @pytest.mark.asyncio
-async def test_process_status_idle_on_create(bootstrapped_client):
-    """Newly created process should have NEW lifecycle status (no transcript yet)."""
+async def test_process_status_running_after_atomic_create(bootstrapped_client):
+    """``createProcess`` is atomic: it spawns the linked Shell + PTY before returning,
+    so the new process is already RUNNING with an idle worker (no transcript yet)."""
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     compute_node_id = _get_default_compute_node_id(bootstrap.json())
 
     _, process_id = await _create_process(bootstrapped_client, compute_node_id)
 
     entity = await _get_process_entity(bootstrapped_client, process_id)
-    assert entity.get("status") == "new", f"Expected new on create, got {entity.get('status')}"
-    assert entity.get("worker_status") == "idle", f"Expected idle worker_status on create, got {entity.get('worker_status')}"
+    assert entity.get("status") == "running", f"Expected running after atomic-start, got {entity.get('status')}"
+    # Worker is transcript-derived; pre-prompt it can be idle/init/empty/waiting.
+    assert entity.get("worker_status") in {
+        "idle", "init", "empty", "waiting",
+    }, f"Expected pre-prompt worker_status, got {entity.get('worker_status')}"
 
 
 @pytest.mark.asyncio
@@ -121,17 +125,23 @@ async def test_process_status_after_kill_pty(bootstrapped_client):
 
 @pytest.mark.asyncio
 async def test_process_status_full_lifecycle(bootstrapped_client):
-    """Full lifecycle: new -> running -> stopped, with worker_status kept separate."""
+    """Full lifecycle: createProcess (atomic) -> running -> open (idempotent) -> stopped.
+
+    ``createProcess`` now spawns the linked Shell + PTY before returning, so the
+    process is RUNNING from step 1; ``/open`` is the idempotent reattach path.
+    """
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     compute_node_id = _get_default_compute_node_id(bootstrap.json())
 
     _, process_id = await _create_process(bootstrapped_client, compute_node_id)
 
     entity = await _get_process_entity(bootstrapped_client, process_id)
-    assert entity.get("status") == "new", f"Step 1: Expected new, got {entity.get('status')}"
-    assert entity.get("worker_status") == "idle", f"Step 1: Expected idle worker_status, got {entity.get('worker_status')}"
+    assert entity.get("status") == "running", f"Step 1: Expected running after atomic-start, got {entity.get('status')}"
+    assert entity.get("worker_status") in {
+        "idle", "init", "empty", "waiting",
+    }, f"Step 1: Expected pre-prompt worker_status, got {entity.get('worker_status')}"
 
-    # 2. Open shell → status from transcript
+    # 2. Open shell → idempotent reattach; lifecycle stays running.
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/agentic_process/{process_id}/open",
         json={"instruction": "hi"},

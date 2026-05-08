@@ -432,12 +432,100 @@ class ScanActionsMixin:
             cli_factory_key = "codex" if is_codex else "claude"
             wt_enum = WorkerType.CODEX if is_codex else WorkerType.CLAUDE_CODE
 
+            # Resolve workdir + project + project_encoded_name from the session record
+            # before checking for an existing process. The transcript cwd is the
+            # authoritative restore location; project_id is derived from it so
+            # worktrees and nested checkouts do not collapse into the active dock
+            # project.
+            project_encoded_name = None
+            session_name: str | None = None
+            session_rec = None
+            try:
+                from flow_sdk.builtin.project import Project
+
+                if is_codex:
+                    from flow_sdk.fs_records.codex import CodexSessionRecord
+                    session_rec = CodexSessionRecord.get(session_id)
+                else:
+                    from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+                    session_rec = ClaudeSessionRecord.get(session_id)
+
+                if session_rec:
+                    rec_cwd = getattr(session_rec, "cwd", None)
+                    if rec_cwd and not workdir:
+                        workdir = rec_cwd
+                    project_encoded_name = getattr(session_rec, "project_encoded_name", None)
+                    rec_name = getattr(session_rec, "name", None) or ""
+                    if rec_name and rec_name != session_id:
+                        session_name = rec_name
+
+                if workdir:
+                    project = await Project.recover_by_path(workdir)
+                    if project:
+                        project_id = project.id
+                        project_encoded_name = project.project_encoded_name or project_encoded_name
+                elif project_id:
+                    project = await Project.get_by_id(project_id)
+                    if project and not project_encoded_name:
+                        project_encoded_name = project.project_encoded_name
+            except Exception:
+                logging.debug(
+                    "ComputeNode %s upsertSessionProcess session context resolve failed for %s",
+                    self.id,
+                    session_id,
+                    exc_info=True,
+                )
+
             # Try to find existing process by session_id
             existing = await AgenticProcess.get_all(
                 entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id))
             )
             if existing:
                 process = existing[0]
+                changed = False
+                context_data = dict(process.context_data or {})
+                if workdir and process.workdir != workdir:
+                    process.workdir = workdir
+                    changed = True
+                if workdir and context_data.get("workdir") != workdir:
+                    context_data["workdir"] = workdir
+                    changed = True
+                if project_id and process.project_id != project_id:
+                    process._bind_project_id(project_id)
+                    changed = True
+                if project_id and context_data.get("project_id") != project_id:
+                    context_data["project_id"] = project_id
+                    changed = True
+                if project_encoded_name and process.project_encoded_name != project_encoded_name:
+                    process.project_encoded_name = project_encoded_name
+                    changed = True
+                if session_name and not process.name:
+                    process.name = session_name
+                    changed = True
+                if changed:
+                    process.context_data = context_data
+                    await process.save()
+                if process.shell_id and (workdir or project_id):
+                    try:
+                        from flow_sdk.builtin.shell import Shell
+
+                        shell = await Shell.get_by_id(process.shell_id)
+                        shell_changed = False
+                        if shell and workdir and shell.workdir != workdir:
+                            shell.workdir = workdir
+                            shell_changed = True
+                        if shell and project_id and shell.project_id != project_id:
+                            shell.project_id = project_id
+                            shell_changed = True
+                        if shell and shell_changed:
+                            await shell.save()
+                    except Exception:
+                        logging.debug(
+                            "ComputeNode %s upsertSessionProcess shell context heal failed for %s",
+                            self.id,
+                            process.id,
+                            exc_info=True,
+                        )
                 # Heal pre-existing processes that were persisted before the
                 # atomic-start fix: ensure the linked Shell + PTY are attached
                 # and the process is visible so the tab strip will surface it.
@@ -464,40 +552,6 @@ class ScanActionsMixin:
                         "created": False,
                     }
                 )
-
-            # Resolve workdir + project + project_encoded_name from the session record.
-            project_encoded_name = None
-            session_name: str | None = None
-            session_rec = None
-            try:
-                from flow_sdk.builtin.project import Project
-
-                if is_codex:
-                    from flow_sdk.fs_records.codex import CodexSessionRecord
-                    session_rec = CodexSessionRecord.get(session_id)
-                else:
-                    from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
-                    session_rec = ClaudeSessionRecord.get(session_id)
-
-                if session_rec:
-                    rec_cwd = getattr(session_rec, "cwd", None)
-                    if rec_cwd and not workdir:
-                        workdir = rec_cwd
-                    project_encoded_name = getattr(session_rec, "project_encoded_name", None)
-                    rec_name = getattr(session_rec, "name", None) or ""
-                    if rec_name and rec_name != session_id:
-                        session_name = rec_name
-                if workdir and not project_id:
-                    projects = await Project.get_all()
-                    best, best_len = None, 0
-                    for p in projects:
-                        mp = getattr(p, "fs_storage_mount_path", None)
-                        if mp and workdir.startswith(str(mp)) and len(mp) > best_len:
-                            best, best_len = p, len(mp)
-                    if best:
-                        project_id = best.id
-            except Exception:
-                pass
 
             # Create new process directly on this compute node
             owner = request_info.someone_typeid if request_info else None

@@ -591,8 +591,10 @@ class AgenticProcess(Entity):
             await self.reap_if_orphaned()
             _bench("after reap_if_orphaned")
             self.session_id = self.session_id or str(uuid4())
-            if visible is not None:
+            reattach_changed = False
+            if visible is not None and self.visible != visible:
                 self.visible = visible
+                reattach_changed = True
 
             shell = await self.shell() if self.shell_id else None
             _bench("after self.shell()")
@@ -617,6 +619,8 @@ class AgenticProcess(Entity):
                 ):
                     if self.status != ProcessStatus.RUNNING.value:
                         self.status = ProcessStatus.RUNNING.value
+                        reattach_changed = True
+                    if reattach_changed:
                         await self.save()
                     return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=False))
                 # Gate failed (PTY dead, worker dead, or both). Drop the stale
@@ -2518,6 +2522,7 @@ class AgenticProcess(Entity):
             name=session_name,
             workdir=workdir,
             tab_order=tab_order,
+            project_id=self.project_id,
         )
         await shell.save()
         return shell
