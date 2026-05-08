@@ -13,20 +13,20 @@ const PATH_SEP = IS_WIN ? ';' : ':';
 /**
  * Decide whether to spawn `cmd` through cmd.exe on Windows.
  *
- * - Bare command names (e.g. `'uv'`, `'flow'`) need shell:true on Windows so
- *   cmd.exe resolves them via PATH and so App Exec aliases work.
- * - Full paths to `.cmd`/`.bat` need shell:true — Node won't run those without
- *   a shell.
- * - Full paths to `.exe` must NOT use shell:true — cmd.exe splits the command
- *   string on whitespace, which breaks paths like
- *   `C:\Users\avi tal\.local\bin\flow.exe` (the binary becomes `C:\Users\avi`).
- *   Node's CreateProcess handles spaces in the .exe path natively.
+ * shell:true is the broadly-compatible default — cmd.exe handles PATHEXT,
+ * App Exec aliases, and uv shims that some AV/AppLocker setups refuse to
+ * launch via direct CreateProcess (manifests as "spawn UNKNOWN").
+ *
+ * The one case where shell:true breaks is an .exe path containing whitespace:
+ * cmd.exe splits on the space, so `C:\Users\avi tal\.local\bin\flow.exe`
+ * becomes `C:\Users\avi`. For that case only, fall back to shell:false and
+ * let Node's CreateProcess handle the path natively.
  */
 function needsShellOnWin(cmd) {
   if (!IS_WIN) return false;
-  if (!/[\\/]/.test(cmd)) return true;     // bare name → PATH lookup needs shell
-  if (/\.exe$/i.test(cmd)) return false;   // direct .exe → spawn handles spaces
-  return true;                             // .cmd/.bat or extensionless full path
+  if (!/[\\/]/.test(cmd)) return true;                      // bare name → PATH lookup needs shell
+  if (/\.exe$/i.test(cmd) && /\s/.test(cmd)) return false;  // .exe with space → bypass cmd.exe
+  return true;
 }
 
 /**
