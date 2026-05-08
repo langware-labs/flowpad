@@ -10,6 +10,7 @@ import {
   AgenticProcess,
   ContextEntitiesEnum,
   dataContext,
+  initSdk,
   Project,
   QueryRequest,
   systemTools,
@@ -77,9 +78,27 @@ export async function loadAgentApp(args: LoaderArgs) {
   const t = new TimeIt(`loadAgentApp(${params['*'] || params.viewType || '/'})`);
   _perfLog(`loadAgentApp start (${params['*'] || params.viewType || '?'})`);
 
-  // SDK init + bootstrap-error gating now happen in the root loader
-  // (`./root-loader.ts`); by the time we get here, schemas are registered
-  // and any fatal bootstrap error has already routed to <ErrorScreen/>.
+  // React Router 6.4 runs root and child route loaders **in parallel** by
+  // default — the root `loadRoot()` does NOT serialize child loaders behind
+  // it. Without this await, a cold-load nav races: `loadAgentApp` constructs
+  // entities (via `loadShellRoute → load-process.ts`) before the root
+  // loader's initSdk has finished registering schemas → `isDbField`
+  // schema-not-found warning storm.
+  //
+  // `initSdk` is idempotent (memoised via the module-level `initPromise`
+  // in `ts_sdk/src/main.ts`), so this is effectively `await
+  // dataManager.schemasReady` — zero work on the warm path, full
+  // serialisation on the cold path.
+  await initSdk(params);
+  t.time('initSdk');
+
+  // Check if service is unavailable - throw error so ErrorBoundary catches it.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const bootstrapError = dataContext.bootstrapError as any;
+  if (bootstrapError?.isServiceUnavailable || bootstrapError?.type === 'network') {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw dataContext.bootstrapError;
+  }
 
   const { processId, viewType } = params;
   const pointer = params['*'] || '';
@@ -115,7 +134,7 @@ export async function loadAgentApp(args: LoaderArgs) {
     // Session view doesn't require agent — just ensure compute node and return.
     await ensureComputeNodeLoaded();
     t.time('ensureComputeNode');
-    t.done(0.5);
+    t.done(1.2);
     return;
   }
 
@@ -166,22 +185,22 @@ export async function loadAgentApp(args: LoaderArgs) {
       }
     }
 
-    t.done(0.5);
+    t.done(1.2);
     return;
   }
 
   const dockViewType = getDockViewType(args);
   if (!dockViewType) {
-    t.done(0.5);
+    t.done(1.2);
     return loadFlowFromParams(args);
   }
   if (!isValidViewType(args)) {
     const brokenViewUrl = getBrokenViewUrl(args);
     console.error(`[LOADER] Invalid view type(${dockViewType}). Redirecting to default view URL:`, brokenViewUrl);
-    t.done(0.5);
+    t.done(1.2);
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw redirect(brokenViewUrl);
   }
-  t.done(0.5);
+  t.done(1.2);
   return loadFlowFromParams(args);
 }

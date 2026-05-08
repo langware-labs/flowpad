@@ -359,8 +359,10 @@ class DataContext extends EventEmitter {
       userTypeId: computed,
       localUser: computed,
       cloudUser: computed,
+      currentUser: computed,
       localUserTypeId: computed,
       cloudUserTypeId: computed,
+      currentUserTypeId: computed,
       flowTypeId: computed,
       projectTypeId: computed,
       computeNodeTypeId: computed,
@@ -523,6 +525,19 @@ class DataContext extends EventEmitter {
   /** Cloud-logged-in user (set by CloudManager); independent of local user. */
   get cloudUser(): User | null {
     return this.getContextEntity(ContextEntitiesEnum.CloudUserTypeId) as User | null;
+  }
+
+  /**
+   * Display-bound identity for profile UI: cloud-when-logged-in, otherwise
+   * local desktop user. Use this when rendering avatars / names / emails to
+   * the human. Use `localUser` for the auth principal of local API calls.
+   */
+  get currentUser(): User | null {
+    return this.cloudUser ?? this.localUser;
+  }
+
+  get currentUserTypeId(): TypeId | null {
+    return this.cloudUserTypeId ?? this.localUserTypeId;
   }
 
   get workspace(): Workspace | null {
