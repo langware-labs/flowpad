@@ -58,11 +58,11 @@ curl -s -X POST "$API/api/v1/graph/shell" -H 'Content-Type: application/json' \
 curl -s -X POST "$API/api/v1/graph/shell" -H 'Content-Type: application/json' -d '{}' | jq -r '.data.id'
 
 # Create an AgenticProcess fixture (Claude tab) without waiting on the live SDK
-curl -s -X POST "$API/api/v1/graph/agenticProcess" -H 'Content-Type: application/json' \
+curl -s -X POST "$API/api/v1/graph/agentic_process" -H 'Content-Type: application/json' \
   -d '{"projectId":"<project-uuid>","worker_type":"claude_code"}' | jq -r '.data.id'
 
 # Same, Codex variant
-curl -s -X POST "$API/api/v1/graph/agenticProcess" -H 'Content-Type: application/json' \
+curl -s -X POST "$API/api/v1/graph/agentic_process" -H 'Content-Type: application/json' \
   -d '{"projectId":"<project-uuid>","worker_type":"codex"}' | jq -r '.data.id'
 
 # Close a shell (removes from tab strip)
@@ -365,7 +365,7 @@ test 35: External REST POST creates a new shell (CLI-equivalent)
 test 36: External REST POST creates a Claude AgenticProcess
 - via REST: create `Proj-B`
 - navigate to `{APP_URL}/dock/shell`
-- from a separate process: `curl -X POST $API/api/v1/graph/agenticProcess -d '{"projectId":"<proj-b-id>","worker_type":"claude_code"}'`
+- from a separate process: `curl -X POST $API/api/v1/graph/agentic_process -d '{"projectId":"<proj-b-id>","worker_type":"claude_code"}'`
 - without refresh, wait up to 5s
 - validate a new Claude tab appears with orange ClaudeIcon; project = `Proj-B`
 - run common validation block

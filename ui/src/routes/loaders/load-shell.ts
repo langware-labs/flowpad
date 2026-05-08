@@ -40,7 +40,7 @@ import {
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { toast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation';
-import { redirect, replace } from 'react-router';
+import { replace } from 'react-router';
 import {
   describeProcessStartError,
   loadProcess,
@@ -220,12 +220,14 @@ async function routeDefaultShell(): Promise<void> {
     return;
   }
   _perfLog(`routeDefaultShell redirect → /dock/shell/${loadedToPointer(result.loaded)}`);
-  // Push (not replace): the user navigated *to* /dock/shell intentionally.
-  // Replacing here would erase that navigation step from history, so BACK
-  // would skip the user's previous page (home → terminal → BACK should
-  // return to home, not whatever was before home).
+  // Replace (not push): bare /dock/shell is a transient placeholder the user
+  // never sees — the loader resolves it to a concrete shell URL synchronously.
+  // Using redirect() (PUSH) leaves bare /dock/shell as a no-op history entry,
+  // which (a) breaks back/forward navigation across tab clicks and (b) is
+  // dropped silently on hard-refresh. Home → BACK still returns to home
+  // because the resolved /dock/shell/<id> entry replaces the bare one.
   // eslint-disable-next-line @typescript-eslint/only-throw-error
-  throw redirect(`/dock/shell/${loadedToPointer(result.loaded)}`);
+  throw replace(`/dock/shell/${loadedToPointer(result.loaded)}`);
 }
 
 async function routeProcessPointer(processId: string): Promise<void> {
