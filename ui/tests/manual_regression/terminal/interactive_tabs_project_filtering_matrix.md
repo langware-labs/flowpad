@@ -52,18 +52,18 @@ curl -s -X POST "$API/api/v1/graph/project" -H 'Content-Type: application/json' 
 
 # Create a plain shell bound to a project
 curl -s -X POST "$API/api/v1/graph/shell" -H 'Content-Type: application/json' \
-  -d '{"projectId":"<project-uuid>"}' | jq -r '.data.id'
+  -d '{"project_id":"<project-uuid>"}' | jq -r '.data.id'
 
-# Create an orphan shell (no projectId — appears in every project's strip)
+# Create an orphan shell (no project_id — appears in every project's strip)
 curl -s -X POST "$API/api/v1/graph/shell" -H 'Content-Type: application/json' -d '{}' | jq -r '.data.id'
 
 # Create an AgenticProcess fixture (Claude tab) without waiting on the live SDK
 curl -s -X POST "$API/api/v1/graph/agentic_process" -H 'Content-Type: application/json' \
-  -d '{"projectId":"<project-uuid>","worker_type":"claude_code"}' | jq -r '.data.id'
+  -d '{"project_id":"<project-uuid>","worker_type":"claude_code"}' | jq -r '.data.id'
 
 # Same, Codex variant
 curl -s -X POST "$API/api/v1/graph/agentic_process" -H 'Content-Type: application/json' \
-  -d '{"projectId":"<project-uuid>","worker_type":"codex"}' | jq -r '.data.id'
+  -d '{"project_id":"<project-uuid>","worker_type":"codex"}' | jq -r '.data.id'
 
 # Close a shell (removes from tab strip)
 curl -s -X POST "$API/api/v1/graph/shell/<id>/close" >/dev/null
@@ -98,7 +98,7 @@ test 1: Refresh keeps a single shell tab alive
 - run common validation block
 
 test 2: Refresh with 5 tabs preserves order and selection
-- via REST: bootstrap, then create 5 plain shells in the bootstrap project (`for i in 1 2 3 4 5; do curl ... /api/v1/graph/shell -d '{"projectId":"<bootstrap-pid>"}'; done`)
+- via REST: bootstrap, then create 5 plain shells in the bootstrap project (`for i in 1 2 3 4 5; do curl ... /api/v1/graph/shell -d '{"project_id":"<bootstrap-pid>"}'; done`)
 - navigate to `{APP_URL}/dock/shell` and let it resolve to a default tab
 - click the 3rd tab in `terminal-tab-bar`
 - record the active `targetTypeId`
@@ -143,8 +143,8 @@ test 7: Refresh after rename preserves rename
 - via REST: create 2 plain shells in the bootstrap project
 - navigate to `{APP_URL}/dock/shell`, double-click the 2nd tab name, type `build-server`, press Enter
 - validate the tab now shows `build-server`
-- via REST: PATCH the underlying Shell with a new pty title (`curl -X PATCH "$API/api/v1/graph/shell/<id>" -d '{"name":"pty-title-from-pty"}'`)
-- validate the tab name remains `build-server` (Shell.user_renamed=true should prevent override)
+- simulate a PTY-driven title update via the dedicated action that the watcher uses (`POST $API/api/v1/graph/shell/<id>/update-display` with body `{"name":"pty-title-from-pty","is_pty":true}`). NOTE: a generic `PATCH /shell/<id>` body does NOT trigger the `user_renamed` guard — the guard lives only in the `update-display` action's `is_pty=true` branch (`flow_sdk/builtin/shell.py:836-845`). The matrix used to instruct PATCH; that was wrong.
+- validate the tab name remains `build-server` (Shell.user_renamed=true honored)
 - hard refresh
 - validate the tab name is still `build-server`
 - run common validation block
@@ -235,10 +235,11 @@ test 18: Close to the Right
 - validate tabs 1 & 2 remain, tabs 3–5 are gone, badge = 2, the 1st tab stays active
 - run common validation block
 
-test 19: Close single tab via X — adjacent activates
-- via REST: create 4 shells in the bootstrap project
+test 19: Close single tab via X — strip self-heals to first by tab_order
+- via REST: create 4 shells in the bootstrap project (record their `tab_order` values)
 - navigate to `{APP_URL}/dock/shell`; click the 2nd tab; click its X
-- validate the 3rd tab (now sitting in slot 2) becomes active; URL updates; badge = 3
+- validate the 1st tab (lowest `tab_order`, equivalent to `tabs[0]` in `useActiveTerminals.byTabOrder`) becomes active. NOTE: the matrix used to specify "the 3rd tab (right-adjacent)" — that's wrong. The code falls back to `tabs.find(isPickable) === tabs[0]` (`load-shell.ts:138-166` via `useStandardTabNav.ts:34-48`); there is no documented "right-adjacent" or "left-adjacent" intent.
+- validate URL updates to the 1st tab's id; badge = 3
 - run common validation block
 
 test 20: Close-all button hides at < 2 tabs
@@ -291,7 +292,7 @@ test 26: Switching project auto-selects first tab by `tab_order`
 - run common validation block
 
 test 27: Orphan tab (projectId === null) appears in every project view
-- via REST: create `Proj-A`(1) and `Proj-B`(1). Then create an orphan shell with empty body `{}` (no `projectId`).
+- via REST: create `Proj-A`(1) and `Proj-B`(1). Then create an orphan shell with empty body `{}` (no `project_id`).
 - navigate to `{APP_URL}/dock/shell`; via chip, switch to `Proj-A`
 - validate the orphan tab appears in the strip; badge counts it
 - via chip, switch to `Proj-B`
@@ -316,7 +317,12 @@ test 29: Footer label fallback chain
 - run common validation block
 
 test 30: "Select Project" red pill — tab spawn flow
-- force project = null (clear current project context via `dataContext.setContextEntityTypeId(CurrentProjectTypeId, null)` from devtools, OR via REST clear+no-bootstrap)
+- land at `{APP_URL}/dock/shell` (loader does not touch `project` for this URL — confirmed in `main-loader.ts:141-149`).
+- force `dataContext.project = null` from MCP browser via `browser_evaluate`:
+  ```js
+  await window.dataContext.setContextEntityTypeId('CurrentProjectTypeId', null);
+  ```
+  `dataContext` is window-exposed via `defineGlobal` (`ts_sdk/src/FlowSync/context.ts:1058-1060`). The matrix used to say "from devtools" — wrong; no devtools required, plain `browser_evaluate` works. State is not reload-persistent; do not navigate after the call (any navigation re-resolves project context via the loaders).
 - validate red "Select Project" pill is visible in `[data-testid="footer"]`
 - click `+` in the tab bar; record observed: blocked-with-prompt OR orphan-tab-created. Write result JSON `notes`.
 - if orphan tab: validate it appears in every project's view (cross-check test 27)
@@ -326,7 +332,7 @@ test 31: "Open folder" launches at workdir [skip:platform]
 - mark `status:"skip"` with `skip_reason:"platform"` and `skip_challenge_required:true`. The OS file manager opens outside the browser; we cannot verify it headlessly.
 
 test 32: Footer repo/branch reflects active project's GitRepo
-- via REST: create `Proj-B`. Create a `gitRepo` artifact bound to that project (`POST /api/v1/graph/gitRepo` with `{"projectId":"<id>","url":"git@example.com:org/repo.git","branch":"feat/x"}`)
+- via REST: create `Proj-B`. Create a `gitRepo` artifact bound to that project (`POST /api/v1/graph/gitRepo` with `{"project_id":"<id>","url":"git@example.com:org/repo.git","branch":"feat/x"}`)
 - with current = bootstrap project, validate footer center shows the bootstrap project's repo/branch (or empty)
 - via chip, switch to `Proj-B`
 - validate footer center shows `Proj-B`'s repo name and branch `feat/x`
@@ -357,7 +363,7 @@ test 35: External REST POST creates a new shell (CLI-equivalent)
 - (rationale: the `flow` CLI has no shell subcommand; the matrix uses REST as the CLI-equivalent operation a developer would run from a terminal)
 - via REST: create `Proj-B`
 - navigate to `{APP_URL}/dock/shell`
-- from a separate process: `curl -X POST $API/api/v1/graph/shell -d '{"projectId":"<proj-b-id>"}'`
+- from a separate process: `curl -X POST $API/api/v1/graph/shell -d '{"project_id":"<proj-b-id>"}'`
 - without manual refresh, wait up to 5s
 - validate a new tab appears in the strip; chip count for `Proj-B` increments; new tab is owned by `Proj-B`
 - run common validation block
@@ -365,7 +371,7 @@ test 35: External REST POST creates a new shell (CLI-equivalent)
 test 36: External REST POST creates a Claude AgenticProcess
 - via REST: create `Proj-B`
 - navigate to `{APP_URL}/dock/shell`
-- from a separate process: `curl -X POST $API/api/v1/graph/agentic_process -d '{"projectId":"<proj-b-id>","worker_type":"claude_code"}'`
+- from a separate process: `curl -X POST $API/api/v1/graph/agentic_process -d '{"project_id":"<proj-b-id>","worker_type":"claude_code"}'`
 - without refresh, wait up to 5s
 - validate a new Claude tab appears with orange ClaudeIcon; project = `Proj-B`
 - run common validation block
@@ -420,11 +426,11 @@ test 42: Close Claude tab — underlying shell behavior
 - run common validation block
 
 test 43: Rename Claude tab survives switch + refresh + PTY title
-- via REST: create one Claude AgenticProcess
+- via REST: create one Claude AgenticProcess (set `visible=true` if needed so the tab surfaces)
 - navigate to its tab; double-click the tab name; rename to `claude-fix`; press Enter
 - click another tab and back; validate name still `claude-fix`
 - hard refresh; validate name still `claude-fix`
-- via REST PATCH on the underlying Shell: set `name = "pty-title"`
+- simulate a PTY-driven title update on the underlying Shell: `POST $API/api/v1/graph/shell/<linked-shell-id>/update-display` with body `{"name":"pty-title","is_pty":true}`. Same rationale as test 7 — generic PATCH bypasses the `user_renamed` guard.
 - validate tab name remains `claude-fix` (Shell.user_renamed=true honored)
 - run common validation block
 
@@ -467,13 +473,17 @@ test 48: Wrong agentId in URL falls back gracefully
 - record observed: redirect to local agent's dock OR error page OR empty-state. Write to result `notes`.
 - run common validation block (with whatever resolves)
 
-test 49: Process-bound dock route `/agent/<agentId>/flow/<processId>/dock/shell`
-- via REST: create one Claude AgenticProcess; record its id (= processId) and the local `<agentId>`
-- navigate to `{APP_URL}/agent/<agentId>/flow/<processId>/dock/shell`
-- validate strip is filtered to that process's shell(s); the active tab is one of them
-- click sidebar Home, then press browser Back (or click the sidebar Shell again with the same URL)
-- validate strip and active tab are restored
+test 49: Process-pointer dock URL activates the AP tab
+- (rationale: the matrix originally specified `/agent/<agentId>/flow/<processId>/dock/shell` and expected per-process strip filtering. The router does define that nested path under `agent/:agentId` (`router.tsx:90,92`), but there is no per-process strip filter in code — `useActiveTerminals` and `useProjectTerminals` filter by project, not by process. Test rewritten to validate the actually-implemented surface: the canonical `/dock/shell/agentic_process-<id>` URL form activates the corresponding AP tab.)
+- via REST: create one Claude AgenticProcess in the bootstrap project; record its id (`agentic_process-<uuid>`) and `shell_id`
+- navigate to `{APP_URL}/dock/shell/agentic_process-<id>`
+- validate the AP tab activates (orange ClaudeIcon)
+- validate `terminal-panel` mounts for the linked shell
+- validate URL stays at `/dock/shell/agentic_process-<id>` (not bare /dock/shell — B1 coverage)
+- click sidebar Home; URL becomes `/`
+- press browser Forward (or click sidebar Shell, then click the AP tab) — validate the AP tab reactivates
 - run common validation block
+- (NOTE: do NOT validate "strip filtered to that process's shells only" — that's not an implemented behavior. If/when per-process filtering is added, restore that assertion.)
 
 test 50: Deep link `/dock/shell/new_terminal` redirects to a real shell
 - navigate to `{APP_URL}/dock/shell/new_terminal`
