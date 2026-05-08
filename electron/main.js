@@ -119,12 +119,19 @@ function setupElectronAutoUpdater() {
     }
   });
 
-  // Run after startup, without blocking the app.
-  setTimeout(() => {
+  // First check shortly after startup, then re-check every hour while the
+  // app keeps running. Without the periodic check a long-lived FlowPad
+  // session never picks up new releases until the user relaunches.
+  // electron-updater is internally idempotent: if a download is already in
+  // progress, subsequent checkForUpdates() calls are no-ops.
+  const HOUR_MS = 60 * 60 * 1000;
+  const runCheck = () => {
     autoUpdater.checkForUpdates().catch((err) => {
       log.error('[electron-updater] check failed:', err);
     });
-  }, 5000);
+  };
+  setTimeout(runCheck, 5000);
+  setInterval(runCheck, HOUR_MS);
 }
 
 // Configuration
