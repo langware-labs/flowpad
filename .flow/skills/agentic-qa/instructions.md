@@ -201,3 +201,26 @@ After any field-rename / field-drop migration, grep `/tmp/flow-prod.log` for `no
 
 **FlowMessage.conversation_id is direct, not in context_entities — by design — 2026-05-02**
 The `context_entities` consolidation kept FlowMessage.conversation_id as a standalone field because the message structurally threads on it. When validating round-trips, don't flag it as "legacy field present" — that's the correct shape per the classification rule "qualifier-or-structural-meaning ⇒ direct field stays".
+
+## Learnings — 2026-05-08 tabs-matrix run
+
+**Parallel qa-testers are NOT safe in this MCP harness — 2026-05-08**
+All qa-tester teammates share ONE Chrome instance and ONE backend DB. The "one tab per tester" rule does not actually isolate them: testers' `browser_navigate` calls hijack each other's pages, and the per-test `desktop-db/clear` POSTs from one tester wipe the in-flight DOM of others. Run mode for matrices that depend on tab/state persistence MUST serialize testers (max 1 tester for these scenarios). Use multiple testers only when each scenario is fully self-contained on its own DOM and DB state.
+
+**`desktop-db/clear` endpoint returns "Invalid request" intermittently — 2026-05-08**
+`POST /api/v1/graph/compute_node/@local/desktop-db/clear` returned `{"status":"FAIL","message":"Invalid request"}` on multiple attempts during the tabs-matrix run, then started working later. It also throws `sqlite3 locking protocol` when called concurrently. Treat the reset as best-effort, not a hard precondition; capture state at test start instead of assuming clean.
+
+**Multi-project setup is unbootstrappable in current harness — 2026-05-08**
+No test fixture creates Proj-A/Proj-B/Proj-C/Proj-D. After db-clear the bootstrap creates a single `my_first_project`. Footer "Switch Project" needs interactive directory selection. Many cross-project scenarios become test-issue("multi-project setup unavailable in budget"). To cover those tests, a REST helper that creates Project entities + workdir directories should be added to the QA harness.
+
+**xterm input is fragile via MCP — 2026-05-08**
+`browser_type` rejects the xterm panel (not contenteditable). `browser_press_key` one-char-at-a-time often fails to reach the PTY. Tests that depend on shell-typed echo content for state markers cannot be reliably automated through MCP browser. Prefer URL/selector/state-presence assertions over typed-content assertions.
+
+**Footer missing `data-testid="footer"` — 2026-05-08**
+The interactive_tabs_project_filtering_matrix references `[data-testid="footer"]` but the actual rendered footer is a plain `<FOOTER>` element with no testid. Either add the testid to `ui/src/components/footer.tsx` or update the matrix to use `footer` element selector. Counted as test-issue across Section E (28-32).
+
+**Project chip pluralization — minor bug — 2026-05-08**
+`projects-counter-chip` aria-label is hardcoded `"<N> active projects with <M> terminals"` — says "1 active projects" instead of "1 active project". Bug in `ui/src/components/terminal/ProjectsCounterChip.tsx`.
+
+**`flowpad` CLI not on PATH in dev shell — 2026-05-08**
+Package `flowpad 0.2.8` is pip-installed but its console_script entry isn't on PATH. `which flowpad` → not found. Section F's CLI tests (X3-X5) classified test-issue. Either expose the entry or document the module-form fallback (`uv run -m flow_sdk.cli ...`) in the matrix and harness.

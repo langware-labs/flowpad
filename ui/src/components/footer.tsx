@@ -62,6 +62,7 @@ export function Footer({ className = '' }: FooterProps) {
 
   return (
     <footer
+      data-testid="footer"
       className={`relative z-10 w-full border-t bg-background/95 px-6 py-1 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60 ${className}`}
     >
       <div className="flex items-center justify-between">
