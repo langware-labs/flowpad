@@ -19,10 +19,15 @@
 
     "pack:mac:full": "npm i && npm run pack:mac",
     "pack:win:full": "npm i && npm run pack:win",
-    "pack:linux:full": "npm i && npm run pack:linux"
+    "pack:linux:full": "npm i && npm run pack:linux",
+
+    "release:mac": "npm run cleanup && electron-builder --mac --config electron-builder.config.cjs --publish always",
+    "release:win": "npm run cleanup && electron-builder --win --config electron-builder.config.cjs --publish always",
+    "release:linux": "npm run cleanup && electron-builder --linux --config electron-builder.config.cjs --publish always"
   },
   "dependencies": {
     "electron-log": "^5.1.1",
+    "electron-updater": "^6.3.9",
     "keytar": "^7.9.0"
   },
   "devDependencies": {
