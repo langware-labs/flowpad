@@ -340,15 +340,17 @@ export function useAllTerminals(): UseTerminalsResult {
  * pin (e.g. for collaboration spaces); omit to default to the active project
  * via ``dataContext.project?.id``.
  *
- * Tabs whose `projectId` is null have no project affiliation (e.g. a plain
- * shell created before any project context is set) and are surfaced in every
- * scoped view — excluding them everywhere would orphan them from the UI.
+ * Project consolidation (Path A, 2026-05-09): every Shell carries a real
+ * ``project_id`` (defaulting server-side to the bootstrap ``@local`` project
+ * when none was passed). The historical orphan-include rule —
+ * ``|| t.projectId == null`` — is gone; the strict per-project filter below
+ * is now safe because no tab's ``projectId`` is ever null in normal flows.
  */
 export function useProjectTerminals(projectId?: string | null): UseTerminalsResult {
   const all = useAllTerminals();
   const pid = projectId ?? dataContext.project?.id ?? null;
   const data = useMemo(
-    () => (pid == null ? all.data : all.data.filter((t) => t.projectId === pid || t.projectId == null)),
+    () => (pid == null ? all.data : all.data.filter((t) => t.projectId === pid)),
     [all.data, pid],
   );
   return { ...all, data };

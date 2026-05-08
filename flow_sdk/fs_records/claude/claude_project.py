@@ -123,64 +123,13 @@ class ProjectFsRecord(Record):
     def is_codex_project(self) -> bool:
         return bool(self.data.get("codex_project"))
 
-    @property
-    def last_indexed_at(self) -> str | None:
-        return self.data.get("last_indexed_at")
-
-    @property
-    def session_count(self) -> int:
-        """Total session count across providers."""
-        return self.claude_session_count + self.codex_session_count
-
-    @property
-    def claude_session_count(self) -> int:
-        if not self.is_claude_project:
-            return 0
-        encoded = self.data.get("encoded_path") or ""
-        # Some legacy rows have a `_path` pointing at the project dir directly.
-        path_attr = getattr(self, "_path", None) or self.source_file
-        if path_attr:
-            candidate = Path(path_attr)
-            if candidate.is_dir():
-                return sum(1 for _ in candidate.glob("*.jsonl"))
-        if encoded:
-            candidate = _claude_projects_dir() / encoded
-            if candidate.is_dir():
-                return sum(1 for _ in candidate.glob("*.jsonl"))
-        return 0
-
-    @property
-    def codex_session_count(self) -> int:
-        if not self.is_codex_project:
-            return 0
-        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
-        sessions_root = get_instance_settings().codex_sessions_dir
-        if not sessions_root.is_dir():
-            return 0
-        target = self.cwd
-        if not target:
-            return 0
-        count = 0
-        for p in sessions_root.rglob("rollout-*.jsonl"):
-            try:
-                with open(p, "rb") as fh:
-                    head = fh.read(8192).decode("utf-8", errors="replace")
-            except OSError:
-                continue
-            for line in head.splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    raw = json.loads(line)
-                except json.JSONDecodeError:
-                    break
-                if raw.get("type") == "session_meta":
-                    payload = raw.get("payload") or {}
-                    if payload.get("cwd") == target:
-                        count += 1
-                    break
-        return count
+    # NOTE: ``last_indexed_at``, ``session_count``, and ``last_session_at`` are
+    # plain data fields persisted on ``__dict__`` and surfaced via Python's
+    # attribute lookup against the dict (no ``@property`` accessor). The old
+    # live disk-walking ``session_count`` / ``claude_session_count`` /
+    # ``codex_session_count`` properties were removed when the consolidation
+    # moved to denormalization at upsert time (Path A 2026-05-09). The
+    # disk-walking logic now lives in ``_compute_session_stats``.
 
     @property
     def sessions(self) -> list[ClaudeSessionRecord]:
@@ -274,34 +223,43 @@ class ProjectFsRecord(Record):
         """Find or create a project record at the given cwd.
 
         Existing rows have their flags merged (only updates when the incoming
-        flag is not None). ``last_indexed_at`` always refreshes.
+        flag is not None). ``last_indexed_at`` always refreshes. Session-count
+        denormalization fields (``session_count``, ``last_session_at``) are
+        recomputed from disk on every upsert so that the matching Project
+        entity (created/updated via ``sync_to_db`` → ``Project.from_record``)
+        gets fresh activity hints without the entity layer touching records.
+
+        Note: ``Record.data`` is a read-only property returning a copy of
+        ``to_dict()`` — write via direct attribute assignment so the values
+        actually persist on ``__dict__``.
         """
         canonical = canonical_posix_path(cwd)
         existing = cls.find_by_cwd(canonical)
         if existing is not None:
-            changed = False
-            if claude_project is not None and existing.data.get("claude_project") != claude_project:
-                existing.data["claude_project"] = claude_project
-                changed = True
-            if codex_project is not None and existing.data.get("codex_project") != codex_project:
-                existing.data["codex_project"] = codex_project
-                changed = True
+            if claude_project is not None:
+                existing.claude_project = claude_project
+            if codex_project is not None:
+                existing.codex_project = codex_project
             if encoded_path and not existing.data.get("encoded_path"):
-                existing.data["encoded_path"] = encoded_path
-                changed = True
-            # Backfill cwd on legacy rows that lack it.
+                existing.encoded_path = encoded_path
+            # ``cwd`` and ``last_indexed_at`` are exposed via @property, so use
+            # ``object.__setattr__`` to write the underlying ``__dict__`` value
+            # the property reads from (via ``data``/``to_dict`` chain).
             if not existing.data.get("cwd"):
-                existing.data["cwd"] = canonical
-                changed = True
-            existing.data["last_indexed_at"] = _now_iso()
-            if changed or existing.data.get("last_indexed_at"):
-                try:
-                    await existing.save()
-                except Exception:
-                    pass
+                object.__setattr__(existing, "cwd", canonical)
+            object.__setattr__(existing, "last_indexed_at", _now_iso())
+            # Denormalized session-stats are plain data fields (no @property);
+            # direct attribute assignment writes ``__dict__`` cleanly.
+            session_count, last_session_at = existing._compute_session_stats()
+            existing.session_count = session_count
+            existing.last_session_at = last_session_at
+            try:
+                await existing.save()
+            except Exception:
+                pass
             return existing
 
-        # Create fresh
+        # Create fresh — kwargs flow through Record.__init__ into __dict__.
         kwargs = {
             "cwd": canonical,
             "claude_project": bool(claude_project),
@@ -312,11 +270,92 @@ class ProjectFsRecord(Record):
         if encoded_path:
             kwargs["encoded_path"] = encoded_path
         rec = cls(**kwargs)
+        # Populate session-stats denormalization on the fresh record so the
+        # subsequent ``sync_to_db`` propagates them onto the Project entity.
+        session_count, last_session_at = rec._compute_session_stats()
+        rec.session_count = session_count
+        rec.last_session_at = last_session_at
         try:
             await rec.save()
         except Exception:
             pass
         return rec
+
+    def _compute_session_stats(self) -> tuple[int, str | None]:
+        """Walk Claude + Codex on-disk session sources and return aggregate
+        ``(session_count, last_session_at)`` for this record's ``cwd``.
+
+        Called by ``upsert_for_cwd`` to populate the denormalized fields the
+        entity layer surfaces. Cheap-but-bounded I/O — at most a few file
+        stats per session JSONL, plus one rglob per provider per cwd.
+        """
+        from datetime import datetime as _dt  # noqa: PLC0415
+
+        total = 0
+        last_ts: str | None = None
+
+        def _bump(ts: float) -> None:
+            nonlocal last_ts
+            iso = _dt.fromtimestamp(ts, tz=timezone.utc).isoformat()
+            if last_ts is None or iso > last_ts:
+                last_ts = iso
+
+        # Claude side: ``~/.claude/projects/<encoded>/<session>.jsonl``
+        if self.is_claude_project:
+            encoded = self.data.get("encoded_path") or ""
+            project_dir: Path | None = None
+            path_attr = getattr(self, "_path", None) or self.source_file
+            if path_attr:
+                cand = Path(path_attr)
+                if cand.is_dir():
+                    project_dir = cand
+            if project_dir is None and encoded:
+                cand = _claude_projects_dir() / encoded
+                if cand.is_dir():
+                    project_dir = cand
+            if project_dir is not None:
+                for f in project_dir.glob("*.jsonl"):
+                    total += 1
+                    try:
+                        _bump(f.stat().st_mtime)
+                    except OSError:
+                        continue
+
+        # Codex side: rollouts whose ``session_meta.payload.cwd`` equals our cwd.
+        if self.is_codex_project:
+            from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+            sessions_root = get_instance_settings().codex_sessions_dir
+            target = self.cwd
+            if sessions_root.is_dir() and target:
+                for p in sessions_root.rglob("rollout-*.jsonl"):
+                    try:
+                        with open(p, "rb") as fh:
+                            head = fh.read(8192).decode("utf-8", errors="replace")
+                    except OSError:
+                        continue
+                    matched = False
+                    for line in head.splitlines():
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            raw = json.loads(line)
+                        except json.JSONDecodeError:
+                            break
+                        if raw.get("type") == "session_meta":
+                            payload = raw.get("payload") or {}
+                            if payload.get("cwd") == target:
+                                matched = True
+                            break
+                    if matched:
+                        total += 1
+                        try:
+                            _bump(p.stat().st_mtime)
+                        except OSError:
+                            continue
+
+        return total, last_ts
 
     # ─── Indexer entry point ───────────────────────────────────────────────
 

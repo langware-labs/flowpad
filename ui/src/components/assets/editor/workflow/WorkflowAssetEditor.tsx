@@ -2,6 +2,7 @@ import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownE
 import { enableMcp, isMcpAvailable } from '@src/components/assets/utils';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
+import { WorkflowTraceViewer } from '@src/components/workflow-trace';
 import {
   workflowRunStore,
   type ProcessEntry,
@@ -64,6 +65,10 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
   const [isStarting, setIsStarting] = useState(false);
   const [showMcpModal, setShowMcpModal] = useState(false);
   const [mcpEnabling, setMcpEnabling] = useState(false);
+  // When set, the main pane swaps from MarkdownEditor → WorkflowTraceViewer.
+  // Phase 3 (greedy v1): viewer renders whatever trace/analysis files are
+  // present in the run's output_folder.
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
   // WorkflowStrip's Play button stashes a live ProcessEntry here before
   // navigating — drain it on mount so we show the run in progress.
@@ -199,20 +204,28 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
         entries={runHistory}
         currentEntry={processEntry}
         computeNodeId={fsRef.typeId.id}
+        onSelectRun={setSelectedRunId}
       />
     ),
   };
 
   return (
     <>
-      <MarkdownEditor
-        fsRef={resolvedWorkflow.doc ?? fsRef}
-        chatTarget={resolvedWorkflow.typeId.toString()}
-        toolbar={toolbar}
-        extraSideTabs={[runsTab]}
-        activeSideTab={activeSideTab}
-        onActiveSideTabChange={setActiveSideTab}
-      />
+      {selectedRunId ? (
+        <WorkflowTraceViewer
+          processId={selectedRunId}
+          onBack={() => setSelectedRunId(null)}
+        />
+      ) : (
+        <MarkdownEditor
+          fsRef={resolvedWorkflow.doc ?? fsRef}
+          chatTarget={resolvedWorkflow.typeId.toString()}
+          toolbar={toolbar}
+          extraSideTabs={[runsTab]}
+          activeSideTab={activeSideTab}
+          onActiveSideTabChange={setActiveSideTab}
+        />
+      )}
 
       <AlertDialog open={showMcpModal} onOpenChange={setShowMcpModal}>
         <AlertDialogContent>
