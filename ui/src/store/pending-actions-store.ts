@@ -1,4 +1,5 @@
-import { AgenticProcess, ConnectionManager, isReadyForInput, type StatusBearingProcess } from '@sdk';
+import { AgenticProcess, isReadyForInput, type StatusBearingProcess } from '@sdk';
+import { subscribeToEntityOps } from '@sdk/react/hooks';
 import { useMemo, useSyncExternalStore } from 'react';
 
 /**
@@ -96,9 +97,10 @@ function ensureTimer(): void {
 }
 
 function handleDataOp(typeIdStr: string, op: string, data: unknown): void {
+  // Type filtering is handled by `subscribeToEntityOps` in `attachOnce()` —
+  // this callback is only invoked for AgenticProcess events.
   const prefix = `${AgenticProcess.type}-`;
-  if (!typeIdStr.startsWith(prefix)) return;
-  const id = typeIdStr.slice(prefix.length);
+  const id = typeIdStr.startsWith(prefix) ? typeIdStr.slice(prefix.length) : typeIdStr;
 
   if (op === 'delete') {
     if (trackers.delete(id)) {
@@ -176,7 +178,12 @@ function handleDataOp(typeIdStr: string, op: string, data: unknown): void {
 function attachOnce(): void {
   if (attached) return;
   attached = true;
-  ConnectionManager.getInstance().on('on_data_op', handleDataOp);
+  subscribeToEntityOps(
+    AgenticProcess.type,
+    (typeId, op, data) => handleDataOp(typeId.toString(), op, data as unknown),
+  );
+  // No op filter — pending-actions cares about all AgenticProcess ops
+  // (create / update / delete). Module-scoped: never unsubscribe.
 }
 
 function subscribe(onChange: () => void): () => void {

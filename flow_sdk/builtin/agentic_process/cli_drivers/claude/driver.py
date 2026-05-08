@@ -10,6 +10,7 @@ agents.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from pathlib import Path
@@ -150,9 +151,18 @@ class ClaudeDriver:
         else:
             ctx_add_dirs = list(process.additional_dirs or [])
 
+        # Mirror PTY path's FLOWPAD_EXECUTION_SCOPE injection
+        # (agentic_process.py:786-788) so headless workers can route
+        # CLI calls (e.g. ``flow workflow report``) back to this process.
+        env_vars = dict(cli_cfg.get("env_vars") or {})
+        env_vars.setdefault(
+            "FLOWPAD_EXECUTION_SCOPE",
+            json.dumps([{"type": process.get_type(), "id": process.id}]),
+        )
+
         context = AgenticContext(
             workdir=process.workdir,
-            env_vars=dict(cli_cfg.get("env_vars") or {}),
+            env_vars=env_vars,
             model=parent_model,
             effort=parent_effort,
             permission_mode=cli_cfg.get("permission_mode", "bypassPermissions"),
