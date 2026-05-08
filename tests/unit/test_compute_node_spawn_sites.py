@@ -142,9 +142,14 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
             captured.update(kwargs)
             self.id = "fresh-1"
             self.type = "agentic_process"
+            self.shell_id = None
 
         async def save(self, owner=None):
             captured["__saved_owner"] = owner
+
+        async def start(self, visible=False):
+            captured["__started_visible"] = visible
+            return ApiSuccessResponse(data={"id": self.id})
 
     with patch(_PATCH_REQ_SCAN, return_value=info), \
          patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
@@ -155,7 +160,7 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
     # Validate post-refactor field set
     expected = {
         "worker_type", "instruction_content", "cli_config", "context_data",
-        "workdir", "visible", "additional_dirs", "project_id", "target_typeid_str",
+        "workdir", "visible", "additional_dirs", "project_id", "target_vfs_path",
     }
     assert expected.issubset(captured.keys()), captured.keys()
     assert captured["workdir"] == "/tmp/proj"
@@ -192,9 +197,16 @@ async def test_scan_upsert_session_process_creates_fresh_when_no_existing():
             self.session_id = kwargs.get("session_id")
             self.cli_config = kwargs.get("cli_config", {}) or {}
             self.workdir = kwargs.get("workdir")
+            self.shell_id = None
+            self.visible = kwargs.get("visible", False)
+            self.worker_type = kwargs.get("worker_type")
 
         async def save(self, owner=None):
             captured["__saved_owner"] = owner
+
+        async def start(self, visible=False):
+            captured["__started_visible"] = visible
+            return ApiSuccessResponse(data={"id": self.id})
 
     with patch(_PATCH_REQ_SCAN, return_value=info), \
          patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
@@ -220,6 +232,10 @@ async def test_scan_upsert_session_process_returns_existing_on_resume():
     existing.id = "existing-id"
     existing.type = "agentic_process"
     existing.session_id = "sess-existing"
+    existing.shell_id = "shell-1"
+    existing.visible = True
+    existing.worker_type = "claude"
+    existing.pty_pid = None
 
     class FakeProc:
         constructed = False
@@ -236,10 +252,8 @@ async def test_scan_upsert_session_process_returns_existing_on_resume():
         resp = await node._scan_upsert_session_process()
 
     assert resp.status == "SUCCESS"
-    assert resp.data == {
-        "id": "existing-id",
-        "type": "agentic_process",
-        "session_id": "sess-existing",
-        "created": False,
-    }
+    assert resp.data["id"] == "existing-id"
+    assert resp.data["type"] == "agentic_process"
+    assert resp.data["session_id"] == "sess-existing"
+    assert resp.data["created"] is False
     assert FakeProc.constructed is False, "Should not construct a new entity on resume hit"

@@ -1,11 +1,11 @@
 """Unified worker history surface for the "Recent Sessions" UI.
 
-Per-worker providers (currently only ``get_claude_worker_history``) collect
+Per-worker providers (currently Claude and Codex) collect
 sessions from each agent's native history source. ``get_worker_history``
 merges, deduplicates, sorts and caps the combined list so the frontend can
 render it from a single response.
 
-Adding a new worker (e.g. codex) is a one-line addition to
+Adding a new worker is a one-line addition to
 ``WORKER_HISTORY_PROVIDERS``.
 """
 
@@ -127,7 +127,9 @@ def _build_agentic_process_index() -> dict[str, str]:
         logger.warning("[worker_history] discover agentic_process failed: %s", e)
         return index
     for rec in records:
-        sid = rec.worker_session_id
+        data = object.__getattribute__(rec, "__dict__")
+        cli_config = data.get("cli_config") if isinstance(data.get("cli_config"), dict) else {}
+        sid = rec.worker_session_id or data.get("session_id") or cli_config.get("session_id")
         if sid and sid not in index:
             index[sid] = rec.id
     return index

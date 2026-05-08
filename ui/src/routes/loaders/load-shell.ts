@@ -30,7 +30,7 @@ import {
   systemTools,
   TypeId,
 } from '@sdk';
-import { type TerminalTab } from '@src/hooks/useActiveTerminals';
+import { terminalProcessId, terminalTransportShellId, type TerminalTab } from '@src/hooks/useActiveTerminals';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { toast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation';
@@ -104,6 +104,7 @@ export async function loadShell(shellId: string): Promise<Shell> {
   }
 
   dataContext.setActiveShellId(shell.id);
+  dataContext.setActiveTerminalTargetTypeId(shell.typeId);
   dataContext.setWorkdir(shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
   await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
   if (shell.project_id) {
@@ -121,9 +122,9 @@ export async function loadShell(shellId: string): Promise<Shell> {
 
 /**
  * Pick a default tab from a pre-filtered list. Prefers the previously-active
- * shell, then falls back to the first non-disabled tab. Skips any tab whose
- * shell id or owning-process id is in `excludeIds`. Returns null when nothing
- * is pickable.
+ * target, then falls back to the first non-disabled tab. Skips any tab whose
+ * target TypeId, target id, transport shell id, or owning-process id is in
+ * `excludeIds`. Returns null when nothing is pickable.
  *
  * `excludeIds` is a single set because process ids and shell ids are both
  * UUIDs and don't collide.
@@ -134,14 +135,25 @@ export function resolveDefaultTab(
 ): TerminalTab | null {
   const isPickable = (tab: TerminalTab) => {
     if (tab.isDisabled) return false;
-    if (excludeIds.has(tab.shellId)) return false;
-    if (tab.agenticProcess && excludeIds.has(tab.agenticProcess.id)) return false;
+    if (excludeIds.has(tab.targetTypeId.toString())) return false;
+    if (excludeIds.has(tab.targetTypeId.id)) return false;
+    const shellId = terminalTransportShellId(tab);
+    if (shellId && excludeIds.has(shellId)) return false;
+    const processId = terminalProcessId(tab);
+    if (processId && excludeIds.has(processId)) return false;
     return true;
   };
 
+  const previousTargetTypeId = dataContext.activeTerminalTargetTypeId;
+  if (previousTargetTypeId) {
+    const previous = tabs.find((t) => t.targetTypeId.equals(previousTargetTypeId) && isPickable(t));
+    if (previous) return previous;
+  }
   const previousShellId = dataContext.activeShellId;
   if (previousShellId) {
-    const previous = tabs.find((t) => t.shellId === previousShellId && isPickable(t));
+    const previous = tabs.find(
+      (t) => t.targetTypeId.type === Shell.type && t.targetTypeId.id === previousShellId && isPickable(t),
+    );
     if (previous) return previous;
   }
   return tabs.find(isPickable) ?? null;
@@ -196,6 +208,7 @@ async function routeDefaultShell(): Promise<void> {
     // Empty state: clear context, render whatever the shell view shows when
     // nothing is selected.
     dataContext.setActiveShellId('');
+    dataContext.setActiveTerminalTargetTypeId(null);
     dataContext.setWorkdir(dataContext.project?.fs_storage_mount_path ?? null);
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
     return;

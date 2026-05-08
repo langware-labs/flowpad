@@ -140,47 +140,54 @@ export async function createProjectConversation(
 }
 
 // ---------------------------------------------------------------------------
-// Hub-mirrored conversations (Entity.remote === true).
+// Cross-user conversations: bundle (.flowmsg) delivery, single codepath.
+//
+// Both task-bound shares (`share_task`) and homelanding-started conversations
+// (`conversation-start-bundle`) use the same `.flowmsg` bundle pipeline. The
+// recipient gets a pending Invitation linked to the share's first FlowMessage;
+// on accept, the bundle downloads and the local Conversation materializes.
 // ---------------------------------------------------------------------------
 
-export interface HubConversationParticipantInput {
-  /** Either the hub user id (when address_type='id') or an email address. */
-  address: string;
-  address_type: 'id' | 'email';
-}
-
-export interface CreateHubConversationParams {
-  participants: HubConversationParticipantInput[];
+export interface StartBundleConversationParams {
+  /** Either the hub user id or an email address — the backend resolves both. */
+  recipient_id: string;
   /** First message text. */
-  initial_text?: string;
+  message?: string;
+  /** Display title; defaults to a truncated message preview when blank. */
   title?: string;
-  /** Display name on the first FlowMessage. Defaults server-side to the
-   * local user's name (synced from `git config user.name`). */
+  /** Local Project this conversation is filed under (sender side). The bundle
+   *  also stamps it as remote_project_id on the receiver for project mapping. */
+  project_id?: string | null;
+  project_name?: string | null;
+  /** Display name on the first FlowMessage. Defaults to the local user's name. */
   sender_name?: string | null;
 }
 
-export interface CreateHubConversationResult {
-  conversation_id: string;
-  invited_emails: string[];
+export interface StartBundleConversationResult {
+  sent: boolean;
+  email_error?: string | null;
+  conversation_id?: string | null;
+  task_id?: string | null;
+  notification_id?: string | null;
+  notify_url?: string | null;
 }
 
-/** Create a conversation that lives on the hub and is mirrored locally with `remote=true`. */
-export async function createHubConversation(
-  params: CreateHubConversationParams,
-): Promise<CreateHubConversationResult> {
-  const action = new ActionInfo('conversation-start-hub', null, null, 'POST');
+/** Start a Task-less conversation via the bundle delivery path (Scenario B). */
+export async function startBundleConversation(
+  params: StartBundleConversationParams,
+): Promise<StartBundleConversationResult> {
+  const action = new ActionInfo('conversation-start-bundle', null, null, 'POST');
   action.bodyParameters = params;
-  const res = await dataManager.callAction<CreateHubConversationParams, CreateHubConversationResult>(action);
+  const res = await dataManager.callAction<StartBundleConversationParams, StartBundleConversationResult>(action);
   return res!;
 }
 
 export interface SyncFromHubResult {
   invitations: number;
-  conversations: number;
   flow_messages: number;
 }
 
-/** Pull pending invitations + accessible conversations from the hub. */
+/** Pull pending invitations + new FlowMessages (cursor-based) from the hub. */
 export async function syncFromHub(): Promise<SyncFromHubResult> {
   const action = new ActionInfo('conversation-sync', null, null, 'POST');
   action.bodyParameters = {};
@@ -194,10 +201,18 @@ export interface AcceptInvitationParams {
 
 export interface AcceptInvitationResult {
   invitation_id: string;
-  synced: SyncFromHubResult;
+  /** Id of the FlowMessage whose bundle was downloaded and unpacked, if any. */
+  flow_message_id?: string | null;
+  /** True when the targeted bundle download materialized the local Conversation. */
+  bundle_unpacked: boolean;
 }
 
-/** Accept a pending invitation on the hub, then sync to materialize the conversation. */
+/** Accept a pending invitation on the hub and download just the unlocked bundle.
+ *
+ * Does NOT pull other accessible FlowMessages — that's the Refresh button's job
+ * (``syncFromHub``). Keeps accept latency to ~one HTTP round-trip + one bundle
+ * download.
+ */
 export async function acceptInvitation(
   params: AcceptInvitationParams,
 ): Promise<AcceptInvitationResult> {

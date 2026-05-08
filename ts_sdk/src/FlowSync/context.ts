@@ -273,6 +273,22 @@ class DataContext extends EventEmitter {
     this.emit(ContextEventType.CONTEXT_CHANGED);
   }
 
+  /**
+   * Canonical active terminal tab target.
+   *
+   * Shell tabs use shell-<id>. Agentic process tabs use
+   * agentic_process-<id>. This deliberately differs from activeShellId:
+   * activeShellId is the current PTY transport shell, while this field is the
+   * stable row identity used by terminal tab UI.
+   */
+  setActiveTerminalTargetTypeId(typeId: TypeId | null): void {
+    if (this.activeTerminalTargetTypeId?.equals(typeId)) return;
+    runInAction(() => {
+      this.activeTerminalTargetTypeId = typeId ? new TypeId(typeId) : null;
+    });
+    this.emit(ContextEventType.CONTEXT_CHANGED);
+  }
+
   setWorkdir(path: string | null): void {
     if (this.workdir === path) return;
     runInAction(() => {
@@ -290,6 +306,10 @@ class DataContext extends EventEmitter {
 
   // Active shell session ID - persisted across refreshes via URL
   activeShellId: string = '';
+
+  // Active terminal tab identity. This is intentionally TypeId-based so a
+  // process tab remains selected even if its current PTY shell changes.
+  activeTerminalTargetTypeId: TypeId | null = null;
 
   // Active working directory — shown in the footer
   workdir: string | null = null;
@@ -348,6 +368,7 @@ class DataContext extends EventEmitter {
       connection: observable,
       isConnected: computed,
       activeShellId: observable,
+      activeTerminalTargetTypeId: observable,
       workdir: observable,
       envName: computed,
       desktopInfo: computed,
