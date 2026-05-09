@@ -1,8 +1,6 @@
 import { ExternalLink } from 'lucide-react';
-import { AgenticProcess, Conversation, dataManager, FlowMessage, Task, TypeId } from '@sdk';
+import { AgenticProcess, Conversation, FlowMessage, Task, TypeId } from '@sdk';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ContextEntityChip } from './EntityChip';
 import { AttachmentChip } from './AttachmentChip';
 import { fileAttachmentUrl } from './attachment-url';
@@ -12,7 +10,7 @@ interface ConversationContextPanelProps {
   /** The selected message — falls back to the most recent in ConversationView. */
   flowMessage: FlowMessage | null;
   task: Task | null;
-  /** Conversation entity — its `contextEntities` (e.g. project) also surface here. */
+  /** Used to surface the conversation-wide project chip on every message. */
   conversation: Conversation | null;
   conversationId: string;
   /** Wraps any action that needs a `cwd`/project. */
@@ -26,17 +24,21 @@ function isTranscriptAttachment(a: Attachment): boolean {
 }
 
 /**
- * Body of the conversation drawer's "Context" tab. Surfaces every
- * chip-worthy affordance for the conversation in one place — the toolbar
- * is intentionally empty above us.
+ * Body of the conversation drawer's "Context" tab. **Per-message**:
+ * everything rendered here is sourced from the currently-selected
+ * `flowMessage` — clicking another message switches the panel wholesale.
  *
- * Sections, top to bottom:
- *   - Open in Claude (resumes / spawns the task's `my_process_id`)
- *   - Open Shared Terminal (the task's `shared_process_id`, when set)
- *   - Entities — merged TypeIds from task / conversation / selected message
- *     `contextEntities` (project, spec, plan, …); de-duped, with self-refs
- *     and the host conversation's own TypeId filtered out.
- *   - Files / Prompts / Transcript — scoped to the selected message.
+ * The one exception is the **project** chip: once a project is mapped /
+ * selected, it applies to the entire conversation, so it shows on every
+ * message's Context. Sourced from `task.project_id || conversation.project_id`
+ * (both auto-project to a `Project` TypeId in their `contextEntities`).
+ *
+ * Per-message sources:
+ *   - `flowMessage.contextEntities` — TypeIds the sender stamped.
+ *   - `flowMessage.attachment` — TYPE_ID entries surface as entity chips;
+ *     FILE / PROMPT entries surface in their dedicated sections.
+ *
+ * The "Open in Claude" button is the other always-shown task-level affordance.
  */
 export function ConversationContextPanel({
   flowMessage,
@@ -45,8 +47,6 @@ export function ConversationContextPanel({
   conversationId,
   ensureMapped,
 }: ConversationContextPanelProps) {
-  const { navigation } = useDockNavigation();
-
   const messageId = flowMessage?.id ?? '';
   const attachments: Attachment[] = flowMessage?.attachment ?? [];
   const fileAttachments = attachments.filter(
@@ -54,58 +54,58 @@ export function ConversationContextPanel({
   );
   const promptAttachments = attachments.filter((a) => a.attachment_type === AttachmentType.PROMPT);
   const transcriptAttachment = attachments.find(isTranscriptAttachment);
+  const typeIdAttachments = attachments.filter((a) => a.attachment_type === AttachmentType.TYPE_ID);
 
-  // Merge contextEntities from task + conversation + selected message into a
-  // single de-duplicated chip row. The task's row contributes project / spec /
-  // plan / assignee chips that used to live in the toolbar; the conversation
-  // row contributes its own project projection on hub-direct conversations.
+  // Skip self-references and the things rendered by dedicated buttons —
+  // everything else flows through as a generic chip.
   const skipKeys = new Set<string>();
   if (messageId) skipKeys.add(new TypeId(FlowMessage.type, messageId).toString());
   skipKeys.add(new TypeId(Conversation.type, conversationId).toString());
-  // Skip the task's own self-ref — we render its dedicated affordances above.
-  if (task?.id) skipKeys.add(new TypeId(Task.type, task.id).toString());
-  // Suppress AgenticProcess chips for my_process_id / shared_process_id —
-  // those have dedicated buttons (Open in Claude / Open Shared Terminal).
   if (task?.my_process_id) skipKeys.add(new TypeId(AgenticProcess.type, task.my_process_id).toString());
   if (task?.shared_process_id) skipKeys.add(new TypeId(AgenticProcess.type, task.shared_process_id).toString());
 
-  const sources: TypeId[][] = [];
-  if (task?.contextEntities) sources.push(task.contextEntities);
-  if (conversation?.contextEntities) sources.push(conversation.contextEntities);
-  if (flowMessage?.contextEntities) sources.push(flowMessage.contextEntities);
-
   const seen = new Set<string>();
   const contextEntities: TypeId[] = [];
-  for (const list of sources) {
-    for (const t of list) {
-      const key = t.toString();
-      if (skipKeys.has(key) || seen.has(key)) continue;
-      seen.add(key);
-      contextEntities.push(t);
+  const pushTypeId = (t: TypeId | null) => {
+    if (!t) return;
+    const key = t.toString();
+    if (skipKeys.has(key) || seen.has(key)) return;
+    seen.add(key);
+    contextEntities.push(t);
+  };
+  // Conversation-wide project chip first — applies to every message once a
+  // project is mapped / selected for the conversation.
+  const projectId = task?.project_id ?? conversation?.project_id ?? null;
+  if (projectId) pushTypeId(new TypeId('project', projectId));
+  // Per-message contextEntities.
+  for (const t of flowMessage?.contextEntities ?? []) pushTypeId(t);
+  // TYPE_ID attachments (spec, task, conversation refs the sender stamped).
+  for (const a of typeIdAttachments) {
+    try {
+      pushTypeId(new TypeId(a.data));
+    } catch {
+      // Malformed TypeId string — skip silently.
     }
   }
 
   const conversationContainer = { type: Conversation.type, id: conversationId };
 
-  const handleOpenShared = async () => {
-    const sharedId = task?.shared_process_id;
-    if (!sharedId) return;
-    const proc = await dataManager
-      .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, sharedId))
-      .catch(() => null);
-    if (!proc) return;
-    navigation.openDock(proc.dockPointer);
-  };
-
   const showOpenInClaude = !!task;
-  const showOpenShared = !!task?.shared_process_id;
   const hasMessageScopedSections =
     !!flowMessage &&
     (fileAttachments.length > 0 ||
       promptAttachments.length > 0 ||
       !!transcriptAttachment);
   const hasAnything =
-    showOpenInClaude || showOpenShared || contextEntities.length > 0 || hasMessageScopedSections;
+    showOpenInClaude || contextEntities.length > 0 || hasMessageScopedSections;
+
+  if (!flowMessage) {
+    return (
+      <div className="px-3 py-6 text-center text-[11px] text-muted-foreground">
+        Select a message to view its context.
+      </div>
+    );
+  }
 
   return (
     <div className="h-full overflow-y-auto p-3 space-y-4" data-testid="conversation-context-panel">
@@ -117,20 +117,6 @@ export function ConversationContextPanel({
             ensureMapped={ensureMapped}
             variant="inline"
           />
-        </Section>
-      )}
-
-      {showOpenShared && (
-        <Section title="Shared Terminal">
-          <button
-            type="button"
-            onClick={() => void handleOpenShared()}
-            title="Open the shared terminal where approved prompts run"
-            className="inline-flex items-center gap-1.5 rounded-full border border-orange-500/40 bg-orange-500/10 px-2.5 py-1 text-[11px] font-medium text-orange-700 transition-colors hover:bg-orange-500/20 dark:text-orange-300"
-          >
-            <ClaudeIcon className="h-3.5 w-3.5" />
-            Open Shared Terminal
-          </button>
         </Section>
       )}
 
@@ -201,7 +187,7 @@ export function ConversationContextPanel({
 
       {!hasAnything && (
         <div className="px-1 py-2 text-[11px] italic text-muted-foreground/70">
-          No context yet.
+          No context for this message.
         </div>
       )}
     </div>
