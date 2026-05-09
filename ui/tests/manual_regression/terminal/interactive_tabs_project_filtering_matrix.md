@@ -57,13 +57,23 @@ curl -s -X POST "$API/api/v1/graph/shell" -H 'Content-Type: application/json' \
 # Create an orphan shell (no project_id — appears in every project's strip)
 curl -s -X POST "$API/api/v1/graph/shell" -H 'Content-Type: application/json' -d '{}' | jq -r '.data.id'
 
-# Create an AgenticProcess fixture (Claude tab) without waiting on the live SDK
-curl -s -X POST "$API/api/v1/graph/agentic_process" -H 'Content-Type: application/json' \
-  -d '{"project_id":"<project-uuid>","worker_type":"claude_code"}' | jq -r '.data.id'
+# Create an AgenticProcess fixture (Claude tab) without waiting on the live SDK.
+# IMPORTANT: AgenticProcess defaults to visible=False (agentic_process.py:498); the
+# backend's terminals/list filters out non-visible APs (compute_node.py:507), so
+# without an explicit visible=true the AP never surfaces in the strip. PATCH it
+# immediately after creation:
+AP_ID=$(curl -s -X POST "$API/api/v1/graph/agentic_process" -H 'Content-Type: application/json' \
+  -d '{"project_id":"<project-uuid>","worker_type":"claude_code"}' | jq -r '.data.id')
+curl -s -X PATCH "$API/api/v1/graph/agentic_process/$AP_ID" \
+  -H 'Content-Type: application/json' -d '{"visible":true}' >/dev/null
+echo "$AP_ID"
 
-# Same, Codex variant
-curl -s -X POST "$API/api/v1/graph/agentic_process" -H 'Content-Type: application/json' \
-  -d '{"project_id":"<project-uuid>","worker_type":"codex"}' | jq -r '.data.id'
+# Same, Codex variant — same visible=true follow-up required.
+AP_ID=$(curl -s -X POST "$API/api/v1/graph/agentic_process" -H 'Content-Type: application/json' \
+  -d '{"project_id":"<project-uuid>","worker_type":"codex"}' | jq -r '.data.id')
+curl -s -X PATCH "$API/api/v1/graph/agentic_process/$AP_ID" \
+  -H 'Content-Type: application/json' -d '{"visible":true}' >/dev/null
+echo "$AP_ID"
 
 # Close a shell (removes from tab strip)
 curl -s -X POST "$API/api/v1/graph/shell/<id>/close" >/dev/null
@@ -81,6 +91,7 @@ When a test cannot be automated headlessly, mark it `[skip:<reason>]` in the tit
 - `[skip:platform]` — needs OS file manager / native dialog we cannot inspect.
 - `[skip:live-claude]` — needs Claude/Codex to actively *respond* (multi-minute, non-deterministic). Banner-only checks do NOT qualify.
 - `[skip:clipboard]` — needs OS clipboard read/write.
+- `[skip:harness]` — requires infrastructure the QA harness does not provide: an isolated test backend (so backend restart doesn't disrupt other agents/sessions), two genuinely separate browser sessions (the MCP shared Chrome session can't simulate this safely), or fabrication of files outside the API surface (e.g. writing to `~/.claude/projects/...` to populate disk-based history). Use only after confirming there is no API/REST/`browser_evaluate` path that achieves the test's intent.
 
 Anything else (selector mismatch, missing fixture) is a `test-issue` to fix in the matrix or app, not a skip.
 
@@ -173,13 +184,8 @@ test 10: Open invalid shell id (graceful fallback)
 - validate UI shows ONE of: explicit error page, default-tab redirect, or empty-state — record which one
 - run common validation block (the URL check applies to whatever resolves)
 
-test 11: Open Claude tab via history record
-- via REST: create an AgenticProcess fixture in the bootstrap project (this enrolls it in history)
-- navigate to `{APP_URL}/` and open the History/Resume Claude surface (sidebar → Shell → opener menu → `opener-menu-row-history` or `opener-menu-row-claude-resume-by-id`)
-- click the just-created process row
-- validate the dock opens with that Claude session as the active tab
-- validate `targetTypeId` matches the historical process id
-- run common validation block
+test 11: Open Claude tab via history record [skip:harness]
+- (rationale: the History modal at `ui/src/components/terminal/HistoryModal.tsx` is fed by `useWorkerHistory` which calls the backend `worker-history` action on the compute_node — the source is the disk-based session log under `~/.claude/projects/...`, populated only when a real Claude/Codex session has actually run. REST POST to `/api/v1/graph/agentic_process` does NOT enroll a row in this disk log; nothing from the QA harness can fabricate it without writing files outside the API surface. Mark `status:"skip"` with `skip_reason:"harness"` and `skip_challenge_required:true`.)
 
 test 12: Open shell-by-id whose project differs from current
 - via REST: create `Proj-A` and `Proj-B`. Create a shell in `Proj-B` and record its id.
@@ -291,29 +297,33 @@ test 26: Switching project auto-selects first tab by `tab_order`
 - validate the lowest-`tab_order` `Proj-B` shell is active; URL = its id
 - run common validation block
 
-test 27: Orphan tab (projectId === null) appears in every project view
-- via REST: create `Proj-A`(1) and `Proj-B`(1). Then create an orphan shell with empty body `{}` (no `project_id`).
-- navigate to `{APP_URL}/dock/shell`; via chip, switch to `Proj-A`
-- validate the orphan tab appears in the strip; badge counts it
-- via chip, switch to `Proj-B`
-- validate the same orphan tab appears in `Proj-B`'s strip too
+test 27: Every shell carries a real project_id (no orphans by design)
+- (rationale: the "orphan tab" concept the matrix originally tested was DELIBERATELY REMOVED on 2026-05-09 as part of "Project consolidation (Path A)" — see `useActiveTerminals.ts:343-347` which explicitly states *"The historical orphan-include rule — || t.projectId == null — is gone; the strict per-project filter below is now safe because no tab's projectId is ever null in normal flows"*. Backend `Shell.save()` at `flow_sdk/builtin/shell.py:256-279` auto-assigns the bootstrap `@local` project to any shell created without an explicit `project_id`. So there is NO null-projectId state to test for orphans — the test is rewritten to validate the consolidated invariant.)
+- via REST: create `Proj-A`(1) and `Proj-B`(1).
+- via REST: `POST $API/api/v1/graph/shell -d '{}'` (no project_id in body).
+- via REST: GET the resulting shell — validate `project_id` is **non-null** (auto-assigned to the bootstrap `@local` project per Shell.save).
+- navigate to `{APP_URL}/dock/shell`; via chip, switch to `Proj-A` and validate the empty-body shell does NOT appear (it belongs to bootstrap `@local`, not `Proj-A`).
+- via chip, switch to bootstrap `@local`; validate the empty-body shell DOES appear.
+- via chip, switch to `Proj-B`; validate the empty-body shell does NOT appear.
 - run common validation block
 
 ## E. Footer selections
 
 test 28: Footer "Switch Project" modal switches end-to-end
-- via REST: create `Proj-B` with 2 shells
+- via REST: create `Proj-B` with 2 shells (mount path `/tmp/regression/proj-b` — note macOS resolves to `/private/tmp/regression/proj-b` via canonical-path normalization, both forms work)
 - navigate to `{APP_URL}/dock/shell` (lands in bootstrap project)
-- click the "Switch Project" button inside `[data-testid="footer"]`
-- pick `Proj-B` from the modal
-- validate footer label updates; chip current row = `Proj-B`; tab strip shows `Proj-B`'s 2 tabs; URL is a `Proj-B` tab URL
+- click the "Switch Project" button inside `[data-testid="footer"]` (button title: "Switch project")
+- in the modal, click the **"All"** tab/filter (modal defaults to "Today" / "This week" subset views; freshly-created REST projects with no Claude session history are still listed under "Today" via timestamp, but explicitly clicking "All" guarantees the full project list is rendered)
+- find and click the `proj-b` row (text matches `proj-b/private/tmp/regression/proj-b`)
+- validate footer label updates to `Proj-B` (or its fs_storage_mount_path basename); chip current row = `Proj-B`; tab strip shows `Proj-B`'s 2 tabs; URL is a `Proj-B` tab URL
 - run common validation block
 
 test 29: Footer label fallback chain
-- via REST: ensure a project with `displayName` set; validate footer shows displayName
-- via REST PATCH: clear `displayName`; set `workdir`; validate footer shows the workdir path
-- via REST PATCH: clear `workdir`; validate footer shows the project's mount path
-- via REST: drop the project (set `dataContext.project = null` by clearing context); validate footer shows the red "Select Project" pill
+- (rationale: previous wording assumed `displayName` and `workdir` are persisted fields on Project. They are not. Project's actual schema (`flow_sdk/builtin/project.py:53,59`) exposes `name: str | None` and `fs_storage_mount_path: str | None` — nothing else label-relevant. `displayName` is a TS-only computed getter on `APIEntity` (`ts_sdk/src/APIEntity.ts:149-151`) deriving from `getDisplayName()` (not persisted). `workdir` is a `dataContext` runtime override (`status-bar.tsx:31,40`), not a Project field. The footer's actual fallback is documented in `status-bar.tsx:38-50` — first `dataContext.workdir`, then `project.fs_storage_mount_path`, then computed paths.)
+- via REST: ensure the bootstrap project has `name` set. Validate footer label = the computed displayName (typically `project.name`).
+- via `browser_evaluate`: `await window.dataContext.setWorkdir('/tmp/regression/override-workdir')`. Validate footer label switches to the explicit workdir path.
+- via `browser_evaluate`: `await window.dataContext.setWorkdir(null)`. Validate footer label reverts to the project path (`project.fs_storage_mount_path`).
+- via `browser_evaluate`: `await window.dataContext.setContextEntityTypeId('CurrentProjectTypeId', null)`. Validate footer shows the red "Select Project" pill.
 - run common validation block
 
 test 30: "Select Project" red pill — tab spawn flow
@@ -331,33 +341,43 @@ test 30: "Select Project" red pill — tab spawn flow
 test 31: "Open folder" launches at workdir [skip:platform]
 - mark `status:"skip"` with `skip_reason:"platform"` and `skip_challenge_required:true`. The OS file manager opens outside the browser; we cannot verify it headlessly.
 
-test 32: Footer repo/branch reflects active project's GitRepo
-- via REST: create `Proj-B`. Create a `gitRepo` artifact bound to that project (`POST /api/v1/graph/gitRepo` with `{"project_id":"<id>","url":"git@example.com:org/repo.git","branch":"feat/x"}`)
+test 32: Footer repo/branch reflects active project's Git artifact
+- (rationale: the matrix originally referenced a `gitRepo` entity. There is NO such graph entity — `flow_sdk/builtin/faas/git_repo.py:69` defines a `class GitRepo` that is a CLI helper, not an APIEntity. The footer at `ui/src/components/footer.tsx:33-61` reads from the project's **artifacts** via `useCurrentArtifacts()` (filtering for `artifact_type === ArtifactType.GIT_REPO`). The correct fixture is an Artifact entity with `artifact_type='GIT_REPO'`.)
+- via REST: create `Proj-B` (record `<proj-b-id>`). Create a GIT_REPO artifact scoped to that project:
+  ```bash
+  curl -X POST "$API/api/v1/graph/artifact" -H 'Content-Type: application/json' \
+    -d '{"artifact_type":"GIT_REPO","metadata":{"url":"git@example.com:org/repo.git","branch":"feat/x"},"context_entities":[{"type_id":"project-<proj-b-id>"}]}'
+  ```
+  (NOTE: artifact-to-project scoping convention may need verification per the codebase — `useCurrentArtifacts` queries `type:'artifact'` with `scope:[projectTypeId]`. If `context_entities` doesn't bind it correctly, try setting a `parent_id` or `project_id` field on the body. Record the working shape in `notes`.)
 - with current = bootstrap project, validate footer center shows the bootstrap project's repo/branch (or empty)
 - via chip, switch to `Proj-B`
-- validate footer center shows `Proj-B`'s repo name and branch `feat/x`
+- validate footer center shows the artifact's url + `:feat/x`
 - via chip, switch back; validate footer updates
 - run common validation block
 
 ## F. Restart & CLI changes
 
-> **Important:** F33 and F34 restart the backend. They MUST run with serial-mode tester allocation (one tester at a time on this matrix), per the e2e-qa skill's per-test tab allocation rule. Concurrent testers' WebSocket connections are killed by the restart.
+> **Important:** F33 and F34 restart the backend. In a CI/dedicated-test backend they would run as full live tests; in a shared dev backend (the typical QA harness) the restart would disrupt the user's CLI session and other agents. Both tests are marked `[skip:harness]` for shared-backend runs. To run them: spin up an isolated backend instance and re-classify these as live tests.
 
-test 33: Backend restart preserves tabs
-- via REST: create 4 shells split across 2 projects (`Proj-A`:3, `Proj-B`:1)
-- navigate to `{APP_URL}/dock/shell`; record the 4 `targetTypeId`s and their project assignments
-- run the backend-restart helper from "Setup helpers"
-- hard refresh the browser
-- validate `fetchActiveTerminals` rehydrates the same 4 tabs (same ids, same names, same project assignments, no duplicates)
-- run common validation block
+test 33: Backend restart preserves tabs [skip:harness]
+- (rationale: Shell hydration via `fetchActiveTerminals` against a restarted backend is the assertion. Restarting `flow_sdk.server.run` on the shared dev backend would terminate every other live agent's WS connection. Mark `status:"skip"` with `skip_reason:"harness"` and `skip_challenge_required:true` for shared-backend runs. Live test only viable in an isolated backend instance.)
+- (preserved spec for isolated-backend runs:)
+  - via REST: create 4 shells split across 2 projects (`Proj-A`:3, `Proj-B`:1)
+  - navigate to `{APP_URL}/dock/shell`; record the 4 `targetTypeId`s and their project assignments
+  - run the backend-restart helper from "Setup helpers"
+  - hard refresh the browser
+  - validate `fetchActiveTerminals` rehydrates the same 4 tabs (same ids, same names, same project assignments, no duplicates)
+  - run common validation block
 
-test 34: Backend restart with an AgenticProcess in the strip
-- via REST: create an AgenticProcess (`worker_type=claude_code`) in the bootstrap project
-- navigate to `{APP_URL}/dock/shell/agentic_process-<id>`; validate it activates
-- run the backend-restart helper
-- hard refresh
-- validate the Claude tab is rebound (process resolved via `get-by-worker-id`); no duplicate tab; `agentic_process-<id>` is the active tab
-- run common validation block
+test 34: Backend restart with an AgenticProcess in the strip [skip:harness]
+- (rationale: same harness limit as test 33. Mark `status:"skip"` with `skip_reason:"harness"` for shared-backend runs.)
+- (preserved spec for isolated-backend runs:)
+  - via REST: create an AgenticProcess (`worker_type=claude_code`) in the bootstrap project
+  - navigate to `{APP_URL}/dock/shell/agentic_process-<id>`; validate it activates
+  - run the backend-restart helper
+  - hard refresh
+  - validate the Claude tab is rebound (process resolved via `get-by-worker-id`); no duplicate tab; `agentic_process-<id>` is the active tab
+  - run common validation block
 
 test 35: External REST POST creates a new shell (CLI-equivalent)
 - (rationale: the `flow` CLI has no shell subcommand; the matrix uses REST as the CLI-equivalent operation a developer would run from a terminal)
@@ -386,13 +406,8 @@ test 37: External REST DELETE/close removes a session
 - validate active selection self-heals to an adjacent tab; URL updates
 - run common validation block
 
-test 38: Two browser windows in sync
-- open the app in MCP browser tab #1 and tab #2 (treat them as separate windows; same backend)
-- in window 1, via the `+` menu spawn a new shell in the bootstrap project
-- in window 2, do NOT refresh
-- validate window 2 picks up the new tab within ~5s
-- validate badges match in both windows; no duplicate ids
-- run common validation block
+test 38: Two browser windows in sync [skip:harness]
+- (rationale: validating cross-window WS sync requires two genuinely independent browser sessions with separate WS connections. The MCP harness shares one Chrome instance / one tab pool — `mcp__debugMcp__browser_tabs` adds a Chrome tab to the SAME session, so creating "window 2" doesn't simulate two clients. Cross-tab tab-index churn after close also disrupts state. Mark `status:"skip"` with `skip_reason:"harness"` and `skip_challenge_required:true`. Live test viable only with two separate Playwright contexts or two real browser windows driven independently — not the current MCP setup. The underlying mechanism (cross-session WS sync) is already validated by tests 35/36/37 which use REST POSTs from outside the browser as the "second client".)
 
 ## G. Codex / Claude / terminal mix
 
@@ -410,10 +425,10 @@ test 40: Switching between mixed types — no cross-talk
 
 test 41: Spawn each type from `+` / opener menu
 - start with empty strip (close all)
-- click `+` to open the opener menu
-- click `opener-menu-row-terminal`; validate a plain shell tab appears
-- click `+`, then `opener-menu-row-claude`; validate a Claude tab appears
-- click `+`, then `opener-menu-row-codex`; validate a Codex tab appears (if absent, mark this sub-step `[skip:platform]` and continue)
+- click `+` (CSS selector: `button[aria-label="Open new tab menu"]` — accessibility-ref clicks via `mcp__debugMcp__browser_click` may fail with element-not-stable; use the aria-label CSS selector. Verified working live during the 2026-05-09 RCA cycle.)
+- click `[data-testid="opener-menu-row-terminal"]`; validate a plain shell tab appears
+- click `+` again, then `[data-testid="opener-menu-row-claude"]`; validate a Claude tab appears
+- click `+` again, then `[data-testid="opener-menu-row-codex"]`; validate a Codex tab appears (if absent in this build, mark this sub-step `[skip:platform]` and continue)
 - validate all three are assigned to the bootstrap project; chip count increments by 3
 - run common validation block
 
@@ -434,10 +449,13 @@ test 43: Rename Claude tab survives switch + refresh + PTY title
 - validate tab name remains `claude-fix` (Shell.user_renamed=true honored)
 - run common validation block
 
-test 44: Rename rejects TypeId-format strings
-- with any tab open, double-click the tab name
-- type `shell-abcd1234-ef56-7890-1234-567890abcdef` and press Enter
-- validate the input is rejected/sanitized (TabbedTerminal name-injection guard); tab still shows its previous name
+test 44: Rename rejects TypeId-format strings (real v4 UUID)
+- (rationale: the previous example string `shell-abcd1234-ef56-7890-1234-567890abcdef` is NOT a valid RFC4122 v4 UUID — segment 3 must start with `4` and segment 4 must start with `[89ab]`. The guard at `TabbedTerminal.tsx:581` correctly enforces real v4 UUID shape: `^[a-z][a-z0-9-]*-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`. Use a valid v4 UUID to actually exercise the guard.)
+- with any tab open (spawn via `+` button using `button[aria-label="Open new tab menu"]` → `[data-testid="opener-menu-row-terminal"]` if needed — see test 41), double-click the tab name
+- type a string matching the real TypeId v4 format: `shell-abcd1234-ef56-4789-9abc-567890abcdef` (segment 3 starts with `4`, segment 4 starts with `9` — a real v4 UUID)
+- press Enter
+- validate the input is rejected/sanitized — tab still shows its previous name (the guard early-returns on match, suppressing the rename)
+- (note: the backend `update_display` action has NO equivalent guard — `flow_sdk/builtin/shell.py:847-897` writes `name` raw. Defense-in-depth gap; out of scope for this test but worth flagging for future hardening.)
 - run common validation block
 
 ## H. Navigation back/forward in/out of dock
@@ -457,12 +475,17 @@ test 46: Browser back/forward across tab clicks
 - press browser Forward twice — validate sequence A → B → C
 - run common validation block
 
-test 47: Browser back from `/dock/shell/...` to `/`, then forward
+test 47: Browser back/forward across `/dock/shell/<id>` and `/`
+- (rationale: previous wording said "Home, then Forward" expecting Forward to restore the dock URL — that's structurally invalid: Forward only does anything if you've pressed Back at least once. A push from `/dock/shell/<id>` to `/` adds a BACK entry, not a forward entry. Verified live via `history.pushState`+`history.back()`+`history.forward()`. Test rewritten to exercise the actual Back+Forward round-trip.)
 - via REST: create 2 shells; click the 2nd tab; record its `targetTypeId`
-- navigate sidebar Home (URL `/`)
-- press browser Forward
-- validate URL is the recorded 2nd-tab `/dock/shell/...`; the 2nd tab is active; `terminal-panel` mounted
-- validate `close-all-tabs-button` badge = 2
+- navigate sidebar Home (URL becomes `/` — sidebar uses `navigate('/')`, a PUSH per `collapsed-sidebar.tsx:77`)
+- press browser BACK
+- validate URL returns to `/dock/shell/<recorded-id>`; the 2nd tab is active; `terminal-panel` mounted
+- press browser FORWARD
+- validate URL is `/`
+- press browser BACK again
+- validate URL is `/dock/shell/<recorded-id>` again (round-trip stable)
+- validate `close-all-tabs-button` badge = 2 throughout
 - run common validation block
 
 test 48: Wrong agentId in URL falls back gracefully
