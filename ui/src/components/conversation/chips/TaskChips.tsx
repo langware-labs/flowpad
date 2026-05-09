@@ -76,7 +76,6 @@ export function TaskChips({
           }}
           inside={conversationContainer}
           onClick={onShowTask}
-          title="Open this task"
         />
       )}
 
@@ -122,16 +121,12 @@ export function TaskChips({
 
         // Generic: spec, project (loaded), assignee/user, plan, anything new
         // added via task.addContextEntity later — all flow through here.
-        const titleByType: Record<string, string> = {
-          [Project.type]: 'Open this conversation under the local project',
-          spec: 'Open the spec this task was created from',
-        };
+        // Tooltip falls back to EntityChip's default "Open <Type>: <name>".
         return (
           <ContextEntityChip
             key={key}
             typeId={typeId}
             inside={conversationContainer}
-            title={titleByType[typeId.type]}
           />
         );
       })}
