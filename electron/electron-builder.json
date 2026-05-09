@@ -73,6 +73,7 @@
   },
   "win": {
     "icon": "resources/icons/icon.ico",
+    "publisherName": ["LANGWARE LABS LTD", "Langware INC."],
     "target": [
       {
         "target": "nsis",
