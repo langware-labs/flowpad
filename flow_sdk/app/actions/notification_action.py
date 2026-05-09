@@ -306,8 +306,9 @@ async def _create_conversation_and_fm(
     attachments: list[Attachment] = []
     if spec:
         attachments.append(Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.SPEC.value, id=spec.id))))
-    if task_typeid:
-        attachments.append(Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(task_typeid)))
+    # Task is intentionally NOT attached as a TYPE_ID. The task is referenced
+    # via fm_context (context_entities) for backend run-headless resolution; the
+    # recipient sees only the FlowMessage in the conversation, not a "new task".
     attachments.extend([
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))),
         Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm_id))),

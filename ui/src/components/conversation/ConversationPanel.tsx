@@ -1,7 +1,13 @@
-import { useMemo } from 'react';
-import { Conversation, type Task, TypeId } from '@sdk';
+import { useMemo, useState } from 'react';
+import { Conversation, FlowMessage, type Task, TypeId } from '@sdk';
+import { isProcessRunning } from '@sdk/process/agentic-types';
 import { useEntity } from '@sdk/react/hooks';
+import { History, Layers } from 'lucide-react';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
+import { TabbedSideDrawer } from '@src/components/ui/side-drawer';
+import { useProcessesForTarget } from '@src/components/entity-chat-panel/hooks/useProcessesForTarget';
+import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
+import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
 import { ConversationChips } from './chips/ConversationChips';
 import { ConversationEntityChips } from './chips/ConversationEntityChips';
 import { ConversationToolbar } from './ConversationToolbar';
@@ -10,6 +16,8 @@ import { ConversationMode } from './conversation-mode';
 import { useProjectMappingGate } from './useProjectMappingGate';
 import { ChipsExcludeProvider } from './chips/ChipsExcludeContext';
 import { ChipKey, taskChipKeys } from './chips/keys';
+import { ConversationBottomRibbon, type ConversationSideTab } from './ConversationBottomRibbon';
+import { ConversationContextPanel } from './ConversationContextPanel';
 
 interface ConversationPanelProps {
   /** Optional. Project-scoped conversations have no task. */
@@ -35,21 +43,20 @@ interface ConversationPanelProps {
 /**
  * Single source of truth for how a conversation looks anywhere in the app.
  *
- * Layout (top to bottom):
- *   [ "Conversation" header  +  ConversationToolbar (Open Task / Transcript / CC) ]
- *   [ ConversationView (avatars, bubbles, prompt rows, composer) ]
+ * Layout:
+ *   ┌─────────────────────────────────────────────────────┬──────────────┐
+ *   │  Header (label + toolbar chips)                     │              │
+ *   │  ConversationView (bubbles + composer)              │  Side drawer │
+ *   │                                                     │  Runs |Cntxt │
+ *   ├─────────────────────────────────────────────────────┴──────────────┤
+ *   │  Bottom ribbon (toggle Runs / Context)                             │
+ *   └────────────────────────────────────────────────────────────────────┘
  *
- * Owns its own project-picker dialog (the same `OpenProjectComponent` the
- * footer uses) so callers don't have to plumb it. The active-project context
- * is set by the route loaders (`load-conversation`, `load-tasks`,
- * `load-project`) before this component renders — no need for a runtime
- * sync hook here.
- *
- * The "Open Task" button in the toolbar navigates to
- * `/dock/tasks/<taskId>/conversation/<convId>` — a canonical URL anchor for
- * the task + conversation pair. Drop the panel anywhere a task-bound
- * conversation needs to render — task views, the inbox reader, embedded
- * panels.
+ * The drawer mirrors the workflow editor's side drawer pattern. The Runs tab
+ * lists `AgenticProcess` entries scoped to this task (omitted on hub-direct
+ * conversations). The Context tab reflects the message the user has clicked
+ * — entity chips, attachments, transcript, and the "Open in Claude"
+ * affordance for the parent task.
  */
 export function ConversationPanel({
   task,
@@ -84,53 +91,146 @@ export function ConversationPanel({
     [conversationId],
   );
 
+  // Drawer + ribbon state.
+  const [sideOpen, setSideOpen] = useState(false);
+  const [activeSideTab, setActiveSideTab] = useState<ConversationSideTab>('context');
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  const [mostRecentMessageId, setMostRecentMessageId] = useState<string | null>(null);
+
+  const showRuns = !!task;
+  const toggleSideTab = (tab: ConversationSideTab) => {
+    if (sideOpen && activeSideTab === tab) {
+      setSideOpen(false);
+      return;
+    }
+    setActiveSideTab(tab);
+    setSideOpen(true);
+  };
+
+  // Runs tab data — task-scoped AgenticProcess entries, newest first.
+  const targetStr = task?.typeId ? task.typeId.toString() : '';
+  const { processes: pastRunProcesses } = useProcessesForTarget(targetStr, {
+    enabled: !!targetStr,
+  });
+  const runHistory = useMemo<ProcessEntry[]>(() => {
+    const toMs = (d: unknown): number => {
+      if (d instanceof Date) return d.getTime();
+      if (typeof d === 'string') return new Date(d).getTime() || 0;
+      return 0;
+    };
+    return [...pastRunProcesses]
+      .sort((a, b) => toMs(b.created_date) - toMs(a.created_date))
+      .map((p) => ({ process: p }));
+  }, [pastRunProcesses]);
+  const currentRunEntry = useMemo<ProcessEntry | null>(() => {
+    return runHistory.find((e) => e.process.status && isProcessRunning(e.process.status)) ?? null;
+  }, [runHistory]);
+
+  // Context tab — fetch the selected (or most recent) FlowMessage so the
+  // panel can render its chips/attachments/transcript.
+  const contextMessageId = selectedMessageId ?? mostRecentMessageId;
+  const { data: contextMessage } = useEntity<FlowMessage>(
+    contextMessageId ? new TypeId(FlowMessage.type, contextMessageId) : null,
+  );
+
   const headerWrapper =
     variant === 'compact'
       ? 'flex items-center gap-1.5 text-xs font-medium text-muted-foreground'
       : 'flex h-9 flex-shrink-0 items-center gap-2 border-y border-border px-4 text-xs font-medium text-muted-foreground';
   const bodyWrapper = variant === 'compact' ? 'mt-1' : 'px-4 pt-3';
 
+  const tabs = [
+    ...(showRuns
+      ? [{ id: 'runs' as const, label: runHistory.length > 0 ? `Runs ${runHistory.length}` : 'Runs', icon: History }]
+      : []),
+    { id: 'context' as const, label: 'Context', icon: Layers },
+  ];
+
+  const drawerChildren: Partial<Record<ConversationSideTab, React.ReactNode>> = {
+    context: (
+      <ConversationContextPanel
+        flowMessage={contextMessage ?? null}
+        task={task ?? null}
+        conversationId={conversationId}
+        ensureMapped={ensureMapped}
+      />
+    ),
+  };
+  if (showRuns) {
+    drawerChildren.runs = (
+      <WorkflowRunsPanel
+        entries={runHistory}
+        currentEntry={currentRunEntry}
+        computeNodeId={targetStr || undefined}
+      />
+    );
+  }
+
   return (
-    <div className={className}>
-      {(headerLabel !== null || task || convEntity) && (
-        <div className={headerWrapper}>
-          {headerLabel !== null && <span>{headerLabel}</span>}
-          {task ? (
-            <ChipsExcludeProvider add={selfPageKeys}>
-              <ConversationToolbar
-                task={task}
+    <div className={`flex h-full flex-col ${className ?? ''}`}>
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">
+          {(headerLabel !== null || task || convEntity) && (
+            <div className={headerWrapper}>
+              {headerLabel !== null && <span>{headerLabel}</span>}
+              {task ? (
+                <ChipsExcludeProvider add={selfPageKeys}>
+                  <ConversationToolbar
+                    task={task}
+                    conversationId={conversationId}
+                    ensureMapped={ensureMapped}
+                  />
+                </ChipsExcludeProvider>
+              ) : convEntity ? (
+                // Task-less conversations (project-scoped chats, hub-direct
+                // convs) get the same chip strip — driven by
+                // `conversation.contextEntities` (project_id projection + any
+                // explicit context entries) plus the shared transcript/terminal
+                // chips.
+                <ChipsExcludeProvider add={selfPageKeys}>
+                  <div className="flex items-center gap-1">
+                    <ConversationEntityChips conversation={convEntity} />
+                    <ConversationChips conversationId={conversationId} />
+                  </div>
+                </ChipsExcludeProvider>
+              ) : null}
+            </div>
+          )}
+          <div className={`${bodyWrapper} min-h-0 flex-1 overflow-y-auto`}>
+            <ChipsExcludeProvider add={taskKeys}>
+              <ConversationView
                 conversationId={conversationId}
+                task={task}
                 senderName={senderName}
                 ensureMapped={ensureMapped}
+                mode={mode}
+                selectedMessageId={selectedMessageId}
+                onSelectMessage={setSelectedMessageId}
+                onMostRecentMessageChange={setMostRecentMessageId}
               />
             </ChipsExcludeProvider>
-          ) : convEntity ? (
-            // Task-less conversations (project-scoped chats, hub-direct convs)
-            // get the same chip strip — driven by `conversation.contextEntities`
-            // (project_id projection + any explicit context entries) plus the
-            // shared transcript/terminal chips. Without this, the upper bar
-            // would be empty even when the conversation knows which project
-            // (and other entities) it relates to.
-            <ChipsExcludeProvider add={selfPageKeys}>
-              <div className="flex items-center gap-1">
-                <ConversationEntityChips conversation={convEntity} />
-                <ConversationChips conversationId={conversationId} />
-              </div>
-            </ChipsExcludeProvider>
-          ) : null}
+          </div>
         </div>
-      )}
-      <div className={bodyWrapper}>
-        <ChipsExcludeProvider add={taskKeys}>
-          <ConversationView
-            conversationId={conversationId}
-            task={task}
-            senderName={senderName}
-            ensureMapped={ensureMapped}
-            mode={mode}
-          />
-        </ChipsExcludeProvider>
+
+        <TabbedSideDrawer<ConversationSideTab>
+          open={sideOpen}
+          onOpenChange={setSideOpen}
+          activeTab={activeSideTab}
+          onActiveTabChange={setActiveSideTab}
+          tabs={tabs}
+          width="w-72"
+          data-testid="conversation-side-drawer"
+        >
+          {drawerChildren}
+        </TabbedSideDrawer>
       </div>
+
+      <ConversationBottomRibbon
+        activeSideTab={sideOpen ? activeSideTab : null}
+        onToggleSideTab={toggleSideTab}
+        showRuns={showRuns}
+        runsBadge={runHistory.length}
+      />
 
       <OpenProjectComponent {...mappingDialogProps} />
     </div>

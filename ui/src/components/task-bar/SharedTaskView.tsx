@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
 import { ConversationMode } from '@src/components/conversation/conversation-mode';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
+import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { TaskRunsDrawer } from './TaskRunsDrawer';
 
 const STATUS_REQUEST_PROMPT_TEXT = 'Summarize the task and plan status in 5 lines';
@@ -39,6 +40,7 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
   const conversationTypeId = task.firstContextOfType?.('conversation') ?? null;
 
   const { localUser } = useLocalUser();
+  const ensureCloudLogin = useCloudLoginGate();
   const isAuthor = !!(localUser?.id && task.shared_by_id && localUser.id === task.shared_by_id);
   const [requestingStatus, setRequestingStatus] = useState(false);
 
@@ -46,6 +48,11 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
     if (!conversationTypeId?.id || requestingStatus) return;
     setRequestingStatus(true);
     try {
+      const gate = await ensureCloudLogin();
+      if (!gate.ok) {
+        toast.error(gate.error);
+        return;
+      }
       await sendReply(
         { task, conversationId: conversationTypeId.id },
         '',
