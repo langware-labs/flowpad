@@ -16,7 +16,6 @@ import { ConversationPanel } from '@src/components/conversation/ConversationPane
 import { ConversationMode } from '@src/components/conversation/conversation-mode';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
-import { TaskRunsDrawer } from './TaskRunsDrawer';
 
 const STATUS_REQUEST_PROMPT_TEXT = 'Summarize the task and plan status in 5 lines';
 
@@ -101,11 +100,12 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
         )}
       </div>
 
-      {/* Body + Runs drawer */}
-      <div className="flex min-h-0 flex-1 flex-row">
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
-          {/* Read-only fields */}
-          <section className="space-y-3">
+      {/* Body — spec on top, ConversationPanel filling the rest. The
+          conversation hosts its own right-side drawer (Runs / Context) plus
+          the bottom ribbon, which now sits flush at the bottom of this view. */}
+      <div className="flex min-h-0 flex-1 flex-col">
+        {(spec?.title || spec?.content) && (
+          <section className="flex-shrink-0 space-y-3 border-b border-border px-4 py-4">
             {spec?.title && (
               <div>
                 <span className="text-xs font-medium text-muted-foreground">Title</span>
@@ -121,23 +121,20 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
               </div>
             )}
           </section>
+        )}
 
-          {/* Conversation */}
-          <section className="-mx-4 flex flex-col">
-            {conversationTypeId ? (
-              <ConversationPanel
-                task={task}
-                conversationId={conversationTypeId.id}
-                senderName={senderName}
-                mode={ConversationMode.HEADLESS}
-              />
-            ) : (
-              <p className="px-4 text-xs italic text-muted-foreground/60">No conversation yet.</p>
-            )}
-          </section>
+        <div className="flex min-h-0 flex-1 flex-col">
+          {conversationTypeId ? (
+            <ConversationPanel
+              task={task}
+              conversationId={conversationTypeId.id}
+              senderName={senderName}
+              mode={ConversationMode.HEADLESS}
+            />
+          ) : (
+            <p className="px-4 py-4 text-xs italic text-muted-foreground/60">No conversation yet.</p>
+          )}
         </div>
-
-        <TaskRunsDrawer task={task} />
       </div>
     </div>
   );

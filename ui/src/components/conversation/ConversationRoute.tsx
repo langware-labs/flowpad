@@ -1,10 +1,8 @@
 import { useMemo } from 'react';
 import { ArrowLeft } from 'lucide-react';
-import { Conversation, TypeId } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
-import { RunsDrawer } from '@src/components/runs-drawer/RunsDrawer';
 import { ConversationPanel } from './ConversationPanel';
 import { useConversation } from './useConversation';
 
@@ -86,17 +84,11 @@ export function ConversationRoute() {
         </button>
         <span className="truncate text-sm font-semibold">{subject}</span>
       </div>
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-y-auto">
-          <ConversationPanel
-            task={task}
-            conversationId={conversationId}
-            senderName={senderName}
-          />
-        </div>
-        <RunsDrawer
-          targetTypeId={new TypeId(Conversation.type, conversationId)}
-          testId="conversation-runs-drawer"
+      <div className="flex min-h-0 flex-1 flex-col">
+        <ConversationPanel
+          task={task}
+          conversationId={conversationId}
+          senderName={senderName}
         />
       </div>
     </div>
