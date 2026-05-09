@@ -139,3 +139,56 @@ export interface WorkflowTraceViewModel {
   /** fatal error if all three loads failed (process unresolved, etc) */
   error?: string;
 }
+
+// ─── Learning artifacts (Phase 4 — workflow-level memory/log/feedback) ──────
+
+export interface MemoryArtifact {
+  /** Raw markdown content of memory.md. */
+  content: string;
+  /** File size in bytes. */
+  bytes: number;
+}
+
+export interface FeedbackArtifact {
+  /** Raw markdown content of feedback.md. Only present when the file exists
+   *  AND is non-empty. The learner only writes this on surrender. */
+  content: string;
+  /** Modification time as epoch ms. Used for "seen" tracking in localStorage
+   *  so the viewer auto-focuses Feedback only when content has changed. */
+  mtime: number;
+}
+
+export interface LearningLogArtifact {
+  /** Raw markdown content of learning.log.md. */
+  content: string;
+  /** Number of `## ` headed entries (one per learning iteration). */
+  entryCount: number;
+}
+
+export interface HistoryEntry {
+  /** Raw timestamp folder name, e.g. "05_09_26__11_45_55". */
+  timestamp: string;
+  /** Pretty-printed display string, e.g. "May 9 · 11:45:55". */
+  display: string;
+  /** Absolute path to the archive folder. */
+  archiveDir: string;
+  /** Step counts derived from the archive's analysis.jsonl. -1 = unknown
+   *  (analysis missing). */
+  cleanSteps: number;
+  totalSteps: number;
+  totalIssues: number;
+  hasError: boolean;
+  /** True if this archive matches the run currently displayed. */
+  isCurrent: boolean;
+}
+
+export interface LearningArtifacts {
+  /** Workflow's record data folder — None if not provided / not derivable. */
+  workflowDataDir?: string;
+  memory?: MemoryArtifact;
+  feedback?: FeedbackArtifact;
+  learningLog?: LearningLogArtifact;
+  history: HistoryEntry[];
+  /** True while any learning file is loading. */
+  isLoading: boolean;
+}

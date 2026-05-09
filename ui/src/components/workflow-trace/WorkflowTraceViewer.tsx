@@ -17,18 +17,23 @@
 
 import {
   AlertCircle,
+  AlertOctagon,
   AlertTriangle,
   ArrowLeft,
+  Brain,
   CheckCircle2,
   Clock,
+  History,
   Loader2,
   MinusCircle,
+  Play,
   Wrench,
 } from "lucide-react";
-import { Fragment, useMemo, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { Button } from "@src/components/ui/button";
 import { ScrollArea } from "@src/components/ui/scroll-area";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@src/components/ui/tabs";
 import {
   Tooltip,
   TooltipContent,
@@ -37,6 +42,10 @@ import {
 } from "@src/components/ui/tooltip";
 import { cn } from "@src/lib/utils";
 
+import { FeedbackPanel } from "./FeedbackPanel";
+import { HistoryPanel } from "./HistoryPanel";
+import { MemoryPanel } from "./MemoryPanel";
+import { useWorkflowLearningArtifacts } from "./useWorkflowLearningArtifacts";
 import { useWorkflowTraceData } from "./useWorkflowTraceData";
 import type {
   AnalysisIssue,
@@ -49,6 +58,9 @@ import type {
 interface WorkflowTraceViewerProps {
   processId?: string;
   outputFolderPath?: string;
+  /** Workflow's record data folder. When provided, Memory · History ·
+   *  Feedback tabs become available. When absent, only Run is shown. */
+  workflowDataDir?: string;
   onBack?: () => void;
 }
 
@@ -492,9 +504,52 @@ function RunSummary({
 export function WorkflowTraceViewer({
   processId,
   outputFolderPath,
+  workflowDataDir,
   onBack,
 }: WorkflowTraceViewerProps) {
-  const view = useWorkflowTraceData({ processId, outputFolderPath });
+  // selectedArchive overrides outputFolderPath when the user picks a
+  // historical run from the History tab. Reset when external props change.
+  const [selectedArchive, setSelectedArchive] = useState<string | null>(null);
+  useEffect(() => {
+    setSelectedArchive(null);
+  }, [processId, outputFolderPath]);
+
+  const activeOutputFolder = selectedArchive ?? outputFolderPath;
+  const view = useWorkflowTraceData({
+    processId: selectedArchive ? undefined : processId,
+    outputFolderPath: activeOutputFolder,
+  });
+  const learning = useWorkflowLearningArtifacts(
+    workflowDataDir,
+    activeOutputFolder,
+  );
+
+  // Tab state. Auto-focus Feedback on first paint when feedback.md exists
+  // AND its content hash differs from the last 'seen' value in localStorage.
+  const [activeTab, setActiveTab] = useState<string>("run");
+  useEffect(() => {
+    if (!learning.feedback || !workflowDataDir) return;
+    const key = `wft.feedback_seen.${workflowDataDir}`;
+    let hash = 0;
+    for (let i = 0; i < learning.feedback.content.length; i++) {
+      hash = ((hash << 5) - hash + learning.feedback.content.charCodeAt(i)) | 0;
+    }
+    const currentHash = String(hash);
+    let seen: string | null = null;
+    try {
+      seen = window.localStorage.getItem(key);
+    } catch {
+      /* private mode — ignore */
+    }
+    if (seen !== currentHash) {
+      setActiveTab("feedback");
+      try {
+        window.localStorage.setItem(key, currentHash);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [learning.feedback, workflowDataDir]);
 
   // Build the full markdown text we'll render. Phase 1 split header off; for
   // the gutter view we want every line — header, steps, references — to flow
@@ -523,6 +578,60 @@ export function WorkflowTraceViewer({
 
   const visibleLines = lines.filter((l) => l.kind !== "frontmatter");
 
+  // ── Run tab body — the existing annotated-markdown render. ────────────
+  const runBody = (
+    <ScrollArea className="flex-1">
+      {visibleLines.length === 0 ? (
+        <div className="mx-auto max-w-3xl p-8 text-center text-sm text-muted-foreground">
+          {view.isLoading ? "Loading workflow…" : view.error ?? "No content."}
+        </div>
+      ) : (
+        <div className="mx-auto max-w-6xl px-6 py-6">
+          <div
+            className="grid items-start gap-x-4"
+            style={{
+              gridTemplateColumns: "minmax(80px, 110px) minmax(0, 1fr) minmax(180px, 260px)",
+              rowGap: "0.25rem",
+            }}
+            data-testid="workflow-trace-grid"
+          >
+            {visibleLines.map((line) => {
+              const step = stepByLine.get(line.n);
+              return (
+                <Fragment key={line.n}>
+                  {/* LEFT */}
+                  <div
+                    className="pt-[3px]"
+                    data-testid={step ? "workflow-trace-step" : undefined}
+                    data-line={line.n}
+                  >
+                    <LeftGutter step={step} />
+                  </div>
+                  {/* CENTER */}
+                  <div
+                    className={cn(
+                      step && "border-l-2 border-amber-300/40 pl-3 dark:border-amber-700/40",
+                      step && step.issues.length === 0 && "border-emerald-300/40 dark:border-emerald-700/40",
+                      step && step.status === "error" && "border-destructive/50",
+                    )}
+                  >
+                    <MarkdownLine line={line} hasStep={!!step} />
+                  </div>
+                  {/* RIGHT */}
+                  <div className="pt-[2px]">
+                    <RightGutter step={step} />
+                  </div>
+                </Fragment>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </ScrollArea>
+  );
+
+  const showLearningTabs = !!workflowDataDir;
+
   return (
     <TooltipProvider>
       <div
@@ -547,6 +656,16 @@ export function WorkflowTraceViewer({
               totalMs={totalMs}
               hasAnalysis={view.hasAnalysis}
             />
+            {selectedArchive && (
+              <button
+                type="button"
+                onClick={() => setSelectedArchive(null)}
+                className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground hover:bg-muted/70"
+                data-testid="workflow-trace-clear-archive"
+              >
+                viewing archive · clear
+              </button>
+            )}
           </div>
           {view.isLoading && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -556,54 +675,74 @@ export function WorkflowTraceViewer({
           )}
         </div>
 
-        <ScrollArea className="flex-1">
-          {visibleLines.length === 0 ? (
-            <div className="mx-auto max-w-3xl p-8 text-center text-sm text-muted-foreground">
-              {view.isLoading ? "Loading workflow…" : view.error ?? "No content."}
-            </div>
-          ) : (
-            <div className="mx-auto max-w-6xl px-6 py-6">
-              <div
-                className="grid items-start gap-x-4"
-                style={{
-                  gridTemplateColumns: "minmax(80px, 110px) minmax(0, 1fr) minmax(180px, 260px)",
-                  rowGap: "0.25rem",
+        {showLearningTabs ? (
+          <Tabs
+            value={activeTab}
+            onValueChange={setActiveTab}
+            className="flex flex-1 flex-col overflow-hidden"
+          >
+            <TabsList
+              className="mx-4 mt-2 self-start"
+              data-testid="workflow-trace-tabs"
+            >
+              <TabsTrigger value="run" className="gap-1.5">
+                <Play className="h-3 w-3" />
+                Run
+              </TabsTrigger>
+              <TabsTrigger value="memory" className="gap-1.5">
+                <Brain className="h-3 w-3" />
+                Memory
+                {learning.memory && (
+                  <span className="ml-1 rounded-full bg-muted px-1.5 py-[1px] text-[10px] tabular-nums text-muted-foreground">
+                    {Math.round(learning.memory.bytes / 100) / 10}KB
+                  </span>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="history" className="gap-1.5">
+                <History className="h-3 w-3" />
+                History
+                {learning.history.length > 0 && (
+                  <span className="ml-1 rounded-full bg-muted px-1.5 py-[1px] text-[10px] tabular-nums text-muted-foreground">
+                    {learning.history.length}
+                  </span>
+                )}
+              </TabsTrigger>
+              {learning.feedback && (
+                <TabsTrigger
+                  value="feedback"
+                  className="gap-1.5 data-[state=active]:text-amber-700 dark:data-[state=active]:text-amber-300"
+                >
+                  <AlertOctagon className="h-3 w-3 text-amber-600 dark:text-amber-400" />
+                  Feedback
+                  <span className="ml-1 h-1.5 w-1.5 rounded-full bg-amber-500" />
+                </TabsTrigger>
+              )}
+            </TabsList>
+            <TabsContent value="run" className="flex-1 overflow-hidden">
+              {runBody}
+            </TabsContent>
+            <TabsContent value="memory" className="flex-1 overflow-auto">
+              <MemoryPanel memory={learning.memory} />
+            </TabsContent>
+            <TabsContent value="history" className="flex-1 overflow-auto">
+              <HistoryPanel
+                history={learning.history}
+                learningLog={learning.learningLog}
+                onSelectArchive={(dir) => {
+                  setSelectedArchive(dir);
+                  setActiveTab("run");
                 }}
-                data-testid="workflow-trace-grid"
-              >
-                {visibleLines.map((line) => {
-                  const step = stepByLine.get(line.n);
-                  return (
-                    <Fragment key={line.n}>
-                      {/* LEFT */}
-                      <div
-                        className="pt-[3px]"
-                        data-testid={step ? "workflow-trace-step" : undefined}
-                        data-line={line.n}
-                      >
-                        <LeftGutter step={step} />
-                      </div>
-                      {/* CENTER */}
-                      <div
-                        className={cn(
-                          step && "border-l-2 border-amber-300/40 pl-3 dark:border-amber-700/40",
-                          step && step.issues.length === 0 && "border-emerald-300/40 dark:border-emerald-700/40",
-                          step && step.status === "error" && "border-destructive/50",
-                        )}
-                      >
-                        <MarkdownLine line={line} hasStep={!!step} />
-                      </div>
-                      {/* RIGHT */}
-                      <div className="pt-[2px]">
-                        <RightGutter step={step} />
-                      </div>
-                    </Fragment>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </ScrollArea>
+              />
+            </TabsContent>
+            {learning.feedback && (
+              <TabsContent value="feedback" className="flex-1 overflow-auto">
+                <FeedbackPanel feedback={learning.feedback} />
+              </TabsContent>
+            )}
+          </Tabs>
+        ) : (
+          runBody
+        )}
       </div>
     </TooltipProvider>
   );

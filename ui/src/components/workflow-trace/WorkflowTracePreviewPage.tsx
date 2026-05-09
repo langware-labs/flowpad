@@ -27,6 +27,17 @@ export function WorkflowTracePreviewPage() {
   const { runId } = useParams<{ runId: string }>();
   const [searchParams] = useSearchParams();
   const explicitPath = searchParams.get("p");
+  // Optional workflow record data folder. When provided, the viewer
+  // surfaces the Memory · History · Feedback tabs.
+  const workflowDataDir = searchParams.get("wf") || undefined;
+
+  const onBack = () => {
+    if (window.history.length > 1) {
+      window.history.back();
+    } else {
+      window.close();
+    }
+  };
 
   if (runId === "path") {
     if (!explicitPath) {
@@ -39,13 +50,8 @@ export function WorkflowTracePreviewPage() {
     return (
       <WorkflowTraceViewer
         outputFolderPath={explicitPath}
-        onBack={() => {
-          if (window.history.length > 1) {
-            window.history.back();
-          } else {
-            window.close();
-          }
-        }}
+        workflowDataDir={workflowDataDir}
+        onBack={onBack}
       />
     );
   }
@@ -54,7 +60,8 @@ export function WorkflowTracePreviewPage() {
     return (
       <div className="flex h-full items-center justify-center p-8 text-sm text-muted-foreground">
         No run id in URL. Use /dev/trace/&lt;agentic_process_id&gt; or
-        /dev/trace/path?p=&lt;absolute folder path&gt;.
+        /dev/trace/path?p=&lt;absolute folder path&gt;
+        {" "}(optional &amp;wf=&lt;workflow_data_dir&gt; for Memory/History/Feedback).
       </div>
     );
   }
@@ -62,13 +69,8 @@ export function WorkflowTracePreviewPage() {
   return (
     <WorkflowTraceViewer
       processId={runId}
-      onBack={() => {
-        if (window.history.length > 1) {
-          window.history.back();
-        } else {
-          window.close();
-        }
-      }}
+      workflowDataDir={workflowDataDir}
+      onBack={onBack}
     />
   );
 }
