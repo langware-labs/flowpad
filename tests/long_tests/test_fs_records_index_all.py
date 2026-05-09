@@ -68,19 +68,29 @@ async def _create_skill(client, cn_url_base, name: str) -> str:
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(180)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_index_all_returns_total(bootstrapped_client):
     """POST /index (no type) indexes all registered types and returns total.
 
-    Slow because some registered types scan from ~/.claude/ which can contain
-    thousands of files on a real machine.
+    The ``limit_types`` cap must include SKILL so the bulk-skill we just
+    created is actually picked up — a tighter cap would leave ``indexed=0``.
+    SKILL's position in ``INDEXABLE_TYPES`` has shifted across refactors, so
+    derive it dynamically rather than hard-coding the slice.
     """
+    from flow_sdk.fs_store.indexer import INDEXABLE_TYPES
+    from flow_sdk.fs_store.record_types import RecordType
+
+    skill_cap = INDEXABLE_TYPES.index(RecordType.SKILL) + 1
+
     resp = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     boot = resp.json()
     skill_base = _cn_url(boot, "skill")
     await _create_skill(bootstrapped_client, skill_base, "bulk-skill")
 
-    resp = await bootstrapped_client.post(_cn_url(boot, "index"))
+    resp = await bootstrapped_client.post(
+        _cn_url(boot, "index") + f"?limit_types={skill_cap}&limit_per_type=20"
+    )
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert "indexed" in data

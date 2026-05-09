@@ -22,6 +22,7 @@ class AppPaths(BaseModel):
     user_skills: str  # Personal skills folder ("Users/shlom/.claude/skills")
     system_skills: str  # System skills folder ("Users/shlom/Flowpad workspace/.flow/system_assets/skills")
     system_agents: str  # System agents folder ("Users/shlom/Flowpad workspace/.flow/system_assets/agents")
+    user_agents: str = ""  # Personal agents folder ("Users/shlom/.claude/agents")
     logs: str  # Logs folder ("Users/shlom/Flowpad workspace/.flow/logs")
     settings: str  # Settings file ("Users/shlom/Flowpad workspace/.flow/settings.json")
 
@@ -42,6 +43,7 @@ class LmInfo(BaseModel):
     llm_providers: List[str] = []
     installed_agents: List[str] = []  # List of agent names (e.g., "Claude Code", "Cursor")
     cloud_login_available: bool = False  # Whether cloud login is available
+    cloud_url: Optional[str] = None  # FLOWPAD_HUB_URL — shown in login button tooltip
     # Application paths - all VFS-relative, ready to use
     paths: Optional[AppPaths] = None
     # Legacy desktop paths (deprecated - use paths instead)
@@ -64,10 +66,15 @@ class BootstrapInfo(BaseModel):
     default_project: Optional[Dict[str, Any]] = None
     default_workspace: Optional[Dict[str, Any]] = None
     default_compute_node: Optional[Dict[str, Any]] = None
+    sandbox_available: bool = False
+    sandbox_compute_node: Optional[Dict[str, Any]] = None
+    docker_available: bool = False
+    docker_compute_nodes: List[Dict[str, Any]] = []
     env: Optional[EnvInfo] = None
     desktop_info: Optional[LmInfo] = None
     sniffer_hook: Optional[Dict[str, Any]] = None
     scan_info: Optional[Dict[str, Any]] = None
+    records_root: Optional[str] = None
 
 
 __all__ = ["AppPaths", "EnvInfo", "LmInfo", "BootstrapInfo"]

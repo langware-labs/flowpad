@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { dismissSetupModal } from './helpers';
+import { dismissSetupModal, startClaudeSession } from './helpers';
 
 test.describe('Terminal PTY No Duplicates (Claude CLI)', () => {
   test.beforeEach(async ({ page }) => {
@@ -9,11 +9,13 @@ test.describe('Terminal PTY No Duplicates (Claude CLI)', () => {
   test('claude CLI terminal has no duplicated lines or escape artifacts', async ({ page }) => {
     test.setTimeout(90_000);
 
-    // Navigate to a new shell with startClaude=true (same as clicking >_ icon)
-    await page.goto('/dock/shell/new_terminal?startClaude=true');
+    // Navigate to a new shell, then start a Claude session via the tab-opener menu.
+    await page.goto('/dock/shell/new_terminal');
+    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
+    await startClaudeSession(page);
 
-    // Wait for URL to settle (new_terminal redirects to /dock/shell/<sessionId>)
-    await page.waitForURL(/\/dock\/shell\/(?!new_terminal)/, { timeout: 60_000 });
+    // Wait for URL to settle (new_terminal redirects to /dock/shell/agentic_process-<id>)
+    await page.waitForURL(/\/dock\/shell\/agentic_process-/, { timeout: 60_000 });
 
     // Wait for terminal to be visible
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });
@@ -57,7 +59,7 @@ test.describe('Terminal PTY No Duplicates (Claude CLI)', () => {
     expect(duplicates, `Found duplicated consecutive lines: ${JSON.stringify(duplicates)}`).toHaveLength(0);
 
     // CHECK 3: The "claude --session-id" command should appear at most once
-    // (the duplicated command is a known bug in the startClaude flow)
+    // (the duplicated command is a known bug in the start-claude flow)
     const claudeCommandMatches = content.match(/claude --session-id/g) || [];
     expect(
       claudeCommandMatches.length,

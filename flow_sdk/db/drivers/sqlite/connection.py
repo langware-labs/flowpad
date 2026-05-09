@@ -2,16 +2,22 @@
 
 import os
 
-# Configuration from environment
-from pathlib import Path
-
-from sqlalchemy import Boolean, Column, DateTime, String, Text, event
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text, event, text
+from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.orm import DeclarativeBase
 
-_default_db_path = str(Path.home() / ".flow" / "db" / "flowpad_db")
-SQLITE_DATABASE_PATH = os.environ.get("SQLITE_DATABASE_PATH", _default_db_path)
-DEVELOPMENT = os.environ.get("DEVELOPMENT", "true").lower() == "true"
+
+def get_database_path() -> str:
+    """Per-instance SQLite database path (call-time, via InstanceSettings).
+
+    InstanceSettings already reads the SQLITE_DATABASE_PATH env var inside
+    `from_env()` — never read the env here, that defeats the contract.
+    """
+    from flow_sdk.instance_settings import get_instance_settings
+    return str(get_instance_settings().db_path)
+
+
+DEVELOPMENT = os.environ.get("FLOWPAD_DEV", "true").lower() == "true"
 
 
 class Base(DeclarativeBase):
@@ -78,37 +84,83 @@ class RelationshipSchema(Base):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
 
-def get_database_url(path: str = SQLITE_DATABASE_PATH) -> str:
-    """Get the async SQLite database URL."""
+class LinksSchema(Base):
+    """Wiki links — one row per [[...]] occurrence in a source record's body."""
+
+    __tablename__ = "links"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    src_type = Column(String(50), nullable=False)
+    src_id = Column(String(36), nullable=False)
+    target_raw = Column(Text, nullable=False)
+    target_resolved_type = Column(String(50), nullable=True)
+    target_resolved_id = Column(String(36), nullable=True)
+    line = Column(Integer, nullable=False)
+
+    __table_args__ = (
+        Index("idx_links_src", "src_type", "src_id"),
+        Index("idx_links_target", "target_resolved_type", "target_resolved_id"),
+        Index(
+            "idx_links_unresolved_raw",
+            "target_raw",
+            sqlite_where=text("target_resolved_id IS NULL"),
+        ),
+    )
+
+    def to_dict(self) -> dict:
+        """Convert schema to dictionary."""
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
+
+def get_database_url(path: str | None = None) -> str:
+    """Get the async SQLite database URL. Resolves per-instance default at call time."""
+    if path is None:
+        path = get_database_path()
     if path == ":memory:":
         # Use shared cache mode so all connections share the same database
         return "sqlite+aiosqlite:///:memory:?cache=shared"
     return f"sqlite+aiosqlite:///{path}"
 
 
-async def create_engine_and_session(path: str = SQLITE_DATABASE_PATH):
-    """Create async engine and session factory."""
-    # Ensure the parent directory exists for file-based databases
-    if path != ":memory:":
-        Path(path).parent.mkdir(parents=True, exist_ok=True)
-    url = get_database_url(path)
-    engine = create_async_engine(url, echo=False)
+def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
+    """Register the SQLite production pragmas + BEGIN IMMEDIATE on an engine.
 
-    # Enable WAL mode and performance pragmas for concurrent access
+    Pragmas (per-connection, set on every new aiosqlite connection):
+      - journal_mode=WAL          readers concurrent with one writer
+      - synchronous=NORMAL        safe with WAL, fsync only on checkpoint
+      - busy_timeout=15000        15s wait on writer-lock contention
+      - temp_store=MEMORY         temp tables in RAM
+      - cache_size=-64000         64 MB page cache
+      - mmap_size=268435456       256 MB memory-mapped I/O for reads
+      - foreign_keys=ON           enforce FK constraints
+
+    BEGIN IMMEDIATE on every transaction so SQLite acquires the writer
+    lock up-front instead of upgrading mid-transaction. This eliminates
+    the "SQLITE_BUSY despite busy_timeout" trap that fires when a
+    deferred transaction starts as a reader and then tries to upgrade
+    after another writer has taken the lock.
+    """
+
     @event.listens_for(engine.sync_engine, "connect")
-    def _set_sqlite_pragmas(dbapi_connection, connection_record):
+    def _on_connect(dbapi_connection, _connection_record):
         cursor = dbapi_connection.cursor()
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA busy_timeout=5000")
-        cursor.execute("PRAGMA synchronous=NORMAL")
+        for stmt in (
+            "PRAGMA journal_mode=WAL",
+            "PRAGMA synchronous=NORMAL",
+            "PRAGMA busy_timeout=15000",
+            "PRAGMA temp_store=MEMORY",
+            "PRAGMA cache_size=-64000",
+            "PRAGMA mmap_size=268435456",
+            # foreign_keys intentionally OFF: existing schema doesn't declare
+            # FK constraints in the SQL DDL; they're enforced at app level.
+            # Turning this on changes nothing for existing data and risks
+            # surprising failures on legacy rows.
+        ):
+            cursor.execute(stmt)
         cursor.close()
 
-    # Create tables
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    @event.listens_for(engine.sync_engine, "begin")
+    def _on_begin(conn):
+        conn.exec_driver_sql("BEGIN IMMEDIATE")
 
-    session_factory = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
 
-    return engine, session_factory

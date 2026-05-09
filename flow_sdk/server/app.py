@@ -38,49 +38,55 @@ from flow_sdk.server import FlowServer
 
 from .routes import (
     assets_router,
-    auth_api_router,
     auth_router,
+    cloud_router,
     chat_router,
+    debug_router,
     detection_router,
+    navigate_router,
+    agent_records_router,
+    transcripts_router,
     directory_router,
     hooks_router,
     search_router,
+    project_router,
     testing_router,
     ui_router,
     watch_router,
     webhook_api_router,
     websocket_router,
+    compute_register_router,
 )
 
 
 async def _on_server_startup():
     """Write server.json for discovery by hooks/CLI and start cron scheduler."""
-    from flow_sdk.config import DEV_SERVER_JSON_PATH, SERVER_JSON_PATH, _is_dev_mode, set_server_info
-    from flow_sdk.db.drivers.sqlite.connection import SQLITE_DATABASE_PATH
+    from flow_sdk.config import set_server_info
+    from flow_sdk.db.drivers.sqlite.connection import get_database_path
+    from flow_sdk.instance_settings import get_instance_settings
 
-    print(f"  Database path: {SQLITE_DATABASE_PATH}")
+    settings = get_instance_settings()
+    print(f"  Database path: {get_database_path()}")
 
     if os.environ.get("FLOWPAD_SKIP_LOCK", "").lower() == "true":
         return
 
-    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
     set_server_info(
         {
-            "port": port,
+            "port": settings.port,
             "server_pid": os.getpid(),
             "webhook_path": "/api/v1/webhook/listen",
             "health_path": "/api/v1/health/status",
         }
     )
-    json_path = DEV_SERVER_JSON_PATH if _is_dev_mode() else SERVER_JSON_PATH
-    print(f"  server.json:   {json_path}")
+    print(f"  server.json:   {settings.server_json_path}")
 
     from flow_sdk.fs_records.old_record_cleanup import run_old_record_cleanup
 
     threading.Thread(target=run_old_record_cleanup, daemon=True, name="old-record-cleanup").start()
 
-    # Search uses FTS5 (built into SQLite) — no external indexer needed.
-    print("  Search indexer: FTS5 (SQLite built-in)")
+    # Search uses FTS5 (built into SQLite) — no external index needed.
+    print("  Search index: FTS5 (SQLite built-in)")
 
     # Start cron job scheduler
     try:
@@ -116,17 +122,17 @@ async def _start_notification_scanner() -> None:
 
 
 async def _start_cloud_ws_listener() -> None:
-    """Stub: real-time cloud push notifications not yet implemented.
+    """Start the outbound authenticated hub WebSocket listener when logged in."""
+    try:
+        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge
+        from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
-    TODO: Connect to flowpad.ai cloud WebSocket to receive notification
-    push events in real time. For now, notifications reach the recipient via
-    the email deep-link → git pull → manifest scanner path.
-    """
-    import logging as _logging
-    _logging.getLogger(__name__).info(
-        "Cloud WS listener: not started (real-time push from cloud is a stub — "
-        "notifications arrive via email deep-link + git pull instead)"
-    )
+        # Install the bridge before starting the manager so the inbound
+        # dispatcher is ready to consume frames the moment the WS connects.
+        hub_ws_bridge.install()
+        await hub_ws_manager.start()
+    except Exception as e:
+        logging.getLogger(__name__).info("Cloud WS listener: failed to start (%s)", e)
 
 
 async def _shutdown_extras():
@@ -141,6 +147,13 @@ async def _shutdown_extras():
     except Exception:
         pass
 
+    try:
+        from flow_sdk.cloud_client.ws_client import hub_ws_manager
+
+        await hub_ws_manager.stop()
+    except Exception:
+        pass
+
     print("Shutting down minihub server...")
     clear_server_info()
     print("Shutdown complete.")
@@ -148,7 +161,7 @@ async def _shutdown_extras():
 
 server = FlowServer()
 server.add_router(auth_router)
-server.add_router(auth_api_router)
+server.add_router(cloud_router)
 server.add_router(hooks_router)
 server.add_router(chat_router)
 server.add_router(directory_router)
@@ -160,6 +173,12 @@ server.add_router(watch_router)
 server.add_router(websocket_router)
 server.add_router(webhook_api_router)
 server.add_router(assets_router)
+server.add_router(project_router, prefix="/api/v1")
+server.add_router(compute_register_router)
+server.add_router(debug_router)
+server.add_router(navigate_router)
+server.add_router(agent_records_router)
+server.add_router(transcripts_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)
@@ -264,9 +283,9 @@ def start_server(port: int):
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
 
-def wait_for_post_login(timeout_sec: int = None):
+def wait_for_login_callback(timeout_sec: int = None):
     """
-    Wait for the post_login endpoint to be called.
+    Wait for the login_callback endpoint to be called.
     Runs the server in a separate thread and waits for login.
 
     Args:
@@ -284,7 +303,7 @@ def wait_for_post_login(timeout_sec: int = None):
 
     # Get timeout from config if not provided
     if timeout_sec is None:
-        timeout_str = get_config_value("post_login_timeout")
+        timeout_str = get_config_value("login_callback_timeout")
         timeout_sec = int(timeout_str) if timeout_str else 30
 
     port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))

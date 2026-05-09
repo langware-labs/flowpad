@@ -1,4 +1,4 @@
-import { AgenticProcess, claudeSessionManager } from '@sdk';
+import { AgenticProcess, TypeId } from '@sdk';
 import { render, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -17,12 +17,14 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
 function makeProcess(overrides: Partial<AgenticProcess> = {}): AgenticProcess {
   return {
     id: 'proc-1',
+    typeId: new TypeId('agentic_process', 'proc-1'),
     session_id: 'session-1',
     pty_pid: 'pty-1',
     workdir: '/home/user/project',
     cliOptions: { chrome: false, permission_mode: 'askUser', debug: false },
     status: 'running',
     save: vi.fn(),
+    fork: vi.fn().mockResolvedValue({ id: 'forked-proc-1' }),
     ...overrides,
   } as unknown as AgenticProcess;
 }
@@ -40,7 +42,6 @@ const defaultColVis: ColVisibility = { trace: true, time: true, annotations: tru
 describe('ProcessToolbar "Open terminal" button', () => {
   beforeEach(() => {
     mockOpenNewShell.mockClear();
-    vi.spyOn(claudeSessionManager, 'forkSession').mockResolvedValue(undefined as any);
   });
 
   it('opens a new terminal with cwd when workdir is set', () => {

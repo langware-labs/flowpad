@@ -23,19 +23,22 @@ export function TasksViewer() {
   const { project } = useProject();
   const pointer = currentDock?.pointer;
 
-  // Load existing task if pointer is a valid typeId
+  // Load existing task if pointer is a valid typeId. Pointers may carry a
+  // sub-path (e.g. `<taskId>/conversation/<convId>`) so we parse the first
+  // segment as the task id and ignore the rest — the canonical anchor is
+  // the URL only; the view itself only renders the task.
   const taskTypeId = useMemo(() => {
     if (!pointer) return undefined;
-    if (isTypeId(pointer)) return new TypeId(pointer);
-    // Try constructing from task type + id
+    const head = pointer.split('/')[0];
+    if (isTypeId(head)) return new TypeId(head);
     try {
-      return new TypeId(Task.type, pointer);
+      return new TypeId(Task.type, head);
     } catch {
       return undefined;
     }
   }, [pointer]);
 
-  const { data: existingTask } = useEntity<Task>(taskTypeId ?? null, {
+  const { data: existingTask, isLoading } = useEntity<Task>(taskTypeId ?? null, {
     enabled: !!taskTypeId,
   });
 
@@ -108,8 +111,14 @@ export function TasksViewer() {
     navigation.goBack();
   }, [existingTask, project?.typeId, navigation]);
 
+  // Wait for the task to load before deciding which layout to show — avoids
+  // flashing the empty edit form before switching to SharedTaskView or the populated form.
+  if (taskTypeId && (isLoading || !existingTask)) {
+    return <div className="flex h-full items-center justify-center text-muted-foreground">Loading…</div>;
+  }
+
   // Shared tasks (sent via notification) show the SharedTaskView instead of the edit form
-  if (existingTask?.spec_id) {
+  if (existingTask?.firstContextOfType?.('spec')) {
     return <SharedTaskView task={existingTask} onClose={() => navigation.goBack()} />;
   }
 

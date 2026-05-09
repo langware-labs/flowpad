@@ -4,7 +4,7 @@ from .bootstrap import router as bootstrap_router
 from .graph import graph_router
 from .health import health_router
 from .auth import router as auth_router
-from .auth import api_router as auth_api_router
+from .cloud import router as cloud_router
 from .hooks import router as hooks_router
 from .chat import router as chat_router
 from .directory import router as directory_router
@@ -17,12 +17,19 @@ from .webhook import webhook_router as webhook_api_router
 from .rules import router as rules_router
 from .watch import router as watch_router
 from .assets import router as assets_router
+from .project import router as project_router
+from .compute_register import compute_register_router
+from .debug import router as debug_router
+from .navigate import router as navigate_router
+from .agent_records import router as agent_records_router
+from .transcripts import router as transcripts_router
+
 __all__ = [
     "bootstrap_router",
     "graph_router",
     "health_router",
     "auth_router",
-    "auth_api_router",
+    "cloud_router",
     "hooks_router",
     "chat_router",
     "directory_router",
@@ -35,4 +42,10 @@ __all__ = [
     "rules_router",
     "watch_router",
     "assets_router",
+    "project_router",
+    "compute_register_router",
+    "debug_router",
+    "navigate_router",
+    "agent_records_router",
+    "transcripts_router",
 ]

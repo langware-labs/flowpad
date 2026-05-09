@@ -7,6 +7,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { FONT_FAMILY, FONT_SIZE_PX } from './terminalConfig';
 
 const DARK_THEME = {
   background: '#1e1e1e',
@@ -106,8 +107,8 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
       scrollOnUserInput: true,
       disableStdin: false,
       cursorStyle: 'block',
-      fontFamily: '"Cascadia Code", "Fira Code", "JetBrains Mono", Menlo, Monaco, "Courier New", monospace',
-      fontSize: 14,
+      fontFamily: FONT_FAMILY,
+      fontSize: FONT_SIZE_PX,
       fontWeight: '400',
       fontWeightBold: '700',
       allowTransparency: true,

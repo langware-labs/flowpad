@@ -16,11 +16,11 @@ def get_scheduler():
         try:
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
             from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
-            from flow_sdk.db.drivers.sqlite.connection import SQLITE_DATABASE_PATH
+            from flow_sdk.db.drivers.sqlite.connection import get_database_path
 
             _scheduler = AsyncIOScheduler(
                 jobstores={
-                    "default": SQLAlchemyJobStore(url=f"sqlite:///{SQLITE_DATABASE_PATH}")
+                    "default": SQLAlchemyJobStore(url=f"sqlite:///{get_database_path()}")
                 },
                 job_defaults={"misfire_grace_time": 60},
             )

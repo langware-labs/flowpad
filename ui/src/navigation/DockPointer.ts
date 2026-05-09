@@ -167,21 +167,36 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Create dock pointer for skills viewer
-   * @param skillName - Optional skill name to view/edit
+   * Create dock pointer for the skill editor / list under the Assets browser.
+   * The standalone Skills view was removed; this helper now routes into the
+   * Assets editor (when a name is given) or the Assets list of skills.
+   * @param skillName - Optional skill name / vfs path to open in the editor
    */
   static forSkills(skillName?: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.SKILLS, skillName, undefined, layout);
+    if (skillName) {
+      return DockPointer.forAssetEditor('skill', skillName, layout);
+    }
+    return DockPointer.forAssetList('skill', undefined, layout);
   }
 
   /**
    * Create dock pointer for an asset editor.
    * Pointer format: "editor/<assetType>/<vfsPath>"
-   * @param assetType - The asset type (e.g., "skill", "docs")
+   * @param assetType - The asset type (e.g., "skill", "markdown")
    * @param vfsPath - The VFS or filesystem path to the asset
    */
   static forAssetEditor(assetType: string, vfsPath: string, layout: Layout = Layout.DOCK): DockPointer {
     return new DockPointer(ViewType.ASSETS, `editor/${assetType}/${vfsPath.replace(/^\//, '')}`, undefined, layout);
+  }
+
+  /**
+   * Create dock pointer for a wiki link by name. Resolves to a markdown record
+   * at view time; the URL stays at the name form (rename-resilient).
+   * Pointer format: "wiki/<encoded name>"
+   * URL: /dock/assets/wiki/<encoded name>
+   */
+  static forWiki(name: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.ASSETS, `wiki/${encodeURIComponent(name)}`, undefined, layout);
   }
 
   /**
@@ -203,11 +218,142 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create dock pointer for an asset folder view (filtered list under a folder).
+   * Pointer format: "folder/<typeName>/<typeid>/<relPath>"
+   *   - typeid is a VFS entity identifier like "compute_node-@local" or "project-<uuid>".
+   *   - relPath is the folder path relative to the typeid (may be empty for the vault root).
+   * URL: /dock/assets/folder/<typeName>/<typeid>/<relPath>
+   */
+  static forAssetFolder(
+    typeName: string,
+    typeid: string,
+    relPath: string = '',
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const cleanRel = relPath.replace(/^\/+/, '').replace(/\/+$/, '');
+    const pointer = cleanRel
+      ? `folder/${typeName}/${typeid}/${cleanRel}`
+      : `folder/${typeName}/${typeid}`;
+    return new DockPointer(ViewType.ASSETS, pointer, undefined, layout);
+  }
+
+  /**
+   * Parse a folder pointer into its parts.
+   * Returns null if the pointer is not a folder pointer.
+   */
+  static parseAssetFolderPointer(
+    pointer: string | undefined,
+  ): { typeName: string; typeid: string; relPath: string } | null {
+    if (!pointer || !pointer.startsWith('folder/')) return null;
+    const rest = pointer.slice('folder/'.length);
+    const firstSlash = rest.indexOf('/');
+    if (firstSlash < 0) return null;
+    const typeName = rest.slice(0, firstSlash);
+    const afterType = rest.slice(firstSlash + 1);
+    const secondSlash = afterType.indexOf('/');
+    if (secondSlash < 0) {
+      // no relPath — pointer addresses the vault root itself
+      return { typeName, typeid: afterType, relPath: '' };
+    }
+    const typeid = afterType.slice(0, secondSlash);
+    const relPath = afterType.slice(secondSlash + 1);
+    return { typeName, typeid, relPath };
+  }
+
+  /**
    * Create dock pointer for workflows viewer
    * @param workflowId - Optional workflow entity ID to view/edit
    */
   static forWorkflows(workflowId?: string, layout: Layout = Layout.DOCK): DockPointer {
     return new DockPointer(ViewType.WORKFLOWS, workflowId, undefined, layout);
+  }
+
+  /**
+   * Create dock pointer for a project's collaboration view, optionally with
+   * an active collaboration_room and/or an active tab inside that room, or
+   * a focused conversation.
+   *
+   * URL formats:
+   *   /dock/project/<projectId>
+   *   /dock/project/<projectId>/collaboration_room/<roomId>
+   *   /dock/project/<projectId>/collaboration_room/<roomId>/tab/<typeid>
+   *   /dock/project/<projectId>/conversation/<conversationId>
+   *
+   * `typeid` is the standard TypeId string (e.g. "agentic_process-<uuid>").
+   *
+   * Precedence: when both `roomId` and `conversationId` are passed, `conversationId`
+   * wins — the room shape is dropped to keep the URL unambiguous.
+   */
+  static forProject(
+    projectId?: string,
+    sub?: { roomId?: string | null; tab?: TypeId | null; conversationId?: string | null },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    if (!projectId) return new DockPointer(ViewType.PROJECT, undefined, undefined, layout);
+    const segments: string[] = [projectId];
+    if (sub?.conversationId) {
+      segments.push('conversation', sub.conversationId);
+    } else if (sub?.roomId) {
+      segments.push('collaboration_room', sub.roomId);
+      if (sub.tab) {
+        segments.push('tab', sub.tab.toString());
+      }
+    }
+    return new DockPointer(ViewType.PROJECT, segments.join('/'), undefined, layout);
+  }
+
+  /**
+   * Parse a project pointer string.
+   *
+   * Accepted shapes:
+   *   <projectId>
+   *   <projectId>/collaboration_room/<roomId>
+   *   <projectId>/collaboration_room/<roomId>/tab/<type>-<id>
+   *   <projectId>/conversation/<conversationId>
+   *
+   * Returns nulls for segments that aren't present or the input is malformed.
+   */
+  static parseProjectPointer(
+    pointer: string | undefined | null,
+  ): { projectId: string | null; roomId: string | null; tabTypeId: TypeId | null; conversationId: string | null } {
+    if (!pointer) return { projectId: null, roomId: null, tabTypeId: null, conversationId: null };
+    const parts = pointer.split('/').filter(Boolean);
+    const projectId = parts[0] ?? null;
+    let roomId: string | null = null;
+    let tabTypeId: TypeId | null = null;
+    let conversationId: string | null = null;
+    if (parts[1] === 'conversation' && parts[2]) {
+      conversationId = parts[2];
+    } else if (parts[1] === 'collaboration_room' && parts[2]) {
+      roomId = parts[2];
+      if (parts[3] === 'tab' && parts[4]) {
+        try {
+          tabTypeId = new TypeId(parts[4]);
+        } catch {
+          tabTypeId = null;
+        }
+      }
+    }
+    return { projectId, roomId, tabTypeId, conversationId };
+  }
+
+  /**
+   * Create dock pointer for the inbox, optionally focused on a specific conversation
+   * and/or message via query params.
+   *
+   * URL formats:
+   *   /dock/inbox
+   *   /dock/inbox?conversation=<id>
+   *   /dock/inbox?conversation=<id>&message=<id>
+   */
+  static forInbox(
+    options?: { conversationId?: string | null; messageId?: string | null },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const queryOptions: Record<string, string> = {};
+    if (options?.conversationId) queryOptions.conversation = options.conversationId;
+    if (options?.messageId) queryOptions.message = options.messageId;
+    return new DockPointer(ViewType.INBOX, undefined, Object.keys(queryOptions).length ? queryOptions : undefined, layout);
   }
 
   /**
@@ -230,19 +376,16 @@ export class DockPointer implements IDockPointer {
   /**
    * Create dock pointer for shell/terminal viewer
    * @param sessionId - Optional shell session ID (e.g., 'run', 'flowShell', or custom UUID)
-   * @param options - Optional options object
-   * @param options.startClaude - If true, starts Claude CLI with --session-id using the sessionId
-   * @param options.resumeClaude - If true, resumes Claude CLI with --resume using the sessionId
-   * @param options.cwd - Working directory to cd into before starting Claude CLI
+   * @param options.cwd - Working directory to cd into before starting the shell
+   * @param options.startCommand - Optional command to run on shell startup
+   * @param options.skipPermissions - Pass through `--dangerously-skip-permissions` semantics where applicable
    */
   static forShell(
     sessionId?: string,
-    options?: { startClaude?: boolean; resumeClaude?: boolean; cwd?: string; startCommand?: string; skipPermissions?: boolean },
+    options?: { cwd?: string; startCommand?: string; skipPermissions?: boolean },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     const queryOptions: Record<string, string> = {};
-    if (options?.startClaude) queryOptions.startClaude = 'true';
-    if (options?.resumeClaude) queryOptions.resumeClaude = 'true';
     if (options?.cwd) queryOptions.cwd = options.cwd;
     if (options?.startCommand) queryOptions.startCommand = options.startCommand;
     if (options?.skipPermissions) queryOptions.skipPermissions = 'true';
@@ -348,11 +491,42 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Create dock pointer for tasks view
+   * Create dock pointer for tasks view.
    * @param taskId - Optional task ID to view/edit
+   * @param options.conversationId - Optional conversation id to canonicalise
+   *   into the URL — produces `/dock/tasks/<taskId>/conversation/<convId>`.
+   *   The task view itself only renders the task; the segment is purely a
+   *   canonical anchor (so deep-links from the email / inbox can carry both).
    */
-  static forTasks(taskId?: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.TASKS, taskId, undefined, layout);
+  static forTasks(
+    taskId?: string,
+    options?: { conversationId?: string; layout?: Layout },
+  ): DockPointer {
+    const layout = options?.layout ?? Layout.DOCK;
+    const pointer = taskId
+      ? options?.conversationId
+        ? `${taskId}/conversation/${options.conversationId}`
+        : taskId
+      : undefined;
+    return new DockPointer(ViewType.TASKS, pointer, undefined, layout);
+  }
+
+  /**
+   * Create dock pointer for the dedicated conversation viewer at
+   * `/dock/conversation/<conversationId>`. Same UI as the conversation
+   * panel embedded in task views — the URL is just a different host for it.
+   */
+  static forConversation(conversationId: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.CONVERSATION, conversationId, undefined, layout);
+  }
+
+  /**
+   * Create dock pointer for the dedicated spec viewer at
+   * `/dock/spec/<specId>`. Renders the Spec record's metadata and
+   * a link back to the source plan + generated tasks.
+   */
+  static forSpec(specId: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.SPEC, specId, undefined, layout);
   }
 
   /**
@@ -389,6 +563,23 @@ export class DockPointer implements IDockPointer {
    */
   static forFsRecordsScanner(layout: Layout = Layout.DOCK): DockPointer {
     return DockPointer.forLens('fs-records', 'scan', '', layout);
+  }
+
+  /**
+   * Create a dock pointer for the transcript lens, dispatching by worker.
+   *
+   * - claude: ref is `<projectEncodedName>/<sessionId>` (legacy claude viewer).
+   * - codex (and other workers): ref is the URL-encoded absolute path to the
+   *   rollout JSONL — the generic viewer fetches it via `useTranscript`.
+   */
+  static forLensTranscript(
+    workerType: 'claude' | 'codex',
+    ref: string,
+    layout: Layout = Layout.DOCK,
+    options?: Record<string, string>,
+  ): DockPointer {
+    const safeRef = workerType === 'claude' ? ref : encodeURIComponent(ref);
+    return DockPointer.forLens(workerType, 'transcript', safeRef, layout, options);
   }
 
   /**
@@ -472,4 +663,32 @@ export class DockPointer implements IDockPointer {
       this.options.slot = value;
     }
   }
+}
+
+/**
+ * Compute the project-scoped DockPointer for a terminal tab rendered inside
+ * the Project (collaboration) view. Prefers the AgenticProcess when the tab
+ * is a Claude session; falls back to the plain Shell.
+ *
+ * The room id is required — tabs inside a collaboration room always belong
+ * to one. Keep `process.dockPointer` untouched — this function is the seam.
+ */
+export function getProcessProjectDockPointer(
+  tab: { shell?: { id?: string } | null; agenticProcess?: { id?: string } | null },
+  projectId: string,
+  roomId: string,
+): DockPointer {
+  if (tab.agenticProcess?.id) {
+    return DockPointer.forProject(projectId, {
+      roomId,
+      tab: new TypeId('agentic_process', tab.agenticProcess.id),
+    });
+  }
+  if (tab.shell?.id) {
+    return DockPointer.forProject(projectId, {
+      roomId,
+      tab: new TypeId('shell', tab.shell.id),
+    });
+  }
+  return DockPointer.forProject(projectId, { roomId });
 }

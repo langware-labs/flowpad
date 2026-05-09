@@ -24,6 +24,7 @@ from typing import Any, ClassVar, Iterator
 from flow_sdk._compat import Self
 
 from flow_sdk.fs_store import PropertyRecord, Record, RecordType
+from flow_sdk.instance_settings import get_instance_settings
 
 # --- Compiled patterns (module-level, compiled once) ---
 
@@ -165,7 +166,7 @@ def _find_transcript(session_id: str) -> str:
     Scans ``~/.claude/projects/*/`` for ``{session_id}.jsonl``.
     Returns the full path as a string, or empty string if not found.
     """
-    projects_dir = Path.home() / ".claude" / "projects"
+    projects_dir = get_instance_settings().claude_projects_dir
     if not projects_dir.is_dir():
         return ""
     fname = f"{session_id}.jsonl"
@@ -240,8 +241,7 @@ class ClaudeSessionDebugLogRecord(Record):
     @classmethod
     def debug_dir(cls) -> Path:
         """Return the platform-appropriate debug log directory."""
-        home = Path.home()
-        d = home / ".claude" / "debug"
+        d = get_instance_settings().claude_home / "debug"
         if d.is_dir():
             return d
         # Windows AppData fallback
@@ -253,7 +253,7 @@ class ClaudeSessionDebugLogRecord(Record):
                 d = Path(appdata) / "claude" / "debug"
                 if d.is_dir():
                     return d
-        return home / ".claude" / "debug"
+        return Path.home() / ".claude" / "debug"
 
     @classmethod
     def discover(cls, scope=None, hours: float = 168.0, **kwargs) -> list[ClaudeSessionDebugLogRecord]:
@@ -262,7 +262,7 @@ class ClaudeSessionDebugLogRecord(Record):
         return list(rl)
 
     @classmethod
-    def discover_one(cls, uid: str, scope=None, **kwargs) -> ClaudeSessionDebugLogRecord | None:
+    def get(cls, uid: str, scope=None, **kwargs) -> ClaudeSessionDebugLogRecord | None:
         """Load a specific debug log session by ID."""
         rl = ClaudeSessionDebugLogRecordList()
         return rl.get(uid)
@@ -318,7 +318,7 @@ class ClaudeSessionDebugLogRecord(Record):
         for he in hook_errors:
             fp = _fingerprint_hook(he.hook, he.event, he.root_cause)
             all_fps.append(fp)
-            existing = ClaudeErrorRecord.discover_one(fp)
+            existing = ClaudeErrorRecord.get(fp)
             if existing and not force:
                 continue
             rec = ClaudeErrorRecord(
@@ -355,7 +355,7 @@ class ClaudeSessionDebugLogRecord(Record):
         for le in log_errors:
             fp = _fingerprint_log(le.message)
             all_fps.append(fp)
-            existing = ClaudeErrorRecord.discover_one(fp)
+            existing = ClaudeErrorRecord.get(fp)
             if existing and not force:
                 continue
             rec = ClaudeErrorRecord(

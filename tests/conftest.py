@@ -63,10 +63,11 @@ def async_context(func):
 @pytest.fixture(scope="session", autouse=True)
 def clean_claude_temp_projects():
     """Remove temp-path Claude projects before and after the test session."""
+    import asyncio
     from flow_sdk.fs_records.claude.claude_project import ClaudeProjectFsRecord
-    ClaudeProjectFsRecord.clean_temp_projects()
+    asyncio.get_event_loop().run_until_complete(ClaudeProjectFsRecord.clean_temp_projects())
     yield
-    ClaudeProjectFsRecord.clean_temp_projects()
+    asyncio.get_event_loop().run_until_complete(ClaudeProjectFsRecord.clean_temp_projects())
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -101,6 +102,20 @@ async def initialize_test_db(tmp_path_factory):
     _test_db_initialized = True
 
     await driver.open()
+
+    # Force-rebind the LazyDBDriver caches on DBEntity / DBRelationship to this
+    # test driver. Order-of-fixture hazard: an earlier session-autouse fixture
+    # (e.g. clean_claude_temp_projects) can hit `cls._db` before this fixture
+    # runs, which freezes the descriptor onto whichever driver was in
+    # `_driver_instances` at that time. Overwriting `_driver_instances` here
+    # is not enough — once LazyDBDriver has set the attribute on the owning
+    # class, subsequent accesses bypass the registry. Re-assigning here keeps
+    # entity queries pointed at the schema this fixture just created.
+    from flow_sdk.db.db_entity import DBEntity
+    from flow_sdk.db.db_relationship import DBRelationship
+    DBEntity._db = driver
+    DBRelationship._db = driver
+
     yield driver
 
     # Cleanup: close the driver to stop aiosqlite worker threads
@@ -112,3 +127,21 @@ def app():
     """Get the FastAPI app instance."""
     from flow_sdk.server.app import app as minihub_app
     return minihub_app
+
+
+@pytest.fixture(autouse=True)
+def isolated_records_root(tmp_path, monkeypatch):
+    """Redirect the default records root to a temp dir for every test.
+
+    Sets FS_RECORD_PATH env var (which BaseInstanceSettings.from_env reads)
+    and resets the cached singleton so the next get_instance_settings()
+    rebuilds with the new path. Mirrors the per-instance contract — no
+    module-level mutation, the InstanceSettings singleton is the single
+    source of truth.
+    """
+    from flow_sdk.instance_settings import reset_instance_settings  # noqa: PLC0415
+
+    monkeypatch.setenv("FS_RECORD_PATH", str(tmp_path / "records"))
+    reset_instance_settings()
+    yield tmp_path / "records"
+    reset_instance_settings()

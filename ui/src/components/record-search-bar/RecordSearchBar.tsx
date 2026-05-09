@@ -2,13 +2,14 @@ import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { SearchFilters } from '@src/hooks/use-record-search';
 import { cn } from '@src/lib/utils';
+import { RecordType } from '@sdk';
 import { CornerDownLeft, Search, SlidersHorizontal, X } from 'lucide-react';
 import { KeyboardEvent, useCallback, useRef, useState } from 'react';
 
 const RECORD_TYPES = [
-  'bookmark', 'claude_session', 'skill', 'agent', 'claude_hook', 'command',
-  'annotation', 'comment', 'task', 'workflow', 'docs', 'plan',
-  'claude_md', 'claude_memory', 'claude_rules', 'project', 'asset',
+  'bookmark', 'claude_session', 'codex_session', RecordType.SKILL, RecordType.AGENT, 'claude_hook', RecordType.COMMAND,
+  RecordType.ANNOTATION, 'comment', RecordType.TASK, 'workflow', RecordType.MARKDOWN, RecordType.PLAN,
+  RecordType.CLAUDE_MD, 'claude_memory', 'claude_rules', RecordType.PROJECT, 'codex_project',
 ];
 const TIME_PRESETS = [
   { value: '1h', label: '1h' },
@@ -21,11 +22,15 @@ const STATUSES = ['active', 'closed', 'archived'];
 const TYPE_DISPLAY_NAMES: Record<string, string> = {
   claude_session: 'session',
   claude_hook: 'hook',
+  codex_session: 'codex',
+  codex_project: 'codex project',
 };
 
 const TYPE_COLORS: Record<string, string> = {
   bookmark: 'bg-violet-500/20 text-violet-700 dark:text-violet-300',
   claude_session: 'bg-blue-500/20 text-blue-700 dark:text-blue-300',
+  codex_session: 'bg-green-500/20 text-green-700 dark:text-green-300',
+  codex_project: 'bg-green-700/20 text-green-800 dark:text-green-200',
   skill: 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300',
   agent: 'bg-amber-500/20 text-amber-700 dark:text-amber-300',
   claude_hook: 'bg-orange-500/20 text-orange-700 dark:text-orange-300',
@@ -44,8 +49,10 @@ const TYPE_COLORS: Record<string, string> = {
 };
 
 interface RecordSearchBarProps {
-  /** Compact mode: shows Tools toggle button, filters hidden by default */
+  /** Compact mode: filters hidden by default */
   compact?: boolean;
+  /** Show the Tools toggle button (default: false) */
+  showTools?: boolean;
   placeholder?: string;
   query: string;
   filters: SearchFilters;
@@ -88,6 +95,7 @@ function CustomDateRangeInputs({
 
 export function RecordSearchBar({
   compact = true,
+  showTools = false,
   placeholder = 'Search records...',
   query,
   filters,
@@ -163,7 +171,7 @@ export function RecordSearchBar({
           </button>
         )}
 
-        {compact && (
+        {showTools && (
           <Button
             variant="ghost"
             size="sm"

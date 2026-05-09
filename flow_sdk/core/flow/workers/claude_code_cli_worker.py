@@ -4,7 +4,7 @@ Claude Code CLI Worker
 Extends BasePTYWorker with Claude-specific CLI options (print mode).
 """
 
-from flow_sdk.builtin.cli_workers import ClaudeCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
 
 from .base_pty_worker import BasePTYWorker
 

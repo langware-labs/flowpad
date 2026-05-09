@@ -69,6 +69,15 @@ class PtyActionsMixin:
     ComputeNode keeps the @action stubs and delegates to these methods.
     """
 
+    @staticmethod
+    def _request_message_id(body: dict | None = None) -> str:
+        request_info = get_current_request_info()
+        if request_info and request_info.request_message_id:
+            return request_info.request_message_id
+        if body and body.get("message_id"):
+            return str(body["message_id"])
+        return str(uuid.uuid4())
+
     async def _pty_terminal_command(self):
         """Dispatch terminal operations via /terminal-command/<op> API.
 
@@ -398,7 +407,7 @@ class PtyActionsMixin:
             from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
             from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
 
-            existing_record = ShellRecord.discover_one(shell_id)
+            existing_record = ShellRecord.get(shell_id)
             if not existing_record:
                 record = ShellRecord(
                     id=shell_id,
@@ -499,7 +508,7 @@ class PtyActionsMixin:
                 s.error_message = "PTY session not found"
                 await s.save()
 
-        active = [s for s in all_sessions if s.status not in ("closed", "error")]
+        active = [s for s in all_sessions if s.status not in ("closing", "closed", "error")]
         result = [s.model_dump(mode="json") for s in active]
 
         # Enrich with agentic_process_id from AgenticProcess
@@ -537,7 +546,7 @@ class PtyActionsMixin:
         if project:
             kwargs["project"] = project
 
-        record = ClaudeSessionRecord.discover_one(session_id, **kwargs)
+        record = ClaudeSessionRecord.get(session_id, **kwargs)
         if not record:
             return ApiSuccessResponse(data=[])
 
@@ -585,7 +594,7 @@ class PtyActionsMixin:
 
         try:
             if uuid_param:
-                record = await loop.run_in_executor(None, lambda: cls.discover_one(uuid_param, **kwargs))
+                record = await loop.run_in_executor(None, lambda: cls.get(uuid_param, **kwargs))
                 if not record:
                     # Return 200 with null data — the session file may not exist yet
                     # during normal startup (race condition), so this is not an error.
@@ -633,7 +642,7 @@ class PtyActionsMixin:
         if not shell_id:
             return ApiFailResponse(message="shell_id is required")
 
-        record = ShellRecord.discover_one(shell_id)
+        record = ShellRecord.get(shell_id)
         if not record:
             return ApiFailResponse(message="Shell session not found")
 
@@ -824,10 +833,7 @@ class PtyActionsMixin:
 
     async def _send_pty_input(self, body: dict) -> ApiResponse:
         """Send input to PTY session."""
-        request_info = get_current_request_info()
-        if not request_info or not request_info.request_message_id:
-            return ApiFailResponse(message="Invalid request context")
-        request_message_id = request_info.request_message_id
+        request_message_id = self._request_message_id(body)
 
         shell_id = body.get("shell_id")
         data = body.get("data", "")
@@ -882,10 +888,7 @@ class PtyActionsMixin:
 
     async def _resize_pty(self, body: dict) -> ApiResponse:
         """Resize PTY terminal."""
-        request_info = get_current_request_info()
-        if not request_info or not request_info.request_message_id:
-            return ApiFailResponse(message="Invalid request context")
-        request_message_id = request_info.request_message_id
+        request_message_id = self._request_message_id(body)
 
         shell_id = body.get("shell_id")
         try:
@@ -973,7 +976,7 @@ class PtyActionsMixin:
         try:
             from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
 
-            record = ShellRecord.discover_one(shell_id)
+            record = ShellRecord.get(shell_id)
             if record:
                 object.__setattr__(record, "state", ShellStatus.CLOSED)
                 dirty = object.__getattribute__(record, "_dirty_keys")

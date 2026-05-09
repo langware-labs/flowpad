@@ -35,8 +35,10 @@ export const FlowEvents = {
   STREAM_ELEMENT_START: 'stream:element_start', // Element processing started
   STREAM_ELEMENT_END: 'stream:element_end', // Element processing completed
 
-  // Execution events
-  EXECUTION_STATUS: 'execution:status', // Execution status changed
+  // Client-side send-status events (renamed from EXECUTION_STATUS — see Flow.sendStatus).
+  SEND_STATUS: 'send:status', // sendMessage state changed
+  /** @deprecated Alias for SEND_STATUS during the rename sweep. */
+  EXECUTION_STATUS: 'send:status',
 
   // Entity and artifact events
   ARTIFACT: 'artifact', // Artifact created

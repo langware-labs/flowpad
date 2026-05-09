@@ -1,0 +1,200 @@
+/**
+ * loadNextProcess — single recovery primitive for "pick a usable shell tab."
+ *
+ * Loop:
+ *   1. Pull visible shells + processes, build the tab list.
+ *   2. Pick the best candidate via `resolveDefaultTab`.
+ *   3. Try to load it (`loadProcess` for agentic-process tabs, `loadShell`
+ *      otherwise).
+ *   4. On a typed `ProcessLoadError` / `ShellLoadError`, dispatch the per-kind
+ *      cleanup (mirrors what the previous route wrappers did inline), record
+ *      the cleanup, mark the id as tried, and advance.
+ *   5. Repeat until success, or the candidate set is exhausted.
+ *
+ * Untyped errors (network 5xx, programming bugs, …) are re-thrown unchanged —
+ * they signal "the system is broken," not "this candidate is broken." The
+ * caller decides what to do with them.
+ *
+ * Replaces the URL skip-set machinery (`shell-recovery.ts`) and the per-kind
+ * branches that used to live in `routeProcessPointer` / `routePlainShellPointer`.
+ */
+
+import { AgenticProcess, Shell, TypeId } from '@sdk';
+import {
+  closeTerminalTargets,
+  fetchActiveTerminals,
+  terminalProcessId,
+  terminalTransportShellId,
+} from '@src/hooks/useActiveTerminals';
+import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
+import { loadShell, resolveDefaultTab, ShellLoadError } from './load-shell';
+
+// ── public types ────────────────────────────────────────────────────────────
+
+export type CleanupKind =
+  | 'process_not_found'
+  | 'process_start_failed'
+  | 'process_no_shell'
+  | 'process_project_missing'
+  | 'shell_not_found'
+  | 'shell_error_status'
+  | 'shell_start_failed';
+
+export interface CleanupRecord {
+  kind: CleanupKind;
+  processId?: string;
+  shellId?: string;
+  /** User-friendly description of what went wrong — used for the toast on the
+   * single-cleanup path. */
+  title: string;
+  description?: string;
+}
+
+export type LoadedNext =
+  | { kind: 'process'; process: AgenticProcess; shell: Shell }
+  | { kind: 'shell'; shell: Shell };
+
+export interface LoadNextProcessOptions {
+  /** Candidate ids to skip (process ids and/or shell ids cohabit). Used by
+   *  direct-link callers that want to exclude their own already-failed id. */
+  excludeIds?: Set<string>;
+  /** When set, only consider tabs whose shell/process belongs to this project_id.
+   *  Mirrors the per-project filter on the visible tab strip — closing the last
+   *  tab in the current project should land on the empty view, not silently
+   *  switch the user to a tab in a different project. */
+  projectId?: string | null;
+}
+
+export interface LoadNextProcessResult {
+  /** Successfully-loaded process or shell. `null` when no candidate could be loaded. */
+  loaded: LoadedNext | null;
+  /** Per-attempt cleanup records, in order. Empty when the first try succeeded. */
+  cleaned: CleanupRecord[];
+}
+
+// ── per-error cleanup dispatchers (preserve current behaviour) ──────────────
+
+function buildProcessCleanup(e: ProcessLoadError): CleanupRecord {
+  switch (e.kind) {
+    case 'not_found':
+      return {
+        kind: 'process_not_found',
+        processId: e.processId,
+        title: 'Session not found',
+        description: 'Agentic process does not exist.',
+      };
+    case 'start_failed': {
+      const desc = describeProcessStartError(e.cause ?? e);
+      return {
+        kind: 'process_start_failed',
+        processId: e.processId,
+        shellId: e.shellId ?? undefined,
+        title: desc.title,
+        description: desc.description,
+      };
+    }
+    case 'no_shell':
+      return {
+        kind: 'process_no_shell',
+        processId: e.processId,
+        shellId: e.shellId ?? undefined,
+        title: 'Session unavailable',
+        description: 'No shell is linked to this process.',
+      };
+    case 'project_missing':
+      return {
+        kind: 'process_project_missing',
+        processId: e.processId,
+        shellId: e.shellId ?? undefined,
+        title: 'Project not found',
+        description: 'Could not recover this session’s project.',
+      };
+  }
+}
+
+async function buildShellCleanup(e: ShellLoadError): Promise<CleanupRecord> {
+  switch (e.kind) {
+    case 'not_found':
+      return {
+        kind: 'shell_not_found',
+        shellId: e.shellId,
+        title: 'Shell not found',
+        description: 'This terminal no longer exists.',
+      };
+    case 'error_status':
+      return {
+        kind: 'shell_error_status',
+        shellId: e.shellId,
+        title: 'Shell unavailable',
+        description: e.errorMessage ?? 'Shell error',
+      };
+    case 'start_failed': {
+      // Best-effort close so the user isn't stuck with a zombie row
+      // (mirrors the pre-refactor behaviour at routePlainShellPointer:272-273).
+      await closeTerminalTargets([new TypeId(Shell.type, e.shellId)]).catch(() => {});
+      const desc = describeProcessStartError(e.cause ?? e);
+      return {
+        kind: 'shell_start_failed',
+        shellId: e.shellId,
+        title: desc.title,
+        description: desc.description,
+      };
+    }
+  }
+}
+
+// ── public entry point ──────────────────────────────────────────────────────
+
+export async function loadNextProcess(
+  options: LoadNextProcessOptions = {},
+): Promise<LoadNextProcessResult> {
+  const cleaned: CleanupRecord[] = [];
+  const tried = new Set(options.excludeIds ?? []);
+
+  const allTabs = await fetchActiveTerminals();
+  const projectId = options.projectId ?? null;
+  const tabs = projectId == null
+    ? allTabs
+    : allTabs.filter((t) => t.projectId === projectId);
+
+  while (true) {
+    const tab = resolveDefaultTab(tabs, tried);
+    if (!tab) {
+      return { loaded: null, cleaned };
+    }
+
+    const processId = terminalProcessId(tab);
+    if (processId) {
+      try {
+        const result = await loadProcess(processId);
+        return {
+          loaded: { kind: 'process', process: result.process, shell: result.shell },
+          cleaned,
+        };
+      } catch (e) {
+        if (!(e instanceof ProcessLoadError)) throw e;
+        cleaned.push(buildProcessCleanup(e));
+        tried.add(processId);
+        if (e.shellId) tried.add(e.shellId);
+        continue;
+      }
+    }
+
+    const shellId = terminalTransportShellId(tab);
+    if (!shellId || !tab.shell) {
+      // Defensive: filterTabs shouldn't yield a tab without either entity.
+      tried.add(tab.targetTypeId.toString());
+      continue;
+    }
+
+    try {
+      const shell = await loadShell(shellId);
+      return { loaded: { kind: 'shell', shell }, cleaned };
+    } catch (e) {
+      if (!(e instanceof ShellLoadError)) throw e;
+      cleaned.push(await buildShellCleanup(e));
+      tried.add(shellId);
+      continue;
+    }
+  }
+}

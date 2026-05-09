@@ -149,13 +149,38 @@ export async function waitForOutput(page: Page, text: string, timeout = 15_000) 
 }
 
 /**
+ * Click the "+" tab opener menu and pick a row by opener id.
+ * Pinned-opener inline buttons (opener-inline-<id>, open-terminal-tab-button)
+ * only render when the opener has been pinned; the always-present affordance
+ * is the plus button + dropdown menu row.
+ */
+export async function openTabViaMenu(page: Page, openerId: 'claude' | 'terminal' | 'sandbox' | 'docker' | 'history' | 'claude-resume-by-id') {
+  const inline =
+    openerId === 'terminal'
+      ? page.locator('[data-testid="open-terminal-tab-button"]')
+      : page.locator(`[data-testid="opener-inline-${openerId}"]`);
+  if (await inline.isVisible({ timeout: 500 }).catch(() => false)) {
+    await inline.click();
+    return;
+  }
+  await page.locator('[data-testid="opener-plus-button"]').click();
+  await page.locator(`[data-testid="opener-menu-row-${openerId}"]`).click();
+}
+
+/**
  * Click the "+" button to add a new terminal tab.
  */
 export async function addTerminalTab(page: Page) {
-  const addButton = page.locator('[data-testid="open-terminal-tab-button"]');
-  await addButton.click();
+  await openTabViaMenu(page, 'terminal');
   // Wait for the new tab and terminal to initialise
   await page.waitForTimeout(1_000);
+}
+
+/**
+ * Start a Claude session in the current shell view (creates a new agentic process).
+ */
+export async function startClaudeSession(page: Page) {
+  await openTabViaMenu(page, 'claude');
 }
 
 /**
@@ -185,13 +210,13 @@ export async function getActiveTabName(page: Page): Promise<string> {
 
 /**
  * Navigate to Home via the sidebar Home button (client-side React Router nav).
- * The sidebar buttons have no title/label, so we use positional selection:
- *   [data-sidebar="menu-button"] nth 1 = Home (after Back at nth 0)
- * This preserves React state including active terminal sessions.
+ * Selects by lucide icon class to avoid positional-index drift (Refresh/Inbox
+ * shifted indices in the sidebar). Click-path is required because this
+ * scenario verifies that no-reload nav preserves React state including active
+ * xterm.js terminal sessions.
  */
 export async function goHome(page: Page) {
-  // The collapsed sidebar renders: Back(0), Home(1), Shell(2), Skills(3), Triggers(4), …
-  const homeSidebarBtn = page.locator('[data-sidebar="menu-button"]').nth(1);
+  const homeSidebarBtn = page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-house)');
   await homeSidebarBtn.click();
   await page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first().waitFor({ state: 'visible', timeout: 15_000 });
 
@@ -209,11 +234,12 @@ export async function goHome(page: Page) {
 }
 
 /**
- * Navigate to the Shell view via the sidebar Shell button (client-side React Router nav).
- * [data-sidebar="menu-button"] nth 2 = Shell.
+ * Navigate to the Shell view via the sidebar Shell button (client-side React
+ * Router nav). Selects by lucide icon class — Shell is in mainNavItems
+ * (always visible), so no chevron hover is needed.
  */
 export async function gotoShellView(page: Page) {
-  const shellSidebarBtn = page.locator('[data-sidebar="menu-button"]').nth(2);
+  const shellSidebarBtn = page.locator('button[data-sidebar="menu-button"]:has(svg.lucide-terminal)');
   await shellSidebarBtn.click();
   await page.waitForURL(/\/dock\/shell/, { timeout: 10_000 });
   await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 10_000 });

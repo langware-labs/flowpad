@@ -3,9 +3,10 @@ import type { SearchResult } from '@src/hooks/use-record-search';
 import { DockPointer } from './DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { CheckSquare, Search, GitBranch, FileText } from 'lucide-react';
-import { Agent, AgenticProcess, Project, Skill, Task } from '@sdk';
+import { Agent, AgenticProcess, dataContext, Project, RecordType, Skill, Task } from '@sdk';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import type { NavigationActions } from './NavigationActions';
+import { toast } from '@src/hooks/use-toast';
 
 export interface DockNavigationAction {
   icon: LucideIcon;
@@ -26,9 +27,9 @@ export interface RecordTypeNav {
 
 /** Extract the Claude session UUID from a search result */
 function sessionIdFromResult(result: SearchResult): string {
-  // source_path: "/path/to/<uuid>.jsonl" — derive session UUID from filename
-  if (result.source_path) {
-    const filename = result.source_path.split('/').pop() ?? '';
+  // asset_ref: "/path/to/<uuid>.jsonl" — derive session UUID from filename
+  if (result.asset_ref) {
+    const filename = result.asset_ref.split('/').pop() ?? '';
     const id = filename.replace(/\.jsonl$/i, '');
     if (id) return id;
   }
@@ -36,10 +37,28 @@ function sessionIdFromResult(result: SearchResult): string {
   return result.record_id.replace(/^claude_session-/, '');
 }
 
-/** Extract the project encoded name from a session search result's source_path */
+/** Extract the Codex thread_id from a rollout asset_ref or record_id.
+ *
+ * Codex rollouts are named ``rollout-<ISO-ts>-<thread_id>.jsonl`` — the
+ * thread_id is the last 5 hyphen-separated groups of the stem. We mirror the
+ * backend ``_extract_thread_id`` helper here so the UI doesn't need to round-trip.
+ */
+function codexThreadIdFromResult(result: SearchResult): string {
+  if (result.asset_ref) {
+    const stem = (result.asset_ref.split('/').pop() ?? '').replace(/\.jsonl$/i, '');
+    if (stem.startsWith('rollout-')) {
+      const parts = stem.slice('rollout-'.length).split('-');
+      if (parts.length >= 5) return parts.slice(-5).join('-');
+    }
+  }
+  // Fallback: record_id is the thread_id directly (set by CodexSessionRecord.getId).
+  return result.record_id.replace(/^codex_session-/, '');
+}
+
+/** Extract the project encoded name from a session search result's asset_ref */
 function projectEncodedNameFromResult(result: SearchResult): string {
-  // source_path: "/.../.claude/projects/<project_encoded>/<uuid>.jsonl"
-  const parts = result.source_path.split('/');
+  // asset_ref: "/.../.claude/projects/<project_encoded>/<uuid>.jsonl"
+  const parts = result.asset_ref.split('/');
   parts.pop(); // remove filename
   return parts.pop() ?? '';
 }
@@ -47,7 +66,7 @@ function projectEncodedNameFromResult(result: SearchResult): string {
 
 export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   skill: {
-    dockPointer: (r) => new Skill({ id: r.record_id, source_path: r.source_path || undefined }).searchDockPointer,
+    dockPointer: (r) => new Skill({ id: r.record_id, asset_ref: r.asset_ref || undefined }).searchDockPointer,
     actions: [
       { icon: Search, name: 'All skills', dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'skill' }) },
     ],
@@ -61,13 +80,17 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     ],
   },
   agent: {
-    dockPointer: (r) => new Agent({ id: r.record_id, source_path: r.source_path || undefined }).searchDockPointer,
+    dockPointer: (r) => {
+      const agent = new Agent({ id: r.record_id, name: r.name || undefined, asset_ref: r.asset_ref || undefined });
+      return agent.searchDockPointer;
+    },
   },
   annotation: {
     primaryAction: async (r, navigation) => {
       const sessionId = r.session_id;
       if (sessionId) {
-        await navigation.openClaudeSession(sessionId);
+        const p = await navigation.openWorkerSession(sessionId);
+        if (!p) toast({ title: 'Session not found', description: `Session ${sessionId} is not in Claude or Codex history.`, variant: 'destructive' });
       }
     },
   },
@@ -75,57 +98,57 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     primaryAction: async (r, navigation) => {
       const sessionId = r.session_id;
       if (sessionId) {
-        const p = await AgenticProcess.fromClaudeSession(sessionId);
+        const p = await AgenticProcess.getByWorkerId(sessionId);
+        if (!p) {
+          toast({ title: 'Session not found', description: `Session ${sessionId} is not in Claude or Codex history.`, variant: 'destructive' });
+          return;
+        }
         navigation.openDockPointer(p.dockPointer, r.created_at ? { t: r.created_at } : undefined);
       }
     },
   },
   command: {
-    dockPointer: (r) => r.source_path
-      ? new DockPointer(ViewType.ASSETS, `editor/command/${r.source_path.replace(/^\//, '')}`)
+    dockPointer: (r) => r.asset_ref
+      ? new DockPointer(ViewType.ASSETS, `editor/command/${r.asset_ref.replace(/^\//, '')}`)
       : null,
   },
   comment: {
     primaryAction: async (r, navigation) => {
       const sessionId = r.session_id;
       if (sessionId) {
-        await navigation.openClaudeSession(sessionId);
+        const p = await navigation.openWorkerSession(sessionId);
+        if (!p) toast({ title: 'Session not found', description: `Session ${sessionId} is not in Claude or Codex history.`, variant: 'destructive' });
       }
     },
   },
-  docs: {
-    dockPointer: (r) => r.source_path
-      ? new DockPointer(ViewType.ASSETS, `editor/docs/${r.source_path.replace(/^\//, '')}`)
+  [RecordType.MARKDOWN]: {
+    dockPointer: (r) => r.asset_ref
+      ? new DockPointer(ViewType.ASSETS, `editor/${RecordType.MARKDOWN}/${r.asset_ref.replace(/^\//, '')}`)
       : null,
   },
   plan: {
-    dockPointer: (r) => r.source_path
-      ? new DockPointer(ViewType.ASSETS, `editor/plan/${r.source_path.replace(/^\//, '')}`)
+    dockPointer: (r) => r.asset_ref
+      ? new DockPointer(ViewType.ASSETS, `editor/plan/${r.asset_ref.replace(/^\//, '')}`)
       : null,
   },
   workflow: {
-    dockPointer: (r) => r.source_path
-      ? new DockPointer(ViewType.ASSETS, `editor/workflow/${r.source_path.replace(/^\//, '')}`)
+    dockPointer: (r) => r.asset_ref
+      ? new DockPointer(ViewType.ASSETS, `editor/workflow/${r.asset_ref.replace(/^\//, '')}`)
       : null,
   },
   claude_md: {
-    dockPointer: (r) => r.source_path
-      ? new DockPointer(ViewType.ASSETS, `editor/claude_md/${r.source_path.replace(/^\//, '')}`)
+    dockPointer: (r) => r.asset_ref
+      ? new DockPointer(ViewType.ASSETS, `editor/claude_md/${r.asset_ref.replace(/^\//, '')}`)
       : null,
   },
   claude_memory: {
-    dockPointer: (r) => r.source_path
-      ? new DockPointer(ViewType.ASSETS, `editor/claude_memory/${r.source_path.replace(/^\//, '')}`)
+    dockPointer: (r) => r.asset_ref
+      ? new DockPointer(ViewType.ASSETS, `editor/claude_memory/${r.asset_ref.replace(/^\//, '')}`)
       : null,
   },
   claude_rules: {
-    dockPointer: (r) => r.source_path
-      ? new DockPointer(ViewType.ASSETS, `editor/claude_rules/${r.source_path.replace(/^\//, '')}`)
-      : null,
-  },
-  asset: {
-    dockPointer: (r) => r.source_path
-      ? new DockPointer(ViewType.ASSETS, `editor/asset/${r.source_path.replace(/^\//, '')}`)
+    dockPointer: (r) => r.asset_ref
+      ? new DockPointer(ViewType.ASSETS, `editor/claude_rules/${r.asset_ref.replace(/^\//, '')}`)
       : null,
   },
   claude_settings: {
@@ -150,10 +173,37 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   project: {
     dockPointer: (r) => new Project({ id: r.record_id }).searchDockPointer,
   },
+  codex_session: {
+    primaryAction: async (r, navigation) => {
+      const threadId = codexThreadIdFromResult(r);
+      const p = await AgenticProcess.getByWorkerId(threadId);
+      if (!p) {
+        toast({ title: 'Session not found', description: `Session ${threadId} is not in Claude or Codex history.`, variant: 'destructive' });
+        return;
+      }
+      navigation.openDock(p.dockPointer);
+    },
+    actions: [
+      {
+        icon: FileText,
+        name: 'Transcript',
+        action: (r, navigation) => {
+          // codex/transcript lens (LensViewer.tsx case 'codex/transcript')
+          // expects URL-encoded absolute path. DockPointer.forLensTranscript
+          // applies the encoding when workerType === 'codex'.
+          if (r.asset_ref) navigation.openDock(DockPointer.forLensTranscript('codex', r.asset_ref));
+        },
+      },
+    ],
+  },
   claude_session: {
     primaryAction: async (r, navigation) => {
       const sessionId = sessionIdFromResult(r);
-      const p = await AgenticProcess.fromClaudeSession(sessionId);
+      const p = await AgenticProcess.getByWorkerId(sessionId);
+      if (!p) {
+        toast({ title: 'Session not found', description: `Session ${sessionId} is not in Claude or Codex history.`, variant: 'destructive' });
+        return;
+      }
       navigation.openDock(p.dockPointer);
     },
     actions: [
@@ -175,7 +225,10 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
           const cwd = record?.cwd ?? undefined;
           const computeNode = dataContext.computeNode;
           if (!computeNode) throw new Error('[Fork] No compute node');
-          const p = await computeNode.createProcess(cwd ? { workdir: cwd } : {});
+          const p = await computeNode.createProcess(
+            cwd ? { workdir: cwd } : {},
+            { visible: true, watchProcess: false },
+          );
           void navigation.openShellProcess(p.id);
         },
       },

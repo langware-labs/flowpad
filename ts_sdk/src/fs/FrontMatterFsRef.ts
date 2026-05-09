@@ -1,10 +1,9 @@
 /**
- * FrontMatterFsRef — in-memory document model for a markdown file with YAML frontmatter.
+ * FrontMatterFsRef — markdown file with YAML frontmatter, backed by FSRef.
  *
+ * Extends FSRef so it carries its own TypeId and uses inherited read/write.
  * Holds name, description, and markdown body as mutable fields.
  * Call load() to populate from disk, save() to write back.
- * The compute node TypeId is resolved from dataContext.computeNodeTypeId at call time —
- * throws Error('Compute node not available') if not set (i.e. before bootstrap).
  *
  * Usage:
  *   const doc = agent.doc          // FrontMatterFsRef pointing to agent .md file
@@ -13,8 +12,8 @@
  *   await doc.save()
  */
 
-import { dataContext } from '../FlowSync/context';
 import { TypeId } from '../models/TypeId';
+import { FSRef } from './FSRef';
 
 // ── Parse/serialize helpers ────────────────────────────────────────────────
 
@@ -51,9 +50,7 @@ function serializeDoc(fm: Record<string, string>, body: string): string {
 
 // ── FrontMatterFsRef ───────────────────────────────────────────────────────
 
-export class FrontMatterFsRef {
-  readonly path: string;
-
+export class FrontMatterFsRef extends FSRef {
   /** Frontmatter field: the name of this document */
   name: string = '';
   /** Frontmatter field: short description */
@@ -61,21 +58,19 @@ export class FrontMatterFsRef {
   /** The markdown body (everything after the closing --- delimiter) */
   markdown: string = '';
 
-  constructor(path: string) {
-    this.path = path;
+  constructor(path: string, typeId: TypeId, readOnly = false) {
+    super(path, typeId, 'file', readOnly);
   }
 
-  private getTypeId(): TypeId {
-    const typeId = dataContext.computeNodeTypeId;
-    if (!typeId) throw new Error('Compute node not available');
-    return typeId;
+  /** Create a FrontMatterFsRef from an existing FSRef (same path/typeId). */
+  static fromFSRef(ref: FSRef): FrontMatterFsRef {
+    const json = ref.toJSON();
+    return new FrontMatterFsRef(json.path, new TypeId(json.type_id), json.read_only);
   }
 
   /** Read the file from disk and populate name, description, markdown. */
   async load(): Promise<void> {
-    const typeId = this.getTypeId();
-    const { fsManager } = await import('../services/fsService');
-    const raw = (await fsManager.download(typeId, this.path)) as string;
+    const raw = await this.read();
     const fm = parseFrontmatter(raw);
     this.name = fm['name'] ?? '';
     this.description = fm['description'] ?? '';
@@ -84,12 +79,10 @@ export class FrontMatterFsRef {
 
   /** Serialize name, description, and markdown back to the file on disk. */
   async save(): Promise<void> {
-    const typeId = this.getTypeId();
-    const { fsManager } = await import('../services/fsService');
     const fm: Record<string, string> = {};
     if (this.name) fm['name'] = this.name;
     if (this.description !== undefined) fm['description'] = this.description;
     const content = serializeDoc(fm, this.markdown);
-    await fsManager.writeFile(typeId, this.path, content);
+    await this.write(content);
   }
 }

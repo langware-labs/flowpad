@@ -10,7 +10,10 @@ from flow_sdk._compat import Self
 from flow_sdk.fs_store import Record, RecordType
 
 
-_DEFAULT_HISTORY_PATH = Path.home() / ".claude" / "history.jsonl"
+def _default_history_path() -> Path:
+    """Per-instance ~/.claude/history.jsonl (call-time, via InstanceSettings)."""
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    return get_instance_settings().claude_history_path
 
 
 class ClaudeHistoryFsRecord(Record):
@@ -25,7 +28,7 @@ class ClaudeHistoryFsRecord(Record):
         if "type" not in kwargs:
             kwargs["type"] = RecordType.HISTORY
         if "history_path" not in kwargs:
-            kwargs["history_path"] = str(_DEFAULT_HISTORY_PATH)
+            kwargs["history_path"] = str(_default_history_path())
         super().__init__(**kwargs)
         if not self.name:
             self.name = "history"
@@ -57,4 +60,4 @@ class ClaudeHistoryFsRecord(Record):
     @classmethod
     def default(cls) -> Self:
         """Return the history record for the default Claude installation."""
-        return cls(history_path=str(_DEFAULT_HISTORY_PATH))
+        return cls(history_path=str(_default_history_path()))

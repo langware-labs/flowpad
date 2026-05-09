@@ -32,11 +32,19 @@ async def _poll(shell: Shell, keyword: bytes, timeout: float = 10.0) -> bytes:
 
 
 @pytest.fixture(autouse=True)
-def use_tmp_records_root(tmp_path):
+def use_tmp_records_root(tmp_path, monkeypatch):
+    """`set_default_records_data_root` rebinds only the lambda inside
+    flow_sdk.fs_store.record. Modules that did `from … import
+    get_default_records_data_root` keep their own binding, so monkeypatch
+    those callsites too."""
     orig_root = get_default_records_root()
     orig_data_root = get_default_records_data_root()
     set_default_records_root(tmp_path)
     set_default_records_data_root(tmp_path)
+    import flow_sdk.fs_records.shell_record as _shell_mod
+    monkeypatch.setattr(
+        _shell_mod, "get_default_records_data_root", lambda: tmp_path
+    )
     yield tmp_path
     set_default_records_root(orig_root)
     set_default_records_data_root(orig_data_root)
@@ -110,6 +118,7 @@ async def test_shell_read_returns_file_bytes(tmp_path):
     record = ShellRecord(id=shell.id, pty_pid=shell.id)
     record.save()
     pty_path = record.pty_stream_path
+    pty_path.parent.mkdir(parents=True, exist_ok=True)
     pty_path.write_bytes(b"hello\r\nworld\r\n")
 
     assert await shell.read() == b"hello\r\nworld\r\n"
@@ -123,7 +132,7 @@ async def test_shell_read_returns_file_bytes(tmp_path):
 async def test_proc_get_shell_returns_none_when_no_shell_id():
     from flow_sdk.builtin.agentic_process import AgenticProcess
 
-    proc = AgenticProcess(id=str(uuid.uuid4()), compute_node_id=str(uuid.uuid4()))
+    proc = AgenticProcess(id=str(uuid.uuid4()))
     assert await proc.shell() is None
 
 
@@ -131,7 +140,7 @@ async def test_proc_get_shell_returns_none_when_no_shell_id():
 async def test_proc_send_raises_when_no_shell():
     from flow_sdk.builtin.agentic_process import AgenticProcess
 
-    proc = AgenticProcess(id=str(uuid.uuid4()), compute_node_id=str(uuid.uuid4()))
+    proc = AgenticProcess(id=str(uuid.uuid4()))
     with pytest.raises(ValueError, match="No shell linked"):
         await proc.send("hello")
 

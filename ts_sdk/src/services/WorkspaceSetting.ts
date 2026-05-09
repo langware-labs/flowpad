@@ -37,6 +37,7 @@ const DEBOUNCE_MS = 500;
 export class WorkspaceSetting extends EventEmitter {
   private _settings: WorkspaceSettings = { ...DEFAULT_SETTINGS };
   private _loaded = false;
+  private _loadPromise: Promise<void> | null = null;
   private _saveTimeout: ReturnType<typeof setTimeout> | null = null;
   private _pendingSave = false;
   private _version = 0;
@@ -129,9 +130,20 @@ export class WorkspaceSetting extends EventEmitter {
   }
 
   /**
-   * Load settings from settings.json file
+   * Load settings from settings.json file.
+   * Concurrent callers share the same in-flight request, and once loaded the
+   * result is reused — prevents a flood of duplicate GETs on multi-component mount.
    */
-  async loadJson(): Promise<void> {
+  loadJson(): Promise<void> {
+    if (this._loaded) return Promise.resolve();
+    if (this._loadPromise) return this._loadPromise;
+    this._loadPromise = this._doLoadJson().finally(() => {
+      this._loadPromise = null;
+    });
+    return this._loadPromise;
+  }
+
+  private async _doLoadJson(): Promise<void> {
     const typeId = this.computeNodeTypeId;
     const path = this.settingsPath;
 

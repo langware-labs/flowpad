@@ -21,19 +21,17 @@ async def _reindex_all() -> int:
 
     Returns the count of records indexed.
     """
-    from flow_sdk.fs_records.schema_record import SchemaRecord  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer import IndexerOptions, get_shared_indexer  # noqa: PLC0415
 
-    _, index_results = await SchemaRecord.discover(trigger="reindex")
-    total = sum(r.indexed for r in index_results)
-    logger.info("reindex: indexed %d records", total)
-    return total
+    result = await get_shared_indexer().index(IndexerOptions(verbose=False))
+    logger.info("reindex: indexed %d records", result.total_indexed)
+    return result.total_indexed
 
 
-async def _entity_source_path(ent) -> str:
-    """Resolve source_path for an entity: check common fields, then fall back to its record."""
+async def _entity_asset_ref(ent) -> str:
+    """Resolve asset_ref for an entity: check asset_ref field, fall back to record/legacy mounts."""
     path = (
-        getattr(ent, "source_path", None)
-        or getattr(ent, "source_vfs_path", None)
+        getattr(ent, "asset_ref", None)
         or getattr(ent, "fs_storage_mount_path", None)
         or getattr(ent, "file_path", None)
         or getattr(ent, "work_dir", None)
@@ -44,15 +42,15 @@ async def _entity_source_path(ent) -> str:
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         rec = await ent.get_record()
         if rec is None:
-            # For record types where entity ID (UUID) differs from record ID (name),
-            # fall back to looking up by name (e.g. agent records keyed by agent name).
             record_cls = SchemaRegistry.get_record_cls(ent.type or ent.get_type())
             if record_cls:
                 ent_name = getattr(ent, "name", None) or getattr(ent, "uname", None)
                 if ent_name:
-                    rec = record_cls.discover_one(ent_name)
+                    rec = record_cls.get(ent_name)
         if rec:
-            return getattr(rec, "source_path", None) or ""
+            ar = getattr(rec, "_asset_ref", None)
+            if ar is not None:
+                return getattr(ar, "path", None) or ""
     except Exception:
         pass
     return ""
@@ -77,6 +75,23 @@ def _apply_scope_filter(entities: list, scope: str | None, project_ids: str | No
     return entities
 
 
+def _apply_folder_filter(entities: list, parent_path: str | None, vault_root: str | None) -> list:
+    """Filter entities by parent_path (exact) and/or vault_root (prefix).
+
+    parent_path  → direct children only (exact equality).
+    vault_root   → all descendants at any depth.
+    Both can be combined (AND).
+    """
+    if not parent_path and not vault_root:
+        return entities
+    filtered = entities
+    if parent_path:
+        filtered = [e for e in filtered if (getattr(e, "parent_path", None) or "") == parent_path]
+    if vault_root:
+        filtered = [e for e in filtered if (getattr(e, "vault_root", None) or "") == vault_root]
+    return filtered
+
+
 async def _entity_to_result(ent) -> dict:
     name = (
         getattr(ent, "name", None)
@@ -91,16 +106,23 @@ async def _entity_to_result(ent) -> dict:
         "snippet": getattr(ent, "_fts_snippet", None),
         "status": getattr(ent, "status", None) or "",
         "scope": getattr(ent, "scope", "") or "",
-        "source_path": await _entity_source_path(ent) or name or ent.id,
+        "asset_ref": await _entity_asset_ref(ent) or "",
         "created_at": str(getattr(ent, "created_date", "") or ""),
         "modified_at": str(getattr(ent, "updated_date", "") or ""),
     }
     # Extra fields for per-type column rendering
-    for field in ("uname", "title", "description", "file_path", "filename", "work_dir", "project_encoded", "project_encoded_name", "session_id", "asset_type"):
+    for field in ("uname", "title", "description", "file_path", "filename", "work_dir", "project_encoded", "project_encoded_name", "session_id", "asset_type", "parent_path", "vault_root"):
         val = getattr(ent, field, None)
         if val:
             result[field] = val
     return result
+
+
+def _apply_system_filter(entities: list, include_system: bool) -> list:
+    """Drop system-project entities unless the caller opted in."""
+    if include_system:
+        return entities
+    return [e for e in entities if not getattr(e, "system", False)]
 
 
 @router.get("/api/v1/search")
@@ -113,6 +135,9 @@ async def search_records(
     scope: Optional[str] = Query(default=None, description="Filter by scope (user, project)"),
     tags: Optional[str] = Query(default=None, description="Comma-separated tags to filter by"),
     project_ids: Optional[str] = Query(default=None, description="Comma-separated project entity IDs (used when scope=project)"),
+    parent_path: Optional[str] = Query(default=None, description="Filter to records whose parent_path is exactly this absolute path (direct children only)"),
+    vault_root: Optional[str] = Query(default=None, description="Filter to records whose vault_root is exactly this absolute path (descendants at any depth)"),
+    include_system: bool = Query(default=False, description="Include entities from SDK-shipped system projects. Default off."),
     col_weights: Optional[str] = Query(default=None, description="Comma-separated BM25 column weights (6 values)"),
     recency_boost: Optional[float] = Query(default=None, description="SQL-side additive recency penalty per day"),
     recency_factor: Optional[float] = Query(default=None, description="Python-side multiplicative recency decay per day (k in bm25/(1+days*k))"),
@@ -164,6 +189,12 @@ async def search_records(
         # Apply scope + project_ids filtering
         all_entities = _apply_scope_filter(all_entities, scope, project_ids)
 
+        # Apply folder filter (parent_path / vault_root)
+        all_entities = _apply_folder_filter(all_entities, parent_path, vault_root)
+
+        # Filter out system entities unless the caller opted in
+        all_entities = _apply_system_filter(all_entities, include_system)
+
         # Apply tags filter
         if tag_list:
             all_entities = [
@@ -190,6 +221,12 @@ async def search_records(
 
     # Apply scope + project_ids filtering
     entities = _apply_scope_filter(entities, scope, project_ids)
+
+    # Apply folder filter (parent_path / vault_root)
+    entities = _apply_folder_filter(entities, parent_path, vault_root)
+
+    # Filter out system entities unless the caller opted in
+    entities = _apply_system_filter(entities, include_system)
 
     # Apply tags filter
     if tag_list:
@@ -248,10 +285,14 @@ async def reindex_records_by_type(record_type: str):
     # Delete entities whose records no longer exist on disk
     from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
     stale = await Entity.get_all(QueryFilter(type=record_type))
+    from flow_sdk.db import get_db_driver  # noqa: PLC0415
+    driver = get_db_driver()
     deleted = 0
     for ent in stale:
         if ent.id not in live_ids:
             try:
+                if hasattr(driver, "fts_delete"):
+                    await driver.fts_delete(ent.id)
                 await ent.delete()
                 deleted += 1
             except Exception:

@@ -66,7 +66,9 @@ export interface ViewerMeta {
     | 'Zap'
     | 'CheckSquare'
     | 'SearchIcon'
-    | 'Workflow';
+    | 'Workflow'
+    | 'Users'
+    | 'Inbox';
   /** Where this viewer renders: 'overview' tab or dedicated tab */
   tabLocation: 'overview' | 'dedicated';
   /** Can this viewer be manually added as a tab? */
@@ -200,12 +202,10 @@ export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
-  [ViewType.SKILLS]: {
-    title: 'Skills',
-    iconName: 'Sparkles',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
-  },
+  // ViewType.SKILLS removed — Skills folded into the Assets browser
+  // (/dock/assets/list/skill). The enum value is retained in the SDK for
+  // back-compat with persisted DockPointers but the registry no longer
+  // surfaces it as a navigable view.
   [ViewType.AI_CONFIG]: {
     title: 'AI Configuration',
     iconName: 'Settings',
@@ -289,5 +289,29 @@ export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
     iconName: 'BookOpen',
     tabLocation: 'dedicated',
     canAddAsTab: true,
+  },
+  [ViewType.PROJECT]: {
+    title: 'Collaboration',
+    iconName: 'Users',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
+  [ViewType.INBOX]: {
+    title: 'Inbox',
+    iconName: 'Inbox',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+  },
+  [ViewType.CONVERSATION]: {
+    title: 'Conversation',
+    iconName: 'MessageSquare',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+  },
+  [ViewType.SPEC]: {
+    title: 'Spec',
+    iconName: 'FileText',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
   },
 };

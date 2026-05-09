@@ -16,8 +16,8 @@ import pytest
 # Patch targets: imports inside search_cloud_errors_action are lazy (inside the function),
 # so we patch at the source modules, not at compute_node module level.
 _PATCH_GET_CURRENT_REQUEST_INFO = "flow_sdk.builtin.faas.compute_node.get_current_request_info"
-_PATCH_GET_API_KEY = "flow_sdk.cli.auth.get_api_key"
-_PATCH_FLOWPAD_CLIENT = "flow_sdk.client.FlowpadClient"
+_PATCH_GET_API_KEY = "flow_sdk.cli.auth.hub_login.get_api_key"
+_PATCH_FLOWPAD_CLIENT = "flow_sdk.cloud_client.FlowpadClient"
 _PATCH_GET_RECORDS_ROOT = "flow_sdk.fs_store.record.get_default_records_root"
 
 
@@ -220,9 +220,9 @@ def _create_error_record(records_root: Path, fingerprint: str):
 
 
 def _reload_record(backing, rec_id):
-    """Reload a record from disk via discover_one (reads metadata.json)."""
+    """Reload a record from disk via get (reads metadata.json)."""
     from flow_sdk.fs_records.claude.claude_error import ClaudeErrorRecord
-    rec = ClaudeErrorRecord.discover_one(rec_id)
+    rec = ClaudeErrorRecord.get(rec_id)
     assert rec is not None, f"Record {rec_id} not found after reload"
     return rec
 

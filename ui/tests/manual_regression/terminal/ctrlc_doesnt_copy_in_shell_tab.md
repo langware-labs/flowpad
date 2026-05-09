@@ -1,6 +1,6 @@
 test 1: Ctrl+C in shell tab sends interrupt signal, not clipboard copy (FLOWPAD-1615)
 - [browser] navigate to {APP_URL}/dock/shell/new_terminal
-- wait for terminal to be ready (element with data-terminal-id is visible)
+- wait for terminal to be ready (element with active terminal panel `[data-testid="terminal-panel"][data-active="true"]` shows xterm)
 - [browser] run javascript: await navigator.clipboard.writeText('ORIGINAL_CLIPBOARD_CONTENT')
 - [browser] click the terminal input (aria-label="Terminal Input")
 - type "echo hello" into the terminal input

@@ -112,10 +112,25 @@ try:
 except (FileNotFoundError, OSError):
     pass
 
+# Build the per-instance settings singleton now that .env.local is loaded.
+# Anything imported below that touches FLOW_HOME / .flow paths goes through
+# get_instance_settings() and sees the right dev/test/prod resolution.
+#
+# Drop any stale cache first: ``flow_sdk.config`` constructs
+# ``default_service_config = ServiceConfig()`` at module-load time, whose
+# ``apply_desktop_config`` validator calls ``get_instance_settings()`` before
+# we've had a chance to load .env.local. Without resetting, we'd be locked
+# into prod (FLOWPAD_DEV unset at the early call) — both prod and dev
+# backends would race for the same ``server.lock`` instead of using their
+# distinct ``server.lock`` / ``dev_server.lock`` paths.
+from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings  # noqa: E402
+
+reset_instance_settings()
+get_instance_settings()
+
 # Configuration
 # Use 0.0.0.0 to listen on all interfaces (both IPv4 and IPv6)
 DEFAULT_HOST = "0.0.0.0"
-DEFAULT_PORT = 9007
 
 
 def main():
@@ -127,7 +142,7 @@ def main():
         sys.exit(0)
 
     host = os.environ.get("MINIHUB_HOST", DEFAULT_HOST)
-    port = int(os.environ.get("LOCAL_SERVER_PORT", DEFAULT_PORT))
+    port = get_instance_settings().port
     # Auto-reload disabled by default; set MINIHUB_RELOAD=true to enable for development
     reload_enabled = os.environ.get("MINIHUB_RELOAD", "false").lower() == "true"
 

@@ -16,9 +16,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-# Constants (inline to avoid importing config.py which pulls in pydantic)
-SERVER_JSON_PATH = Path.home() / ".flow" / "server.json"
-DEV_SERVER_JSON_PATH = Path.home() / ".flow" / "dev_server.json"
 FLOWPAD_APP_NAME = "FlowPad"
 
 # Rate limiting constants
@@ -26,8 +23,10 @@ MAX_FAILURES_PER_HOUR = 3
 HOUR_IN_SECONDS = 3600
 
 
-def _is_dev_mode() -> bool:
-    return os.environ.get("FLOWPAD_DEV", "").lower() == "true"
+def _server_json_path() -> Path:
+    """Resolve the active server.json via the per-instance settings."""
+    from flow_sdk.instance_settings import get_instance_settings
+    return get_instance_settings().server_json_path
 
 
 @dataclass
@@ -115,6 +114,13 @@ class _ServerState:
         """Check if cached result is still valid."""
         if self._discovery_result is None:
             return False
+        # Don't cache negative results: if the previous discovery couldn't
+        # confirm the server is running, always retry. Otherwise a startup
+        # race (server.json written before health endpoint binds) poisons
+        # the cache permanently — the mtime never changes again, so the
+        # cache stays valid and notifications get silently dropped forever.
+        if self._discovery_result.status != FlowpadStatus.RUNNING:
+            return False
         # Invalidate if port file changed
         current_mtime = self._get_port_file_mtime()
         if current_mtime != self._port_file_mtime:
@@ -159,13 +165,18 @@ class _ServerState:
         return len(recent_failures) >= MAX_FAILURES_PER_HOUR
 
 
-# Global cached states — one per server file
-_prod_state = _ServerState(SERVER_JSON_PATH)
-_dev_state = _ServerState(DEV_SERVER_JSON_PATH)
+# Per-path cached states — one per server.json file path. Lazy so the path is
+# resolved through InstanceSettings only after .env.local has been loaded.
+_states: dict[Path, "_ServerState"] = {}
 
 
 def _active_state() -> _ServerState:
-    return _dev_state if _is_dev_mode() else _prod_state
+    path = _server_json_path()
+    state = _states.get(path)
+    if state is None:
+        state = _ServerState(path)
+        _states[path] = state
+    return state
 
 
 def get_port_file_path() -> Path:
@@ -222,7 +233,7 @@ def check_server_health(server_info: FlowpadServerInfo, timeout: float = 2.0) ->
     try:
         req = urllib.request.Request(health_url, method="GET")
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.worker_status == 200
+            return resp.status == 200
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError):
         return False
 
@@ -289,8 +300,19 @@ def read_all_server_infos() -> list[FlowpadServerInfo]:
     Returns:
         List of FlowpadServerInfo for all currently written server files.
     """
+    # Discovery enumerates BOTH instances by design (cross-mode discovery).
+    # Resolve the canonical paths via the per-instance settings classes.
+    from flow_sdk.instance_settings import (
+        BaseInstanceSettings,
+        DevInstanceSettings,
+    )
+    candidate_paths = [
+        BaseInstanceSettings.from_env().server_json_path,
+        DevInstanceSettings.from_env().server_json_path,
+    ]
+
     infos = []
-    for path in [SERVER_JSON_PATH, DEV_SERVER_JSON_PATH]:
+    for path in candidate_paths:
         try:
             data = json.loads(path.read_text())
             infos.append(FlowpadServerInfo(
@@ -310,8 +332,18 @@ def discover_all_flowpads() -> list[FlowpadDiscoveryResult]:
     Returns:
         List of FlowpadDiscoveryResult with status RUNNING only.
     """
+    from flow_sdk.instance_settings import (
+        BaseInstanceSettings,
+        DevInstanceSettings,
+    )
+    candidate_paths = [
+        BaseInstanceSettings.from_env().server_json_path,
+        DevInstanceSettings.from_env().server_json_path,
+    ]
     results = []
-    for state in [_prod_state, _dev_state]:
+    for path in candidate_paths:
+        state = _states.get(path) or _ServerState(path)
+        _states[path] = state
         r = state.get_discovery_result()
         if r.status == FlowpadStatus.RUNNING:
             results.append(r)

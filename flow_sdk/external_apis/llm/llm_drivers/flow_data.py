@@ -63,6 +63,22 @@ class FlowDataType(StrEnum):
     ENTITY = "entity"
 
 
+class FlowDataSource(StrEnum):
+    """Provenance of a FlowData item — mirrors the TS FlowDataSource enum.
+
+    Set on the ``source`` attribute. Renderers (e.g. the InteractiveTerminal
+    TraceGutter) color icons by source: history=emerald, sniffer=blue,
+    stream=per-element-type default.
+    """
+
+    STREAM = "stream"
+    HISTORY = "history"
+    SNIFFER = "sniffer"
+    WEBSOCKET = "websocket"
+    INJECT = "inject"
+    UNKNOWN = "unknown"
+
+
 class ViewType(StrEnum):
     CHAT = "chat"
     SHELL = "shell"

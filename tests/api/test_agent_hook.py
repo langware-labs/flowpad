@@ -429,7 +429,7 @@ def test_sniffer_webhook_e2e_via_websocket():
                 raise AssertionError(f"Expected flow_data_msg, got: {json.dumps(msg, indent=2)}")
             # Verify the flow_data contains the webhook payload
             flow_data = msg["flow_data"]
-            assert flow_data["attributes"]["webhook_type"] == "hook_op"
+            assert flow_data["attributes"]["webhook-type"] == "hook_op"
             # content is JSON-serialized by emit_flow_data
             content = json.loads(flow_data["content"])
             assert content["webhook_type"] == "hook_op"

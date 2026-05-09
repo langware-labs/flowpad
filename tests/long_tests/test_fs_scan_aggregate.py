@@ -41,7 +41,8 @@ async def _create_skill(client, cn_url_base, name: str) -> str:
 
 
 @pytest.mark.asyncio
-@pytest.mark.timeout(120)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_scan_aggregate_structure(bootstrapped_client):
     """Aggregate scan returns valid structure (all registered types, including claude types).
 

@@ -3,7 +3,7 @@ import { defineConfig, mergeConfig } from 'vitest/config';
 import { loadEnv } from 'vite';
 import viteConfig from '../../vite.config';
 
-const env = loadEnv('test', path.resolve(__dirname, '../..'), '');
+const env = loadEnv('test', path.resolve(__dirname, '../../..'), '');
 const port = env.LOCAL_SERVER_PORT || '9007';
 const resolvedViteConfig = typeof viteConfig === 'function' ? viteConfig({ mode: 'test', command: 'serve' } as any) : viteConfig;
 

@@ -1,3 +1,7 @@
+---
+
+---
+
 # TypeId Specification
 
 A **TypeId** is the universal identifier format in flow-cli. It uniquely identifies any entity — database records, filesystem records, or resources — by combining an entity type with an identifier.
@@ -8,11 +12,11 @@ A **TypeId** is the universal identifier format in flow-cli. It uniquely identif
 {type}-{id}
 ```
 
-| Component | Description |
-|-----------|-------------|
-| `{type}` | Entity type string, lowercase (e.g. `user`, `compute_node`, `agent`) |
-| `-` | Delimiter. Always the first hyphen — the split is on the **first dash only**. |
-| `{id}` | Entity identifier. One of four formats (see [Identifier Formats](#identifier-formats)). |
+| Component | Description                                                                             |
+| --------- | --------------------------------------------------------------------------------------- |
+| `{type}`  | Entity type string, lowercase (e.g. `user`, `compute_node`, `agent`)                    |
+| `-`       | Delimiter. Always the first hyphen — the split is on the **first dash only**.           |
+| `{id}`    | Entity identifier. One of four formats (see [Identifier Formats](#identifier-formats)). |
 
 The first-dash-only split is critical because UUID identifiers contain dashes themselves:
 
@@ -32,12 +36,12 @@ The `{id}` portion supports four formats, classified by the `IdentifierType` enu
 
 Standard UUID v4. The default for dynamically created entities.
 
-| | |
-|-|-|
-| **Enum** | `IdentifierType.UUID` |
-| **Pattern** | `[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}` |
-| **Example** | `user-550e8400-e29b-41d4-a716-446655440000` |
-| **Validation** | `is_valid_uuid4()` (Python), `isValidUUIDv4()` (TS) |
+| <br />         | <br />                                                                |
+| -------------- | --------------------------------------------------------------------- |
+| **Enum**       | `IdentifierType.UUID`                                                 |
+| **Pattern**    | `[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}` |
+| **Example**    | `user-550e8400-e29b-41d4-a716-446655440000`                           |
+| **Validation** | `is_valid_uuid4()` (Python), `isValidUUIDv4()` (TS)                   |
 
 Entities that don't specify an `id` on creation get a random UUID v4 assigned automatically (`DBBaseRecord.__init__`).
 
@@ -45,14 +49,14 @@ Entities that don't specify an `id` on creation get a random UUID v4 assigned au
 
 Human-readable name prefixed with `@`. Used for well-known singleton entities.
 
-| | |
-|-|-|
-| **Enum** | `IdentifierType.NAMED` |
-| **Pattern** | `^@([a-zA-Z][a-zA-Z0-9_-]*)$` |
-| **Example** | `agent-@local`, `user-@system` |
+| <br />         | <br />                                                |
+| -------------- | ----------------------------------------------------- |
+| **Enum**       | `IdentifierType.NAMED`                                |
+| **Pattern**    | `^@([a-zA-Z][a-zA-Z0-9_-]*)$`                         |
+| **Example**    | `agent-@local`, `user-@system`                        |
 | **Validation** | `is_valid_named_id()` (Python), `isValidUName()` (TS) |
-| **Parse** | `parse_named_id("@local")` → `"local"` |
-| **Property** | `typeid.uname` → `"local"` (without `@`) |
+| **Parse**      | `parse_named_id("@local")` → `"local"`                |
+| **Property**   | `typeid.uname` → `"local"` (without `@`)              |
 
 The TypeScript `isValidUName()` also accepts `@{uuid}` (e.g. `@550e8400-...`) for entities whose uname is an external UUID. The Python side does not.
 
@@ -70,15 +74,15 @@ compute_node-@local   Local machine
 
 Hierarchical identifier with an uppercase namespace prefix and numeric index.
 
-| | |
-|-|-|
-| **Enum** | `IdentifierType.NAMESPACE` |
-| **Pattern** | `^([_a-zA-Z0-9]+)-(\d+)$` |
-| **Example** | `workspace-WORKSPACE-123` |
-| **Validation** | `is_valid_key()` (both) |
-| **Parse** | `parse_key("WORKSPACE-123")` → `("WORKSPACE", "123")` |
-| **Construction** | `get_namespace_key("workspace", "123")` → `"WORKSPACE-123"` |
-| **Properties** | `.namespace` → `"workspace"` (lowercased), `.key` → `"WORKSPACE-123"`, `.key_index` → `123` |
+| <br />           | <br />                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------- |
+| **Enum**         | `IdentifierType.NAMESPACE`                                                                  |
+| **Pattern**      | `^([_a-zA-Z0-9]+)-(\d+)$`                                                                   |
+| **Example**      | `workspace-WORKSPACE-123`                                                                   |
+| **Validation**   | `is_valid_key()` (both)                                                                     |
+| **Parse**        | `parse_key("WORKSPACE-123")` → `("WORKSPACE", "123")`                                       |
+| **Construction** | `get_namespace_key("workspace", "123")` → `"WORKSPACE-123"`                                 |
+| **Properties**   | `.namespace` → `"workspace"` (lowercased), `.key` → `"WORKSPACE-123"`, `.key_index` → `123` |
 
 The TS implementation caps the numeric index at 10000.
 
@@ -86,14 +90,14 @@ The TS implementation caps the numeric index at 10000.
 
 Dot-delimited property-based lookup. Identifies an entity by a unique property value.
 
-| | |
-|-|-|
-| **Enum** | `IdentifierType.PROP_ID` |
-| **Pattern** | `^([_a-zA-Z0-9]+)\.([_a-zA-Z0-9]+)$` |
-| **Delimiter** | `.` |
-| **Example** | `user-email.john_doe` |
-| **Validation** | `is_valid_prop_id()` (both) |
-| **Parse** | `parse_prop_id("email.john_doe")` → `("email", "john_doe")` |
+| <br />         | <br />                                                       |
+| -------------- | ------------------------------------------------------------ |
+| **Enum**       | `IdentifierType.PROP_ID`                                     |
+| **Pattern**    | `^([_a-zA-Z0-9]+)\.([_a-zA-Z0-9]+)$`                         |
+| **Delimiter**  | `.`                                                          |
+| **Example**    | `user-email.john_doe`                                        |
+| **Validation** | `is_valid_prop_id()` (both)                                  |
+| **Parse**      | `parse_prop_id("email.john_doe")` → `("email", "john_doe")`  |
 | **Properties** | `.prop_id_name` → `"email"`, `.prop_id_value` → `"john_doe"` |
 
 ### Unknown
@@ -145,25 +149,27 @@ TypeId(type="user", id="@local")
 
 **Properties:**
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `.type` | `str` | Entity type |
-| `.id` | `str \| None` | Raw identifier |
-| `.identifier` | `str \| None` | Alias for `.id` |
-| `.identifier_type` | `IdentifierType \| None` | Which format the id is |
-| `.uname` | `str \| None` | Name without `@` (Named only) |
-| `.namespace` | `str \| None` | Lowercased namespace (Namespace only) |
-| `.key` | `str \| None` | Full key string (Namespace only) |
-| `.key_index` | `int \| None` | Numeric index (Namespace only) |
-| `.prop_id_name` | `str \| None` | Property name (PropId only) |
-| `.prop_id_value` | `str \| None` | Property value (PropId only) |
-| `.vfs_subfolder` | `str` | `"entities/{type}-{id}"` |
+| Property           | Type                     | Description                           |
+| ------------------ | ------------------------ | ------------------------------------- |
+| `.type`            | `str`                    | Entity type                           |
+| `.id`              | `str \| None`            | Raw identifier                        |
+| `.identifier`      | `str \| None`            | Alias for `.id`                       |
+| `.identifier_type` | `IdentifierType \| None` | Which format the id is                |
+| `.uname`           | `str \| None`            | Name without `@` (Named only)         |
+| `.namespace`       | `str \| None`            | Lowercased namespace (Namespace only) |
+| `.key`             | `str \| None`            | Full key string (Namespace only)      |
+| `.key_index`       | `int \| None`            | Numeric index (Namespace only)        |
+| `.prop_id_name`    | `str \| None`            | Property name (PropId only)           |
+| `.prop_id_value`   | `str \| None`            | Property value (PropId only)          |
+| `.vfs_subfolder`   | `str`                    | `"entities/{type}-{id}"`              |
 
 **Serialization:**
 
-- `str(typeid)` → `"user-@local"`
-- Pydantic JSON serialization via `__get_pydantic_core_schema__` → string format
-- Pydantic validation accepts string (`"user-@local"`) or dict (`{"type": "user", "id": "@local"}`) input
+* `str(typeid)` → `"user-@local"`
+
+* Pydantic JSON serialization via `__get_pydantic_core_schema__` → string format
+
+* Pydantic validation accepts string (`"user-@local"`) or dict (`{"type": "user", "id": "@local"}`) input
 
 **Equality & hashing:**
 
@@ -174,8 +180,9 @@ hash(TypeId("user-@local"))                       # hash of "user-@local"
 
 **Static methods:**
 
-- `TypeId.is_typeid(value)` → `bool` — checks if value is a valid TypeId
-- `TypeId.to_typeid(value)` → `TypeId` — converts or raises `ValueError`
+* `TypeId.is_typeid(value)` → `bool` — checks if value is a valid TypeId
+
+* `TypeId.to_typeid(value)` → `TypeId` — converts or raises `ValueError`
 
 ### TypeScript (`ts_sdk/src/models/TypeId.ts`)
 
@@ -201,9 +208,11 @@ new TypeId(existingTypeId)           // copy
 
 **Additional TS methods:**
 
-- `.toUrlString()` → `"user/@local"` (slash-separated, for URL paths)
-- `.toJSON()` → same as `.toString()`
-- `.equals(other)` → `boolean`
+* `.toUrlString()` → `"user/@local"` (slash-separated, for URL paths)
+
+* `.toJSON()` → same as `.toString()`
+
+* `.equals(other)` → `boolean`
 
 ### Standalone helper (`ts_sdk/src/models/TypeId.ts`)
 
@@ -327,20 +336,21 @@ In HTTP routes, the TypeId is split across path segments:
 
 ## Implementations
 
-| Language | File | Purpose |
-|----------|------|---------|
-| Python | `flow_sdk/fs_store/type_id.py` | `TypeId` class (canonical) |
-| Python | `flow_sdk/api/type_id.py` | Backward-compat re-export of `TypeId` |
-| Python | `flow_sdk/fs_store/identifier.py` | `IdentifierType` enum, patterns, validators (canonical) |
-| Python | `flow_sdk/api/identifier.py` | Backward-compat re-export of identifier module |
-| Python | `flow_sdk/api/validation.py` | `UUID_PATTERN` constant |
-| Python | `flow_sdk/fs_store/schema_registry.py` | `SchemaRegistry` — unified type registry (canonical) |
-| Python | `flow_sdk/schema/entity_factory.py` | DB entity registry shim (delegates to SchemaRegistry) |
-| Python | `flow_sdk/fs_store/factory/type_registry.py` | FS record registry shim (delegates to SchemaRegistry) |
-| Python | `flow_sdk/fs_store/record_types.py` | `RecordType` enum |
-| Python | `flow_sdk/db/drivers/db_base_record.py` | `BuiltinEntityType` enum, auto-registration |
-| Python | `flow_sdk/fs_store/record.py` | FS Record auto-registration |
-| TypeScript | `ts_sdk/src/models/TypeId.ts` | `TypeId` class, `IdentifierType` enum, validators |
-| TypeScript | `ts_sdk/src/resource_management/fs_records/record-type-registry.ts` | FS record type registry |
-| TypeScript | `ts_sdk/src/resource_management/fs_records/record-types.ts` | `RecordType` enum |
-| Tests | `tests/unit/test_typeid.py` | Python TypeId tests |
+| Language   | File                                                                | Purpose                                                 |
+| ---------- | ------------------------------------------------------------------- | ------------------------------------------------------- |
+| Python     | `flow_sdk/fs_store/type_id.py`                                      | `TypeId` class (canonical)                              |
+| Python     | `flow_sdk/api/type_id.py`                                           | Backward-compat re-export of `TypeId`                   |
+| Python     | `flow_sdk/fs_store/identifier.py`                                   | `IdentifierType` enum, patterns, validators (canonical) |
+| Python     | `flow_sdk/api/identifier.py`                                        | Backward-compat re-export of identifier module          |
+| Python     | `flow_sdk/api/validation.py`                                        | `UUID_PATTERN` constant                                 |
+| Python     | `flow_sdk/fs_store/schema_registry.py`                              | `SchemaRegistry` — unified type registry (canonical)    |
+| Python     | `flow_sdk/schema/entity_factory.py`                                 | DB entity registry shim (delegates to SchemaRegistry)   |
+| Python     | `flow_sdk/fs_store/factory/type_registry.py`                        | FS record registry shim (delegates to SchemaRegistry)   |
+| Python     | `flow_sdk/fs_store/record_types.py`                                 | `RecordType` enum                                       |
+| Python     | `flow_sdk/db/drivers/db_base_record.py`                             | `BuiltinEntityType` enum, auto-registration             |
+| Python     | `flow_sdk/fs_store/record.py`                                       | FS Record auto-registration                             |
+| TypeScript | `ts_sdk/src/models/TypeId.ts`                                       | `TypeId` class, `IdentifierType` enum, validators       |
+| TypeScript | `ts_sdk/src/resource_management/fs_records/record-type-registry.ts` | FS record type registry                                 |
+| TypeScript | `ts_sdk/src/resource_management/fs_records/record-types.ts`         | `RecordType` enum                                       |
+| Tests      | `tests/unit/test_typeid.py`                                         | Python TypeId tests                                     |
+

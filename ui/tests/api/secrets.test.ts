@@ -23,7 +23,7 @@ describe('Env Vars API', () => {
 
   beforeEach(async (context: any) => {
     await apiTestSetup(info, context.task.name);
-    agent = new Agent();
+    agent = new Agent({ name: `test-agent-${Date.now()}` });
     await agent.save();
     entityTypeId = new TypeId(Agent.type, agent.typeId.id);
     entityEnv = new EntityEnv(entityTypeId);

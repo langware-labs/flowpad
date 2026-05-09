@@ -13,12 +13,22 @@ from flow_sdk.fs_store.record import (
 
 
 @pytest.fixture(autouse=True)
-def use_tmp_records_root(tmp_path):
-    """Set both records root and records data root to tmp_path for all tests."""
+def use_tmp_records_root(tmp_path, monkeypatch):
+    """Set both records root and records data root to tmp_path for all tests.
+
+    `set_default_records_data_root` only rebinds the lambda inside
+    `flow_sdk.fs_store.record`. Modules that did `from … import
+    get_default_records_data_root` keep their own binding, so we monkeypatch
+    those callsites too (currently only shell_record).
+    """
     orig_root = get_default_records_root()
     orig_data_root = get_default_records_data_root()
     set_default_records_root(tmp_path)
     set_default_records_data_root(tmp_path)
+    import flow_sdk.fs_records.shell_record as _shell_mod
+    monkeypatch.setattr(
+        _shell_mod, "get_default_records_data_root", lambda: tmp_path
+    )
     yield tmp_path
     set_default_records_root(orig_root)
     set_default_records_data_root(orig_data_root)
@@ -66,7 +76,7 @@ def test_close_sets_status_and_deletes_pty(use_tmp_records_root):
     assert record.status == ShellStatus.CLOSED
     assert not pty_path.exists()
 
-    reloaded = ShellRecord.discover_one("test-session-1")
+    reloaded = ShellRecord.get("test-session-1")
     assert reloaded is not None
     assert reloaded.status == ShellStatus.CLOSED
 

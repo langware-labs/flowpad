@@ -28,8 +28,21 @@ The two layers are kept in sync through a combination of:
 |---|---|---|
 | Storage | JSON files on disk | SQLite rows |
 | Content | Full record payload | Metadata subset (`_ENTITY_META_FIELDS`) |
-| Query | O(N) scan | Indexed SQL + FTS5 |
-| Use when | You need full field data or unindexed types | You need filtered queries or search |
+| Query | O(N) scan | Indexed SQL + FTS5, plus path-based descendant query (see below) |
+| Use when | You need full field data or unindexed types | You need filtered queries, full-text search, or "all assets under folder X" |
+
+**Querying entities under a filesystem folder:**
+
+`Entity.assets_by_path(PathQueryOptions)` returns entities whose `asset_ref`
+is a strict descendant of any of the supplied search dirs, optionally filtered
+by type. The HTTP wrapper is `GET /api/v1/assets/by-path?folder=...&record_type=...`
+(both `folder` and `record_type` are repeatable). Implementation pushes a
+half-open lex range `asset_ref >= "<dir>/" AND asset_ref < "<dir>0"` down to
+SQL via `json_extract(data, '$.asset_ref')` — multiple dirs are OR'd, types
+are AND'd via `IN`. Reads `asset_ref` only; `parent_path` and `vault_root`
+are not consulted by this query. Path strings are stored in canonical POSIX
+form (`flow_sdk/fs_store/path_utils.canonical_posix_path`) so the range
+matches across macOS / Linux / Windows on the same host.
 
 ### Three "Index" Systems
 
@@ -169,7 +182,7 @@ The webhook listener (`POST /api/v1/webhook/listen`) that drives real-time entit
 ---
 
 ### [System Tools (Frontend)](data-management/system-tools.md)
-`SystemToolsService` — the TypeScript SDK service for backup, archive, restore, clear, scan, and index operations. Extends `EventEmitter` to emit `'state_changed'` whenever `currentActivity`, `activityProgress`, or `scanInfo` changes. `useSystemTools()` hook provides `useSyncExternalStore`-based subscription so all components share the same activity state. Includes `resetAndRescan()` compound operation (archive → clear → scan → index) exposed as the refresh button in `SearchView`. Shared UI: `ActivityProgressBar` and `ActivityProgressModal` in `ui/src/components/search-index/ActivityProgressModal.tsx`.
+`SystemToolsService` — the TypeScript SDK service for backup, archive, restore, clear, scan, and index operations. Extends `EventEmitter` to emit `'state_changed'` whenever `currentActivity`, `progressTable`, or `scanInfo` changes. `useSystemTools()` hook provides `useSyncExternalStore`-based subscription so all components share the same activity state. Includes `resetAndRescan()` compound operation (archive → clear → scan → index) exposed as the refresh button in `SearchView`. Shared UI: `ActivityProgressBar` and `ActivityProgressModal` in `ui/src/components/search-index/ActivityProgressModal.tsx`.
 
 **Key source files:** `ts_sdk/src/services/system-tools-service.ts`, `ui/src/hooks/use-system-tools.ts`, `ui/src/components/search-index/ActivityProgressModal.tsx`
 
@@ -183,6 +196,7 @@ The webhook listener (`POST /api/v1/webhook/listen`) that drives real-time entit
 | Where are files stored on disk? | [Folder Layout](data-management/folder-layout.md) |
 | How do I list all Claude sessions? | [Scan and Discovery](data-management/scan-and-discovery.md) |
 | How do I search records by text? | [Record Search](data-management/record-search.md) |
+| How do I find all entities under a filesystem folder? | `Entity.assets_by_path(PathQueryOptions)` / `GET /api/v1/assets/by-path`. See [Record Model](data-management/record-model.md#asset_ref-and-folder-queries). |
 | How do I read/write Records via HTTP? | [ComputeNode fs-records Action](data-management/compute-node-fs-records.md) |
 | How does the DB stay in sync with disk? | [Entity-Index Sync](data-management/entity-index-sync.md) |
 | How does Claude Code write entity data? | [MCP Operations](data-management/mcp-operations.md) |

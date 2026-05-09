@@ -42,6 +42,7 @@ export type SnifferEvent = {
 
 const MAX_EVENTS_STORAGE_KEY = 'flowpad-sniffer-max-events';
 const DEFAULT_MAX_EVENTS = 100;
+const SNIFFER_ENABLED_STORAGE_KEY = 'flowpad-sniffer-enabled';
 
 function loadMaxEvents(): number {
   try {
@@ -54,6 +55,26 @@ function loadMaxEvents(): number {
     // ignore
   }
   return DEFAULT_MAX_EVENTS;
+}
+
+/** Last user decision; defaults to OFF when no preference has been recorded. */
+function loadSnifferPreference(): boolean {
+  try {
+    const stored = localStorage.getItem(SNIFFER_ENABLED_STORAGE_KEY);
+    if (stored === 'true') return true;
+    if (stored === 'false') return false;
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
+function saveSnifferPreference(enabled: boolean): void {
+  try {
+    localStorage.setItem(SNIFFER_ENABLED_STORAGE_KEY, enabled ? 'true' : 'false');
+  } catch {
+    // ignore
+  }
 }
 
 function safeParse(raw: string): any {
@@ -116,7 +137,7 @@ export function useHooksSniffer() {
     });
   }, []);
 
-  const { flowData } = useEntityData(hookId ? new TypeId(AgentHook.type, hookId) : null);
+  const { flowData, clear: clearEntityData } = useEntityData(hookId ? new TypeId(AgentHook.type, hookId) : null);
   const { projects } = useClaudeProjectList();
   const { computeNode, snifferEnabled, isBootstrapping } = useContext();
   const isLoading = isBootstrapping;
@@ -133,6 +154,20 @@ export function useHooksSniffer() {
       setHookId(null);
     }
   }, [snifferEnabled]);
+
+  // Reconcile server state with the user's last-saved preference, exactly once
+  // after bootstrap completes. Default is OFF (see loadSnifferPreference).
+  const reconciledRef = useRef(false);
+  useEffect(() => {
+    if (isBootstrapping || reconciledRef.current) return;
+    reconciledRef.current = true;
+    const desired = loadSnifferPreference();
+    if (desired === snifferEnabled) return;
+    setIsToggling(true);
+    void (desired ? snifferManager.enable() : snifferManager.disable())
+      .then(() => setHookId(desired ? snifferManager.entity?.id ?? null : null))
+      .finally(() => setIsToggling(false));
+  }, [isBootstrapping, snifferEnabled]);
   const sessionToProjectRef = useRef<Map<string, string | null>>(new Map());
 
   const projectFlowDataCounts = useMemo(() => {
@@ -209,13 +244,25 @@ export function useHooksSniffer() {
 
   const clear = useCallback(() => {
     sessionToProjectRef.current.clear();
-    globalIndexOffsetRef.current = 0;
     const entity = snifferManager.entity;
     if (entity && 'flowDataStream' in entity) {
+      const stream = (entity as any).flowDataStream;
+      // Treat clear as a full trim — bump the offset by the cleared item count so
+      // future events keep getting monotonically-increasing idxs. Resetting to 0
+      // would cause useProcessSniffer's seenIdxRef to dedup post-clear events
+      // against stale idxs, silently dropping them.
+      const clearedCount = stream._ownItems?.length ?? 0;
+      globalIndexOffsetRef.current += clearedCount;
       // stream.clear() emits 'clear' → useEntityData resets all React consumers automatically
-      (entity as any).flowDataStream.clear();
+      stream.clear();
     }
-  }, []);
+    // Defensive React-state reset: across disable/enable cycles, snifferManager._entity
+    // and dataManager's cached entity can diverge (different flowDataStream instances).
+    // stream.clear() above only emits 'clear' on snifferManager._entity's stream, which
+    // may have 0 listeners if the cached entity diverged. clearEntityData() forces the
+    // React state owned by useEntityData to reset regardless.
+    clearEntityData();
+  }, [clearEntityData]);
 
   // Trim the underlying stream when it exceeds maxEvents
   useEffect(() => {
@@ -396,7 +443,7 @@ export function useHooksSniffer() {
     // Assign globally-increasing index (survives trimming) and derive a stable id from it.
     // Using idx (not positional index) for the id ensures the id is stable when items
     // are trimmed from the front of the stream — deduplication in consumers (useProcessSniffer,
-    // useClaudeSessionTrace) relies on this stability.
+    // useFlowDataTrace) relies on this stability.
     const offset = globalIndexOffsetRef.current;
     for (let i = 0; i < parsed.length; i++) {
       parsed[i].idx = offset + i + 1;
@@ -413,6 +460,7 @@ export function useHooksSniffer() {
     try {
       await snifferManager.enable();   // entity.watch() fully awaited inside
       setHookId(snifferManager.entity?.id ?? null);
+      saveSnifferPreference(true);
     } finally {
       setIsToggling(false);
     }
@@ -425,6 +473,7 @@ export function useHooksSniffer() {
       setHookId(null);
       sessionToProjectRef.current.clear();
       globalIndexOffsetRef.current = 0;
+      saveSnifferPreference(false);
     } finally {
       setIsToggling(false);
     }

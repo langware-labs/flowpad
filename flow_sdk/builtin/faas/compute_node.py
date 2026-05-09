@@ -10,6 +10,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, AsyncIterator, Literal, overload
 
+from fastapi import BackgroundTasks
 from pydantic import Field
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.messages import ResponseMessage
@@ -57,7 +58,7 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
     fs_storage_mount_path: str | None = APIField(default=None)
     home_dir: str | None = APIField(default=None)
 
-    def _start_activity(self, job_name: str, total: int = 0, timeout_seconds: int = 600):
+    def _start_activity(self, job_name: str, timeout_seconds: int = 600):
         """Register a new in-process activity, raising RuntimeError if one is already running."""
         from flow_sdk.builtin.faas.in_process_activity import InProcessActivity  # noqa: PLC0415
 
@@ -68,7 +69,6 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
         activity = InProcessActivity(
             job_name=job_name,
             entity_id=str(self.typeid),
-            total=total,
             timeout_seconds=timeout_seconds,
         )
         _COMPUTE_ACTIVITIES[key] = activity
@@ -444,6 +444,226 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.get(action_name="list-shells")
     async def _list_shells(self): return await self._pty_list_shells()
 
+    @action.all(action_name="terminals", methods=["get", "post"])
+    async def _terminals(self, background_tasks: BackgroundTasks) -> ApiResponse:
+        request_info = get_current_request_info()
+        sub_path = (request_info.sub_path or "").strip("/").lower() if request_info else ""
+        if sub_path == "list":
+            if request_info and not request_info.is_get:
+                return ApiFailResponse(message="terminals/list requires GET", status_code=405)
+            return await self._terminal_list()
+        if sub_path == "close":
+            if request_info and not request_info.is_post:
+                return ApiFailResponse(message="terminals/close requires POST", status_code=405)
+            body = await request_info.get_post_data() if request_info else {}
+            return await self._terminal_close(body, background_tasks)
+        if sub_path.startswith("get_by_worker_id/"):
+            if request_info and not request_info.is_get:
+                return ApiFailResponse(message="terminals/get_by_worker_id requires GET", status_code=405)
+            worker_id = sub_path[len("get_by_worker_id/"):]
+            if not worker_id:
+                return ApiFailResponse(message="worker id required", status_code=400)
+            return await self._scan_get_by_worker_id(worker_id)
+        return ApiFailResponse(message=f"unknown terminals sub-path: {sub_path!r}", status_code=400)
+
+    async def _terminal_list(self) -> ApiResponse:
+        """Single source of truth for the tab strip.
+
+        Returns two flat, non-overlapping lists. The frontend renders both,
+        with no join: each "AI worker" tab comes from ``visible_processes``
+        and each "plain terminal" tab comes from ``pure_shells``.
+
+        Wire shape: ``{pure_shells, visible_processes, checked_at}``.
+          - ``pure_shells``: Shell entity dicts that are NOT background plumbing
+            for any AgenticProcess. A shell is "pure" iff no AgenticProcess
+            (visible or not) owns it via ``shell_id``. This deliberately drops
+            both visible-process-owned shells (they show up via the process row)
+            and invisible-process-owned orphans.
+          - ``visible_processes``: AgenticProcess entity dicts with
+            ``visible == true``. After ``createProcess`` becomes atomic, every
+            visible process has a populated ``shell_id``.
+        """
+        from flow_sdk.builtin.shell import Shell as ShellEntity
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+
+        # 1. Fetch
+        all_shells = await ShellEntity.get_all()
+        # Reap pass also covers invisible STOPPING rows so they can recover
+        # and re-appear when the user opens them. The visible filter is
+        # applied below for what we *return*, not for what we *reap*.
+        all_processes = await AgenticProcess.get_all()
+
+        # 2. Reap stuck STOPPING — fan out, processes are independent (each owns
+        # its own shell + save lock), so concurrent reap is safe.
+        reap_results = await asyncio.gather(
+            *(proc.reap_if_orphaned() for proc in all_processes),
+            return_exceptions=True,
+        )
+        reaped_any = any(r is True for r in reap_results)
+
+        # 3. Refetch if we reaped, then narrow to visible.
+        if reaped_any:
+            all_processes = await AgenticProcess.get_all()
+        visible_processes = [p for p in all_processes if getattr(p, "visible", False)]
+
+        # 4. Drop background shells: any shell owned by an AgenticProcess
+        # (regardless of visibility) is plumbing for that process and is
+        # represented by the process row instead. Sidecars are already a
+        # subset of "owned by a process" but we keep the explicit set for
+        # readability and to honor the unconditional sidecar exclusion.
+        owned_shell_ids = {p.shell_id for p in all_processes if getattr(p, "shell_id", None)}
+        sidecar_ids = {p.sidecar_shell_id for p in all_processes if getattr(p, "sidecar_shell_id", None)}
+        excluded_shell_ids = owned_shell_ids | sidecar_ids
+
+        from flow_sdk.fs_records.shell_record import ShellStatus
+        terminal_shell_states = {
+            ShellStatus.CLOSING.value,
+            ShellStatus.CLOSED.value,
+            ShellStatus.ERROR.value,
+        }
+        pure_shells = [
+            s for s in all_shells
+            if s.status not in terminal_shell_states
+            and s.id not in excluded_shell_ids
+        ]
+
+        # 5. Build response with full entity dicts for cache write-through.
+        pure_shell_dicts = [s.model_dump(mode="json") for s in pure_shells]
+        process_dicts = [p.model_dump(mode="json") for p in visible_processes]
+
+        from datetime import datetime as _dt, timezone as _tz
+        return ApiSuccessResponse(data={
+            "pure_shells": pure_shell_dicts,
+            "visible_processes": process_dicts,
+            "checked_at": _dt.now(tz=_tz.utc).isoformat(),
+        })
+
+    def _parse_terminal_target(self, raw: Any) -> tuple[str, str] | None:
+        if not isinstance(raw, str):
+            return None
+        target = raw.strip()
+        if not target:
+            return None
+        if ":" in target:
+            entity_type, entity_id = target.split(":", 1)
+            if entity_type not in {"shell", "agentic_process"} or not entity_id:
+                return None
+            try:
+                TypeId(type=entity_type, id=entity_id)
+            except Exception:
+                return None
+            return entity_type, entity_id
+        try:
+            typeid = TypeId(target)
+        except Exception:
+            return None
+        if typeid.type not in {"shell", "agentic_process"} or not typeid.id:
+            return None
+        return typeid.type, typeid.id
+
+    async def _mark_shell_closing(self, shell_id: str) -> bool:
+        from flow_sdk.builtin.shell import Shell as ShellEntity
+        from flow_sdk.fs_records.shell_record import ShellStatus
+
+        shell = await ShellEntity.get_by_id(shell_id)
+        if not shell:
+            return False
+        if shell.status != ShellStatus.CLOSING.value:
+            shell.status = ShellStatus.CLOSING.value
+            await shell.save()
+        try:
+            record = await shell.get_record()
+            if record:
+                record.sync_from_entity(shell)
+        except Exception as e:
+            logging.warning(f"[terminals/close] Failed to mark ShellRecord closing for {shell_id}: {e}")
+        return True
+
+    async def _terminal_close(self, body: dict, background_tasks: BackgroundTasks) -> ApiResponse:
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+        from flow_sdk.builtin.shell import Shell as ShellEntity
+        from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+
+        targets = body.get("targets") if isinstance(body, dict) else None
+        if not isinstance(targets, list):
+            return ApiFailResponse(message="terminals/close requires body: { targets: string[] }", status_code=400)
+
+        accepted: list[str] = []
+        missing: list[str] = []
+        invalid: list[str] = []
+        seen: set[str] = set()
+
+        for raw in targets:
+            parsed = self._parse_terminal_target(raw)
+            if not parsed:
+                invalid.append(str(raw))
+                continue
+
+            entity_type, entity_id = parsed
+            canonical = str(TypeId(type=entity_type, id=entity_id))
+            if canonical in seen:
+                continue
+            seen.add(canonical)
+
+            if entity_type == "agentic_process":
+                proc = await AgenticProcess.get_by_id(entity_id)
+                if not proc:
+                    missing.append(canonical)
+                    continue
+                shell_id = getattr(proc, "shell_id", None)
+                proc.status = ProcessStatus.STOPPING.value
+                proc.visible = False
+                await proc.save()
+                if shell_id:
+                    await self._mark_shell_closing(shell_id)
+                accepted.append(canonical)
+                background_tasks.add_task(self._close_agentic_terminal_background, entity_id)
+                continue
+
+            shell = await ShellEntity.get_by_id(entity_id)
+            if not shell:
+                missing.append(canonical)
+                continue
+            await self._mark_shell_closing(entity_id)
+            accepted.append(canonical)
+            background_tasks.add_task(self._close_shell_terminal_background, entity_id)
+
+        return ApiSuccessResponse(data={
+            "accepted": accepted,
+            "missing": missing,
+            "invalid": invalid,
+        })
+
+    async def _close_agentic_terminal_background(self, process_id: str) -> None:
+        try:
+            from flow_sdk.builtin.agentic_process import AgenticProcess
+
+            proc = await AgenticProcess.get_by_id(process_id)
+            if proc:
+                await proc.close()
+        except Exception as e:
+            logging.exception(f"[terminals/close] AgenticProcess teardown failed for {process_id}: {e}")
+
+    async def _close_shell_terminal_background(self, shell_id: str) -> None:
+        try:
+            from flow_sdk.builtin.shell import Shell as ShellEntity
+
+            shell = await ShellEntity.get_by_id(shell_id)
+            if shell:
+                await shell.close()
+        except Exception as e:
+            logging.exception(f"[terminals/close] Shell teardown failed for {shell_id}: {e}")
+            try:
+                from flow_sdk.builtin.shell import Shell as ShellEntity
+
+                shell = await ShellEntity.get_by_id(shell_id)
+                if shell:
+                    shell.status = "error"
+                    shell.error_message = str(e)
+                    await shell.save()
+            except Exception:
+                logging.exception(f"[terminals/close] Failed to persist shell close error for {shell_id}")
+
     @action.get(action_name="session-transcript")
     async def _session_transcript(self): return await self._pty_session_transcript()
 
@@ -515,41 +735,15 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.post(action_name="upsertSessionProcess")
     async def upsert_session_process(self): return await self._scan_upsert_session_process()
 
+    @action.get(action_name="findSession")
+    async def find_session(self): return await self._scan_find_session()
+
     # -- fs-records action (implementation in FsRecordsActionsMixin) -------------
 
     @action.all(action_name="fs-records", methods=["get", "post", "put", "delete"])
     async def fs_records_action(self): return await self._fs_records_action()
 
     # -- shell record actions ----------------------------------------------------
-
-    @action.post(action_name="elevate-shell")
-    async def _elevate_shell(self) -> ApiResponse:
-        """Elevate a running shell to a Claude session via AgenticProcess.start()."""
-        from uuid import uuid4
-
-        from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.cli_workers import ClaudeCliOptions
-
-        request_info = get_current_request_info()
-        body = await request_info.get_post_data()
-
-        shell_id = body.get("shell_id")
-        if not shell_id:
-            return ApiFailResponse(message="shell_id is required")
-
-        resume_session_id = body.get("resume_session_id")
-        cmd = ClaudeCliOptions(
-            model=body.get("model"),
-            permission_mode=body.get("permission_mode", "bypassPermissions"),
-            resume=bool(resume_session_id),
-        )
-        agentic_process = AgenticProcess(
-            shell_id=shell_id,
-            session_id=resume_session_id or str(uuid4()),
-            cli_config=cmd.to_json(),
-        )
-        await agentic_process.save(owner=request_info.someone_typeid if request_info else None)
-        return await agentic_process.start()
 
     @action.post(action_name="clear-debug-errors")
     async def clear_debug_errors_action(self) -> ApiResponse:
@@ -560,8 +754,8 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.post(action_name="search-cloud-errors")
     async def search_cloud_errors_action(self) -> ApiResponse:
         """Proxy error fingerprint search to the Flowpad cloud, then apply results to local records."""
-        from flow_sdk.cli.auth import get_api_key as get_flowpad_api_key
-        from flow_sdk.client import ApiConfig, FlowpadClient
+        from flow_sdk.cli.auth.hub_login import get_api_key as get_flowpad_api_key
+        from flow_sdk.cloud_client import ApiConfig, FlowpadClient
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data()
@@ -622,7 +816,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     async def fix_all_cloud_errors_action(self) -> ApiResponse:
         """Spawn an AgenticProcess for each error with a saved cloud fix instruction."""
         from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.cli_workers import ClaudeCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
         from flow_sdk.fs_records.claude.claude_error import ClaudeErrorRecord, Fix
 
         request_info = get_current_request_info()
@@ -664,6 +858,20 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         cmd = await self.run_command("pwd", background=False)
         cwd = (cmd.all_stdout or "").strip()
         return ApiSuccessResponse(data={"cwd": cwd})
+
+    @action.get(action_name="worker-history")
+    async def worker_history_action(self) -> ApiResponse:
+        """Unified Recent Sessions list across every worker (claude, codex, …)."""
+        from flow_sdk.fs_records.worker_history import get_worker_history
+
+        request_info = get_current_request_info()
+        limit_raw = request_info.get_param("limit") if request_info else None
+        try:
+            limit = int(limit_raw) if limit_raw else 10
+        except (TypeError, ValueError):
+            limit = 10
+        entries = await asyncio.to_thread(get_worker_history, limit)
+        return ApiSuccessResponse(data=[e.model_dump(mode="json") for e in entries])
 
     @action.get(action_name="git-ops")
     async def git_ops_action(self) -> ApiResponse:

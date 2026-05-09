@@ -115,7 +115,7 @@ export const WebappArtifactsTab: React.FC<WebappArtifactsTabProps> = ({ artifact
                 >
                   <div className={`h-2 w-2 rounded-full ${getStatusColor(status)}`} />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{artifact.name || `Port ${artifact.port}`}</p>
+                    <p className="truncate font-medium">{artifact.displayName}</p>
                     <p className="truncate text-xs text-muted-foreground">
                       {artifact.artifact_type} • {artifact.port}
                     </p>

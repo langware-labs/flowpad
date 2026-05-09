@@ -2,10 +2,11 @@ import { ClaudeUsageChip } from '@src/components/claude-usage-chip/ClaudeUsageCh
 import { PoweredBy } from '@src/components/powered-by';
 import { StatusBar } from '@src/components/status-bar';
 import { WarningsPopover } from '@src/components/warnings-popover';
-import { Agent, ArtifactType, TypeId } from '@sdk';
+import { Agent, ArtifactType, FLOWPAD_ASSISTANT_PROJECT_UNAME, TypeId } from '@sdk';
 import { useCurrentArtifacts, useEntity } from '@sdk/react/hooks';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { Settings } from 'lucide-react';
+import { BookOpen, Settings } from 'lucide-react';
 import { useMemo } from 'react';
 import { useParams } from 'react-router';
 import { useContext } from '@sdk/react/hooks';
@@ -61,6 +62,7 @@ export function Footer({ className = '' }: FooterProps) {
 
   return (
     <footer
+      data-testid="footer"
       className={`relative z-10 w-full border-t bg-background/95 px-6 py-1 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60 ${className}`}
     >
       <div className="flex items-center justify-between">
@@ -90,6 +92,16 @@ export function Footer({ className = '' }: FooterProps) {
 
         {/* Usage chip + version + Powered by on the right */}
         <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => navigation.openDock(DockPointer.forProject(`@${FLOWPAD_ASSISTANT_PROJECT_UNAME}`))}
+            className="flex items-center gap-1 rounded-sm px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            title="Open Flowpad docs"
+            aria-label="Flowpad docs"
+          >
+            <BookOpen className="h-3.5 w-3.5" />
+            <span>Flowpad docs</span>
+          </button>
           <ClaudeUsageChip />
           {version && (
             <span className="font-mono text-[10px] text-muted-foreground">v{version}</span>

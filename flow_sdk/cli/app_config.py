@@ -68,31 +68,33 @@ def get_config(key: str, default: Any = None) -> Any:
     return config.get(key, default)
 
 
-def get_user() -> dict | None:
-    """
-    Get the stored user information.
+def _user_key() -> str:
+    """Per-instance config key for the user record.
 
-    Returns:
-        dict | None: User information dictionary, or None if not logged in
+    ``prod`` keeps the legacy ``"user"`` key (zero migration for installed
+    users); other instances use ``"user:<instance_name>"`` so two local
+    instances logged in as different cloud users don't overwrite each
+    other's record.
     """
-    return get_config('user')
+    from flow_sdk.instance_settings import get_instance_settings
+    name = get_instance_settings().instance_name
+    return "user" if name == "prod" else f"user:{name}"
+
+
+def get_user() -> dict | None:
+    """Get the stored user information for the current instance."""
+    return get_config(_user_key())
 
 
 def set_user(user_info: dict) -> None:
-    """
-    Store user information.
-
-    Args:
-        user_info: User information dictionary (will be stored as JSON)
-    """
-    set_config('user', user_info)
+    """Store user information for the current instance."""
+    set_config(_user_key(), user_info)
 
 
 def clear_user() -> None:
-    """
-    Clear stored user information.
-    """
+    """Clear stored user information for the current instance."""
     config = _load_config()
-    if 'user' in config:
-        del config['user']
+    key = _user_key()
+    if key in config:
+        del config[key]
         _save_config(config)

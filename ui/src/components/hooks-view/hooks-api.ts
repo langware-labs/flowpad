@@ -28,12 +28,24 @@ export interface HooksResponse {
 
 const apiClient = getApiClient();
 
+let inFlightGetHooks: Promise<HooksResponse> | null = null;
+
 /**
- * Get all hooks configuration
+ * Get all hooks configuration.
+ * Concurrent callers share the in-flight request to avoid duplicate GETs
+ * (e.g. StrictMode double-invoke of the HooksView mount effect).
  */
 export async function getHooks(): Promise<HooksResponse> {
-  const response = await apiClient.get<HooksResponse>('/api/hooks');
-  return response as unknown as HooksResponse;
+  if (inFlightGetHooks) return inFlightGetHooks;
+  inFlightGetHooks = (async () => {
+    try {
+      const response = await apiClient.get<HooksResponse>('/api/hooks');
+      return response as unknown as HooksResponse;
+    } finally {
+      inFlightGetHooks = null;
+    }
+  })();
+  return inFlightGetHooks;
 }
 
 /**

@@ -15,7 +15,10 @@ from .claude_session import ClaudeSessionRecord
 if TYPE_CHECKING:
     from .claude_project import ClaudeProjectFsRecord
 
-_DEFAULT_PROJECTS_DIR = Path.home() / ".claude" / "projects"
+def _default_projects_dir() -> Path:
+    """Per-instance ~/.claude/projects (call-time, via InstanceSettings)."""
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    return get_instance_settings().claude_projects_dir
 
 
 class ClaudeRootFsRecord(Record):
@@ -30,7 +33,7 @@ class ClaudeRootFsRecord(Record):
         if "type" not in kwargs:
             kwargs["type"] = RecordType.CLAUDE_ROOT
         if "projects_dir" not in kwargs:
-            kwargs["projects_dir"] = str(_DEFAULT_PROJECTS_DIR)
+            kwargs["projects_dir"] = str(_default_projects_dir())
         super().__init__(**kwargs)
         if not self.name:
             self.name = "claude_root"
@@ -45,7 +48,7 @@ class ClaudeRootFsRecord(Record):
     def projects(self) -> list[ClaudeProjectFsRecord]:
         """Return all project directories as ``ClaudeProjectFsRecord``."""
         from .claude_project import ClaudeProjectFsRecord
-        return list(ClaudeProjectFsRecord._external_source_iter())
+        return ClaudeProjectFsRecord.discover()
 
     @property
     def active_sessions(self):
@@ -77,4 +80,4 @@ class ClaudeRootFsRecord(Record):
     @classmethod
     def default(cls) -> ClaudeRootFsRecord:
         """Return the root record for the default Claude installation."""
-        return cls(projects_dir=str(_DEFAULT_PROJECTS_DIR))
+        return cls(projects_dir=str(_default_projects_dir()))

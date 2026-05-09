@@ -46,7 +46,7 @@ export const GitFileDiffModal: React.FC<GitFileDiffModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="flex max-w-5xl flex-col" style={{ height: '80vh' }}>
+      <DialogContent className="flex flex-col" style={{ width: '95vw', maxWidth: '95vw', height: '90vh' }}>
         <DialogHeader className="shrink-0">
           <DialogTitle className="text-sm font-medium">
             {filename}

@@ -40,6 +40,13 @@ export class FlowDataStream extends EventEmitter {
   private _recentChunkKeys: Set<string> = new Set();
   private _recentChunkKeysQueue: string[] = [];
 
+  // Batching: when set to a non-null array, every `'data'` emit pushes the
+  // emitted items into this buffer instead of firing the listener. Used by
+  // `ingestBatch` to coalesce a burst of ingests (e.g. 700+ history items
+  // from `AgenticProcess.loadHistory`) into a single `'data'` event,
+  // preventing render-loop bursts in `useSyncExternalStore` consumers.
+  private _emitBuffer: FlowData[] | null = null;
+
   /**
    * Creates a new FlowDataStream
    * @param nameOrConfig - Either a string name (id will be auto-generated) or a config object with id and/or name
@@ -153,6 +160,58 @@ export class FlowDataStream extends EventEmitter {
     const newItems = Array.isArray(items) ? items : [items];
     this._ownItems.push(...newItems);
     this.emit('data', newItems, this);
+  }
+
+  /**
+   * Ingest a batch of items with a single coalesced `'data'` emission.
+   *
+   * Each item still goes through `ingest()` (so group consolidation,
+   * USER_MESSAGE dedup, and the streaming-mode merging all run as normal),
+   * but per-item `'data'` events are buffered until the batch finishes.
+   * One final `'data'` event is emitted with every newly-appended item.
+   *
+   * Use case: `AgenticProcess.loadHistory` ingests hundreds of history
+   * items in a tight loop; per-item emission caused `useSyncExternalStore`
+   * subscribers to re-render hundreds of times within a single commit and
+   * blew past React's nested-update budget. Coalescing collapses that to
+   * one re-render per loadHistory call.
+   *
+   * Returns the items that were actually appended to `_ownItems` (i.e. not
+   * deduplicated or consolidated into an existing group).
+   */
+  ingestBatch(items: FlowData[]): FlowData[] {
+    if (items.length === 0) return [];
+    const buffered: FlowData[] = [];
+    const prevBuffer = this._emitBuffer;
+    this._emitBuffer = buffered;
+    try {
+      for (const item of items) {
+        this.ingest(item);
+      }
+    } finally {
+      this._emitBuffer = prevBuffer;
+    }
+    if (buffered.length > 0) {
+      // If we're nested inside another batch, forward to the outer buffer
+      // instead of emitting; the outermost call will fire the `'data'`.
+      if (prevBuffer) {
+        prevBuffer.push(...buffered);
+      } else {
+        this.emit('data', buffered, this);
+      }
+    }
+    return buffered;
+  }
+
+  // Override EventEmitter.emit so the 7 ingest-path `'data'` emissions can
+  // be coalesced by `ingestBatch` without touching every emit site.
+  emit(event: string | symbol, ...args: any[]): boolean {
+    if (event === 'data' && this._emitBuffer) {
+      const items = args[0];
+      if (Array.isArray(items)) this._emitBuffer.push(...items);
+      return false; // listeners deferred until batch flushes
+    }
+    return super.emit(event, ...args);
   }
 
   /**

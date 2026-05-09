@@ -1,6 +1,6 @@
 test 1: Multiple shell commands can be typed without crashing the terminal
 - navigate to {APP_URL}/dock/shell/new_terminal
-- wait for terminal to be ready (element with data-terminal-id is visible)
+- wait for terminal to be ready (element with active terminal panel `[data-testid="terminal-panel"][data-active="true"]` shows xterm)
 - click the terminal input textarea
 - type "echo command_one"
 - press Enter

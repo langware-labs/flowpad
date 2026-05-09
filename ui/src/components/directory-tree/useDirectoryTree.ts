@@ -84,12 +84,18 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
         const result = await fsStore.getState().listDirectory(typeid, relativePath);
         const items = [...result.items];
 
-        // Sort: folders first, then files, alphabetically
+        // Sort: folders first, then files, alphabetically. ``a.name`` is a
+        // class getter on FSItem that Immer's ``produce()`` strips when the
+        // item is cached in the store — fall back to ``display_name`` (always
+        // present on the wire payload) so the comparator survives the trip
+        // through the cache.
         items.sort((a, b) => {
           if (a.is_dir !== b.is_dir) {
             return a.is_dir ? -1 : 1;
           }
-          return a.name.localeCompare(b.name);
+          const an = a.name ?? a.display_name ?? '';
+          const bn = b.name ?? b.display_name ?? '';
+          return an.localeCompare(bn);
         });
 
         // Clear loading state (cache update handled by fsStore)
@@ -579,13 +585,16 @@ export function useDirectoryTree(rootFolders: FSItem[]) {
       if (!cacheKey) return [];
       const cached = browseCache.get(cacheKey);
       if (!cached) return [];
-      // Sort: folders first, then files, alphabetically
+      // Sort: folders first, then files, alphabetically (see above for the
+      // a.name / display_name fallback rationale)
       const items = [...cached.items];
       items.sort((a, b) => {
         if (a.is_dir !== b.is_dir) {
           return a.is_dir ? -1 : 1;
         }
-        return a.name.localeCompare(b.name);
+        const an = a.name ?? a.display_name ?? '';
+        const bn = b.name ?? b.display_name ?? '';
+        return an.localeCompare(bn);
       });
       return items;
     },

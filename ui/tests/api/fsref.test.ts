@@ -229,7 +229,7 @@ describe('entity.record()', () => {
     const skill = new Skill({ id: skillId });
     const rec = await skill.record();
     expect(rec.mainRef).not.toBeNull();
-    expect(['json', 'file', 'text', 'folder']).toContain(rec.mainRef!.refType);
+    expect(['json', 'file', 'text', 'folder', 'frontmatter_md']).toContain(rec.mainRef!.refType);
   });
 
   it('record.recordFolderRef is a folder type', async () => {

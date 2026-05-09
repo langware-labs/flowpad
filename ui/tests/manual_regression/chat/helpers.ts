@@ -6,9 +6,13 @@ import { type Page, expect } from '@playwright/test';
  * We set it before navigating so it never appears, and also try to dismiss if it still does.
  */
 export async function dismissSetupModal(page: Page) {
-  // Pre-set localStorage to suppress the modal before page loads
+  // Pre-set localStorage to suppress the modal before page loads.
+  // Also pre-mark the index/discover Welcome modal as approved so its Radix
+  // overlay does not intercept pointer events on home-landing buttons after
+  // a fresh DB clear (the modal opens when scanInfo.never_indexed=true).
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
+    localStorage.setItem('flowpad-index-approved', '1');
   });
 }
 
@@ -59,15 +63,10 @@ export async function submitFromLanding(page: Page, message: string) {
     // Give modal time to close
     await page.waitForTimeout(800);
   }
-  // New UI: TerminalLineSessionInput is hidden behind a button by default.
-  // Click the "What would you like to work on today?" button to reveal the input first.
-  // Use CSS text filter instead of getByRole to avoid aria-hidden issues.
-  const triggerBtn = page.locator('button').filter({ hasText: /what would you like to work on today\?/i });
-  if (await triggerBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    await triggerBtn.click();
-  }
-  // Use CSS attribute selector to find input directly — avoids getByRole aria-hidden issues.
-  const input = page.locator('input[aria-label="Start new Claude Code session..."]');
+  // Home renders <SessionInput> inline as a textarea with
+  // aria-label="What would you like to work on?". Use a CSS attribute selector
+  // to avoid getByRole aria-hidden issues when modals are still resolving.
+  const input = page.locator('textarea[aria-label="What would you like to work on?"]');
   await input.waitFor({ state: 'visible', timeout: 15_000 });
   await input.fill(message);
   await input.press('Enter');
@@ -83,9 +82,13 @@ export async function submitFromLanding(page: Page, message: string) {
  * This is a placeholder that waits for the shell tab to appear.
  */
 export async function ensureShellReady(page: Page) {
-  // Wait for the terminal panel to appear
-  await page.locator('[data-terminal-id], .xterm-screen, .xterm').first().waitFor({
+  // Wait for the active terminal panel + xterm to render.
+  await page.locator('[data-testid="terminal-panel"][data-active="true"]').first().waitFor({
     state: 'visible',
+    timeout: 15_000,
+  });
+  await page.locator('[data-testid="terminal-panel"][data-active="true"] .xterm').first().waitFor({
+    state: 'attached',
     timeout: 15_000,
   });
 }
@@ -104,7 +107,7 @@ export async function ensureActiveSession(page: Page) {
  */
 export async function sendInstruction(page: Page, message: string) {
   // Type into the terminal (best effort)
-  const terminal = page.locator('.xterm-screen, [data-terminal-id]').first();
+  const terminal = page.locator('[data-testid="terminal-panel"][data-active="true"] .xterm-screen').first();
   await terminal.click({ timeout: 5_000 }).catch(() => {});
   await page.keyboard.type(message);
   await page.keyboard.press('Enter');

@@ -13,6 +13,30 @@ import { useEffect, useSyncExternalStore } from 'react';
  * // Toggle system skills visibility
  * settings.showSystemSkills = !settings.showSystemSkills;
  */
+
+// Single EE subscription shared across all useSettings() callers, so the
+// singleton's listener count stays at 2 regardless of how many components mount.
+const subscribers = new Set<() => void>();
+let eeAttached = false;
+
+const notify = () => {
+  for (const cb of subscribers) cb();
+};
+
+const subscribe = (callback: () => void) => {
+  if (!eeAttached) {
+    workspaceSetting.on(WorkspaceSettingEvent.SETTINGS_CHANGED, notify);
+    workspaceSetting.on(WorkspaceSettingEvent.SETTINGS_LOADED, notify);
+    eeAttached = true;
+  }
+  subscribers.add(callback);
+  return () => {
+    subscribers.delete(callback);
+  };
+};
+
+const getSnapshot = () => workspaceSetting.version;
+
 export function useSettings() {
   // Load settings on first use
   useEffect(() => {
@@ -21,22 +45,6 @@ export function useSettings() {
     }
   }, []);
 
-  // Subscribe to external store using useSyncExternalStore
-  const subscribe = (callback: () => void) => {
-    workspaceSetting.on(WorkspaceSettingEvent.SETTINGS_CHANGED, callback);
-    workspaceSetting.on(WorkspaceSettingEvent.SETTINGS_LOADED, callback);
-
-    return () => {
-      workspaceSetting.off(WorkspaceSettingEvent.SETTINGS_CHANGED, callback);
-      workspaceSetting.off(WorkspaceSettingEvent.SETTINGS_LOADED, callback);
-    };
-  };
-
-  // Get snapshot returns a version counter to trigger re-renders on change
-  // Using a primitive avoids infinite loops from object reference changes
-  const getSnapshot = () => workspaceSetting.version;
-
-  // Subscribe to changes
   useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   return { settings: workspaceSetting };

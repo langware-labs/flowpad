@@ -9,7 +9,7 @@ import typer
 from typing_extensions import Annotated
 
 from flow_sdk._version import __version__
-from flow_sdk.cli.auth import delete_api_key, is_logged_in, set_api_key
+from flow_sdk.cli.auth.hub_login import delete_api_key, is_logged_in, set_api_key
 from flow_sdk.cli.cli_command import CLICommand
 from flow_sdk.cli.cli_context import ClaudeScope, CLIContext
 from flow_sdk.cli.commands.prompt_cmd import run_prompt_command
@@ -423,7 +423,7 @@ def auth_login(
     if api_key:
         # Direct API key login
         from flow_sdk.cli.app_config import set_user
-        from flow_sdk.cli.auth import validate_api_key
+        from flow_sdk.cli.auth.hub_login import validate_api_key
 
         try:
             user_info = validate_api_key(api_key)
@@ -436,40 +436,37 @@ def auth_login(
             typer.echo(f"✗ Login failed: {e}", err=True)
             raise typer.Exit(1)
     else:
-        # Browser-based login flow
-        import webbrowser
+        # Cloud login chokepoint — decides env-mode vs browser-mode internally.
+        import asyncio
 
-        from flow_sdk.cli.env_loader import get_login_url
-        from flow_sdk.server.app import wait_for_post_login
+        from flow_sdk.cli.auth.cloud_login import cloud_login
+        from flow_sdk.server.app import wait_for_login_callback
 
-        port = _discover_port()
-
-        # Build the callback URL
-        callback_url = f"http://127.0.0.1:{port}/post_login"
-
-        # Get the formatted login URL with the callback URL
-        full_login_url = get_login_url(callback_url)
-
-        typer.echo("\n🌊 Opening browser for Flowpad login...")
-        typer.echo(f"Callback URL: {callback_url}")
-        typer.echo(f"Full Login URL: {full_login_url}\n")
-
-        # Open browser
-        webbrowser.open(full_login_url)
-
-        # Wait for the login callback
-        result = wait_for_post_login()
-
-        if result.get("success"):
-            typer.echo("\n✓ Successfully logged in to Flowpad")
-            typer.echo("✓ API key stored securely in system keyring")
-            if "user" in result:
-                typer.echo(f"✓ User ID: {result['user'].get('id')}")
-        else:
-            typer.echo(f"\n✗ Login failed: {result.get('message', 'Unknown error')}", err=True)
-            if "error" in result:
-                typer.echo(f"  Error: {result['error']}", err=True)
+        typer.echo("\n🌊 Logging in to Flowpad...")
+        try:
+            launch = asyncio.run(cloud_login())
+        except Exception as e:
+            typer.echo(f"\n✗ Login failed: {e}", err=True)
             raise typer.Exit(1)
+
+        if launch["status"] == "logged_in":
+            typer.echo("✓ Successfully logged in to Flowpad")
+            typer.echo("✓ API key stored securely in system keyring")
+            typer.echo(f"✓ User ID: {launch['user'].get('id')}")
+        else:
+            # Browser-mode: cloud_login opened the system browser; wait for the callback.
+            typer.echo(f"Opened browser: {launch['url']}\n")
+            result = wait_for_login_callback()
+            if result.get("success"):
+                typer.echo("\n✓ Successfully logged in to Flowpad")
+                typer.echo("✓ API key stored securely in system keyring")
+                if "user" in result:
+                    typer.echo(f"✓ User ID: {result['user'].get('id')}")
+            else:
+                typer.echo(f"\n✗ Login failed: {result.get('message', 'Unknown error')}", err=True)
+                if "error" in result:
+                    typer.echo(f"  Error: {result['error']}", err=True)
+                raise typer.Exit(1)
 
 
 @auth_app.command("logout")
@@ -504,13 +501,13 @@ def auth_test(delay: Annotated[int, typer.Option(help="Delay in seconds before a
     """
     import webbrowser
 
-    from flow_sdk.server.app import wait_for_post_login
+    from flow_sdk.server.app import wait_for_login_callback
 
     port = _discover_port()
 
     # Build the test login URL with callback and delay
-    callback_url = f"http://127.0.0.1:{port}/post_login"
-    test_login_url = f"http://127.0.0.1:{port}/test_login?callback={callback_url}&delay={delay}"
+    callback_url = f"http://127.0.0.1:{port}/auth/login_callback"
+    test_login_url = f"http://127.0.0.1:{port}/api/v1/cloud/test_login?callback={callback_url}&delay={delay}"
 
     typer.echo(f"\n🧪 Opening test login page with {delay} second delay...")
     typer.echo(f"Test URL: {test_login_url}\n")
@@ -519,7 +516,7 @@ def auth_test(delay: Annotated[int, typer.Option(help="Delay in seconds before a
     webbrowser.open(test_login_url)
 
     # Wait for the login callback
-    result = wait_for_post_login()
+    result = wait_for_login_callback()
 
     if result.get("success"):
         typer.echo("\n✓ Test login successful!")
@@ -726,7 +723,8 @@ def hooks_report(
             if project_settings.exists():
                 return (metadata or None), str(project_settings)
 
-        fallback_path = Path.home() / ".claude" / "settings.json"
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+        fallback_path = get_instance_settings().claude_settings_json_path
         settings_path = str(fallback_path) if fallback_path.exists() else None
         return (metadata or None), settings_path
 
@@ -929,6 +927,24 @@ def hooks_list(
 
 log_app = typer.Typer(help="View and replay CLI invocation logs")
 app.add_typer(log_app, name="log")
+
+from flow_sdk.cli.commands.compute_cmd import compute_app
+app.add_typer(compute_app, name="compute")
+
+from flow_sdk.cli.commands.navigate_cmd import navigate_app
+app.add_typer(navigate_app, name="navigate")
+
+from flow_sdk.cli.commands.context_cmd import context_app
+app.add_typer(context_app, name="context")
+
+from flow_sdk.cli.commands.schema_cmd import schema_app
+app.add_typer(schema_app, name="schema")
+
+from flow_sdk.cli.commands.record_cmd import record_app
+app.add_typer(record_app, name="record")
+
+from flow_sdk.cli.commands.workflow_cmd import workflow_app
+app.add_typer(workflow_app, name="workflow")
 
 
 @log_app.callback(invoke_without_command=True)

@@ -1,5 +1,6 @@
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { acknowledgePending } from '@src/store/pending-actions-store';
 import { ChevronLeft, ChevronRight, Plus, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useRef, useState } from 'react';
@@ -17,6 +18,8 @@ interface SessionTabBarProps {
   activeSessionId: string | null;
   /** Set of session IDs that have unsaved changes */
   dirtySessionIds?: Set<string>;
+  /** Set of session IDs that recently became ready-for-input (PendingAction). */
+  pendingSessionIds?: Set<string>;
   /** Callback when a tab close button is clicked */
   onCloseTab: (sessionId: string) => Promise<void>;
   /** Callback when a session is renamed */
@@ -46,6 +49,7 @@ export function SessionTabBar({
   sessions,
   activeSessionId,
   dirtySessionIds = new Set(),
+  pendingSessionIds = new Set(),
   onCloseTab,
   onRenameSession,
   onAddTab,
@@ -105,6 +109,7 @@ export function SessionTabBar({
   // Handle tab click - navigate to session
   const handleTabClick = (sessionId: string) => {
     onSelectTab?.(sessionId);
+    acknowledgePending(sessionId);
   };
 
   // Handle close button click (navigation is handled by the parent via onCloseTab)
@@ -113,13 +118,8 @@ export function SessionTabBar({
     await onCloseTab(sessionId);
   };
 
-  // Handle click on name to start editing
-  const handleTabNameClick = (e: React.MouseEvent, sessionId: string, currentName: string, isActive: boolean) => {
-    e.stopPropagation();
-    if (!isActive) {
-      handleTabClick(sessionId);
-      return;
-    }
+  // Enter rename mode (double-click on tab title)
+  const handleTabNameDoubleClick = (sessionId: string, currentName: string) => {
     setEditingSessionId(sessionId);
     setEditingName(currentName);
   };
@@ -176,6 +176,7 @@ export function SessionTabBar({
           const displayName = session.name || 'Untitled Session';
           const isEditing = editingSessionId === session.id;
           const isDirty = session.id ? dirtySessionIds.has(session.id) : false;
+          const isPending = session.id ? pendingSessionIds.has(session.id) : false;
 
           return (
             <div
@@ -184,7 +185,7 @@ export function SessionTabBar({
                 isActive
                   ? 'border-primary bg-background text-foreground'
                   : 'border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
+              } ${isPending ? 'animate-pending-glow rounded-md' : ''}`}
               draggable={!!session.id}
               onDragStart={(e) => {
                 if (!session.id) return;
@@ -230,7 +231,10 @@ export function SessionTabBar({
               ) : (
                 <span
                   className="max-w-[150px] truncate text-sm font-medium"
-                  onClick={(e) => session.id && handleTabNameClick(e, session.id, displayName, isActive)}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    if (session.id) handleTabNameDoubleClick(session.id, displayName);
+                  }}
                 >
                   {displayName}
                 </span>

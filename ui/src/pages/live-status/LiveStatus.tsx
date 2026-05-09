@@ -1209,20 +1209,13 @@ function ProjectsSection() {
     );
   }
 
-  // Convert ProjectListItem to ProjectItem format for ProjectSelector
+  // ProjectSelector takes a generic id — pass encoded_name so callbacks land
+  // in the same shape `handleProjectSelect` already expects.
   const projectItems = projects.map((p) => ({
-    id: p.id,
-    type: 'project' as const,
+    id: p.encoded_name,
     name: getProjectDisplayName(p),
-    encoded_name: p.encoded_name,
-    cwd: p.cwd || '',
-    session_count: p.session_count,
-    total_messages: 0,
-    scope: 'user',
-    modified_at: p.modified_at ?? undefined,
-    created_at: undefined,
-    created_by: undefined,
-    updated_by: undefined,
+    path: p.cwd || '',
+    modifiedAt: p.modified_at ?? null,
   }));
 
   return (
@@ -1231,7 +1224,7 @@ function ProjectsSection() {
       <div className="w-52 shrink-0">
         <ProjectSelector
           projects={projectItems}
-          selectedEncodedName={selectedProjectEncoded}
+          selectedId={selectedProjectEncoded}
           onSelect={handleProjectSelect}
           isLoading={isLoadingProjects}
         />

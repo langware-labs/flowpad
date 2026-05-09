@@ -76,22 +76,22 @@ export function Suggestions({
     const set = new Set<string>();
     for (const t of learningTasks) {
       if (isActionTask(t)) {
-        const sid = t.metadata?.sessionId;
+        const sid = t.session_id;
         if (typeof sid === 'string') set.add(sid);
       }
     }
     return set;
   }, [learningTasks]);
 
-  // All classification tasks that have results (done or have classificationPath).
-  // Deduplicate by sessionId, preferring 'done' status.
+  // All classification tasks that have results (done or have classification_path).
+  // Deduplicate by session_id, preferring 'done' status.
   const completedClassifications = useMemo(() => {
     const seen = new Map<string, Task>();
     for (const t of learningTasks) {
       if (!isClassificationTask(t)) continue;
-      const sid = t.metadata?.sessionId;
+      const sid = t.session_id;
       if (typeof sid !== 'string') continue;
-      const hasResult = t.status === 'done' || typeof t.metadata?.classificationPath === 'string';
+      const hasResult = t.status === 'done' || typeof t.classification_path === 'string';
       if (!hasResult) continue;
       const existing = seen.get(sid);
       if (!existing || (t.status === 'done' && existing.status !== 'done')) {
@@ -103,11 +103,11 @@ export function Suggestions({
 
   // Set of all classified session IDs (for the analyze button filter)
   const classifiedSessionIds = useMemo(
-    () => new Set(completedClassifications.map((t) => t.metadata?.sessionId as string)),
+    () => new Set(completedClassifications.map((t) => t.session_id as string)),
     [completedClassifications],
   );
 
-  // File-read fallback: read classification.json for tasks missing metadata classification fields.
+  // File-read fallback: read classification.json for tasks missing classification fields.
   // Run once on mount (or when completedClassifications changes) — not a reactive loop.
   const [fileClassifications, setFileClassifications] = useState<Map<string, ClassificationInfo>>(new Map());
   const fileReadRanRef = useRef(false);
@@ -115,10 +115,10 @@ export function Suggestions({
   useEffect(() => {
     if (fileReadRanRef.current) return;
     const toRead = completedClassifications.filter((t) => {
-      const sid = t.metadata?.sessionId as string;
+      const sid = t.session_id as string;
       if (actedSessionIds.has(sid)) return false;
       if (getClassificationInfo(t)) return false;
-      return typeof t.metadata?.classificationPath === 'string' || typeof t.metadata?.output_dir === 'string';
+      return typeof t.classification_path === 'string' || typeof t.output_dir === 'string';
     });
     if (toRead.length === 0) return;
 
@@ -132,9 +132,9 @@ export function Suggestions({
       await Promise.allSettled(
         toRead.map(async (t) => {
           const path =
-            (t.metadata?.classificationPath as string) ||
-            `${(t.metadata?.output_dir as string).replace(/\\/g, '/')}/classification.json`;
-          const sid = t.metadata?.sessionId as string;
+            t.classification_path ||
+            `${(t.output_dir as string).replace(/\\/g, '/')}/classification.json`;
+          const sid = t.session_id as string;
           try {
             const content = await fsManager.download(computeNodeTypeId, path);
             if (!content) return;
@@ -161,7 +161,7 @@ export function Suggestions({
     const results: UnactedClassification[] = [];
 
     for (const t of completedClassifications) {
-      const sid = t.metadata?.sessionId as string;
+      const sid = t.session_id as string;
       if (actedSessionIds.has(sid)) continue;
       const info = getClassificationInfo(t) ?? fileClassifications.get(sid) ?? null;
       if (!info) continue;

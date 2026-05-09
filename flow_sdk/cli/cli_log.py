@@ -11,17 +11,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, ClassVar
 
-from flow_sdk.config import FLOW_HOME
 from flow_sdk.fs_store import Record
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.scope import Scope
+from flow_sdk.instance_settings import get_instance_settings
 
 # ---------------------------------------------------------------------------
-# Paths — tests monkeypatch these module-level vars
+# Paths — call-time, via InstanceSettings (the single source of truth).
 # ---------------------------------------------------------------------------
 
-CLI_LOG_DIR: Path = FLOW_HOME / "logs"
-CLI_LOG_FILE: Path = CLI_LOG_DIR / "cli.log.jsonl"
+
+def _cli_log_dir() -> Path:
+    return get_instance_settings().logs_dir
+
+
+def _cli_log_file() -> Path:
+    return _cli_log_dir() / "cli.log.jsonl"
 
 MAX_ENTRIES = 800
 DROP_COUNT = 300
@@ -43,7 +48,7 @@ class CliLogRecord(Record):
                  level, duration_ms
 
     Entries live in a JSONL file (not individual record folders), so
-    discover/discover_one are overridden to read from the JSONL.
+    discover/get are overridden to read from the JSONL.
     The record is read-only through the fs-records action.
     """
 
@@ -85,7 +90,7 @@ class CliLogRecord(Record):
         return read_entries(limit=kwargs.get("limit", MAX_ENTRIES))
 
     @classmethod
-    def discover_one(cls, uid: str, scope: Scope | None = None, **kwargs: Any) -> "CliLogRecord | None":
+    def get(cls, uid: str, scope: Scope | None = None, **kwargs: Any) -> "CliLogRecord | None":
         """Find a single entry by id in the JSONL log file."""
         for rec in read_entries():
             if rec.id == uid:
@@ -128,7 +133,7 @@ class CliLogSettingsRecord(Record):
 def load_settings() -> CliLogSettingsRecord:
     """Load settings record from disk. Returns defaults if missing."""
     try:
-        rec = CliLogSettingsRecord.discover_one(_SETTINGS_UID)
+        rec = CliLogSettingsRecord.get(_SETTINGS_UID)
         if rec is not None:
             return rec
     except Exception:
@@ -139,7 +144,7 @@ def load_settings() -> CliLogSettingsRecord:
 def save_settings(level: str) -> None:
     """Save settings record to disk."""
     try:
-        rec = CliLogSettingsRecord.discover_one(_SETTINGS_UID) or CliLogSettingsRecord()
+        rec = CliLogSettingsRecord.get(_SETTINGS_UID) or CliLogSettingsRecord()
         rec.level = level
         rec.save()
     except Exception:
@@ -153,9 +158,9 @@ def save_settings(level: str) -> None:
 def write_entry(record: CliLogRecord) -> None:
     """Append record as a JSONL line, then enforce cap."""
     try:
-        CLI_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        _cli_log_dir().mkdir(parents=True, exist_ok=True)
         line = json.dumps(record.meta_dict(), default=str) + "\n"
-        with open(CLI_LOG_FILE, "a") as f:
+        with open(_cli_log_file(), "a") as f:
             f.write(line)
         _enforce_cap()
     except Exception:
@@ -165,15 +170,16 @@ def write_entry(record: CliLogRecord) -> None:
 def _enforce_cap() -> None:
     """If line count >= MAX_ENTRIES, keep last (MAX_ENTRIES - DROP_COUNT) lines."""
     try:
-        with open(CLI_LOG_FILE, "r") as f:
+        log_file = _cli_log_file()
+        with open(log_file, "r") as f:
             lines = f.readlines()
         if len(lines) < MAX_ENTRIES:
             return
         keep = lines[-(MAX_ENTRIES - DROP_COUNT):]
-        tmp = CLI_LOG_FILE.with_suffix(".tmp")
+        tmp = log_file.with_suffix(".tmp")
         with open(tmp, "w") as f:
             f.writelines(keep)
-        tmp.replace(CLI_LOG_FILE)
+        tmp.replace(log_file)
     except Exception:
         pass
 
@@ -181,11 +187,12 @@ def _enforce_cap() -> None:
 def clear_log() -> int:
     """Delete all log entries. Returns the number of entries deleted."""
     try:
-        if not CLI_LOG_FILE.exists():
+        log_file = _cli_log_file()
+        if not log_file.exists():
             return 0
-        with open(CLI_LOG_FILE, "r") as f:
+        with open(log_file, "r") as f:
             count = sum(1 for line in f if line.strip())
-        CLI_LOG_FILE.unlink()
+        log_file.unlink()
         return count
     except Exception:
         return 0
@@ -194,10 +201,11 @@ def clear_log() -> int:
 def read_entries(limit: int = 800) -> list[CliLogRecord]:
     """Read JSONL entries as CliLogRecord instances, newest-first."""
     try:
-        if not CLI_LOG_FILE.exists():
+        log_file = _cli_log_file()
+        if not log_file.exists():
             return []
         records: list[CliLogRecord] = []
-        with open(CLI_LOG_FILE, "r") as f:
+        with open(log_file, "r") as f:
             for line in f:
                 line = line.strip()
                 if not line:

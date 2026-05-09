@@ -57,24 +57,20 @@ test.describe('Record Search Bar', () => {
     await expect(input).toHaveValue('hello', { timeout: 5_000 });
   });
 
-  // ── Test 4: Tools button shows filter panel ───────────────────────────────
-  test('Tools button on home bar toggles the filter panel', async ({ page }) => {
+  // ── Test 4: Compact home bar has no Tools button / filter panel ───────────
+  test('compact home search bar has no Tools button and no filter panel', async ({ page }) => {
     await gotoHome(page);
 
-    const toolsBtn = page.locator('[data-testid="search-tools-btn"]').first();
-    await expect(toolsBtn).toBeVisible({ timeout: 10_000 });
+    const searchBar = page.locator('[data-testid="record-search-bar"]');
+    await expect(searchBar).toBeVisible({ timeout: 10_000 });
 
-    // Filter panel should not be visible initially
-    const filterPanel = page.locator('[data-testid="search-filter-panel"]').first();
-    await expect(filterPanel).not.toBeVisible();
+    // Home bar is rendered with default showTools=false → no Tools button
+    const toolsBtn = page.locator('[data-testid="search-tools-btn"]');
+    await expect(toolsBtn).toHaveCount(0);
 
-    // Click Tools → filter panel appears
-    await toolsBtn.click();
-    await expect(filterPanel).toBeVisible({ timeout: 5_000 });
-
-    // Click again → hidden
-    await toolsBtn.click();
-    await expect(filterPanel).not.toBeVisible();
+    // No filter panel initially (compact=true by default)
+    const filterPanel = page.locator('[data-testid="search-filter-panel"]');
+    await expect(filterPanel).toHaveCount(0);
   });
 
   // ── Test 5: Search results area renders in search view ────────────────────

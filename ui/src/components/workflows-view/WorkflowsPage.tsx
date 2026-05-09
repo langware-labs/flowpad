@@ -1,503 +1,30 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
-import { InteractiveTerminal } from '@src/components/terminal';
-import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@src/components/ui/alert-dialog';
+import { WorkflowAssetEditor } from '@src/components/assets/editor/workflow/WorkflowAssetEditor';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { Button } from '@src/components/ui/button';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@src/components/ui/resizable';
 import { ScrollArea } from '@src/components/ui/scroll-area';
 import { useToast } from '@src/hooks/use-toast';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
-import { useProcessState } from '@src/hooks/use-process-state';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { FSRef, QueryRequest, Workflow } from '@sdk';
+import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import {
-  ActionInfo,
-  AgenticProcess,
-  dataContext,
-  dataManager,
-  fsManager,
-  isProcessActive,
-  QueryRequest,
-  type TypeId,
-  Workflow,
-} from '@sdk';
-import { ComputeNode, openExternalFromComputeNode } from '@sdk/entities/compute-node';
-import { ExternalLink, FilePlus, GitFork, Loader2, Play, Save, Trash2, Workflow as WorkflowIcon, Zap } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useRef, useState, KeyboardEvent } from 'react';
-import { WorkflowTraceGutter } from './WorkflowTraceGutter';
-import { WorkflowRunsList } from './WorkflowRunsList';
-import type { ClaudeTraceEvent } from '@src/types/trace-event';
-import { useClaudeSessionTrace } from '@src/hooks/use-claude-session-trace';
-import { PipelineViewer } from '@src/components/pipeline-viewer';
+  ExternalLink,
+  FilePlus,
+  Loader2,
+  Trash2,
+  Workflow as WorkflowIcon,
+} from 'lucide-react';
+import { useCallback, useMemo, useRef, useState, KeyboardEvent } from 'react';
 
-async function isMcpAvailable(serverName: string): Promise<boolean> {
-  try {
-    const actionInfo = new ActionInfo('mcp-available', 'compute_node', '@local', 'GET');
-    actionInfo.queryParameters = { server: serverName };
-    const result = await dataManager.callAction<null, { available: boolean }>(actionInfo);
-    return (result as { available: boolean })?.available ?? false;
-  } catch {
-    return false;
-  }
-}
-
-async function enableMcp(serverName: string, scope: 'user' | 'project'): Promise<void> {
-  const actionInfo = new ActionInfo('mcp-enable', 'compute_node', '@local', 'POST');
-  actionInfo.bodyParameters = { server: serverName, scope };
-  await dataManager.callAction(actionInfo);
-}
-
-import { workflowRunStore, type ProcessEntry } from './workflow-run-store';
-
-/** Load and edit the markdown file linked to a workflow entity */
-function WorkflowEditor({
-  workflow,
-  fsTypeId,
-  processEntry,
-  onProcessChange,
-  prepareEntry,
-  onPrepareChange,
-  runHistory,
-}: {
-  workflow: Workflow;
-  fsTypeId: TypeId | undefined;
-  processEntry: ProcessEntry | null;
-  onProcessChange: (entry: ProcessEntry | null) => void;
-  prepareEntry: ProcessEntry | null;
-  onPrepareChange: (entry: ProcessEntry | null) => void;
-  runHistory: ProcessEntry[];
-}) {
-  const { toast } = useToast();
-  const [content, setContent] = useState('');
-  const [isDirty, setIsDirty] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isStarting, setIsStarting] = useState(false);
-  const [isPreparing, setIsPreparing] = useState(false);
-  const [showMcpModal, setShowMcpModal] = useState(false);
-  const [mcpEnabling, setMcpEnabling] = useState(false);
-  // 'source' | 'prepared' | 'pipeline' — which view to show
-  const [viewMode, setViewMode] = useState<'source' | 'prepared' | 'pipeline'>('source');
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Annotation state
-  const [workerSessionId, setWorkerSessionId] = useState<string | null>(null);
-  const [traceHistory, setTraceHistory] = useState<{ sessionId: string; events: ClaudeTraceEvent[] }[]>([]);
-  const [selectedHistoryIdx, setSelectedHistoryIdx] = useState<number | null>(null);
-  const editorContainerRef = useRef<HTMLDivElement>(null);
-  const prevSessionIdRef = useRef<string | null>(null);
-  const prevEventsRef = useRef<ClaudeTraceEvent[]>([]);
-
-  // Collect live workflow_trace events for the current worker session
-  const { events: allSessionEvents } = useClaudeSessionTrace(workerSessionId);
-  const currentTraceEvents = useMemo(
-    () => allSessionEvents.filter(
-      (e) => e.webhook_type === 'hook_op' && e.hook_data?.event_name === 'workflow_trace',
-    ),
-    [allSessionEvents],
-  );
-
-  // When the session ID changes (new run), save previous run's events to history
-  useEffect(() => {
-    if (workerSessionId !== prevSessionIdRef.current) {
-      const prev = prevEventsRef.current;
-      if (prevSessionIdRef.current && prev.length > 0) {
-        setTraceHistory((h) => [...h, { sessionId: prevSessionIdRef.current!, events: prev }]);
-      }
-      prevSessionIdRef.current = workerSessionId;
-      setSelectedHistoryIdx(null);
-    }
-    prevEventsRef.current = currentTraceEvents;
-  }, [workerSessionId, currentTraceEvents]);
-
-  const processState = useProcessState(processEntry?.process ?? null);
-  const prepareState = useProcessState(prepareEntry?.process ?? null);
-  const isRunning = !!processEntry && isProcessActive(processState.status);
-  const isPrepareRunning = !!prepareEntry && isProcessActive(prepareState.status);
-
-  // When the prepare process finishes, verify the file actually landed on disk.
-  // If it didn't, `verifyPrepared` clears prepared_vfs_path and saves the entity.
-  const prevPrepareRunningRef = useRef(false);
-  useEffect(() => {
-    if (prevPrepareRunningRef.current && !isPrepareRunning && prepareEntry && fsTypeId) {
-      void workflow.verifyPrepared(fsTypeId).then((ok) => {
-        if (!ok) toast({ title: 'Prepare did not produce a file — please try again.', variant: 'destructive' });
-      });
-    }
-    prevPrepareRunningRef.current = isPrepareRunning;
-  }, [isPrepareRunning, prepareEntry, fsTypeId, workflow, toast]);
-
-  // Which file path is shown in the editor
-  const sourcePath = workflow.source_vfs_path;
-  const hasPrepared = workflow.isPrepared;
-  const path = viewMode === 'prepared' && hasPrepared ? workflow.preparedPath! : sourcePath;
-
-  // Reset to source view when the workflow changes
-  useEffect(() => {
-    setViewMode('source');
-  }, [workflow.id]);
-
-  const [isPipelinePreparing, setIsPipelinePreparing] = useState(false);
-
-  useEffect(() => {
-    if (!path || !fsTypeId) return;
-    setIsLoading(true);
-    setIsDirty(false);
-    void fsManager
-      .download(fsTypeId, path)
-      .then((text) => {
-        setContent(typeof text === 'string' ? text : '');
-      })
-      .catch((err) => {
-        console.error('[WorkflowEditor] Failed to load file:', err);
-        toast({ title: 'Failed to load workflow file', variant: 'destructive' });
-      })
-      .finally(() => setIsLoading(false));
-  }, [path, fsTypeId, toast]);
-
-  const handleChange = useCallback(
-    (value: string) => {
-      setContent(value);
-      setIsDirty(true);
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(() => {
-        if (!path || !fsTypeId) return;
-        void fsManager
-          .writeFile(fsTypeId, path, value)
-          .catch((err) => console.error('[WorkflowEditor] Auto-save failed:', err));
-      }, 1000);
-    },
-    [path, fsTypeId],
-  );
-
-  const handleSave = useCallback(async () => {
-    if (!path || !fsTypeId || !isDirty) return;
-    setIsSaving(true);
-    try {
-      await fsManager.writeFile(fsTypeId, path, content);
-      setIsDirty(false);
-    } catch (err) {
-      console.error('[WorkflowEditor] Save failed:', err);
-      toast({ title: 'Save failed', variant: 'destructive' });
-    } finally {
-      setIsSaving(false);
-    }
-  }, [path, fsTypeId, isDirty, content, toast]);
-
-  const handleOpenExternal = useCallback(async () => {
-    if (!path || !fsTypeId?.id) {
-      toast({ title: 'No file linked to this workflow', variant: 'destructive' });
-      return;
-    }
-    try {
-      await openExternalFromComputeNode(fsTypeId.id, path);
-    } catch (err) {
-      console.error('[WorkflowEditor] Open external failed:', err);
-      toast({ title: 'Failed to open file', variant: 'destructive' });
-    }
-  }, [path, fsTypeId, toast]);
-
-  const doRun = useCallback(async () => {
-    const systemSkills = dataContext.bootstrapInfo?.desktop_info?.paths?.system_skills;
-    const flowSkillPath = systemSkills ? `/${systemSkills}/flow/SKILL.md` : '~/.flow/system_assets/skills/flow/SKILL.md';
-    const runPath = workflow.preparedPath ?? workflow.source_vfs_path;
-    const instruction = `Run workflow at /${runPath} using the flow skill located at: ${flowSkillPath}`;
-    const workdir = dataContext.project?.fs_storage_mount_path;
-    const { process, shell } = await AgenticProcess.spawn(
-      { permissionMode: 'bypassPermissions', workdir, scope: [workflow.typeId] },
-      { instruction },
-    );
-    onProcessChange({ process, shell: shell! });
-  }, [workflow, onProcessChange]);
-
-  const doPrepare = useCallback(async () => {
-    const systemSkills = dataContext.bootstrapInfo?.desktop_info?.paths?.system_skills;
-    const compileSkillPath = systemSkills
-      ? `/${systemSkills}/compile-workflow/SKILL.md`
-      : '~/.flow/system_assets/skills/compile-workflow/SKILL.md';
-    const derived = Workflow.derivePreparedPath(workflow.source_vfs_path!);
-    const instruction = `Prepare workflow at /${workflow.source_vfs_path}, write prepared steps to /${derived}, using the compile-workflow skill at: ${compileSkillPath}`;
-    const workdir = dataContext.project?.fs_storage_mount_path;
-    const { process, shell } = await AgenticProcess.spawn(
-      { permissionMode: 'bypassPermissions', workdir },
-      { instruction },
-    );
-    // Optimistically persist the prepared path on the entity
-    workflow.prepared_vfs_path = derived;
-    await workflow.save();
-    onPrepareChange({ process, shell: shell! });
-  }, [workflow, onPrepareChange]);
-
-  const handlePrepare = useCallback(async () => {
-    if (!workflow.source_vfs_path) return;
-    setIsPreparing(true);
-    try {
-      const available = await isMcpAvailable('flow-sdk-mcp');
-      if (!available) {
-        setShowMcpModal(true);
-        return;
-      }
-      await doPrepare();
-    } catch (err) {
-      console.error('[WorkflowEditor] Failed to prepare workflow:', err);
-      toast({ title: 'Failed to prepare workflow', variant: 'destructive' });
-    } finally {
-      setIsPreparing(false);
-    }
-  }, [workflow, doPrepare, toast]);
-
-  const handleGeneratePipeline = useCallback(async () => {
-    if (!workflow.source_vfs_path) return;
-    setIsPipelinePreparing(true);
-    try {
-      await workflow.prepare();
-      toast({ title: 'Pipeline generated' });
-    } catch (err) {
-      console.error('[WorkflowEditor] Failed to generate pipeline:', err);
-      toast({ title: 'Failed to generate pipeline', variant: 'destructive' });
-    } finally {
-      setIsPipelinePreparing(false);
-    }
-  }, [workflow, toast]);
-
-  const handleRun = useCallback(async () => {
-    if (!workflow.source_vfs_path) return;
-    setIsStarting(true);
-    try {
-      const available = await isMcpAvailable('flow-sdk-mcp');
-      if (!available) {
-        setShowMcpModal(true);
-        return;
-      }
-      await doRun();
-    } catch (err) {
-      console.error('[WorkflowEditor] Failed to start workflow:', err);
-      toast({ title: 'Failed to start workflow', variant: 'destructive' });
-    } finally {
-      setIsStarting(false);
-    }
-  }, [workflow, doRun, toast]);
-
-  const handleEnableMcp = useCallback(async (scope: 'user' | 'project') => {
-    setMcpEnabling(true);
-    try {
-      await enableMcp('flow-sdk-mcp', scope);
-      setShowMcpModal(false);
-      toast({ title: `flow-sdk-mcp enabled (${scope} scope). Starting workflow…` });
-      await doRun();
-    } catch (err) {
-      console.error('[WorkflowEditor] Failed to enable MCP:', err);
-      toast({ title: 'Failed to enable MCP', variant: 'destructive' });
-    } finally {
-      setMcpEnabling(false);
-    }
-  }, [doRun, toast]);
-
-  const handleClose = useCallback(async () => {
-    const entry = processEntry ?? prepareEntry;
-    if (entry) {
-      try {
-        await entry.process.stop();
-      } catch (err) {
-        console.error('[WorkflowEditor] Failed to stop process:', err);
-      }
-    }
-    onProcessChange(null);
-    onPrepareChange(null);
-  }, [processEntry, prepareEntry, onProcessChange, onPrepareChange]);
-
-  if (!sourcePath) {
-    return (
-      <div className="flex h-full items-center justify-center text-muted-foreground">
-        No file linked to this workflow.
-      </div>
-    );
-  }
-
-  const activeEntry = processEntry ?? prepareEntry;
-
-  return (
-    <div className="flex h-full w-full flex-col overflow-hidden">
-      {/* Action bar */}
-      <div className="flex h-[52px] flex-shrink-0 items-center justify-between border-b bg-muted/50 px-3">
-        <h3 className="truncate text-sm font-medium">{workflow.displayName}</h3>
-        <div className="flex items-center gap-2">
-          {isDirty && (
-            <Button size="sm" onClick={() => void handleSave()} disabled={isSaving}>
-              <Save className={`mr-1 h-4 w-4 ${isSaving ? 'animate-pulse' : ''}`} />
-              {isSaving ? 'Saving...' : 'Save'}
-            </Button>
-          )}
-          {(workflow.isPrepared || workflow.hasPipeline) && (
-            <div className="flex items-center rounded-md border bg-background">
-              <Button
-                variant={viewMode === 'source' ? 'secondary' : 'ghost'}
-                size="sm"
-                className="rounded-r-none border-0 h-8 px-3 text-xs"
-                onClick={() => setViewMode('source')}
-              >
-                Source
-              </Button>
-              {workflow.isPrepared && (
-                <Button
-                  variant={viewMode === 'prepared' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="rounded-none border-x h-8 px-3 text-xs"
-                  onClick={() => setViewMode('prepared')}
-                >
-                  Prepared
-                </Button>
-              )}
-              {workflow.hasPipeline && (
-                <Button
-                  variant={viewMode === 'pipeline' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="rounded-l-none border-0 h-8 px-3 text-xs"
-                  onClick={() => setViewMode('pipeline')}
-                >
-                  Pipeline
-                </Button>
-              )}
-            </div>
-          )}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void handleGeneratePipeline()}
-            disabled={isPipelinePreparing || !workflow.source_vfs_path}
-            title="Generate pipeline view from workflow markdown"
-          >
-            {isPipelinePreparing ? (
-              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-            ) : (
-              <GitFork className="mr-1 h-4 w-4" />
-            )}
-            {isPipelinePreparing ? 'Generating…' : 'Pipeline'}
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => void handlePrepare()}
-            disabled={isPreparing || isRunning || isStarting || !workflow.source_vfs_path}
-            title={!workflow.source_vfs_path ? 'No file linked' : isPrepareRunning ? 'Preparing…' : 'Prepare workflow'}
-          >
-            {isPreparing || isPrepareRunning ? (
-              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-            ) : (
-              <Zap className="mr-1 h-4 w-4" />
-            )}
-            {isPreparing || isPrepareRunning ? 'Preparing…' : 'Prepare'}
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => void handleRun()}
-            disabled={isRunning || isStarting || isPreparing || !workflow.source_vfs_path}
-            title={!workflow.source_vfs_path ? 'No file linked' : isRunning ? 'Workflow running…' : 'Run workflow'}
-          >
-            {isRunning || isStarting ? (
-              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-            ) : (
-              <Play className="mr-1 h-4 w-4" />
-            )}
-            {isRunning ? 'Running…' : isStarting ? 'Starting…' : 'Run'}
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => void handleOpenExternal()} title="Open in external editor">
-            <ExternalLink className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
-      {/* Editor / Pipeline view + Runs list */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
-        {/* Main editor area */}
-        <div className="min-w-0 flex-1 overflow-hidden">
-          {viewMode === 'pipeline' && workflow.hasPipeline && fsTypeId ? (
-            <div className="h-full overflow-hidden">
-              <PipelineViewer pipelinePath={workflow.pipelinePath!} fsTypeId={fsTypeId} />
-            </div>
-          ) : isLoading ? (
-            <div className="flex h-full items-center justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
-          ) : activeEntry ? (
-            <ResizablePanelGroup direction="vertical" className="h-full">
-              <ResizablePanel defaultSize={70} minSize={20}>
-                <div className="flex h-full overflow-hidden">
-                  <div className="min-w-0 flex-1 overflow-auto" ref={editorContainerRef}>
-                    <MilkdownEditor content={content} onChange={handleChange} />
-                  </div>
-                  {processEntry && (
-                    <WorkflowTraceGutter
-                      workerSessionId={workerSessionId}
-                      editorContainerRef={editorContainerRef as React.RefObject<HTMLDivElement>}
-                      displayEvents={
-                        selectedHistoryIdx !== null
-                          ? (traceHistory[selectedHistoryIdx]?.events ?? [])
-                          : currentTraceEvents
-                      }
-                      traceHistory={traceHistory}
-                      selectedHistoryIdx={selectedHistoryIdx}
-                      onSelectHistory={setSelectedHistoryIdx}
-                    />
-                  )}
-                </div>
-              </ResizablePanel>
-              <ResizableHandle withHandle />
-              <ResizablePanel defaultSize={30} minSize={10}>
-                <InteractiveTerminal
-                  sessionId={activeEntry.shell.id}
-                  process={activeEntry.process}
-                  active
-                  embedded
-                  onClose={() => void handleClose()}
-                  onWorkerSessionId={setWorkerSessionId}
-                  className="h-full"
-                />
-              </ResizablePanel>
-            </ResizablePanelGroup>
-          ) : (
-            <div className="h-full overflow-auto">
-              <MilkdownEditor content={content} onChange={handleChange} />
-            </div>
-          )}
-        </div>
-
-        {/* Runs list panel */}
-        {runHistory.length > 0 && (
-          <WorkflowRunsList
-            entries={runHistory}
-            currentEntry={processEntry}
-            computeNodeId={fsTypeId?.id}
-          />
-        )}
-      </div>
-
-      <AlertDialog open={showMcpModal} onOpenChange={setShowMcpModal}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Flow MCP not enabled</AlertDialogTitle>
-            <AlertDialogDescription>
-              The <code>flow-sdk-mcp</code> server is required to run workflows with progress
-              tracing. Enable it to continue.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <Button disabled={mcpEnabling} onClick={() => void handleEnableMcp('project')}>
-              Enable for project
-            </Button>
-            <Button disabled={mcpEnabling} onClick={() => void handleEnableMcp('user')}>
-              Enable for user
-            </Button>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </div>
-  );
-}
-
+/**
+ * Workflows sidebar view. Owns the left list (create / rename / delete) and
+ * delegates the actual workflow editing surface to `WorkflowAssetEditor` —
+ * the same component the wiki mounts when you open a workflow `.md` from the
+ * asset tree. One editor, two mount points.
+ */
 export function WorkflowsPage() {
   const { computeNode } = useAgentContext();
   const { navigation, currentDock } = useDockNavigation();
@@ -514,66 +41,11 @@ export function WorkflowsPage() {
     [selectedId, workflows],
   );
 
-  // Per-workflow process state — survives workflow list navigation
-  const [processMap, setProcessMap] = useState<Map<string, ProcessEntry>>(new Map());
-  const [prepareMap, setPrepareMap] = useState<Map<string, ProcessEntry>>(new Map());
-  const [runHistoryMap, setRunHistoryMap] = useState<Map<string, ProcessEntry[]>>(new Map());
-
-  const setWorkflowProcess = useCallback((workflowId: string, entry: ProcessEntry | null) => {
-    setProcessMap((prev) => {
-      const next = new Map(prev);
-      if (entry) next.set(workflowId, entry);
-      else next.delete(workflowId);
-      return next;
-    });
-    if (entry) {
-      setRunHistoryMap((prev) => {
-        const next = new Map(prev);
-        const hist = next.get(workflowId) ?? [];
-        // Deduplicate: new live entry replaces any existing entry with same process.id
-        const filtered = hist.filter((e) => e.process.id !== entry.process.id);
-        next.set(workflowId, [entry, ...filtered]);
-        return next;
-      });
-    }
-  }, []);
-
-  const setWorkflowPrepare = useCallback((workflowId: string, entry: ProcessEntry | null) => {
-    setPrepareMap((prev) => {
-      const next = new Map(prev);
-      if (entry) next.set(workflowId, entry);
-      else next.delete(workflowId);
-      return next;
-    });
-  }, []);
-
-  // Hydrate from module-level store (set by WorkflowStrip Play button before navigation)
-  useEffect(() => {
-    if (!selectedId) return;
-    const entry = workflowRunStore.get(selectedId);
-    console.log('[WorkflowsPage] selectedId changed:', selectedId, 'store entry:', entry ? 'found' : 'not found');
-    if (entry) {
-      setWorkflowProcess(selectedId, entry);
-      workflowRunStore.delete(selectedId);
-    }
-  }, [selectedId, setWorkflowProcess]);
-
-  // Load child processes from DB when workflow is selected
-  useEffect(() => {
-    if (!selectedWorkflow?.id) return;
-    void AgenticProcess.query(new QueryRequest({ type: AgenticProcess.type, scope: [selectedWorkflow.typeId] }), true)
-      .then((processes) => {
-        const sorted = [...processes].sort(
-          (a, b) => (b.created_date?.getTime() ?? 0) - (a.created_date?.getTime() ?? 0),
-        );
-        setRunHistoryMap((prev) => {
-          const next = new Map(prev);
-          const liveMap = new Map((prev.get(selectedWorkflow.id) ?? []).map((e) => [e.process.id!, e]));
-          next.set(selectedWorkflow.id, sorted.map((p) => liveMap.get(p.id!) ?? { process: p }));
-          return next;
-        });
-      });
-  }, [selectedWorkflow?.id]);
+  const selectedFsRef = useMemo(() => {
+    if (!selectedWorkflow?.asset_ref || !fsTypeId) return null;
+    const path = selectedWorkflow.asset_ref.replace(/^\//, '');
+    return new FSRef(path, fsTypeId);
+  }, [selectedWorkflow?.asset_ref, fsTypeId]);
 
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Workflow | null>(null);
@@ -606,11 +78,6 @@ export function WorkflowsPage() {
       try {
         await workflow.delete();
         await refetch();
-        setProcessMap((prev) => {
-          const next = new Map(prev);
-          next.delete(workflow.id);
-          return next;
-        });
         if (selectedId === workflow.id) {
           navigation.openDock(DockPointer.forWorkflows());
         }
@@ -625,12 +92,12 @@ export function WorkflowsPage() {
 
   const handleOpenExternal = useCallback(
     async (workflow: Workflow) => {
-      if (!workflow.source_vfs_path || !fsTypeId?.id) {
+      if (!workflow.asset_ref || !fsTypeId?.id) {
         toast({ title: 'No file linked to this workflow', variant: 'destructive' });
         return;
       }
       try {
-        await openExternalFromComputeNode(fsTypeId.id, workflow.source_vfs_path);
+        await openExternalFromComputeNode(fsTypeId.id, workflow.asset_ref);
       } catch (err) {
         console.error('[WorkflowsPage] Open external failed:', err);
         toast({ title: 'Failed to open file', variant: 'destructive' });
@@ -702,19 +169,18 @@ export function WorkflowsPage() {
         </ScrollArea>
       </div>
 
-      {/* Right panel: editor */}
+      {/* Right panel: editor — same component the wiki uses */}
       <div className="flex min-w-0 flex-1 flex-col">
-        {selectedWorkflow ? (
-          <WorkflowEditor
+        {selectedWorkflow && selectedFsRef ? (
+          <WorkflowAssetEditor
             key={selectedWorkflow.id}
+            fsRef={selectedFsRef}
             workflow={selectedWorkflow}
-            fsTypeId={fsTypeId}
-            processEntry={processMap.get(selectedWorkflow.id) ?? null}
-            onProcessChange={(entry) => setWorkflowProcess(selectedWorkflow.id, entry)}
-            prepareEntry={prepareMap.get(selectedWorkflow.id) ?? null}
-            onPrepareChange={(entry) => setWorkflowPrepare(selectedWorkflow.id, entry)}
-            runHistory={runHistoryMap.get(selectedWorkflow.id) ?? []}
           />
+        ) : selectedWorkflow ? (
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            No file linked to this workflow.
+          </div>
         ) : (
           <div className="flex h-full items-center justify-center text-muted-foreground">
             Select a workflow to edit

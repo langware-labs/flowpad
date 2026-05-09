@@ -16,6 +16,7 @@ class RecordType(StrEnum):
     BOOKMARK = "bookmark"
     ANNOTATION = "annotation"
     COMMENT = "comment"
+    APP_SECRET = "app_secret"
 
     # Claude Code record types
     CLAUDE_ROOT = "claude_root"
@@ -79,6 +80,14 @@ class RecordType(StrEnum):
     # Claude API usage / rate limit record
     CLAUDE_USAGE = "claude_usage"
 
+    # Codex CLI record types
+    CODEX_SESSION = "codex_session"
+    # DEPRECATED 2026-05-09: Codex projects are now stored as RecordType.PROJECT
+    # with `codex_project=True` provenance flag. Kept here for backward
+    # compatibility of any external schema consumers; no class is registered
+    # against this type. To be removed in Phase 7 of the project consolidation.
+    CODEX_PROJECT = "codex_project"
+
     # CLI log record types
     CLI_LOG = "cli_log"
     CLI_LOG_SETTINGS = "cli_log_settings"
@@ -102,10 +111,20 @@ class RecordType(StrEnum):
     # Workflow record type
     WORKFLOW = "workflow"
 
-    ASSET = "asset"
-    DOCS = "docs"
+    MARKDOWN = "markdown"
     SPEC = "spec"
     CONVERSATION = "conversation"
+
+    COLLABORATION_ROOM = "collaboration_room"
+
+    USER_HOME_FOLDER = "user_home_folder"
+    REAL_PROJECT_CWD = "real_project_cwd"
+    SYSTEM_ROOT = "system_root"
+    CWD_ROOT = "cwd_root"
+
+    # Transient scaffold emitted by project_folder_walker_fn — fan-out only,
+    # never persisted as a terminal record (no record_cls registered).
+    FOLDER = "folder"
 
 
 class SkillitRecordType(StrEnum):

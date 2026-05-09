@@ -136,7 +136,7 @@ class ClaudeErrorRecord(RecordError):
     @classmethod
     def get_by_fingerprint(cls, fingerprint: str) -> "ClaudeErrorRecord | None":
         """Look up an error record by its fingerprint string."""
-        return cls.discover_one(cls._rec_id_for_fingerprint(fingerprint))
+        return cls.get(cls._rec_id_for_fingerprint(fingerprint))
 
     def __init__(self, **kwargs: Any):
         kwargs.setdefault("type", RecordType.CLAUDE_ERROR)

@@ -223,7 +223,8 @@ async def _attach_via_ws(ws, cn_id: str, shell_id: str, since_seq: int = 0) -> d
 # Test
 # ---------------------------------------------------------------------------
 
-@pytest.mark.timeout(120)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_shell_pty_recover(pty_recover_server):
     """
     A. Reattach: WS2 reattaches to a running PTY started by WS1.

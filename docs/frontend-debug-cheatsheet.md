@@ -99,25 +99,30 @@ shell.sendPtyInput('<sessionId>', 'ls -la\n')
 
 ---
 
-## 4 — Claude session bugs
+## 4 — Agentic process trace / prompt bugs
 
-*"Session not starting", "fork not working", "kill not firing"*
+*"TraceGutter empty", "prompt index empty", "click-to-prompt does not scroll"*
 
 ```js
-claudeSessionManager.startSession(agentId, processId, workerSessionId)
-claudeSessionManager.resumeSession(sessionId)
-claudeSessionManager.forkSession(sessionId)
-claudeSessionManager.restartSession(sessionId)
-claudeSessionManager.killSession(sessionId)
+// Current process identity
+context.agenticProcess?.id
+context.agenticProcess?.session_id
+
+// Left gutter source: per-process FlowData stream
+context.agenticProcess?.flowDataStream?.items
+await context.agenticProcess?.loadHistory({ force: true })
+
+// Prompt index source: transcript/prompts action
+await context.agenticProcess?.getPrompts()
 ```
 
-**Tip:** the `workerSessionId` is what the TraceGutter and sniffer filter on. If trace events aren't appearing, verify the `workerSessionId` passed to `useTraceGutter` matches an active session in `claudeSessionManager`.
+**Tip:** TraceGutter reads `AgenticProcess.flowDataStream`; prompt index reads the special `transcript/prompts` action. Prompt annotations only provide row anchors for click-to-scroll.
 
 ---
 
 ## 5 — Hook / sniffer bugs
 
-*"Sniffer not capturing", "hook events missing", "TraceGutter empty"*
+*"Sniffer not capturing", "hook events missing", "global sniffer panel empty"*
 
 ```js
 // Is the sniffer entity registered?
@@ -132,7 +137,7 @@ context.snifferHook            // SnifferHook instance, or null
 context.activeShellId          // worker session id
 ```
 
-**Tip:** `sniffer` is only set when `useHooksSniffer` mounts (i.e. a terminal panel is active). On the home page it will be `null`. Navigate to a terminal dock route before investigating sniffer bugs.
+**Tip:** the global sniffer panel and a terminal's TraceGutter are separate consumers. Hook events are broadcast to the global `@sniffer` hook and also routed to the matching `AgenticProcess.flowDataStream` when execution scope/session metadata identifies the process.
 
 ---
 

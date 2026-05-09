@@ -33,6 +33,7 @@ from typing import TYPE_CHECKING, Any, ClassVar, Iterator
 
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.record_ref import RecordRef
+from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.fs_store.source_file_record_list import (
     _escape_json_pointer,
     _unescape_json_pointer,
@@ -152,23 +153,52 @@ class ClaudeHookRecord(Record):
         return rec
 
     @classmethod
-    def discovery_items_count(cls, limit: int | None = None) -> int:
-        count = len(ClaudeHookRecordList())
-        return min(count, limit) if limit is not None else count
+    def getId(cls, ref) -> str:
+        """File-level identifier for skip-fresh.
+
+        CLAUDE_HOOK is 1:N — one settings.json produces many hook records,
+        each with its own `_stable_hook_hash(source, event, matcher, command)`
+        id set by `from_fsref`. At the asset level, the meaningful skip-fresh
+        key is the source file: if the file hasn't changed, none of the hook
+        records derived from it have changed either. This method returns
+        that file-level identifier; individual record ids stay per-hook."""
+        import uuid
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, f"hook_source:{ref._path.resolve()}"))
 
     @classmethod
-    def discover_iter(cls, limit: int | None = None, scope: "Scope | None" = None, **kwargs: Any) -> Iterator[ClaudeHookRecord]:
-        rl = ClaudeHookRecordList(search_paths=kwargs.get("search_paths"))
-        count = 0
-        for rec in rl:
-            if scope is not None:
-                scope_val = scope.value if hasattr(scope, "value") else str(scope)
-                if _scope_str(rec.scope) != scope_val:
-                    continue
-            yield rec
-            count += 1
-            if limit is not None and count >= limit:
-                return
+    async def from_fsref(cls, ref) -> list["ClaudeHookRecord"]:
+        """Indexer entry point — parse one settings-like file into N hook records.
+
+        Dispatch on file shape:
+          - installed_plugins.json: registry only, no hooks emitted (plugin
+            cache `hooks.json` files are emitted separately by the walker).
+          - plugin cache `hooks.json` (under ~/.claude/plugins/cache/...): apply
+            $CLAUDE_PLUGIN_ROOT resolution and recompute stable id.
+          - settings.json / settings.local.json / .claude.json: standard parse.
+        """
+        path = ref._path
+        scope = ref.scope or "user"
+
+        if path.name == "installed_plugins.json":
+            return []
+
+        # Plugin-cache hooks.json: ~/.claude/plugins/cache/<vendor>/<plugin>/<ver>/hooks/hooks.json
+        if path.name == "hooks.json" and "plugins" in path.parts and "cache" in path.parts:
+            install_path = str(path.parent.parent)  # `hooks/` -> install dir
+            plugin_name = path.parent.parent.parent.name if len(path.parents) >= 4 else ""
+            records = list(_parse_hooks_from_file(path, "plugin"))
+            for rec in records:
+                rec.command = _resolve_plugin_root(rec.command, install_path)
+                rec.plugin_name = plugin_name
+                rec.id = _stable_hook_hash(
+                    str(path),
+                    _escape_json_pointer(rec.event_type),
+                    rec.matcher,
+                    rec.command,
+                )
+            return records
+
+        return list(_parse_hooks_from_file(path, scope))
 
     @classmethod
     def discover(
@@ -192,7 +222,7 @@ class ClaudeHookRecord(Record):
         return records
 
     @classmethod
-    def discover_one(
+    def get(
         cls,
         uid: str,
         scope: Scope | None = None,
@@ -450,7 +480,7 @@ def _parse_hooks_from_plugins() -> list[ClaudeHookRecord]:
     Reads the plugin registry at ``~/.claude/plugins/installed_plugins.json``
     and scans each plugin's ``hooks/hooks.json`` file.
     """
-    claude_home = Path.home() / ".claude"
+    claude_home = get_instance_settings().claude_home
     registry_path = claude_home / "plugins" / "installed_plugins.json"
     if not registry_path.exists():
         return []
@@ -584,8 +614,8 @@ def _default_search_paths() -> list[tuple[Path, str]]:
 
     Mirrors the paths used by config_collector.get_all_hooks().
     """
-    home = Path.home()
-    claude_home = home / ".claude"
+    settings = get_instance_settings()
+    claude_home = settings.claude_home
     paths: list[tuple[Path, str]] = []
 
     # User-level
@@ -657,7 +687,7 @@ class ClaudeHookRecordList:
             records.extend(_parse_hooks_from_plugins())
 
             # Legacy ~/.claude.json
-            legacy_path = Path.home() / ".claude.json"
+            legacy_path = get_instance_settings().user_home / ".claude.json"
             if legacy_path.exists():
                 resolved = str(legacy_path.resolve())
                 if resolved not in seen_files:

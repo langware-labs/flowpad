@@ -18,6 +18,7 @@ request body before dispatching, which makes a second request.json() call hang
 
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional, Tuple
 
 from pydantic import ValidationError
@@ -34,6 +35,12 @@ from flow_sdk.core.flow.models.webhook_flow_data import (
     SkillNotification,
     WebhookPayload,
     WebhookType,
+)
+from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
+    FlowData,
+    FlowDataSource,
+    FlowDataType,
+    FlowElementType,
 )
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
@@ -72,13 +79,15 @@ async def _route_to_source_process(
     except Exception:
         return
 
-    now_iso = datetime.now(timezone.utc).isoformat()
-    flow_msg = {
-        "element_type": "webhook",
-        "data_type": "object",
-        "flow_value": payload_data,
-        "attributes": {"t": now_iso},
-    }
+    # Translate the webhook payload to a canonical FlowData via the shared
+    # dispatcher (agent_hook → convert_hook_event, hook_op → convert_hook_op_event).
+    # The renderer reads attributes (`hook-op-event-name`, `workflow-label`,
+    # `hook-message`, …) instead of digging into payload_data itself.
+    from flow_sdk.app.actions._webhook_to_flowdata import convert_webhook_event
+    fds = convert_webhook_event(payload_data)
+    if not fds:
+        return
+    flow_msg = fds[0].model_dump(mode="python")
 
     # Route via execution_scope (hook_op events)
     if execution_scope:
@@ -154,21 +163,23 @@ async def _broadcast_to_sniffer(
     if skip_hook_id and sniffer_hook.id == skip_hook_id:
         return
 
-    attrs = {
-        "element-type": element_type or "webhook",
-        "data-type": data_type or "object",
-        "webhook_type": webhook_type,
-        "t": datetime.now(timezone.utc).isoformat(),
-    }
+    # Translate via the shared dispatcher so the global sniffer view receives
+    # the same canonical FlowData shape as the per-process trace gutter.
+    from flow_sdk.app.actions._webhook_to_flowdata import convert_webhook_event
+    fds = convert_webhook_event(payload_data)
+    if not fds:
+        return
+    fd = fds[0]
+    if element_type:
+        fd.attributes["element-type"] = element_type
+    if data_type:
+        fd.attributes["data-type"] = data_type
     if warning:
-        attrs["warning"] = warning
+        fd.attributes["warning"] = warning
 
     try:
         await sniffer_hook.emit_flow_data(
-            {
-                "flow_value": payload_data,
-                "attributes": attrs,
-            }
+            {"flow_value": fd.flow_value, "attributes": fd.attributes}
         )
     except Exception as e:
         logger.debug(f"Sniffer broadcast failed (non-critical): {e}")
@@ -254,7 +265,16 @@ def set_plan_auto_approve(agentic_process_id: str | None) -> None:
 
 
 async def _create_plan_annotation(tool_input: dict, session_id: str) -> None:
-    """Create an Annotation entity for an ExitPlanMode event. Non-critical."""
+    """On ``PreToolUse:ExitPlanMode``, persist ``plan_path`` on the linked
+    AgenticProcess and create a ``plan:`` Annotation for the gutter.
+
+    Path resolution prefers ``tool_input["planFilePath"]`` (emitted directly
+    by Claude Code on every ExitPlanMode call) and falls back to the older
+    Write/Edit cache for older Claude versions. The save on AgenticProcess
+    broadcasts an entity-update over WS, which is what flips the
+    "Open Plan" button on in the live UI without polling.
+    Non-critical: errors are logged and swallowed.
+    """
     try:
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.annotation import Annotation
@@ -262,18 +282,43 @@ async def _create_plan_annotation(tool_input: dict, session_id: str) -> None:
 
         plan_text = tool_input.get("plan", "")
 
-        # Resolve plan file from last Write / Edit path if it's a .claude/plans/*.md
-        plan_file_path = ""
-        last_file_op = _last_file_op_path_by_session.pop(session_id, None)
-        last_file_op_str = str(last_file_op) if last_file_op else ""
-        if last_file_op_str and ".claude/plans/" in last_file_op_str and last_file_op_str.endswith(".md"):
-            plan_file_path = last_file_op_str
+        # Primary: planFilePath emitted directly by Claude Code (newer
+        # versions). Fallback: cached Write/Edit path under .claude/plans/.
+        plan_file_path = str(tool_input.get("planFilePath") or "")
+        if not plan_file_path:
+            last_file_op = _last_file_op_path_by_session.pop(session_id, None)
+            last_file_op_str = str(last_file_op) if last_file_op else ""
+            if last_file_op_str and ".claude/plans/" in last_file_op_str and last_file_op_str.endswith(".md"):
+                plan_file_path = last_file_op_str
+        else:
+            # Drain the cache to avoid cross-session drift.
+            _last_file_op_path_by_session.pop(session_id, None)
 
         now_iso = datetime.now(timezone.utc).isoformat()
         agentic_processes = await AgenticProcess.get_all(
             entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id))
         )
-        agentic_process_id = agentic_processes[0].id if agentic_processes else ""
+        agentic_process = agentic_processes[0] if agentic_processes else None
+        agentic_process_id = agentic_process.id if agentic_process else ""
+
+        # Persist plan_path on the entity — this is the single field the UI
+        # button reads. The save() WS broadcast lights up the "Open Plan"
+        # button in real time. Gated on file existence so the invariant
+        # ``hasPlan = !!plan_path`` is upheld by every writer.
+        if (
+            agentic_process
+            and plan_file_path
+            and Path(plan_file_path).exists()
+            and agentic_process.plan_path != plan_file_path
+        ):
+            agentic_process.plan_path = plan_file_path
+            try:
+                await agentic_process.save()
+            except Exception:
+                logger.debug(
+                    "_create_plan_annotation: agentic_process.save() failed for %s",
+                    agentic_process.id, exc_info=True,
+                )
 
         content = plan_text[:50] if plan_text else "Plan created"
 
@@ -363,7 +408,10 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
     # Use the refactored handle_webhook method
     result = await agent_hook.handle_webhook(webhook_data)
 
-    # Emit FlowData for live sniffer/watchers
+    # Emit FlowData for live sniffer/watchers. Route through the canonical
+    # ``convert_hook_event`` translator so the global sniffer view receives
+    # exactly the same shape as the per-process fan-out below — both end up
+    # as ``FlowData(element-type=status, source=sniffer, attributes={...})``.
     payload_data = {
         "webhook_type": "agent_hook",
         "agent_hook_id": agent_hook_id,
@@ -373,22 +421,45 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
         "hook_file_path": webhook_data.hook_file_path,
     }
 
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude.hook_to_flowdata import (
+        convert_hook_event,
+    )
+    converted_fds = convert_hook_event(payload_data)
+    for fd in converted_fds:
+        try:
+            await agent_hook.emit_flow_data(
+                {"flow_value": fd.flow_value, "attributes": fd.attributes}
+            )
+        except Exception as e:
+            logger.debug(f"AgentHook emit_flow_data failed (non-critical): {e}")
+
+    # Per-process sniffer fan-out: ingest the same converted FlowData into
+    # the matching AgenticProcess.flowDataStream so the InteractiveTerminal
+    # trace gutter can render it alongside live completion + history.
     try:
-        await agent_hook.emit_flow_data(
-            {
-                "flow_value": payload_data,
-                "attributes": {
-                    "element-type": "webhook",
-                    "data-type": "object",
-                    "webhook_type": "agent_hook",
-                    "hook_event_name": hook_event_name or "",
-                    "agent_hook_id": agent_hook_id,
-                    "t": datetime.now(timezone.utc).isoformat(),
-                },
-            }
-        )
-    except Exception as e:
-        logger.debug(f"AgentHook emit_flow_data failed (non-critical): {e}")
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
+
+        target_process = None
+        if agentic_process_id:
+            target_process = await AgenticProcess.get_by_id(agentic_process_id)
+        if target_process is None and hook_session_id:
+            processes = await AgenticProcess.get_all(
+                entities_filter=QueryFilter(match=ExpressionNode(session_id=hook_session_id))
+            )
+            if processes:
+                target_process = processes[0]
+
+        if target_process is not None:
+            for fd in converted_fds:
+                try:
+                    await target_process.emit_flow_data(
+                        {"flow_value": fd.flow_value, "attributes": fd.attributes}
+                    )
+                except Exception as exc:
+                    logger.debug("AgenticProcess sniffer emit_flow_data failed (non-critical): %s", exc)
+    except Exception as exc:
+        logger.debug("Sniffer fan-out skipped (non-critical): %s", exc)
 
     return ApiSuccessResponse(data=result.model_dump())
 
@@ -588,6 +659,15 @@ async def _reflect_entity(
 
     try:
         if operation == SyncOperation.CREATE:
+            existing_by_id = await entity_cls.get_one({"id": external_id})
+            if existing_by_id:
+                logger.debug(
+                    f"[_reflect_entity] {record_type} id={external_id} already exists locally, skipping reflection"
+                )
+                return ApiSuccessResponse(
+                    data={f"{record_type}_id": existing_by_id.id, "action": "noop"}
+                ), None
+
             existing = await entity_cls.get_by_uname(external_id)
             if existing:
                 warning = f"CREATE with existing uname={external_id}, treating as UPDATE"
@@ -626,9 +706,11 @@ async def _reflect_entity(
             return ApiSuccessResponse(data={f"{record_type}_id": entity.id, "action": "created"}), None
 
         elif operation == SyncOperation.UPDATE:
-            existing = await entity_cls.get_by_uname(external_id)
+            existing = await entity_cls.get_one({"id": external_id})
             if not existing:
-                warning = f"UPDATE for non-existing uname={external_id}"
+                existing = await entity_cls.get_by_uname(external_id)
+            if not existing:
+                warning = f"UPDATE for non-existing id/uname={external_id}"
                 logger.warning(f"[_reflect_entity] {warning}")
                 return None, warning
 

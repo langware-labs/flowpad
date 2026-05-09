@@ -5,19 +5,18 @@ from flow_sdk.fs_store.schema_registry import SchemaRegistry as SchemaRegistry  
 from .agent_record import AgentRecord as AgentRecord
 from .agentic_process_record import AgenticProcessRecord as AgenticProcess  # noqa: F401 — backward compat alias
 from .agentic_process_record import AgenticProcessRecord as AgenticProcessRecord
-from .agent_status import AgenticProcessStatus as AgenticProcessStatus
-from .agentic_process_lifecycle import AgenticProcessLifecycleStatus as AgenticProcessLifecycleStatus
-from .agentic_process_lifecycle import is_active as is_process_active
+from .agent_status import WorkerStatus as WorkerStatus
+from .agentic_process_lifecycle import ProcessStatus as ProcessStatus
+from .agentic_process_lifecycle import is_running as is_process_running
 from .agentic_process_lifecycle import is_startable as is_process_startable
-from .agent_status import is_running as is_running
-from .agent_status import is_busy as is_busy
-from .agent_status import is_idle as is_idle
-from .agent_status import is_terminal as is_terminal
+from .agent_status import is_running as is_worker_running
+from .agent_status import is_busy as is_worker_busy
+from .agent_status import is_idle as is_worker_idle
+from .agent_status import is_terminal as is_worker_terminal
 from .artifact import Artifact as Artifact
 from .markdown_record import MarkdownRecord as MarkdownRecord
-from . import asset_record as _asset_record  # noqa: F401 — trigger "asset" type_registry
-from .markdown_record import MarkdownRecord as AssetRecord  # noqa: F401 — backward compat alias
 from .annotation_record import AnnotationRecord as AnnotationRecord
+from .app_secret import AppSecretRecord as AppSecretRecord
 from .bookmark import BookmarkRecord as BookmarkRecord
 from .comment_record import CommentRecord as CommentRecord
 from .claude import (  # noqa: F401 — trigger type_registry auto-registration
@@ -40,6 +39,10 @@ from .claude import (  # noqa: F401 — trigger type_registry auto-registration
     ErrorCategory,
     ErrorStatus,
 )
+from .codex import (  # noqa: F401 — trigger type_registry auto-registration
+    CodexProjectFsRecord as CodexProjectFsRecord,
+    CodexSessionRecord as CodexSessionRecord,
+)
 from .environment_record import EnvironmentRecord as EnvironmentRecord
 from .record_error import RecordError as RecordError
 from .relationship import RelationshipRecord as RelationshipRecord
@@ -55,6 +58,8 @@ from .session_analysis import SessionAnalysis as SessionAnalysis
 from .session_classification import SessionClassification as SessionClassification
 from .shell_record import ShellRecord as ShellRecord
 from .shell_record import ShellStatus as ShellStatus
+from .collaboration_room_record import CollaborationRoomRecord as CollaborationRoomRecord
+from .collaboration_room_record import CollaborationRoomStatus as CollaborationRoomStatus
 from .skill_record import SkillRecord as SkillRecord
 from .spec_record import SpecRecord as SpecRecord
 from .task import TaskResource as TaskResource

@@ -6,7 +6,9 @@ Handles WebSocket connections and message routing following the original FlowPad
 import contextvars
 import json
 import logging
-from typing import Dict
+import time
+from dataclasses import dataclass, field
+from typing import Dict, Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -23,8 +25,29 @@ from .ws_rest import handle_rest_message
 
 websocket_router = APIRouter()
 
-# Store active connections
-_active_connections: Dict[str, WebSocket] = {}
+
+@dataclass
+class ConnectionInfo:
+    """Per-connection state: socket plus tab presence (visible/focused) and
+    the monotonic timestamp of the last presence update, used to tie-break
+    when selecting a single 'active' tab.
+
+    ``browser_context`` mirrors the UI's per-tab data-context (current
+    project / process / workspace TypeIds, etc). The UI sends a
+    ``browser_context`` WS message on every change; agents read it via
+    ``flow context list`` to drive "navigate to current X" style actions
+    without asking the user for the id.
+    """
+
+    ws: WebSocket
+    visible: bool = True
+    focused: bool = True
+    last_presence_at: float = field(default_factory=time.monotonic)
+    browser_context: dict = field(default_factory=dict)
+
+
+# Store active connections (id -> ConnectionInfo).
+_active_connections: Dict[str, ConnectionInfo] = {}
 
 
 class MinihubConnectionHandler:
@@ -43,9 +66,9 @@ class MinihubConnectionHandler:
 
 def _minihub_connection_lookup(connection_id: str):
     """Lookup a connection by ID and return a ConnectionHandler-compatible wrapper."""
-    ws = _active_connections.get(connection_id)
-    if ws:
-        return MinihubConnectionHandler(ws)
+    info = _active_connections.get(connection_id)
+    if info:
+        return MinihubConnectionHandler(info.ws)
     return None
 
 
@@ -56,8 +79,80 @@ logger = logging.getLogger(__name__)
 
 
 def get_active_connections() -> Dict[str, WebSocket]:
-    """Get dict of all active connections."""
+    """Get dict of all active connections (id -> WebSocket).
+
+    Returns a fresh dict so callers can iterate without worrying about
+    mutation during connect/disconnect. The underlying state lives in
+    `_active_connections` as `ConnectionInfo` records.
+    """
+    return {cid: info.ws for cid, info in _active_connections.items()}
+
+
+def get_connection_infos() -> Dict[str, ConnectionInfo]:
+    """Return the live connection-info map (including visibility/focus state).
+
+    Returns the live dict, not a copy — intended for internal server code
+    that needs presence state. External callers should prefer
+    ``get_active_connections()``.
+    """
     return _active_connections
+
+
+def get_active_connection_info() -> Optional[tuple[str, "ConnectionInfo"]]:
+    """Same selection rule as ``get_active_connection`` but returns the full
+    ``ConnectionInfo`` so callers can read presence + browser_context.
+    """
+    if not _active_connections:
+        return None
+    items = list(_active_connections.items())
+
+    def _rank(kv):
+        _cid, info = kv
+        return (info.last_presence_at, _cid)
+
+    visible_focused = [kv for kv in items if kv[1].visible and kv[1].focused]
+    if visible_focused:
+        return max(visible_focused, key=_rank)
+    visible = [kv for kv in items if kv[1].visible]
+    if visible:
+        return max(visible, key=_rank)
+    return max(items, key=_rank)
+
+
+def get_active_connection() -> Optional[tuple[str, WebSocket]]:
+    """Resolve the single 'active' connection used for agent-directed actions.
+
+    Resolution order (first match wins):
+      1. Connections where both ``visible`` and ``focused`` are true,
+         newest ``last_presence_at``.
+      2. Connections where ``visible`` is true, newest ``last_presence_at``.
+      3. Any connection, newest ``last_presence_at``.
+    Ties on ``last_presence_at`` are broken by ``connection_id`` (lexicographic).
+    Returns ``None`` only when no connections are open.
+    """
+    if not _active_connections:
+        return None
+
+    items = list(_active_connections.items())
+
+    def _rank(kv):
+        # max() picks the largest tuple; connection_id as secondary key
+        # is a deterministic tie-break.
+        _cid, info = kv
+        return (info.last_presence_at, _cid)
+
+    visible_focused = [kv for kv in items if kv[1].visible and kv[1].focused]
+    if visible_focused:
+        cid, info = max(visible_focused, key=_rank)
+        return cid, info.ws
+
+    visible = [kv for kv in items if kv[1].visible]
+    if visible:
+        cid, info = max(visible, key=_rank)
+        return cid, info.ws
+
+    cid, info = max(items, key=_rank)
+    return cid, info.ws
 
 
 async def send_personal_message(message: str, websocket: WebSocket):
@@ -74,9 +169,9 @@ async def broadcast(message: str):
         return
 
     disconnected = []
-    for connection_id, websocket in _active_connections.items():
+    for connection_id, info in _active_connections.items():
         try:
-            await websocket.send_text(message)
+            await info.ws.send_text(message)
         except Exception as e:
             logger.error(f"Error broadcasting to {connection_id}: {e}")
             disconnected.append(connection_id)
@@ -223,6 +318,33 @@ async def handle_json_message(connection_id: str, websocket: WebSocket, message_
             }
             await broadcast(json.dumps(broadcast_msg))
 
+        elif message_type == "browser_context":
+            # Per-tab data-context snapshot from the UI (current project /
+            # process / workspace TypeIds, etc.). Fire-and-forget like
+            # ``presence`` — the client never awaits a reply. Agents read
+            # this via ``flow context list``.
+            info = _active_connections.get(connection_id)
+            if info is not None:
+                ctx = message_data.get("context")
+                if isinstance(ctx, dict):
+                    info.browser_context = ctx
+
+        elif message_type == "presence":
+            # Per-tab visibility/focus update from the UI. Fire-and-forget:
+            # the client sends via raw WebSocket.send and never awaits a reply,
+            # so emitting a response_msg here would only produce "unknown
+            # request" warnings on the client. Tests that need a sync barrier
+            # use a follow-up `ping` (which echoes a `pong`).
+            info = _active_connections.get(connection_id)
+            if info is not None:
+                visible = message_data.get("visible")
+                focused = message_data.get("focused")
+                if isinstance(visible, bool):
+                    info.visible = visible
+                if isinstance(focused, bool):
+                    info.focused = focused
+                info.last_presence_at = time.monotonic()
+
         elif message_type == "hangup":
             # Client requests disconnect
             logger.info(f"Client {connection_id} requested hangup")
@@ -329,7 +451,7 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
         logger.error(f"Failed to accept WebSocket for connection_id={connection_id}: {e}")
         return
 
-    _active_connections[connection_id] = websocket
+    _active_connections[connection_id] = ConnectionInfo(ws=websocket)
     add_registry_connection(connection_id, websocket)
 
     logger.info(f"Client {connection_id} connected. Total connections: {len(_active_connections)}")

@@ -170,11 +170,29 @@ cd ui && VITE_PORT=4097 npx playwright test \
 
 ## Browser Step Execution
 
-For each browser step, map the leading verb to an action:
+### Per-test tab — one tab per task, lifecycle-bound
+
+Each qa-tester teammate allocates a **brand-new browser tab for every task it claims**, and keeps that tab open for the full task lifecycle (Run → Debug → Fix → re-Validate). This prevents two failure modes seen in prior runs:
+- **Cross-tester hijack** — multiple testers driving the same Chrome page race on `browser_snapshot` / `browser_navigate` and corrupt each other's state.
+- **Cross-test contamination** — leftover DOM/URL/state from a prior test on the same tab confuses the next test's setup.
+
+#### Protocol
+
+1. **Claim a task.** Call `TaskList`; set yourself as `owner` on the lowest-id available `Run:`/`Validate:` task; mark `in_progress`.
+2. **Allocate a fresh tab.** Call `mcp__debugMcp__browser_tabs(action="new")` (or chrome's `tabs_create_mcp`). Record the returned id as `MY_TASK_TAB_ID`. This tab is bound to THIS task only.
+3. **Use only this tab.** Every `browser_*` call inside this task must operate on `MY_TASK_TAB_ID`. If a call would otherwise default to the active Chrome tab, first call `browser_tabs(action="select", index=MY_TASK_TAB_ID)`.
+4. **Hold across iterations.** If the test fails and the manager creates a `Debug:` then a `Fix:` then a re-`Validate:` task for the SAME scenario, do not close `MY_TASK_TAB_ID`. Use the same tab across the iterations so debugger/fixer/validator share the same DOM state. The manager will route the re-validate task back to you (or send the tab id with the task).
+5. **Close on completion.** Once the task is `completed` (or skip is challenged + confirmed), close `MY_TASK_TAB_ID` via `browser_tabs(action="close", index=MY_TASK_TAB_ID)`. Then loop back to step 1 for the next task.
+6. **Never reuse another tester's tab.** Even if it looks idle. If you cannot create a fresh tab (Chrome tab cap, MCP error), `SendMessage` the manager and wait — do not pick a stranger's tab.
+7. **On shutdown_request,** close any task tabs you still have open before exiting.
+
+If a step description says "open a new tab" as part of the user flow under test, that is a *scenario tab* — separate from your `MY_TASK_TAB_ID`. Track it locally; close it before completing the task so only `MY_TASK_TAB_ID` remains for that task.
+
+For each browser step, map the leading verb to an action (all calls below operate on `MY_TASK_TAB_ID`):
 
 ### navigate
 ```
-browser_navigate(url)
+browser_navigate(url)   # on MY_TASK_TAB_ID
 ```
 
 ### click

@@ -6,7 +6,7 @@
  * Supports bulk selection mode for acting on multiple tasks at once.
  */
 
-import { Archive, CheckSquare, Plus, RotateCcw, Search, Sparkles, Trash2, X, Zap } from 'lucide-react';
+import { Archive, CheckSquare, HelpCircle, Plus, RotateCcw, Search, Sparkles, Trash2, X, Zap } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SkillItem, Task, Trigger } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -21,6 +21,7 @@ import { TaskCard } from './TaskCard';
 import { TaskDetailPanel } from './TaskDetailPanel';
 import { SharedTaskView } from './SharedTaskView';
 import { BulkReminderButton } from './BulkReminderButton';
+import { AskHelpDialog } from './AskHelpDialog';
 import { BULK_SELECT_MIN_TASKS, isTaskActive, isTaskArchived, isTaskPending, type TaskTab } from './constants';
 import './TaskBar.css';
 
@@ -39,6 +40,9 @@ export function TaskBar() {
   const [confirmBulkRemove, setConfirmBulkRemove] = useState(false);
   const [confirmBulkReminder, setConfirmBulkReminder] = useState<Date | null>(null);
 
+  // Scenario B: ask-for-help dialog
+  const [askHelpOpen, setAskHelpOpen] = useState(false);
+
   const isOnArchivedTab = selectedTab === 'archived';
 
   // Shared task data + mutations (sniffer watching is handled inside useProjectTasks)
@@ -55,7 +59,8 @@ export function TaskBar() {
     // pointer is a task ID like "620ffea5-..." or a typeId like "task-620ffea5-..."
     const rawId = pointer.startsWith('task-') ? pointer.slice(5) : pointer;
     const found = tasks.find((t) => t.id === rawId || t.id === pointer);
-    console.log('[TaskBar] pointer expand:', { rawId, found_spec_id: found?.spec_id, found_id: found?.id, isSharedTask: !!(found?.spec_id) });
+    const foundSpecId = found?.firstContextOfType?.('spec')?.id;
+    console.log('[TaskBar] pointer expand:', { rawId, found_spec_id: foundSpecId, found_id: found?.id, isSharedTask: !!foundSpecId });
     if (found && expandedTask?.id !== found.id) {
       setExpandedTask(found);
     }
@@ -192,8 +197,9 @@ export function TaskBar() {
     [getSelectedTasks, exitBulkMode, bulkReminder],
   );
 
-  const isSharedTask = !!(expandedTask?.spec_id);
-  console.log('[TaskBar] render:', { expandedTask_id: expandedTask?.id, spec_id: expandedTask?.spec_id, isSharedTask });
+  const expandedSpecId = expandedTask?.firstContextOfType?.('spec')?.id;
+  const isSharedTask = !!expandedSpecId;
+  console.log('[TaskBar] render:', { expandedTask_id: expandedTask?.id, spec_id: expandedSpecId, isSharedTask });
   const isSlid = expandedTask != null && !isSharedTask;
   const showBulkSelectButton = filteredTasks.length >= BULK_SELECT_MIN_TASKS;
   const removeLabel = isOnArchivedTab ? 'Delete' : 'Archive';
@@ -211,13 +217,22 @@ export function TaskBar() {
             </span>
           )}
         </div>
-        <button
-          onClick={handleCreate}
-          className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          title="New task"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={() => setAskHelpOpen(true)}
+            className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title="Ask someone for help"
+          >
+            <HelpCircle className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={handleCreate}
+            className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title="New task"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Bulk toolbar OR tab section */}
@@ -330,6 +345,8 @@ export function TaskBar() {
           if (confirmBulkReminder) void executeBulkReminder(confirmBulkReminder);
         }}
       />
+
+      <AskHelpDialog open={askHelpOpen} onClose={() => setAskHelpOpen(false)} />
     </div>
   );
 }

@@ -24,11 +24,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, Literal
-from flow_sdk.fs_records.agent_status import AgenticProcessStatus, _tail_status
+from flow_sdk.fs_records.agent_status import WorkerStatus, _tail_status
 from flow_sdk._compat import Self
 
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.fs_records.claude.properties import (
     SessionActivePropertyRecord,
     SessionStartTimePropertyRecord,
@@ -149,16 +150,11 @@ class ClaudeSessionRecord(Record):
         return d.get("jsonl_path") or d.get("source_file_field") or self.source_file
 
     @property
-    def source_path(self) -> str:
-        """On-disk path used by search result navigation (the JSONL transcript file)."""
-        return self.jsonl_path or ""
-
-    @property
-    def status(self) -> AgenticProcessStatus:
+    def status(self) -> WorkerStatus:
         """Derive status from the last 4 KB of the JSONL transcript (tail-read, ~60µs)."""
         path = self.jsonl_path
         if not path:
-            return AgenticProcessStatus.IDLE
+            return WorkerStatus.IDLE
         return _tail_status(path)
 
     def to_dict(self) -> dict:
@@ -238,7 +234,7 @@ class ClaudeSessionRecord(Record):
                 pass
 
         # status: "complete" is correct for all finished sessions.
-        # Active sessions are re-indexed on change via index_required.
+        # Active sessions are re-indexed on change via asset_hash / is_valid.
         result["status"] = "complete"
 
         # message_count: set cheaply by from_jsonl() via binary line count.
@@ -423,23 +419,37 @@ class ClaudeSessionRecord(Record):
         return self._parse_fts()[1]
 
     @classmethod
-    def discovery_items_count(cls, limit: int | None = None) -> int:
-        """Count JSONL session files across ~/.claude/projects/ dirs (fast, no file reads)."""
-        projects_dir = Path.home() / ".claude" / "projects"
-        if not projects_dir.is_dir():
-            return 0
-        count = sum(
-            1
-            for d in projects_dir.iterdir()
-            if d.is_dir()
-            for _ in d.glob("*.jsonl")
-        )
-        return min(count, limit) if limit is not None else count
+    async def from_fsref(cls, ref) -> list["ClaudeSessionRecord"]:
+        """Indexer entry point — construct from an FSRef emitted by claude_sessions_fn."""
+        return [cls.from_jsonl(ref._path)]
+
+    @classmethod
+    def getId(cls, ref) -> str:
+        """Id = `sessionId` field from the jsonl first-line envelope (what
+        `ClaudeSessionRecord.__init__` sets as self.id). Falls back to the
+        filename stem (jsonl files are typically <sessionId>.jsonl anyway)."""
+        try:
+            with ref._path.open("rb") as fh:
+                head = fh.read(4096).decode("utf-8", errors="replace")
+            for line in head.splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                except json.JSONDecodeError:
+                    break
+                sid = raw.get("sessionId")
+                if sid:
+                    return str(sid)
+        except OSError:
+            pass
+        return ref._path.stem
 
     @classmethod
     def discover_paths_iter(cls, limit: int | None = None, **kwargs):
         """Lazy generator — yields Path objects for each JSONL file (no file reads)."""
-        projects_dir = Path.home() / ".claude" / "projects"
+        projects_dir = get_instance_settings().claude_projects_dir
         if not projects_dir.is_dir():
             return
         count = 0
@@ -453,32 +463,30 @@ class ClaudeSessionRecord(Record):
                     return
 
     @classmethod
-    def discover_iter(cls, limit: int | None = None, scope=None, **kwargs):
-        """Lazy generator — yields one ClaudeSessionRecord per JSONL file."""
-        for jsonl_file in cls.discover_paths_iter(limit=limit):
-            try:
-                yield cls.from_jsonl(jsonl_file)
-            except (json.JSONDecodeError, OSError):
-                continue
-
-    @classmethod
     def discover(cls, scope=None, **kwargs) -> list[ClaudeSessionRecord]:
         """Find all session JSONL files under ~/.claude/projects/.
 
         Uses the fast minimal ``from_jsonl()`` — only reads the first few lines
         of each JSONL to extract session ID and slug.  Stats are loaded lazily.
         """
-        return list(cls.discover_iter(scope=scope, **kwargs))
+        limit = kwargs.get("limit")
+        results: list[ClaudeSessionRecord] = []
+        for jsonl_file in cls.discover_paths_iter(limit=limit):
+            try:
+                results.append(cls.from_jsonl(jsonl_file))
+            except (json.JSONDecodeError, OSError):
+                continue
+        return results
 
     @classmethod
-    def discover_one(cls, uid: str, scope=None, **kwargs) -> ClaudeSessionRecord | None:
+    def get(cls, uid: str, scope=None, **kwargs) -> ClaudeSessionRecord | None:
         """Find a specific session by session ID.
 
         Pass ``project="/abs/path"`` for O(1) lookup via the encoded
         project directory.  Without it, falls back to scanning all
         project directories.
         """
-        projects_dir = Path.home() / ".claude" / "projects"
+        projects_dir = get_instance_settings().claude_projects_dir
         if not projects_dir.is_dir():
             return None
         fname = f"{uid}.jsonl"
@@ -512,68 +520,68 @@ class ClaudeSessionRecord(Record):
     ) -> Self:
         """Build a session record from a JSONL transcript file path.
 
-        Only reads the first few lines of the file to extract ``session_id``
-        and ``slug`` (needed to set ``id`` and ``name`` at construction time).
-        All other stats are lazy — they are parsed from the JSONL on first
-        access via ``_SessionStatsProp`` descriptors.
+        O(1) read cost regardless of transcript size:
+          - head ``_HEAD_BYTES`` for session_id / slug / cwd (first-line fields).
+          - tail ``_TAIL_BYTES`` for the most-recent custom-title (``/rename``
+            can be written at any point in the session, but in practice the
+            latest one is near the end).
 
-        Args:
-            path: Path to the JSONL transcript file.
-            project_encoded_name: Encoded project directory name. If not
-                provided it is derived from ``path.parent.name``.
+        ``message_count`` is intentionally NOT computed eagerly — it's a
+        ``_SessionStatsProp`` on the class and parses lazily on first access.
         """
-        import time as _time
+        _HEAD_BYTES = 4096
+        _TAIL_BYTES = 16384
 
         path = Path(path)
         session_id = path.stem  # fallback
         slug = ""
-
-        # Scan all lines for session_id, slug, cwd, and custom-title.
-        # custom-title entries can appear anywhere (written on every /rename),
-        # so we must scan to the end and take the last one.
         cwd = ""
         custom_title = ""
+
+        # ── head: first few lines cover session_id / slug / cwd ────────────
         try:
-            with open(path, encoding="utf-8") as fh:
-                lines = fh.readlines()
-
-            # Find the index of the last non-empty line to detect mid-write truncation.
-            last_nonempty_idx = -1
-            for i in range(len(lines) - 1, -1, -1):
-                if lines[i].strip():
-                    last_nonempty_idx = i
-                    break
-
-            # Only excuse a parse error on the last non-empty line, and only when
-            # the file was modified within the last second (actively being written).
-            file_age = _time.time() - path.stat().st_mtime
-
-            for i, raw_line in enumerate(lines):
-                line = raw_line.strip()
+            with open(path, "rb") as fh:
+                head = fh.read(_HEAD_BYTES).decode("utf-8", errors="replace")
+            for line in head.splitlines():
+                line = line.strip()
                 if not line:
                     continue
                 try:
                     raw = json.loads(line)
                 except json.JSONDecodeError:
-                    if i == last_nonempty_idx and file_age < 1.0:
-                        continue  # mid-write last line — excuse it
-                    raise
+                    # Partial line at the 4KB boundary — stop here.
+                    break
                 if raw.get("sessionId"):
                     session_id = raw["sessionId"]
                 if raw.get("slug"):
                     slug = raw["slug"]
                 if not cwd and raw.get("cwd"):
                     cwd = raw["cwd"]
-                if raw.get("type") == "custom-title" and raw.get("customTitle"):
-                    custom_title = raw["customTitle"]  # keep last one (most recent rename)
+                if session_id and slug and cwd:
+                    break
         except OSError:
             pass
 
-        # Fast message count: binary scan for newlines — no JSON parsing.
-        message_count = 0
+        # ── tail: most-recent custom-title only (same trick as _tail_status) ─
         try:
+            sz = path.stat().st_size
             with open(path, "rb") as fb:
-                message_count = fb.read().count(b"\n")
+                if sz > _TAIL_BYTES:
+                    fb.seek(sz - _TAIL_BYTES)
+                tail = fb.read().decode("utf-8", errors="replace")
+            # Walk tail lines in reverse; first valid custom-title wins.
+            for line in reversed(tail.splitlines()):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    raw = json.loads(line)
+                except json.JSONDecodeError:
+                    # Line straddled the seek boundary or mid-write — skip.
+                    continue
+                if raw.get("type") == "custom-title" and raw.get("customTitle"):
+                    custom_title = raw["customTitle"]
+                    break
         except OSError:
             pass
 
@@ -583,7 +591,7 @@ class ClaudeSessionRecord(Record):
             slug=slug,
             cwd=cwd,
             custom_title=custom_title,
-            message_count=message_count,
+            # message_count intentionally omitted — _SessionStatsProp parses lazily.
             jsonl_path=str(path),
             source_file=str(path),
             path=str(path),

@@ -10,7 +10,7 @@ declare global {
 
 const DEV_MODE_KEY = 'devMode';
 
-let _devMode: boolean = localStorage.getItem(DEV_MODE_KEY) === 'true' || import.meta.env.VITE_DEV_MODE === 'true';
+let _devMode: boolean = localStorage.getItem(DEV_MODE_KEY) === 'true' || __FLOWPAD_DEV__;
 const _listeners = new Set<(val: boolean) => void>();
 
 function setDevMode(val: boolean): void {

@@ -10,7 +10,7 @@ export interface SearchResult {
   snippet: string | null;
   status: string;
   scope: string;
-  source_path: string;
+  asset_ref: string;
   created_at: string;
   modified_at: string;
   // Extra entity-specific fields (optional, populated when available)

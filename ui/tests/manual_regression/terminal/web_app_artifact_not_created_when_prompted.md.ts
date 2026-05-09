@@ -32,7 +32,10 @@ test.describe('Web App view accessibility', () => {
       (e) =>
         !e.includes('ResizeObserver') &&
         !e.includes('favicon') &&
-        !e.includes('404'), // web-app view may 404 on iframe content without a running session — that's expected
+        !e.includes('404') && // web-app view may 404 on iframe content without a running session — that's expected
+        // Stale user typeid from a prior session can 404 after DB clear and
+        // surfaces via the SDK wrapper. Filter the wrapper error too.
+        !e.includes('Error fetching entity by type ID: user-'),
     );
     expect(realErrors, `Console errors: ${realErrors.join(', ')}`).toHaveLength(0);
   });

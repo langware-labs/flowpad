@@ -1,8 +1,66 @@
+import type { AgenticProcess } from '@sdk';
+
 export interface SessionTab {
   id: string;
   name: string;
   favorite_index?: number | null;
 }
+
+/**
+ * Module-level cache of rendered session tabs, keyed by project cacheKey.
+ * SessionViewer keeps this in sync with its live state; other components
+ * (e.g. the Ask-for-Assistance dialog) can read the current tab name from
+ * here instead of recomputing.
+ */
+export const sessionTabsCache = new Map<string, SessionTab[]>();
+
+/**
+ * Look up the name currently shown on the tab bar for *processId*, scanning
+ * across all cached projects. Returns null if no tab has been rendered for
+ * this process yet (e.g. dialog opened before SessionViewer mounted).
+ */
+export const getCachedTabName = (processId: string): string | null => {
+  if (!processId) return null;
+  for (const tabs of sessionTabsCache.values()) {
+    const match = tabs.find((t) => t.id === processId);
+    if (match && match.name) return match.name;
+  }
+  return null;
+};
+
+/**
+ * Compute the name shown on a session tab. Reused by anything else that
+ * needs to label a session (e.g. the Ask-for-Assistance dialog) so the
+ * tab and the rest of the UI never disagree.
+ */
+export const getSessionDisplayName = (
+  process: AgenticProcess | null | undefined,
+  fallback: string,
+) => {
+  if (process?.context_data && typeof process.context_data === 'object') {
+    const displayName = (process.context_data as Record<string, unknown>).display_name;
+    if (typeof displayName === 'string' && displayName.trim().length > 0) {
+      return displayName.trim();
+    }
+  }
+
+  // process.name mirrors Shell.name (via shell.py propagation) — this is the
+  // Claude-generated PTY tab title shown in TabbedTerminal. Without this
+  // fallback the dialog would say "Session" while the tab shows the real title.
+  const procName = (process as { name?: string | null } | null | undefined)?.name;
+  if (typeof procName === 'string' && procName.trim().length > 0) {
+    return procName.trim();
+  }
+
+  if (process?.instruction_content) {
+    const trimmed = process.instruction_content.replace(/<!--.*?-->/g, '').trim();
+    if (trimmed.length > 0) {
+      return trimmed.substring(0, 30);
+    }
+  }
+
+  return fallback;
+};
 
 export const getNextSessionNumber = (tabs: SessionTab[]) => {
   let max = 0;

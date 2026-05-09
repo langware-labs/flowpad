@@ -54,6 +54,10 @@ export enum ViewType {
   CRON = 'cron', // Scheduled cron jobs manager
   WORKFLOWS = 'workflows', // Workflows manager with markdown editor
   ASSETS = 'assets', // Assets - unified docs/skills/workflows tree
+  PROJECT = 'project', // Collaboration on a project — meet, share tabs/docs/plans
+  INBOX = 'inbox', // Inbox — received FlowMessages from hub
+  CONVERSATION = 'conversation', // Single Conversation viewer (avatar bubbles + composer)
+  SPEC = 'spec', // Single Spec viewer (shows spec metadata, plan link, generated tasks)
 }
 
 /**

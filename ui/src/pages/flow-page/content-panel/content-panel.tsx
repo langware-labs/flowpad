@@ -1,3 +1,4 @@
+import { SpecEditor } from '@src/components/spec-editor/SpecEditor';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { AIConfigView } from '@src/components/ai-config-view';
 import { ApiKeysView } from '@src/components/api-keys-view/api-keys-view';
@@ -12,49 +13,49 @@ import { ExplorerView } from '@src/components/explorer-view';
 import { HooksManager } from '@src/components/hooks-manager';
 import { LensViewer } from '@src/components/lens-viewer';
 import { SessionViewer } from '@src/components/live-workflow';
-import { ProcessTerminal } from '@src/components/process-terminal';
-import { SettingsView } from '@src/components/settings-view/SettingsView';
-import { TasksViewer } from '@src/components/tasks-viewer/TasksViewer';
 import { MachineOverview } from '@src/components/machine-overview/machine-overview';
 import { MarkdownViewer } from '@src/components/markdown-viewer';
-import { PlanEditor } from '@src/components/plan-editor/PlanEditor';
+import { ProcessTerminal } from '@src/components/process-terminal';
+import { SettingsView } from '@src/components/settings-view/SettingsView';
 import { ShowView } from '@src/components/show-view/ShowView';
+import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
+import { TasksViewer } from '@src/components/tasks-viewer/TasksViewer';
 import { HomeLanding } from '@src/pages/home-landing';
 import { LiveStatus } from '@src/pages/live-status';
-import { SessionAnalysisPage } from '@src/pages/session-analysis';
 import { SearchView } from '@src/pages/search-view/SearchView';
-import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
 
-import { WorkflowsPage } from '@src/components/workflows-view/WorkflowsPage';
-import { AssetsPage } from '@src/components/assets/AssetsPage';
-import { TriggersView } from '@src/components/triggers-view';
-import { SurveyView } from '@src/components/survey/SurveyView';
-import { TabbedTerminal } from '@src/components/terminal';
-import { WebappViewer } from '@src/components/webapp-viewer';
-import { useContentPanelStore } from '@src/hooks/use-content-panel-store';
-import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
-import { useSendMessageStore } from '@src/store/use-send-message-store';
-import { useSurveyStore } from '@src/store/use-survey-store';
-import {
-  ConnectionStatus,
-  dataContext,
-  navigator,
-  ShellStatus,
-  type OAuthConnection,
-} from '@sdk';
+import { ConnectionStatus, dataContext, navigator, ShellStatus, type OAuthConnection } from '@sdk';
 import { useAuth, useContext } from '@sdk/react/hooks';
-import { useActiveViewer } from '@src/hooks/flow-hooks';
-import { useActiveTerminals } from '@src/hooks/useActiveTerminals';
+import { AssetsPage } from '@src/components/assets/AssetsPage';
+import { CollaborationPage } from '@src/components/collaboration';
 import { ConnectionsManager } from '@src/components/connections-manager';
+import { ConversationRoute } from '@src/components/conversation';
+import { InboxView } from '@src/components/inbox-view/InboxView';
+import { SurveyView } from '@src/components/survey/SurveyView';
+import { TabbedTerminal, useStandardTabNav } from '@src/components/terminal';
+import { TriggersView } from '@src/components/triggers-view';
 import { Button } from '@src/components/ui/button';
 import { Tabs, TabsContent } from '@src/components/ui/tabs';
+import { WebappViewer } from '@src/components/webapp-viewer';
+import { WorkflowsPage } from '@src/components/workflows-view/WorkflowsPage';
+import { useActiveViewer } from '@src/hooks/flow-hooks';
+import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
+import { useContentPanelStore } from '@src/hooks/use-content-panel-store';
+import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
+import { useToast } from '@src/hooks/use-toast';
+import {
+  terminalTargetKey,
+  terminalTransportShellId,
+  useAllTerminals,
+} from '@src/hooks/useActiveTerminals';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
+import { SpecRoute } from '@src/pages/spec/SpecRoute';
+import { useSendMessageStore } from '@src/store/use-send-message-store';
+import { useSurveyStore } from '@src/store/use-survey-store';
 import { ViewType } from '@src/types/ViewType';
 import { LogIn } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useToast } from '@src/hooks/use-toast';
 import { UserDropdown } from './user-dropdown/user-dropdown';
 
 export function ContentPanel() {
@@ -65,27 +66,20 @@ export function ContentPanel() {
   const { user } = useAuth();
 
   const { flow, agent, computeNode } = useAgentContext();
-  const { project: contextProject, activeShellId: activeSessionId } = useContext();
+  const { project: contextProject } = useContext();
 
   // Sync flow focus and URL dock state to viewer store
   useActiveViewer(flow);
 
-  const { tabs: terminalTabs, isLoading: terminalsLoading } = useActiveTerminals();
-
-  /**
-   * Returns the first tab the backend considers alive (not closed/error).
-   * Skips the current shell.
-   */
-  const findAliveShell = useCallback(
-    (currentShellId: string) =>
-      terminalTabs.find((t) => t.shellId !== currentShellId && !t.isDisabled),
-    [terminalTabs],
-  );
+  const { data: terminalTabs } = useAllTerminals();
+  const terminalsLoading = false;
+  const { onTabClick, onTabClose, onTabOpen } = useStandardTabNav();
 
   /** Navigate to a terminal tab's shell or agentic process */
   const navigateToTab = useCallback(
     (tab: (typeof terminalTabs)[number]) => {
-      navigation.openDock(tab.agenticProcess?.dockPointer ?? tab.shell!.dockPointer);
+      const pointer = tab.agenticProcess?.dockPointer ?? tab.shell?.dockPointer;
+      if (pointer) navigation.openDock(pointer);
     },
     [navigation],
   );
@@ -159,25 +153,30 @@ export function ContentPanel() {
     if (terminalsLoading) return;
 
     const pointer = currentDock.pointer;
-    const shellUuid = pointer ? pointer.replace(/^[a-z_]+-/, '') : '';
-
     // No pointer is loader-owned. Let the route loader resolve the default
     // shell/process target so we do not race explicit tab navigation.
     if (!pointer) {
       return;
     }
+    const targetKey = DockPointer.isAgenticProcessPointer(pointer)
+      ? pointer
+      : pointer.startsWith('shell-')
+        ? pointer
+        : `shell-${pointer}`;
 
     // Disabled shell -> redirect to first alive tab.
     // Missing tab here is not enough to conclude disconnection because the
     // tab query can lag behind the loader/navigation path for a newly opened shell.
     // Only toast for unexpected disconnections (ERROR status), not for user-initiated
     // closes (CLOSING status) which are handled by TabbedTerminal's closeShell flow.
-    const tab = terminalTabs.find((t) => t.shellId === shellUuid);
+    const tab = terminalTabs.find((t) => terminalTargetKey(t) === targetKey);
     if (tab?.isDisabled) {
-      if (tab.shell?.status !== ShellStatus.CLOSING) {
+      const transportShellId = terminalTransportShellId(tab);
+      const shell = transportShellId ? (tab.shell ?? null) : null;
+      if (shell?.status !== ShellStatus.CLOSING) {
         toast({ title: 'Shell is disconnected', variant: 'destructive' });
       }
-      const aliveTab = terminalTabs.find((t) => t.shellId !== shellUuid && !t.isDisabled);
+      const aliveTab = terminalTabs.find((t) => terminalTargetKey(t) !== targetKey && !t.isDisabled);
       if (aliveTab) navigateToTab(aliveTab);
     }
   }, [currentDock, navigateToTab, terminalsLoading, terminalTabs, toast]);
@@ -223,7 +222,13 @@ export function ContentPanel() {
           >
             <div className="min-h-0 flex-1 overflow-auto">
               {currentOverviewTab === ViewType.SHELL ? (
-                <TabbedTerminal className="h-full" addTabButton />
+                <TabbedTerminal
+                  className="h-full"
+                  addTabButton
+                  onTabClick={onTabClick}
+                  onTabClose={onTabClose}
+                  onTabOpen={onTabOpen}
+                />
               ) : currentOverviewTab === ViewType.EDITOR ? (
                 <CodeEditor activePath={editorActivePath} />
               ) : currentOverviewTab === ViewType.WEB_APP ? (
@@ -246,8 +251,6 @@ export function ContentPanel() {
                 <HomeLanding />
               ) : currentOverviewTab === ViewType.SYSTEM_PROFILE ? (
                 <LiveStatus />
-              ) : currentOverviewTab === ViewType.ANALYSIS ? (
-                <SessionAnalysisPage />
               ) : (
                 <HomeLanding />
               )}
@@ -258,7 +261,13 @@ export function ContentPanel() {
             value={ViewType.SHELL}
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in overflow-auto shadow-lg data-[state=inactive]:hidden"
           >
-            <TabbedTerminal className="h-full" addTabButton />
+            <TabbedTerminal
+              className="h-full"
+              addTabButton
+              onTabClick={onTabClick}
+              onTabClose={onTabClose}
+              onTabOpen={onTabOpen}
+            />
           </TabsContent>
 
           <TabsContent
@@ -273,13 +282,6 @@ export function ContentPanel() {
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in overflow-auto shadow-lg data-[state=inactive]:hidden"
           >
             <WebappViewer onWebappErrorRetry={onWebappErrorRetry} />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.ANALYSIS}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in overflow-auto shadow-lg data-[state=inactive]:hidden"
-          >
-            <SessionAnalysisPage />
           </TabsContent>
 
           <TabsContent
@@ -371,7 +373,7 @@ export function ContentPanel() {
             value={ViewType.PLAN}
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
           >
-            <PlanEditor />
+            <SpecEditor />
           </TabsContent>
 
           {agent?.site_config?.feature_flags?.enable_escalation && (
@@ -505,6 +507,34 @@ export function ContentPanel() {
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
           >
             <AssetsPage />
+          </TabsContent>
+
+          <TabsContent
+            value={ViewType.PROJECT}
+            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
+          >
+            <CollaborationPage />
+          </TabsContent>
+
+          <TabsContent
+            value={ViewType.INBOX}
+            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
+          >
+            <InboxView />
+          </TabsContent>
+
+          <TabsContent
+            value={ViewType.CONVERSATION}
+            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
+          >
+            <ConversationRoute />
+          </TabsContent>
+
+          <TabsContent
+            value={ViewType.SPEC}
+            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
+          >
+            <SpecRoute />
           </TabsContent>
         </div>
       </Tabs>
