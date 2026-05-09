@@ -392,11 +392,8 @@ async def _run_turn_and_capture(
         logger.exception("[%s] worker error", scope.log_label)
     finally:
         _PROMPT_WORKERS.pop(process.id, None)
-        # Headless turn is over. Land the process in a terminal status and
-        # rewrite cli_config so opening it in a PTY later resumes the saved
-        # session interactively, instead of re-running the print-mode
-        # invocation (which fails with "session already in use").
         process.status = ProcessStatus.FAILED.value if errored else ProcessStatus.STOPPED.value
+        process.visible = True
         cli_cfg_next = dict(process.cli_config or {})
         cli_cfg_next.pop("print_mode", None)
         cli_cfg_next.pop("output_format", None)

@@ -13,7 +13,6 @@ import { getPriorityColor, PRIORITY_CONFIG } from './constants';
 import { getAnalysisPath, getTaskTypeLabel, openAnalysisReport } from './task-utils';
 import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
 import { ConversationMode } from '@src/components/conversation/conversation-mode';
-import { TaskRunsDrawer } from './TaskRunsDrawer';
 
 interface TaskDetailPanelProps {
   task: Task;
@@ -47,6 +46,9 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
   return (
     <div className="flex h-full flex-row">
       <div className="flex min-w-0 flex-1 flex-col">
+      {/* Conversation host: TaskDetailPanel renders the conversation in compact
+          mode; the conversation's own bottom ribbon sticks to the bottom of
+          this column above the "Open full view" footer below. */}
       {/* Header */}
       <div className="flex items-center gap-2 border-b border-border p-3">
         <button
@@ -174,8 +176,6 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
         </button>
       </div>
       </div>
-
-      <TaskRunsDrawer task={task} />
     </div>
   );
 }
