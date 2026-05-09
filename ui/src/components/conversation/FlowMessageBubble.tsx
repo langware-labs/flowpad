@@ -23,6 +23,10 @@ interface FlowMessageBubbleProps {
   isDraft?: boolean;
   /** Called after the draft was sent or discarded so the parent can refetch. */
   onDraftSent?: () => void;
+  /** Drives the visual selection ring + Context drawer tab. */
+  isSelected?: boolean;
+  /** Click on the bubble fires this so the parent can mark this message selected. */
+  onSelect?: () => void;
 }
 
 export function FlowMessageBubble({
@@ -32,6 +36,8 @@ export function FlowMessageBubble({
   onApproveAndExecute,
   isDraft,
   onDraftSent,
+  isSelected,
+  onSelect,
 }: FlowMessageBubbleProps) {
   const { data: fm } = useEntity<FlowMessage>(
     new TypeId(FlowMessage.type, messageId),
@@ -139,6 +145,8 @@ export function FlowMessageBubble({
       } : undefined}
       onApproveAndExecute={onApproveAndExecute ? (idx) => onApproveAndExecute(messageId, idx) : undefined}
       footer={footer}
+      isSelected={isSelected}
+      onSelect={onSelect}
     />
   );
 }

@@ -22,6 +22,12 @@ interface ConversationViewProps {
   /** Wraps any action that needs a `cwd`/project. Provided by the parent (SharedTaskView / TaskDetailPanel). */
   ensureMapped?: (continuation: () => void | Promise<void>) => void;
   mode?: ConversationMode;
+  /** ID of the currently-selected message (for the Context drawer tab). */
+  selectedMessageId?: string | null;
+  /** Called when the user clicks (or starts editing) a message. */
+  onSelectMessage?: (messageId: string) => void;
+  /** Reports the most recent message id so the parent can default-select it. */
+  onMostRecentMessageChange?: (messageId: string | null) => void;
 }
 
 export function ConversationView({
@@ -30,6 +36,9 @@ export function ConversationView({
   senderName: _senderName,
   ensureMapped,
   mode = ConversationMode.HEADLESS,
+  selectedMessageId,
+  onSelectMessage,
+  onMostRecentMessageChange,
 }: ConversationViewProps) {
   const { data: conversation, refetch } = useEntity<Conversation>(
     new TypeId(Conversation.type, conversationId),
@@ -139,6 +148,21 @@ export function ConversationView({
     [pointers, backfilledIds, draftMessages],
   );
 
+  // Surface the most-recent message id so the parent's Context tab can default
+  // to it when the user hasn't clicked anything yet.
+  const mostRecentMessageId = useMemo<string | null>(() => {
+    for (let i = orderedItems.length - 1; i >= 0; i--) {
+      const item = orderedItems[i];
+      const id =
+        item.kind === ConversationItemKind.POINTER ? item.messageId : item.draft.id ?? null;
+      if (id) return id;
+    }
+    return null;
+  }, [orderedItems]);
+  useEffect(() => {
+    onMostRecentMessageChange?.(mostRecentMessageId);
+  }, [mostRecentMessageId, onMostRecentMessageChange]);
+
   const [hubSyncing, setHubSyncing] = useState(false);
   const handleRefresh = useCallback(async () => {
     setHubSyncing(true);
@@ -171,28 +195,37 @@ export function ConversationView({
         <p className="text-xs italic text-muted-foreground/60">No messages yet.</p>
       ) : (
         <div className="flex flex-col gap-3">
-          {orderedItems.map((item) =>
-            item.kind === ConversationItemKind.POINTER ? (
+          {orderedItems.map((item) => {
+            if (item.kind === ConversationItemKind.POINTER) {
+              const id = item.messageId;
+              return (
+                <FlowMessageBubble
+                  key={item.key}
+                  messageId={id}
+                  timestamp={item.timestamp}
+                  task={task}
+                  onApproveAndExecute={canApproveAndExecute ? runApprove : undefined}
+                  isSelected={selectedMessageId === id}
+                  onSelect={onSelectMessage ? () => onSelectMessage(id) : undefined}
+                />
+              );
+            }
+            const id = item.draft.id ?? '';
+            return (
               <FlowMessageBubble
                 key={item.key}
-                messageId={item.messageId}
-                timestamp={item.timestamp}
-                task={task}
-                onApproveAndExecute={canApproveAndExecute ? runApprove : undefined}
-              />
-            ) : (
-              <FlowMessageBubble
-                key={item.key}
-                messageId={item.draft.id ?? ''}
+                messageId={id}
                 timestamp={item.draft.created_date instanceof Date
                   ? item.draft.created_date.toISOString()
                   : (item.draft.created_date ?? '')}
                 task={task}
                 isDraft
                 onDraftSent={() => void refetch()}
+                isSelected={selectedMessageId === id}
+                onSelect={onSelectMessage && id ? () => onSelectMessage(id) : undefined}
               />
-            ),
-          )}
+            );
+          })}
         </div>
       )}
 
