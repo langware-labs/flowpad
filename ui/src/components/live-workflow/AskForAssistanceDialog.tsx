@@ -105,16 +105,22 @@ export function AskForAssistanceDialog({
     setBusy(true);
     setError(null);
     try {
-      // Resolve the AgenticProcess to grab its session_id for transcript discovery.
+      // Resolve the AgenticProcess so loadOptionalTranscript can walk the fork
+      // chain (cli_config.fork_session_id) when this process has no jsonl yet.
       const proc = processId
         ? await dataManager.getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, processId)).catch(() => null)
         : null;
-      const sessionId = proc?.session_id ?? undefined;
-      const filesWithTranscript = await loadOptionalTranscript(files, {
+      const transcriptResult = await loadOptionalTranscript(files, {
         attach: attachTranscript,
-        sessionId,
+        proc,
         projectPath,
       });
+      if (attachTranscript && !transcriptResult.attached) {
+        toast.warning(
+          `Transcript not attached: ${transcriptResult.failureReason ?? 'unknown reason'}`,
+        );
+      }
+      const filesWithTranscript = transcriptResult.files;
 
       // Scenario C: pre-fork the live session into an invisible AgenticProcess
       // so the recipient's Approve & Execute reuses the existing fork (which

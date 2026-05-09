@@ -108,7 +108,10 @@ export function EntityChip({ entity, inside, onClick, title, size = 'chip' }: En
   const Icon = entity.icon ?? (resolved ? ICON_BY_TYPE[resolved.type] : undefined) ?? ExternalLink;
   const label = entity.name ?? (resolved?.id || '(unnamed)');
   const typeStyle = (resolved && STYLE_BY_TYPE[resolved.type]) ?? DEFAULT_STYLE;
-  const tooltip = title ?? (resolved ? `Open in ${resolved.type}` : `Open ${label}`);
+  const typeWord = resolved
+    ? resolved.type.charAt(0).toUpperCase() + resolved.type.slice(1).replace(/_/g, ' ')
+    : '';
+  const tooltip = title ?? (resolved ? `Open ${typeWord}: ${label}` : `Open ${label}`);
 
   const handleClick = useMemo(() => {
     return () => {

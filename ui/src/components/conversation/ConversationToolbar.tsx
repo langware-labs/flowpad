@@ -8,7 +8,6 @@ import { taskChipKeys } from './chips/keys';
 interface ConversationToolbarProps {
   task: Task;
   conversationId: string;
-  senderName?: string;
   /**
    * Optional override for the "Open Task" button. When omitted (default),
    * the chip navigates to `/dock/tasks/<taskId>/conversation/<convId>` —
@@ -21,15 +20,13 @@ interface ConversationToolbarProps {
 
 /**
  * Sits next to the "Conversation" header. Composes the per-conversation
- * chip rows: ``TaskChips`` (project / spec / process button) followed by
- * ``ConversationChips`` (transcript / shared terminal). The latter is
- * wrapped in a ``ChipsExcludeProvider`` seeded with the keys ``TaskChips``
- * already rendered, so duplicates would be suppressed automatically.
+ * chip rows: ``TaskChips`` (project / spec) followed by
+ * ``ConversationChips`` (transcript / shared terminal). The "Open in Claude"
+ * affordance lives in the conversation drawer's Context tab, not here.
  */
 export function ConversationToolbar({
   task,
   conversationId,
-  senderName,
   onShowTask,
   ensureMapped,
 }: ConversationToolbarProps) {
@@ -40,7 +37,6 @@ export function ConversationToolbar({
       <TaskChips
         task={task}
         conversationId={conversationId}
-        senderName={senderName}
         ensureMapped={ensureMapped}
         onShowTask={onShowTask}
       />
