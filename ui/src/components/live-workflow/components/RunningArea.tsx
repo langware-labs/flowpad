@@ -4,7 +4,7 @@ import { ArrowDown, Clock, Square, Zap } from 'lucide-react';
 import { FusionSpinner } from '@src/components/icons/FusionSpinner';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import ChatMessage from '@src/pages/flow-page/chat-panel/chat-message/chat-message';
+import ExecutionMessage from '@src/components/entity-execution-panel/execution-message/execution-message';
 import ErrorSection from '@src/components/ErrorSection';
 import ReasoningSection from '@src/components/ReasoningSection';
 import ShellSection from '@src/components/ShellSection';
@@ -165,7 +165,7 @@ export function RunningArea({
             const isUser = fd.elementType === FlowElementTypes.USER_MESSAGE || fd.attributes.role === 'user';
             return (
               <div key={key} className="mb-2">
-                <ChatMessage flowData={fd} isUser={isUser} />
+                <ExecutionMessage flowData={fd} isUser={isUser} />
               </div>
             );
           }

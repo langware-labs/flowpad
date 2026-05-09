@@ -1,6 +1,9 @@
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
+import { IndexingIndicator } from '@src/components/search-index/IndexingIndicator';
 import { useProjects } from '@src/hooks/use-projects';
 import { useContext } from '@src/hooks/useContext';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { fsManager } from '@sdk';
 import { ExternalLink, ArrowLeftRight } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
@@ -28,6 +31,7 @@ export function StatusBar({ className = '' }: StatusBarProps) {
   const { project, computeNode, bootstrapInfo, workdir } = useContext();
   const workspacePath = bootstrapInfo?.desktop_info?.paths?.workspace;
   const { refetch: refetchProjects } = useProjects();
+  const { navigation } = useDockNavigation();
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
 
   // Get the active working directory path — prefer context workdir (reflects active tab),
@@ -61,7 +65,33 @@ export function StatusBar({ className = '' }: StatusBarProps) {
     setIsProjectModalOpen(true);
   }, []);
 
-  if (!project) return null;
+  // No active project. Render a red "Select Project" pill that pops the same
+  // OpenProjectComponent the Switch Project button uses. Null project is now
+  // a real (transient) state — entities like a freshly-opened cross-machine
+  // conversation can leave context.project null until the user picks one.
+  if (!project) {
+    return (
+      <>
+        <div className={`flex items-center gap-2 ${className}`}>
+          <button
+            type="button"
+            onClick={openProjectModal}
+            className="inline-flex h-6 items-center gap-1 rounded-full border border-red-500/50 bg-red-500/10 px-2.5 text-[11px] font-medium text-red-700 transition-colors hover:bg-red-500/20 dark:text-red-300"
+            title="No project selected — pick one to enable project-scoped actions"
+          >
+            <ArrowLeftRight className="h-3 w-3 shrink-0" />
+            Select Project
+          </button>
+          <IndexingIndicator />
+        </div>
+        <OpenProjectComponent
+          open={isProjectModalOpen}
+          onOpenChange={setIsProjectModalOpen}
+          onProjectChanged={() => void refetchProjects()}
+        />
+      </>
+    );
+  }
 
   const rootTooltip = 'Current project is on root folder, this is not recommended';
   const glowStyle: React.CSSProperties = isRoot
@@ -82,10 +112,10 @@ export function StatusBar({ className = '' }: StatusBarProps) {
           <span style={glowStyle}>Switch Project</span>
         </button>
         <button
-          onClick={openProjectModal}
+          onClick={() => navigation.openDock(DockPointer.forProject(project.id))}
           className="text-xs font-medium transition-colors hover:underline"
           style={isRoot ? glowStyle : { color: 'var(--muted-foreground)' }}
-          title={isRoot ? rootTooltip : 'Switch project'}
+          title={isRoot ? rootTooltip : 'Open project view'}
         >
           {project.displayName}
         </button>
@@ -99,6 +129,7 @@ export function StatusBar({ className = '' }: StatusBarProps) {
             <ExternalLink className="h-3 w-3 shrink-0" />
           </button>
         )}
+        <IndexingIndicator />
       </div>
       <OpenProjectComponent
         open={isProjectModalOpen}

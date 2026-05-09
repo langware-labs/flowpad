@@ -113,7 +113,7 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
       setErrorMsg(err instanceof Error ? err.message : 'Pull failed.');
       setStep('error');
     }
-  }, [taskId, localPath, navigation, handleClose]);
+  }, [taskId, localPath, projectUrl, branch, navigation, handleClose]);
 
   const handleConfirmClone = useCallback(async () => {
     if (!cloneTarget) return;
@@ -137,7 +137,7 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
       setErrorMsg(err instanceof Error ? err.message : 'Clone failed.');
       setStep('error');
     }
-  }, [taskId, cloneTarget, navigation, handleClose]);
+  }, [taskId, cloneTarget, projectUrl, branch, navigation, handleClose]);
 
   const handlePickFolder = useCallback(async () => {
     if (!computeNode) return;

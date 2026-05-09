@@ -1,0 +1,271 @@
+"""ClaudeCliOptions — builds Claude Code CLI shell command strings.
+
+Extends WorkerCLIOptions with all Claude-specific switches:
+session/resume, fork, model, debug, permissions, chrome, worktree, agents.
+
+Auto-injects CLAUDE_PROJECT_DIR from workdir.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
+from flow_sdk.config import PLATFORM_WIN32
+
+
+class ClaudeCliOptions(WorkerCLIOptions):
+    """Builds a ``claude`` CLI shell command string for PTY injection.
+
+    All fields map 1-to-1 to CLI flags. The command object is constructed
+    at process creation time (or upsert time) with the intent baked in;
+    ``open()`` adds runtime env vars via ``add_env()`` before calling
+    ``to_shell_string()``.
+
+    Example::
+
+        cmd = ClaudeCliOptions(session_id="abc-123", resume=True, workdir="/proj")
+        cmd.add_env("FLOWPAD_EXECUTION_SCOPE", scope_json)
+        shell_str = cmd.to_shell_string()
+        # → cd '/proj' && CLAUDE_PROJECT_DIR='/proj' FLOWPAD_EXECUTION_SCOPE='...'
+        #   claude --dangerously-skip-permissions --resume 'abc-123'
+
+    Fork example::
+
+        cmd = ClaudeCliOptions(
+            session_id="new-uuid",      # new worker_session_id
+            resume=True,
+            fork_session_id="src-uuid", # the session being forked from
+        )
+        # → claude ... --resume 'src-uuid' --fork-session --session-id 'new-uuid'
+    """
+
+    def __init__(
+        self,
+        session_id: str | None = None,
+        resume: bool = False,
+        fork_session_id: str | None = None,
+        model: str | None = None,
+        debug: bool = False,
+        permission_mode: str = "bypassPermissions",
+        chrome: bool = False,
+        worktree: bool = False,
+        agents_json: dict | None = None,
+        workdir: str | None = None,
+        env_vars: dict[str, str] | None = None,
+        print_mode: bool = False,
+        add_dirs: list[str] | None = None,
+        output_format: str | None = None,
+        verbose: bool = False,
+        effort: str | None = None,
+    ) -> None:
+        super().__init__(workdir=workdir, env_vars=env_vars)
+        self.session_id = session_id
+        self.resume = resume
+        self.fork_session_id = fork_session_id
+        self.model = model
+        self.debug = debug
+        self.permission_mode = permission_mode
+        self.chrome = chrome
+        self.worktree = worktree
+        self.agents_json = agents_json
+        self.print_mode = print_mode
+        self.add_dirs: list[str] = list(add_dirs or [])
+        # One of {"text", "json", "stream-json"} or None for CLI default.
+        self.output_format = output_format
+        # Required by CLI when output_format == "stream-json"; harmless otherwise.
+        self.verbose = verbose or output_format == "stream-json"
+        # ``--effort {low|medium|high|xhigh|max}`` — caps the parent's
+        # reasoning budget. Lower effort means snappier responses, useful for
+        # the headless-orchestration path where the parent only needs to
+        # dispatch to sub-agents and write a brief wrap-up.
+        self.effort = effort
+
+        # Auto-inject CLAUDE_PROJECT_DIR from workdir
+        if workdir:
+            self.env_vars.setdefault("CLAUDE_PROJECT_DIR", workdir)
+
+    # ------------------------------------------------------------------
+    # WorkerCLIOptions contract
+    # ------------------------------------------------------------------
+
+    def _build_worker_args(self) -> list[str]:
+        import shlex
+
+        args: list[str] = ["claude"]
+
+        if self.permission_mode == "bypassPermissions":
+            args.append("--dangerously-skip-permissions")
+        elif self.permission_mode in ("plan", "default", "acceptEdits"):
+            # Claude Code's session-level permission/plan modes — passed
+            # through to the CLI verbatim. ``plan`` is required for the
+            # model to be allowed to call ``ExitPlanMode``.
+            args.append(f"--permission-mode {shlex.quote(self.permission_mode)}")
+        if self.chrome:
+            args.append("--chrome")
+        if self.debug:
+            args.append("--debug")
+        if self.worktree:
+            args.append("--worktree")
+        if self.verbose:
+            args.append("--verbose")
+        if self.output_format:
+            args.append(f"--output-format {shlex.quote(self.output_format)}")
+
+        if self.resume and self.session_id:
+            if self.fork_session_id:
+                # Fork: --resume <source> --fork-session --session-id <new>
+                args.append(f"--resume {shlex.quote(self.fork_session_id)}")
+                args.append("--fork-session")
+                args.append(f"--session-id {shlex.quote(self.session_id)}")
+            else:
+                args.append(f"--resume {shlex.quote(self.session_id)}")
+        elif self.session_id:
+            args.append(f"--session-id {shlex.quote(self.session_id)}")
+
+        if self.model:
+            args.append(f"--model {shlex.quote(self.model)}")
+        if self.effort:
+            args.append(f"--effort {shlex.quote(self.effort)}")
+        if self.agents_json:
+            args.append(f"--agents {shlex.quote(json.dumps(self.agents_json))}")
+        for d in self.add_dirs:
+            args.append(f"--add-dir {shlex.quote(d)}")
+
+        if self.print_mode:
+            args.append("-p")
+
+        return args
+
+    def to_shell_string(self, instruction: str | None = None) -> str:
+        """Build shell command with --add-dir flags appended after the instruction.
+
+        Claude CLI requires that the prompt/instruction appear before --add-dir
+        flags when both are present. This override separates --add-dir from the
+        other args so _build_posix can insert the instruction first.
+        """
+        import sys
+
+        args = self._build_worker_args()
+        if sys.platform == "win32":
+            return self._build_win32(args, instruction)
+
+        main_args = [a for a in args if not a.startswith("--add-dir ")]
+        add_dir_args = [a for a in args if a.startswith("--add-dir ")]
+
+        cmd = self._build_posix(main_args, instruction)
+        if add_dir_args:
+            cmd += " " + " ".join(add_dir_args)
+        return cmd
+
+    # ------------------------------------------------------------------
+    # Serialisation
+    # ------------------------------------------------------------------
+
+    def to_json(self) -> dict[str, Any]:
+        d = super().to_json()
+        d.update({
+            "worker_type": "claude",
+            "session_id": self.session_id,
+            "resume": self.resume,
+            "fork_session_id": self.fork_session_id,
+            "model": self.model,
+            "debug": self.debug,
+            "permission_mode": self.permission_mode,
+            "chrome": self.chrome,
+            "worktree": self.worktree,
+            "agents_json": self.agents_json,
+            "print_mode": self.print_mode,
+            "add_dirs": self.add_dirs,
+            "output_format": self.output_format,
+            "verbose": self.verbose,
+            "effort": self.effort,
+        })
+        return d
+
+    def to_spawn_args(self, instruction: str | None = None) -> tuple[list[str], dict[str, str]]:
+        """Build argv list and env dict for PtyProcess.spawn() — no shell intermediary.
+
+        Builds argv directly (each flag and value as separate elements) rather than
+        going through shell-string quoting.
+        """
+        import os
+        import shutil
+        import sys
+
+        resolved: str | None = shutil.which("claude")
+        if sys.platform == PLATFORM_WIN32:
+            if resolved and resolved.lower().endswith((".cmd", ".bat")):
+                comspec = os.environ.get("COMSPEC") or "cmd.exe"
+                argv: list[str] = [comspec, "/c", resolved]
+            else:
+                argv = [resolved or "claude"]
+        else:
+            argv = [resolved or "claude"]
+
+        if self.permission_mode == "bypassPermissions":
+            argv.append("--dangerously-skip-permissions")
+        elif self.permission_mode in ("plan", "default", "acceptEdits"):
+            # Session-level permission/plan modes — pass-through to CLI.
+            argv.extend(["--permission-mode", self.permission_mode])
+        if self.chrome:
+            argv.append("--chrome")
+        if self.debug:
+            argv.append("--debug")
+        if self.worktree:
+            argv.append("--worktree")
+        if self.verbose:
+            argv.append("--verbose")
+        if self.output_format:
+            argv.extend(["--output-format", self.output_format])
+
+        if self.resume and self.session_id:
+            if self.fork_session_id:
+                argv.extend(["--resume", self.fork_session_id, "--fork-session", "--session-id", self.session_id])
+            else:
+                argv.extend(["--resume", self.session_id])
+        elif self.session_id:
+            argv.extend(["--session-id", self.session_id])
+
+        if self.model:
+            argv.extend(["--model", self.model])
+        if self.effort:
+            argv.extend(["--effort", self.effort])
+        if self.agents_json:
+            import json as _json
+            argv.extend(["--agents", _json.dumps(self.agents_json)])
+        if self.print_mode:
+            argv.append("-p")
+
+        # ``--add-dir`` must come BEFORE the ``--`` instruction separator —
+        # the Claude CLI only registers skills/agents from a mounted directory
+        # when the flag is parsed as a flag, not as a positional after ``--``.
+        for d in self.add_dirs:
+            argv.extend(["--add-dir", d])
+
+        if instruction:
+            argv.extend(["--", instruction])
+
+        return argv, dict(self.env_vars)
+
+    @classmethod
+    def from_json(cls, data: dict[str, Any]) -> "ClaudeCliOptions":
+        return cls(
+            session_id=data.get("session_id"),
+            resume=bool(data.get("resume", False)),
+            fork_session_id=data.get("fork_session_id"),
+            model=data.get("model"),
+            debug=bool(data.get("debug", False)),
+            permission_mode=data.get("permission_mode", "bypassPermissions"),
+            chrome=bool(data.get("chrome", False)),
+            worktree=bool(data.get("worktree", False)),
+            agents_json=data.get("agents_json"),
+            workdir=data.get("workdir"),
+            env_vars=data.get("env_vars") or {},
+            print_mode=bool(data.get("print_mode", False)),
+            add_dirs=list(data.get("add_dirs") or []),
+            output_format=data.get("output_format"),
+            verbose=bool(data.get("verbose", False)),
+            effort=data.get("effort"),
+        )

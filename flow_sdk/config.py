@@ -27,14 +27,43 @@ from flow_sdk.utils.validation import UUID_PATTERN
 # ---------------------------------------------------------------------------
 
 FLOWPAD_CLOUD_URL = "https://app.flowpad.ai"
+API_PREFIX = "/api/v1"
 
 # ---------------------------------------------------------------------------
-# Path constants
+# Path getters — call-time, via InstanceSettings (single source of truth).
+# Direct `Path.home() / ".flow" / X` constructions are a contract violation.
 # ---------------------------------------------------------------------------
 
-FLOW_HOME = Path.home() / ".flow"
-SERVER_JSON_PATH = FLOW_HOME / "server.json"
-DEV_SERVER_JSON_PATH = FLOW_HOME / "dev_server.json"
+
+def _flow_home() -> Path:
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    return get_instance_settings().flow_home
+
+
+def _server_json_path() -> Path:
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    return get_instance_settings().server_json_path
+
+# ---------------------------------------------------------------------------
+# System projects (shipped inside the flow_sdk package)
+# ---------------------------------------------------------------------------
+
+SYSTEM_PROJECTS_DIRNAME = "system_projects"
+FLOWPAD_ASSISTANT_DIRNAME = "flowpad_assistant"
+FLOWPAD_ASSISTANT_PROJECT_UNAME = "flowpad_assistant"
+FLOWPAD_ASSISTANT_PROJECT_NAME = "Flowpad Assistant"
+
+
+def system_projects_root() -> Path:
+    """Filesystem root containing all SDK-shipped system projects."""
+    import importlib.resources
+
+    return Path(str(importlib.resources.files("flow_sdk") / SYSTEM_PROJECTS_DIRNAME))
+
+
+def flowpad_assistant_project_root() -> Path:
+    """Mount path for the Flowpad Assistant system project."""
+    return system_projects_root() / FLOWPAD_ASSISTANT_DIRNAME
 
 
 def _is_dev_mode() -> bool:
@@ -42,7 +71,8 @@ def _is_dev_mode() -> bool:
 
 
 def _active_server_json_path() -> Path:
-    return DEV_SERVER_JSON_PATH if _is_dev_mode() else SERVER_JSON_PATH
+    """Per-instance server.json path. InstanceSettings handles the dev/prod split."""
+    return _server_json_path()
 
 # SDK repo root and UI build output
 _SDK_PKG_DIR = Path(__file__).resolve().parent          # .../flow-cli/flow_sdk/
@@ -133,6 +163,7 @@ class ComputeProviderType(StrEnum):
     GCP = "gcp"
     AWS = "aws"
     E2B = "e2b"
+    DOCKER = "docker"
 
 
 class DBDriver(StrEnum):
@@ -592,6 +623,7 @@ class ServiceConfig(BaseSettings):
     load_plugins: bool = False
     deep_testing: bool = False
     manual_testing: bool = False
+    load_flowpad_assistant: bool = True
 
     # Paths
     public_static_paths: list[str] = [
@@ -688,29 +720,27 @@ class ServiceConfig(BaseSettings):
             )
             self.db_driver = DBDriver.SQLITE
 
+        # All per-instance paths come from InstanceSettings (single source of truth).
+        # See flow_sdk/instance_settings/ — picks dev/test/prod based on env.
+        from flow_sdk.instance_settings import get_instance_settings
+
+        settings = get_instance_settings()
+
         # Configure SQLite-specific paths only when using SQLite
         if self.db_driver == DBDriver.SQLITE.value:
-            db_folder = Path.home() / ".flow" / "db"
-            db_folder.mkdir(parents=True, exist_ok=True)
-            sqlite_db_path = str(db_folder / "flowpad_db")
-            # Only set the default path if not already configured — allows tests and
-            # explicit env var overrides (e.g. SQLITE_DATABASE_PATH=/tmp/flowpad_test.db)
-            # to take precedence over the production default.
-            if ENV_SQLITE_DATABASE_PATH not in os.environ:
-                os.environ[ENV_SQLITE_DATABASE_PATH] = sqlite_db_path
-            else:
-                sqlite_db_path = os.environ[ENV_SQLITE_DATABASE_PATH]
+            settings.db_dir.mkdir(parents=True, exist_ok=True)
+            sqlite_db_path = str(settings.db_path)
+            # Mirror the resolved path into SQLITE_DATABASE_PATH for downstream code
+            # (sqlite driver, tests). InstanceSettings already honored any pre-existing
+            # explicit override; this just keeps the env-var contract intact.
+            os.environ[ENV_SQLITE_DATABASE_PATH] = sqlite_db_path
             db_info = f"SQLite at {sqlite_db_path}"
         else:
             db_info = f"{self.db_driver} database driver"
 
-        # Configure records root path (prod vs dev).
-        # Tests override this via FS_RECORD_PATH env var set before import.
-        if ENV_FS_RECORD_PATH not in os.environ:
-            records_folder_name = "dev_records" if _is_dev_mode() else "records"
-            records_root = Path.home() / ".flow" / records_folder_name
-            records_root.mkdir(parents=True, exist_ok=True)
-            os.environ[ENV_FS_RECORD_PATH] = str(records_root)
+        # Records root — same single-source pattern.
+        settings.records_root.mkdir(parents=True, exist_ok=True)
+        os.environ[ENV_FS_RECORD_PATH] = str(settings.records_root)
 
         # Force local compute provider for desktop
         self.default_compute_provider = ComputeProviderType.LOCAL_MACHINE
@@ -758,4 +788,4 @@ debug_file_path = os.path.join(FLOWPAD_TEMP_DIR, "debug.log")
 
 # Environment variable constants (for consumers that import these)
 GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", None)
-DEVELOPMENT = os.getenv("DEVELOPMENT", False)
+DEVELOPMENT = os.getenv("FLOWPAD_DEV", False)

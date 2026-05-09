@@ -62,7 +62,7 @@ export const WebappArtifactDetail: React.FC<WebappArtifactDetailProps> = ({ arti
       {/* Header */}
       <div className="mb-2 flex items-center gap-2">
         <div className={`h-2 w-2 rounded-full ${getStatusColor(status)}`} />
-        <span className="text-sm font-medium">{artifact.name || 'Unnamed'}</span>
+        <span className="text-sm font-medium">{artifact.displayName}</span>
         <Badge
           variant={status === 'running' ? 'default' : status === 'error' ? 'destructive' : 'secondary'}
           className="h-5 text-[10px]"

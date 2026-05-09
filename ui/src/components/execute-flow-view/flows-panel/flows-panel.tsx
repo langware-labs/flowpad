@@ -1,6 +1,6 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { normalizeVfsPathToLocal } from '@sdk/react/hooks/use-fs-item-flows';
-import { Flow, FlowExecutionStatus, FSItem, QueryFilter, QueryRequest } from '@sdk';
+import { Flow, SendStatus, FSItem, QueryFilter, QueryRequest } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -40,15 +40,15 @@ const formatRelativeTime = (timestamp?: string | Date) => {
 /**
  * Get status display info
  */
-const getStatusDisplay = (status?: FlowExecutionStatus) => {
+const getStatusDisplay = (status?: SendStatus) => {
   switch (status) {
-    case FlowExecutionStatus.Running:
+    case SendStatus.Running:
       return { label: 'Running', color: 'text-green-500', icon: Play };
-    case FlowExecutionStatus.Canceled:
+    case SendStatus.Canceled:
       return { label: 'Canceled', color: 'text-yellow-500', icon: Square };
-    case FlowExecutionStatus.Error:
+    case SendStatus.Error:
       return { label: 'Error', color: 'text-red-500', icon: Square };
-    case FlowExecutionStatus.Ready:
+    case SendStatus.Ready:
     default:
       return { label: 'Ready', color: 'text-muted-foreground', icon: Square };
   }
@@ -60,11 +60,10 @@ interface FlowItemProps {
 }
 
 function FlowItem({ flow, onTerminalClick }: FlowItemProps) {
-  const statusDisplay = getStatusDisplay(flow.executionStatus);
+  const statusDisplay = getStatusDisplay(flow.sendStatus);
   const StatusIcon = statusDisplay.icon;
-  const isRunning = flow.executionStatus === FlowExecutionStatus.Running;
+  const isRunning = flow.sendStatus === SendStatus.Running;
   const hasTerminal = !!flow.current_terminal_id;
-  const shortId = flow.id?.slice(0, 8) || 'unknown';
 
   const handleTerminalClick = useCallback(
     (e: React.MouseEvent) => {
@@ -82,7 +81,7 @@ function FlowItem({ flow, onTerminalClick }: FlowItemProps) {
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <GitBranch className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-medium">{flow.title || `Flow ${shortId}`}</p>
+          <p className="truncate text-xs font-medium">{flow.displayName}</p>
           <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
             <span className={cn('flex items-center gap-1', statusDisplay.color)}>
               <StatusIcon className="h-2.5 w-2.5" />
@@ -135,7 +134,7 @@ export const FlowsPanel = forwardRef<FlowsPanelRef, FlowsPanelProps>(function Fl
     // Note: Don't expand auth_scopes - not supported on Flow entity
     return QueryFilter.parse(
       {
-        match: { source_vfs_path: normalizedVfsPath || '' },
+        match: { asset_ref: normalizedVfsPath || '' },
       },
       Flow.type,
     );

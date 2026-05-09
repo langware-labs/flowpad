@@ -1,6 +1,5 @@
 """File-system backed storage utilities."""
 
-from .data_manager import DataManager as DataManager
 from .exceptions import ReadOnlyProviderError as ReadOnlyProviderError
 from .exceptions import ReadOnlyRecordError as ReadOnlyRecordError
 from .factory.type_registry import type_registry as type_registry
@@ -12,6 +11,7 @@ from .fs_ref import TextFsRef as TextFsRef
 from .json_file_record_store import JsonFileRecordStore as JsonFileRecordStore
 from .json_file_record_store import JsonFileRecordStore as SourceFileRecordList  # noqa: F401 — legacy alias
 from .json_file_record_store import _escape_json_pointer as _escape_json_pointer
+from .pointer import Pointer as Pointer
 from .property_record import PropertyRecord as PropertyRecord
 from .record_field import RecordField as RecordField
 from .provider import FSProvider as FSProvider

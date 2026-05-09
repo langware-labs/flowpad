@@ -55,7 +55,7 @@ export function BookmarkCard({
       if (taskId) {
         setPendingTask({
           taskId,
-          taskTitle: bookmark.title || 'Shared task',
+          taskTitle: bookmark.displayName,
           senderName: (bookmark.data?.sender_name as string | undefined) || 'Someone',
         });
       }
@@ -83,7 +83,7 @@ export function BookmarkCard({
           ? <StickyNote className="h-4 w-4 shrink-0 text-yellow-400" />
           : <FileText className="h-4 w-4 shrink-0 text-blue-500" />
         }
-        <span className="bookmark-card-title">{bookmark.title || 'Untitled bookmark'}</span>
+        <span className="bookmark-card-title">{bookmark.displayName}</span>
         <div className="bookmark-card-actions">
           {onRemind && (
             <button

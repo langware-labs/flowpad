@@ -28,6 +28,31 @@ export interface IEntity extends Partial<IResource> {
   vfs_record?: string;
   /** True when the linked Record has been deleted (Entity persists as tombstone) */
   vfs_orphan?: boolean;
+  /**
+   * True when the FSIndexer can no longer find the on-disk Record this entity
+   * was loaded from. Mirrors backend ``Entity.orphan`` (flipped on/off by the
+   * FSIndexer reconcile pass). Distinct from ``vfs_orphan`` (legacy).
+   */
+  orphan?: boolean;
+  /**
+   * ISO 8601 timestamp of when ``orphan`` was last flipped to ``true``. Null
+   * when the entity is not currently orphaned. Backend serializes ``datetime``
+   * to string on the wire — keep it as ``string`` here.
+   */
+  orphan_since?: string | null;
+  /** True when this entity belongs to an SDK-shipped system project. Hidden by default. */
+  system?: boolean;
+  /** True when this entity has a hub-side counterpart at the same id; refreshable from the hub. */
+  remote?: boolean;
+  /**
+   * Generic context-entity references. The unified container for "what other
+   * entities is this entity contextually related to." On the wire, each entry
+   * is a TypeId-formatted string ("type-id"); in code, entities expose a typed
+   * ``contextEntities`` getter that merges this list with per-entity-projected
+   * direct fields. Frontend code must NOT push to this array directly — use
+   * ``addContextEntity`` / ``removeContextEntity``.
+   */
+  context_entities?: string[];
 }
 
 export const defaultEntityType = 'entity_base';

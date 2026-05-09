@@ -1,18 +1,27 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
-import type { ActivityProgress } from '@sdk';
+import type { IndexProgressTable, TypeProgressRow } from '@sdk';
 
-export type { ActivityProgress };
+export type { IndexProgressTable, TypeProgressRow };
+
+function rowState(row: TypeProgressRow, current: string | null): 'done' | 'current' | 'pending' {
+  if (current === row.type_name) return 'current';
+  if (row.total > 0 && row.done >= row.total) return 'done';
+  return 'pending';
+}
 
 export function ActivityProgressBar({
-  progress,
+  table,
   onClick,
 }: {
-  progress: ActivityProgress;
+  table: IndexProgressTable;
   onClick: () => void;
 }) {
-  const pct = progress.total > 0 ? (progress.done.length / progress.total) * 100 : 0;
-  const isDone = progress.current === null && progress.pending.length === 0;
+  const pct = table.total > 0 ? (table.done / table.total) * 100 : 0;
+  const isDone = table.text === 'complete';
+  const label = table.total > 0
+    ? `${table.done.toLocaleString()}/${table.total.toLocaleString()}`
+    : `${table.done.toLocaleString()}`;
 
   return (
     <button
@@ -20,12 +29,10 @@ export function ActivityProgressBar({
       className="w-full text-left rounded-md px-1 py-0.5 hover:bg-accent/30 transition-colors"
     >
       <div className="flex items-center justify-between mb-1">
-        <span className="text-xs font-medium tabular-nums">
-          {progress.done.length}/{progress.total} types
-        </span>
-        {progress.current ? (
+        <span className="text-xs font-medium tabular-nums">{label} records</span>
+        {table.current ? (
           <span className="text-xs text-muted-foreground truncate max-w-[180px] ml-2 font-mono">
-            {progress.current}
+            {table.current}
           </span>
         ) : isDone ? (
           <span className="text-xs text-emerald-600 dark:text-emerald-400">done</span>
@@ -44,77 +51,73 @@ export function ActivityProgressBar({
 export function ActivityProgressModal({
   open,
   onOpenChange,
-  progress,
+  table,
   title = 'Progress',
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  progress: ActivityProgress | null;
+  table: IndexProgressTable | null;
   title?: string;
 }) {
-  if (!progress) return null;
+  if (!table) return null;
+
+  const headerLabel = table.total > 0
+    ? `${table.done.toLocaleString()}/${table.total.toLocaleString()}`
+    : `${table.done.toLocaleString()} records`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="text-sm font-semibold">
-            {title} — {progress.done.length}/{progress.total}
+            {title} — {headerLabel}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3 max-h-[70vh] overflow-y-auto pr-1">
-          {/* Current */}
-          {progress.current && (
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
-                Current
-              </p>
-              <div className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
-                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
-                <span className="font-mono text-sm truncate flex-1">{progress.current}</span>
-              </div>
-            </div>
+        <div className="flex flex-col gap-1 max-h-[70vh] overflow-y-auto pr-1">
+          {table.rows.length === 0 && (
+            <p className="text-xs text-muted-foreground italic px-3 py-2">No records discovered yet.</p>
           )}
+          {table.rows.map((row) => {
+            const state = rowState(row, table.current);
+            const pct = row.total > 0 ? (row.done / row.total) * 100 : 0;
+            const Icon =
+              state === 'done' ? CheckCircle2 :
+              state === 'current' ? Loader2 :
+              Circle;
+            const iconClass =
+              state === 'done' ? 'text-emerald-500' :
+              state === 'current' ? 'text-primary animate-spin' :
+              'text-muted-foreground';
+            const rowClass =
+              state === 'current' ? 'border border-primary/30 bg-primary/5' :
+              state === 'pending' ? 'opacity-60' :
+              '';
+            const countLabel = row.total > 0
+              ? `${row.done.toLocaleString()}/${row.total.toLocaleString()}`
+              : row.done.toLocaleString();
 
-          {/* Done */}
-          {progress.done.length > 0 && (
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
-                Done ({progress.done.length})
-              </p>
-              <div className="flex flex-col gap-0.5">
-                {progress.done.map((t) => (
-                  <div key={t} className="flex items-center gap-2 px-3 py-1.5 rounded-md">
-                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
-                    <span className="font-mono text-sm truncate flex-1 text-muted-foreground">{t}</span>
-                    {progress.counts?.[t] !== undefined && (
-                      <span className="text-xs tabular-nums text-muted-foreground/60 shrink-0">
-                        {progress.counts[t].toLocaleString()}
-                      </span>
-                    )}
+            return (
+              <div
+                key={row.type_name}
+                className={`flex items-center gap-2 rounded-md px-3 py-1.5 ${rowClass}`}
+              >
+                <Icon className={`h-3.5 w-3.5 shrink-0 ${iconClass}`} />
+                <span className="font-mono text-sm truncate flex-1">{row.type_name}</span>
+                <span className="text-xs tabular-nums text-muted-foreground shrink-0">
+                  {countLabel}
+                </span>
+                {row.total > 0 && (
+                  <div className="h-1 w-16 rounded-full bg-muted overflow-hidden shrink-0">
+                    <div
+                      className={`h-full ${state === 'done' ? 'bg-emerald-500' : 'bg-primary'}`}
+                      style={{ width: `${pct}%` }}
+                    />
                   </div>
-                ))}
+                )}
               </div>
-            </div>
-          )}
-
-          {/* Pending */}
-          {progress.pending.length > 0 && (
-            <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1.5">
-                Pending ({progress.pending.length})
-              </p>
-              <div className="flex flex-col gap-0.5">
-                {progress.pending.map((t) => (
-                  <div key={t} className="flex items-center gap-2 px-3 py-1.5 rounded-md opacity-50">
-                    <Circle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="font-mono text-sm truncate">{t}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+            );
+          })}
         </div>
       </DialogContent>
     </Dialog>

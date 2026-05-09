@@ -8,7 +8,10 @@ from pathlib import Path
 # Shared log path utilities
 # ---------------------------------------------------------------------------
 
-LOGS_BASE = Path.home() / ".flow" / "logs"
+def _logs_base() -> Path:
+    """Resolve the active logs dir from the per-instance settings."""
+    from flow_sdk.instance_settings import get_instance_settings
+    return get_instance_settings().logs_dir
 
 
 def _timestamped_filename() -> str:
@@ -19,8 +22,8 @@ def _timestamped_filename() -> str:
 
 
 def generate_timestamped_log_path(subdirectory: str) -> Path:
-    """Create ``~/.flow/logs/{subdirectory}/`` and return a timestamped file path inside it."""
-    log_dir = LOGS_BASE / subdirectory
+    """Create ``<logs_dir>/{subdirectory}/`` and return a timestamped file path inside it."""
+    log_dir = _logs_base() / subdirectory
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir / _timestamped_filename()
 

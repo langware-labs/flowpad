@@ -1,8 +1,8 @@
-"""Unit tests for AssetRecord parent/child hierarchy using the Record fs_store layer.
+"""Unit tests for MarkdownRecord parent/child hierarchy using the Record fs_store layer.
 
 These tests exercise:
 1. Basic parent-child linking: add_child(), parent, children
-2. Folder + skill asset: move asset to different parent, verify source_vfs_path unchanged
+2. Folder + skill asset: move asset to different parent, verify asset_ref unchanged
 3. Multi-level nesting: add/move/delete, move a whole branch under a new node
 """
 
@@ -14,7 +14,7 @@ import pytest
 
 from flow_sdk.fs_store.record import get_default_records_root, set_default_records_root
 from flow_sdk.fs_store.record_ref import RecordRef
-from flow_sdk.fs_records.markdown_record import MarkdownRecord as AssetRecord
+from flow_sdk.fs_records.markdown_record import MarkdownRecord
 
 
 # ---------------------------------------------------------------------------
@@ -34,25 +34,26 @@ def tmp_records_root(tmp_path: Path):
 def make_asset(
     title: str,
     asset_type: str = "doc",
-    source_vfs_path: str | None = None,
-) -> AssetRecord:
-    """Create an AssetRecord and persist it to disk (using default_path)."""
+    asset_ref: str | None = None,
+) -> MarkdownRecord:
+    """Create an MarkdownRecord and persist it to disk (using default_path)."""
     kwargs: dict = {"title": title, "asset_type": asset_type}
-    if source_vfs_path:
-        kwargs["source_vfs_path"] = source_vfs_path
-    rec = AssetRecord(**kwargs)
+    rec = MarkdownRecord(**kwargs)
+    if asset_ref:
+        from flow_sdk.fs_store.fs_ref import FSRef
+        rec.asset_ref = FSRef(asset_ref)
     rec.save()
     assert rec.path is not None, "save() must set path (folder)"
     return rec
 
 
-def reload(rec: AssetRecord) -> AssetRecord:
-    """Reload an AssetRecord from disk by its directory path."""
+def reload(rec: MarkdownRecord) -> MarkdownRecord:
+    """Reload an MarkdownRecord from disk by its directory path."""
     folder = Path(rec.path)
-    return AssetRecord.load_record(folder)
+    return MarkdownRecord.load_record(folder)
 
 
-def _folder_ref(rec: AssetRecord) -> RecordRef:
+def _folder_ref(rec: MarkdownRecord) -> RecordRef:
     """Build a RecordRef pointing at the record's folder (not metadata.json).
 
     Using the folder path ensures init_record() will run the full split-format
@@ -62,15 +63,15 @@ def _folder_ref(rec: AssetRecord) -> RecordRef:
     return RecordRef(id=rec.id, type=rec.type, path=rec.path)
 
 
-def link_child(parent: AssetRecord, child: AssetRecord) -> None:
+def link_child(parent: MarkdownRecord, child: MarkdownRecord) -> None:
     """Add *child* to *parent* using a folder-path ref and save both."""
     parent.add_child(_folder_ref(child))  # saves parent immediately
     child.parent_ref = _folder_ref(parent)
     child.save()
 
 
-def get_children_of(parent: AssetRecord) -> list[AssetRecord]:
-    """Return all AssetRecord children of *parent* loaded from disk.
+def get_children_of(parent: MarkdownRecord) -> list[MarkdownRecord]:
+    """Return all MarkdownRecord children of *parent* loaded from disk.
 
     Resolves each child ref to its folder so the full split format is loaded.
     """
@@ -83,11 +84,11 @@ def get_children_of(parent: AssetRecord) -> list[AssetRecord]:
         # Ref may point to metadata.json (file) or the record dir – normalise to dir.
         folder = p if p.is_dir() else p.parent
         if folder.exists():
-            results.append(AssetRecord.load_record(folder))
+            results.append(MarkdownRecord.load_record(folder))
     return results
 
 
-def move_child(child: AssetRecord, old_parent: AssetRecord, new_parent: AssetRecord) -> None:
+def move_child(child: MarkdownRecord, old_parent: MarkdownRecord, new_parent: MarkdownRecord) -> None:
     """Move *child* from *old_parent* to *new_parent*, updating all refs on disk."""
     # 1. Remove from old parent's children_refs
     old_fresh = reload(old_parent)
@@ -104,17 +105,17 @@ def move_child(child: AssetRecord, old_parent: AssetRecord, new_parent: AssetRec
     child_fresh.save()
 
 
-def all_assets_with_parent(parent: AssetRecord, root: Path) -> list[AssetRecord]:
+def all_assets_with_parent(parent: MarkdownRecord, root: Path) -> list[MarkdownRecord]:
     """Scan all asset records in *root* and return those whose parent_ref.id == parent.id."""
     results = []
-    asset_dir = root / "docs"
+    asset_dir = root / "markdown"
     if not asset_dir.exists():
         return results
     for entry in asset_dir.iterdir():
         if not entry.is_dir():
             continue
         try:
-            rec = AssetRecord.load_record(entry)
+            rec = MarkdownRecord.load_record(entry)
             if rec.parent_ref and rec.parent_ref.id == parent.id:
                 results.append(rec)
         except Exception:
@@ -223,22 +224,25 @@ class TestBasicParentChild:
 class TestFolderSkillMove:
     def test_move_skill_to_different_parent(self, tmp_records_root):
         """Moving a skill from folder A to folder B updates parent/child refs.
-        The source_vfs_path (physical file location) must not change."""
+        The asset_ref (physical file location) must not change."""
         folder_a = make_asset("Folder A", "folder")
         folder_b = make_asset("Folder B", "folder")
-        skill = make_asset("My Skill", "skill", source_vfs_path="skills/my-skill/SKILL.md")
+        skill = make_asset("My Skill", "skill", asset_ref="skills/my-skill/SKILL.md")
 
         # Link skill under folder_a
         link_child(folder_a, skill)
 
-        original_vfs_path = getattr(skill, 'source_vfs_path', None)
+        ar = skill.asset_ref
+        original_path = ar.path if ar is not None else None
 
         # Move skill to folder_b
         move_child(skill, folder_a, folder_b)
 
-        # --- Verify source_vfs_path unchanged ---
+        # --- Verify asset_ref unchanged ---
         skill_fresh = reload(skill)
-        assert getattr(skill_fresh, 'source_vfs_path', None) == original_vfs_path, (
+        ar_fresh = skill_fresh.asset_ref
+        fresh_path = ar_fresh.path if ar_fresh is not None else None
+        assert fresh_path == original_path, (
             "Physical file path must not change when moving a record"
         )
 
@@ -262,7 +266,7 @@ class TestFolderSkillMove:
         """After move, directory scan returns skill under new parent only."""
         folder_a = make_asset("Folder A", "folder")
         folder_b = make_asset("Folder B", "folder")
-        skill = make_asset("Skill", "skill", source_vfs_path="skills/s/SKILL.md")
+        skill = make_asset("Skill", "skill", asset_ref="skills/s/SKILL.md")
 
         link_child(folder_a, skill)
 
@@ -304,7 +308,7 @@ class TestFolderSkillMove:
 
 
 class TestMultiLevelNesting:
-    def _build_tree(self) -> tuple[AssetRecord, ...]:
+    def _build_tree(self) -> tuple[MarkdownRecord, ...]:
         """
         Build this tree and return all nodes:
 
@@ -424,7 +428,7 @@ class TestMultiLevelNesting:
 
         # Deep path: branch_b → branch_a → leaf_a1 via children property
         branch_a_via_children = next(
-            (AssetRecord.load_record(Path(r.path)) for r in b_fresh.children_refs if r.id == branch_a.id and r.path),
+            (MarkdownRecord.load_record(Path(r.path)) for r in b_fresh.children_refs if r.id == branch_a.id and r.path),
             None,
         )
         assert branch_a_via_children is not None

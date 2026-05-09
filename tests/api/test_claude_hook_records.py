@@ -59,9 +59,9 @@ def hooks_dir(tmp_path):
 
 @pytest.fixture(autouse=True)
 def patch_discover(hooks_dir):
-    """Patch ClaudeHookRecord.discover and discover_one to use temp settings files."""
+    """Patch ClaudeHookRecord.discover and get to use temp settings files."""
     original_discover = ClaudeHookRecord.discover.__func__
-    original_discover_one = ClaudeHookRecord.discover_one.__func__
+    original_get = ClaudeHookRecord.get.__func__
 
     @classmethod
     def patched_discover(cls, scope=None, **kwargs):
@@ -69,12 +69,12 @@ def patch_discover(hooks_dir):
         return original_discover(cls, scope=scope, **kwargs)
 
     @classmethod
-    def patched_discover_one(cls, uid, scope=None, **kwargs):
+    def patched_get(cls, uid, scope=None, **kwargs):
         kwargs.setdefault("search_paths", [hooks_dir])
-        return original_discover_one(cls, uid, scope=scope, **kwargs)
+        return original_get(cls, uid, scope=scope, **kwargs)
 
     with mock.patch.object(ClaudeHookRecord, "discover", patched_discover):
-        with mock.patch.object(ClaudeHookRecord, "discover_one", patched_discover_one):
+        with mock.patch.object(ClaudeHookRecord, "get", patched_get):
             yield
 
 

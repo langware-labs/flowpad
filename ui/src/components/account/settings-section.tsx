@@ -55,7 +55,11 @@ export function SettingsSection() {
       </div>
 
       <div>
-        <Label className="mb-2 block text-sm font-medium">Default Terminal</Label>
+        <Label className="mb-2 block text-sm font-medium">External Terminal</Label>
+        <p className="mb-2 text-xs text-muted-foreground">
+          The in-app terminal is always the primary shell. This setting controls whether a
+          sidecar OS Terminal window is also opened.
+        </p>
         <RadioGroup
           value={settings.defaultTerminal}
           onValueChange={(value) => {
@@ -65,13 +69,13 @@ export function SettingsSection() {
           <div className="flex items-center gap-2">
             <RadioGroupItem value={TerminalType.BUILTIN_XTERM} id="terminal-builtin" />
             <Label htmlFor="terminal-builtin" className="cursor-pointer text-sm">
-              Built-in Terminal
+              In-app only
             </Label>
           </div>
           <div className="flex items-center gap-2">
             <RadioGroupItem value={TerminalType.EXTERNAL_TERMINAL} id="terminal-external" />
             <Label htmlFor="terminal-external" className="cursor-pointer text-sm">
-              External Terminal (OS)
+              Also open sidecar OS Terminal
             </Label>
           </div>
         </RadioGroup>

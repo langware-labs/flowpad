@@ -1,8 +1,8 @@
 import type { SnifferEvent } from '@src/hooks/use-hooks-sniffer';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
-import type { Annotation, Bookmark, Task } from '@sdk';
-import { MessageSquarePlus, RefreshCw, StickyNote, Tag, X } from 'lucide-react';
+import { BookmarkType, type Annotation, type Bookmark, type Task } from '@sdk';
+import { ArchiveX, MessageSquarePlus, RefreshCw, StickyNote, Tag, X } from 'lucide-react';
 import { useRef, useMemo, useState } from 'react';
 import { LearningCard } from './LearningCard';
 import { BookmarkCard } from './BookmarkCard';
@@ -19,6 +19,7 @@ export interface BookmarkColumnProps {
   onErrorClick?: () => void;
   onAddComment?: (content: string) => Promise<void>;
   onArchiveLearning?: (task: Task) => void;
+  onArchiveAllLearnings?: () => void;
   onCloseBookmark?: (bookmark: Bookmark) => void;
   onDeleteBookmark?: (bookmark: Bookmark) => void;
   onRemindBookmark?: (bookmark: Bookmark, delayMinutes: number) => void;
@@ -81,7 +82,9 @@ function BookmarksList({
   onOpenEventDialog?: (sessionId: string, name: string) => void;
 }) {
   const entries = useMemo<BookmarkEntry[]>(() => {
-    const filteredBookmarks = bookmarks.filter((m) => filterBookmark(m, filter));
+    const filteredBookmarks = bookmarks.filter(
+      (m) => m.bookmark_type !== BookmarkType.FAVORITE && filterBookmark(m, filter),
+    );
     const items: BookmarkEntry[] = [
       ...learningTasks.map((task) => ({
         kind: 'learning' as const,
@@ -132,6 +135,7 @@ export function BookmarkColumn({
   onErrorClick,
   onAddComment,
   onArchiveLearning,
+  onArchiveAllLearnings,
   onCloseBookmark,
   onDeleteBookmark,
   onRemindBookmark,
@@ -219,20 +223,32 @@ export function BookmarkColumn({
             </button>
           )}
         </div>
-        {onAddComment && (
-          <button
-            type="button"
-            data-testid="add-comment-button"
-            title="Add comment"
-            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-            onClick={() => {
-              setCommentOpen((v) => !v);
-              if (!commentOpen) setTimeout(() => commentInputRef.current?.focus(), 50);
-            }}
-          >
-            {commentOpen ? <X className="h-3.5 w-3.5" /> : <MessageSquarePlus className="h-3.5 w-3.5" />}
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {onArchiveAllLearnings && learningTasks.length > 0 && (
+            <button
+              type="button"
+              title="Archive all todos"
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              onClick={onArchiveAllLearnings}
+            >
+              <ArchiveX className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {onAddComment && (
+            <button
+              type="button"
+              data-testid="add-comment-button"
+              title="Add comment"
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              onClick={() => {
+                setCommentOpen((v) => !v);
+                if (!commentOpen) setTimeout(() => commentInputRef.current?.focus(), 50);
+              }}
+            >
+              {commentOpen ? <X className="h-3.5 w-3.5" /> : <MessageSquarePlus className="h-3.5 w-3.5" />}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Inline comment form */}
@@ -331,7 +347,7 @@ export function BookmarkColumn({
         open={!!pendingDeleteBookmark}
         onOpenChange={(open) => !open && setPendingDeleteBookmark(null)}
         title="Delete bookmark?"
-        description={`This will permanently delete "${pendingDeleteBookmark?.title || 'Untitled bookmark'}". This cannot be undone.`}
+        description={`This will permanently delete "${pendingDeleteBookmark?.displayName ?? ''}". This cannot be undone.`}
         confirmLabel="Delete"
         variant="destructive"
         onConfirm={() => {

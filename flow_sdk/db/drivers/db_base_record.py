@@ -57,6 +57,8 @@ class DBBaseRecord(BaseModel):
 
     def __init_subclass__(cls, **kwargs: Unpack[ConfigDict]):
         super().__init_subclass__(**kwargs)
+        if cls.__dict__.get('_abstract', False):
+            return
         type_name = cls.get_type()
         if type_name:
             from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo  # noqa: PLC0415
@@ -64,7 +66,8 @@ class DBBaseRecord(BaseModel):
                 type_name=type_name,
                 locations=["index"],
                 entity_cls=cls,
-                user_asset=bool(getattr(cls, "_user_asset", False)),
+                browseable=bool(getattr(cls, "_browseable", False)),
+                creatable=bool(getattr(cls, "_creatable", False)),
                 icon=getattr(cls, "_icon", None),
             ))
 
@@ -313,6 +316,14 @@ class BuiltinEntityType(Enum):
     SKILL = "skill"
     SHELL = "shell"
     CRON_EVENT = "cron_event"
+    TASK = "task"
+    SPEC = "spec"
+    CONVERSATION = "conversation"
+    FLOW_MESSAGE = "flow_message"
+    TEAM_SPACE = "team_space"
+    NOTIFICATION = "notification"
+    BOOKMARK = "bookmark"
+    RUN = "run"
 
 
 class EntityChild(BaseModel, Generic[RecordType]):

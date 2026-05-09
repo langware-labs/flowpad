@@ -15,7 +15,10 @@ type MessageType =
   | 'response_msg'
   | 'pty_output_msg'
   | 'flow_data_msg'
-  | 'llm_config_msg';
+  | 'llm_config_msg'
+  | 'hub_client_error_msg'
+  | 'auth_expired_msg'
+  | 'ui_command';
 
 function convertToWebSocketUrl(url: string) {
   // Create a URL object to parse the input URL
@@ -84,6 +87,38 @@ export interface ControlMessage extends BaseMessage {
 export interface OAuthMessage extends BaseMessage {
   oauth_request_id: string;
   status: 'success' | 'error';
+  message?: string | null;
+  user?: Record<string, any> | null;
+}
+
+export interface HubClientErrorMessage extends BaseMessage {
+  message_type: 'hub_client_error_msg';
+  status_code: number;
+  method: string;
+  path: string;
+  message: string;
+  suppressed_count?: number;
+}
+
+export interface AuthExpiredMessage extends BaseMessage {
+  message_type: 'auth_expired_msg';
+  reason: string;
+}
+
+/**
+ * Server → client directive to drive the UI (navigate, open, etc.).
+ * Emitted by the local Flowpad server when an agent invokes a `flow navigate ...`
+ * command. The server resolves targeting via presence tracking and sends this
+ * to the single active tab.
+ */
+export interface UiCommandMessage extends BaseMessage {
+  message_type: 'ui_command';
+  /** Discriminator for the specific action the UI should perform. */
+  kind: 'navigate_entity' | string;
+  /** For `navigate_entity`: the entity's type (e.g. "shell", "project"). */
+  type?: string;
+  /** For `navigate_entity`: the entity's id. */
+  id?: string;
 }
 
 export interface LlmConfigMessage extends BaseMessage {
@@ -184,6 +219,12 @@ export class ConnectionManager extends EventEmitter {
   private baseReconnectDelay: number = 500; // ms
   private isReconnecting: boolean = false;
 
+  // In-flight connect promise. Set when a `new WebSocket(...)` is created and
+  // cleared on `open` or on `close-before-open` of that same socket. Lets
+  // concurrent callers (e.g. `waitForConnected`) await the same handshake
+  // instead of racing each other or seeing `undefined` during CONNECTING.
+  private _openPromise: Promise<void> | null = null;
+
   public resetReconnectState() {
     this.reconnectAttempts = 0;
     this.isReconnecting = false;
@@ -194,19 +235,25 @@ export class ConnectionManager extends EventEmitter {
     ConnectionManager.instance = this;
   }
 
-  public async connect() {
-    if (
-      this.socket &&
-      (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)
-    ) {
+  public async connect(): Promise<void> {
+    if (this.socket?.readyState === WebSocket.OPEN) {
       return;
     }
-    let resolve_promise: any;
-    let reject_promise: any;
-    const connected_promise = new Promise((resolve, reject) => {
+    // CONNECTING: another caller already started a handshake — return that
+    // promise so awaiters actually wait for `open`. Previously this branch
+    // returned `undefined`, which silently let downstream WS calls fire
+    // before the socket opened.
+    if (this.socket?.readyState === WebSocket.CONNECTING && this._openPromise) {
+      return this._openPromise;
+    }
+
+    let resolve_promise: () => void = () => {};
+    let reject_promise: (err: Error) => void = () => {};
+    const connected_promise = new Promise<void>((resolve, reject) => {
       resolve_promise = resolve;
       reject_promise = reject;
     });
+    this._openPromise = connected_promise;
     try {
       const ws_url = `${config.SERVER_URL}${config.API_PREFIXES.connect}/${this.id}`;
       const ws = new WebSocket(convertToWebSocketUrl(ws_url));
@@ -215,6 +262,7 @@ export class ConnectionManager extends EventEmitter {
       let didOpen = false;
       ws.addEventListener('open', (event) => {
         didOpen = true;
+        if (this._openPromise === connected_promise) this._openPromise = null;
         this.onOpen(event);
         resolve_promise();
       });
@@ -238,6 +286,7 @@ export class ConnectionManager extends EventEmitter {
         // A newer connect() call may have already replaced it — don't clobber that.
         if (this.socket === ws) {
           this.socket = null;
+          if (this._openPromise === connected_promise) this._openPromise = null;
         }
         this.onClose(event);
         if (!didOpen) {
@@ -249,9 +298,46 @@ export class ConnectionManager extends EventEmitter {
       });
     } catch (e) {
       console.error('Error connecting to WebSocket server:', e);
-      reject_promise(e);
+      if (this._openPromise === connected_promise) this._openPromise = null;
+      reject_promise(e instanceof Error ? e : new Error(String(e)));
     }
     return connected_promise;
+  }
+
+  /**
+   * Resolve once the socket is OPEN, with a hard timeout fence.
+   *
+   * Idempotent and safe under concurrency: multiple callers share the same
+   * in-flight `_openPromise`. Use this from any code path that is about to
+   * issue a WS-only action (e.g. `callActionOverWS`) and cannot block the
+   * UI indefinitely if the server is unreachable.
+   *
+   * Throws `Error('WebSocket connect timed out after Xms')` on timeout —
+   * does NOT mutate the underlying socket; a later attempt may still succeed.
+   */
+  public async waitForConnected(timeoutMs: number = 5000): Promise<void> {
+    if (this.connected) return;
+
+    // Kick a connect if none is in flight. connect() short-circuits when
+    // OPEN/CONNECTING, so this is cheap to call concurrently.
+    if (!this._openPromise) {
+      void this.connect();
+    }
+    const open = this._openPromise;
+    if (!open) return; // race: connect() resolved synchronously to OPEN
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`WebSocket connect timed out after ${timeoutMs}ms`)),
+        timeoutMs,
+      );
+    });
+    try {
+      await Promise.race([open, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   onOpen(event: Event) {
@@ -336,6 +422,19 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'llm_config_msg') {
       return this.onLlmConfigMessage(data as LlmConfigMessage);
     }
+    if (data.message_type === 'hub_client_error_msg') {
+      return this.onHubClientErrorMessage(data as HubClientErrorMessage);
+    }
+    if (data.message_type === 'auth_expired_msg') {
+      return this.onAuthExpiredMessage(data as AuthExpiredMessage);
+    }
+    if (data.message_type === 'ui_command') {
+      return this.onUiCommandMessage(data as UiCommandMessage);
+    }
+  }
+
+  onUiCommandMessage(data: UiCommandMessage) {
+    this.emit('on_ui_command', data);
   }
 
   onBinMessage(data: ArrayBuffer) {
@@ -397,6 +496,12 @@ export class ConnectionManager extends EventEmitter {
   }
   onLlmConfigMessage(data: LlmConfigMessage) {
     this.emit('on_llm_config_msg', data);
+  }
+  onHubClientErrorMessage(data: HubClientErrorMessage) {
+    this.emit('on_hub_client_error_msg', data);
+  }
+  onAuthExpiredMessage(data: AuthExpiredMessage) {
+    this.emit('on_auth_expired_msg', data);
   }
   onPtyOutputMessage(data: PtyOutputMessage) {
     this.emit('on_pty_output_msg', data);

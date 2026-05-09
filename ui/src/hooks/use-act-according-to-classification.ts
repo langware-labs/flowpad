@@ -110,27 +110,26 @@ export function useActAccordingToClassification(
           },
         );
 
-        // 2. Resolve outputDir now that we have process.id
+        // 2. Output folder — prefer the process's own FSRef; fall back to the
+        //    legacy layout so pre-migration processes still work.
         const normalizedHome = ctx.homePath.startsWith('/') ? ctx.homePath : `/${ctx.homePath}`;
-        const resolvedOutputDir = `${normalizedHome}/.flow/sessions/${process.id}`;
+        const resolvedOutputDir =
+          process.output_folder?.path ?? `${normalizedHome}/.flow/sessions/${process.id}`;
         await fsManager.mkdir(ctx.computeNodeTypeId, resolvedOutputDir);
 
         // 3. Task + ProcessResult creation
-        const taskMetadata: Record<string, unknown> = {
-          processId: process.id,
-          sessionId,
-          resultUname,
-          workerSessionId: generatedWorkerSessionId,
-          output_dir: resolvedOutputDir,
-          command,
-        };
         const task = new Task({
           title: `${command} for ${sessionId}`,
           status: 'in_progress',
           task_type: taskType,
           priority: 'medium',
           tags: [taskType],
-          metadata: taskMetadata,
+          process_id: process.id,
+          session_id: sessionId,
+          result_uname: resultUname,
+          worker_session_id: generatedWorkerSessionId,
+          output_dir: resolvedOutputDir,
+          command,
         });
         const taskScope = ctx.projectTypeId ? [ctx.projectTypeId] : [];
         await task.save(taskScope);
@@ -148,7 +147,7 @@ export function useActAccordingToClassification(
 
         // 4. Completion listeners
         const updateStatus = async (status: 'complete' | 'error') => {
-          let extraMeta: Record<string, unknown> = {};
+          let skillFields: Partial<{ skill_name: string; folder_name: string; skill_scope: string; skill_path: string }> = {};
           if (status === 'complete') {
             try {
               const listing = await fsManager.ls(ctx.computeNodeTypeId, resolvedOutputDir);
@@ -161,11 +160,11 @@ export function useActAccordingToClassification(
                     const skillMdPath = `${resolvedOutputDir}/${name}/SKILL.md`;
                     const content = await fsManager.download(ctx.computeNodeTypeId, skillMdPath);
                     if (content) {
-                      extraMeta = {
-                        skillName: name,
-                        folderName: name,
-                        skillScope: 'user',
-                        skillPath: skillMdPath,
+                      skillFields = {
+                        skill_name: name,
+                        folder_name: name,
+                        skill_scope: 'user',
+                        skill_path: skillMdPath,
                       };
                       break;
                     }
@@ -192,12 +191,10 @@ export function useActAccordingToClassification(
 
           try {
             task.status = status === 'complete' ? 'done' : 'open';
-            task.metadata = {
-              ...taskMetadata,
-              ...(status === 'complete'
-                ? { completedAt: new Date().toISOString(), ...extraMeta }
-                : {}),
-            };
+            if (status === 'complete') {
+              task.completed_at = new Date();
+              Object.assign(task, skillFields);
+            }
             await task.save(taskScope);
           } catch (error) {
             console.error('[useActAccordingToClassification] Failed to update Task:', error);

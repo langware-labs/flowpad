@@ -77,7 +77,7 @@ test.describe('Full-Text Search', () => {
       expect(r).toHaveProperty('scope');
       expect(r).toHaveProperty('created_at');
       expect(r).toHaveProperty('modified_at');
-      expect(r).toHaveProperty('source_path');
+      expect(r).toHaveProperty('asset_ref');
     }
   });
 

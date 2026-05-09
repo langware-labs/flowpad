@@ -27,13 +27,17 @@ except ImportError:
                 return func
             return decorator
 
-from pydantic import Field, SerializationInfo, SerializeAsAny, ValidationError, model_serializer
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+
+from pydantic import Field, SerializationInfo, SerializeAsAny, TypeAdapter, ValidationError, model_serializer
 
 from flow_sdk.config import StorageProvider
 from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
-from flow_sdk.db.drivers.query import OrderType, QueryFilter
+from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, QueryOp
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 import flow_sdk.service_log as service_log
@@ -46,11 +50,65 @@ from .entity_env.env_types import EntityEnvVars, EnvVar, EnvVarType
 EntityType = TypeVar("EntityType", bound="Entity")
 
 
+@dataclass
+class PathQueryOptions:
+    """Filter options for ``Entity.assets_by_path``.
+
+    - ``search_dirs``: one or more absolute folder paths; results are the
+      union of entities whose ``asset_ref`` is a strict descendant of any.
+    - ``types``: limit to these entity types. ``None`` means *all registered
+      entity types* (record-only types are skipped — they have no DB rows).
+    - ``include_system``: when False, system-project entities are excluded
+      via SQL (so paging stays correct).
+    """
+
+    search_dirs: List[str | Path]
+    types: List[str] | None = None
+    include_system: bool = True
+    limit: int = 200
+    offset: int = 0
+
+
 class Entity(DBEntity):
     env_vars: SerializeAsAny[EntityEnvVars[EnvVar] | None] = Field(default=None)
     visitor_role: str | None = Field(default=None)
     labels: List[str] | None = APIField(default=None)
     tags: List[str] = APIField(default_factory=list)
+    system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
+    remote: bool = APIField(default=False, description="True when this entity has a hub counterpart at the same id; refreshable from the hub")
+    orphan: bool = APIField(
+        default=False,
+        description=(
+            "True when the entity's source asset (file/folder at asset_ref) is "
+            "missing on disk. Set by the FSIndexer's orphan-detection pass; "
+            "cleared automatically when the source reappears. Non-asset entities "
+            "(those without an asset_ref) are always False."
+        ),
+    )
+    orphan_since: datetime | None = APIField(
+        default=None,
+        description=(
+            "UTC timestamp of when the entity first transitioned to orphan=True. "
+            "Null when orphan=False. Preserved across rescans so 'how long has "
+            "this been missing' is answerable."
+        ),
+    )
+
+    # Generic context-entity references — the unified container for "what
+    # other entities is this one contextually related to." Persists as a list
+    # of TypeIds. Direct fields (``project_id``, ``assignee``, etc.) stay on
+    # the entity for indexing/business logic; ``context_entities`` holds the
+    # purely-pointer references that previously lived as one-off fields like
+    # ``task.spec_id`` / ``conversation.task_id`` / ``flow_message.context``.
+    # Mutate via ``add_context_entity`` / ``remove_context_entity``.
+    context_entities: list[TypeId] = APIField(
+        default_factory=list,
+        description=(
+            "Pointers to other entities that contextually relate to this one. "
+            "Used by EntityChips to render lineage. Frontend writes go through "
+            "addContextEntity / removeContextEntity only."
+        ),
+    )
 
     # Display name — overridden with required `str` on many subclasses
     name: str | None = APIField(default=None, description="Display name")
@@ -106,6 +164,71 @@ class Entity(DBEntity):
         return await driver.browse_by_type(entity_type=record_type, limit=limit, status=status)
 
     @classmethod
+    async def assets_by_path(cls, opts: PathQueryOptions) -> list["Entity"]:
+        """Return entities whose ``asset_ref`` is a strict descendant of any
+        folder in ``opts.search_dirs``.
+
+        Pushdown: each search dir becomes a half-open lex range
+        ``asset_ref >= "<dir>/" AND asset_ref < "<dir>0"`` against
+        ``json_extract(data, '$.asset_ref')`` (`/` is `0x2F`, next codepoint
+        is `0`). Multiple dirs are OR'd. The query is dispatched per type
+        because the SQL driver mandates a type filter — when ``opts.types``
+        is None, every registered type is queried. Results are union'd,
+        sorted by ``asset_ref``, then paged.
+        """
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+        if not opts.search_dirs:
+            return []
+
+        folder_terms: list[ExpressionNode] = []
+        for d in opts.search_dirs:
+            f = canonical_posix_path(d).rstrip("/")
+            if not f:
+                continue
+            folder_terms.append(ExpressionNode(
+                op=QueryOp.AND,
+                operands=[
+                    ExpressionNode(op=QueryOp.GE, operands=["asset_ref", f + "/"]),
+                    ExpressionNode(op=QueryOp.LT, operands=["asset_ref", f + "0"]),
+                ],
+            ))
+        if not folder_terms:
+            return []
+
+        folder_expr: ExpressionNode = (
+            folder_terms[0] if len(folder_terms) == 1
+            else ExpressionNode(op=QueryOp.OR, operands=folder_terms)
+        )
+
+        match: ExpressionNode = folder_expr
+        if not opts.include_system:
+            match = ExpressionNode(op=QueryOp.AND, operands=[
+                match,
+                ExpressionNode(op=QueryOp.NE, operands=["system", True]),
+            ])
+
+        types_to_query = opts.types if opts.types else SchemaRegistry.get_all_entity_types()
+
+        # Each per-type query needs at most ``offset + limit`` rows; the global
+        # offset is applied after merge because rows are split across types.
+        per_type_limit = (opts.offset + opts.limit) if opts.limit else None
+
+        results: list[Entity] = []
+        for type_name in types_to_query:
+            qf = QueryFilter(
+                type=type_name,
+                match=match,
+                limit=per_type_limit,
+                order_by={"asset_ref": "asc"},
+            )
+            results.extend(await cls.get_all(qf))
+
+        results.sort(key=lambda e: getattr(e, "asset_ref", "") or "")
+        end = opts.offset + opts.limit if opts.limit else None
+        return results[opts.offset:end]
+
+    @classmethod
     def allocate_id(cls, data: dict) -> str:
         """Return a stable UUID for this entity type given creation data.
 
@@ -136,34 +259,28 @@ class Entity(DBEntity):
         entity_uuid = entity_cls.allocate_id(data)
         entity = await entity_cls.get_one(QueryFilter.parse({"id": entity_uuid}))
 
-        # Collect domain fields from the record that the entity understands but
-        # that meta_dict() omits (e.g. Skill.description, Bookmark.title).
-        # This prevents sync_from_entity() from overwriting record values with
-        # empty entity defaults on the next sync cycle.
-        # Only do this for specialized entity subclasses — base Entity has no
-        # domain fields worth syncing, and record.to_dict() can be expensive
-        # (e.g. ClaudeSessionRecord triggers a full JSONL parse).
+        # Collect domain fields the entity understands but meta_dict() omits.
+        # Only fetch the SPECIFIC missing fields — never call to_dict(), which on
+        # ClaudeSessionRecord materialises 27 PropertyRecord descriptors and
+        # triggers a full JSONL parse just to populate fields no caller asked for.
+        # Pulling fields one-by-one with getattr still triggers the same descriptor
+        # cache (e.g. _get_session_batch_stats) on first access — but only when an
+        # entity field actually requires it, and only once per record.
         record_domain: dict = {}
         if entity_cls is not cls and hasattr(entity_cls, "model_fields"):
             entity_field_names = set(entity_cls.model_fields.keys())
             missing = entity_field_names - set(data.keys()) - {"id", "type"}
             if missing:
-                # Only call the (potentially expensive) to_dict() if the record
-                # actually carries any of the missing fields — i.e. when missing
-                # intersects with the record's own property_types or __dict__.
-                # This avoids triggering a full JSONL parse (ClaudeSessionRecord)
-                # when the missing fields are all base Entity infrastructure
-                # fields (created_date, tags, env_vars, …) that the record never
-                # populates anyway.
                 record_fields = set(
                     getattr(record, '_property_types', None) or {}
                 ) | set(
                     object.__getattribute__(record, "__dict__").keys()
                 )
-                if missing & record_fields:
-                    for k, v in record.to_dict().items():
-                        if k in missing:
-                            record_domain[k] = v
+                for k in missing & record_fields:
+                    try:
+                        record_domain[k] = getattr(record, k, None)
+                    except Exception:
+                        record_domain[k] = None
 
         if entity is None:
             create_kwargs = {"id": entity_uuid, "type": record_type}
@@ -177,8 +294,12 @@ class Entity(DBEntity):
             entity.type = record_type
             all_updates = {**data, **record_domain}
             for k, v in all_updates.items():
-                if k not in ("id",) and hasattr(entity, k):
-                    setattr(entity, k, v)
+                if k in ("id",) or not hasattr(entity, k):
+                    continue
+                field = entity.__class__.model_fields.get(k)
+                if field is not None:
+                    v = TypeAdapter(field.annotation).validate_python(v)
+                setattr(entity, k, v)
 
         # Propagate PropertyRecord values to matching entity fields
         already_set = set(data.keys()) | set(record_domain.keys())
@@ -212,7 +333,7 @@ class Entity(DBEntity):
         record_cls = SchemaRegistry.get_record_cls(type_name)
         if record_cls is None:
             return None
-        return record_cls.discover_one(self.id)
+        return record_cls.get(self.id)
 
     async def updateSearchIndex(self) -> None:
         """Write this entity's searchable content into the FTS5 table.
@@ -260,11 +381,21 @@ class Entity(DBEntity):
         if record_cls is None:
             service_log.debug(f"_store: no Record class registered for entity type '{type_name}'")
             return None
-        record = record_cls.discover_one(entity.id)
+        record = record_cls.get(entity.id)
         if record is None:
             record = record_cls(id=entity.id)
+        # Propagate any pre-resolved asset_ref string from the entity (set in
+        # _prepare_for_storage) onto the record so main_ref resolves correctly.
+        if record.asset_ref is None:
+            ar_str = getattr(entity, "asset_ref", None)
+            if ar_str:
+                from flow_sdk.fs_store.fs_ref import FSRef
+                record.asset_ref = FSRef(ar_str)
         import asyncio
         try:
+            # upsert_main_ref writes default_body iff main_ref doesn't exist
+            # — write goes through the FSRef contract, never raw Path.write_text.
+            await asyncio.to_thread(record.upsert_main_ref, entity)
             await asyncio.to_thread(record.sync_from_entity, entity)
         except Exception as exc:
             from flow_sdk.fs_records.record_error import RecordError  # lazy (circular-safe)
@@ -276,19 +407,98 @@ class Entity(DBEntity):
             await entity._fts_upsert(type_name, content)
         return record
 
+    async def _resolve_scope_root(self) -> "Path | None":
+        """Resolve filesystem scope root from request_context.
+
+        Project context (POST /api/v1/graph/project/<id>/<type>) →
+        ``project.fs_storage_mount_path``. Otherwise → per-instance user_home.
+
+        Single source of truth for scope, called once per save(); per-type
+        ``store()`` overrides must not duplicate this logic.
+        """
+        from pathlib import Path
+        from flow_sdk.instance_settings import get_instance_settings
+        from flow_sdk.request_context.methods import get_current_request_info
+        request_info = get_current_request_info()
+        if (
+            request_info is not None
+            and getattr(request_info, "target_entity_typeid", None) is not None
+            and request_info.target_entity_typeid.type == "project"
+        ):
+            try:
+                proj = await request_info.get_target_entity()
+            except Exception:
+                proj = None
+            mount = getattr(proj, "fs_storage_mount_path", None) if proj is not None else None
+            if mount:
+                return Path(mount)
+        return get_instance_settings().user_home
+
     async def check_and_refresh_record(self) -> bool:
-        """If record is stale, run discover + index. Returns True if refresh happened."""
+        """If the asset is newer than the DB row, re-sync. Returns True if refresh happened."""
         record = await self.get_record()
         if record is None:
             return False
-        ttl = getattr(type(record), '_record_ttl', 30.0)
-        if not record.record_update_required(ttl=ttl):
+        # Propagate the entity's updated_date to the record so is_valid() has
+        # a reference point — the DB row is the source of truth.
+        if self.updated_date is not None:
+            object.__getattribute__(record, "__dict__")["updated_date"] = self.updated_date
+        if record.is_valid():
             return False
         try:
-            await record.sync_to_db()   # discover() is called inside sync_to_db() → writes hash file
+            await record.sync_to_db()
         except Exception:
             pass
         return True
+
+    # ==================== Wiki link capability ====================
+    # Mirrors Record.get_links / Record.get_backlinks. Both call into the
+    # same flow_sdk.wiki module — the wiki layer takes only (type, id) and
+    # is agnostic to who called.
+
+    async def get_links(self) -> list:
+        """Outgoing wiki links from this entity."""
+        from flow_sdk import wiki
+        return await wiki.outgoing(self.type, self.id)
+
+    async def get_backlinks(self) -> list:
+        """Inbound wiki links pointing at this entity."""
+        from flow_sdk import wiki
+        return await wiki.backlinks(self.type, self.id)
+
+    async def reindex(self, body: str | None = None) -> list[dict]:
+        """Re-extract wiki edges for this entity.
+
+        ``body=None`` → load the linked record and read its ``wiki_body()``.
+        Provide ``body`` directly for callers that already have it (e.g. the
+        markdown editor toolbar after an out-of-band insert).
+
+        Returns the resulting outgoing edges as plain dicts (same shape as
+        ``GET /api/v1/graph/{type}/{id}/wiki/links``).
+        """
+        from flow_sdk import wiki
+
+        if body is None:
+            rec_cls = SchemaRegistry.get_record_cls(self.type)
+            rec = rec_cls.get(self.id) if rec_cls is not None else None
+            if rec is None:
+                rec = await self.get_record()
+            if rec is not None:
+                body = rec.wiki_body()
+
+        await wiki.index(self.type, self.id, body)
+        return [
+            {
+                "id": e.id,
+                "src_type": e.src_type,
+                "src_id": e.src_id,
+                "raw": e.raw,
+                "target_type": e.target_type,
+                "target_id": e.target_id,
+                "line": e.line,
+            }
+            for e in await wiki.outgoing(self.type, self.id)
+        ]
 
     @staticmethod
     def api_visible_by_type(entity_type: str):
@@ -369,6 +579,18 @@ class Entity(DBEntity):
 
         entity_typeid = TypeId(type=cls.get_type(), id=eid)
         entity_cache.invalidate_entity_cache(entity_typeid)
+
+        # Cleanup wiki edges that reference this entity on either side.
+        # Best-effort — log on failure so a wiki hiccup never blocks deletes.
+        try:
+            from flow_sdk import wiki
+            await wiki.delete_for_id(cls.get_type(), str(eid))
+        except Exception as wiki_exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "wiki.delete_for_id failed for %s:%s — %s",
+                cls.get_type(), eid, wiki_exc,
+            )
 
         # Call parent delete_by_id
         return await super().delete_by_id(eid)
@@ -502,15 +724,53 @@ class Entity(DBEntity):
         if not owner:
             if self.get_type() == BuiltinEntityType.USER.value:
                 user_id = self.typeid
+        # Framework: resolve scope from request_context once and pre-populate
+        # asset_ref / parent_path on the entity BEFORE the DB write, so the
+        # row carries them on first save. After this call, ``store()`` only
+        # has to upsert main_ref and sync_from_entity.
+        await self._prepare_for_storage()
         await self._save_blobs()
         await super().save(user_id, notify=notify)
-        # Sync entity metadata down to its record on disk
-        await self._store()
+        # Sync metadata down to disk + upsert main_ref iff missing (Record
+        # contract: writes go through main_ref FSRef, no per-type store()).
+        await self.store()
         # Invalidate authorization cache since entity properties have changed
         from ..auth.auth_cache import get_auth_cache
 
         get_auth_cache().invalidate_entity(self.typeid)
         return self
+
+    async def _prepare_for_storage(self) -> None:
+        """Resolve scope-derived fields on the entity before DB save.
+
+        For Records that declare ``_main_subdir``, this resolves scope_root
+        from request_context and computes the asset_ref FSRef. The path
+        string is mirrored onto ``entity.asset_ref`` (and ``parent_path`` if
+        present) so the DB row persists them on first save without needing
+        a second round-trip.
+        """
+        if getattr(self, "asset_ref", None):
+            return  # Already set (entity update or explicit caller-set path).
+        type_name = self.get_type()
+        record_cls = SchemaRegistry.get_record_cls(type_name)
+        if record_cls is None or not getattr(record_cls, "_main_subdir", None):
+            return
+        scope_root = await self._resolve_scope_root()
+        if scope_root is None:
+            return
+        # Transient record just to compute the asset_ref convention.
+        rec = record_cls(id=self.id)
+        ar = rec.compute_asset_ref(scope_root, self)
+        if ar is None or getattr(ar, "_path", None) is None:
+            return
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+        path_str = canonical_posix_path(ar.path)
+        if hasattr(self, "asset_ref"):
+            self.asset_ref = path_str
+        # parent_path lets DocsCategory / PlansCategory filter the markdown
+        # entity-query result without waiting for the indexer.
+        if hasattr(self, "parent_path"):
+            self.parent_path = str(ar._path.parent)
 
     async def delete(self):
         """Override delete to invalidate cache when entity is deleted."""
@@ -526,6 +786,18 @@ class Entity(DBEntity):
 
         # Invalidate authorization cache since entity is being deleted
         get_auth_cache().invalidate_entity(self.typeid)
+
+        # Cleanup wiki edges that reference this entity on either side.
+        # Best-effort — log on failure so a wiki hiccup never blocks deletes.
+        try:
+            from flow_sdk import wiki
+            await wiki.delete_for_id(self.type, str(self.id))
+        except Exception as wiki_exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "wiki.delete_for_id failed for %s:%s — %s",
+                self.type, self.id, wiki_exc,
+            )
 
         # Call parent delete
         return await super().delete()
@@ -669,6 +941,46 @@ class Entity(DBEntity):
     def get_labels(self) -> List[str]:
         """Get all labels for the entity."""
         return self.labels or []
+
+    # ── context_entities surface ─────────────────────────────────────────
+    #
+    # Mirrors the TS APIEntity API. ``context_entities`` is the persisted
+    # list of TypeId references; the dynamic ``context_entities_full``
+    # property merges in per-entity-projected direct fields. Subclasses
+    # override ``_direct_fields_as_typeids`` to surface fields like
+    # ``project_id`` / ``assignee`` for chip rendering.
+
+    def _direct_fields_as_typeids(self) -> List[TypeId]:
+        """Per-subclass projection of direct fields into the chip context.
+        Default: nothing. Override on entities that want their own fields
+        (e.g. project_id) to appear in the merged context list.
+        """
+        return []
+
+    @property
+    def context_entities_full(self) -> List[TypeId]:
+        """Direct-field projection + persisted ``context_entities``."""
+        return [*self._direct_fields_as_typeids(), *self.context_entities]
+
+    def add_context_entity(self, type_id: TypeId) -> None:
+        """Append a context entity (idempotent)."""
+        if any(t == type_id for t in self.context_entities):
+            return
+        self.context_entities = [*self.context_entities, type_id]
+
+    def remove_context_entity(self, type_id: TypeId) -> bool:
+        """Remove a context entity. Returns True if removed."""
+        before = len(self.context_entities)
+        self.context_entities = [t for t in self.context_entities if t != type_id]
+        return len(self.context_entities) < before
+
+    def context_of_type(self, type_name: str) -> List[TypeId]:
+        """All context entries of the given entity type."""
+        return [t for t in self.context_entities_full if t.type == type_name]
+
+    def first_context_of_type(self, type_name: str) -> TypeId | None:
+        """First context entry of the given entity type, or None."""
+        return next((t for t in self.context_entities_full if t.type == type_name), None)
 
     def get_env_table(self) -> "EntityEnvVars":
         if not self.env_vars:

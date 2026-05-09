@@ -1,0 +1,130 @@
+import { expect, test } from '@playwright/test';
+
+async function dismissSetupModal(page: import('@playwright/test').Page) {
+  await page.addInitScript(() => {
+    localStorage.setItem('llm-setup-modal-seen', 'true');
+  });
+}
+
+async function dismissWelcomeModalIfShown(page: import('@playwright/test').Page) {
+  const skipForNow = page.getByRole('button', { name: 'Skip for now' });
+  if (await skipForNow.isVisible({ timeout: 4_000 }).catch(() => false)) {
+    await skipForNow.click();
+  }
+}
+
+test.describe('Wiki folder tree (asset browseable tree)', () => {
+  // ── Test 1: Folder tree renders markdown vault roots on expand ────────────
+  // Environment-dependent: only asserts vault children when the user has
+  // markdown vaults configured (AssetTypeInfo.vaults non-empty). Otherwise
+  // just validates the chevron expanded successfully.
+  test('Folder tree renders markdown vault roots on expand', async ({ page, request }) => {
+    await dismissSetupModal(page);
+    await page.goto('/dock/assets/list/markdown');
+    await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+    await dismissWelcomeModalIfShown(page);
+
+    const chevron = page.locator('[data-testid="browseable-chevron-asset-type:markdown"]');
+    await expect(chevron).toBeVisible({ timeout: 10_000 });
+    await chevron.click();
+
+    // Probe the backend for markdown vaults to decide what to assert.
+    const apiUrl = process.env.API_URL || 'http://localhost:9008';
+    const typesRes = await request.get(`${apiUrl}/api/v1/graph/compute_node/@local/asset-types`).catch(() => null);
+    let hasVaults = false;
+    if (typesRes && typesRes.ok()) {
+      const body = await typesRes.json().catch(() => null);
+      const types = body?.data?.types ?? body?.data ?? [];
+      const md = Array.isArray(types) ? types.find((t: { type_name?: string }) => t.type_name === 'markdown') : null;
+      hasVaults = Array.isArray(md?.vaults) && md.vaults.length > 0;
+    }
+
+    if (hasVaults) {
+      const vaultRoot = page.locator('[role="treeitem"][aria-level="2"]').first();
+      await expect(vaultRoot).toBeVisible({ timeout: 10_000 });
+      const vaultLabelMatch = page.locator(
+        '[role="treeitem"][aria-level="2"]:has-text("User docs"), ' +
+        '[role="treeitem"][aria-level="2"]:has-text("Project docs"), ' +
+        '[role="treeitem"][aria-level="2"]:has-text("Workspace docs")'
+      ).first();
+      await expect(vaultLabelMatch).toBeVisible({ timeout: 5_000 });
+    } else {
+      // No vaults — just assert the markdown type row is expanded (aria-expanded="true")
+      const typeRow = page.locator('[role="treeitem"][aria-level="1"]').filter({ hasText: /Markdown/i }).first();
+      await expect(typeRow).toBeVisible({ timeout: 5_000 });
+    }
+  });
+
+  // ── Test 2: Clicking a folder navigates to folder URL + breadcrumb ────────
+  // Skipped (soft) when no markdown vaults exist — there is nothing to click.
+  test('Clicking a vault-root folder navigates to folder URL and shows breadcrumb', async ({ page, request }) => {
+    await dismissSetupModal(page);
+    await page.goto('/dock/assets/list/markdown');
+    await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+    await dismissWelcomeModalIfShown(page);
+
+    await page.locator('[data-testid="browseable-chevron-asset-type:markdown"]').click();
+
+    const apiUrl = process.env.API_URL || 'http://localhost:9008';
+    const typesRes = await request.get(`${apiUrl}/api/v1/graph/compute_node/@local/asset-types`).catch(() => null);
+    let hasVaults = false;
+    if (typesRes && typesRes.ok()) {
+      const body = await typesRes.json().catch(() => null);
+      const types = body?.data?.types ?? body?.data ?? [];
+      const md = Array.isArray(types) ? types.find((t: { type_name?: string }) => t.type_name === 'markdown') : null;
+      hasVaults = Array.isArray(md?.vaults) && md.vaults.length > 0;
+    }
+    test.skip(!hasVaults, 'No markdown vaults configured — vault navigation not applicable');
+
+    const vaultRoot = page.locator('[role="treeitem"][aria-level="2"]').first();
+    await expect(vaultRoot).toBeVisible({ timeout: 10_000 });
+    await vaultRoot.click();
+
+    await expect(page).toHaveURL(/\/dock\/assets\/folder\/markdown\//, { timeout: 10_000 });
+
+    const breadcrumb = page.locator('[data-testid="asset-list-breadcrumb"]');
+    await expect(breadcrumb).toBeVisible({ timeout: 10_000 });
+  });
+
+  // ── Test 9: Scan toolbar action on the Markdown root triggers reindex ─────
+  test('Scan toolbar action on markdown root triggers POST /fs-records/index?type=markdown', async ({ page }) => {
+    await dismissSetupModal(page);
+    await page.goto('/dock/assets/list/markdown');
+    await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
+    await dismissWelcomeModalIfShown(page);
+
+    // Collect console errors for the "no console errors" assertion.
+    const consoleErrors: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') consoleErrors.push(msg.text());
+    });
+
+    // The toolbar button is rendered inside the aria-level=1 markdown type row.
+    // Hover over the row to reveal the toolbar (in case visibility is hover-gated).
+    const typeRow = page.locator('[role="treeitem"][aria-level="1"]').filter({ hasText: /markdown/i }).first();
+    await expect(typeRow).toBeVisible({ timeout: 10_000 });
+    await typeRow.hover();
+
+    const scanBtn = page.locator('[data-testid="browseable-toolbar-scan:markdown"]');
+    await expect(scanBtn).toBeVisible({ timeout: 10_000 });
+
+    // Listen for the reindex POST before clicking.
+    const reindexRequest = page.waitForRequest(
+      (req) =>
+        req.method() === 'POST' &&
+        /\/api\/v1\/graph\/compute_node\/@local\/fs-records\/index\?type=markdown/.test(req.url()),
+      { timeout: 15_000 },
+    );
+
+    await scanBtn.click();
+    const req = await reindexRequest;
+    expect(req.method()).toBe('POST');
+    expect(req.url()).toContain('/api/v1/graph/compute_node/@local/fs-records/index?type=markdown');
+
+    // Give the browser a short moment to finish producing any error messages.
+    await page.waitForTimeout(500);
+    expect(
+      consoleErrors.filter((e) => !/favicon|ResizeObserver/i.test(e)),
+    ).toEqual([]);
+  });
+});

@@ -5,10 +5,10 @@ import { UsageBar } from '@src/components/cost-dashboard';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
 import { NotificationFeed } from '@src/components/notification-feed';
 import { type ProjectResourceListItem } from '@src/components/project-resource-list';
-import { ProjectActivityStrip, BookmarkColumn } from '@src/components/project-activity-strip';
-import { WorkflowStrip } from '@src/components/workflows-view/WorkflowStrip';
+import { ProjectActivityStrip, RecentConversationsStrip, BookmarkColumn } from '@src/components/project-activity-strip';
 import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
-import { TerminalLineSessionInput } from '@src/components/session-input';
+import { MiniDesktop } from '@src/components/quick-create';
+import { SessionInput } from '@src/components/session-input/session-input';
 import { isSkillCreationTask, TaskStatus } from '@src/components/task-bar/task-utils';
 import { useBookmarkMutations } from '@src/hooks/use-bookmark-mutations';
 import { useClaudeErrorRecords } from '@src/hooks/useClaudeErrorRecords';
@@ -18,7 +18,7 @@ import { useProjectTasks } from '@src/hooks/use-project-tasks';
 import { useTaskMutations } from '@src/hooks/use-task-mutations';
 import { useClaudeProjectList } from '@src/hooks/use-claude-projects';
 import { useSnifferContext } from '@src/contexts/SnifferContext';
-import { useEventDrivenSessions } from '@src/hooks/use-event-driven-sessions';
+import { useCollaborationRooms } from '@src/hooks/useCollaborationRooms';
 import { useProjects } from '@src/hooks/use-projects';
 import { useActAccordingToClassification } from '@src/hooks/use-act-according-to-classification';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
@@ -31,15 +31,24 @@ import { useToast } from '@src/hooks/use-toast';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityProgressModal } from '@src/components/search-index/ActivityProgressModal';
 import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
+import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
+import { JoinConversationDialog } from '@src/components/join-room-dialog/JoinConversationDialog';
+import { CommunityAssistanceDialog } from '@src/components/community-assistance-dialog/CommunityAssistanceDialog';
+import { useLoginRequired } from '@src/hooks/use-login-required';
+import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { resolveConversationDockPointer } from '@src/navigation/conversation-route-resolver';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type React from 'react';
 import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
-import { Loader2, PackageSearch, X, CheckCircle2, Hammer } from 'lucide-react';
+import { Loader2, PackageSearch, X, CheckCircle2, Hammer, Inbox, RefreshCw, Users } from 'lucide-react';
+import { useInboxStore } from '@src/store/use-inbox-store';
+import { listInboxMessages, fetchInboxFromHub } from '@src/components/inbox-view/inbox-api';
+import { ViewType } from '@src/types/ViewType';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDevMode } from '@src/contexts/dev-mode-context';
 import type { LastScanResult } from '@sdk';
@@ -75,31 +84,68 @@ export function HomeLanding() {
   const { navigation } = useDockNavigation();
   useProjects();
 
-  // Incoming task dialog — driven by URL params (email deep-link) or WS events
+  // Incoming task dialog — driven by URL params (email deep-link) or WS events.
+  // Deep link shape:
+  //   ?action=open&fm=<id>[&conversation_id=...&task_id=...&project_url=...&...]
+  // The backend's /open handler unpacks the bundle and resolves
+  // conversation_id / task_id from the FM's context, so we navigate directly
+  // off the URL params — no FM lookup needed on the UI side.
   const { pendingTask, setPendingTask } = useIncomingTaskStore();
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('task_action') === 'open') {
-      const taskId = params.get('task_id') || '';
-      const taskTitle = params.get('task_title') || 'Shared task';
-      const senderName = params.get('sender_name') || 'Someone';
-      const projectUrl = params.get('project_url') || undefined;
-      const branch = params.get('branch') || undefined;
-      const repoId = params.get('repo_id') || undefined;
-      if (taskId) {
-        setPendingTask({ taskId, taskTitle, senderName, projectUrl, branch, repoId });
-        // Clean URL so refreshing doesn't re-trigger
-        const url = new URL(window.location.href);
-        url.searchParams.delete('task_action');
-        url.searchParams.delete('task_id');
-        url.searchParams.delete('task_title');
-        url.searchParams.delete('sender_name');
-        url.searchParams.delete('project_url');
-        url.searchParams.delete('branch');
-        url.searchParams.delete('repo_id');
-        window.history.replaceState(null, '', url.toString());
-      }
+    if (params.get('action') !== 'open') return;
+    const fmId = params.get('fm') || '';
+    const convId = params.get('conversation_id') || '';
+    const taskId = params.get('task_id') || '';
+    const title = params.get('title') || 'Shared';
+    const senderName = params.get('sender_name') || 'Someone';
+    const projectUrl = params.get('project_url') || undefined;
+    const branch = params.get('branch') || undefined;
+    const repoId = params.get('repo_id') || undefined;
+
+    // Clean URL so refreshing doesn't re-trigger
+    const url = new URL(window.location.href);
+    for (const key of ['action', 'fm', 'conversation_id', 'task_id', 'title', 'sender_name', 'project_url', 'branch', 'repo_id']) {
+      url.searchParams.delete(key);
     }
+    window.history.replaceState(null, '', url.toString());
+
+    if (projectUrl && taskId) {
+      // REPO attachment — show pull/clone dialog before navigating in.
+      setPendingTask({ taskId, taskTitle: title, senderName, projectUrl, branch, repoId });
+      return;
+    }
+
+    void (async () => {
+      if (convId) {
+        // Resolve project_id from the local Task (if any) for the dock pointer.
+        let projectId: string | null = null;
+        if (taskId) {
+          const { dataManager, Task, TypeId } = await import('@sdk');
+          const task = await dataManager
+            .getByTypeId<import('@sdk').Task>(new TypeId(Task.type, taskId))
+            .catch(() => null);
+          projectId = task?.project_id ?? null;
+        }
+        navigation.openDock(
+          resolveConversationDockPointer({
+            conversationId: convId,
+            taskId: taskId || null,
+            projectId,
+          }),
+        );
+        return;
+      }
+
+      // Last resort: no convId in the deep link. If we have a taskId, open the
+      // tasks dock; otherwise stay on home and let the strip surface the share
+      // once inbox-fetch lands the FM. ``fmId`` is unused here but kept in the
+      // URL params for diagnostics / future fallback.
+      void fmId;
+      if (taskId) {
+        navigation.openDock(DockPointer.fromUrl('tasks', `task-${taskId}`));
+      }
+    })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const { projects: claudeProjects, isLoading: isLoadingClaudeProjects } = useClaudeProjectList();
@@ -120,7 +166,7 @@ export function HomeLanding() {
 
   // Skill creation tasks for the Learnings tab
   const { data: allTasks, refetch: taskRefetch, excludeTasks } = useProjectTasks();
-  const { archiveTask } = useTaskMutations({ refetch: taskRefetch, excludeTasks });
+  const { archiveTask, removeTasks } = useTaskMutations({ refetch: taskRefetch, excludeTasks });
   const learningTasks = useMemo(
     () => allTasks.filter((t) => t.status !== 'archived' && !t.archived_at),
     [allTasks],
@@ -154,7 +200,7 @@ export function HomeLanding() {
   );
 
   const devMode = useDevMode();
-  const { busy, resetAndRescan, clearIndex, currentActivity, activityProgress, scanInfo, lastScanResult } = useSystemTools();
+  const { busy, resetAndRescan, clearIndex, currentActivity, progressTable, scanInfo, lastScanResult } = useSystemTools();
   const [progressOpen, setProgressOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [postScanResult, setPostScanResult] = useState<LastScanResult | null>(null);
@@ -175,6 +221,38 @@ export function HomeLanding() {
   }, [scanInfo]);
   const firstName = user?.name?.split(' ')[0] || 'there';
 
+  const { checkLoginAndProceed, requiresLogin, showLoginDialog, closeLoginDialog } = useLoginRequired();
+  const [showNewConversation, setShowNewConversation] = useState(false);
+  const [showJoinConversation, setShowJoinConversation] = useState(false);
+  const [showCommunityAssistance, setShowCommunityAssistance] = useState(false);
+  const [draftPrompt, setDraftPrompt] = useState('');
+  const handleStartConversation = () => {
+    if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
+    setShowNewConversation(true);
+  };
+  const handleJoinConversation = () => {
+    if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
+    setShowJoinConversation(true);
+  };
+
+  // Inbox state
+  const { unreadCount, setUnreadCount } = useInboxStore();
+  const [inboxRefreshing, setInboxRefreshing] = useState(false);
+  useEffect(() => {
+    void listInboxMessages().then((msgs) => setUnreadCount(msgs.filter((m) => !m.is_read).length));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const handleInboxRefresh = useCallback(async () => {
+    setInboxRefreshing(true);
+    try {
+      await fetchInboxFromHub();
+      const msgs = await listInboxMessages();
+      setUnreadCount(msgs.filter((m) => !m.is_read).length);
+    } finally {
+      setInboxRefreshing(false);
+    }
+  }, [setUnreadCount]);
+
   const [memoPanelOpen, setMemoPanelOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
@@ -183,21 +261,6 @@ export function HomeLanding() {
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
   // Clear post-scan panel when user starts a real search
   useEffect(() => { if (searchQuery.trim().length >= 2) setPostScanResult(null); }, [searchQuery]);
-  const [showSessionInput, setShowSessionInput] = useState(false);
-  const sessionInputRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!showSessionInput) return;
-    const handler = (e: MouseEvent) => {
-      if (sessionInputRef.current && !sessionInputRef.current.contains(e.target as Node)) {
-        setShowSessionInput(false);
-      }
-    };
-    const id = setTimeout(() => document.addEventListener('mousedown', handler), 0);
-    return () => {
-      clearTimeout(id);
-      document.removeEventListener('mousedown', handler);
-    };
-  }, [showSessionInput]);
 
   const handleSearchSubmit = useCallback(() => {
     if (searchQuery.trim()) {
@@ -221,10 +284,14 @@ export function HomeLanding() {
 
   // Get paths from desktop_info
   const paths = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths, []);
+
   const apiUrl = useMemo(() => {
-    // Derive API URL from the current window location or use default
-    const port = '9007';
-    return `http://${window.location.hostname}:${port}`;
+    // __API_URL__ is the vite-time define populated from LOCAL_SERVER_PORT in
+    // .env.local. Falls back to a derived hostname-based URL only if the
+    // define somehow resolves to an empty string (packaged build).
+    const fromDefine = (typeof __API_URL__ === 'string' && __API_URL__) || '';
+    if (fromDefine) return fromDefine;
+    return `${window.location.protocol}//${window.location.host}`;
   }, []);
   const currentProjectPath = useMemo(
     () => normalizePath(currentProject?.fs_storage_mount_path || currentProject?.name || ''),
@@ -287,11 +354,27 @@ export function HomeLanding() {
     [selectedClaudeProjectEncodedName],
   );
 
-  const { items: activityItems } = useEventDrivenSessions({
-    snifferEvents,
-    seedItems: [],
-    fetchProject: async () => null,
+  const { items: collaborationRoomRows } = useCollaborationRooms({
+    projectId: currentProject?.typeId.id,
+    limit: 20,
   });
+  const activityItems = useMemo(
+    () =>
+      collaborationRoomRows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        type: 'collaboration_room' as const,
+        // Subtitle = host. ProjectActivityStrip already renders the timestamp
+        // (from modifiedAt) on the row, so the subtitle line reads:
+        //   `<name>`  (big)
+        //   `by <host> · <time-ago>`  (rendered across subtitle + timestamp slots)
+        subtitle: row.hostName ? `by ${row.hostName}` : '',
+        // `path`'s last segment is rendered as the chip — use the project name.
+        path: row.projectName,
+        modifiedAt: row.updatedAt,
+      })),
+    [collaborationRoomRows],
+  );
 
   const selectedClaudeProjectCwd = useMemo(() => {
     if (!selectedClaudeProjectEncodedName) return undefined;
@@ -372,6 +455,15 @@ export function HomeLanding() {
           handleSessionResume(resource);
           break;
         }
+        case 'collaboration_room': {
+          const row = collaborationRoomRows.find((r) => r.id === resource.id);
+          if (row && row.projectId) {
+            navigation.openDock(
+              DockPointer.forProject(row.projectId, { roomId: row.id }),
+            );
+          }
+          break;
+        }
         case 'hook':
           navigation.openSystemProfile('hooks', resource.itemId, resourceNavigationOptions);
           break;
@@ -399,7 +491,13 @@ export function HomeLanding() {
           navigation.openSystemProfile();
       }
     },
-    [navigation, resourceNavigationOptions, selectedClaudeProjectEncodedName, handleSessionResume],
+    [
+      navigation,
+      resourceNavigationOptions,
+      selectedClaudeProjectEncodedName,
+      handleSessionResume,
+      collaborationRoomRows,
+    ],
   );
 
   const handleSessionTasks = useCallback(
@@ -430,17 +528,71 @@ export function HomeLanding() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Top row: UsageBar */}
+      {/* Top row: UsageBar + Search */}
       <div className="flex shrink-0 items-center gap-2 p-4">
         <div className="w-72 shrink-0">
           <UsageBar />
+        </div>
+        <div className="flex-1" />
+        <div className="relative w-72 shrink-0">
+          <RecordSearchBar
+            query={searchQuery}
+            filters={searchFilters}
+            onQueryChange={setSearchQuery}
+            onFiltersChange={setSearchFilters}
+            onSubmit={handleSearchSubmit}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Search..."
+          />
+          {searchQuery.trim().length >= 2 && (
+            <div className="absolute right-0 top-full z-50 w-[600px] pt-1">
+              <InlineSearchResults
+                query={searchQuery}
+                filters={searchFilters}
+                selectedIndex={selectedResultIndex}
+                onSelectedIndexChange={setSelectedResultIndex}
+                onOpenFullSearch={handleSearchSubmit}
+                onNavigateResult={handleNavigateResult}
+              />
+            </div>
+          )}
         </div>
       </div>
 
       {/* Main row: Sidebar + Content */}
       <div className="flex min-h-0 flex-1 gap-6 px-4 pb-4">
-        {/* Left column: Bookmarks */}
-        <div className="w-72 shrink-0">
+        {/* Left column: Inbox header + Bookmarks */}
+        <div className="w-72 shrink-0 flex flex-col gap-2">
+          {/* Inbox icon row — same box model as the Recent conversations strip header so both columns share an invisible top line */}
+          <div className="flex h-9 items-center justify-between rounded-lg border border-transparent px-3">
+            <button
+              className="flex items-center gap-1.5 rounded-md py-1 text-xs font-medium hover:bg-accent transition-colors"
+              onClick={() => navigation.openTab(ViewType.INBOX)}
+            >
+              <div className="relative">
+                <Inbox className="h-3.5 w-3.5 text-muted-foreground" />
+                {unreadCount > 0 && (
+                  <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-destructive px-0.5 text-[8px] font-bold leading-none text-destructive-foreground">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </div>
+              <span className="text-muted-foreground hover:text-foreground transition-colors">Inbox</span>
+              {unreadCount > 0 && (
+                <span className="text-muted-foreground">({unreadCount})</span>
+              )}
+            </button>
+            <button
+              type="button"
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+              onClick={() => void handleInboxRefresh()}
+              disabled={inboxRefreshing}
+              title="Fetch new messages from hub"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${inboxRefreshing ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+
           <BookmarkColumn
             learningTasks={learningTasks}
             bookmarks={bookmarks}
@@ -449,6 +601,7 @@ export function HomeLanding() {
             onErrorClick={() => navigation.openLens('heartbeat', 'errors', 'open')}
             onAddComment={createComment}
             onArchiveLearning={(task) => void archiveTask(task)}
+            onArchiveAllLearnings={() => void removeTasks(learningTasks)}
             onCloseBookmark={(m) => void closeBookmark(m)}
             onDeleteBookmark={(m) => void deleteBookmark(m)}
             onRemindBookmark={(m, mins) => void remindBookmark(m, mins)}
@@ -469,64 +622,44 @@ export function HomeLanding() {
               <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
             </h1>
 
-            {showSessionInput ? (
-              <div className="w-full max-w-3xl" ref={sessionInputRef}>
-                <TerminalLineSessionInput
-                  placeholder="Start new Claude Code session..."
-                  onSubmit={(msg) => void handleSessionSubmit(msg)}
-                />
-              </div>
-            ) : (
-              <button
-                className="cursor-pointer text-lg text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => setShowSessionInput(true)}
-              >
-                What would you like to work on today?
-              </button>
-            )}
-
-            <div className="w-full max-w-3xl flex items-start gap-2">
-              <div className="flex-1">
-                <RecordSearchBar
-                  query={searchQuery}
-                  filters={searchFilters}
-                  onQueryChange={setSearchQuery}
-                  onFiltersChange={setSearchFilters}
-                  onSubmit={handleSearchSubmit}
-                  onKeyDown={handleSearchKeyDown}
-                  placeholder="Search anything across your Claude Code projects"
-                />
-              </div>
-              <Tooltip>
-                <TooltipTrigger asChild>
+            <div className="w-full max-w-3xl flex flex-col items-end gap-2">
+              <SessionInput
+                placeholder="What would you like to work on?"
+                value={draftPrompt}
+                onChange={setDraftPrompt}
+                onSubmit={(msg) => void handleSessionSubmit(msg)}
+              />
+              <div className="flex w-full items-center justify-between gap-2">
+                <div className="flex gap-2">
                   <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9 shrink-0"
-                    onClick={() => void resetAndRescan()}
-                    disabled={busy}
+                    type="button"
+                    variant="outline"
+                    className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white transition-colors shadow-sm"
+                    onClick={handleJoinConversation}
                   >
-                    <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
+                    Join conversation
                   </Button>
-                </TooltipTrigger>
-                <TooltipContent>Refresh search data</TooltipContent>
-              </Tooltip>
-              {devMode && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 shrink-0 text-orange-500 ring-1 ring-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] animate-pulse"
-                      onClick={() => void clearIndex()}
-                      disabled={busy}
-                    >
-                      <Hammer className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Clear index (dev)</TooltipContent>
-                </Tooltip>
-              )}
+                  <Button
+                    type="button"
+                    className="bg-green-600 text-white hover:bg-green-700 transition-colors shadow-sm"
+                    onClick={handleStartConversation}
+                  >
+                    Start conversation
+                  </Button>
+                </div>
+                <button
+                  type="button"
+                  className="inline-flex h-6 items-center gap-1 rounded-full border border-violet-600/60 bg-transparent px-2.5 text-xs font-medium text-violet-600 transition-colors hover:bg-violet-50 dark:border-violet-400/60 dark:text-violet-400 dark:hover:bg-violet-950/40"
+                  onClick={() => setShowCommunityAssistance(true)}
+                >
+                  <Users className="h-3 w-3" />
+                  Community assistance
+                </button>
+              </div>
+            </div>
+
+            <div className="w-full max-w-3xl">
+              <MiniDesktop />
             </div>
 
             {/* Activity strip — shown while any system activity is running */}
@@ -543,40 +676,26 @@ export function HomeLanding() {
                     : currentActivity === 'scan' ? 'Scanning'
                     : 'Indexing'}
                 </span>
-                {activityProgress?.current && (
+                {progressTable?.current && (
                   <span className="font-mono text-foreground truncate max-w-[180px]">
-                    {activityProgress.current}
+                    {progressTable.current}
                   </span>
                 )}
-                {activityProgress?.current && activityProgress.counts?.[activityProgress.current] !== undefined && (
-                  <span className="text-muted-foreground shrink-0 tabular-nums">
-                    {activityProgress.counts[activityProgress.current].toLocaleString()} recs
-                  </span>
-                )}
-                {activityProgress?.recordsDone != null && activityProgress.recordsTotal != null && (
-                  <span className="text-muted-foreground shrink-0 tabular-nums">
-                    {activityProgress.recordsDone.toLocaleString()}/{activityProgress.recordsTotal.toLocaleString()} recs
-                  </span>
-                )}
-                {activityProgress && (
+                {progressTable && (
                   <>
                     <span className="ml-auto text-muted-foreground shrink-0 tabular-nums">
-                      {activityProgress.jobDone != null && activityProgress.jobTotal != null
-                        ? `${activityProgress.jobDone}/${activityProgress.jobTotal}`
-                        : `${activityProgress.done.length}/${activityProgress.total}`}
+                      {progressTable.total > 0
+                        ? `${progressTable.done.toLocaleString()}/${progressTable.total.toLocaleString()}`
+                        : progressTable.done.toLocaleString()}
                     </span>
-                    <div className="h-1 w-20 rounded-full bg-muted overflow-hidden shrink-0">
-                      <div
-                        className="h-full bg-primary rounded-full transition-all"
-                        style={{
-                          width: `${activityProgress.recordsDone != null && activityProgress.recordsTotal
-                            ? (activityProgress.recordsDone / activityProgress.recordsTotal) * 100
-                            : activityProgress.jobDone != null && activityProgress.jobTotal
-                            ? (activityProgress.jobDone / activityProgress.jobTotal) * 100
-                            : (activityProgress.done.length / activityProgress.total) * 100}%`
-                        }}
-                      />
-                    </div>
+                    {progressTable.total > 0 && (
+                      <div className="h-1 w-20 rounded-full bg-muted overflow-hidden shrink-0">
+                        <div
+                          className="h-full bg-primary rounded-full transition-all"
+                          style={{ width: `${(progressTable.done / progressTable.total) * 100}%` }}
+                        />
+                      </div>
+                    )}
                   </>
                 )}
               </button>
@@ -619,18 +738,6 @@ export function HomeLanding() {
             </div>
           )}
 
-          {/* Inline search results */}
-          <div className="w-full max-w-3xl self-center min-h-0 flex-1 relative z-10">
-            <InlineSearchResults
-              query={searchQuery}
-              filters={searchFilters}
-              selectedIndex={selectedResultIndex}
-              onSelectedIndexChange={setSelectedResultIndex}
-              onOpenFullSearch={handleSearchSubmit}
-              onNavigateResult={handleNavigateResult}
-            />
-          </div>
-
           {/* Notifications section */}
           <div className="w-full max-w-3xl shrink-0 self-center">
             <NotificationFeed />
@@ -642,21 +749,11 @@ export function HomeLanding() {
           </div>
         </div>
 
-        {/* Right column: Workflows strip + Session list */}
+        {/* Right column: Recent conversations */}
         <div className="w-72 shrink-0 flex flex-col gap-2">
-          <WorkflowStrip />
-          <ProjectActivityStrip
-            items={activityItems}
-            isLoading={isLoadingClaudeProjects}
-            onItemClick={handleResourceClick}
-            onSessionResume={handleSessionResume}
-            onSessionTasks={handleSessionTasks}
-            onActAccordingToClassification={(item, cmd) => void handleActAccordingToClassification(item, cmd)}
-            actingSessionId={actingSessionId}
-            sessionEventCounts={sessionEventCounts}
-            snifferEvents={snifferEvents}
-            learningTasks={learningTasks}
-          />
+          {/* Invisible spacer mirroring the left column's Inbox row so Recent conversations aligns with Todos */}
+          <div aria-hidden className="h-9 shrink-0" />
+          <RecentConversationsStrip />
         </div>
 
       </div>
@@ -675,17 +772,33 @@ export function HomeLanding() {
         }}
       />
 
+      <NewConversationDialog
+        open={showNewConversation}
+        onClose={() => setShowNewConversation(false)}
+      />
+      <JoinConversationDialog
+        open={showJoinConversation}
+        onClose={() => setShowJoinConversation(false)}
+        defaultName={user?.name ?? undefined}
+      />
+      <CommunityAssistanceDialog
+        open={showCommunityAssistance}
+        onClose={() => setShowCommunityAssistance(false)}
+      />
+      <LoginDialog open={showLoginDialog} onOpenChange={closeLoginDialog} />
+
       {/* Activity progress detail modal */}
       <ActivityProgressModal
         open={progressOpen}
         onOpenChange={setProgressOpen}
-        progress={activityProgress}
+        table={progressTable}
         title={currentActivity ? (
           currentActivity === 'archive' ? 'Archiving…'
           : currentActivity === 'clear' ? 'Clearing index…'
           : currentActivity === 'load_from_archive' ? 'Restoring…'
-          : currentActivity === 'scan' ? `Scanning… ${activityProgress?.done.length ?? 0}/${activityProgress?.total ?? 0}`
-          : `Indexing… ${activityProgress?.done.length ?? 0}/${activityProgress?.total ?? 0}`
+          : currentActivity === 'scan'
+            ? `Scanning… ${progressTable ? progressTable.done.toLocaleString() : 0}`
+            : `Indexing… ${progressTable && progressTable.total > 0 ? `${progressTable.done}/${progressTable.total}` : (progressTable?.done ?? 0)}`
         ) : 'Activity'}
       />
 

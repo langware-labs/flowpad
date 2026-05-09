@@ -26,21 +26,17 @@ export async function loadHomePage(args: LoaderArgs) {
   const { params } = args;
   const t = new TimeIt('Home load');
 
+  // React Router runs root + child loaders in parallel; this idempotent
+  // re-await on the memoised `initPromise` (see ts_sdk/src/main.ts:25-30)
+  // guarantees schemas are registered before any entity construction in
+  // the home view. Cheap on warm calls, the actual gate on cold load.
   await initSdk(params);
   t.time('initSdk');
-
-  // Check if service is unavailable - throw error so ErrorBoundary catches it
-  if (
-    dataContext.bootstrapError &&
-    (dataContext.bootstrapError as { isServiceUnavailable?: boolean })?.isServiceUnavailable
-  ) {
-    throw new Error(dataContext.bootstrapError.message || 'Service unavailable');
-  }
 
   await ensureComputeNodeLoaded();
   t.time('ensureComputeNode');
 
-  t.done(0.5); // warn if total > 500ms
+  t.done(1.2); // warn if total > 1200ms
 
   // Project setup is handled by initSdk -> initContext -> setupProject
   // If no projects exist, user will be shown project setup screen

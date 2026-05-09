@@ -16,6 +16,8 @@ export default defineConfig(({ mode }) => {
       __AUTH_PROVIDER__: JSON.stringify(env.AUTH_PROVIDER || 'local'),
       __DEPLOY_ENV__: JSON.stringify(env.DEPLOY_ENV || 'local'),
       __IS_PACKAGE__: JSON.stringify(!!isPackage),
+      __FLOWPAD_DEV__: JSON.stringify(env.FLOWPAD_DEV === 'true'),
+      __CHECK_REFRESH_TOKEN__: JSON.stringify(env.VITE_CHECK_REFRESH_TOKEN === 'true'),
     },
     build: {
       sourcemap: true,
@@ -25,13 +27,33 @@ export default defineConfig(({ mode }) => {
       react({
         tsDecorators: true,
       }),
+      // Workaround for radix-ui/primitives#3799 / #3675: bundled @radix-ui/react-slot
+      // calls composeRefs(forwardedRef, childrenRef) inline every render, producing a
+      // new ref function each render. Under render storms (e.g. terminal PTY chunk
+      // replay), React detach+attach fires Tooltip's setTrigger 2x per Tooltip per
+      // render, eventually tripping React's 50-deep nested-update guard ("Maximum
+      // update depth exceeded"). PR radix-ui/primitives#3835 memoizes via useMemo —
+      // not yet released. Patch on the fly until it ships.
+      {
+        name: 'patch-radix-slot-memoize-composerefs',
+        enforce: 'pre' as const,
+        transform(code: string, id: string) {
+          if (!/@radix-ui\/react-slot\/dist\/index\.m?js$/.test(id)) return null;
+          if (!code.includes('composeRefs(forwardedRef, childrenRef)')) return null;
+          const patched = code.replace(
+            /props2\.ref = forwardedRef \? composeRefs\(forwardedRef, childrenRef\) : childrenRef;/,
+            'props2.ref = React.useMemo(' +
+              '() => forwardedRef ? composeRefs(forwardedRef, childrenRef) : childrenRef, ' +
+              '[forwardedRef, childrenRef]' +
+            ');',
+          );
+          return patched === code ? null : { code: patched, map: null };
+        },
+      },
     ],
     server: {
       host: 'localhost',
       port: parseInt(env.VITE_PORT || '4097'),
-      proxy: {
-        '/api/v1/notify': `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`,
-      },
       fs: {
         allow: [
           path.resolve(__dirname, './'),

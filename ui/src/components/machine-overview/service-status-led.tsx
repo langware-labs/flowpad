@@ -21,9 +21,10 @@ interface ServiceStatusLedProps {
   className?: string;
   onShowShell?: () => void;
   onRefreshWebapp?: () => void;
+  onStatusChange?: (status: MachineStatus) => void;
 }
 
-export const ServiceStatusLed: React.FC<ServiceStatusLedProps> = ({ className = '', onShowShell, onRefreshWebapp }) => {
+export const ServiceStatusLed: React.FC<ServiceStatusLedProps> = ({ className = '', onShowShell, onRefreshWebapp, onStatusChange }) => {
   const { flow, computeNode } = useAgentContext();
   const { data: artifacts = [] } = useCurrentArtifacts();
   const [machineStatus, setMachineStatus] = useState<MachineStatus | null>(null);
@@ -50,13 +51,14 @@ export const ServiceStatusLed: React.FC<ServiceStatusLedProps> = ({ className = 
       const data = await response.json();
       if (data.data) {
         setMachineStatus(data.data);
+        onStatusChange?.(data.data);
       }
     } catch (err) {
       console.error('[ServiceStatusLed] fetchMachineStatus error:', err);
     } finally {
       setIsLoading(false);
     }
-  }, [flow?.id]);
+  }, [flow?.id, onStatusChange]);
 
   // Debounced refresh function - refreshes both machine status and webapp iframe
   const debouncedRefresh = useCallback(() => {
@@ -87,13 +89,25 @@ export const ServiceStatusLed: React.FC<ServiceStatusLedProps> = ({ className = 
     void fetchMachineStatus();
   }, [fetchMachineStatus]);
 
-  // Poll for status updates every 5 seconds
+  // Poll for status updates every 5 seconds, paused when tab is hidden
   useEffect(() => {
-    const interval = setInterval(() => {
-      void fetchMachineStatus();
-    }, 5000);
+    const poll = () => void fetchMachineStatus();
+    let id = setInterval(poll, 5000);
 
-    return () => clearInterval(interval);
+    const onVisibility = () => {
+      if (document.hidden) {
+        clearInterval(id);
+      } else {
+        poll();
+        id = setInterval(poll, 5000);
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [fetchMachineStatus]);
 
   const servicesStatus: ServicesStatus | null = useMemo(() => {

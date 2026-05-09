@@ -48,7 +48,7 @@ export function TaskDetail({ task, onBack }: TaskDetailProps) {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
-          <h3 className="text-sm font-medium">{task.title}</h3>
+          <h3 className="text-sm font-medium">{task.displayName}</h3>
           {task.status && (
             <p className="text-xs text-muted-foreground">
               Status:{' '}

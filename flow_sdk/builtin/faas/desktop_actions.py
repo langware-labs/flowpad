@@ -140,16 +140,27 @@ class DesktopActionsMixin:
             if not resolved_path:
                 return ApiFailResponse(message=f"Path does not exist: {raw_path}")
 
-            # Open with system default application
-            system = platform.system()
-            if system == "Darwin":  # macOS
-                subprocess.Popen(["open", resolved_path])
-            elif system == "Windows":
-                os.startfile(resolved_path)  # type: ignore
-            else:  # Linux and other Unix-like
-                subprocess.Popen(["xdg-open", resolved_path])
+            select = bool(body.get("select", False)) and os.path.isfile(resolved_path)
 
-            return ApiSuccessResponse(data={"opened": resolved_path})
+            system = platform.system()
+            if select:
+                if system == "Darwin":
+                    subprocess.Popen(["open", "-R", resolved_path])
+                elif system == "Windows":
+                    subprocess.Popen(["explorer", f"/select,{resolved_path}"])
+                else:
+                    # Most Linux file managers lack a universal --select flag;
+                    # opening the parent directory is the consistent fallback.
+                    subprocess.Popen(["xdg-open", os.path.dirname(resolved_path)])
+            else:
+                if system == "Darwin":
+                    subprocess.Popen(["open", resolved_path])
+                elif system == "Windows":
+                    os.startfile(resolved_path)  # type: ignore
+                else:
+                    subprocess.Popen(["xdg-open", resolved_path])
+
+            return ApiSuccessResponse(data={"opened": resolved_path, "selected": select})
 
         except Exception as e:
             logging.exception(f"Failed to open external file: {e}")

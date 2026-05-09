@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.json_file_record_store import JsonFileRecordStore
+from flow_sdk.instance_settings import get_instance_settings
 
 if TYPE_CHECKING:
     from flow_sdk.fs_store.scope import Scope
@@ -56,12 +57,12 @@ class ClaudeManagedSettingsFsRecord(Record):
     def discover(cls, scope: Scope | None = None, **kwargs) -> list[ClaudeManagedSettingsFsRecord]:
         """Extract managed settings from the system-level managed-settings.json."""
         rl = ClaudeManagedSettingsRecordList(
-            source_file=Path.home() / ".claude" / "managed-settings.json"
+            source_file=get_instance_settings().claude_managed_settings_path
         )
         return [r for r in rl if isinstance(r, cls)]
 
     @classmethod
-    def discover_one(cls, uid: str, scope: Scope | None = None, **kwargs) -> ClaudeManagedSettingsFsRecord | None:
+    def get(cls, uid: str, scope: Scope | None = None, **kwargs) -> ClaudeManagedSettingsFsRecord | None:
         """Find a specific managed settings record by uid."""
         for r in cls.discover(scope=scope):
             if r.id == uid:

@@ -2,18 +2,17 @@
 
 ## Prerequisites
 
-1. **Backend running** on port 8000:
+1. **Backend running** (default port 9008, set via `LOCAL_SERVER_PORT` in `.env.local`):
    ```bash
-   cd flowpad
-   python run.py
+   uv run -m flow_sdk.server.run
    ```
 
-2. **Frontend dev server running** on port 8193:
+2. **Frontend dev server running** (default port 4097, set via `VITE_PORT` in `ui/.env.local`):
    ```bash
-   cd flowpad/ui
+   cd flowpad-oss/ui
    npm run dev
    ```
-   The port defaults to 8193. Override with `VITE_PORT` env var if needed.
+   Override the port with `VITE_PORT` env var when running playwright if your dev server uses a different port.
 
 3. **Playwright browsers installed**:
    ```bash
@@ -69,7 +68,7 @@ Both suites share these settings (see `playwright.config.ts` in each folder):
 | `headless` | true | CI-friendly; use `--headed` flag to override |
 | `slowMo` | 50ms | Prevents race conditions with UI animations |
 | `trace` | retain-on-first-failure | Traces saved only for failures |
-| `baseURL` | `http://localhost:8193` | Override with `VITE_PORT` env var |
+| `baseURL` | `http://localhost:4097` | Override with `VITE_PORT` env var |
 
 ---
 

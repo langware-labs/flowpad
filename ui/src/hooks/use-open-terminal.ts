@@ -18,30 +18,27 @@ function withCwd(command: string, cwd?: string): string {
 }
 
 /**
- * Hook that opens a terminal session, routing to builtin xterm or external OS terminal
- * based on workspace settings.
- *
- * For builtin xterm: navigates to a new shell tab with the command passed via URL query params.
- * For external terminal: delegates to openTerminalFromComputeNode().
+ * Hook that opens a terminal session. Always opens an in-app shell tab so flowpad
+ * owns the PTY (winsize, resize, capture, replay all coherent). When the user
+ * has opted into EXTERNAL_TERMINAL via workspace settings, additionally spawns
+ * an external Terminal.app window as a sidecar — never as a replacement.
  */
 export function useOpenTerminal() {
   const { navigation } = useDockNavigation();
 
   const open = useCallback(
     async (options: OpenTerminalOptions) => {
-      const terminalType = options.terminalType ?? workspaceSetting.defaultTerminal;
+      void navigation.openNewShell({ startCommand: options.command, cwd: options.cwd });
 
+      const terminalType = options.terminalType ?? workspaceSetting.defaultTerminal;
       if (terminalType === TerminalType.EXTERNAL_TERMINAL) {
         const computeNodeId = dataContext.computeNode?.id;
-        if (!computeNodeId) {
-          throw new Error('No compute node available');
+        if (computeNodeId) {
+          void openTerminalFromComputeNode(computeNodeId, options.command, options.cwd).catch(
+            (e) => console.error('[useOpenTerminal] sidecar external terminal failed:', e),
+          );
         }
-        await openTerminalFromComputeNode(computeNodeId, options.command, options.cwd);
-        return;
       }
-
-      // Builtin xterm: navigate to shell with startCommand.
-      void navigation.openNewShell({ startCommand: options.command, cwd: options.cwd });
     },
     [navigation],
   );

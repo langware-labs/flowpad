@@ -10,8 +10,9 @@ import {
 } from '@sdk';
 import { useContext, useEntityData, useProject } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { usePendingSessionIds } from '@src/store/pending-actions-store';
 import { Plus } from 'lucide-react';
-import { filterClosedTabs, getNextSessionNumber, mergeSessionTabs } from './sessionTabUtils';
+import { filterClosedTabs, getNextSessionNumber, getSessionDisplayName, mergeSessionTabs, sessionTabsCache } from './sessionTabUtils';
 import { SessionActionButtons } from './SessionActionButtons';
 import { SessionTabBar } from './SessionTabBar';
 import { InterferenceBox, RunningArea } from './components';
@@ -24,25 +25,6 @@ interface SessionTab {
   favorite_index?: number | null;
 }
 
-const sessionTabsCache = new Map<string, SessionTab[]>();
-
-const getSessionDisplayName = (process: AgenticProcess | null | undefined, fallback: string) => {
-  if (process?.context_data && typeof process.context_data === 'object') {
-    const displayName = process.context_data.display_name;
-    if (typeof displayName === 'string' && displayName.trim().length > 0) {
-      return displayName.trim();
-    }
-  }
-
-  if (process?.instruction_content) {
-    const trimmed = process.instruction_content.replace(/<!--.*?-->/g, '').trim();
-    if (trimmed.length > 0) {
-      return trimmed.substring(0, 30);
-    }
-  }
-
-  return fallback;
-};
 
 /**
  * SessionViewer - Live execution view with session tabs
@@ -334,6 +316,9 @@ export function SessionViewer() {
   // Track dirty (none for sessions)
   const dirtyIds = useMemo(() => new Set<string>(), []);
 
+  // Track pending-action ids (recently became ready-for-input) for this project's tabs.
+  const pendingIds = usePendingSessionIds(currentProject?.typeId?.id ?? null);
+
   // Convert session tabs to tab bar format
   const tabEntries = useMemo(() => {
     return sessionTabs.map((tab, index) => ({
@@ -424,6 +409,7 @@ export function SessionViewer() {
           sessions={tabEntries}
           activeSessionId={null}
           dirtySessionIds={dirtyIds}
+          pendingSessionIds={pendingIds}
           onCloseTab={handleCloseTab}
           onAddTab={handleAddSession}
           onSelectTab={handleSelectTab}
@@ -451,6 +437,7 @@ export function SessionViewer() {
         sessions={tabEntries}
         activeSessionId={activeTabId ?? processId}
         dirtySessionIds={dirtyIds}
+        pendingSessionIds={pendingIds}
         onCloseTab={handleCloseTab}
         onAddTab={handleAddSession}
         onSelectTab={handleSelectTab}

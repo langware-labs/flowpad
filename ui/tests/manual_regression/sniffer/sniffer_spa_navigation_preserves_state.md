@@ -1,5 +1,14 @@
+precondition: prime localStorage so sniffer reconciles to ENABLED at boot
+- before navigation, in a fresh tab, run:
+  `localStorage.setItem('flowpad.snifferEnabled', 'true')`
+- # Default for an unprimed browser is OFF; the reconciliation effect in
+- #   ui/src/hooks/use-hooks-sniffer.ts:161 will disable an unprimed browser
+- #   even though bootstrap returned a sniffer_hook. Priming reflects an
+- #   already-opted-in user and is the realistic state for these scenarios.
+
 test 1: sniffer state preserved when navigating home → /dock/hooks via SPA
-- open browser to `http://localhost:4097`
+- open browser to {APP_URL}
+- wait for window.appReady === true
 - verify sniffer is enabled: green dot in EventSnifferChip, timespan buttons visible
 - open browser DevTools → Network tab; clear log
 - navigate to hooks page via SPA (simulates clicking sidebar link):

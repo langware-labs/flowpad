@@ -286,7 +286,8 @@ export const fsStore = createStore<FSStoreState>()(
       // Deduplicate concurrent requests for the same path
       let pending = listDirInFlight.get(cacheKey);
       if (!pending) {
-        pending = fsManager.listDirectory(typeid, path).then((result) => {
+        // eslint-disable-next-line @typescript-eslint/no-shadow
+        const fetchPromise: Promise<BrowseCache> = fsManager.listDirectory(typeid, path).then((result) => {
           const entry: BrowseCache = {
             items: [...result.items],
             path: result.path,
@@ -294,14 +295,23 @@ export const fsStore = createStore<FSStoreState>()(
             itemCount: result.itemCount,
             fetchedAt: new Date(),
           };
-          set((state) => {
-            state.browseCache.set(cacheKey, entry as any);
-          });
+          // Only commit to cache if we are still the active in-flight fetch.
+          // If invalidate dropped us or a newer fetch replaced us, our result
+          // is stale and would clobber the fresh data.
+          if (listDirInFlight.get(cacheKey) === fetchPromise) {
+            set((state) => {
+              state.browseCache.set(cacheKey, entry as any);
+            });
+          }
           return entry;
         }).finally(() => {
-          listDirInFlight.delete(cacheKey);
+          // Only clear our own slot, not a successor's
+          if (listDirInFlight.get(cacheKey) === fetchPromise) {
+            listDirInFlight.delete(cacheKey);
+          }
         });
-        listDirInFlight.set(cacheKey, pending);
+        listDirInFlight.set(cacheKey, fetchPromise);
+        pending = fetchPromise;
       }
 
       return pending;
@@ -633,6 +643,10 @@ export const fsStore = createStore<FSStoreState>()(
         }
         if (cacheType === 'browse' || cacheType === 'all') {
           state.browseCache.delete(cacheKey);
+          // Drop any in-flight listDirectory promise too — otherwise the next
+          // listDirectory call would dedup onto a request whose result was
+          // captured before invalidation and overwrite the cache with stale data.
+          listDirInFlight.delete(cacheKey);
         }
       });
     },

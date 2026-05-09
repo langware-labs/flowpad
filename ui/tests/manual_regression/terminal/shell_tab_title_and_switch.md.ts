@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
-import { dismissSetupModal, gotoShell } from './helpers';
+import { dismissSetupModal, gotoShell, openTabViaMenu } from './helpers';
 
 /**
  * Shell Tab Title & Switch Regression
@@ -9,36 +9,27 @@ import { dismissSetupModal, gotoShell } from './helpers';
  * 2. Tab titles survive page refresh (persisted via shell.updateDisplay)
  * 3. Tab switching works after refresh (no redirect to first tab)
  *
- * Uses plain shell tabs (open-terminal-tab-button) + double-click rename to avoid
+ * Uses plain shell tabs (opener menu → terminal row) + double-click rename to avoid
  * relying on Claude CLI /rename which may be overwritten on reconnect.
  */
 
 /** Get the text of all tab labels, in order */
 async function getTabNames(page: Page): Promise<string[]> {
-  const tabs = page.locator('[data-testid^="tab-"] span.font-medium');
-  const count = await tabs.count();
-  const names: string[] = [];
-  for (let i = 0; i < count; i++) {
-    const text = await tabs.nth(i).textContent();
-    names.push(text?.trim() || '');
-  }
-  return names;
+  return page.locator('[data-testid^="tab-"]').evaluateAll((els) =>
+    els.map((el) => (el.querySelector('span.font-medium')?.textContent ?? '').trim()),
+  );
 }
 
 /** Get the name of the currently active (selected) tab */
 async function getActiveTabName(page: Page): Promise<string> {
-  const allTabs = page.locator('[data-testid^="tab-"]');
-  const count = await allTabs.count();
-  for (let i = 0; i < count; i++) {
-    const tab = allTabs.nth(i);
-    const cls = await tab.getAttribute('class');
-    if (cls?.includes('border-primary')) {
-      // Use span.font-medium (the name span) — the first span is the status dot (no text).
-      const text = await tab.locator('span.font-medium').first().textContent();
-      return text?.trim() || '';
+  return page.locator('[data-testid^="tab-"]').evaluateAll((els) => {
+    for (const el of els) {
+      if ((el.getAttribute('class') ?? '').includes('border-primary')) {
+        return (el.querySelector('span.font-medium')?.textContent ?? '').trim();
+      }
     }
-  }
-  return '';
+    return '';
+  });
 }
 
 /**
@@ -50,19 +41,28 @@ function tabNameMatches(actual: string, expected: string): boolean {
 
 /** Click a tab whose name ends with the given text */
 async function clickTabByName(page: Page, tabName: string) {
-  const allTabs = page.locator('[data-testid^="tab-"]');
-  const count = await allTabs.count();
-  for (let i = 0; i < count; i++) {
-    const tab = allTabs.nth(i);
-    // Use span.font-medium (the name span) — the first span is the status dot (no text).
-    const text = await tab.locator('span.font-medium').first().textContent();
-    if (text && tabNameMatches(text.trim(), tabName)) {
-      await tab.click({ force: true });
-      await page.waitForTimeout(500);
-      return;
+  // Read all tab names + testids in a single DOM evaluation — iterating with
+  // playwright locators on a crowded tab strip stalls when one tab lacks the
+  // expected `span.font-medium` and the per-tab textContent locator hangs
+  // until the per-test timeout.
+  const matched = await page.locator('[data-testid^="tab-"]').evaluateAll((els, expected) => {
+    function matches(actual: string): boolean {
+      return actual === expected || actual.endsWith(' ' + expected) || actual.endsWith(expected);
     }
+    for (const el of els) {
+      const span = el.querySelector('span.font-medium');
+      const text = (span?.textContent ?? '').trim();
+      if (text && matches(text)) {
+        return el.getAttribute('data-testid');
+      }
+    }
+    return null;
+  }, tabName);
+  if (!matched) {
+    throw new Error(`Tab "${tabName}" not found. Available tabs: ${await getTabNames(page)}`);
   }
-  throw new Error(`Tab "${tabName}" not found. Available tabs: ${await getTabNames(page)}`);
+  await page.locator(`[data-testid="${matched}"]`).click({ force: true });
+  await page.waitForTimeout(500);
 }
 
 /** Wait for a tab whose name matches the expected value */
@@ -93,8 +93,6 @@ test.describe('Shell Tab Title and Switching', () => {
     // Step 1: Navigate to shell (creates a new terminal, waits for xterm init)
     await gotoShell(page);
 
-    const addTerminalButton = page.locator('[data-testid="open-terminal-tab-button"]');
-
     /** Create a tab, detect it by testid diff, rename it via dispatchEvent('dblclick'). */
     async function createAndRename(newName: string): Promise<string> {
       // Snapshot existing testids before adding
@@ -104,7 +102,7 @@ test.describe('Shell Tab Title and Switching', () => {
         ),
       );
 
-      await addTerminalButton.click();
+      await openTabViaMenu(page, 'terminal');
 
       // Wait for a new tab to appear
       let newTestId = '';

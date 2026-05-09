@@ -109,7 +109,8 @@ async def live_server(allocate_ports):
 # Test
 # ---------------------------------------------------------------------------
 
-@pytest.mark.timeout(60)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_listen_e2e_real_server_cli_subprocess(live_server):
     """Full E2E: real server, real CLI subprocess, real WebSocket."""
     port, base_url = live_server
@@ -189,7 +190,7 @@ async def test_listen_e2e_real_server_cli_subprocess(live_server):
                 if msg.get("message_type") != "flow_data_msg":
                     continue
                 flow_data = msg.get("flow_data", {})
-                if flow_data.get("attributes", {}).get("webhook_type") != "agent_hook":
+                if flow_data.get("attributes", {}).get("webhook-type") != "agent_hook":
                     continue
                 content_raw = flow_data.get("content", "")
                 try:

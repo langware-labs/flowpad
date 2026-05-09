@@ -18,8 +18,8 @@ test.describe('Landing to New Chat', () => {
     await page.waitForLoadState('networkidle').catch(() => {});
 
     // Step 2: submit from landing page to create session
-    // New UI: TerminalLineSessionInput with aria-label="Start new Claude Code session..."
-    // Navigates to /dock/shell/<uuid> instead of old /dock/session/<uuid>
+    // Home renders <SessionInput> (textarea, aria-label="What would you like to work on?")
+    // and navigates to /dock/shell/<uuid> on submit.
     await submitFromLanding(page, 'Hello, can you help me?');
 
     // Step 3: validate URL changed to /dock/shell/<uuid>

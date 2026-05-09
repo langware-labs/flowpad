@@ -21,7 +21,7 @@ def _make_record_class(records: list):
     """Create a mock record class whose discover() returns records."""
     cls = MagicMock()
     cls.discover.return_value = records
-    cls.discover_one.return_value = None
+    cls.get.return_value = None
     cls._record_type = "test"
     return cls
 

@@ -50,6 +50,9 @@ export function useContext() {
     activeEntityTypeId: typeof dataContext.activeEntityTypeId;
     workspaceTypeId: typeof dataContext.workspaceTypeId;
     userTypeId: typeof dataContext.userTypeId;
+    localUser: typeof dataContext.localUser;
+    cloudUser: typeof dataContext.cloudUser;
+    currentUser: typeof dataContext.currentUser;
     flowTypeId: typeof dataContext.flowTypeId;
     visitorTypeId: typeof dataContext.visitorTypeId;
     someone: typeof dataContext.someone;
@@ -74,6 +77,7 @@ export function useContext() {
     agenticProcess: typeof dataContext.agenticProcess;
     agenticProcessTypeId: typeof dataContext.agenticProcessTypeId;
     activeShellId: typeof dataContext.activeShellId;
+    activeTerminalTargetTypeId: typeof dataContext.activeTerminalTargetTypeId;
     workdir: typeof dataContext.workdir;
     snifferEnabled: typeof dataContext.snifferEnabled;
     isConnected: typeof dataContext.isConnected;
@@ -85,6 +89,9 @@ export function useContext() {
     activeEntityTypeId: dataContext.activeEntityTypeId,
     workspaceTypeId: dataContext.workspaceTypeId,
     userTypeId: dataContext.userTypeId,
+    localUser: dataContext.localUser,
+    cloudUser: dataContext.cloudUser,
+    currentUser: dataContext.currentUser,
     flowTypeId: dataContext.flowTypeId,
     visitorTypeId: dataContext.visitorTypeId,
     someone: dataContext.someone,
@@ -109,6 +116,7 @@ export function useContext() {
     agenticProcess: dataContext.agenticProcess,
     agenticProcessTypeId: dataContext.agenticProcessTypeId,
     activeShellId: dataContext.activeShellId,
+    activeTerminalTargetTypeId: dataContext.activeTerminalTargetTypeId,
     workdir: dataContext.workdir,
     snifferEnabled: dataContext.snifferEnabled,
     isConnected: dataContext.isConnected,
@@ -130,6 +138,9 @@ export function useContext() {
       activeEntityTypeId: dataContext.activeEntityTypeId,
       workspaceTypeId: dataContext.workspaceTypeId,
       userTypeId: dataContext.userTypeId,
+      localUser: dataContext.localUser,
+      cloudUser: dataContext.cloudUser,
+      currentUser: dataContext.currentUser,
       flowTypeId: dataContext.flowTypeId,
       visitorTypeId: dataContext.visitorTypeId,
       someone: dataContext.someone,
@@ -154,6 +165,7 @@ export function useContext() {
       agenticProcess: dataContext.agenticProcess,
       agenticProcessTypeId: dataContext.agenticProcessTypeId,
       activeShellId: dataContext.activeShellId,
+      activeTerminalTargetTypeId: dataContext.activeTerminalTargetTypeId,
       workdir: dataContext.workdir,
       snifferEnabled: dataContext.snifferEnabled,
       isConnected: dataContext.isConnected,
@@ -162,11 +174,16 @@ export function useContext() {
     // Only update snapshot if values have changed (to maintain stable reference)
     // For TypeId objects, compare by id instead of reference to avoid race conditions
     const prev = snapshotRef.current;
-    const typeIdChanged = (a: { id: string } | null | undefined, b: { id: string } | null | undefined) =>
-      a?.id !== b?.id;
+    const typeIdChanged = (
+      a: { type?: string; id: string } | null | undefined,
+      b: { type?: string; id: string } | null | undefined,
+    ) => a?.type !== b?.type || a?.id !== b?.id;
 
     if (
       prev.user !== current.user ||
+      prev.localUser !== current.localUser ||
+      prev.cloudUser !== current.cloudUser ||
+      prev.currentUser !== current.currentUser ||
       prev.workspace !== current.workspace ||
       prev.flow !== current.flow ||
       prev.activeEntity !== current.activeEntity ||
@@ -197,6 +214,7 @@ export function useContext() {
       prev.agenticProcess !== current.agenticProcess ||
       typeIdChanged(prev.agenticProcessTypeId, current.agenticProcessTypeId) ||
       prev.activeShellId !== current.activeShellId ||
+      typeIdChanged(prev.activeTerminalTargetTypeId, current.activeTerminalTargetTypeId) ||
       prev.workdir !== current.workdir ||
       prev.snifferEnabled !== current.snifferEnabled ||
       prev.isConnected !== current.isConnected

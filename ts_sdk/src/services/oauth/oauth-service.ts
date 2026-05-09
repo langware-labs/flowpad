@@ -1,6 +1,8 @@
 import { EventEmitter } from 'events';
 import { ActionInfo, dataContext, dataManager, OAuthMessage, TypeId } from '../../index';
 import { EntityEnv, EnvVarType } from '../../models/env_var';
+import { secretApprovalGate } from '../secretApprovalGate';
+import { secretsService } from '../secrets-service';
 import { BrowserAuthWindow, MockAuthWindow, OAuthWindow } from './oauth-window';
 
 // OAuth Provider Constants
@@ -147,7 +149,8 @@ export class OAuthService {
 
       // Clean up the OAuth flow
       this.oAuthFlows.delete(data.oauth_request_id);
-    } else {
+    } else if (data.oauth_request_id !== OAUTH_PROVIDERS.FLOWPAD_CLOUD) {
+      // FlowpadCloud is owned by cloudManager — its WS messages don't go through this map.
       console.error(`[OAuthService] OAuth flow not found for request id:`, data.oauth_request_id);
       console.error(`[OAuthService] Available flows:`, Array.from(this.oAuthFlows.keys()));
     }
@@ -229,6 +232,13 @@ export class OAuthService {
     sharedEntityVarName?: string,
   ): Promise<OauthFlow | null> {
     try {
+      // FlowpadCloud is owned by cloudManager — route there instead of going through
+      // the generic OAuth popup machinery used by Slack/GitHub/etc.
+      if (provider === OAUTH_PROVIDERS.FLOWPAD_CLOUD) {
+        const { cloudManager } = await import('../cloud_login');
+        await cloudManager.login();
+        return null;
+      }
       // Start OAuth flow
       const oauthRequestInfo = await this.generateOauthRequestInfo(provider, targetEntity, sharedEntityVarName);
 
@@ -246,6 +256,30 @@ export class OAuthService {
     } catch (error) {
       console.error(`[OAuthService] OAuth connection failed for ${provider}:`, error);
       throw error;
+    }
+  }
+
+  /**
+   * Ensure secret-keychain access is enabled. Returns false if the user cancels
+   * or the OS denies — caller must NOT proceed to OAuth popup in that case.
+   * Mirrors the gate inside navigationService.navigateToLogin so that any
+   * cloud-login entry point (oauthService.connect) also goes through the
+   * SecretApprovalDialog before the OAuth popup opens.
+   */
+  private async ensureSecretsEnabled(): Promise<boolean> {
+    try {
+      const initial = await secretsService.isEnabled();
+      if (initial?.enabled) return true;
+    } catch {
+      // probe failed (offline/server down) — fall through to the dialog
+    }
+    const approved = await secretApprovalGate.request();
+    if (!approved) return false;
+    try {
+      const verified = await secretsService.isEnabled();
+      return Boolean(verified?.enabled);
+    } catch {
+      return false;
     }
   }
 
@@ -289,6 +323,17 @@ export class OAuthService {
 
   public async disconnect(provider: string): Promise<OAuthDetachResult> {
     try {
+      // FlowpadCloud disconnect is owned by cloudManager.
+      if (provider === OAUTH_PROVIDERS.FLOWPAD_CLOUD) {
+        const { cloudManager } = await import('../cloud_login');
+        await cloudManager.logout();
+        dataManager.emit(OAuthEventType.OAUTH_FLOW_COMPLETE, {
+          provider,
+          disconnectSuccess: true,
+        });
+        return { remaining_attachment_count: 0 } as OAuthDetachResult;
+      }
+
       const actionInfo = new ActionInfo('oauth');
       actionInfo.subpath = [provider, 'disconnect'];
       // No target entity needed for disconnect - it removes the user's token completely

@@ -75,16 +75,21 @@ class DbSettingsResult(BaseModel):
 # Path helpers
 # ---------------------------------------------------------------------------
 
-DEFAULT_DB_PATH = str(Path.home() / ".flow" / "db" / "flowpad_db")
+def _default_db_path() -> str:
+    from flow_sdk.instance_settings import get_instance_settings
+    return str(get_instance_settings().db_path)
 
 
 def get_db_path() -> Path:
-    db_path_str = os.environ.get("SQLITE_DATABASE_PATH")
-    if not db_path_str:
-        db_folder = Path.home() / ".flow" / "db"
-        db_folder.mkdir(parents=True, exist_ok=True)
-        db_path_str = str(db_folder / "flowpad_db")
-    return Path(db_path_str)
+    """Per-instance SQLite database path (call-time, via InstanceSettings).
+
+    InstanceSettings reads the SQLITE_DATABASE_PATH env var inside `from_env()`;
+    we never read the env here directly.
+    """
+    from flow_sdk.instance_settings import get_instance_settings
+    settings = get_instance_settings()
+    settings.db_dir.mkdir(parents=True, exist_ok=True)
+    return Path(settings.db_path)
 
 
 def get_backup_folder() -> Path:
@@ -319,10 +324,17 @@ async def clear_all_data() -> ClearAllResult:
     if sqlite_driver is not None:
         await sqlite_driver.open()
 
-    # Invalidate bootstrap cache so the next bootstrap call recreates @local
-    # entities in the fresh DB rather than returning stale entity IDs.
-    from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache  # noqa: PLC0415
+    # Invalidate the bootstrap cache and immediately rebuild the @local
+    # entities. Without the rebuild, subsequent requests addressed via
+    # `/compute_node/@local/...` cannot resolve `@local` (it has just been
+    # wiped) and the request middleware returns "Invalid request" until the
+    # client happens to call /bootstrap again.
+    from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
+        bootstrap,
+        invalidate_bootstrap_cache,
+    )
     invalidate_bootstrap_cache()
+    await bootstrap()
 
     return ClearAllResult(
         backup_path=backup.backup_path,
@@ -430,7 +442,7 @@ async def get_database_stats() -> DatabaseStatsResult:
 def get_db_settings() -> DbSettingsResult:
     return DbSettingsResult(
         db_path=str(get_db_path()),
-        default_path=DEFAULT_DB_PATH,
+        default_path=_default_db_path(),
     )
 
 
@@ -447,7 +459,7 @@ async def set_db_path(new_path: str) -> DbSettingsResult:
 
     await reinit_db(expanded)
     logger.info(f"Database switched to: {expanded}")
-    return DbSettingsResult(db_path=expanded, default_path=DEFAULT_DB_PATH)
+    return DbSettingsResult(db_path=expanded, default_path=_default_db_path())
 
 
 # ---------------------------------------------------------------------------
@@ -455,11 +467,12 @@ async def set_db_path(new_path: str) -> DbSettingsResult:
 # ---------------------------------------------------------------------------
 
 
-def get_scan_info() -> dict:
-    """Return current index status — reads SchemaRegistry in-memory log cache, no DB query."""
+async def get_scan_info() -> dict:
+    """Return current index status. Reads JSONL bookkeeping + queries the DB
+    for live entity counts (single chokepoint via SchemaRegistry.get_index_status)."""
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-    status = SchemaRegistry.get_index_status()
+    status = await SchemaRegistry.get_index_status()
     total_indexed = sum(t.entity_count for t in status.per_type)
     return {
         "total_indexed": total_indexed,

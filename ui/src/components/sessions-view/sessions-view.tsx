@@ -1,8 +1,7 @@
-import { TabbedTerminal } from '@src/components/terminal';
-import { useState } from 'react';
+import { TabbedTerminal, useStandardTabNav } from '@src/components/terminal';
 
 export function SessionsView() {
-  const [activeSessionId, setActiveSessionId] = useState<string>('');
+  const { onTabClick, onTabClose, onTabOpen } = useStandardTabNav();
 
   return (
     <div className="h-full p-6">
@@ -10,7 +9,11 @@ export function SessionsView() {
         <h2 className="text-2xl font-bold text-foreground">Terminal Sessions</h2>
         <p className="mt-1 text-sm text-muted-foreground">Manage your terminal sessions</p>
       </div>
-      <TabbedTerminal activeSessionId={activeSessionId} onActiveSessionChange={setActiveSessionId} />
+      <TabbedTerminal
+        onTabClick={onTabClick}
+        onTabClose={onTabClose}
+        onTabOpen={onTabOpen}
+      />
     </div>
   );
 }

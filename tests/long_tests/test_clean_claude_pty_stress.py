@@ -47,6 +47,8 @@ from flow_sdk.config import FLOWPAD_TEMP_DIR
 
 ITERATIONS = 50
 SETTLE_SLEEP = 1.5  # seconds to wait after process.start() before reading PTY
+PTY_OUTPUT_DEADLINE = 5.0  # max wait for first PTY byte (cold Claude under stress)
+INVARIANT_DEADLINE = 5.0   # max wait for full Claude banner after first byte
 
 # Minimum run of '─' chars that counts as Claude Code's separator line.
 MIN_SEPARATOR_LEN = 60
@@ -172,6 +174,11 @@ def extract_invariants(screen_rows: list[str]) -> dict:
         after = screen_rows[prompt_row].split("❯", 1)[1].strip()
         # Remove the cursor block character (U+2588 FULL BLOCK or U+258B etc.)
         after = re.sub(r"[\u2580-\u259f\u2588\xa0 ]+", "", after)
+        # Claude rotates a placeholder hint when the input is empty
+        # (e.g. `Try "edit <file> to..."`, `Try "refactor <file>"`). Treat
+        # any `Try "..."` placeholder as empty \u2014 only real leaked input matters.
+        if re.match(r'^Try\b.*"', after):
+            after = ""
         prompt_content = after
 
     return {
@@ -251,11 +258,22 @@ def extract_claude_section(full_pty: str) -> bytes:
 # ── Test ──────────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
+# exception to 30s policy: 50 cold Claude PTY spawns × 1.5s settle = 75s floor by construction;
+# plus ~1-3s per spawn. See ITERATIONS=50 (line 48), SETTLE_SLEEP=1.5 (line 49).
+# do not lower without redesigning the stress test (e.g. reducing ITERATIONS).
 @pytest.mark.timeout(300)
 async def test_clean_claude_pty_stress(bootstrapped_client):
     """Launch Claude 50 times; each PTY must structurally match a clean reference."""
+    from flow_sdk.builtin.project import Project
+
     cn = await ComputeNode.get_one({"uname": "local"})
     assert cn, "No @local compute node found"
+
+    # Bind project_id explicitly — the @local-project fallback inside
+    # get_project() races with cross-test DB churn and intermittently fires
+    # `RuntimeError: No project found` mid-loop, which silently drops shell_id.
+    local_project = await Project.get_by_uname("local")
+    assert local_project, "No @local project found — bootstrap should have created it"
 
     # One-time reference: what does a clean Claude Code screen look like?
     ref = await capture_reference_screen()
@@ -271,6 +289,7 @@ async def test_clean_claude_pty_stress(bootstrapped_client):
     for i in range(ITERATIONS):
         process = AgenticProcess(
             compute_node_id=f"compute_node-{cn.id}",
+            project_id=local_project.id,
             cli_config={"permission_mode": "bypassPermissions"},
             workdir=FLOWPAD_TEMP_DIR,
             visible=True,
@@ -278,31 +297,62 @@ async def test_clean_claude_pty_stress(bootstrapped_client):
         await process.save([])
 
         try:
-            await process.start()
+            start_resp = await process.start_pty()
             shell_id = process.shell_id
-            assert shell_id, f"[iter {i}] process.start() did not set shell_id"
+            assert shell_id, (
+                f"[iter {i}] process.start() did not set shell_id; "
+                f"resp={getattr(start_resp, 'message', start_resp)!r}"
+            )
 
-            await asyncio.sleep(SETTLE_SLEEP)
+            pty_key = (cn.id, cn.node_provider_id, shell_id)
 
-            pty_key = (cn.id, "local", shell_id)
-            chunks = replay_buffer.get_replay(pty_key, since_seq=0)
-            full_pty = "".join(c.data.decode("utf-8", errors="replace") for c in chunks)
-            assert full_pty, f"[iter {i}] No PTY output captured"
+            def _capture_invariants():
+                chunks = replay_buffer.get_replay(pty_key, since_seq=0)
+                full_pty = "".join(c.data.decode("utf-8", errors="replace") for c in chunks)
+                if not full_pty:
+                    return None, None
+                claude_bytes = extract_claude_section(full_pty)
+                screen = render_pty_screen(claude_bytes)
+                return extract_invariants(screen), full_pty
 
-            # Render only the Claude Code section (skip shell echo)
-            claude_bytes = extract_claude_section(full_pty)
-            screen = render_pty_screen(claude_bytes)
-            inv = extract_invariants(screen)
+            # Poll for the first byte of PTY output. Claude cold-start latency
+            # under stress (50 back-to-back spawns) drifts past a fixed sleep,
+            # so wait up to PTY_OUTPUT_DEADLINE before giving up.
+            inv = None
+            full_pty = None
+            deadline = time.monotonic() + PTY_OUTPUT_DEADLINE
+            while time.monotonic() < deadline:
+                inv, full_pty = _capture_invariants()
+                if full_pty:
+                    break
+                await asyncio.sleep(0.2)
+            assert full_pty, f"[iter {i}] No PTY output captured within {PTY_OUTPUT_DEADLINE}s"
 
-            problems = []
-            if not inv["separator_found"]:
-                problems.append("missing separator")
-            if not inv["prompt_found"]:
-                problems.append("missing ❯ prompt")
-            if not inv["bypass_found"]:
-                problems.append("missing bypass-permissions")
-            if inv["prompt_content"]:
-                problems.append(f"prompt not empty: {inv['prompt_content']!r}")
+            # Cold-launch tail can lag past first-byte for one or more
+            # invariants (most often bypass-permissions, which renders late
+            # in the bottom-right). Under stress (50 spawns) the lag widens.
+            # Poll up to INVARIANT_DEADLINE for the full banner before
+            # declaring the iteration dirty.
+            def _problems(inv):
+                p = []
+                if not inv["separator_found"]:
+                    p.append("missing separator")
+                if not inv["prompt_found"]:
+                    p.append("missing ❯ prompt")
+                if not inv["bypass_found"]:
+                    p.append("missing bypass-permissions")
+                if inv["prompt_content"]:
+                    p.append(f"prompt not empty: {inv['prompt_content']!r}")
+                return p
+
+            problems = _problems(inv)
+            inv_deadline = time.monotonic() + INVARIANT_DEADLINE
+            while problems and time.monotonic() < inv_deadline:
+                await asyncio.sleep(0.25)
+                inv2, _ = _capture_invariants()
+                if inv2:
+                    inv = inv2
+                    problems = _problems(inv)
 
             if problems:
                 failures.append(f"iter {i}: {'; '.join(problems)}")

@@ -8,10 +8,31 @@ import tempfile
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.record import Record, set_default_records_root
 from flow_sdk.responses.response import ApiResponse
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _isolate_record_state():
+    """Clear DB rows for record types these tests seed, before AND after each
+    test. Sibling tests in the api suite leak rows that pollute the
+    record_data_ref write-through behavior."""
+    from flow_sdk.db import get_db_driver
+    driver = get_db_driver()
+    for t in ("markdown", "asset", "claude_project"):
+        try:
+            await driver.delete_entities_by_type(t)
+        except Exception:
+            pass
+    yield
+    for t in ("markdown", "asset", "claude_project"):
+        try:
+            await driver.delete_entities_by_type(t)
+        except Exception:
+            pass
 
 
 @pytest.mark.asyncio
@@ -48,6 +69,7 @@ async def test_write_through_entity_update_syncs_to_disk_record(bootstrapped_cli
     from flow_sdk.builtin.workspace import Workspace
     from flow_sdk.fs_store.record import get_default_records_root, record_stem
 
+    original_root = get_default_records_root()
     with tempfile.TemporaryDirectory() as tmpdir:
         records_root = Path(tmpdir)
         set_default_records_root(records_root)
@@ -82,7 +104,7 @@ async def test_write_through_entity_update_syncs_to_disk_record(bootstrapped_cli
             assert res.data.get("name") == "Updated Name"
 
         finally:
-            set_default_records_root(Path.home() / ".flow" / "records")
+            set_default_records_root(original_root)
 
 
 @pytest.mark.asyncio

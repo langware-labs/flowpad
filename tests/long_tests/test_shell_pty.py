@@ -143,7 +143,8 @@ async def _recv(ws, timeout: float = 10.0) -> dict:
 # Test
 # ---------------------------------------------------------------------------
 
-@pytest.mark.timeout(90)
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
 async def test_shell_pty_e2e(pty_live_server):
     """
     A. Create a shell → close it → not in list-shells.

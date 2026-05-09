@@ -11,8 +11,9 @@ class BookmarkRecord(Record):
     """A bookmark record backed by Record."""
 
     _record_type: ClassVar[str] = RecordType.BOOKMARK
-    _indexed_by_default: ClassVar[bool] = True
-    _user_asset: ClassVar[bool] = True
+    # Runtime-created via Record.save (not FS-scannable). Excluded from
+    # the indexer's default set — entities still flow into the DB normally.
+    _indexed_by_default: ClassVar[bool] = False
     index_fields: ClassVar[list[str]] = ["tags", "summary"]
 
     def __init__(self, **kwargs: Any):

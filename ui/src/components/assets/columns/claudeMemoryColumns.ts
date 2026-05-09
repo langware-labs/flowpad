@@ -4,7 +4,7 @@ import type { ColumnActions } from './columnRegistry';
 import type { SearchResult } from '@src/hooks/use-asset-search';
 
 function memoryProjectCell(r: SearchResult, actions?: ColumnActions): React.ReactNode {
-  const path = r.source_path || '';
+  const path = r.asset_ref || '';
   const parts = path.replace(/\/$/, '').split('/');
   const memIdx = parts.lastIndexOf('memory');
   const encoded = memIdx > 0 ? parts[memIdx - 1] : (r.project_encoded || '');

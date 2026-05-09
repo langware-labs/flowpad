@@ -79,10 +79,12 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   isPopupOpen = false;
   dataOpQueryInvalidation = false;
   private subscriptions: SubscriptionMap<T> = new SubscriptionMap<T>();
+  private _inFlightGets: Map<string, Promise<unknown>> = new Map();
   private watches: WatchMap = new WatchMap();
   private watchedQueries: WatchQueryMap<T> = new WatchQueryMap<T>();
   private streamingRequestsCount: number = 0;
   scanInfo: ScanInfo | null = null;
+  recordsRoot: string | null = null;
 
   constructor() {
     super();
@@ -192,6 +194,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     try {
       const info = await this.callAction<null, BootstrapInfo>(actionInfo);
       if (info.scan_info) this.setScanInfo(info.scan_info);
+      if (info.records_root) this.recordsRoot = info.records_root;
       return info;
     } catch (error: any) {
       console.error('Error calling bootstrap action:', error);
@@ -347,7 +350,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
 
     const flowData = new FlowData(elementType, content, attributes);
-    flowData.source = FlowDataSource.WebSocket;
+    // The FlowData constructor already reads `attributes['source']` and sets
+    // `flowData.source` to the matching FlowDataSource enum value (or
+    // FlowDataSource.Unknown when absent). For backend-translated events
+    // (sniffer hooks via convert_hook_event, history replay, etc.) the
+    // source is set authoritatively upstream, so we respect it here. Only
+    // events that don't carry a source attribute (legacy WS-only paths) get
+    // tagged as WebSocket.
+    if (flowData.source === FlowDataSource.Unknown) {
+      flowData.source = FlowDataSource.WebSocket;
+    }
 
     // Route to entity's handleFlowData method if it exists
     if (typeof (entity as any).handleFlowData === 'function') {
@@ -389,10 +401,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     switch (op) {
       case 'create': {
-        const ref = this.getRef(typeId);
-        ref.entity = this.castAndDeepAssign(data);
-        ref.status = EntityStatus.READY;
-        this.subscriptions.get(typeId)?.forEach((cb) => void cb(ref.entity));
+        const entity = this.castAndDeepAssign(data);
+        this.register_new_entity(typeId, entity);
+        this._notifyAllAliases(typeId, entity, entity);
         break;
       }
       case 'update': {
@@ -407,12 +418,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         }
         ref.entity = this.castAndDeepAssign(data);
         ref.status = EntityStatus.READY;
-        this.subscriptions.get(typeId)?.forEach((cb) => void cb(ref.entity));
+        // Aliases share the same `ref` so cache reads stay consistent automatically;
+        // subscribers on alias keys still need to be notified.
+        this._notifyAllAliases(typeId, ref.entity, ref.entity);
         break;
       }
       case 'delete': {
-        this.entities.delete(typeId);
-        this.subscriptions.get(typeId)?.forEach((cb) => void cb(null));
+        const ref = this.entities.get(typeId);
+        const entity = ref?.entity ?? null;
+        this._deleteWithAliases(typeId);
+        this._notifyAllAliases(typeId, entity, null);
         break;
       }
     }
@@ -533,7 +548,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         // Silently ignore if schema is not available or isDbField check fails
       }
     }
-    this.subscriptions.get(typeId)?.forEach((cb) => void cb(ref.entity));
+    this._notifyAllAliases(typeId, ref.entity, ref.entity);
   }
 
   /**
@@ -550,6 +565,53 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
   }
 
+  /**
+   * Compute the alternate cache keys for an entity. Entities loaded with both
+   * a `uname` and a real UUID `id` are normally cached only under
+   * `<type>-@<uname>` (because `APIEntity.identifier` prefers `@uname`). We
+   * also mirror them under `<type>-<id>` so consumers that resolve refs by
+   * raw UUID — e.g. `process.project_id` → `Project.getByIdFromCache(uuid)` —
+   * find the entity. Returns an array to keep room for future alias kinds.
+   */
+  private _aliasTypeIdsFor(entity: any): TypeId[] {
+    if (!entity?.uname || !entity?.id || entity.id === `@${entity.uname}`) return [];
+    try {
+      return [new TypeId(entity.getType(), entity.id)];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Delete a cache entry AND any alias entries pointing to the same entity.
+   * Symmetric: works whether the caller passes the primary or an alias key.
+   */
+  private _deleteWithAliases(typeId: TypeId): void {
+    const ref = this.entities.get(typeId);
+    this.entities.delete(typeId);
+    if (ref?.entity) {
+      for (const alias of this._aliasTypeIdsFor(ref.entity)) {
+        if (!alias.equals(typeId)) this.entities.delete(alias);
+      }
+    }
+  }
+
+  /**
+   * Notify subscribers of `typeId` AND of any alias keys for the same entity.
+   * Caller must pass the entity (read BEFORE any deletion) so aliases compute
+   * correctly even when notifying about a removal (`value === null`).
+   */
+  private _notifyAllAliases(typeId: TypeId, entity: any | null, value: any | null): void {
+    this.subscriptions.get(typeId)?.forEach((cb) => void cb(value));
+    if (entity) {
+      for (const alias of this._aliasTypeIdsFor(entity)) {
+        if (!alias.equals(typeId)) {
+          this.subscriptions.get(alias)?.forEach((cb) => void cb(value));
+        }
+      }
+    }
+  }
+
   public register_new_entity(typeId: TypeId, entity: any) {
     const ref = this.getRef(typeId);
     if (ref.entity && ref.entity !== entity) {
@@ -557,6 +619,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
     ref.entity = entity;
     ref.status = EntityStatus.READY;
+    for (const alias of this._aliasTypeIdsFor(entity)) {
+      if (!alias.equals(typeId)) this.entities.set(alias, ref);
+    }
   }
 
   public hasRef(typeId: TypeId): boolean {
@@ -572,13 +637,15 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   public invalidateCacheByTypeId(typeId: TypeId): void {
-    this.entities.delete(typeId);
+    this._deleteWithAliases(typeId);
   }
 
   public removeEntityFromCache(typeId: TypeId): void {
     this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
-    this.entities.delete(typeId);
-    this.subscriptions.get(typeId)?.forEach((cb) => void cb(null));
+    const ref = this.entities.get(typeId);
+    const entity = ref?.entity ?? null;
+    this._deleteWithAliases(typeId);
+    this._notifyAllAliases(typeId, entity, null);
   }
 
   public getRef(typeId: TypeId): EntityRef<T> {
@@ -855,16 +922,37 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       };
     }
 
+    // In-flight dedup for GETs: share a pending request with concurrent callers
+    // (e.g. StrictMode double-invoke, or multiple components mounting at once).
+    // Safe because GETs are idempotent. Mutations (POST/PUT/DELETE) are never deduped.
+    const method = actionInfo.method ?? 'GET';
+    const isDedupable = method === 'GET' && !actionInfo.abortSignal;
+    if (isDedupable) {
+      const key = endpoint;
+      const pending = this._inFlightGets.get(key);
+      if (pending) return pending as Promise<Res>;
+      const promise = (async () => {
+        try {
+          const raw = (await apiClient.get<Res>(endpoint, requestConfig)) as unknown as Res;
+          return actionInfo.castResponse ? (this.castAndDeepAssign(raw) as unknown as Res) : raw;
+        } finally {
+          this._inFlightGets.delete(key);
+        }
+      })();
+      this._inFlightGets.set(key, promise);
+      return promise;
+    }
+
     let response: Res;
 
-    switch (actionInfo.method) {
+    switch (method) {
       case 'POST':
       case 'PUT':
         if (!actionInfo.queryParameters) {
-          throw new Error(`Can not call ${actionInfo.method} action ${actionInfo.name}, Missing request data`);
+          throw new Error(`Can not call ${method} action ${actionInfo.name}, Missing request data`);
         }
         response =
-          actionInfo.method === 'POST'
+          method === 'POST'
             ? ((await apiClient.post<Res>(endpoint, actionInfo.bodyParameters, requestConfig)) as unknown as Res)
             : ((await apiClient.put<Res>(endpoint, actionInfo.bodyParameters, requestConfig)) as unknown as Res);
         break;
@@ -874,8 +962,8 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           ...requestConfig,
         })) as unknown as Res;
         break;
-      case 'GET':
       default:
+        // Fallthrough GET that opted out of dedup (e.g. has abortSignal)
         response = (await apiClient.get<Res>(endpoint, requestConfig)) as unknown as Res;
         break;
     }
@@ -1016,11 +1104,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           console.warn(`[DataManager] Skipping entity with invalid id "${identifier}" for type: ${entityJson['type']}`);
           continue;
         }
-        const ref = this.getRef(typeId);
-        ref.entity = this.castAndDeepAssign(entityJson);
-        ref.status = EntityStatus.READY;
-        // TODO: Why we did not update the entity here ? we are just update the ref!!
-        this.entities.set(ref.entity.typeId, ref);
+        const entity = this.castAndDeepAssign(entityJson);
+        this.register_new_entity(entity.typeId, entity);
+        const ref = this.getRef(entity.typeId);
         queryResult.push(ref.entity as U);
       }
 
@@ -1146,7 +1232,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       if (!isDeleted) {
         throw new Error('No data returned');
       }
-      this.entities.delete(typeId);
+      this._deleteWithAliases(typeId);
       // Keep query-driven UIs reactive even when backend doesn't emit a delete DataOp.
       // If a delete DataOp arrives later, removeEntityFromResults is idempotent.
       this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
@@ -1239,50 +1325,38 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return entity;
   }
 
-  // // Whitelist of fields that should always be converted to TypeId
-  // private static TYPEID_FIELD_WHITELIST = new Set([
-  //   'created_by',
-  //   'updated_by',
-  //   'parent_id',
-  //   'workspace_id',
-  //   'user_id',
-  //   'owner_id',
-  //   'install_target',
-  // ]);
-
-  // // Helper to check if a field should be converted to TypeId
-  // private shouldConvertToTypeId(target: any, key: string): boolean {
-  //   // First check: is it in the whitelist?
-  //   if (DataManager.TYPEID_FIELD_WHITELIST.has(key)) {
-  //     return true;
-  //   }
-
-  //   // Second check: does the entity's schema indicate this is a TypeId field?
-  //   // Check if target has a schema and if the field ends with _id or _by
-  //   if (target && typeof target === 'object' && 'getType' in target) {
-  //     try {
-  //       const schema = this.getSchema(target.getType());
-  //       if (schema) {
-  //         const property = schema.getProperty(key);
-  //         // Check if property has format: "type_id" or similar marker
-  //         if (property && (property as any).format === 'type_id') {
-  //           return true;
-  //         }
-  //       }
-  //     } catch (e) {
-  //       // Schema might not be loaded yet, continue
-  //     }
-  //   }
-
-  //   // Default: don't convert
-  //   return false;
-  // }
+  /**
+   * Field-name whitelist for the TypeId auto-coercion in `deepAssign`.
+   *
+   * The default heuristic — "if the value looks like a TypeId string, treat it
+   * as one" — corrupts plain-string fields whose values happen to match the
+   * `<type>-<id>` shape. The canonical example is `target_vfs_path` on
+   * `AgenticProcess` / `Run`: the Python schema declares it `str | None`, the
+   * on-disk record stores it as the string `"project-<uuid>"`, but
+   * `deepAssign` would otherwise wrap it into a TypeId object — breaking
+   * `useProcessesForTarget` queries (string match on the server, object
+   * mismatch on the client validator) and silently disabling the chat
+   * toolbar's history.
+   *
+   * The list below names every field whose value should NEVER be promoted to
+   * a TypeId, regardless of how it looks. Add new entries here when a plain
+   * string id field is introduced and its values can collide with the TypeId
+   * shape. Reference IDs (project_id, created_by, …) are intentionally NOT in
+   * this set — current consumers rely on the auto-coercion for those.
+   */
+  private static TYPEID_COERCION_DENYLIST: ReadonlySet<string> = new Set([
+    'target_vfs_path',
+  ]);
 
   public deepAssign(target: any, source: any) {
     for (const key in source) {
       // Check if source[key] is a TypeId FIRST, before checking if it's an object
       // This handles TypeId objects in arrays (like auth_scopes) where the key is just an index
-      if (source[key] && isTypeId(source[key])) {
+      if (
+        source[key] &&
+        isTypeId(source[key]) &&
+        !DataManager.TYPEID_COERCION_DENYLIST.has(key)
+      ) {
         target[key] = new TypeId(source[key]);
       } else if (typeof source[key] === 'object' && source[key] !== null) {
         // For objects/arrays, recursively deep assign

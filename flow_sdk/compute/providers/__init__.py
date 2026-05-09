@@ -13,7 +13,7 @@ def get_compute_provider(provider_type: str) -> ComputeProvider:
     """Get or create a compute provider singleton.
 
     Args:
-        provider_type: The type of provider ("local_machine", etc.)
+        provider_type: The type of provider ("local_machine", "e2b", etc.)
 
     Returns:
         ComputeProvider instance
@@ -25,5 +25,14 @@ def get_compute_provider(provider_type: str) -> ComputeProvider:
         if "local_machine" not in _providers:
             _providers["local_machine"] = LocalComputeProvider()
         return _providers["local_machine"]
-    else:
-        raise ValueError(f"Unknown compute provider type: {provider_type}")
+    if provider_type == "e2b":
+        if "e2b" not in _providers:
+            from .e2b import E2BComputeProvider
+            _providers["e2b"] = E2BComputeProvider()
+        return _providers["e2b"]
+    if provider_type == "docker":
+        if "docker" not in _providers:
+            from .docker import DockerComputeProvider
+            _providers["docker"] = DockerComputeProvider()
+        return _providers["docker"]
+    raise ValueError(f"Unknown compute provider type: {provider_type}")

@@ -71,5 +71,16 @@ async def test_api_request_parse_type_id_action_subpath():
     assert api_request.segments == [etype, eid, eaction, subpath]
 
 
+async def test_api_request_parse_target_action_that_collides_with_entity_type():
+    """A target action wins when its name is also a registered entity type."""
+    eid = "cd15bf08-fb57-48f5-a657-0f9f89b5a635"
+    url = f"http://localhost:8000/api/v1/graph/shell/{eid}/run"
+    api_request: APIRequest = APIRequest.from_api_path(url)
+    assert api_request.target_typeid == TypeId(type="shell", id=eid)
+    assert api_request.direct_resource_type is None
+    assert api_request.action == "run"
+    assert api_request.sub_path is None
+
+
 if __name__ == "__main__":
     pytest.main()

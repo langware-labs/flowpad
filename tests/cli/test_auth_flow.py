@@ -11,7 +11,7 @@ import time
 import threading
 import os
 from flow_sdk.cli.app_config import get_user, clear_user
-from flow_sdk.cli.auth import delete_api_key
+from flow_sdk.cli.auth.hub_login import delete_api_key
 
 
 @pytest.fixture(autouse=True)

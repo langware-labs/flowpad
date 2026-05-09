@@ -237,6 +237,11 @@ Bootstrap prompt content."""
         assert agent.data.get("model") == "haiku"
         assert "Bootstrap prompt content." in agent.prompt
 
+    @pytest.mark.skip(
+        reason="AgentRecord.save() no longer writes the .md companion (body lives "
+        "at asset_ref and is owned by the user — see save() docstring). Only "
+        "metadata.json is written to the shadow dir."
+    )
     def test_save_writes_both_files(self, tmp_path, isolated_records_root):
         """Test that save() writes metadata.json to records_root shadow — not agent dir."""
         agent = AgentRecord(
@@ -279,16 +284,17 @@ Bootstrap prompt content."""
             "state.json must not be written to the agent source dir"
 
     def test_prompt_from_file(self, tmp_path):
-        """Test the prompt property reads from companion .md file."""
+        """Test the prompt property reads from companion .md file via asset_ref."""
         agent_dir = tmp_path / "agent-@prompt-test"
         agent_dir.mkdir()
-        (agent_dir / "prompt-test.md").write_text(
+        md_path = agent_dir / "prompt-test.md"
+        md_path.write_text(
             "---\ndescription: test\n---\n\nPrompt from file."
         )
 
-        agent = AgentRecord(id="prompt-test", name="prompt-test")
-        agent.path = str(agent_dir)
-        agent.source_file = str(agent_dir / ".flow_record" / "record.json")
+        # New API: prompt is read via asset_ref → FrontMatterFsRef → read_body().
+        # Construct via from_file so _asset_ref is set, mirroring real load paths.
+        agent = AgentRecord.from_file(md_path)
 
         assert agent.prompt == "Prompt from file."
 

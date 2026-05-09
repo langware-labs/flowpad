@@ -35,12 +35,8 @@ export function useProcessNavigation() {
       return;
     }
 
-    // Create new flow using the Project.createFlow method
-    void project.createFlow(agent.id).then((flowTypeId) => {
-      // Use agent from context or construct TypeId from dataContext
-      void navigate(`/${agent.typeId.toUrlString()}/${flowTypeId.toUrlString()}`);
-      clearEditorContent();
-    });
+    console.warn('[useProcessNavigation] project.createFlow is no longer supported; flow reset not available');
+    clearEditorContent();
   }, [someone, flow, project, navigate, agent, clearEditorContent]);
 
   return {

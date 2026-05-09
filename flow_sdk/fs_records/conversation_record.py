@@ -1,12 +1,13 @@
 """ConversationRecord — represents a conversation backed by a conversation.jsonl file.
 
-Each line in the JSONL file is one message:
-  {"role": "sender"|"recipient"|"bot", "content": "...", "sender_id": "...", "timestamp": "ISO"}
+Each line in the JSONL file is a typed Pointer:
+  {"typeid": "flow_message-@<id>", "ts": "<ISO>"}
 
 Layout:
-  tasks/<task-dir>/conversation.jsonl   — messages, one JSON object per line
+  <records_data_root>/conversation/conversation-@<id>/conversation.jsonl
 
-The record's data_ref.path points to the conversation.jsonl on disk.
+The record's data_ref.path always resolves to that canonical path; callers
+no longer pass an explicit ``data_path``.
 parent_ref points to the TaskRecord (or other parent record).
 """
 
@@ -16,12 +17,13 @@ import json
 from pathlib import Path
 from typing import ClassVar
 
-from flow_sdk.fs_store import Record, RecordDataRef, RecordRef, RecordType
+from flow_sdk.fs_store import Pointer, Record, RecordDataRef, RecordRef, RecordType
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.type_id import TypeId
 
 
 class ConversationRecord(Record):
-    """A conversation backed by a <task-dir>/conversation.jsonl file."""
+    """A conversation backed by a `conversation-@<id>/conversation.jsonl` file."""
 
     _record_type: ClassVar[str] = RecordType.CONVERSATION
     _indexed_by_default: ClassVar[bool] = False
@@ -36,13 +38,13 @@ class ConversationRecord(Record):
 
     @property
     def data_ref(self) -> RecordDataRef | None:
-        dp = object.__getattribute__(self, "__dict__").get("data_path")
-        if not dp:
+        rid = object.__getattribute__(self, "__dict__").get("id", "")
+        if not rid:
             return None
         return RecordDataRef(
-            id=object.__getattribute__(self, "__dict__").get("id", ""),
+            id=rid,
             type=RecordType.CONVERSATION,
-            path=dp,
+            path=str(self.default_jsonl_path(rid)),
             format="jsonl",
         )
 
@@ -66,55 +68,77 @@ class ConversationRecord(Record):
         dirty.add("parent")
 
     # ------------------------------------------------------------------
-    # messages — read from the jsonl file on demand
+    # Path helpers
+    # ------------------------------------------------------------------
+
+    def _jsonl_path(self) -> Path | None:
+        rid = object.__getattribute__(self, "__dict__").get("id", "")
+        if not rid:
+            return None
+        return self.default_jsonl_path(rid)
+
+    # ------------------------------------------------------------------
+    # messages — read typed pointers from the jsonl file on demand
     # ------------------------------------------------------------------
 
     @property
-    def messages(self) -> list[dict]:
-        dp = object.__getattribute__(self, "__dict__").get("data_path")
-        if not dp:
+    def messages(self) -> list[Pointer]:
+        return self.message_pointers()
+
+    def message_pointers(self) -> list[Pointer]:
+        path = self._jsonl_path()
+        if not path or not path.exists():
             return []
-        path = Path(dp)
-        if not path.exists():
-            return []
-        result = []
+        result: list[Pointer] = []
         try:
             for line in path.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
-                if line:
-                    result.append(json.loads(line))
+                if not line:
+                    continue
+                try:
+                    result.append(Pointer.from_jsonl_line(line))
+                except Exception:
+                    continue
         except Exception:
             pass
         return result
 
     # ------------------------------------------------------------------
-    # append_message — write one message to the jsonl file
+    # append_message_pointer — write a Pointer line referencing a FlowMessage id
     # ------------------------------------------------------------------
 
-    def append_message(self, message: dict) -> None:
-        """Append a single message dict as a JSONL line."""
-        dp = object.__getattribute__(self, "__dict__").get("data_path")
-        if not dp:
-            raise ValueError("ConversationRecord has no data_path set")
-        path = Path(dp)
+    def append_message_pointer(self, message_id: str, timestamp: str) -> Pointer:
+        """Append a pointer line for a FlowMessage and return the Pointer."""
+        path = self._jsonl_path()
+        if not path:
+            raise ValueError("ConversationRecord has no id; cannot resolve jsonl path")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        ptr = Pointer(TypeId(type=Pointer.DEFAULT_MESSAGE_TYPE, id=message_id), timestamp)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(ptr.to_jsonl_line() + "\n")
+        return ptr
+
+    def append_pointer(self, pointer: Pointer) -> None:
+        """Append an arbitrary typed Pointer line."""
+        path = self._jsonl_path()
+        if not path:
+            raise ValueError("ConversationRecord has no id; cannot resolve jsonl path")
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(message, ensure_ascii=False) + "\n")
+            fh.write(pointer.to_jsonl_line() + "\n")
 
     # ------------------------------------------------------------------
-    # write_messages — (re)write all messages from a list
+    # write_messages — (re)write all pointers from a list
     # ------------------------------------------------------------------
 
-    def write_messages(self, messages: list[dict]) -> None:
-        """Overwrite the jsonl file with the given message list."""
-        dp = object.__getattribute__(self, "__dict__").get("data_path")
-        if not dp:
-            raise ValueError("ConversationRecord has no data_path set")
-        path = Path(dp)
+    def write_pointers(self, pointers: list[Pointer]) -> None:
+        path = self._jsonl_path()
+        if not path:
+            raise ValueError("ConversationRecord has no id; cannot resolve jsonl path")
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as fh:
-            for msg in messages:
-                fh.write(json.dumps(msg, ensure_ascii=False) + "\n")
+            for p in pointers:
+                fh.write(p.to_jsonl_line() + "\n")
 
     # ------------------------------------------------------------------
     # search helpers
@@ -126,34 +150,117 @@ class ConversationRecord(Record):
 
     @property
     def search_content(self) -> str | None:
-        msgs = self.messages
-        if not msgs:
-            return None
-        return " ".join(m.get("content", "") for m in msgs)
+        # The jsonl only stores pointers, not content; full-text falls back to
+        # FlowMessage records via their own indexer.
+        return None
+
+    # ------------------------------------------------------------------
+    # sync_to_db — also project pointers into Conversation.message_ids/_count
+    # ------------------------------------------------------------------
+
+    async def sync_to_db(self, fts_batch=None, notify: bool = True) -> None:
+        await super().sync_to_db(fts_batch=fts_batch, notify=notify)
+        try:
+            await self._project_pointers_to_entity(notify=notify)
+        except Exception as exc:  # noqa: BLE001
+            import logging  # noqa: PLC0415
+            logging.getLogger(__name__).warning(
+                "ConversationRecord projection failed for %s — %s", self.id, exc
+            )
+
+    async def _project_pointers_to_entity(self, notify: bool = True) -> None:
+        """Mirror the on-disk pointer index into Conversation.message_ids/message_count.
+
+        Bypasses ``Conversation.__setattr__``'s projection guard via the
+        ``_PROJECTION_SENTINEL`` sentinel so application code keeps raising
+        on direct mutation.
+        """
+        from flow_sdk.builtin.conversation import (  # noqa: PLC0415  (lazy to avoid cycle)
+            Conversation,
+            _PROJECTION_SENTINEL,
+        )
+
+        conv = await Conversation.get_one({"id": self.id})
+        if not conv:
+            return
+        pointers = self.message_pointers()
+        new_count = len(pointers)
+        new_ids = json.dumps([p.to_dict() for p in pointers]) if pointers else None
+        if conv.message_ids == new_ids and conv.message_count == new_count:
+            return
+        conv._set_projection("message_ids", new_ids, _PROJECTION_SENTINEL)
+        conv._set_projection("message_count", new_count, _PROJECTION_SENTINEL)
+        local_user_typeid = await _resolve_local_owner_typeid()
+        await conv.save(local_user_typeid, notify=notify)
+
+    # ------------------------------------------------------------------
+    # Standard records-data path resolution
+    # ------------------------------------------------------------------
 
     @classmethod
-    def from_jsonl(cls, jsonl_path: Path, task_id: str, record_id: str) -> "ConversationRecord":
-        """Construct a ConversationRecord from a jsonl file path.
+    def default_data_dir(cls, record_id: str) -> Path:
+        if not record_id:
+            raise ValueError("record_id is required")
+        from flow_sdk.fs_store.record import (  # noqa: PLC0415  (lazy to avoid cycle)
+            get_default_records_data_root,
+            record_stem,
+        )
+        return (
+            get_default_records_data_root()
+            / RecordType.CONVERSATION
+            / record_stem(RecordType.CONVERSATION, record_id)
+        )
 
-        Passes parent_ref and data_ref as constructor kwargs so that
-        Record.__init__ stores them in __dict__ — making them appear in
-        to_dict() and therefore in metadata.json on save().
+    @classmethod
+    def default_jsonl_path(cls, record_id: str) -> Path:
+        return cls.default_data_dir(record_id) / "conversation.jsonl"
+
+    @classmethod
+    def from_jsonl(
+        cls,
+        jsonl_path: Path,
+        parent_id: str,
+        record_id: str,
+        *,
+        parent_type: str = RecordType.TASK,
+    ) -> "ConversationRecord":
+        """Construct a ConversationRecord pointing at the canonical jsonl path.
+
+        ``jsonl_path`` is accepted for callsite back-compat but the record
+        always resolves its data file via ``default_jsonl_path(record_id)``.
+        Pre-existing files at non-canonical locations should be moved by the
+        startup migration (`cli/commands/migrate/conversation_data_path.py`).
         """
+        canonical = cls.default_jsonl_path(record_id)
+        canonical.parent.mkdir(parents=True, exist_ok=True)
+        if not canonical.exists():
+            canonical.touch()
         data_ref = RecordDataRef(
             id=record_id,
             type=RecordType.CONVERSATION,
-            path=str(jsonl_path),
+            path=str(canonical),
             format="jsonl",
         )
-        parent_ref = RecordRef(id=task_id, type=RecordType.TASK)
+        parent_ref = RecordRef(id=parent_id, type=parent_type)
 
-        rec = cls(
-            id=record_id,
-            task_id=task_id,
-            data_path=str(jsonl_path),
-            name=f"conversation-{task_id[:8]}",
-            data_ref=data_ref,
-            parent_ref=parent_ref,
-        )
-        object.__setattr__(rec, "_asset_ref", FSRef(str(jsonl_path)))
+        kwargs: dict = {
+            "id": record_id,
+            "name": f"conversation-{parent_id[:8]}" if parent_id else f"conversation-{record_id[:8]}",
+            "data_ref": data_ref,
+            "parent_ref": parent_ref,
+        }
+        if parent_type == RecordType.TASK:
+            kwargs["task_id"] = parent_id
+        rec = cls(**kwargs)
+        object.__setattr__(rec, "_asset_ref", FSRef(str(canonical)))
         return rec
+
+
+async def _resolve_local_owner_typeid():
+    """Best-effort: look up the local User.typeid for projection saves."""
+    try:
+        from flow_sdk.builtin.user import User  # noqa: PLC0415
+        u = await User.get_one({"uname": "local"})
+        return u.typeid if u else None
+    except Exception:
+        return None

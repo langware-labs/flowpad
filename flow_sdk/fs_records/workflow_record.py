@@ -11,9 +11,26 @@ import os
 import uuid
 from pathlib import Path
 
-from typing import Any, ClassVar, Iterator
+from typing import Any, ClassVar
 
 from flow_sdk.fs_store import Record, RecordType
+from flow_sdk.instance_settings import get_instance_settings
+
+from ._frontmatter import _extract_frontmatter, _render_frontmatter, _yaml_load
+
+
+def _read_workflow_asset_id(path: Path) -> str | None:
+    """Return ``asset_id`` from frontmatter, or None if absent / unreadable."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    fm = _extract_frontmatter(text)
+    if not fm:
+        return None
+    fields = _yaml_load(fm) or {}
+    raw = fields.get("asset_id") or fields.get("id")
+    return str(raw).strip() if isinstance(raw, str) and raw.strip() else None
 
 
 def _workflow_search_dirs() -> list[Path]:
@@ -32,7 +49,7 @@ def _workflow_search_dirs() -> list[Path]:
             seen.add(rp)
             dirs.append(p)
 
-    _add(Path.home() / ".claude" / "workflows")
+    _add(get_instance_settings().claude_workflows_dir)
 
     from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
     for real in iter_claude_project_paths():
@@ -56,20 +73,45 @@ class WorkflowRecord(Record):
 
     _record_type: ClassVar[str] = RecordType.WORKFLOW
     _indexed_by_default: ClassVar[bool] = True
-    _user_asset: ClassVar[bool] = True
+    _browseable: ClassVar[bool] = True
+    _creatable: ClassVar[bool] = True
+    _icon: ClassVar[str] = "Workflow"
     index_fields: ClassVar[list[str]] = ["name", "description"]
 
-    # VFS path of the generated pipeline.json (set by the prepare action)
-    pipeline_ref: str | None = None
+    # Framework upsert: <scope_root>/.claude/workflows/<safe_name>.md
+    _main_subdir: ClassVar[str] = ".claude/workflows"
+    _main_layout: ClassVar[str] = "file"
 
-    def __init__(self, file_path: Path | str, **kwargs: Any):
-        file_path = Path(file_path)
+    @property
+    def main_ref(self) -> "Any":  # FrontMatterFsRef | None
+        """Primary content ref points at the workflow .md via asset_ref."""
+        from flow_sdk.fs_store.fs_ref import FrontMatterFsRef
+        ar = self.asset_ref
+        if ar is not None:
+            return FrontMatterFsRef(ar._path)
+        return None
+
+    def default_body(self, entity) -> "str | None":
+        """Stub for new workflows. Only fires when the file at the computed
+        asset_ref doesn't yet exist. Shadow guard in Record.upsert_main_ref
+        refuses writes inside the shadow tree."""
+        name = (getattr(entity, "name", None) or "").strip() or "Untitled"
+        desc = (getattr(entity, "description", None) or "").strip()
+        fm: dict = {"asset_id": entity.id, "name": name}
+        if desc:
+            fm["description"] = desc
+        return _render_frontmatter(fm) + f"\n# {name}\n"
+
+    def __init__(self, file_path: Path | str | None = None, **kwargs: Any):
         kwargs.setdefault("type", RecordType.WORKFLOW)
-        kwargs.setdefault("name", file_path.stem)
+        if file_path is not None:
+            file_path = Path(file_path)
+            kwargs.setdefault("name", file_path.stem)
         super().__init__(**kwargs)
-        # Use asset_ref instead of _file_path instance attr
-        from flow_sdk.fs_store.fs_ref import FSRef
-        object.__setattr__(self, "_asset_ref", FSRef(file_path))
+        if file_path is not None:
+            # Use asset_ref instead of _file_path instance attr
+            from flow_sdk.fs_store.fs_ref import FSRef
+            object.__setattr__(self, "_asset_ref", FSRef(file_path))
 
     @property
     def file_path(self) -> Path:
@@ -86,35 +128,31 @@ class WorkflowRecord(Record):
             return ar.read()
         return None
 
+    def meta_dict(self) -> dict:
+        result = super().meta_dict()
+        ar = self.asset_ref
+        if ar is not None:
+            result["asset_ref"] = str(ar._path)
+        return result
+
     @classmethod
     def from_path(cls, path: Path | str) -> WorkflowRecord:
         """Load a WorkflowRecord from a .md file path."""
         return cls(file_path=path)
 
     @classmethod
-    def _external_source_count(cls, limit: int | None = None) -> int:
-        seen: set[str] = set()
-        for workflows_dir in _workflow_search_dirs():
-            for md_file in workflows_dir.glob("*.md"):
-                seen.add(str(md_file.resolve()))
-        count = len(seen)
-        return min(count, limit) if limit is not None else count
+    async def from_fsref(cls, ref) -> list["WorkflowRecord"]:
+        """Indexer entry point — construct from an FSRef emitted by workflow_fn.
+
+        Honors ``asset_id`` from frontmatter when present so that workflows
+        created via ``Entity.save()`` keep the same id on subsequent rescans
+        (avoiding duplicate Records). Falls back to ``uuid5(path)`` for
+        legacy files written without an asset_id stamp.
+        """
+        return [cls(file_path=ref._path, id=cls.getId(ref))]
 
     @classmethod
-    def _external_source_iter(cls, limit: int | None = None) -> Iterator["WorkflowRecord"]:
-        seen: set[str] = set()
-        count = 0
-        for workflows_dir in _workflow_search_dirs():
-            for md_file in sorted(workflows_dir.glob("*.md")):
-                key = str(md_file.resolve())
-                if key in seen:
-                    continue
-                seen.add(key)
-                try:
-                    rec = cls(file_path=md_file, id=_workflow_id(md_file))
-                    yield rec
-                    count += 1
-                    if limit is not None and count >= limit:
-                        return
-                except Exception:
-                    continue
+    def getId(cls, ref) -> str:
+        """Mirror ``from_fsref``: prefer frontmatter ``asset_id``, else uuid5(path)."""
+        existing = _read_workflow_asset_id(ref._path)
+        return existing if existing else _workflow_id(ref._path)

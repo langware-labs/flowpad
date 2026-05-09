@@ -20,7 +20,7 @@ export class FSRef {
   readonly path: string;
   readonly refType: FSRefType;
   readonly readOnly: boolean;
-  private readonly typeId: TypeId;
+  protected readonly typeId: TypeId;
 
   constructor(path: string, typeId: TypeId, refType: FSRefType = 'file', readOnly = false) {
     this.path = path;
@@ -65,6 +65,23 @@ export class FSRef {
     }
   }
 
+  /**
+   * Recovery primitive — write `content` (default empty) at this path,
+   * creating parent directories server-side. Pair with ``exists()`` for the
+   * editor's "read-or-recover" branch:
+   *
+   *     if (!(await fsRef.exists())) await fsRef.create();
+   *
+   * This is **not** the normal create path — Entity.save() →
+   * Record.upsert_main_ref handles routine creation with the correct default
+   * body. ``create()`` exists so a stale entity row pointing at a missing
+   * file never produces a hard 404 in the editor.
+   */
+  async create(content: string = ''): Promise<void> {
+    const { fsManager } = await import('../services/fsService');
+    await fsManager.writeFile(this.typeId, this.path, content);
+  }
+
   get vpath(): string {
     // Format: "{type}-{id}/{path_without_leading_slash}"
     const typeId = this.typeId;
@@ -84,6 +101,16 @@ export class FSRef {
   async delete(): Promise<void> {
     const { fsManager } = await import('../services/fsService');
     await fsManager.delete(this.typeId, this.path).catch(() => {});
+  }
+
+  /**
+   * Reveal this path in the OS file manager (Finder / Explorer).
+   * Folders open directly; files can be revealed with `{ select: true }`.
+   * Dispatches to the compute_node `open-external` action via this ref's typeId.
+   */
+  async open(options?: { select?: boolean }): Promise<{ opened: string; selected?: boolean } | null> {
+    const { openExternalFromComputeNode } = await import('../entities/compute-node/system-profile');
+    return openExternalFromComputeNode(this.typeId.id, this.path, options);
   }
 
   children(): FSRef[] {

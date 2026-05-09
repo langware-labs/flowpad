@@ -174,7 +174,7 @@ describe('useFSItemFlows Hook - API Integration Tests', () => {
     return Wrapper;
   };
 
-  // Helper to create a flow with source_vfs_path via the project action
+  // Helper to create a flow with asset_ref via the project action
   async function createFlowWithSourcePath(project: Project, sourcePath: string): Promise<Flow> {
     const processId = crypto.randomUUID();
 
@@ -184,19 +184,23 @@ describe('useFSItemFlows Hook - API Integration Tests', () => {
       createFlowAction.bodyParameters = {
         flow_id: processId,
         agent_id: '@local',
-        source_vfs_path: sourcePath,
+        asset_ref: sourcePath,
       };
       createFlowAction.castResponse = true;
 
       const response = (await dataManager.callAction(createFlowAction)) as Flow;
-      console.log('✓ Created flow via action:', response.id, 'with source_vfs_path:', sourcePath);
+      console.log('✓ Created flow via action:', response.id, 'with asset_ref:', sourcePath);
       return response;
     } catch (error: any) {
       const backendMessage = String(error?.response?.data?.error ?? error?.response?.data?.message ?? '');
+      const status = error?.response?.status;
       const serviceUnavailable =
-        error?.response?.status === 500 &&
-        (backendMessage.includes('Service not available') ||
-          String(error?.message ?? '').includes('status code 500'));
+        (status === 500 &&
+          (backendMessage.includes('Service not available') ||
+            String(error?.message ?? '').includes('status code 500'))) ||
+        // Newer backends that never registered the `create-flow` action return
+        // 400 "Post not supported for this path". Treat the same way.
+        (status === 400 && backendMessage.toLowerCase().includes('not supported for this path'));
 
       if (!serviceUnavailable) {
         throw error;
@@ -207,13 +211,13 @@ describe('useFSItemFlows Hook - API Integration Tests', () => {
         id: processId,
         project_id: project.id,
         agent_id: '@local',
-        source_vfs_path: sourcePath,
+        asset_ref: sourcePath,
         title: `Test Flow ${Date.now()}`,
       });
       await flow.save(project.typeId);
       // Keep local test intent explicit even if backend omits the field in response payload.
-      flow.source_vfs_path = sourcePath;
-      console.log('✓ Created flow via CRUD fallback:', flow.id, 'with source_vfs_path:', sourcePath);
+      flow.asset_ref = sourcePath;
+      console.log('✓ Created flow via CRUD fallback:', flow.id, 'with asset_ref:', sourcePath);
       return flow;
     }
   }
@@ -241,7 +245,7 @@ describe('useFSItemFlows Hook - API Integration Tests', () => {
       expect(result.current.normalizedVfsPath).toBe(normalizedVfsPath);
     });
 
-    it('should find flow after creation with matching source_vfs_path', async () => {
+    it('should find flow after creation with matching asset_ref', async () => {
       // Step 1: Create FSItem with normalized path
       const testItem = new FSItem({
         vfs_abs_path: normalizedVfsPath,
@@ -263,7 +267,7 @@ describe('useFSItemFlows Hook - API Integration Tests', () => {
       const initialFlowCount = result.current.flows.length;
       console.log('Initial flow count:', initialFlowCount);
 
-      // Step 3: Create a flow with matching source_vfs_path
+      // Step 3: Create a flow with matching asset_ref
       const createdFlow = await createFlowWithSourcePath(testProject, normalizedVfsPath);
       expect(createdFlow).toBeTruthy();
 
@@ -274,7 +278,7 @@ describe('useFSItemFlows Hook - API Integration Tests', () => {
       // Verify the flow is in the results
       const foundFlow = result.current.flows.find((f) => f.id === createdFlow.id);
       if (foundFlow) {
-        expect(foundFlow.source_vfs_path).toBe(normalizedVfsPath);
+        expect(foundFlow.asset_ref).toBe(normalizedVfsPath);
         expect(result.current.flows.length).toBe(initialFlowCount + 1);
         console.log('✓ Flow successfully found via useFSItemFlows hook');
       } else {

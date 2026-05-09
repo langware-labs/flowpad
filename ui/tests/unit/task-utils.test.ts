@@ -31,23 +31,15 @@ beforeEach(() => {
 
 describe('getAnalysisPath', () => {
   it('returns null for non-analysis tasks', () => {
-    expect(getAnalysisPath({ task_type: 'bug', metadata: { analysisPath: '/p' } } as any)).toBeNull();
+    expect(getAnalysisPath({ task_type: 'bug', analysis_path: '/p' } as any)).toBeNull();
   });
 
-  it('returns null when metadata has no analysisPath', () => {
-    expect(getAnalysisPath({ task_type: 'analysis', metadata: {} } as any)).toBeNull();
-  });
-
-  it('returns null when metadata is undefined', () => {
+  it('returns null when analysis_path is missing', () => {
     expect(getAnalysisPath({ task_type: 'analysis' } as any)).toBeNull();
   });
 
-  it('returns null when analysisPath is not a string', () => {
-    expect(getAnalysisPath({ task_type: 'analysis', metadata: { analysisPath: 42 } } as any)).toBeNull();
-  });
-
   it('returns the path for a valid analysis task', () => {
-    const task = { task_type: 'analysis', metadata: { analysisPath: '/home/.flow/sessions/abc/analysis.md' } };
+    const task = { task_type: 'analysis', analysis_path: '/home/.flow/sessions/abc/analysis.md' };
     expect(getAnalysisPath(task as any)).toBe('/home/.flow/sessions/abc/analysis.md');
   });
 });

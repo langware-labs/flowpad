@@ -14,6 +14,7 @@ from typing import ClassVar, Iterator
 import os
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.instance_settings import get_instance_settings
 
 
 def _plan_search_dirs() -> list[Path]:
@@ -32,7 +33,7 @@ def _plan_search_dirs() -> list[Path]:
             seen.add(rp)
             dirs.append(p)
 
-    _add(Path.home() / ".claude" / "plans")
+    _add(get_instance_settings().claude_plans_dir)
 
     from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
     for real in iter_claude_project_paths():
@@ -68,7 +69,7 @@ class ClaudePlanRecord(Record):
 
     _record_type: ClassVar[str] = RecordType.PLAN
     _indexed_by_default: ClassVar[bool] = True
-    _user_asset: ClassVar[bool] = True
+    _browseable: ClassVar[bool] = True
     _icon: ClassVar[str] = "FileText"
     index_fields: ClassVar[list[str]] = ["name"]
 
@@ -135,51 +136,10 @@ class ClaudePlanRecord(Record):
         except OSError:
             return "0" * 16
 
-    @property
-    def source_path(self) -> str:
-        ar = object.__getattribute__(self, "_asset_ref")
-        return ar.path if ar is not None else ""
-
     @classmethod
-    def _external_source_iter(cls, limit: int | None = None) -> Iterator["ClaudePlanRecord"]:
-        seen: set[str] = set()
-        count = 0
-        for plans_dir in _plan_search_dirs():
-            for md_file in sorted(plans_dir.glob("*.md")):
-                key = str(md_file.resolve())
-                if key in seen:
-                    continue
-                seen.add(key)
-                yield cls._from_md_file(md_file)
-                count += 1
-                if limit is not None and count >= limit:
-                    return
-
-    @classmethod
-    def _external_source_count(cls, limit: int | None = None) -> int:
-        seen: set[str] = set()
-        for plans_dir in _plan_search_dirs():
-            for md_file in plans_dir.glob("*.md"):
-                seen.add(str(md_file.resolve()))
-        count = len(seen)
-        return min(count, limit) if limit is not None else count
-
-    @classmethod
-    def discovery_items_count(cls, limit: int | None = None) -> int:
-        # discover_iter deduplicates: external records already on disk are skipped.
-        # The unique count is max(disk, ext), not disk + ext.
-        ext = cls._external_source_count()
-        base = super().discovery_items_count()  # type: ignore[misc]  # disk + ext (no limit)
-        disk = max(0, base - ext)
-        count = max(disk, ext)
-        return min(count, limit) if limit is not None else count
-
-    @classmethod
-    def _external_source_find_one(cls, uid: str) -> "ClaudePlanRecord | None":
-        for rec in cls._external_source_iter():
-            if rec.id == uid:
-                return rec
-        return None
+    async def from_fsref(cls, ref) -> list["ClaudePlanRecord"]:
+        """Indexer entry point — construct from an FSRef emitted by claude_plan_fn."""
+        return [cls._from_md_file(ref._path)]
 
     def save(self) -> None:
         ar = object.__getattribute__(self, "_asset_ref")

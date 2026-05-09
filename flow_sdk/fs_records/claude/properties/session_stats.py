@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, ClassVar, TYPE_CHECKING
 
 from flow_sdk.fs_store.property_record import PropertyRecord
+from flow_sdk.instance_settings import get_instance_settings
 
 if TYPE_CHECKING:
     from flow_sdk.fs_store.record import Record
@@ -196,7 +197,7 @@ def _parse_jsonl_stats(path: Path) -> dict:
 
     resolved_session_id = session_id or path.stem
     task_path: str | None = None
-    tasks_dir = Path.home() / ".claude" / "tasks" / resolved_session_id
+    tasks_dir = get_instance_settings().claude_tasks_dir / resolved_session_id
     if tasks_dir.exists() and any(tasks_dir.glob("*.json")):
         task_path = str(tasks_dir)
 

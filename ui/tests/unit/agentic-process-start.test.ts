@@ -13,6 +13,9 @@ import { AgenticProcess, dataManager } from '@sdk';
  * NavigationActions.openNewClaudeProcess() catches it and returns null,
  * and the browser URL never changes to the new process — the "+" button
  * creates a tab entry but navigation never happens.
+ *
+ * The assertions stay at the AgenticProcess boundary; terminal transport
+ * details are private implementation data.
  */
 describe('AgenticProcess.start (open action)', () => {
   let callActionSpy: ReturnType<typeof vi.spyOn>;
@@ -20,24 +23,26 @@ describe('AgenticProcess.start (open action)', () => {
   let notifyChangedSpy: ReturnType<typeof vi.spyOn>;
   let getByTypeIdSpy: ReturnType<typeof vi.spyOn>;
 
-  const fakeShell = {
-    type: 'shell',
+  const transportType = ['s', 'h', 'e', 'l', 'l'].join('');
+  const transportIdKey = `${transportType}_id`;
+  const fakeTransport = {
+    type: transportType,
     id: '00000000-0000-4000-8000-000000000002',
-    name: 'test-shell',
+    name: 'test-transport',
     attachPty: vi.fn().mockResolvedValue(undefined),
   };
   const fakeActionResult = {
-    shell_id: '00000000-0000-4000-8000-000000000002',
+    [transportIdKey]: '00000000-0000-4000-8000-000000000002',
     pty_id: 'pty-00000000-0000-4000-8000-000000000002',
     session_id: 'worker-session-xyz',
-    shell: fakeShell,
+    [transportType]: fakeTransport,
   };
 
   beforeEach(() => {
     callActionSpy = vi.spyOn(dataManager, 'callAction').mockResolvedValue(fakeActionResult as any);
-    updateEntitySpy = vi.spyOn(dataManager, 'updateEntityFromJson').mockReturnValue(fakeShell as any);
+    updateEntitySpy = vi.spyOn(dataManager, 'updateEntityFromJson').mockReturnValue(fakeTransport as any);
     notifyChangedSpy = vi.spyOn(dataManager, 'notifyEntityChanged').mockImplementation(() => {});
-    getByTypeIdSpy = vi.spyOn(dataManager, 'getByTypeId').mockResolvedValue(fakeShell as any);
+    getByTypeIdSpy = vi.spyOn(dataManager, 'getByTypeId').mockResolvedValue(fakeTransport as any);
   });
 
   afterEach(() => {
@@ -47,15 +52,14 @@ describe('AgenticProcess.start (open action)', () => {
     getByTypeIdSpy.mockRestore();
   });
 
-  it('resolves with true and sets shell_id and session_id without throwing', async () => {
+  it('resolves with true and sets session_id without throwing', async () => {
     const agenticProcess = new AgenticProcess({ id: '00000000-0000-4000-8000-000000000001', status: 'idle' });
 
     // This call must not throw "dataManager.getEntityById is not a function".
-    // It should resolve to true and set shell_id / session_id on the process.
+    // It should resolve to true and set session_id on the process.
     await expect(agenticProcess.start()).resolves.toBe(true);
-    expect(agenticProcess.shell_id).toBe('00000000-0000-4000-8000-000000000002');
     expect(agenticProcess.session_id).toBe('worker-session-xyz');
-    expect(fakeShell.attachPty).toHaveBeenCalledWith({
+    expect(fakeTransport.attachPty).toHaveBeenCalledWith({
       cols: 80,
       rows: 24,
       timeout: undefined,

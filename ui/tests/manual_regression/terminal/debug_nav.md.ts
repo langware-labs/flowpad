@@ -23,6 +23,6 @@ test('debug new_terminal navigation', async ({ page }) => {
   await page.waitForTimeout(5_000);
   
   console.log('API requests/responses:');
-  requests.forEach(r => console.log(`  ${r.method} ${r.url.replace('http://localhost:9007', '')} -> ${r.status}`));
+  requests.forEach(r => console.log(`  ${r.method} ${r.url.replace('http://localhost:9008', '')} -> ${r.status}`));
   console.log('Current URL:', page.url());
 });

@@ -1,9 +1,56 @@
-import type { OrphanEntry } from './ptyOrphanBuffer';
-import type { OutputChunk } from '../../pty-sync/types.js';
 import { dataContext } from '../../FlowSync/context';
+import type { OutputChunk } from '../../pty-sync/types.js';
+import type { OrphanEntry } from './ptyOrphanBuffer';
 
 export type PtyOutputListener = (data: string, seq?: number) => void;
+export type PtyLineListener = (line: string) => void;
+/**
+ * Pattern watcher registered via ``Shell.addTrigger`` /
+ * ``PtyConnection.addTrigger``. ``onMatch`` fires when an ANSI-stripped PTY
+ * line matches ``pattern``. ``label`` is shown in the PTY Events Viewer; if
+ * absent, the viewer falls back to ``pattern.toString()``.
+ */
+export type PtyEvent = {
+  pattern: RegExp;
+  onMatch: (line: string, match: RegExpMatchArray) => void;
+  label?: string;
+};
+
+/** A single recorded fire of a registered ``PtyEvent`` — buffered in
+ *  ``PtyConnection`` and surfaced in the PTY Events Viewer. */
+export interface PtyEventFire {
+  /** Local uuid for stable React keys. */
+  id: string;
+  /** ``Date.now()`` at fire time. */
+  ts: number;
+  /** ``pattern.toString()`` — the regex literal source. */
+  patternSource: string;
+  /** ``PtyEvent.label`` if set by the caller. */
+  label?: string;
+  /** ANSI-stripped line that matched. */
+  line: string;
+  /** First 8 capture groups (or fewer) from the match — slice protects the buffer. */
+  match: string[];
+  /** True iff the fire happened during the replay phase (pre-attach). */
+  duringReplay: boolean;
+}
+
+export type PtyEventFireListener = (fire: PtyEventFire) => void;
+
 export type PtyConnectionStatus = 'idle' | 'connecting' | 'live' | 'restarting' | 'closed';
+
+/** Strip CSI/SGR escape sequences so regex matchers see plain text.
+ *
+ * Matches the most common ANSI control sequences emitted by terminal
+ * applications: CSI (`ESC [ ... letter`), OSC (`ESC ] ... BEL/ST`), and
+ * single-character escapes. Not exhaustive — bracketed paste mode and
+ * unusual DCS sequences may slip through — but covers >99% of real PTY
+ * output Claude Code / shell prompts produce.
+ */
+const ANSI_RE = /\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])/g;
+function stripAnsi(s: string): string {
+  return s.replace(ANSI_RE, '');
+}
 
 export class PtyConnection {
   shellId: string;
@@ -21,6 +68,20 @@ export class PtyConnection {
 
   /** Live output listeners — only notified after isReady. */
   private readonly _listeners = new Set<PtyOutputListener>();
+
+  /** Line listeners — fed by every chunk (including replay). ANSI-stripped. */
+  private readonly _lineListeners = new Set<PtyLineListener>();
+
+  /** Active triggers — pattern + onMatch. Wrapped over the line stream. */
+  private readonly _triggers = new Set<PtyEvent>();
+
+  /** Bounded ring of fire records — surfaced in PTY Events Viewer. */
+  private readonly _eventFires: PtyEventFire[] = [];
+  private readonly _eventFireListeners = new Set<PtyEventFireListener>();
+  private static readonly MAX_EVENT_FIRES = 200;
+
+  /** Pending raw text not yet terminated by \n. Fed into the line stream. */
+  private _lineBuffer = '';
 
   /** onReady subscribers — fired once when replay completes + live stream opens. */
   private readonly _readyListeners = new Set<() => void>();
@@ -50,6 +111,11 @@ export class PtyConnection {
   /** True once attach() has finished replay (no WS dependency — safe in unit tests). */
   get replayDone(): boolean {
     return this._replayDone;
+  }
+
+  /** True if this connection is fully attached to the given PTY (started + replay done). */
+  isAttachedTo(ptyId: string): boolean {
+    return this.started && this._replayDone && this._attachedPtyId === ptyId;
   }
 
   /**
@@ -116,14 +182,174 @@ export class PtyConnection {
     if (seq !== undefined) {
       this.chunks.set(seq, { seq, data: bytes, timestamp: timestamp_ms ?? Date.now() });
     }
+    // Feed line listeners regardless of replay state — triggers must fire
+    // for replayed output too so reload-time pattern detection works.
+    this._feedLineBuffer(decoded);
     // Only fire live listeners after replay phase is complete.
     // Gate on _replayDone only (not isLive) so unit tests work without a WS.
     if (this._replayDone) {
       for (const listener of this._listeners) {
-        try { listener(decoded, seq); } catch (e) { console.error('[PtyConnection] listener error:', e); }
+        try {
+          listener(decoded, seq);
+        } catch (e) {
+          console.error('[PtyConnection] listener error:', e);
+        }
       }
     }
     return decoded;
+  }
+
+  // ── Line stream ───────────────────────────────────────────────────────────
+
+  /**
+   * Subscribe to ANSI-stripped lines. Fires on every \n found in the raw
+   * stream — replayed chunks included. Trailing partial line (no newline)
+   * is buffered until the next chunk arrives.
+   *
+   * Returns an unsubscribe function.
+   */
+  onLine(fn: PtyLineListener): () => void {
+    this._lineListeners.add(fn);
+    return () => this._lineListeners.delete(fn);
+  }
+
+  /**
+   * Register a regex trigger over the line stream. ``onMatch`` fires
+   * with the matched line and the regex match groups.
+   *
+   * If chunks have already arrived (e.g. registration happens after a
+   * tab-reload's replay completes), the new trigger is run against the
+   * accumulated line history so consumers don't lose visibility of
+   * matches that fired pre-registration. Synthesized fires are flagged
+   * ``duringReplay: true`` so the viewer can distinguish catchup hits
+   * from live ones.
+   *
+   * Returns an unsubscribe function.
+   */
+  addTrigger(trigger: PtyEvent): () => void {
+    this._triggers.add(trigger);
+    if (this.chunks.size > 0) this._catchupTrigger(trigger);
+    return () => this._triggers.delete(trigger);
+  }
+
+  /**
+   * Walk the buffered replay chunks in seq order, decode + ANSI-strip,
+   * split on \n, and run a single trigger against each line. Used by
+   * ``addTrigger`` to retroactively match history when a watcher
+   * registers after replay has already drained chunks through the
+   * line buffer.
+   *
+   * Independent of the live ``_lineBuffer``: this scans the persisted
+   * chunk map without affecting the running stream.
+   */
+  private _catchupTrigger(trigger: PtyEvent): void {
+    let buf = '';
+    const seqs = Array.from(this.chunks.keys()).sort((a, b) => a - b);
+    for (const seq of seqs) {
+      const chunk = this.chunks.get(seq);
+      if (!chunk?.data) continue;
+      buf += this.decoder.decode(chunk.data, { stream: true });
+    }
+    buf += this.decoder.decode();
+    const lines = buf.split('\n');
+    for (const raw of lines) {
+      const line = stripAnsi(raw.endsWith('\r') ? raw.slice(0, -1) : raw);
+      if (!line) continue;
+      const m = line.match(trigger.pattern);
+      if (!m) continue;
+      try {
+        trigger.onMatch(line, m);
+      } catch (e) {
+        console.error('[PtyConnection] catchup trigger error:', e);
+      }
+      this._recordEventFire(trigger, line, m, /*duringReplay*/ true);
+    }
+  }
+
+  /** Number of currently-registered ``PtyEvent`` watchers. */
+  getRegisteredEventCount(): number {
+    return this._triggers.size;
+  }
+
+  /** Snapshot of buffered fire records (oldest first). */
+  getEventFires(): readonly PtyEventFire[] {
+    return this._eventFires;
+  }
+
+  /** Subscribe to new fires. Returns an unsubscribe function. */
+  onEventFire(fn: PtyEventFireListener): () => void {
+    this._eventFireListeners.add(fn);
+    return () => this._eventFireListeners.delete(fn);
+  }
+
+  /** Drop all buffered fires (does not affect listeners or watchers). */
+  clearEventFires(): void {
+    this._eventFires.length = 0;
+  }
+
+  private _feedLineBuffer(decoded: string): void {
+    this._lineBuffer += decoded;
+    let nl = this._lineBuffer.indexOf('\n');
+    while (nl !== -1) {
+      // Slice off the line (keep trailing CR off if present).
+      let line = this._lineBuffer.slice(0, nl);
+      if (line.endsWith('\r')) line = line.slice(0, -1);
+      this._lineBuffer = this._lineBuffer.slice(nl + 1);
+      this._emitLine(stripAnsi(line));
+      nl = this._lineBuffer.indexOf('\n');
+    }
+  }
+
+  private _emitLine(line: string): void {
+    for (const fn of this._lineListeners) {
+      try {
+        fn(line);
+      } catch (e) {
+        console.error('[PtyConnection] line listener error:', e);
+      }
+    }
+    for (const trig of this._triggers) {
+      const m = line.match(trig.pattern);
+      if (m) {
+        try {
+          trig.onMatch(line, m);
+        } catch (e) {
+          console.error('[PtyConnection] trigger error:', e);
+        }
+        this._recordEventFire(trig, line, m);
+      }
+    }
+  }
+
+  private _recordEventFire(
+    trig: PtyEvent,
+    line: string,
+    match: RegExpMatchArray,
+    duringReplay?: boolean,
+  ): void {
+    const fire: PtyEventFire = {
+      id:
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `fire-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      ts: Date.now(),
+      patternSource: trig.pattern.toString(),
+      label: trig.label,
+      line,
+      match: Array.from(match).slice(0, 8) as string[],
+      duringReplay: duringReplay ?? !this._replayDone,
+    };
+    this._eventFires.push(fire);
+    while (this._eventFires.length > PtyConnection.MAX_EVENT_FIRES) {
+      this._eventFires.shift();
+    }
+    for (const fn of this._eventFireListeners) {
+      try {
+        fn(fire);
+      } catch (e) {
+        console.error('[PtyConnection] event-fire listener error:', e);
+      }
+    }
   }
 
   // ── Event subscriptions (xterm interface) ─────────────────────────────────
@@ -330,30 +556,47 @@ export class PtyConnection {
 
   // ── Housekeeping ──────────────────────────────────────────────────────────
 
-  /** Clear chunk buffer and reset seq counter (does NOT reset attach state). */
+  /** Clear chunk buffer and reset seq counter (does NOT reset attach state).
+   *  Also drops the PTY-event fire buffer — fires from a prior PTY pid are
+   *  stale once we re-attach to a fresh pid. */
   clear(): void {
     this.chunks.clear();
     this.lastSeq = 0;
+    this._lineBuffer = '';
+    this._eventFires.length = 0;
   }
 
   dispose(): void {
     this._listeners.clear();
     this._readyListeners.clear();
     this._disconnectListeners.clear();
+    this._lineListeners.clear();
+    this._triggers.clear();
+    this._eventFireListeners.clear();
+    this._eventFires.length = 0;
     this.chunks.clear();
+    this._lineBuffer = '';
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
   private _emitReady(): void {
     for (const fn of this._readyListeners) {
-      try { fn(); } catch (e) { console.error('[PtyConnection] onReady listener error:', e); }
+      try {
+        fn();
+      } catch (e) {
+        console.error('[PtyConnection] onReady listener error:', e);
+      }
     }
   }
 
   private _emitDisconnect(): void {
     for (const fn of this._disconnectListeners) {
-      try { fn(); } catch (e) { console.error('[PtyConnection] onDisconnect listener error:', e); }
+      try {
+        fn();
+      } catch (e) {
+        console.error('[PtyConnection] onDisconnect listener error:', e);
+      }
     }
   }
 

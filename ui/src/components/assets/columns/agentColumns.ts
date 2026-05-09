@@ -3,7 +3,7 @@ import { registerColumns } from './columnRegistry';
 import type { SearchResult } from '@src/hooks/use-asset-search';
 
 function agentLocationCell(r: SearchResult): React.ReactNode {
-  const path = r.source_path || '';
+  const path = r.asset_ref || '';
   const claudeIdx = path.indexOf('/.claude/agents/');
   if (claudeIdx <= 0) return '—';
   const prefix = path.slice(0, claudeIdx);

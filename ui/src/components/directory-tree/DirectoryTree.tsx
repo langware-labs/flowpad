@@ -96,6 +96,9 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
     // Also require rootFolders to be populated before attempting expansion
     if (selectedPath && selectedPath !== hasExpandedRef.current && rootFolders.length > 0) {
       hasExpandedRef.current = selectedPath;
+      // Sync the selection immediately so the highlighted row updates even if
+      // expandParentsForPath is still loading folder contents (or fails).
+      tree.selectItem(selectedPath);
       tree.expandParentsForPath(selectedPath).then(() => {
         // After expansion completes, scroll the selected item into view
         requestAnimationFrame(() => {
@@ -105,7 +108,7 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPath, tree.expandParentsForPath, rootFolders.length]);
+  }, [selectedPath, tree.expandParentsForPath, tree.selectItem, rootFolders.length]);
 
   // Auto-select first entry when selectedPath is null and entries exist
   useEffect(() => {

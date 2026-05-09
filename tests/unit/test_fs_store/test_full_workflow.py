@@ -69,9 +69,10 @@ class TestFullWorkflow:
         assert not (skill_dir / "metadata.json").exists(), \
             "metadata.json must not be written to the skill source dir"
 
-        # To persist to disk, call save() — it goes to records_root shadow
+        # To persist to disk, call save() — it goes to records_root shadow.
+        # Shadow folder is named skill-@<rec.id> (uuid5-derived), not the human name.
         rec.save()
-        shadow_dir = get_default_records_root() / "skill" / "skill-@my-skill"
+        shadow_dir = get_default_records_root() / "skill" / f"skill-@{rec.id}"
         assert (shadow_dir / "metadata.json").exists()
 
         # Reload from skill_dir still works (re-bootstraps from YAML)

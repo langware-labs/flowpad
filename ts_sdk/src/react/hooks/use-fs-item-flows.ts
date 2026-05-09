@@ -59,7 +59,7 @@ export function useFSItemFlows(item: FSItem | null | undefined, options: UseFSIt
   const flowsQuery = useMemo(() => {
     return QueryFilter.parse(
       {
-        match: { source_vfs_path: normalizedVfsPath || '' },
+        match: { asset_ref: normalizedVfsPath || '' },
       },
       Flow.type,
     );

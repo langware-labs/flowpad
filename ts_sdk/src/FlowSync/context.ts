@@ -89,7 +89,12 @@ export enum ContextEntitiesEnum {
   CurrentFlowTypeId = 'CurrentFlowTypeId',
   CurrentProjectTypeId = 'CurrentProjectTypeId',
   CurrentComputeNodeTypeId = 'CurrentComputeNodeTypeId',
-  CurrentUserTypeId = 'CurrentUserTypeId',
+  // Two distinct user identities — desktop (local bootstrap, HTTP-cookie auth)
+  // vs cloud (Hub login). They are independent: cloud transitions must never
+  // mutate the local slot, and vice versa. `someone` (the "is the dock ready
+  // to render" gate) is bound to the *local* slot only.
+  LocalUserTypeId = 'LocalUserTypeId',
+  CloudUserTypeId = 'CloudUserTypeId',
   CurrentActiveEntityTypeId = 'CurrentActiveEntityTypeId',
   CurrentDomainTypeId = 'CurrentDomainTypeId',
   CurrentVisitorTypeId = 'CurrentVisitorTypeId',
@@ -109,12 +114,20 @@ class DataContext extends EventEmitter {
   stateItem = 'flowpad-state';
   persistedState: { [key: string]: TypeId } = {};
 
+  /** Mirror of cloudManager.isLoggedIn — only cloudManager should call setCloudLoggedIn. */
+  _cloudLoggedIn = false;
+  setCloudLoggedIn(v: boolean) {
+    if (this._cloudLoggedIn === v) return;
+    runInAction(() => { this._cloudLoggedIn = v; });
+  }
+
   private _contextEntitiesMap = observable.map<ContextEntitiesEnum, TypeId | null | undefined>([
     [ContextEntitiesEnum.CurrentWorkspaceTypeId, null],
     [ContextEntitiesEnum.CurrentFlowTypeId, null],
     [ContextEntitiesEnum.CurrentProjectTypeId, null],
     [ContextEntitiesEnum.CurrentComputeNodeTypeId, null],
-    [ContextEntitiesEnum.CurrentUserTypeId, null],
+    [ContextEntitiesEnum.LocalUserTypeId, null],
+    [ContextEntitiesEnum.CloudUserTypeId, null],
     [ContextEntitiesEnum.CurrentActiveEntityTypeId, null],
     [ContextEntitiesEnum.CurrentDomainTypeId, null],
     [ContextEntitiesEnum.CurrentVisitorTypeId, null],
@@ -147,10 +160,12 @@ class DataContext extends EventEmitter {
   }
 
   /**
-   * Get whether cloud login is available (valid cloud token exists)
+   * Reactive mirror of cloudManager.isLoggedIn — cloudManager is the SSoT but
+   * pushes its state into ``_cloudLoggedIn`` via ``setCloudLoggedIn`` so mobx
+   * subscribers re-render. Bootstrap value comes from cloudManager too.
    */
   get cloudLoginAvailable(): boolean {
-    return this.bootstrapInfo?.desktop_info?.cloud_login_available ?? false;
+    return this._cloudLoggedIn;
   }
 
   /**
@@ -161,30 +176,11 @@ class DataContext extends EventEmitter {
   }
 
   /**
-   * Fetch cloud user info and set it as the active user in context.
-   * Called fire-and-forget after bootstrap when cloudLoginAvailable is true.
-   */
-  async loadCloudUser(): Promise<void> {
-    try {
-      const data = await apiClient.get<{ logged_in: boolean; user: Record<string, unknown> }>('/auth/status');
-      if (data?.logged_in && data.user) {
-        const cloudUser = new User(data.user);
-        cloudUser.markAsExpanded();
-        await this.setContextEntityTypeId(ContextEntitiesEnum.CurrentUserTypeId, cloudUser.typeId);
-      }
-    } catch {
-      // Non-critical — local user stays in context
-    }
-  }
-
-  /**
-   * Log out from the cloud account via the OAuth disconnect action.
-   * The server clears local credentials and returns the cloud logout URL;
-   * the OAuth service opens it in a browser window (same mechanism as login).
+   * Cloud logout — delegates to cloudManager.
    */
   async cloudLogout(): Promise<void> {
-    const { oauthService, OAUTH_PROVIDERS } = await import('../services/oauth/oauth-service');
-    await oauthService.disconnect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
+    const { cloudManager } = await import('../services/cloud_login');
+    await cloudManager.logout();
   }
 
   /**
@@ -283,6 +279,22 @@ class DataContext extends EventEmitter {
     this.emit(ContextEventType.CONTEXT_CHANGED);
   }
 
+  /**
+   * Canonical active terminal tab target.
+   *
+   * Shell tabs use shell-<id>. Agentic process tabs use
+   * agentic_process-<id>. This deliberately differs from activeShellId:
+   * activeShellId is the current PTY transport shell, while this field is the
+   * stable row identity used by terminal tab UI.
+   */
+  setActiveTerminalTargetTypeId(typeId: TypeId | null): void {
+    if (this.activeTerminalTargetTypeId?.equals(typeId)) return;
+    runInAction(() => {
+      this.activeTerminalTargetTypeId = typeId ? new TypeId(typeId) : null;
+    });
+    this.emit(ContextEventType.CONTEXT_CHANGED);
+  }
+
   setWorkdir(path: string | null): void {
     if (this.workdir === path) return;
     runInAction(() => {
@@ -301,6 +313,10 @@ class DataContext extends EventEmitter {
   // Active shell session ID - persisted across refreshes via URL
   activeShellId: string = '';
 
+  // Active terminal tab identity. This is intentionally TypeId-based so a
+  // process tab remains selected even if its current PTY shell changes.
+  activeTerminalTargetTypeId: TypeId | null = null;
+
   // Active working directory — shown in the footer
   workdir: string | null = null;
 
@@ -312,8 +328,15 @@ class DataContext extends EventEmitter {
     return this.getContextEntity(ContextEntitiesEnum.CurrentActiveEntityTypeId);
   }
 
+  /**
+   * "Is the desktop user known?" gate — bound to the *local* slot only.
+   *
+   * Cloud login is independent and must NEVER cause `someone` to flip back to
+   * null. AgentLayout's loading guard reads this; we want it stable as long as
+   * the local desktop has bootstrapped, regardless of cloud transitions.
+   */
   get someone(): TypeId | null {
-    return this.userTypeId || this.visitorTypeId;
+    return this.localUserTypeId || this.visitorTypeId;
   }
 
   activeOntology: OntologyData | null = null;
@@ -326,12 +349,20 @@ class DataContext extends EventEmitter {
   constructor() {
     super();
     makeObservable(this, {
+      _cloudLoggedIn: observable,
+      cloudLoginAvailable: computed,
       user: computed,
       workspace: computed,
       activeEntity: computed,
       activeEntityTypeId: computed,
       workspaceTypeId: computed,
       userTypeId: computed,
+      localUser: computed,
+      cloudUser: computed,
+      currentUser: computed,
+      localUserTypeId: computed,
+      cloudUserTypeId: computed,
+      currentUserTypeId: computed,
       flowTypeId: computed,
       projectTypeId: computed,
       computeNodeTypeId: computed,
@@ -355,6 +386,7 @@ class DataContext extends EventEmitter {
       connection: observable,
       isConnected: computed,
       activeShellId: observable,
+      activeTerminalTargetTypeId: observable,
       workdir: observable,
       envName: computed,
       cloudApiUrl: computed,
@@ -390,14 +422,15 @@ class DataContext extends EventEmitter {
     });
 
     if (user && user.typeId) {
-      // User entity is already in dataManager cache
-      // Just set the TypeId in context
-      await this.setContextEntityTypeId(ContextEntitiesEnum.CurrentUserTypeId, user.typeId);
+      // User entity is already in dataManager cache. authManager owns the
+      // *local* slot — cloud login goes through CloudManager into the cloud
+      // slot, which is independent.
+      await this.setContextEntityTypeId(ContextEntitiesEnum.LocalUserTypeId, user.typeId);
       // Clear visitor when user logs in
       await this.setContextEntityTypeId(ContextEntitiesEnum.CurrentVisitorTypeId, null);
     } else {
-      // User logged out
-      await this.setContextEntityTypeId(ContextEntitiesEnum.CurrentUserTypeId, null);
+      // Local user logged out
+      await this.setContextEntityTypeId(ContextEntitiesEnum.LocalUserTypeId, null);
     }
     // setContextEntityTypeId already emits CONTEXT_CHANGED
   }
@@ -457,7 +490,9 @@ class DataContext extends EventEmitter {
   activeEntityTypeId2ContextEnum(typeId: TypeId): ContextEntitiesEnum | null {
     switch (typeId.type) {
       case User.type:
-        return ContextEntitiesEnum.CurrentUserTypeId;
+        // Active-entity highlight maps to the local desktop user; cloud user
+        // is informational only and handled separately by CloudManager.
+        return ContextEntitiesEnum.LocalUserTypeId;
       case Workspace.type:
         return ContextEntitiesEnum.CurrentWorkspaceTypeId;
       case Flow.type:
@@ -477,8 +512,32 @@ class DataContext extends EventEmitter {
     }
   }
 
+  /** Alias for the local user — what callers historically meant by "the user". */
   get user(): User | null {
-    return this.getContextEntity(ContextEntitiesEnum.CurrentUserTypeId) as User | null;
+    return this.localUser;
+  }
+
+  /** Local desktop user (set by local bootstrap / authManager). */
+  get localUser(): User | null {
+    return this.getContextEntity(ContextEntitiesEnum.LocalUserTypeId) as User | null;
+  }
+
+  /** Cloud-logged-in user (set by CloudManager); independent of local user. */
+  get cloudUser(): User | null {
+    return this.getContextEntity(ContextEntitiesEnum.CloudUserTypeId) as User | null;
+  }
+
+  /**
+   * Display-bound identity for profile UI: cloud-when-logged-in, otherwise
+   * local desktop user. Use this when rendering avatars / names / emails to
+   * the human. Use `localUser` for the auth principal of local API calls.
+   */
+  get currentUser(): User | null {
+    return this.cloudUser ?? this.localUser;
+  }
+
+  get currentUserTypeId(): TypeId | null {
+    return this.cloudUserTypeId ?? this.localUserTypeId;
   }
 
   get workspace(): Workspace | null {
@@ -573,8 +632,17 @@ class DataContext extends EventEmitter {
     return entity ?? null;
   }
 
+  /** Alias for `localUserTypeId` — what callers historically meant by "the user TypeId". */
   get userTypeId(): TypeId | null {
-    return this.getContextEntityTypeId(ContextEntitiesEnum.CurrentUserTypeId) ?? null;
+    return this.localUserTypeId;
+  }
+
+  get localUserTypeId(): TypeId | null {
+    return this.getContextEntityTypeId(ContextEntitiesEnum.LocalUserTypeId) ?? null;
+  }
+
+  get cloudUserTypeId(): TypeId | null {
+    return this.getContextEntityTypeId(ContextEntitiesEnum.CloudUserTypeId) ?? null;
   }
 
   get workspaceTypeId(): TypeId | null {
@@ -607,6 +675,33 @@ class DataContext extends EventEmitter {
 
   get computeNode(): ComputeNode | null {
     return this.getContextEntity(ContextEntitiesEnum.CurrentComputeNodeTypeId) as ComputeNode | null;
+  }
+
+  /** Lazily-hydrated @sandbox compute node from bootstrap (E2B-backed). Null when E2B is not configured. */
+  private _sandboxComputeNode: ComputeNode | null = null;
+  get sandboxComputeNode(): ComputeNode | null {
+    if (!this.bootstrapInfo?.sandbox_available || !this.bootstrapInfo?.sandbox_compute_node) {
+      return null;
+    }
+    if (this._sandboxComputeNode === null) {
+      this._sandboxComputeNode = new ComputeNode(this.bootstrapInfo.sandbox_compute_node as any);
+      this._sandboxComputeNode.markAsExpanded();
+    }
+    return this._sandboxComputeNode;
+  }
+
+  /** Lazily-hydrated @docker-<name> compute nodes from bootstrap. One entry per live worker. */
+  private _dockerComputeNodes: ComputeNode[] | null = null;
+  get dockerComputeNodes(): ComputeNode[] {
+    const raws = this.bootstrapInfo?.docker_compute_nodes ?? [];
+    if (this._dockerComputeNodes === null || this._dockerComputeNodes.length !== raws.length) {
+      this._dockerComputeNodes = raws.map((r) => {
+        const cn = new ComputeNode(r as any);
+        cn.markAsExpanded();
+        return cn;
+      });
+    }
+    return this._dockerComputeNodes;
   }
 
   get domainTypeId(): TypeId | null {

@@ -1,9 +1,9 @@
 import { useCallback, useRef, useSyncExternalStore } from 'react';
-import { systemTools, SystemActivity, ActivityProgress, ScanInfo, LastScanResult } from '@sdk';
+import { systemTools, SystemActivity, IndexProgressTable, ScanInfo, LastScanResult } from '@sdk';
 
 export interface SystemToolsSnapshot {
   currentActivity: SystemActivity | null;
-  activityProgress: ActivityProgress | null;
+  progressTable: IndexProgressTable | null;
   scanInfo: ScanInfo | null;
   lastScanResult: LastScanResult | null;
   busy: boolean;
@@ -12,7 +12,7 @@ export interface SystemToolsSnapshot {
 function buildSnapshot(): SystemToolsSnapshot {
   return {
     currentActivity: systemTools.currentActivity,
-    activityProgress: systemTools.activityProgress,
+    progressTable: systemTools.progressTable,
     scanInfo: systemTools.scanInfo,
     lastScanResult: systemTools.lastScanResult,
     busy: systemTools.currentActivity !== null,
@@ -22,7 +22,7 @@ function buildSnapshot(): SystemToolsSnapshot {
 function shallowEqual(a: SystemToolsSnapshot, b: SystemToolsSnapshot): boolean {
   return (
     a.currentActivity === b.currentActivity &&
-    a.activityProgress === b.activityProgress &&
+    a.progressTable === b.progressTable &&
     a.scanInfo === b.scanInfo &&
     a.lastScanResult === b.lastScanResult &&
     a.busy === b.busy

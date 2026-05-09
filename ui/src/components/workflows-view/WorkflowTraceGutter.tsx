@@ -1,6 +1,6 @@
 // WorkflowTraceGutter.tsx — pure display component, no event collection
 import { getEventColor, getEventIcon } from '@src/components/hooks/event-utils';
-import type { ClaudeTraceEvent } from '@src/types/trace-event';
+import type { TraceEvent } from '@src/types/trace-event';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 interface BlockPosition {
@@ -11,8 +11,8 @@ interface BlockPosition {
 interface Props {
   workerSessionId: string | null;
   editorContainerRef: React.RefObject<HTMLDivElement>;
-  displayEvents: ClaudeTraceEvent[];
-  traceHistory: { sessionId: string; events: ClaudeTraceEvent[] }[];
+  displayEvents: TraceEvent[];
+  traceHistory: { sessionId: string; events: TraceEvent[] }[];
   selectedHistoryIdx: number | null;
   onSelectHistory: (idx: number | null) => void;
 }
@@ -78,13 +78,21 @@ export function WorkflowTraceGutter({
     };
   }, [editorContainerRef]);
 
-  // Match each event to a block
-  function matchEventToBlock(event: ClaudeTraceEvent): BlockPosition | null {
-    // workflow_trace events (hook_op) store label/phase in event_data;
-    // agent_hook events store them in raw_hook_data — check both.
-    const data = (event.hook_data?.event_data ?? event.hook_data?.raw_hook_data) as Record<string, unknown> | undefined;
-    const label = (typeof data?.label === 'string' ? data.label : '').toLowerCase();
-    const phase = (typeof data?.phase === 'string' ? data.phase : '').toLowerCase();
+  // Match each event to a block. The label/phase come from canonical
+  // FlowData attributes set by convert_hook_op_event (`workflow-label`,
+  // `workflow-phase`); legacy hook_data shape kept as fallback for events
+  // that haven't been dispatched through the new translator yet.
+  function matchEventToBlock(event: TraceEvent): BlockPosition | null {
+    const attrs = event.attributes;
+    const fallback = (event.hook_data?.event_data ?? event.hook_data?.raw_hook_data) as Record<string, unknown> | undefined;
+    const label = (
+      attrs?.['workflow-label'] ??
+      (typeof fallback?.label === 'string' ? fallback.label : '')
+    ).toLowerCase();
+    const phase = (
+      attrs?.['workflow-phase'] ??
+      (typeof fallback?.phase === 'string' ? fallback.phase : '')
+    ).toLowerCase();
     const candidates = [label, phase].filter(Boolean);
     for (const needle of candidates) {
       const match = blockMap.find(
@@ -97,7 +105,7 @@ export function WorkflowTraceGutter({
 
   // Build positioned annotations
   const positioned = useMemo(() => {
-    const map = new Map<number, ClaudeTraceEvent[]>();
+    const map = new Map<number, TraceEvent[]>();
     for (const e of displayEvents) {
       const block = matchEventToBlock(e);
       if (!block) continue;

@@ -1,8 +1,11 @@
 export { SideWindow } from './SideWindow';
-export { SideTabId, SIDE_TABS } from './SideWindowTypes';
+export { SideTabId, SIDE_TABS, parseSideTabId, parseSideTabIdList } from './SideWindowTypes';
 export type { SideTabDescriptor } from './SideWindowTypes';
 export { GitPanel } from './GitPanel';
 export { PromptIndexPanel } from './PromptIndexPanel';
 export type { PromptEntry } from './PromptIndexPanel';
+export { usePromptsForProcess } from './usePromptsForProcess';
+export type { TranscriptPrompt, UsePromptsForProcessResult } from './usePromptsForProcess';
 export { InputFilesPanel } from './InputFilesPanel';
 export { QueuePanel } from './QueuePanel';
+export { SimpleDirTree } from './SimpleDirTree';

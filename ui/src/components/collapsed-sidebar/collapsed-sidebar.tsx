@@ -1,14 +1,16 @@
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
+import { FlowpadAssistantButton } from '@src/components/floating-chat';
 import { useDevMode } from '@src/contexts/dev-mode-context';
 import { Button } from '@src/components/ui/button';
 import { useNavigationState } from '@src/hooks/use-navigation-state';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
-import { useAuth } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@src/components/ui/sidebar';
+import { useInboxStore } from '@src/store/use-inbox-store';
 import {
   ArrowLeft,
+  RefreshCw,
   BookOpen,
   Bug,
   ChevronDown,
@@ -19,6 +21,7 @@ import {
   FolderOpen,
   // Globe,
   Home,
+  Inbox,
   // KeyRound,
   // MessagesSquare,
   // PlaySquare,
@@ -35,6 +38,7 @@ import { useNavigate } from 'react-router';
 
 const mainNavItems = [
   { title: 'Home', icon: Home, viewType: null },
+  { title: 'Inbox', icon: Inbox, viewType: ViewType.INBOX },
   { title: 'Shell', icon: Terminal, viewType: ViewType.SHELL },
   // { title: 'Execute Flow', icon: PlaySquare, viewType: ViewType.EXECUTE_FLOW },
   { title: 'Assets', icon: BookOpen, viewType: ViewType.ASSETS },
@@ -56,12 +60,12 @@ const secondaryNavItems = [
 
 export function CollapsedSidebar() {
   const { navigation, currentDock } = useDockNavigation();
-  const { user } = useAuth();
   // const context = useContext();
   const navigate = useNavigate();
   const { goBack, canGoBack } = useNavigationState();
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
   const devMode = useDevMode();
+  const { unreadCount } = useInboxStore();
 
   const currentView = currentDock?.viewType;
   // const { cloudLoginAvailable, cloudApiUrl, isDesktop } = context;
@@ -85,6 +89,7 @@ export function CollapsedSidebar() {
   const renderNavItem = (
     item: { title: string; icon: React.ComponentType<{ className?: string }>; viewType: ViewType | null },
     className?: string,
+    badge?: number,
   ) => {
     const Icon = item.icon;
     const isActive = item.viewType === null ? !currentView : currentView === item.viewType;
@@ -95,9 +100,14 @@ export function CollapsedSidebar() {
           tooltip={item.title}
           isActive={isActive}
           onClick={() => handleClick(item.viewType)}
-          className="w-full justify-center px-2"
+          className="relative w-full justify-center px-2"
         >
           <Icon className="h-5 w-5" />
+          {badge != null && badge > 0 && (
+            <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-0.5 text-[9px] font-bold leading-none text-destructive-foreground">
+              {badge > 99 ? '99+' : badge}
+            </span>
+          )}
         </SidebarMenuButton>
       </SidebarMenuItem>
     );
@@ -108,18 +118,27 @@ export function CollapsedSidebar() {
       <SidebarContent className="flex-1">
         <SidebarGroup className="px-0 py-2">
           <SidebarMenu>
-            <SidebarMenuItem>
+            <SidebarMenuItem className="flex flex-row">
               <SidebarMenuButton
                 tooltip="Back"
                 onClick={goBack}
                 disabled={!canGoBack}
-                className="h-6 w-full justify-start px-2"
+                className="h-6 w-1/2 justify-center px-0"
               >
                 <ArrowLeft className="h-3 w-3" />
               </SidebarMenuButton>
+              <SidebarMenuButton
+                tooltip="Refresh"
+                onClick={() => window.location.reload()}
+                className="h-6 w-1/2 justify-center px-0"
+              >
+                <RefreshCw className="h-3 w-3" />
+              </SidebarMenuButton>
             </SidebarMenuItem>
 
-            {mainNavItems.map((item) => renderNavItem(item))}
+            {mainNavItems.map((item) =>
+              renderNavItem(item, undefined, item.viewType === ViewType.INBOX ? unreadCount : undefined),
+            )}
 
             <div onMouseEnter={() => setSecondaryExpanded(true)} onMouseLeave={() => setSecondaryExpanded(false)}>
               <div className="flex justify-center py-1">
@@ -184,8 +203,9 @@ export function CollapsedSidebar() {
             <Bug className="h-4 w-4" />
           </Button>
         )}
+        <FlowpadAssistantButton />
         <ThemeToggle />
-        {user && <UserDropdown />}
+        <UserDropdown />
       </div>
     </Sidebar>
   );

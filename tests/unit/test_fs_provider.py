@@ -23,17 +23,17 @@ class TestFSProviderDiscover:
         assert len(result) == 2
 
     @patch("flow_sdk.fs_store.factory.type_registry.type_registry")
-    def test_discover_one_delegates(self, mock_registry):
+    def test_get_delegates(self, mock_registry):
         mock_cls = MagicMock()
         expected = MagicMock()
-        mock_cls.discover_one.return_value = expected
+        mock_cls.get.return_value = expected
         mock_registry.get.return_value = mock_cls
 
         provider = FSProvider()
-        result = provider.discover_one("note", "abc-123")
+        result = provider.get("note", "abc-123")
 
         mock_registry.get.assert_called_once_with("note")
-        mock_cls.discover_one.assert_called_once_with("abc-123")
+        mock_cls.get.assert_called_once_with("abc-123")
         assert result is expected
 
     @patch("flow_sdk.fs_store.factory.type_registry.type_registry")

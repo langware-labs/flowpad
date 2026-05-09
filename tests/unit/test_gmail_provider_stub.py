@@ -15,10 +15,10 @@ class TestGmailProviderStub:
         with pytest.raises(NotImplementedError):
             provider.discover("email")
 
-    def test_discover_one_not_implemented(self):
+    def test_get_not_implemented(self):
         provider = GmailProvider()
         with pytest.raises(NotImplementedError):
-            provider.discover_one("email", "abc")
+            provider.get("email", "abc")
 
     def test_query_not_implemented(self):
         provider = GmailProvider()

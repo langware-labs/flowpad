@@ -1,9 +1,9 @@
-"""Unit tests for Entity–Record ID sync.
+"""Unit tests for Entity–Record sync (post project-consolidation 2026-05-09).
 
-Tests that Entity.allocate_id and Project.allocate_id produce deterministic
-UUIDs from a natural key (the project work directory), so that a Project entity
-created via API and a Project entity created by scanning a ClaudeProjectFsRecord
-both get the same DB row.
+Project identity is now an opaque ``uuid4``. The natural key for project dedup
+is the canonical ``fs_storage_mount_path`` (i.e. ``cwd``). Lookup is via
+``Project.find_by_cwd`` / ``Project.from_record``; both go through DB queries,
+not through deterministic id derivation.
 """
 
 import uuid
@@ -67,58 +67,67 @@ class TestEntityAllocateId:
 
 
 class TestProjectAllocateId:
-    def test_project_allocate_id_deterministic(self):
+    """Project.allocate_id always returns a fresh uuid4. Identity is opaque;
+    project dedup goes through ``find_by_cwd``, not via id derivation.
+    """
+
+    def test_project_allocate_id_returns_uuid(self):
+        from flow_sdk.builtin.project import Project
+        result = Project.allocate_id({"fs_storage_mount_path": "/tmp/anything"})
+        # Must be a valid UUID string
+        parsed = uuid.UUID(result)
+        assert str(parsed) == result
+
+    def test_project_allocate_id_random_per_call(self):
         from flow_sdk.builtin.project import Project
         data = {"fs_storage_mount_path": "/tmp/myproject"}
         id1 = Project.allocate_id(data)
         id2 = Project.allocate_id(data)
-        assert id1 == id2
+        # Same input → DIFFERENT ids (uuid4 is random; not derived from path).
+        assert id1 != id2
 
-    def test_project_allocate_id_from_fs_storage_mount_path(self):
+    def test_project_allocate_id_returns_uuid_for_real_path(self):
         from flow_sdk.builtin.project import Project
-        expected = str(uuid.uuid5(uuid.NAMESPACE_DNS, "project:/foo/bar"))
-        result = Project.allocate_id({"fs_storage_mount_path": "/foo/bar"})
-        assert result == expected
-
-    def test_project_allocate_id_from_name_absolute(self):
-        from flow_sdk.builtin.project import Project
-        expected = str(uuid.uuid5(uuid.NAMESPACE_DNS, "project:/foo/bar"))
-        result = Project.allocate_id({"name": "/foo/bar"})
-        assert result == expected
-
-    def test_project_allocate_id_fs_storage_mount_path_wins_over_name(self):
-        from flow_sdk.builtin.project import Project
-        expected = str(uuid.uuid5(uuid.NAMESPACE_DNS, "project:/actual/path"))
-        result = Project.allocate_id({"fs_storage_mount_path": "/actual/path", "name": "/foo/bar"})
-        assert result == expected
+        result = Project.allocate_id({"real_path": "/home/user/code"})
+        # Just a valid UUID — not derived from the path.
+        parsed = uuid.UUID(result)
+        assert str(parsed) == result
 
     def test_project_allocate_id_no_path_returns_uuid4(self):
         from flow_sdk.builtin.project import Project
         id1 = Project.allocate_id({})
         id2 = Project.allocate_id({})
-        # Both valid UUIDs but not equal (random)
         uuid.UUID(id1)
         uuid.UUID(id2)
         assert id1 != id2
 
-    def test_project_allocate_id_real_path(self):
+    def test_project_allocate_id_preserves_valid_provided_id(self):
+        """If the caller passes in a valid uuid, we keep it (e.g. round-trips
+        from the wire where the client minted a uuid4)."""
         from flow_sdk.builtin.project import Project
-        expected = str(uuid.uuid5(uuid.NAMESPACE_DNS, "project:/home/user/code"))
-        result = Project.allocate_id({"real_path": "/home/user/code"})
-        assert result == expected
+        provided = str(uuid.uuid4())
+        result = Project.allocate_id({"fs_storage_mount_path": "/tmp/x", "id": provided})
+        assert result == provided
 
 
-class TestEntityRecordIdSync:
+class TestEntityRecordCwdSync:
+    """Project ↔ Record dedup happens via canonical mount_path
+    (``Project.find_by_cwd``), NOT via deterministic id derivation. These
+    tests verify the dedup property holds across the entity-first / record-first
+    / repeated-scan flows.
+    """
+
     @pytest.mark.asyncio
     async def test_entity_first_record_scan_later(self, sync_db):
         """Entity created via API then record scanned → same DB row."""
         from flow_sdk.builtin.project import Project
         from flow_sdk.fs_records.claude.claude_project import ClaudeProjectFsRecord
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
 
         mount_path = "/tmp/testproject_entity_first"
-        entity = Project(fs_storage_mount_path=mount_path)
-        entity.id = Project.allocate_id({"fs_storage_mount_path": mount_path})
+        canonical = canonical_posix_path(mount_path)
+        entity = Project(fs_storage_mount_path=canonical)
+        entity.id = Project.allocate_id({"fs_storage_mount_path": canonical})
         await entity.save()
 
         # Simulate scanning a record with the same path
@@ -132,19 +141,21 @@ class TestEntityRecordIdSync:
         }
         mock_record._property_types = {}
 
-        with patch.object(SchemaRegistry, "get_entity_cls", return_value=Project):
-            result = await Project.from_record(mock_record)
+        result = await Project.from_record(mock_record)
 
+        # Same DB row — id preserved across scan despite uuid4-not-derived ids,
+        # because find_by_cwd returns the existing entity.
         assert result.id == entity.id, f"Expected {entity.id}, got {result.id}"
 
     @pytest.mark.asyncio
     async def test_record_scan_first_entity_created_later(self, sync_db):
-        """Record scanned first, entity created later via API → same ID."""
+        """Record scanned first → Project entity exists at the canonical cwd."""
         from flow_sdk.builtin.project import Project
         from flow_sdk.fs_records.claude.claude_project import ClaudeProjectFsRecord
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
 
         mount_path = "/tmp/testproject2_record_first"
+        canonical = canonical_posix_path(mount_path)
 
         mock_record = MagicMock(spec=ClaudeProjectFsRecord)
         mock_record.type = "project"
@@ -156,21 +167,23 @@ class TestEntityRecordIdSync:
         }
         mock_record._property_types = {}
 
-        with patch.object(SchemaRegistry, "get_entity_cls", return_value=Project):
-            scanned = await Project.from_record(mock_record)
+        scanned = await Project.from_record(mock_record)
 
-        expected_id = Project.allocate_id({"fs_storage_mount_path": mount_path})
-        assert scanned.id == expected_id
+        # The scanned entity exists and is findable by canonical cwd.
+        existing = await Project.find_by_cwd(canonical)
+        assert existing is not None
+        assert existing.id == scanned.id
 
     @pytest.mark.asyncio
     async def test_from_record_no_duplicate_on_rescan(self, sync_db):
-        """Calling from_record twice for the same record yields one entity."""
+        """Calling from_record twice for the same canonical cwd yields one entity."""
         from flow_sdk.builtin.project import Project
         from flow_sdk.fs_records.claude.claude_project import ClaudeProjectFsRecord
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
         from flow_sdk.db.drivers.query import QueryFilter
 
         mount_path = "/tmp/testproject3_no_dup"
+        canonical = canonical_posix_path(mount_path)
 
         def make_mock():
             m = MagicMock(spec=ClaudeProjectFsRecord)
@@ -184,11 +197,17 @@ class TestEntityRecordIdSync:
             m._property_types = {}
             return m
 
-        with patch.object(SchemaRegistry, "get_entity_cls", return_value=Project):
-            await Project.from_record(make_mock())
-            await Project.from_record(make_mock())
+        first = await Project.from_record(make_mock())
+        second = await Project.from_record(make_mock())
 
-        # Query DB directly for project entities with this mount path
+        # Same entity (dedup by canonical cwd, regardless of id-derivation).
+        assert first.id == second.id
+
+        # And the canonical mount path appears exactly once in the DB.
         all_projects = await Project.get_all(QueryFilter.parse({"type": "project"}))
-        matching = [p for p in all_projects if getattr(p, "fs_storage_mount_path", None) == mount_path]
+        matching = [
+            p for p in all_projects
+            if p.fs_storage_mount_path
+            and canonical_posix_path(p.fs_storage_mount_path) == canonical
+        ]
         assert len(matching) == 1, f"Expected 1 entity, got {len(matching)}"
