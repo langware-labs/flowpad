@@ -1,4 +1,4 @@
-import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
 import { QueryRequest } from '../FlowSync/query';
 import { ActionInfo, TypeId } from '../models';
 import { DockPointerData } from '../models/DockPointer';
@@ -85,7 +85,7 @@ export class Project extends APIEntity<Project> {
    * path separators, return null and let the default chain handle it.
    */
   override getDisplayName(): string | null {
-    if (!this.name || typeof this.name !== 'string') return null;
+    if (!isNonEmptyString(this.name)) return null;
     const parts = this.name.replace(/\\/g, '/').split('/').filter(Boolean);
     if (parts.length <= 1) return null;
     return parts[parts.length - 1] || null;

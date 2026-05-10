@@ -13,6 +13,16 @@ import { Callable } from './types';
 import { defineGlobal } from './utils/globals';
 import { WikiLink } from './types/wiki';
 
+/**
+ * True when ``v`` is a string with at least one non-whitespace character.
+ * Wire payloads occasionally carry non-string values for nominally-string
+ * fields (legacy records, unmigrated data); the type guard keeps display-chain
+ * call-sites from blowing up on `.trim()`.
+ */
+export function isNonEmptyString(v: unknown): v is string {
+  return typeof v === 'string' && v.trim().length > 0;
+}
+
 export function getProxy<T extends Manageable & { [key: string | symbol]: any }>(target: T) {
   return new Proxy(target, {
     get(target, property, receiver) {
@@ -153,21 +163,20 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const type = (this.constructor as typeof APIEntity).type ?? 'entity';
 
     // 1. name
-    if (typeof this.name === 'string' && this.name.trim()) return this.name;
+    if (isNonEmptyString(this.name)) return this.name;
 
     // 2. uname
-    if (typeof this.uname === 'string' && this.uname.trim()) return this.uname;
+    if (isNonEmptyString(this.uname)) return this.uname;
 
     // 3. title prefix
-    const t = typeof this.title === 'string' ? this.title.trim() : undefined;
-    if (t) {
-      const words = t.split(/\s+/);
+    if (isNonEmptyString(this.title)) {
+      const words = this.title.trim().split(/\s+/);
       const head = words.slice(0, 2).join(' ');
       return words.length > 2 ? `${head} …` : head;
     }
 
     // 4. <type>-<key>
-    if (this.key && this.key.trim()) return `${type}-${this.key}`;
+    if (isNonEmptyString(this.key)) return `${type}-${this.key}`;
 
     // 5. <type>-<id-tail>
     const id = this.id ?? '';

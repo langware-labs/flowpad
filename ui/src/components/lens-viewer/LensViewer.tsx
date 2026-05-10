@@ -1,13 +1,13 @@
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext } from '@sdk';
 import { useMemo } from 'react';
 import { CliLogViewer } from './CliLogViewer';
 import { ClaudeContextViewer } from './ClaudeContextViewer';
 import { ClaudeErrorsViewer } from './ClaudeErrorsViewer';
 import { ClaudeTasksViewer } from './ClaudeTasksViewer';
+import { ClaudeTranscriptViewer } from './claude-transcript-viewer';
 import { FsRecordsScannerViewer } from './FsRecordsScannerViewer';
-import { GenericTranscriptViewer } from './generic-transcript-viewer';
+import { TranscriptViewer } from './shared/transcript-features';
 import { HeartbeatEventsViewer } from './HeartbeatEventsViewer';
 import { TriggerLogViewer } from './TriggerLogViewer';
 
@@ -44,38 +44,45 @@ export function LensViewer() {
 
   switch (lensKey) {
     case 'claude/transcript': {
-      // Two URL forms supported:
-      //   - legacy: {projectEncodedName}/{sessionId}  → resolve to ~/.claude/projects/<encoded>/<sid>.jsonl
-      //   - direct: {urlEncoded(absolutePath)}        → use the path as-is (matches codex/transcript form)
-      // Both feed GenericTranscriptViewer with worker_type="claude" so Claude
-      // and Codex flow through the same server-parsed pipeline.
-      const home = dataContext.bootstrapInfo?.desktop_info?.paths?.home;
+      // Two URL forms — DIFFERENT renderers (so we can side-by-side compare):
+      //   - legacy form `{projectEncodedName}/{sessionId}` → ClaudeTranscriptViewer
+      //     (the original raw-JSONL renderer; preserved as the reference).
+      //   - new form    `{urlEncodedAbsolutePath}`         → unified TranscriptViewer
+      //     (the worker-agnostic renderer that consumes the server-parsed entries).
+      // Once the two views are proven identical, the legacy renderer goes away
+      // and both forms collapse to the new TranscriptViewer.
       const ref = lensParts.ref;
-      let path: string | null = null;
       const decoded = (() => {
         try { return decodeURIComponent(ref); } catch { return ref; }
       })();
       if (decoded.startsWith('/')) {
-        path = decoded;
-      } else {
-        const lastSlash = ref.lastIndexOf('/');
-        if (lastSlash >= 0 && home) {
-          const projectEncodedName = ref.substring(0, lastSlash);
-          const sessionId = ref.substring(lastSlash + 1);
-          // Bootstrap may report `home` without the leading '/' on some
-          // platforms — normalize so the path is absolute regardless.
-          const homeAbs = home.startsWith('/') ? home : `/${home}`;
-          path = `${homeAbs}/.claude/projects/${projectEncodedName}/${sessionId}.jsonl`;
-        }
+        return (
+          <TranscriptViewer
+            workerType="claude"
+            path={decoded}
+            selectedEntryId={currentDock?.options?.transcript_entry_id}
+            selectedTimestamp={currentDock?.options?.ts}
+          />
+        );
       }
-      if (!path) {
+      // Legacy form: project-encoded-name + session-id, fed to the legacy renderer
+      // for an apples-to-apples reference image.
+      const lastSlash = ref.lastIndexOf('/');
+      if (lastSlash < 0) {
         return (
           <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
             <p>Invalid transcript ref: expected projectEncodedName/sessionId or absolute path</p>
           </div>
         );
       }
-      return <GenericTranscriptViewer workerType="claude" path={path} />;
+      return (
+        <ClaudeTranscriptViewer
+          projectEncodedName={ref.substring(0, lastSlash)}
+          sessionId={ref.substring(lastSlash + 1)}
+          selectedEntryId={currentDock?.options?.transcript_entry_id}
+          selectedTimestamp={currentDock?.options?.ts}
+        />
+      );
     }
     case 'codex/transcript': {
       // ref is the URL-encoded absolute path to the rollout JSONL.
@@ -87,7 +94,14 @@ export function LensViewer() {
           </div>
         );
       }
-      return <GenericTranscriptViewer workerType="codex" path={path} />;
+      return (
+        <TranscriptViewer
+          workerType="codex"
+          path={path}
+          selectedEntryId={currentDock?.options?.transcript_entry_id}
+          selectedTimestamp={currentDock?.options?.ts}
+        />
+      );
     }
     case 'claude/tasks':
       return (
