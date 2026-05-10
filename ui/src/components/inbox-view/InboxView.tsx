@@ -4,7 +4,7 @@ import { Conversation, FlowMessage, QueryRequest, Task, TypeId } from '@sdk';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { resolveConversationDockPointer } from '@src/navigation/conversation-route-resolver';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import {
@@ -89,13 +89,7 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, onVisib
 
   const handleClick = () => {
     if (!conv.id) return;
-    navigation.openDock(
-      resolveConversationDockPointer({
-        conversationId: conv.id,
-        taskId: conv.task_id ?? null,
-        projectId: conv.project_id ?? null,
-      }),
-    );
+    navigation.openDock(DockPointer.forConversation(conv.id));
   };
 
   return (
