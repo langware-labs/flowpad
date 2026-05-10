@@ -526,6 +526,8 @@ async def _process_single_hub_message(raw: dict) -> str | None:
     fm_id = (raw.get("id") or "").strip()
     if not fm_id:
         return None
+    if await FlowMessage.get_one({"id": fm_id}):
+        return fm_id
     attachment_filename = (raw.get("attachment_filename") or "").strip()
     if not attachment_filename:
         return None

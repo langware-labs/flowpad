@@ -102,7 +102,7 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
       } else if (result.success) {
         setStep('success');
         setTimeout(() => {
-          navigation.openDock(DockPointer.fromUrl('tasks', `task-${taskId}`));
+          navigation.openDock(DockPointer.fromUrl('tasks', taskId));
           handleClose();
         }, 800);
       } else {
@@ -126,7 +126,7 @@ export function IncomingTaskDialog({ open, taskId, taskTitle, senderName, projec
       } else if (result.success) {
         setStep('success');
         setTimeout(() => {
-          navigation.openDock(DockPointer.fromUrl('tasks', `task-${taskId}`));
+          navigation.openDock(DockPointer.fromUrl('tasks', taskId));
           handleClose();
         }, 800);
       } else {
