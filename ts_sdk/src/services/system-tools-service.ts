@@ -396,10 +396,27 @@ export class SystemToolsService extends EventEmitter {
 
   // ---- scan index (fs-records) ---------------------------------------------
 
-  /** Index a single record type into the entity DB / FTS. */
-  async indexType(typeName: string): Promise<IndexTypeResult> {
+  /**
+   * Index a single record type into the entity DB / FTS.
+   *
+   * Optional `scopeOpts` narrows the indexer walk to match the user's active
+   * scope filter:
+   *   - `scope='user'`              → walk USER_HOME only.
+   *   - `scope='project'`           → walk the listed project mounts only.
+   *   - `scope='user,project'`      → walk USER_HOME + listed project mounts.
+   *   - omitted                     → backend default (all roots).
+   */
+  async indexType(
+    typeName: string,
+    scopeOpts?: { scope?: string; projectIds?: string[] },
+  ): Promise<IndexTypeResult> {
+    const qs = new URLSearchParams({ type: typeName });
+    if (scopeOpts?.scope) qs.set('scope', scopeOpts.scope);
+    if (scopeOpts?.projectIds && scopeOpts.projectIds.length > 0) {
+      qs.set('project_ids', scopeOpts.projectIds.join(','));
+    }
     const res = await apiClient.post<IndexTypeResult>(
-      `${FS_RECORDS_BASE}/index?type=${encodeURIComponent(typeName)}`,
+      `${FS_RECORDS_BASE}/index?${qs.toString()}`,
     );
     void dataManager.refreshScanInfo();
     return res as unknown as IndexTypeResult;
@@ -467,17 +484,35 @@ export class SystemToolsService extends EventEmitter {
    *
    * WS progress_report events drive the activityProgress.current / done / records fields.
    */
-  async resetAndRescan(): Promise<void> {
+  async resetAndRescan(scopeOpts?: { scope?: string; projectIds?: string[] }): Promise<void> {
     let capturedScanResult: LastScanResult | null = null;
+    const scoped =
+      !!scopeOpts?.scope ||
+      (scopeOpts?.projectIds !== undefined && scopeOpts.projectIds.length > 0);
+    const scopeQuery = (() => {
+      const qs = new URLSearchParams();
+      if (scopeOpts?.scope) qs.set('scope', scopeOpts.scope);
+      if (scopeOpts?.projectIds && scopeOpts.projectIds.length > 0) {
+        qs.set('project_ids', scopeOpts.projectIds.join(','));
+      }
+      return qs.toString();
+    })();
+    const appendScope = (url: string): string => {
+      if (!scopeQuery) return url;
+      return url.includes('?') ? `${url}&${scopeQuery}` : `${url}?${scopeQuery}`;
+    };
     try {
-      // 1. Archive
+      // 1. Archive (always — cheap snapshot, useful regardless of scope)
       this._setActivity('archive');
       await apiClient.post<ArchiveResult>(`${this.base}/archive`);
 
-      // 2. Clear index
-      this._setActivity('clear');
-      await apiClient.post<ClearIndexResult>(`${this.base}/clear-index`, {});
-      void dataManager.refreshScanInfo();
+      // 2. Clear index — skip when scoped (would wipe rows outside the scope).
+      //    For scoped rebuilds, the indexer overwrites the affected rows in step 5.
+      if (!scoped) {
+        this._setActivity('clear');
+        await apiClient.post<ClearIndexResult>(`${this.base}/clear-index`, {});
+        void dataManager.refreshScanInfo();
+      }
 
       // 3. Fetch registered types to seed the pending list (so UI shows names before WS events)
       const typesData = await apiClient.get<{ types: string[] }>(FS_RECORDS_BASE);
@@ -490,7 +525,7 @@ export class SystemToolsService extends EventEmitter {
         total: types.length, done: [], current: null, pending: [...types],
         jobDone: 0, jobTotal: types.length,
       });
-      const scanData = await apiClient.get(`${FS_RECORDS_BASE}/scan?trigger=manual`);
+      const scanData = await apiClient.get(appendScope(`${FS_RECORDS_BASE}/scan?trigger=manual`));
       const scanResult = scanData as unknown as LastScanResult;
       if (scanResult?.types) capturedScanResult = scanResult;
 
@@ -499,7 +534,7 @@ export class SystemToolsService extends EventEmitter {
         total: types.length, done: [], current: null, pending: [...types],
         jobDone: 0, jobTotal: types.length,
       });
-      await apiClient.post(`${FS_RECORDS_BASE}/index`);
+      await apiClient.post(appendScope(`${FS_RECORDS_BASE}/index`));
     } finally {
       // Set lastScanResult before clearing activity so the state_changed event carries both
       if (capturedScanResult) this.lastScanResult = capturedScanResult;

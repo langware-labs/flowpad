@@ -227,8 +227,8 @@ export function AssetsPage() {
   }, []);
 
   const handleRebuildIndex = useCallback(() => {
-    void resetAndRescan();
-  }, [resetAndRescan]);
+    void resetAndRescan(assetFilter);
+  }, [resetAndRescan, assetFilter]);
 
   const handleSearchSubmit = useCallback(() => {
     const q = searchQuery.trim();
@@ -300,6 +300,7 @@ export function AssetsPage() {
             indexType,
             onNew: handleNew,
             onScanComplete: handleScanComplete,
+            filter: assetFilter,
           });
         }
         return assetTypeRoot(t, {
