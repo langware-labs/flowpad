@@ -169,17 +169,21 @@ class ClaudeParser:
         usage = message.get("usage")
         if not isinstance(usage, dict):
             return None
-        # Cached input may be reported as either ``cache_read_input_tokens``
-        # (read hit) or ``cache_creation_input_tokens`` (write). Prefer the
-        # read count when both are present (more meaningful for cost).
-        cached = usage.get("cache_read_input_tokens")
-        if cached is None:
-            cached = usage.get("cache_creation_input_tokens")
+        # Claude reports cache hits as ``cache_read_input_tokens`` (read hit)
+        # AND ``cache_creation_input_tokens`` (wrote a new cache block) on the
+        # same usage payload — both are meaningful for cost. Preserve them
+        # separately. ``cached_input_tokens`` stays as the legacy single-value
+        # summary (read preferred) for callers that haven't migrated.
+        cache_read = usage.get("cache_read_input_tokens")
+        cache_create = usage.get("cache_creation_input_tokens")
+        cached = cache_read if cache_read is not None else cache_create
         usage_base = {**base, "id": f"{base['id']}:usage"}
         return TokenUsageEntry(
             input_tokens=usage.get("input_tokens"),
             output_tokens=usage.get("output_tokens"),
             cached_input_tokens=cached,
+            cache_read_tokens=cache_read,
+            cache_creation_tokens=cache_create,
             model=model,
             **usage_base,
         )

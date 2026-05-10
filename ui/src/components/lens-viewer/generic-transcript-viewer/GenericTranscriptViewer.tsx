@@ -1,11 +1,13 @@
 import { useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
+import { AgentTranscript } from '@sdk';
 import { useTranscript, type WorkerType } from '@src/hooks/use-transcript';
 import { ViewModeToggle } from '../shared/ViewModeToggle';
 import { useTranscriptMode } from '../shared/use-transcript-mode';
 import { formatTime } from '../shared/format-utils';
 import { GenericTranscriptStats } from './GenericTranscriptStats';
 import { EntryRow } from './EntryRow';
+import { ClaudeTranscriptViewer } from '../claude-transcript-viewer';
 
 interface Props {
   workerType: WorkerType;
@@ -29,6 +31,15 @@ const CHAT_KINDS = new Set(['user_message', 'assistant_message', 'tool_use', 'to
 export function GenericTranscriptViewer({ workerType, path }: Props) {
   const { data, isLoading, error } = useTranscript({ workerType, path });
   const [viewMode, setViewMode] = useTranscriptMode();
+
+  // For Claude, adapt the generic shape back to the legacy `ParsedTranscript`
+  // and let the rich `ClaudeTranscriptViewer` render it. Same renderer the
+  // legacy URL form uses — so the view is identical to before, just sourced
+  // from the worker-agnostic API. Codex falls through to the simpler list.
+  const claudeTranscript = useMemo(() => {
+    if (workerType !== 'claude' || !data) return null;
+    return AgentTranscript.genericToLegacyTranscript(data);
+  }, [workerType, data]);
 
   const visibleEntries = useMemo(() => {
     if (!data) return [];
@@ -62,6 +73,18 @@ export function GenericTranscriptViewer({ workerType, path }: Props) {
       <div className="flex h-full items-center justify-center text-muted-foreground" data-testid="transcript-empty">
         No transcript loaded.
       </div>
+    );
+  }
+
+  // Claude → rich legacy renderer with adapted entries.
+  if (claudeTranscript) {
+    return (
+      <ClaudeTranscriptViewer
+        projectEncodedName=""
+        sessionId={claudeTranscript.sessionId ?? ''}
+        externalTranscript={claudeTranscript}
+        externalPath={path}
+      />
     );
   }
 

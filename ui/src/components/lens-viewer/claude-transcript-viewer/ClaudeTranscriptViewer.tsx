@@ -36,9 +36,19 @@ interface Props {
   sessionId: string;
   selectedEntryId?: string;
   selectedTimestamp?: string;
+  /**
+   * When provided, the viewer skips its internal `fsManager.download +
+   * parseTranscript` path and renders this transcript directly. Used by
+   * `GenericTranscriptViewer`-for-claude which fetches via `/api/v1/transcripts`
+   * + adapts the generic shape to the legacy one. The renderer is the same
+   * either way — this prop is the seam.
+   */
+  externalTranscript?: ParsedTranscript | null;
+  /** Optional override for the displayed file path (used by external mode). */
+  externalPath?: string;
 }
 
-export function ClaudeTranscriptViewer({ projectEncodedName, sessionId, selectedEntryId, selectedTimestamp }: Props) {
+export function ClaudeTranscriptViewer({ projectEncodedName, sessionId, selectedEntryId, selectedTimestamp, externalTranscript, externalPath }: Props) {
   const { navigation } = useDockNavigation();
   const [, setSearchParams] = useSearchParams();
   const [transcript, setTranscript] = useState<ParsedTranscript | null>(null);
@@ -105,9 +115,12 @@ export function ClaudeTranscriptViewer({ projectEncodedName, sessionId, selected
   }, [transcript]);
 
   const transcriptPath = useMemo(() => {
+    if (externalPath) return externalPath;
     const home = dataContext.bootstrapInfo?.desktop_info?.paths?.home;
-    return home ? `${home}/.claude/projects/${projectEncodedName}/${sessionId}.jsonl` : null;
-  }, [projectEncodedName, sessionId]);
+    return home && projectEncodedName && sessionId
+      ? `${home}/.claude/projects/${projectEncodedName}/${sessionId}.jsonl`
+      : null;
+  }, [projectEncodedName, sessionId, externalPath]);
 
   const [copiedPath, setCopiedPath] = useState(false);
   const handleCopyPath = useCallback(() => {
@@ -119,7 +132,42 @@ export function ClaudeTranscriptViewer({ projectEncodedName, sessionId, selected
   }, [transcriptPath]);
 
   // ── Data fetch ────────────────────────────────────────────────────────────
+  // Two modes:
+  //   1. External: caller passes a pre-parsed `externalTranscript` (e.g. the
+  //      GenericTranscriptViewer-for-claude path that already fetched via the
+  //      generic API and ran the legacy adapter). Skip our own fetch.
+  //   2. Internal: fetch raw JSONL via fsManager + parseTranscript. Used by
+  //      the legacy URL form `/dock/lens/claude/transcript/{proj}/{sid}`.
   useEffect(() => {
+    const initFromParsed = (parsed: ParsedTranscript) => {
+      setTranscript(parsed);
+      for (const entry of parsed.entries) {
+        const ts = resolveEntryTimestamp(entry);
+        if (ts) {
+          internalTimestampRef.current = ts;
+          setDisplayTimestamp(ts);
+          setCurrentEntryId(entry.uuid);
+          break;
+        }
+      }
+      const toolNames = parsed.entries
+        .filter(isAssistantEntry)
+        .flatMap((e) => e.message.content.filter(isToolUseBlock).map((t) => t.name))
+        .filter(Boolean);
+      const initialFilters: Record<string, boolean> = {};
+      Array.from(new Set(toolNames)).forEach((n) => { initialFilters[n] = true; });
+      setToolFilters(initialFilters);
+      setShowUser(true);
+      setShowAssistant(true);
+    };
+
+    if (externalTranscript) {
+      setError(null);
+      setIsLoading(false);
+      initFromParsed(externalTranscript);
+      return;
+    }
+
     const home = dataContext.bootstrapInfo?.desktop_info?.paths?.home;
     const computeNode = dataContext.computeNode;
     if (!home || !computeNode?.typeId) {
@@ -137,32 +185,7 @@ export function ClaudeTranscriptViewer({ projectEncodedName, sessionId, selected
       try {
         const content = await fsManager.download(typeId, path);
         if (typeof content !== 'string') throw new Error('Transcript content is not a string');
-
-        const parsed = parseTranscript(content);
-        setTranscript(parsed);
-
-        // Initialize clock display from the first timestamped entry.
-        // The scroll listener won't fire until the user actually scrolls, so
-        // without this the top bar would stay blank on first load.
-        for (const entry of parsed.entries) {
-          const ts = resolveEntryTimestamp(entry);
-          if (ts) {
-            internalTimestampRef.current = ts;
-            setDisplayTimestamp(ts);
-            setCurrentEntryId(entry.uuid);
-            break;
-          }
-        }
-
-        const toolNames = parsed.entries
-          .filter(isAssistantEntry)
-          .flatMap((e) => e.message.content.filter(isToolUseBlock).map((t) => t.name))
-          .filter(Boolean);
-        const initialFilters: Record<string, boolean> = {};
-        Array.from(new Set(toolNames)).forEach((n) => { initialFilters[n] = true; });
-        setToolFilters(initialFilters);
-        setShowUser(true);
-        setShowAssistant(true);
+        initFromParsed(parseTranscript(content));
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load transcript');
       } finally {
@@ -171,7 +194,7 @@ export function ClaudeTranscriptViewer({ projectEncodedName, sessionId, selected
     };
 
     void fetchTranscript();
-  }, [projectEncodedName, sessionId]);
+  }, [projectEncodedName, sessionId, externalTranscript]);
 
   // ── Resolved entry for URL-param highlight & initial scroll ───────────────
   // No viewMode dependency — purely driven by URL params.
