@@ -8,7 +8,6 @@ import {
   Task,
   TypeId,
 } from '@sdk';
-import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
 import { ActionInfo } from '@sdk/models/ActionInfo';
 import { useEntity } from '@sdk/react/hooks';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
@@ -94,16 +93,12 @@ export function ConversationContextPanel({
   conversationId,
   ensureMapped: _ensureMapped,
 }: ConversationContextPanelProps) {
-  if (!flowMessage) {
-    return (
-      <div className="px-3 py-6 text-center text-[11px] text-muted-foreground">
-        Select a message to view its context.
-      </div>
-    );
-  }
-
-  const messageId = flowMessage.id ?? '';
-  const attachments: Attachment[] = flowMessage.attachment ?? [];
+  // ⚠ All hook calls must come BEFORE the early-return. Skipping a hook on
+  // the "no message" branch corrupts React's hook table — manifests as the
+  // "Expected static flag was missing" warning and stale state cascading
+  // into child queries (which can in turn open the wrong session).
+  const messageId = flowMessage?.id ?? '';
+  const attachments: Attachment[] = flowMessage?.attachment ?? [];
   const transcriptAttachment = attachments.find(isTranscriptAttachment);
   const typeIdAttachments = attachments.filter((a) => a.attachment_type === AttachmentType.TYPE_ID);
 
@@ -118,6 +113,14 @@ export function ConversationContextPanel({
   // worker processes (e.g. derive-task) live in Private Context too but should
   // not suppress the Shared Context "Start session" button.
   const hasTranscriptSession = privateProcesses.some((p) => p.visible);
+
+  if (!flowMessage) {
+    return (
+      <div className="px-3 py-6 text-center text-[11px] text-muted-foreground">
+        Select a message to view its context.
+      </div>
+    );
+  }
 
   // ── Shared Context: entity TypeIds (project pinned + per-message) ────
   const skipKeys = new Set<string>();
@@ -214,31 +217,39 @@ function SharedContextSection({
         'use flow skill and provide brief analysis of this claude transcript:\n' +
         res.transcript_path;
 
-      // Construct the entity with `target_vfs_path` set from the start so the
-      // Private Context query (`match: { target_vfs_path: fm-<id> }`) catches
-      // it on the CREATE event — without this the row only appears after a
-      // page refresh, since the entity-event router doesn't re-evaluate
-      // membership when a previously-non-matching entity flips into the
-      // filter on a later UPDATE. Same pattern WorkflowAssetEditor uses.
-      const cliOptions = new ClaudeCliOptions({ permission_mode: 'bypassPermissions' });
-      const process = new AgenticProcess({
-        cli_config: cliOptions.toJson(),
-        context_data: { project_id: res.project_id ?? undefined },
-        workdir: res.workdir || undefined,
-        visible: true,
-        project_id: res.project_id ?? undefined,
-        target_vfs_path: fmTypeId.toString(),
-      });
-      process.addContextEntity(fmTypeId);
-      await process.save([fmTypeId]);
-
-      // Navigate first — the dock route loader subscribes to the entity by id
-      // and renders the terminal as soon as start() attaches the PTY.
+      // Use AgenticProcess.spawn — the same path useMyProcess uses for
+      // "Open Claude Code" (which works). Spawning manually then calling start()
+      // raced with the dock route loader's own loadProcess→start, causing the
+      // loader to throw and fall back to the user's existing my_process_id
+      // (the "wrong session opens" symptom).
+      //
+      // Linkage to the source FlowMessage goes through context_entities, added
+      // via the public API after spawn (the constructor's deepAssign would
+      // strip the TypeId prototype if we passed it through). The Private
+      // Context query filters AgenticProcesses client-side on this — same
+      // pattern Tasks already use.
+      // No `scope` here. Passing `scope: [fmTypeId]` made the spawn save go to
+      // POST /flow_message/<id>/agentic_process (a scoped sub-route) instead
+      // of the root POST /agentic_process. The dock route loader fetches via
+      // the root path; if the entity isn't there it throws and falls back to
+      // the user's existing my_process_id — that's the wrong-session symptom.
+      const { process } = await AgenticProcess.spawn(
+        {
+          permissionMode: 'bypassPermissions',
+          workdir: res.workdir || undefined,
+          projectId: res.project_id ?? undefined,
+        },
+        { instruction, visible: true },
+      );
       navigation.openDock(process.dockPointer);
-
-      // Attach the PTY + send the first turn. Errors here surface in the
-      // shell tab (the route is already showing it).
-      await process.start({ instruction });
+      // Stamp the linkage AFTER navigating so the route loader's own
+      // start({visible:true}) runs cleanly. This save is a follow-up UPDATE,
+      // not part of the spawn critical path — failure here just means the
+      // row won't appear, but the session still opens.
+      process.addContextEntity(fmTypeId);
+      void process.save().catch((err) => {
+        console.error('[SharedContext] linkage save failed', err);
+      });
     } catch (err) {
       console.error('[SharedContext] start-cc-from-transcript failed', err);
       toast.error('Failed to start session');

@@ -206,6 +206,10 @@ export function AskForAssistanceDialog({
         // Code" chip is wired immediately, no Start step required.
         sender_process_id: processId ?? null,
         forked_process_id: forkedProcessId,
+        // Scenario C is a share to a known collaborator (sender already inside a
+        // PTY working with this person) — skip the first-touch Invitation so the
+        // recipient gets the conversation directly with no Accept gate.
+        is_initial_share: false,
       });
       if (result.git_error) {
         setGitError(result.git_error);
