@@ -62,7 +62,10 @@ export function LensViewer() {
         if (lastSlash >= 0 && home) {
           const projectEncodedName = ref.substring(0, lastSlash);
           const sessionId = ref.substring(lastSlash + 1);
-          path = `${home}/.claude/projects/${projectEncodedName}/${sessionId}.jsonl`;
+          // Bootstrap may report `home` without the leading '/' on some
+          // platforms — normalize so the path is absolute regardless.
+          const homeAbs = home.startsWith('/') ? home : `/${home}`;
+          path = `${homeAbs}/.claude/projects/${projectEncodedName}/${sessionId}.jsonl`;
         }
       }
       if (!path) {

@@ -36,3 +36,4 @@ export {
 } from './entries';
 
 export { parseTranscriptResponse } from './parser';
+export { genericToLegacyTranscript } from './to-legacy-claude';

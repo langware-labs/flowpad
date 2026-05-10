@@ -153,13 +153,13 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const type = (this.constructor as typeof APIEntity).type ?? 'entity';
 
     // 1. name
-    if (this.name && this.name.trim()) return this.name;
+    if (typeof this.name === 'string' && this.name.trim()) return this.name;
 
     // 2. uname
-    if (this.uname && this.uname.trim()) return this.uname;
+    if (typeof this.uname === 'string' && this.uname.trim()) return this.uname;
 
     // 3. title prefix
-    const t = this.title?.trim();
+    const t = typeof this.title === 'string' ? this.title.trim() : undefined;
     if (t) {
       const words = t.split(/\s+/);
       const head = words.slice(0, 2).join(' ');

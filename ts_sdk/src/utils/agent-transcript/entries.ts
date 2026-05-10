@@ -94,7 +94,11 @@ export interface TokenUsageEntry extends BaseEntry {
   kind: 'token_usage';
   input_tokens: number | null;
   output_tokens: number | null;
+  /** Single-value cache field — read-preferred summary (legacy callers). */
   cached_input_tokens: number | null;
+  /** Disaggregated cache fields — Claude can populate both on the same turn. */
+  cache_read_tokens: number | null;
+  cache_creation_tokens: number | null;
   reasoning_output_tokens: number | null;
   total_input_tokens: number | null;
   total_output_tokens: number | null;
