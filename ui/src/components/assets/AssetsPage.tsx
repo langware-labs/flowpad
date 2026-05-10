@@ -134,7 +134,7 @@ function buildFolderBreadcrumbs(
   return crumbs;
 }
 
-const HIDDEN_TYPES = new Set<string>([RecordType.ANNOTATION]);
+const HIDDEN_TYPES = new Set<string>([RecordType.ANNOTATION, RecordType.PROJECT]);
 
 const SIDEBAR_COLLAPSED_KEY = 'wiki:sidebar-collapsed';
 
@@ -257,10 +257,6 @@ export function AssetsPage() {
 
   const handleProjectIdsChange = useCallback((ids: string[]) => {
     setAssetFilter(prev => ({ ...prev, projectIds: ids }));
-  }, []);
-
-  const handleIncludeSystemChange = useCallback((next: boolean) => {
-    setAssetFilter(prev => ({ ...prev, includeSystem: next }));
   }, []);
 
   const {
@@ -463,8 +459,6 @@ export function AssetsPage() {
             currentProjectId={currentProjectId}
             onScopeChange={handleScopeChange}
             onProjectIdsChange={handleProjectIdsChange}
-            includeSystem={assetFilter.includeSystem ?? false}
-            onIncludeSystemChange={handleIncludeSystemChange}
           />
         </div>
       </div>
