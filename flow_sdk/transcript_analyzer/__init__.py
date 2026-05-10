@@ -27,6 +27,7 @@ from .entries import (
     WebFetchEntry,
 )
 from .entry import EntryKind, TranscriptEntry
+from .process_entry import ObservationKind, ProcessEntry
 from .transcript import AgentTranscript
 
 __all__ = [
@@ -44,8 +45,11 @@ __all__ = [
     "SummaryEntry",
     "SystemEntry",
     "TodoUpdateEntry",
+    "ObservationKind",
+    "ProcessEntry",
     "ToolResultEntry",
     "ToolUseEntry",
+    "TokenUsageEntry",
     "TranscriptEntry",
     "UnknownEntry",
     "UserMessageEntry",

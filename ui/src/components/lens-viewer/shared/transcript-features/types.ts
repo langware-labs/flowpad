@@ -77,4 +77,10 @@ export interface UnifiedEntry {
 
   // For the info modal: the original source rows that produced this turn.
   rawEntries: GenericEntry[];
+  /**
+   * Lowercased, pre-computed text used by the search filter — picks fields
+   * that matter for matching (text, command, path, query, url, …) instead
+   * of `JSON.stringify(entry)` per keystroke.
+   */
+  searchHaystack: string;
 }

@@ -1,15 +1,14 @@
 """Convert Claude CLI ``--output-format stream-json`` events into FlowData.
 
-Each line of the stream is a JSON object with a ``type`` discriminator.
-We map them onto the existing FlowElementType taxonomy so downstream surfaces
-(ChatMessage, ArtifactSection, useProcessStream, etc.) render without any
-knowledge of where the events came from.
+Stream-json events share the per-turn envelope shape of JSONL transcript
+lines, so we delegate parsing to the canonical ``ClaudeParser`` and wrap
+each emitted ``TranscriptEntry`` in a ``ProcessEntry(observation_kind='live')``.
+The wrapper rides on ``FlowData.process_entry``; no per-block flattening,
+no opaque attribute bags for transcript-shaped events.
 
-Event schema confirmed empirically by ``scripts/verify_stream_json.py`` against
-Claude CLI 2.1.116. Shapes match the JSONL transcript shapes used by
-``session_history.py`` for the ``assistant``/``user`` content blocks — the
-per-block mapping is duplicated here deliberately so the live converter has no
-runtime dependency on the history loader.
+Non-conversational events (``system: init``, ``result``, ``rate_limit_event``,
+unknown) stay as plain FlowData (status / end frames). Those don't carry a
+``process_entry`` payload.
 """
 
 from __future__ import annotations
@@ -23,6 +22,8 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowDataType,
     FlowElementType,
 )
+from flow_sdk.transcript_analyzer.parsers.claude import ClaudeParser
+from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
 logger = logging.getLogger(__name__)
 
@@ -30,26 +31,40 @@ logger = logging.getLogger(__name__)
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
+_parser = ClaudeParser()
+_line_index = 0
+
+
 def convert_event(event: dict[str, Any]) -> list[FlowData]:
     """Map a single stream-json event to zero or more FlowData items.
 
-    Never raises on malformed input — unknown/unparseable events become a
-    defensive ``<flow-status subtype="unknown">`` so the stream stays intact.
+    Conversational events (assistant / user) become FlowData with a typed
+    ``process_entry`` payload. Lifecycle events (system, result, rate_limit)
+    stay as plain status frames.
+
+    Never raises on malformed input.
     """
+    global _line_index
+
     etype = event.get("type")
 
+    if etype == "assistant" or etype == "user":
+        try:
+            entries = _parser.feed(event, _line_index)
+        except Exception:
+            logger.debug("claude_event_to_flowdata: parse failed", exc_info=True)
+            return [_status("parse-error", _safe_dump(event))]
+        finally:
+            _line_index += 1
+        return [_wrap_live(e) for e in entries]
+
     if etype == "system":
-        return _convert_system(event)
-    if etype == "assistant":
-        return _convert_assistant(event)
-    if etype == "user":
-        return _convert_user(event)
+        return [_status(event.get("subtype") or "system", _safe_dump(event))]
     if etype == "rate_limit_event":
         return [_status("rate-limit", _safe_dump(event))]
     if etype == "result":
         return _convert_result(event)
 
-    # Unknown event — surface it rather than drop.
     return [_status("unknown", _safe_dump(event))]
 
 
@@ -69,7 +84,7 @@ def convert_line(line: str) -> list[FlowData]:
 
 
 def final_end_frame() -> FlowData:
-    """The terminal ``<flow-end>`` frame. Emit after the subprocess settles."""
+    """The terminal ``<flow-end>`` frame."""
     return FlowData(
         flow_value="",
         attributes={
@@ -79,82 +94,41 @@ def final_end_frame() -> FlowData:
     )
 
 
-# ── Per-event converters ──────────────────────────────────────────────────────
+# ── Internals ─────────────────────────────────────────────────────────────────
 
 
-def _convert_system(event: dict[str, Any]) -> list[FlowData]:
-    subtype = event.get("subtype") or "system"
-    # Keep the raw JSON in the value for debugging; UI surfaces the subtype.
-    return [_status(subtype, _safe_dump(event))]
+def _wrap_live(entry) -> FlowData:
+    """Wrap one TranscriptEntry from the live stream in a FlowData envelope."""
+    pe = ProcessEntry(transcript_entry=entry, observation_kind="live")
+    return FlowData(
+        flow_value={},  # canonical content lives on process_entry; flow_value kept for back-compat shape only
+        created_time=entry.timestamp or "",
+        attributes={
+            "element-type": _element_type_for_kind(entry.kind.value),
+            "data-type": FlowDataType.OBJECT,
+        },
+        process_entry=pe.to_dict(),
+    )
 
 
-def _convert_assistant(event: dict[str, Any]) -> list[FlowData]:
-    message = event.get("message") or {}
-    blocks = message.get("content") or []
-    out: list[FlowData] = []
-    for block in blocks:
-        if not isinstance(block, dict):
-            continue
-        btype = block.get("type")
-        if btype == "text":
-            text = block.get("text") or ""
-            if text:
-                out.append(FlowData(
-                    flow_value=text,
-                    attributes={
-                        "element-type": FlowElementType.CHAT,
-                        "data-type": FlowDataType.TEXT,
-                        "role": "assistant",
-                    },
-                ))
-        elif btype == "thinking":
-            thinking = block.get("thinking") or ""
-            if thinking:
-                out.append(FlowData(
-                    flow_value=thinking,
-                    attributes={
-                        "element-type": FlowElementType.REASONING,
-                        "data-type": FlowDataType.TEXT,
-                    },
-                ))
-        elif btype == "tool_use":
-            out.append(FlowData(
-                flow_value={
-                    "tool_name": block.get("name"),
-                    "tool_call_id": block.get("id"),
-                    "args": block.get("input"),
-                },
-                attributes={
-                    "element-type": FlowElementType.TOOL_CALL,
-                    "data-type": FlowDataType.OBJECT,
-                    "tool-name": str(block.get("name") or ""),
-                },
-            ))
-        # Silently ignore unknown block types — harmless, keeps the stream moving.
-    return out
+_TOOL_USE_KINDS = frozenset({
+    "tool_use", "shell_command", "file_write", "file_edit", "file_read",
+    "search", "web_fetch", "todo_update", "agent_spawn", "exit_plan_mode",
+})
 
 
-def _convert_user(event: dict[str, Any]) -> list[FlowData]:
-    message = event.get("message") or {}
-    blocks = message.get("content") or []
-    out: list[FlowData] = []
-    for block in blocks:
-        if not isinstance(block, dict):
-            continue
-        btype = block.get("type")
-        if btype == "tool_result":
-            out.append(FlowData(
-                flow_value={
-                    "tool_call_id": block.get("tool_use_id"),
-                    "content": block.get("content"),
-                },
-                attributes={
-                    "element-type": FlowElementType.TOOL_RESULT,
-                    "data-type": FlowDataType.OBJECT,
-                    "tool-use-id": str(block.get("tool_use_id") or ""),
-                },
-            ))
-    return out
+def _element_type_for_kind(kind: str) -> str:
+    """Map a TranscriptEntry kind to an existing FlowElementType so legacy
+    consumers still see a meaningful element-type during the migration window."""
+    if kind == "user_message":
+        return FlowElementType.USER_MESSAGE
+    if kind == "assistant_message":
+        return FlowElementType.CHAT
+    if kind in _TOOL_USE_KINDS:
+        return FlowElementType.TOOL_CALL
+    if kind == "tool_result":
+        return FlowElementType.TOOL_RESULT
+    return FlowElementType.STATUS
 
 
 def _convert_result(event: dict[str, Any]) -> list[FlowData]:
@@ -166,7 +140,6 @@ def _convert_result(event: dict[str, Any]) -> list[FlowData]:
         "outcome": outcome,
         "subtype": str(subtype),
     }
-    # Surface cost / usage when available.
     cost = event.get("total_cost_usd")
     if cost is not None:
         attrs["cost-usd"] = str(cost)
@@ -177,9 +150,6 @@ def _convert_result(event: dict[str, Any]) -> list[FlowData]:
         ),
         final_end_frame(),
     ]
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 
 def _status(subtype: str, value: str = "") -> FlowData:

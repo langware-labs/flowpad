@@ -1,3 +1,4 @@
+import { dataContext } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useMemo } from 'react';
@@ -5,7 +6,6 @@ import { CliLogViewer } from './CliLogViewer';
 import { ClaudeContextViewer } from './ClaudeContextViewer';
 import { ClaudeErrorsViewer } from './ClaudeErrorsViewer';
 import { ClaudeTasksViewer } from './ClaudeTasksViewer';
-import { ClaudeTranscriptViewer } from './claude-transcript-viewer';
 import { FsRecordsScannerViewer } from './FsRecordsScannerViewer';
 import { TranscriptViewer } from './shared/transcript-features';
 import { HeartbeatEventsViewer } from './HeartbeatEventsViewer';
@@ -43,61 +43,63 @@ export function LensViewer() {
   const lensKey = `${lensParts.category}/${lensParts.type}`;
 
   switch (lensKey) {
-    case 'claude/transcript': {
-      // Two URL forms — DIFFERENT renderers (so we can side-by-side compare):
-      //   - legacy form `{projectEncodedName}/{sessionId}` → ClaudeTranscriptViewer
-      //     (the original raw-JSONL renderer; preserved as the reference).
-      //   - new form    `{urlEncodedAbsolutePath}`         → unified TranscriptViewer
-      //     (the worker-agnostic renderer that consumes the server-parsed entries).
-      // Once the two views are proven identical, the legacy renderer goes away
-      // and both forms collapse to the new TranscriptViewer.
+    case 'claude/transcript':
+    case 'codex/transcript': {
+      // Three URL forms collapse onto the worker-agnostic TranscriptViewer:
+      //   1. canonical form   `<sessionId>`                     → server resolves the JSONL
+      //   2. absolute path    `<urlEncodedAbsolutePath>`        → useTranscript fetches via ?path=
+      //   3. legacy form      `<projectEncodedName>/<sessionId>` → bridged to abs path here
+      // (1) is what `process.transcriptDockPointer` emits today. (2) is the
+      // power-user / debug form. (3) is kept for bookmarks emitted by the
+      // pre-Phase-9 transcriptDockPointer shape.
+      const workerType = lensParts.category as 'claude' | 'codex';
       const ref = lensParts.ref;
       const decoded = (() => {
         try { return decodeURIComponent(ref); } catch { return ref; }
       })();
+
+      // Form 2: absolute path.
       if (decoded.startsWith('/')) {
         return (
           <TranscriptViewer
-            workerType="claude"
+            workerType={workerType}
             path={decoded}
             selectedEntryId={currentDock?.options?.transcript_entry_id}
             selectedTimestamp={currentDock?.options?.ts}
           />
         );
       }
-      // Legacy form: project-encoded-name + session-id, fed to the legacy renderer
-      // for an apples-to-apples reference image.
-      const lastSlash = ref.lastIndexOf('/');
-      if (lastSlash < 0) {
+
+      // Form 3: legacy two-segment claude form. Bridge to abs path.
+      if (workerType === 'claude' && ref.includes('/')) {
+        const lastSlash = ref.lastIndexOf('/');
+        const projectEncodedName = ref.substring(0, lastSlash);
+        const sessionId = ref.substring(lastSlash + 1);
+        const rawHome = dataContext.bootstrapInfo?.desktop_info?.paths?.home;
+        const home = rawHome ? (rawHome.startsWith('/') ? rawHome : `/${rawHome}`) : null;
+        if (!home) {
+          return (
+            <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
+              <p>Could not resolve home directory from bootstrap info</p>
+            </div>
+          );
+        }
+        const absPath = `${home}/.claude/projects/${projectEncodedName}/${sessionId}.jsonl`;
         return (
-          <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
-            <p>Invalid transcript ref: expected projectEncodedName/sessionId or absolute path</p>
-          </div>
+          <TranscriptViewer
+            workerType="claude"
+            path={absPath}
+            selectedEntryId={currentDock?.options?.transcript_entry_id}
+            selectedTimestamp={currentDock?.options?.ts}
+          />
         );
       }
-      return (
-        <ClaudeTranscriptViewer
-          projectEncodedName={ref.substring(0, lastSlash)}
-          sessionId={ref.substring(lastSlash + 1)}
-          selectedEntryId={currentDock?.options?.transcript_entry_id}
-          selectedTimestamp={currentDock?.options?.ts}
-        />
-      );
-    }
-    case 'codex/transcript': {
-      // ref is the URL-encoded absolute path to the rollout JSONL.
-      const path = decodeURIComponent(lensParts.ref || '');
-      if (!path) {
-        return (
-          <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
-            <p>Invalid transcript ref: expected an absolute path</p>
-          </div>
-        );
-      }
+
+      // Form 1: canonical session id.
       return (
         <TranscriptViewer
-          workerType="codex"
-          path={path}
+          workerType={workerType}
+          sessionId={ref}
           selectedEntryId={currentDock?.options?.transcript_entry_id}
           selectedTimestamp={currentDock?.options?.ts}
         />

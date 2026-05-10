@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 import { OperationExpandedDetail, OperationOneLiner } from './OperationRow';
-import { formatDuration, formatEntryTime, formatNumber, workerIcon, workerLabel } from './transcript-utils';
+import { formatDuration, formatEntryTime, formatNumber, operationFilterKey, workerIcon, workerLabel } from './transcript-utils';
 import type { UnifiedEntry } from './types';
 
 interface Props {
@@ -109,7 +109,7 @@ export function TranscriptEntryItem({
   if (entry.role === 'operation' && entry.operation) {
     const op = entry.operation;
     // Filter chips key on the semantic kind (catch-all uses raw tool name).
-    const filterKey = op.kind === 'tool_use' ? (op as { tool_name: string }).tool_name : op.kind;
+    const filterKey = operationFilterKey(op);
     if (toolFilters && toolFilters[filterKey] === false) return null;
     return (
       <div className={`border-b border-border ${indentWrapperClass}`}>
@@ -173,8 +173,8 @@ export function TranscriptEntryItem({
                 </span>
               )}
             </div>
-            <p className={`mt-0.5 break-all text-xs ${isExpanded ? '' : 'line-clamp-2'}`}>
-              {entry.text || '(no text content)'}
+            <p className={`mt-0.5 break-all text-xs ${isExpanded ? '' : 'line-clamp-2'} ${!entry.text && entry.thinking ? 'italic text-purple-600/80' : ''}`}>
+              {entry.text || thinkingPreview(entry.thinking) || '(no text content)'}
             </p>
           </div>
           <InfoButton onInfo={onInfo} onInfoHover={onInfoHover} onInfoHoverEnd={onInfoHoverEnd} />

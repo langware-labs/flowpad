@@ -4,10 +4,10 @@ import type { ColumnActions } from './columnRegistry';
 import type { SearchResult } from '@src/hooks/use-asset-search';
 
 function memoryProjectCell(r: SearchResult, actions?: ColumnActions): React.ReactNode {
-  // Prefer the backend-resolved project_name; fall back to deriving a label
-  // from the encoded directory in asset_ref for legacy/unindexed rows.
   let label = r.project_name || '';
   if (!label) {
+    // Legacy/unindexed rows lack project_name — derive from the encoded dir
+    // in asset_ref as a best-effort fallback.
     const path = r.asset_ref || '';
     const parts = path.replace(/\/$/, '').split('/');
     const memIdx = parts.lastIndexOf('memory');

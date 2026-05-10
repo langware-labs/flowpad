@@ -21,13 +21,15 @@ import { ChatEntryItem } from './ChatEntryItem';
 import { TranscriptEntryItem } from './TranscriptEntryItem';
 import { TranscriptStats } from './TranscriptStats';
 import { groupEntriesByTurn } from './group-entries';
-import { formatAgo, formatDuration, resolveEntryTimestamp } from './transcript-utils';
+import { collectToolKeys, formatAgo, formatDuration, operationFilterKey, resolveEntryTimestamp } from './transcript-utils';
 import type { UnifiedEntry } from './types';
 
 interface Props {
   workerType: WorkerType;
-  /** Absolute filesystem path to the JSONL transcript. */
-  path: string;
+  /** Absolute filesystem path to the JSONL transcript. Provide this OR sessionId. */
+  path?: string;
+  /** Session id; the server resolves the on-disk path via the worker route. */
+  sessionId?: string;
   selectedEntryId?: string;
   selectedTimestamp?: string;
 }
@@ -47,10 +49,10 @@ interface Props {
  *   - Per-entry expand / collapse + JSON info dialog.
  *   - Path bar with copy-to-clipboard.
  */
-export function TranscriptViewer({ workerType, path, selectedEntryId, selectedTimestamp }: Props) {
+export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, selectedEntryId, selectedTimestamp }: Props) {
   const { navigation } = useDockNavigation();
   const [, setSearchParams] = useSearchParams();
-  const { data, isLoading, error } = useTranscript({ workerType, path });
+  const { data, isLoading, error } = useTranscript({ workerType, path, sessionId: sessionIdProp });
 
   const entries = useMemo<UnifiedEntry[]>(() => (data ? groupEntriesByTurn(data.entries) : []), [data]);
   const sessionId = data?.session_id ?? null;
@@ -88,17 +90,8 @@ export function TranscriptViewer({ workerType, path, selectedEntryId, selectedTi
     if (initializedForRef.current === entries) return;
     initializedForRef.current = entries;
 
-    const toolKeys = entries
-      .filter((e) => e.role === 'operation' && e.operation)
-      .map((e) => {
-        const op = e.operation!;
-        return op.kind === 'tool_use'
-          ? (op as { tool_name: string }).tool_name || 'tool_use'
-          : op.kind;
-      })
-      .filter(Boolean);
     const initial: Record<string, boolean> = {};
-    Array.from(new Set(toolKeys)).forEach((n) => { initial[n] = true; });
+    collectToolKeys(entries).forEach((n) => { initial[n] = true; });
     setToolFilters(initial);
 
     for (const entry of entries) {
@@ -128,12 +121,16 @@ export function TranscriptViewer({ workerType, path, selectedEntryId, selectedTi
     return null;
   }, [entries]);
 
+  // Resolve a copyable path string. When opened by session_id only, fall back
+  // to the parsed transcript's path (server populates it on the response).
+  const copyablePath = path ?? data?.path ?? '';
   const handleCopyPath = useCallback(() => {
-    void navigator.clipboard.writeText(path).then(() => {
+    if (!copyablePath) return;
+    void navigator.clipboard.writeText(copyablePath).then(() => {
       setCopiedPath(true);
       setTimeout(() => setCopiedPath(false), 1500);
     });
-  }, [path]);
+  }, [copyablePath]);
 
   // ── Resolved entry for URL-param highlight ────────────────────────────────
   const resolvedEntryId = useMemo(() => {
@@ -283,32 +280,20 @@ export function TranscriptViewer({ workerType, path, selectedEntryId, selectedTi
     return entries.filter((entry) => {
       if (entry.role === 'user') {
         if (!showUser) return false;
-        if (!query) return true;
-        const haystack = (entry.text ?? '') + (entry.toolResult?.output ?? '');
-        return haystack.toLowerCase().includes(query);
+        return !query || entry.searchHaystack.includes(query);
       }
       if (entry.role === 'operation' && entry.operation) {
         if (!showAssistant) return false;
-        const op = entry.operation;
-        const filterKey = op.kind === 'tool_use'
-          ? (op as { tool_name: string }).tool_name || 'tool_use'
-          : op.kind;
-        if (toolFilters[filterKey] === false) return false;
-        if (!query) return true;
-        // Search across kind, primary fields, and the original payload.
-        const haystack = filterKey + ' ' + JSON.stringify(op);
-        return haystack.toLowerCase().includes(query);
+        if (toolFilters[operationFilterKey(entry.operation)] === false) return false;
+        return !query || entry.searchHaystack.includes(query);
       }
       if (entry.role === 'assistant') {
         if (!showAssistant) return false;
-        if (!query) return true;
-        const text = entry.text ?? '';
-        return text.toLowerCase().includes(query);
+        return !query || entry.searchHaystack.includes(query);
       }
       // System / meta / summary / unknown
       if (!showUser && !showAssistant) return false;
-      if (!query) return true;
-      return JSON.stringify(entry.payload ?? entry).toLowerCase().includes(query);
+      return !query || entry.searchHaystack.includes(query);
     });
   }, [entries, showUser, showAssistant, toolFilters, searchQuery]);
 
@@ -334,36 +319,14 @@ export function TranscriptViewer({ workerType, path, selectedEntryId, selectedTi
   };
 
   const clearAllFilters = () => {
-    const toolKeys = entries
-      .filter((e) => e.role === 'operation' && e.operation)
-      .map((e) => {
-        const op = e.operation!;
-        return op.kind === 'tool_use'
-          ? (op as { tool_name: string }).tool_name || 'tool_use'
-          : op.kind;
-      })
-      .filter(Boolean);
-    const next: Record<string, boolean> = {};
-    Array.from(new Set(toolKeys)).forEach((n) => { next[n] = true; });
-    setToolFilters(next);
+    setToolFilters((prev) => Object.fromEntries(Object.keys(prev).map((k) => [k, true])));
     setShowUser(true);
     setShowAssistant(true);
     setSearchQuery('');
   };
 
   const disableAllFilters = () => {
-    const toolKeys = entries
-      .filter((e) => e.role === 'operation' && e.operation)
-      .map((e) => {
-        const op = e.operation!;
-        return op.kind === 'tool_use'
-          ? (op as { tool_name: string }).tool_name || 'tool_use'
-          : op.kind;
-      })
-      .filter(Boolean);
-    const next: Record<string, boolean> = {};
-    Array.from(new Set(toolKeys)).forEach((n) => { next[n] = false; });
-    setToolFilters(next);
+    setToolFilters((prev) => Object.fromEntries(Object.keys(prev).map((k) => [k, false])));
     setShowUser(false);
     setShowAssistant(false);
   };

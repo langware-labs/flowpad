@@ -14,6 +14,7 @@ from .._helpers import (
     extract_thinking,
     first_block_of_type,
     flatten_tool_result,
+    truncate_file_content,
 )
 from ..entries import (
     AgentSpawnEntry,
@@ -221,21 +222,15 @@ class ClaudeParser:
         ti = tool_input if isinstance(tool_input, dict) else {}
 
         if tool_name == "ExitPlanMode":
-            return ExitPlanModeEntry(
-                tool_name=tool_name,
-                tool_use_id=tool_use_id,
-                tool_input=ti,
-                **envelope,
-                **base,
-            )
+            return ExitPlanModeEntry(tool_input=ti, **common)
         if tool_name == "Write":
-            content_str = ti.get("content")
-            content_str = str(content_str) if content_str is not None else None
-            line_count = content_str.count("\n") + 1 if content_str else None
-            bytes_count = len(content_str.encode("utf-8")) if content_str else None
+            full_content = ti.get("content")
+            full_str = str(full_content) if full_content is not None else None
+            line_count = full_str.count("\n") + 1 if full_str else None
+            bytes_count = len(full_str.encode("utf-8")) if full_str else None
             return FileWriteEntry(
                 path=str(ti.get("file_path") or ""),
-                content=content_str,
+                content=truncate_file_content(full_str),
                 bytes_count=bytes_count,
                 line_count=line_count,
                 is_new=True,
@@ -321,13 +316,7 @@ class ClaudeParser:
                 description=str(ti.get("description") or "") or None,
                 **common,
             )
-        return ToolUseEntry(
-            tool_name=tool_name,
-            tool_use_id=tool_use_id,
-            tool_input=ti,
-            **envelope,
-            **base,
-        )
+        return ToolUseEntry(tool_input=ti, **common)
 
     def _parse_user(self, raw: dict, base: dict) -> TranscriptEntry:
         message = raw.get("message") or {}

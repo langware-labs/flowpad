@@ -48,6 +48,7 @@ from ..entries import (
     WebFetchEntry,
 )
 from ..entry import TranscriptEntry
+from .._helpers import truncate_file_content
 from ._apply_patch import (
     add_op_to_content,
     parse_apply_patch,
@@ -420,9 +421,18 @@ class CodexParser:
             if thinking_parts:
                 thinking = "\n".join(thinking_parts)
             elif payload.get("encrypted_content"):
-                # Plain-text summary unavailable; mark explicitly so the
-                # rendered entry isn't a blank assistant_message block.
-                thinking = "[encrypted reasoning, content dropped]"
+                # No plaintext summary on this reasoning item. The codex
+                # CLI default for ``model_reasoning_summary`` is ``none``
+                # in many invocations — pass ``-c model_reasoning_summary=auto``
+                # (or set it in ~/.codex/config.toml) to populate the
+                # ``summary`` array on subsequent runs.
+                #
+                # ``encrypted_content`` is NOT encrypted reasoning text — it's
+                # a server-side opaque session token used to retain context
+                # across turns when zero-data-retention is enforced. We
+                # don't surface it because it's not human-readable and not
+                # meant to be.
+                thinking = "[no plaintext reasoning summary — set model_reasoning_summary=auto on the codex CLI to capture it]"
             else:
                 thinking = None
             return [AssistantMessageEntry(
@@ -488,6 +498,13 @@ class CodexParser:
             **base,
         )]
 
+    # Codex tool names — kept as constants so a typo doesn't silently route
+    # a recognized tool into the catch-all bucket.
+    _TOOL_EXEC = "exec_command"
+    _TOOL_READ = ("read_file", "view_file")
+    _TOOL_WRITE = "write_file"
+    _TOOL_APPLY_PATCH = "apply_patch"
+
     # ── semantic dispatchers (rollout function_call + custom_tool_call) ────
 
     def _build_semantic_function_call(
@@ -513,36 +530,30 @@ class CodexParser:
         }
         ti = tool_input if isinstance(tool_input, dict) else {}
 
-        if tool_name == "exec_command":
+        if tool_name == self._TOOL_EXEC:
             return [ShellCommandEntry(
                 command=str(ti.get("cmd") or ti.get("command") or ""),
                 cwd=str(ti.get("workdir") or "") or None,
                 **common,
             )]
-        if tool_name in ("read_file", "view_file"):
+        if tool_name in self._TOOL_READ:
             return [FileReadEntry(
                 path=str(ti.get("path") or ti.get("file_path") or ""),
                 **common,
             )]
-        if tool_name in ("write_file",):
-            content_str = str(ti.get("content")) if ti.get("content") is not None else None
-            line_count = content_str.count("\n") + 1 if content_str else None
-            bytes_count = len(content_str.encode("utf-8")) if content_str else None
+        if tool_name == self._TOOL_WRITE:
+            full_str = str(ti.get("content")) if ti.get("content") is not None else None
+            line_count = full_str.count("\n") + 1 if full_str else None
+            bytes_count = len(full_str.encode("utf-8")) if full_str else None
             return [FileWriteEntry(
                 path=str(ti.get("path") or ti.get("file_path") or ""),
-                content=content_str,
+                content=truncate_file_content(full_str),
                 bytes_count=bytes_count,
                 line_count=line_count,
                 is_new=True,
                 **common,
             )]
-        return [ToolUseEntry(
-            tool_name=tool_name,
-            tool_use_id=tool_use_id,
-            tool_input=ti,
-            **envelope,
-            **base,
-        )]
+        return [ToolUseEntry(tool_input=ti, **common)]
 
     def _build_semantic_custom_tool(
         self,
@@ -560,7 +571,7 @@ class CodexParser:
         Update, Delete). One semantic entry is emitted per file op so the
         renderer shows e.g. five Add File rows for a five-file add.
         """
-        if tool_name == "apply_patch" and isinstance(raw_input, str):
+        if tool_name == self._TOOL_APPLY_PATCH and isinstance(raw_input, str):
             ops = parse_apply_patch(raw_input)
             entries: list[TranscriptEntry] = []
             for idx, op in enumerate(ops):
@@ -571,12 +582,12 @@ class CodexParser:
                 op_id = base["id"] if idx == 0 else f"{base['id']}:patch{idx}"
                 op_base = {**base, "id": op_id}
                 if op.op == "add":
-                    content = add_op_to_content(op)
-                    line_count = content.count("\n") + 1 if content else None
-                    bytes_count = len(content.encode("utf-8")) if content else None
+                    full_content = add_op_to_content(op)
+                    line_count = full_content.count("\n") + 1 if full_content else None
+                    bytes_count = len(full_content.encode("utf-8")) if full_content else None
                     entries.append(FileWriteEntry(
                         path=op.path,
-                        content=content,
+                        content=truncate_file_content(full_content),
                         bytes_count=bytes_count,
                         line_count=line_count,
                         is_new=True,

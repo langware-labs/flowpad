@@ -104,10 +104,6 @@ class Entity(DBEntity):
     # VFS path relative to a root entity (e.g., compute node)
     root_vfs_path: str | None = APIField(default=None, description="VFS path relative to a root entity")
 
-    # Discovery scope and owning project — single source of truth for every
-    # entity. Stamped at index time from the FSRef walk's parent-chain scope
-    # ("user" / "project" / "system") and project_id. Read by the search
-    # filter to bucket entities cleanly without path-encoded join keys.
     scope: str | None = APIField(default=None, description="Discovery scope: 'user' | 'project' | 'system'. Stamped at index time from the FSRef walk.")
     project_id: str | None = APIField(default=None, description="Owning project id, when applicable. Stamped at index time from the FSRef walk.")
 
@@ -271,36 +267,29 @@ class Entity(DBEntity):
                     except Exception:
                         record_domain[k] = None
 
-        # Stamp scope + project_id from the record's FSRef-derived state. This
-        # is the single bridge from the indexer's walk-time knowledge into the
-        # entity's persisted columns. Both fields live on the base Entity
-        # (entity_model.py), so every type inherits them — no per-type plumbing.
+        # Bridge the FSRef-derived scope/project_id from the Record onto the
+        # Entity. Both columns live on the base Entity, so every type inherits.
         rec_scope = getattr(record, "scope", None)
-        if hasattr(rec_scope, "value"):  # Scope enum → str
-            rec_scope = rec_scope.value
+        rec_scope = rec_scope.value if hasattr(rec_scope, "value") else rec_scope
         rec_pid = getattr(record, "project_id", None)
-        scope_value = str(rec_scope) if rec_scope not in (None, "") else None
-        pid_value = str(rec_pid) if rec_pid not in (None, "") else None
+        stamp: dict = {}
+        if rec_scope not in (None, ""):
+            stamp["scope"] = str(rec_scope)
+        if rec_pid not in (None, ""):
+            stamp["project_id"] = str(rec_pid)
 
         if entity is None:
             create_kwargs = {"id": entity_uuid, "type": record_type}
             create_kwargs.update({k: v for k, v in data.items() if k not in ("id", "type")})
             create_kwargs.update(record_domain)
-            if scope_value is not None:
-                create_kwargs["scope"] = scope_value
-            if pid_value is not None:
-                create_kwargs["project_id"] = pid_value
+            create_kwargs.update(stamp)
             try:
                 entity = entity_cls(**create_kwargs)
             except Exception:
                 entity = Entity(**create_kwargs)
         else:
             entity.type = record_type
-            all_updates = {**data, **record_domain}
-            if scope_value is not None:
-                all_updates["scope"] = scope_value
-            if pid_value is not None:
-                all_updates["project_id"] = pid_value
+            all_updates = {**data, **record_domain, **stamp}
             for k, v in all_updates.items():
                 if k in ("id",) or not hasattr(entity, k):
                     continue

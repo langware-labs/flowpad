@@ -1,3 +1,4 @@
+import { operationFilterKey } from './transcript-utils';
 import type { UnifiedEntry } from './types';
 
 export interface TranscriptStatsSummary {
@@ -37,12 +38,7 @@ export function computeStats(entries: UnifiedEntry[]): TranscriptStatsSummary {
     }
     if (e.role === 'operation' && e.operation) {
       toolCalls++;
-      const op = e.operation;
-      // Catch-all `tool_use` keeps the raw tool name so MCP / unknown tools
-      // surface individually. Semantic kinds collapse onto their kind.
-      const key = op.kind === 'tool_use'
-        ? (op as { tool_name: string }).tool_name || 'tool_use'
-        : op.kind;
+      const key = operationFilterKey(e.operation);
       toolCounts[key] = (toolCounts[key] || 0) + 1;
     }
     if (e.timestamp) {
