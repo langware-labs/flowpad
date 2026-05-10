@@ -97,6 +97,27 @@ export function MarkdownEditor({
   );
 }
 
+// ── In-doc anchor links ───────────────────────────────────────────────────────
+// Milkdown's heading-id slugifier disagrees with the GFM slugs hand-authored
+// TOCs use (it keeps `.`, `/`, en-dashes), so getElementById usually misses.
+// We resolve the click against the rendered headings without touching the doc.
+
+function isSlugLink(href: string): string | null {
+  return href.startsWith('#') ? decodeURIComponent(href.slice(1)).toLowerCase() : null;
+}
+
+function gfmSlug(text: string): string {
+  return text.toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').replace(/-+/g, '-');
+}
+
+function goToSlug(slug: string): void {
+  const direct = document.getElementById(slug);
+  const heading = direct ?? Array.from(
+    document.querySelectorAll<HTMLElement>('.ProseMirror :is(h1,h2,h3,h4,h5,h6)')
+  ).find((h) => gfmSlug(h.textContent ?? '') === slug);
+  heading?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 // ── Editor content ────────────────────────────────────────────────────────────
 
 function MarkdownEditorContent({
@@ -185,11 +206,9 @@ function MarkdownEditorContent({
   }, [fsRef, fileName]);
 
   const handleLinkClick = useCallback((href: string) => {
-    // Hash-only links → scroll to the matching heading within this editor.
-    // Milkdown swallows the click, so the browser's native hash-jump never runs.
-    if (href.startsWith('#')) {
-      const id = decodeURIComponent(href.slice(1));
-      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const slug = isSlugLink(href);
+    if (slug !== null) {
+      goToSlug(slug);
       return;
     }
 

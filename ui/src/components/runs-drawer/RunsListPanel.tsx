@@ -71,7 +71,7 @@ function RunItem({ run, label }: { run: Run; label: string }) {
 
   const onOpenTerminal = () => {
     if (isRunning) return;
-    if (process?.dockPointer) navigation.openDock(process.dockPointer);
+    if (process?.terminalDockPointer) navigation.openDock(process.terminalDockPointer);
   };
 
   const terminalTitle = isRunning
