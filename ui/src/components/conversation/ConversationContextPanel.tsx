@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   AgenticProcess,
   Conversation,
@@ -112,7 +112,10 @@ export function ConversationContextPanel({
     messageId || null,
     projectIdLifted,
   );
-  const hasTranscriptSession = privateProcesses.length > 0;
+  // Only visible (PTY-backed) sessions count as "transcript sessions" — invisible
+  // worker processes (e.g. derive-task) live in Private Context too but should
+  // not suppress the Shared Context "Start session" button.
+  const hasTranscriptSession = privateProcesses.some((p) => p.visible);
 
   // ── Shared Context: entity TypeIds (project pinned + per-message) ────
   const skipKeys = new Set<string>();
@@ -387,7 +390,52 @@ function PrivateContextSection({
 
   const containerInside = { type: Conversation.type, id: conversationId };
 
-  const isEmpty = tasks.length === 0 && processes.length === 0;
+  // Split processes by role:
+  //   - derivation workers (visible=false) — each backs a "deriving task…" row
+  //     that becomes a fully-linked Task row once Claude saves the new Task.
+  //   - transcript sessions (visible=true) — interactive PTYs the user opens
+  //     directly via the existing PrivateProcessRow.
+  const { derivationProcesses, transcriptProcesses } = useMemo(() => {
+    const derivation: AgenticProcess[] = [];
+    const transcript: AgenticProcess[] = [];
+    for (const p of processes) {
+      if (p.visible) transcript.push(p);
+      else derivation.push(p);
+    }
+    return { derivationProcesses: derivation, transcriptProcesses: transcript };
+  }, [processes]);
+
+  // Pair each derivation process to the Task it produced (if any). Claude is
+  // instructed to add the spawning AgenticProcess's TypeId to the new Task's
+  // context_entities so we can match them here.
+  const linkedTaskByProcessId = useMemo(() => {
+    const map = new Map<string, Task>();
+    for (const p of derivationProcesses) {
+      if (!p.id) continue;
+      const procKey = new TypeId(AgenticProcess.type, p.id).toString();
+      const linked = tasks.find((t) =>
+        t.contextEntities?.some((tid) => tid.toString() === procKey),
+      );
+      if (linked) map.set(p.id, linked);
+    }
+    return map;
+  }, [derivationProcesses, tasks]);
+
+  // Tasks already represented by a paired derivation row are hidden from the
+  // standalone list to avoid showing the same derivation twice.
+  const standaloneTasks = useMemo(() => {
+    const pairedTaskIds = new Set(
+      Array.from(linkedTaskByProcessId.values())
+        .map((t) => t.id)
+        .filter((id): id is string => !!id),
+    );
+    return tasks.filter((t) => !t.id || !pairedTaskIds.has(t.id));
+  }, [tasks, linkedTaskByProcessId]);
+
+  const isEmpty =
+    standaloneTasks.length === 0 &&
+    derivationProcesses.length === 0 &&
+    transcriptProcesses.length === 0;
 
   return (
     <div>
@@ -428,7 +476,7 @@ function PrivateContextSection({
         <EmptyHint text="Nothing added yet. Use the + to add a task." />
       ) : (
         <ContextTable>
-          {tasks.map((t) => (
+          {standaloneTasks.map((t) => (
             <PrivateTaskRow
               key={t.id}
               task={t}
@@ -443,7 +491,23 @@ function PrivateContextSection({
               }}
             />
           ))}
-          {processes.map((p) => (
+          {derivationProcesses.map((p) => {
+            const linkedTask = p.id ? linkedTaskByProcessId.get(p.id) : undefined;
+            return (
+              <PrivateDerivationRow
+                key={p.id}
+                process={p}
+                linkedTask={linkedTask}
+                onOpenTask={() => {
+                  if (!linkedTask?.id) return;
+                  navigation.openDock(
+                    DockPointer.forTasks(linkedTask.id, { conversationId }),
+                  );
+                }}
+              />
+            );
+          })}
+          {transcriptProcesses.map((p) => (
             <PrivateProcessRow
               key={p.id}
               process={p}
@@ -497,6 +561,41 @@ function PrivateProcessRow({
       name={process.displayName ?? process.id ?? '(running)'}
     >
       <RowAction onClick={onOpen} title="Open the session">
+        <ExternalLink className="h-3 w-3" />
+        Open
+      </RowAction>
+    </Row>
+  );
+}
+
+// Single row representing a "derive task" headless run. While the worker is
+// in flight no Task exists yet, so Open is disabled and the row reads
+// "Deriving task…". Once Claude saves the Task (with this AgenticProcess's
+// TypeId in `context_entities`), `linkedTask` becomes defined, the row
+// adopts the Task's display name, and Open jumps to the Task view.
+function PrivateDerivationRow({
+  process,
+  linkedTask,
+  onOpenTask,
+}: {
+  process: AgenticProcess;
+  linkedTask: Task | undefined;
+  onOpenTask: () => void;
+}) {
+  const Icon = ICON_BY_TYPE.task ?? ExternalLink;
+  const ready = !!linkedTask;
+  const name = ready
+    ? linkedTask?.displayName ?? linkedTask?.id ?? '(unnamed)'
+    : process.displayName
+      ? `Deriving task… (${process.displayName})`
+      : 'Deriving task…';
+  return (
+    <Row icon={Icon} type="Task" name={name}>
+      <RowAction
+        onClick={onOpenTask}
+        disabled={!ready}
+        title={ready ? `Open Task: ${linkedTask?.displayName ?? ''}` : 'Deriving with Claude…'}
+      >
         <ExternalLink className="h-3 w-3" />
         Open
       </RowAction>
