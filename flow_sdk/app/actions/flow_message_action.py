@@ -985,3 +985,178 @@ async def invitation_accept() -> ApiResponse:
     except Exception as e:
         logger.error("[flow_message_action] invitation-accept error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Per-message Private Context actions
+#
+# Spawn an invisible AgenticProcess in fire-and-forget style. The conversation
+# drawer's "Private Context" table watches for new entities linked back to the
+# source FlowMessage and renders them as soon as Claude saves them:
+#
+#   - `derive-task`: prompts Claude (via flow skill / MCP) to create a Task
+#     entity capturing the issue described in this message; the task stamps
+#     the FlowMessage TypeId on its `context_entities` so the frontend query
+#     finds it.
+#
+#   - `start-cc-from-transcript`: when the message has a `conversation.jsonl`
+#     FILE attachment, spawn a Claude session pre-loaded with that transcript
+#     path and ask for a brief analysis. The new AgenticProcess pins
+#     `target_vfs_path = <fm typeid>` so the frontend query picks it up.
+#
+# Both actions return immediately with `process_id`; the entity-query channel
+# delivers the result row to the UI when Claude finishes saving the entity.
+# ---------------------------------------------------------------------------
+
+async def _resolve_workdir_and_project_async(fm: FlowMessage) -> tuple[str, Optional[str]]:
+    """Async variant — pulls task.project_root + project_id where available."""
+    project_id: Optional[str] = None
+    workdir = ""
+    conv_id = fm.conversation_id
+    if conv_id:
+        conv = await Conversation.get_one({"id": conv_id})
+        if conv:
+            project_id = conv.project_id or project_id
+            task_typeid = conv.first_context_of_type(BuiltinEntityType.TASK.value) if hasattr(conv, "first_context_of_type") else None
+            if task_typeid:
+                task = await Task.get_one({"id": task_typeid.id})
+                if task:
+                    project_id = task.project_id or project_id
+                    workdir = (task.project_root or "").strip() or workdir
+    if project_id and not workdir:
+        from flow_sdk.builtin.project import Project
+        project = await Project.get_one({"id": project_id})
+        if project:
+            workdir = (project.fs_storage_mount_path or "").strip() or workdir
+    return workdir, project_id
+
+
+async def handle_derive_task(fm_id: str, someone_typeid: str) -> ApiResponse:
+    """Spawn a headless Claude session that creates a Task linked back to this FM."""
+    fm = await FlowMessage.get_one({"id": fm_id})
+    if not fm:
+        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}")
+
+    workdir, project_id = await _resolve_workdir_and_project_async(fm)
+
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
+
+    fm_typeid_str = str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm.id))
+    cli_opts = ClaudeCliOptions(
+        print_mode=True,
+        output_format="stream-json",
+        verbose=True,
+        permission_mode="bypassPermissions",
+    )
+    process = AgenticProcess(
+        cli_config=cli_opts.to_json(),
+        workdir=workdir,
+        visible=False,
+        project_id=project_id,
+        # Don't pin target_vfs_path here — only transcript-derived sessions go
+        # in Private Context; this is the task-creation worker.
+        context_entities=[TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm.id)],
+    )
+    await process.save(someone_typeid)
+
+    instruction = (
+        "Use the flow skill / MCP to create a Task entity that captures the issue "
+        "described in the FlowMessage with TypeId `" + fm_typeid_str + "`.\n\n"
+        "Requirements:\n"
+        "- Title: a concise one-line summary of the issue.\n"
+        "- Description: the relevant details, drawn from the message text and the parent "
+        "conversation if helpful.\n"
+        "- context_entities: include `" + fm_typeid_str + "` so the task links back to its source.\n"
+        "- Save the task using the flow MCP and exit when done."
+    )
+    # Fire-and-forget — the entity will be saved by Claude when it finishes.
+    import asyncio
+    asyncio.create_task(process.prompt(instruction))
+
+    return ApiSuccessResponse(data={"process_id": process.id})
+
+
+@action.post(action_name="derive-task", types=[BuiltinEntityType.FLOW_MESSAGE.value])
+async def derive_task() -> ApiResponse:
+    """Headless: derive a Task from this FlowMessage; result links via context_entities."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found")
+        if not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        return await handle_derive_task(
+            fm_id=str(request_info.target_entity_typeid.id),
+            someone_typeid=request_info.someone_typeid,
+        )
+    except Exception as e:
+        logger.error("[flow_message_action] derive-task error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Derive task failed: {str(e)}")
+
+
+async def handle_start_cc_from_transcript(fm_id: str, someone_typeid: str) -> ApiResponse:
+    """Spawn a Claude session pre-loaded with this message's transcript attachment."""
+    fm = await FlowMessage.get_one({"id": fm_id})
+    if not fm:
+        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}")
+
+    transcript = None
+    for att in (fm.attachment or []):
+        if att.attachment_type == AttachmentType.FILE and att.data.endswith("conversation.jsonl"):
+            transcript = att
+            break
+    if not transcript:
+        return ApiFailResponse(message="No transcript attachment on this message")
+
+    transcript_path = transcript.local_path or transcript.data
+    workdir, project_id = await _resolve_workdir_and_project_async(fm)
+
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
+
+    cli_opts = ClaudeCliOptions(
+        print_mode=True,
+        output_format="stream-json",
+        verbose=True,
+        permission_mode="bypassPermissions",
+    )
+    fm_typeid = TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm.id)
+    process = AgenticProcess(
+        cli_config=cli_opts.to_json(),
+        workdir=workdir,
+        visible=False,
+        project_id=project_id,
+        # Pin to the source FlowMessage so the Private Context query
+        # (`target_vfs_path = fm-<id>`) picks this session up immediately.
+        target_vfs_path=str(fm_typeid),
+        context_entities=[fm_typeid],
+    )
+    await process.save(someone_typeid)
+
+    instruction = (
+        f"Use the flow skill and provide a brief analysis of this Claude transcript at:\n"
+        f"{transcript_path}\n"
+    )
+    import asyncio
+    asyncio.create_task(process.prompt(instruction))
+
+    return ApiSuccessResponse(data={"process_id": process.id})
+
+
+@action.post(action_name="start-cc-from-transcript", types=[BuiltinEntityType.FLOW_MESSAGE.value])
+async def start_cc_from_transcript() -> ApiResponse:
+    """Headless: start a Claude session from this FM's transcript attachment."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found")
+        if not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        return await handle_start_cc_from_transcript(
+            fm_id=str(request_info.target_entity_typeid.id),
+            someone_typeid=request_info.someone_typeid,
+        )
+    except Exception as e:
+        logger.error("[flow_message_action] start-cc-from-transcript error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Start CC failed: {str(e)}")

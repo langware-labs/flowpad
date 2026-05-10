@@ -42,17 +42,21 @@ interface ConversationPanelProps {
  *   ┌─────────────────────────────────────┬──────────────┐
  *   │  Header (label only — toolbar empty)│              │
  *   │                                     │  Side drawer │
- *   │  ConversationView (bubbles + comp.) │  Runs|Cntxt  │
+ *   │  ConversationView (bubbles + comp.) │  Cntxt|Runs  │
  *   ├─────────────────────────────────────┴──────────────┤
- *   │  Bottom ribbon (toggle Runs / Context)             │
+ *   │  Bottom ribbon (toggle Context / Runs)             │
  *   └────────────────────────────────────────────────────┘
  *
- * The drawer is **always visible** (no X close — that would strand the user
- * with no way back). The ribbon at the bottom switches between Runs (every
- * Approve & Execute / headless run on this task) and Context (entity chips,
- * attachments, transcript, "Open in Claude" — all scoped to the selected
- * message). Clicking the active tab on the ribbon is a no-op; the drawer
- * stays open.
+ * The drawer is a real toggleable drawer — the bottom ribbon is the only
+ * affordance for opening / closing it (no X inside the drawer, since the
+ * ribbon icons are always visible and serve as the re-open path). Clicks on
+ * the ribbon:
+ *   - drawer closed → open to the clicked tab
+ *   - drawer open + clicking the active tab → close the drawer
+ *   - drawer open + clicking a non-active tab → switch tab, drawer stays open
+ *
+ * Tabs (left → right): Context, Runs. Both are per-message — switching the
+ * selected message wholesale-replaces both panels.
  *
  * The conversation toolbar deliberately renders no chips. Project / spec /
  * shared-terminal affordances all live in the Context tab now, scoped to
@@ -83,8 +87,8 @@ export function ConversationPanel({
   // entities the toolbar/drawer already shows.
   const taskKeys = useMemo(() => taskChipKeys(task ?? null), [task]);
 
-  // Drawer + ribbon state. Drawer is permanently open (no X close). The
-  // ribbon switches between tabs.
+  // Drawer + ribbon state. Drawer is collapsible — toggled via the ribbon.
+  const [sideOpen, setSideOpen] = useState<boolean>(true);
   const [activeSideTab, setActiveSideTab] = useState<ConversationSideTab>('context');
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [mostRecentMessageId, setMostRecentMessageId] = useState<string | null>(null);
@@ -127,11 +131,13 @@ export function ConversationPanel({
       : 'flex h-9 flex-shrink-0 items-center gap-2 border-y border-border px-4 text-xs font-medium text-muted-foreground';
   const bodyWrapper = variant === 'compact' ? 'mt-1' : 'px-4 pt-3';
 
+  // Context first, Runs second. Runs is hidden entirely when there's no
+  // anchor to query (covered by `showRuns`).
   const tabs = [
+    { id: 'context' as const, label: 'Context', icon: Layers },
     ...(showRuns
       ? [{ id: 'runs' as const, label: runs.length > 0 ? `Runs ${runs.length}` : 'Runs', icon: History }]
       : []),
-    { id: 'context' as const, label: 'Context', icon: Layers },
   ];
 
   const drawerChildren: Partial<Record<ConversationSideTab, React.ReactNode>> = {
@@ -150,7 +156,13 @@ export function ConversationPanel({
   }
 
   const toggleSideTab = (tab: ConversationSideTab) => {
+    if (sideOpen && activeSideTab === tab) {
+      // Active tab clicked while drawer is open → collapse the drawer.
+      setSideOpen(false);
+      return;
+    }
     setActiveSideTab(tab);
+    setSideOpen(true);
   };
 
   return (
@@ -179,7 +191,7 @@ export function ConversationPanel({
         </div>
 
         <TabbedSideDrawer<ConversationSideTab>
-          open={true}
+          open={sideOpen}
           activeTab={activeSideTab}
           onActiveTabChange={setActiveSideTab}
           tabs={tabs}
@@ -191,7 +203,7 @@ export function ConversationPanel({
       </div>
 
       <ConversationBottomRibbon
-        activeSideTab={activeSideTab}
+        activeSideTab={sideOpen ? activeSideTab : null}
         onToggleSideTab={toggleSideTab}
         showRuns={showRuns}
         runsBadge={runs.length}
