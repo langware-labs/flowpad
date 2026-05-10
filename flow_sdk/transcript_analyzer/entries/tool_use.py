@@ -35,13 +35,16 @@ class ToolUseEntry(TranscriptEntry):
             flow_value={
                 "tool_name": self.tool_name,
                 "tool_use_id": self.tool_use_id,
+                "tool_call_id": self.tool_use_id,
                 "input": self.tool_input,
+                "args": self.tool_input,
             },
             created_time=self.timestamp,
             attributes={
                 "element-type": FlowElementType.TOOL_CALL,
                 "data-type": FlowDataType.OBJECT,
                 "tool-name": self.tool_name,
+                "tool-use-id": self.tool_use_id,
             },
         )]
 

@@ -62,6 +62,7 @@ _META_TYPES = frozenset({
     "attachment",
     "permission-mode",
     "last-prompt",
+    "custom-title",
 })
 
 

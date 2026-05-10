@@ -22,6 +22,8 @@ pytestmark = pytest.mark.skipif(
 
 from flow_sdk.server.app import app
 from flow_sdk.fs_store import get_default_records_root, set_default_records_root
+from flow_sdk.fs_store.indexer.builtin import INDEXABLE_TYPES
+from flow_sdk.fs_store.record_types import RecordType
 
 from flow_sdk.fs_records.skill_record import SkillRecord  # noqa: F401 — register type
 from flow_sdk.fs_records.task import TaskResource  # noqa: F401 — register type
@@ -73,9 +75,9 @@ async def _create_skill(client, cn_url_base, name: str) -> str:
 async def test_index_all_returns_total(bootstrapped_client):
     """POST /index (no type) indexes all registered types and returns total.
 
-    Uses ``limit_types=7&limit_per_type=20`` so the test stays bounded on dev
+    Uses a bounded ``limit_types`` cap and ``limit_per_type=20`` so the test stays bounded on dev
     machines whose real ~/.claude/ holds hundreds of files per type. The cap
-    must include the SKILL entry in INDEXABLE_TYPES (position 7) so the
+    must include the SKILL entry in INDEXABLE_TYPES so the
     bulk-skill we just created is actually picked up — a tighter cap would
     leave ``indexed=0``.
     """
@@ -84,7 +86,10 @@ async def test_index_all_returns_total(bootstrapped_client):
     skill_base = _cn_url(boot, "skill")
     await _create_skill(bootstrapped_client, skill_base, "bulk-skill")
 
-    resp = await bootstrapped_client.post(_cn_url(boot, "index") + "?limit_types=7&limit_per_type=20")
+    skill_type_limit = INDEXABLE_TYPES.index(RecordType.SKILL) + 1
+    resp = await bootstrapped_client.post(
+        _cn_url(boot, "index") + f"?limit_types={skill_type_limit}&limit_per_type=20"
+    )
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert "indexed" in data

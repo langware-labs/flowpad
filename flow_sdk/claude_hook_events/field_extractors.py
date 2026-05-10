@@ -31,6 +31,10 @@ def _crop_text(text: str, max_words: int = 5) -> str:
 def _extra(hook_data: HookEventData, key: str) -> Any:
     """Read a variant-specific field that used to be a flat HookEventData
     attribute and now lives in ``extra``."""
+    if hasattr(hook_data, key):
+        value = getattr(hook_data, key)
+        if value is not None:
+            return value
     return (hook_data.extra or {}).get(key)
 
 

@@ -51,6 +51,8 @@ class ToolResultEntry(TranscriptEntry):
             "element-type": FlowElementType.TOOL_RESULT,
             "data-type": FlowDataType.TEXT,
         }
+        if self.tool_use_id:
+            attrs["tool-use-id"] = self.tool_use_id
         if self.tool_name:
             attrs["tool-name"] = self.tool_name
         if self.is_error:

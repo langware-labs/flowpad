@@ -22,6 +22,12 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowDataType,
     FlowElementType,
 )
+from flow_sdk.transcript_analyzer._helpers import flatten_tool_result
+from flow_sdk.transcript_analyzer.entries import (
+    AssistantMessageEntry,
+    ToolResultEntry,
+    ToolUseEntry,
+)
 from flow_sdk.transcript_analyzer.parsers.claude import ClaudeParser
 from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
@@ -48,15 +54,23 @@ def convert_event(event: dict[str, Any]) -> list[FlowData]:
 
     etype = event.get("type")
 
-    if etype == "assistant" or etype == "user":
+    if etype == "assistant":
         try:
-            entries = _parser.feed(event, _line_index)
+            out = _convert_assistant_event(event, _line_index)
         except Exception:
-            logger.debug("claude_event_to_flowdata: parse failed", exc_info=True)
-            return [_status("parse-error", _safe_dump(event))]
-        finally:
-            _line_index += 1
-        return [_wrap_live(e) for e in entries]
+            logger.debug("claude_event_to_flowdata: assistant parse failed", exc_info=True)
+            out = [_status("parse-error", _safe_dump(event))]
+        _line_index += 1
+        return out
+
+    if etype == "user":
+        try:
+            out = _convert_user_event(event, _line_index)
+        except Exception:
+            logger.debug("claude_event_to_flowdata: user parse failed", exc_info=True)
+            out = [_status("parse-error", _safe_dump(event))]
+        _line_index += 1
+        return out
 
     if etype == "system":
         return [_status(event.get("subtype") or "system", _safe_dump(event))]
@@ -95,6 +109,133 @@ def final_end_frame() -> FlowData:
 
 
 # ── Internals ─────────────────────────────────────────────────────────────────
+
+
+def _base_for_event(event: dict[str, Any], line_index: int, block_index: int, fallback: str) -> dict[str, Any]:
+    return {
+        "id": str(event.get("uuid") or fallback or f"claude-live:{line_index}:{block_index}"),
+        "session_id": str(event.get("sessionId") or ""),
+        "timestamp": str(event.get("timestamp") or ""),
+        "worker": "claude",
+        "parent_id": str(event.get("parentUuid") or "") or None,
+        "is_sidechain": bool(event.get("isSidechain", False)),
+    }
+
+
+def _content_blocks(event: dict[str, Any]) -> list[Any]:
+    message = event.get("message") if isinstance(event.get("message"), dict) else {}
+    content = message.get("content") if isinstance(message, dict) else []
+    if isinstance(content, list):
+        return content
+    if isinstance(content, str):
+        return [{"type": "text", "text": content}]
+    return []
+
+
+def _with_process_entry(fd: FlowData, entry) -> FlowData:
+    pe = ProcessEntry(transcript_entry=entry, observation_kind="live")
+    fd.process_entry = pe.to_dict()
+    return fd
+
+
+def _convert_assistant_event(event: dict[str, Any], line_index: int) -> list[FlowData]:
+    out: list[FlowData] = []
+    for block_index, block in enumerate(_content_blocks(event)):
+        if not isinstance(block, dict):
+            continue
+        btype = block.get("type")
+        if btype == "text":
+            text = str(block.get("text") or "")
+            if not text:
+                continue
+            entry = AssistantMessageEntry(
+                text=text,
+                **_base_for_event(event, line_index, block_index, str(block.get("id") or "")),
+            )
+            out.append(_with_process_entry(FlowData(
+                flow_value=text,
+                created_time=entry.timestamp,
+                attributes={
+                    "element-type": FlowElementType.CHAT,
+                    "data-type": FlowDataType.TEXT,
+                    "role": "assistant",
+                },
+            ), entry))
+        elif btype == "thinking":
+            thinking = str(block.get("thinking") or block.get("text") or "")
+            if not thinking:
+                continue
+            entry = AssistantMessageEntry(
+                text="",
+                thinking=thinking,
+                **_base_for_event(event, line_index, block_index, str(block.get("id") or "")),
+            )
+            out.append(_with_process_entry(FlowData(
+                flow_value=thinking,
+                created_time=entry.timestamp,
+                attributes={
+                    "element-type": FlowElementType.REASONING,
+                    "data-type": FlowDataType.TEXT,
+                    "role": "assistant",
+                },
+            ), entry))
+        elif btype == "tool_use":
+            tool_name = str(block.get("name") or "")
+            tool_use_id = str(block.get("id") or "")
+            tool_input = block.get("input") if isinstance(block.get("input"), dict) else {}
+            entry = ToolUseEntry(
+                tool_name=tool_name,
+                tool_use_id=tool_use_id,
+                tool_input=tool_input,
+                **_base_for_event(event, line_index, block_index, tool_use_id),
+            )
+            out.append(_with_process_entry(FlowData(
+                flow_value={
+                    "tool_name": tool_name,
+                    "tool_call_id": tool_use_id,
+                    "tool_use_id": tool_use_id,
+                    "args": tool_input,
+                    "input": tool_input,
+                },
+                created_time=entry.timestamp,
+                attributes={
+                    "element-type": FlowElementType.TOOL_CALL,
+                    "data-type": FlowDataType.OBJECT,
+                    "tool-name": tool_name,
+                    "tool-use-id": tool_use_id,
+                },
+            ), entry))
+    return out
+
+
+def _convert_user_event(event: dict[str, Any], line_index: int) -> list[FlowData]:
+    out: list[FlowData] = []
+    for block_index, block in enumerate(_content_blocks(event)):
+        if not isinstance(block, dict) or block.get("type") != "tool_result":
+            continue
+        tool_use_id = str(block.get("tool_use_id") or "")
+        output = flatten_tool_result(block.get("content"))
+        entry = ToolResultEntry(
+            tool_use_id=tool_use_id,
+            tool_output=output,
+            is_error=bool(block.get("is_error", False)),
+            **_base_for_event(event, line_index, block_index, tool_use_id),
+        )
+        out.append(_with_process_entry(FlowData(
+            flow_value={
+                "tool_call_id": tool_use_id,
+                "tool_use_id": tool_use_id,
+                "content": output,
+                "output": output,
+            },
+            created_time=entry.timestamp,
+            attributes={
+                "element-type": FlowElementType.TOOL_RESULT,
+                "data-type": FlowDataType.OBJECT,
+                "tool-use-id": tool_use_id,
+            },
+        ), entry))
+    return out
 
 
 def _wrap_live(entry) -> FlowData:

@@ -84,12 +84,24 @@ def load_session_history(session_id: str, process_id: str | None = None) -> list
 
 def _wrap_replay(entry) -> FlowData:
     pe = ProcessEntry(transcript_entry=entry, observation_kind="replay")
+    frames = entry.to_flow_data()
+    if frames:
+        fd = frames[0]
+        fd.process_entry = pe.to_dict()
+        fd.attributes.setdefault("element-type", _element_type_for_kind(entry.kind.value))
+        fd.attributes.setdefault("data-type", FlowDataType.OBJECT)
+        fd.attributes.setdefault("subtype", entry.kind.value)
+        fd.attributes.setdefault("observation-kind", "replay")
+        return fd
+
     return FlowData(
         flow_value={},
         created_time=entry.timestamp or "",
         attributes={
             "element-type": _element_type_for_kind(entry.kind.value),
             "data-type": FlowDataType.OBJECT,
+            "subtype": entry.kind.value,
+            "observation-kind": "replay",
         },
         process_entry=pe.to_dict(),
     )

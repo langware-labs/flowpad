@@ -63,10 +63,22 @@ def convert_hook_event(payload: dict[str, Any]) -> list[FlowData]:
         "data-type": FlowDataType.OBJECT,
         "source": FlowDataSource.SNIFFER,
         "webhook-type": str(payload.get("webhook_type") or "agent_hook"),
-        "subtype": process_entry.transcript_entry.kind.value,
+        "subtype": str(merged.get("hook_event_name") or "unknown"),
     }
     if process_entry.observation_kind:
         attributes["observation-kind"] = process_entry.observation_kind
+    tool_name = merged.get("tool_name")
+    if tool_name:
+        attributes["tool-name"] = str(tool_name)
+    tool_use_id = merged.get("tool_use_id")
+    if tool_use_id:
+        attributes["tool-use-id"] = str(tool_use_id)
+    transcript_path = merged.get("transcript_path")
+    if transcript_path:
+        attributes["transcript-path"] = str(transcript_path)
+    session_id = merged.get("session_id")
+    if session_id:
+        attributes["session-id"] = str(session_id)
     agent_hook_id = payload.get("agent_hook_id")
     if agent_hook_id:
         attributes["agent-hook-id"] = str(agent_hook_id)
@@ -76,9 +88,51 @@ def convert_hook_event(payload: dict[str, Any]) -> list[FlowData]:
     hook_file_path = payload.get("hook_file_path")
     if hook_file_path:
         attributes["hook-file-path"] = str(hook_file_path)
+    message = _first_string(merged, (
+        "message",
+        "assistant_message",
+        "last_assistant_message",
+        "user_message",
+        "prompt",
+    ))
+    if message:
+        attributes["hook-message"] = message
+    error = _first_string(merged, ("error", "error_message"))
+    if error:
+        attributes["hook-error"] = error
+    stop_reason = _first_string(merged, ("stop_reason",))
+    if stop_reason:
+        attributes["hook-stop-reason"] = stop_reason
+    task_subject = _first_string(merged, ("task_subject",))
+    if task_subject:
+        attributes["hook-task-subject"] = task_subject
+    tool_input = merged.get("tool_input")
+    summary = _summarize_tool_input(tool_input)
+    if summary:
+        attributes["tool-input-summary"] = summary
 
     return [FlowData(
         flow_value=payload,
         attributes=attributes,
         process_entry=process_entry.to_dict(),
     )]
+
+
+def _first_string(data: dict[str, Any], keys: tuple[str, ...]) -> str | None:
+    for key in keys:
+        value = data.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _summarize_tool_input(tool_input: Any) -> str | None:
+    if not isinstance(tool_input, dict):
+        return None
+    for key in ("command", "file_path", "pattern", "url", "query", "description", "prompt"):
+        value = tool_input.get(key)
+        if isinstance(value, str) and value:
+            return value
+    if tool_input:
+        return str(tool_input)
+    return None
