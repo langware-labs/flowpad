@@ -15,6 +15,9 @@ Field model:
   * ``draft_flow_message_id`` ties a finished Run to the draft FlowMessage it
     produced (when it produced text). Empty when the run errored or the
     assistant emitted no CHAT output.
+  * ``source_flow_message_id`` records the FlowMessage whose PROMPT attachment
+    triggered this Run (the message the user clicked Approve on). Lets the
+    Runs drawer filter per-message instead of showing every Run on the task.
 """
 from __future__ import annotations
 
@@ -40,5 +43,6 @@ class Run(Entity):
     started_at: Optional[str] = APIField(None)
     ended_at: Optional[str] = APIField(None)
     draft_flow_message_id: Optional[str] = APIField(None)
+    source_flow_message_id: Optional[str] = APIField(None)
     _api_visible: ClassVar[bool] = True
     _icon: ClassVar[str] = "Play"

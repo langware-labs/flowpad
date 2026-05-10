@@ -91,14 +91,20 @@ export function ConversationPanel({
 
   const showRuns = !!task;
 
-  // Runs tab data — task-scoped Run entities (one row per Approve & Execute).
-  // Mirrors what the legacy task-bar TaskRunsDrawer used to render.
-  const targetStr = task?.typeId ? task.typeId.toString() : '';
-  const { runs } = useRunsForTarget(targetStr, { enabled: !!targetStr });
-
-  // Context tab — fetch the selected (or most recent) FlowMessage so the
-  // panel can render its chips/attachments/transcript.
+  // Runs / Context are both per-message: switching the selected message
+  // wholesale-replaces both panels. Falls back to the most recent message so
+  // the drawer always shows something useful.
   const contextMessageId = selectedMessageId ?? mostRecentMessageId;
+
+  // Runs tab — Run entities triggered by the selected message's PROMPT.
+  const targetStr = task?.typeId ? task.typeId.toString() : '';
+  const { runs } = useRunsForTarget(targetStr, {
+    enabled: !!targetStr && !!contextMessageId,
+    sourceFlowMessageId: contextMessageId,
+  });
+
+  // Context tab — fetch the selected message so the panel can render its
+  // chips / attachments / transcript.
   const { data: contextMessage } = useEntity<FlowMessage>(
     contextMessageId ? new TypeId(FlowMessage.type, contextMessageId) : null,
   );

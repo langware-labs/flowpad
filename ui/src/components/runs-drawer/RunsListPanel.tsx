@@ -1,5 +1,6 @@
 import { AgenticProcess, Run, RunStatus, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
+import { useAllTerminals } from '@src/hooks/useActiveTerminals';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Button } from '@src/components/ui/button';
 import { Loader2, CheckCircle2, AlertTriangle, Terminal } from 'lucide-react';
@@ -50,6 +51,7 @@ export function RunsListPanel({ runs }: RunsListPanelProps) {
 
 function RunItem({ run, label }: { run: Run; label: string }) {
   const { navigation } = useDockNavigation();
+  const { refresh: refreshTerminals } = useAllTerminals();
   // Live subscription to this Run's entity-event updates. The parent query
   // (`useEntitiesQuery`) sees CREATEs reliably but the UPDATEs that flip
   // status from running → stopped don't always re-render the row through it,
@@ -69,9 +71,17 @@ function RunItem({ run, label }: { run: Run; label: string }) {
   // refreshes. Re-enable on terminal statuses.
   const isRunning = status === RunStatus.RUNNING;
 
-  const onOpenTerminal = () => {
+  const onOpenTerminal = async () => {
     if (isRunning) return;
-    if (process?.dockPointer) navigation.openDock(process.dockPointer);
+    if (!process?.dockPointer) return;
+    // The headless run flips ``visible: false → true`` in `_finalize_run`,
+    // but the terminal strip is fed by a one-shot REST fetch — without an
+    // explicit refresh, ``TabbedTerminal``'s self-heal sees no matching
+    // visible tab for our target and redirects to the first existing tab,
+    // opening some unrelated AgenticProcess. Refresh first so the strip
+    // contains the just-finished process before we navigate.
+    await refreshTerminals();
+    navigation.openDock(process.dockPointer);
   };
 
   const terminalTitle = isRunning
