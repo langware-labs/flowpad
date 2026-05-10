@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Conversation, FlowMessage, type Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
-import { History, Layers } from 'lucide-react';
+import { History, Layers, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { TabbedSideDrawer } from '@src/components/ui/side-drawer';
 import { useRunsForTarget } from '@src/components/runs-drawer/useRunsForTarget';
@@ -47,14 +47,11 @@ interface ConversationPanelProps {
  *   │  Bottom ribbon (toggle Context / Runs)             │
  *   └────────────────────────────────────────────────────┘
  *
- * The drawer is a real toggleable drawer — two affordances for closing it:
- *   - the X button inside the drawer's tab strip (slides it shut to the right)
- *   - clicking the currently-active tab on the bottom ribbon
- * The ribbon icons are always visible regardless of drawer state, so the
- * user can re-open the drawer at any time. Clicks on the ribbon:
- *   - drawer closed → open to the clicked tab
- *   - drawer open + clicking the active tab → close the drawer
- *   - drawer open + clicking a non-active tab → switch tab, drawer stays open
+ * The drawer folds to the right when closed: instead of disappearing, it
+ * collapses to a thin vertical strip with a `PanelRightOpen` icon — click
+ * the icon to expand it back. The bottom ribbon is the secondary affordance
+ * — clicking the active tab there also folds the drawer; clicking either
+ * tab when folded re-opens the drawer to that tab.
  *
  * Tabs (left → right) match the ribbon order: Context, Runs. Both are
  * per-message — switching the selected message wholesale-replaces both panels.
@@ -191,17 +188,37 @@ export function ConversationPanel({
           </div>
         </div>
 
-        <TabbedSideDrawer<ConversationSideTab>
-          open={sideOpen}
-          onOpenChange={setSideOpen}
-          activeTab={activeSideTab}
-          onActiveTabChange={setActiveSideTab}
-          tabs={tabs}
-          width="w-72"
-          data-testid="conversation-side-drawer"
-        >
-          {drawerChildren}
-        </TabbedSideDrawer>
+        {sideOpen ? (
+          <TabbedSideDrawer<ConversationSideTab>
+            open={sideOpen}
+            onOpenChange={setSideOpen}
+            closeIcon={PanelRightClose}
+            closeLabel="Fold drawer"
+            activeTab={activeSideTab}
+            onActiveTabChange={setActiveSideTab}
+            tabs={tabs}
+            width="w-72"
+            data-testid="conversation-side-drawer"
+          >
+            {drawerChildren}
+          </TabbedSideDrawer>
+        ) : (
+          // Collapsed strip — clicking the drawer icon folds it back open.
+          <div
+            className="flex w-9 shrink-0 flex-col items-center border-l bg-background py-1.5"
+            data-testid="conversation-side-drawer-collapsed"
+          >
+            <button
+              type="button"
+              onClick={() => setSideOpen(true)}
+              title="Expand drawer"
+              aria-label="Expand drawer"
+              className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <PanelRightOpen className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       <ConversationBottomRibbon

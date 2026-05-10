@@ -23,7 +23,6 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { fileAttachmentUrl } from './attachment-url';
 import { ICON_BY_TYPE } from './EntityChip';
-import { OpenInClaudeButton } from './OpenInClaudeButton';
 import { usePrivateContext } from './usePrivateContext';
 
 interface ConversationContextPanelProps {
@@ -31,6 +30,8 @@ interface ConversationContextPanelProps {
   task: Task | null;
   conversation: Conversation | null;
   conversationId: string;
+  /** Wraps any action that needs a `cwd`/project (still passed in case future
+   *  Private Context entry types need it; currently unused here). */
   ensureMapped?: (continuation: () => void | Promise<void>) => void;
 }
 
@@ -89,7 +90,7 @@ export function ConversationContextPanel({
   task,
   conversation,
   conversationId,
-  ensureMapped,
+  ensureMapped: _ensureMapped,
 }: ConversationContextPanelProps) {
   if (!flowMessage) {
     return (
@@ -142,18 +143,6 @@ export function ConversationContextPanel({
 
   return (
     <div className="h-full overflow-y-auto p-3 space-y-4" data-testid="conversation-context-panel">
-      {task && (
-        <div>
-          <SectionHeader title="Open in Claude" />
-          <OpenInClaudeButton
-            task={task}
-            conversationId={conversationId}
-            ensureMapped={ensureMapped}
-            variant="inline"
-          />
-        </div>
-      )}
-
       <SharedContextSection
         sharedTypeIds={sharedTypeIds}
         transcriptAttachment={transcriptAttachment ?? null}
@@ -203,21 +192,40 @@ function SharedContextSection({
     if (!messageId || startingCc) return;
     setStartingCc(true);
     try {
+      // Backend resolves transcript path + workdir + project_id; spawn happens
+      // here so we get a real PTY (visible:true) the user can interact with.
+      // Mirrors useMyProcess's "Open Claude Code" pattern, which works.
       const action = new ActionInfo('start-cc-from-transcript', 'flow_message', messageId, 'POST');
-      const res = await dataManager.callAction<unknown, { process_id?: string }>(action);
-      if (!res?.process_id) {
-        toast.error('Failed to start session');
+      const res = await dataManager.callAction<
+        unknown,
+        { transcript_path?: string; workdir?: string; project_id?: string | null }
+      >(action);
+      if (!res?.transcript_path) {
+        toast.error('Failed to resolve transcript path');
         return;
       }
-      // Open the new session immediately. The AgenticProcess entity is also
-      // delivered via the entity-query channel, populating the Private Context
-      // row with an "Open" action for next time.
-      const proc = await dataManager
-        .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, res.process_id))
-        .catch(() => null);
-      if (proc?.dockPointer) {
-        navigation.openDock(proc.dockPointer);
+
+      const fmTypeId = new TypeId(FlowMessage.type, messageId);
+      const instruction =
+        'use flow skill and provide brief analysis of this claude transcript:\n' +
+        res.transcript_path;
+      const { process } = await AgenticProcess.spawn(
+        {
+          permissionMode: 'bypassPermissions',
+          workdir: res.workdir || undefined,
+          projectId: res.project_id ?? undefined,
+          scope: [fmTypeId],
+        },
+        { instruction, visible: true },
+      );
+      // Pin to the source FlowMessage so the Private Context query
+      // (`target_vfs_path = fm-<id>`) finds this session.
+      if (process.target_vfs_path !== fmTypeId.toString()) {
+        process.target_vfs_path = fmTypeId.toString();
+        process.addContextEntity(fmTypeId);
+        await process.save([fmTypeId]).catch(() => null);
       }
+      navigation.openDock(process.dockPointer);
     } catch (err) {
       console.error('[SharedContext] start-cc-from-transcript failed', err);
       toast.error('Failed to start session');
