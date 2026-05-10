@@ -143,7 +143,7 @@ export function HomeLanding() {
       // URL params for diagnostics / future fallback.
       void fmId;
       if (taskId) {
-        navigation.openDock(DockPointer.fromUrl('tasks', `task-${taskId}`));
+        navigation.openDock(DockPointer.fromUrl('tasks', taskId));
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
