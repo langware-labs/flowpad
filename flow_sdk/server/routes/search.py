@@ -57,22 +57,36 @@ async def _entity_asset_ref(ent) -> str:
 
 
 def _apply_scope_filter(entities: list, scope: str | None, project_ids: str | None) -> list:
-    """Filter entities by scope and optional project IDs."""
+    """Filter entities by scope and optional project IDs.
+
+    `scope` may be a single value (`user` / `project`) or a comma-separated set
+    (`user,project`). Comma-separated form means union: keep entities matching
+    any listed scope. When `project` is in the set and `project_ids` is given,
+    project-scoped entities are additionally restricted to those project IDs;
+    user-scoped entities are unaffected by `project_ids`.
+    """
     if not scope:
         return entities
-    if scope == "user":
-        return [e for e in entities if (getattr(e, "scope", None) or "") == "user"]
-    if scope == "project":
-        pid_list = [p.strip() for p in project_ids.split(",") if p.strip()] if project_ids else []
-        if pid_list:
-            pid_set = set(pid_list)
-            return [
-                e for e in entities
-                if (getattr(e, "scope", None) or "") == "project"
-                and (getattr(e, "project_encoded", None) or getattr(e, "id", "")) in pid_set
-            ]
-        return [e for e in entities if (getattr(e, "scope", None) or "") == "project"]
-    return entities
+    scope_set = {s.strip() for s in scope.split(",") if s.strip()}
+    if not scope_set:
+        return entities
+
+    pid_list = [p.strip() for p in project_ids.split(",") if p.strip()] if project_ids else []
+    pid_set = set(pid_list)
+
+    def _keep(e) -> bool:
+        s = (getattr(e, "scope", None) or "")
+        if s == "user":
+            return "user" in scope_set
+        if s == "project":
+            if "project" not in scope_set:
+                return False
+            if not pid_set:
+                return True
+            return (getattr(e, "project_encoded", None) or getattr(e, "id", "")) in pid_set
+        return False
+
+    return [e for e in entities if _keep(e)]
 
 
 def _apply_folder_filter(entities: list, parent_path: str | None, vault_root: str | None) -> list:
@@ -132,7 +146,7 @@ async def search_records(
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
     record_type: Optional[str] = Query(default=None, description="Filter by record type"),
     status: Optional[str] = Query(default=None, description="Filter by record status"),
-    scope: Optional[str] = Query(default=None, description="Filter by scope (user, project)"),
+    scope: Optional[str] = Query(default=None, description="Filter by scope. Single value (user|project) or comma-separated set (e.g. user,project) for a union."),
     tags: Optional[str] = Query(default=None, description="Comma-separated tags to filter by"),
     project_ids: Optional[str] = Query(default=None, description="Comma-separated project entity IDs (used when scope=project)"),
     parent_path: Optional[str] = Query(default=None, description="Filter to records whose parent_path is exactly this absolute path (direct children only)"),

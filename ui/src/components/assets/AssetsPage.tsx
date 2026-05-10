@@ -207,7 +207,11 @@ export function AssetsPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
-  const [assetFilter, setAssetFilter] = useState<AssetFilter>(DEFAULT_ASSET_FILTER);
+  const currentProjectId = dataContext.project?.id ?? null;
+  const [assetFilter, setAssetFilter] = useState<AssetFilter>(() => ({
+    ...DEFAULT_ASSET_FILTER,
+    projectIds: currentProjectId ? [currentProjectId] : [],
+  }));
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
@@ -248,11 +252,7 @@ export function AssetsPage() {
   const toggleSidebar = useCallback(() => setSidebarCollapsed((c) => !c), []);
 
   const handleScopeChange = useCallback((scope: AssetScope) => {
-    setAssetFilter(prev => ({
-      ...prev,
-      scope,
-      projectIds: scope === 'project' ? prev.projectIds : [],
-    }));
+    setAssetFilter(prev => ({ ...prev, scope }));
   }, []);
 
   const handleProjectIdsChange = useCallback((ids: string[]) => {
@@ -460,6 +460,7 @@ export function AssetsPage() {
           <ScopeFilterBar
             scope={assetFilter.scope}
             projectIds={assetFilter.projectIds}
+            currentProjectId={currentProjectId}
             onScopeChange={handleScopeChange}
             onProjectIdsChange={handleProjectIdsChange}
             includeSystem={assetFilter.includeSystem ?? false}
