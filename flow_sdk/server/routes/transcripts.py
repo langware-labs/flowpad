@@ -17,6 +17,10 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from flow_sdk.transcript_analyzer.entries import MetaEntry
+from flow_sdk.transcript_analyzer.resolver import (
+    TranscriptNotFoundError,
+    resolve_session_jsonl,
+)
 from flow_sdk.transcript_analyzer.transcript import AgentTranscript
 
 logger = logging.getLogger(__name__)
@@ -84,6 +88,45 @@ async def get_transcript(worker_type: str, path: str = ""):
     try:
         transcript = AgentTranscript(worker_type, p)
     except Exception as exc:  # noqa: BLE001 — surface the parser failure verbatim
+        logger.exception("transcripts: parse failed for %s", path)
+        return _error(500, "PARSE_FAILED", str(exc))
+
+    return {
+        "ok": True,
+        "worker_type": worker_type,
+        "session_id": transcript.session_id,
+        "path": str(transcript.path),
+        "header": _build_header(transcript),
+        "entries": [entry.to_dict() for entry in transcript.entries],
+    }
+
+
+@router.get("/api/v1/workers/{worker_type}/{session_id}/transcript")
+async def get_worker_session_transcript(worker_type: str, session_id: str):
+    """Return parsed entries for a worker's session, resolved by session id.
+
+    Server resolves the on-disk JSONL path via ``resolve_session_jsonl``
+    (Claude: globs ``~/.claude/projects/*/<sid>.jsonl``; Codex: globs
+    ``~/.codex/sessions/**/rollout-*-<sid>.jsonl``). Callers never need to
+    know the encoded directory layout — pass ``(worker_type, session_id)``
+    and get the transcript.
+
+    Response shape matches ``GET /api/v1/transcripts/{worker_type}?path=``.
+    """
+    if worker_type not in _SUPPORTED_WORKERS:
+        return _error(400, "INVALID_ARG", f"Unsupported worker_type: {worker_type!r}")
+    if not session_id:
+        return _error(400, "INVALID_ARG", "Missing session_id")
+    try:
+        path = resolve_session_jsonl(worker_type, session_id)
+    except TranscriptNotFoundError as exc:
+        return _error(404, "NOT_FOUND", str(exc))
+    except ValueError as exc:
+        return _error(400, "INVALID_ARG", str(exc))
+
+    try:
+        transcript = AgentTranscript(worker_type, path)
+    except Exception as exc:  # noqa: BLE001
         logger.exception("transcripts: parse failed for %s", path)
         return _error(500, "PARSE_FAILED", str(exc))
 

@@ -179,8 +179,6 @@ export interface IAgenticProcess extends IEntity {
   embedded_asset_refs?: TypeId[];
   /** Owning project ID */
   project_id?: string | null;
-  /** Encoded project path/name used for worker history and transcript lookup */
-  project_encoded_name?: string | null;
   /** CollaborationRoom this process was spawned in, if any */
   collaboration_room_id?: string | null;
   /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats (e.g. per-doc chat keyed on the file path). */
@@ -554,15 +552,19 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Read-only transcript — `/dock/lens/claude/transcript/<project>/<session>`.
-   * Falls back to the terminal pointer when session/project are not yet resolved
-   * (e.g., a fresh process before its first message lands on disk).
+   * Read-only transcript — `/dock/lens/<worker_type>/transcript/<session_id>`.
+   *
+   * Single-segment ref form. The server-side resolver
+   * (``flow_sdk.transcript_analyzer.resolver``) globs the actual on-disk JSONL
+   * from worker_type + session_id, so callers don't need to know any path
+   * encoding. Falls back to the terminal pointer when no session is attached
+   * yet (fresh process before first message).
    */
   get transcriptDockPointer(): DockPointerData {
-    if (this.session_id && this.project_encoded_name) {
-      return new DockPointerData(ViewType.LENS, `claude/transcript/${this.project_encoded_name}/${this.session_id}`);
-    }
-    return this.terminalDockPointer;
+    if (!this.session_id) return this.terminalDockPointer;
+    const wt = (this.worker_type ?? 'claude').toLowerCase();
+    const worker = wt === 'codex' ? 'codex' : 'claude';
+    return new DockPointerData(ViewType.LENS, `${worker}/transcript/${this.session_id}`);
   }
 
   /**
@@ -658,9 +660,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /** Worker session ID for resume capability */
   session_id?: string | null;
-
-  /** Encoded project path for transcript navigation */
-  project_encoded_name?: string | null;
 
   /** Whether worker manages its own history */
   use_worker_history?: boolean;
@@ -926,7 +925,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.visible = entity.visible;
     this.sidecar_shell_id = entity.sidecar_shell_id;
     this.project_id = entity.project_id ?? null;
-    this.project_encoded_name = entity.project_encoded_name ?? null;
     this.collaboration_room_id = entity.collaboration_room_id ?? null;
     this.target_vfs_path = entity.target_vfs_path ?? null;
     this.exe_folder = entity.exe_folder ? FSRef.fromJson(entity.exe_folder) : null;

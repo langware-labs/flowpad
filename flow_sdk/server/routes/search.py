@@ -261,18 +261,18 @@ async def search_records(
     if pid_set:
         try:
             from flow_sdk.builtin.project import Project  # noqa: PLC0415
-            from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
-            pid_to_name: dict[str, str] = {}
-            for pid in pid_set:
-                proj = await Project.get_one(QueryFilter.parse({"id": pid}))
-                if proj is not None:
-                    pid_to_name[pid] = getattr(proj, "name", None) or pid
+            from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+            projs = await Project.get_all(QueryFilter(
+                match=ExpressionNode(op=QueryOp.IN, operands=["id", list(pid_set)]),
+                type="project",
+            ))
+            pid_to_name = {p.id: (getattr(p, "name", None) or p.id) for p in projs}
             for r in results:
                 pid = r.get("project_id")
                 if pid and pid in pid_to_name:
                     r["project_name"] = pid_to_name[pid]
         except Exception:
-            pass
+            logger.warning("project_name resolution failed", exc_info=True)
 
     return JSONResponse(content={
         "status": "SUCCESS",

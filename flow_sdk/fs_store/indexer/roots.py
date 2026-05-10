@@ -65,26 +65,22 @@ def default_roots() -> list[FSRef]:
     USER_HOME_FOLDER comes from InstanceSettings.user_home so test mode
     (which sandboxes user_home) walks the sandbox, not the real home.
     """
-    import uuid as _uuid
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.fs_store.scope import Scope  # noqa: PLC0415
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
     settings = get_instance_settings()
     cwd = Path.cwd()
-    # Synthetic project_id derived from cwd path. Matches Project.allocate_id's
-    # uuid5(DNS, f"project:{mount_path}") so the id round-trips against the
-    # Project entity materialised for the same path. Children of CWD_ROOT
-    # inherit this project_id via the FSRef parent chain.
-    cwd_pid = str(_uuid.uuid5(_uuid.NAMESPACE_DNS, f"project:{str(cwd)}"))
     roots: list[FSRef] = [
         FSRef(
             settings.user_home,
             record_type=RecordType.USER_HOME_FOLDER,
-            scope="user",
+            scope=Scope.USER.value,
         ),
         FSRef(
             cwd,
             record_type=RecordType.CWD_ROOT,
-            scope="project",
-            project_id=cwd_pid,
+            scope=Scope.PROJECT.value,
+            project_id=Project.derive_id_for_path(cwd),
         ),
     ]
 

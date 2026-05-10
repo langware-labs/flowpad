@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ChevronDown, ChevronRight, Minus, Plus, User, Zap } from 'lucide-react';
 
 import { OperationExpandedDetail, OperationOneLiner } from './OperationRow';
-import { formatEntryTime, formatNumber, workerIcon, workerLabel } from './transcript-utils';
+import { formatEntryTime, formatNumber, operationFilterKey, workerIcon, workerLabel } from './transcript-utils';
 import type { UnifiedEntry } from './types';
 
 interface Props {
@@ -62,7 +62,7 @@ export function ChatEntryItem({ entry, toolFilters, isExpanded, onToggle }: Prop
   // ── Operation row (file_write / shell / search / tool_use catch-all) ──────
   if (entry.role === 'operation' && entry.operation) {
     const op = entry.operation;
-    const filterKey = op.kind === 'tool_use' ? (op as { tool_name: string }).tool_name : op.kind;
+    const filterKey = operationFilterKey(op);
     if (toolFilters && toolFilters[filterKey] === false) return null;
     const WorkerIcon = workerIcon(entry.worker);
     return (

@@ -1,221 +1,89 @@
-"""
-Session history utilities for loading Claude Code session JSONL files.
+"""Load Claude session history as FlowData carrying typed ProcessEntries.
 
-Converts Claude JSONL format to FlowData for session restoration.
-Reuses load_jsonl from system_profile utils.
+Replaces the old per-block reshape — now delegates to ``AgentTranscript``
+(canonical parser) and wraps each entry in a
+``ProcessEntry(observation_kind='replay')`` riding on
+``FlowData.process_entry``.
+
+Public API preserved:
+    - ``get_session_jsonl_path(session_id)`` — path lookup
+    - ``load_session_history(session_id)``  — list[FlowData]
 """
 
-import json
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 
-from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData, FlowDataType, FlowElementType
+from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
+    FlowData,
+    FlowDataType,
+    FlowElementType,
+)
+from flow_sdk.transcript_analyzer import AgentTranscript
+from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
+from flow_sdk.transcript_analyzer.resolver import (
+    TranscriptNotFoundError,
+    resolve_session_jsonl,
+)
+
+logger = logging.getLogger(__name__)
 
 
-def _load_jsonl(path: Path, limit: int = None) -> list[dict]:
-    """Load JSONL file, return list of entries."""
-    entries = []
-    try:
-        if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
-                for i, line in enumerate(f):
-                    if limit and i >= limit:
-                        break
-                    try:
-                        entries.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
-    except IOError:
-        pass
-    return entries
+_TOOL_USE_KINDS = frozenset({
+    "tool_use", "shell_command", "file_write", "file_edit", "file_read",
+    "search", "web_fetch", "todo_update", "agent_spawn", "exit_plan_mode",
+})
 
 
 def get_session_jsonl_path(session_id: str, project_path: Path | None = None) -> Path | None:
-    """Get the JSONL file path for a session ID.
+    """Resolve the JSONL path for a session id. Backwards-compat wrapper
+    around the canonical resolver.
 
-    Args:
-        session_id: The Claude session ID
-        project_path: Optional project path. If None, searches all projects.
-
-    Returns:
-        Path to JSONL file or None if not found
+    ``project_path`` is ignored — the resolver globs all project folders
+    (UUIDs are unique).
     """
-    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
-    projects_dir = get_instance_settings().claude_projects_dir
-
-    if not projects_dir.exists():
+    try:
+        return resolve_session_jsonl("claude", session_id)
+    except TranscriptNotFoundError:
         return None
-
-    # If project_path provided, check there first
-    if project_path:
-        jsonl_path = project_path / f"{session_id}.jsonl"
-        if jsonl_path.exists():
-            return jsonl_path
-
-    # Search all projects for this session
-    for project_dir in projects_dir.iterdir():
-        if not project_dir.is_dir():
-            continue
-        jsonl_path = project_dir / f"{session_id}.jsonl"
-        if jsonl_path.exists():
-            return jsonl_path
-
-    return None
 
 
 def load_session_history(session_id: str) -> list[FlowData]:
-    """Load session history as FlowData list.
-
-    Reuses load_jsonl from system_profile utils.
-    Converts Claude JSONL format to FlowData.
-
-    Args:
-        session_id: The Claude session ID
-
-    Returns:
-        List of FlowData items representing the session history
-    """
-    jsonl_path = get_session_jsonl_path(session_id)
-    if not jsonl_path:
-        logging.warning(f"[load_session_history] no JSONL file found for session {session_id}")
+    """Load session history as FlowData carrying typed ProcessEntries."""
+    try:
+        path = resolve_session_jsonl("claude", session_id)
+    except TranscriptNotFoundError:
+        logger.warning("load_session_history: no JSONL for session %s", session_id)
         return []
-
-    entries = _load_jsonl(jsonl_path)
-    history = []
-
-    import uuid as _uuid
-
-    for entry in entries:
-        entry_type = entry.get("type")
-        # Claude writes an ISO 8601 `timestamp` field per user/assistant/system/
-        # attachment entry. Reuse it as created_time for every FlowData produced
-        # from this entry so the UI timeline shows the original transcript time
-        # instead of the get-history call time.
-        entry_ts = entry.get("timestamp") or ""
-
-        if entry_type == "user":
-            message = entry.get("message", {})
-            content = message.get("content", [])
-            text = _extract_text_content(content)
-            if text:
-                # Use USER_MESSAGE element-type (not CHAT) so the TS
-                # FlowDataStream.ingest branch routes it through the
-                # user-message dedup path instead of consolidating it into
-                # an adjacent assistant CHAT group (which collapses user +
-                # assistant into one merged item).
-                history.append(
-                    FlowData(
-                        flow_value=text,
-                        created_time=entry_ts,
-                        attributes={
-                            "element-type": FlowElementType.USER_MESSAGE,
-                            "data-type": FlowDataType.TEXT,
-                            "role": "user",
-                            "complete": "true",
-                            "group-id": str(_uuid.uuid4()),
-                        },
-                    )
-                )
-
-        elif entry_type == "assistant":
-            message = entry.get("message", {})
-            content = message.get("content", [])
-
-            for block in content:
-                if isinstance(block, dict):
-                    block_type = block.get("type")
-
-                    if block_type == "text":
-                        text = block.get("text", "")
-                        if text:
-                            history.append(
-                                FlowData(
-                                    flow_value=text,
-                                    created_time=entry_ts,
-                                    attributes={
-                                        "element-type": FlowElementType.CHAT,
-                                        "data-type": FlowDataType.TEXT,
-                                        "role": "assistant",
-                                        "complete": "true",
-                                        "group-id": str(_uuid.uuid4()),
-                                    },
-                                )
-                            )
-
-                    elif block_type == "thinking":
-                        thinking = block.get("thinking", "")
-                        if thinking:
-                            history.append(
-                                FlowData(
-                                    flow_value=thinking,
-                                    created_time=entry_ts,
-                                    attributes={
-                                        "element-type": FlowElementType.REASONING,
-                                        "data-type": FlowDataType.TEXT,
-                                        "role": "assistant",
-                                        "complete": "true",
-                                        "group-id": str(_uuid.uuid4()),
-                                    },
-                                )
-                            )
-
-                    elif block_type == "tool_use":
-                        history.append(
-                            FlowData(
-                                flow_value={
-                                    "tool_name": block.get("name"),
-                                    "tool_call_id": block.get("id"),
-                                    "args": block.get("input"),
-                                },
-                                created_time=entry_ts,
-                                attributes={
-                                    "element-type": FlowElementType.TOOL_CALL,
-                                    "data-type": FlowDataType.OBJECT,
-                                    "tool-name": block.get("name", ""),
-                                    "role": "assistant",
-                                    "complete": "true",
-                                    "group-id": str(_uuid.uuid4()),
-                                },
-                            )
-                        )
-
-                    elif block_type == "tool_result":
-                        history.append(
-                            FlowData(
-                                flow_value={
-                                    "tool_call_id": block.get("tool_use_id"),
-                                    "content": block.get("content"),
-                                },
-                                created_time=entry_ts,
-                                attributes={
-                                    "element-type": FlowElementType.TOOL_RESULT,
-                                    "data-type": FlowDataType.OBJECT,
-                                    "complete": "true",
-                                    "group-id": str(_uuid.uuid4()),
-                                },
-                            )
-                        )
-
-    return history
+    try:
+        transcript = AgentTranscript("claude", path)
+    except Exception:
+        logger.exception("load_session_history: parse failed for %s", path)
+        return []
+    return [_wrap_replay(e) for e in transcript.entries]
 
 
-def _extract_text_content(content) -> str:
-    """Extract text from Claude message content.
+def _wrap_replay(entry) -> FlowData:
+    pe = ProcessEntry(transcript_entry=entry, observation_kind="replay")
+    return FlowData(
+        flow_value={},
+        created_time=entry.timestamp or "",
+        attributes={
+            "element-type": _element_type_for_kind(entry.kind.value),
+            "data-type": FlowDataType.OBJECT,
+        },
+        process_entry=pe.to_dict(),
+    )
 
-    Args:
-        content: Message content (string or list of content blocks)
 
-    Returns:
-        Extracted text as string
-    """
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        texts = []
-        for item in content:
-            if isinstance(item, dict) and item.get("type") == "text":
-                texts.append(item.get("text", ""))
-            elif isinstance(item, str):
-                texts.append(item)
-        return "\n".join(texts)
-    return ""
+def _element_type_for_kind(kind: str) -> str:
+    if kind == "user_message":
+        return FlowElementType.USER_MESSAGE
+    if kind == "assistant_message":
+        return FlowElementType.CHAT
+    if kind in _TOOL_USE_KINDS:
+        return FlowElementType.TOOL_CALL
+    if kind == "tool_result":
+        return FlowElementType.TOOL_RESULT
+    return FlowElementType.STATUS

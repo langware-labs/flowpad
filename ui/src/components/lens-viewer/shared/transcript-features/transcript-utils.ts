@@ -3,7 +3,8 @@
  */
 
 import type { ComponentType } from 'react';
-import type { ProcessIconKey } from '@sdk';
+import type { GenericEntry, ProcessIconKey } from '@sdk';
+import { isToolUse } from '@sdk';
 
 import { pickProcessIcon } from '../../../icons/process-icons';
 import type { UnifiedEntry } from './types';
@@ -49,4 +50,42 @@ export function getEntryText(entry: UnifiedEntry): string {
 /** True iff the user turn has any visible text body (not just tool_result). */
 export function hasUserText(entry: UnifiedEntry): boolean {
   return entry.role === 'user' && !!(entry.text && entry.text.trim().length);
+}
+
+/**
+ * Filter-chip key for an operation. Catch-all `tool_use` rows surface their
+ * raw tool name so MCP / unknown tools each get their own chip; semantic
+ * kinds (`shell_command`, `file_write`, …) collapse onto the kind.
+ */
+export function operationFilterKey(op: GenericEntry): string {
+  if (isToolUse(op)) return op.tool_name || 'tool_use';
+  return op.kind;
+}
+
+/**
+ * One-line preview of a `thinking` block for the collapsed row. Strips the
+ * leading `**header**\n\n` codex emits so the preview is the body of the
+ * reasoning rather than the section title — and never shows the verbose
+ * "[no plaintext reasoning summary…]" placeholder inline.
+ */
+export function thinkingPreview(thinking: string | null | undefined): string {
+  if (!thinking) return '';
+  if (thinking.startsWith('[')) return '';   // bracketed placeholder — leave row blank, badge already says "thinking"
+  const stripped = thinking.replace(/^\*\*(.+?)\*\*\s*\n+/, '$1 — ');
+  const firstNonEmpty = stripped.split('\n').find((l) => l.trim()) ?? '';
+  return firstNonEmpty.trim();
+}
+
+/** Collect the deduped, ordered list of operation filter keys in `entries`. */
+export function collectToolKeys(entries: UnifiedEntry[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const e of entries) {
+    if (e.role !== 'operation' || !e.operation) continue;
+    const k = operationFilterKey(e.operation);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(k);
+  }
+  return out;
 }

@@ -432,12 +432,10 @@ class ScanActionsMixin:
             cli_factory_key = "codex" if is_codex else "claude"
             wt_enum = WorkerType.CODEX if is_codex else WorkerType.CLAUDE_CODE
 
-            # Resolve workdir + project + project_encoded_name from the session record
-            # before checking for an existing process. The transcript cwd is the
-            # authoritative restore location; project_id is derived from it so
-            # worktrees and nested checkouts do not collapse into the active dock
-            # project.
-            project_encoded_name = None
+            # Resolve workdir + project from the session record before checking
+            # for an existing process. The transcript cwd is the authoritative
+            # restore location; project_id is derived from it so worktrees and
+            # nested checkouts do not collapse into the active dock project.
             session_name: str | None = None
             session_rec = None
             try:
@@ -454,7 +452,6 @@ class ScanActionsMixin:
                     rec_cwd = getattr(session_rec, "cwd", None)
                     if rec_cwd and not workdir:
                         workdir = rec_cwd
-                    project_encoded_name = getattr(session_rec, "project_encoded_name", None)
                     rec_name = getattr(session_rec, "name", None) or ""
                     if rec_name and rec_name != session_id:
                         session_name = rec_name
@@ -463,11 +460,6 @@ class ScanActionsMixin:
                     project = await Project.recover_by_path(workdir)
                     if project:
                         project_id = project.id
-                        project_encoded_name = project.project_encoded_name or project_encoded_name
-                elif project_id:
-                    project = await Project.get_by_id(project_id)
-                    if project and not project_encoded_name:
-                        project_encoded_name = project.project_encoded_name
             except Exception:
                 logging.debug(
                     "ComputeNode %s upsertSessionProcess session context resolve failed for %s",
@@ -495,9 +487,6 @@ class ScanActionsMixin:
                     changed = True
                 if project_id and context_data.get("project_id") != project_id:
                     context_data["project_id"] = project_id
-                    changed = True
-                if project_encoded_name and process.project_encoded_name != project_encoded_name:
-                    process.project_encoded_name = project_encoded_name
                     changed = True
                 if session_name and not process.name:
                     process.name = session_name
@@ -568,7 +557,6 @@ class ScanActionsMixin:
                 use_worker_history=True,
                 context_data=context_data,
                 project_id=project_id or None,
-                project_encoded_name=project_encoded_name or None,
                 visible=True,
                 **({"name": session_name} if session_name else {}),
             )

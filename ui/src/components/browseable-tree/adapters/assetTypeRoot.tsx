@@ -298,8 +298,13 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
     } satisfies Browseable));
   };
 
+  // Filter signature in the id forces the BrowseableTree to refetch
+  // children when the user toggles scope/picker (the children are cached
+  // by node id; without this they'd stay frozen at the previous filter).
+  const filterSig = `${filter.scope}:${[...filter.projectIds].sort().join(',')}`;
+
   const root: BrowseableRoot = {
-    id: `asset-type:${type.type_name}`,
+    id: `asset-type:${type.type_name}:${filterSig}`,
     kind: 'root',
     label: type.label,
     icon: resolveAssetIcon(type.icon),

@@ -137,24 +137,20 @@ class AgentTranscript:
                 kept.append(e)
                 continue
             output = e.tool_output or ""
-            preview = output[:_FOLD_PREVIEW_MAX_CHARS] if output else None
             if isinstance(target, ShellCommandEntry):
                 if target.exit_code is None and e.exit_code is not None:
                     target.exit_code = e.exit_code
                 if target.duration_ms is None and e.duration_ms is not None:
                     target.duration_ms = e.duration_ms
-                if target.stdout_preview is None and preview:
-                    target.stdout_preview = preview
+                if target.stdout_preview is None and output:
+                    target.stdout_preview = output[:_FOLD_PREVIEW_MAX_CHARS]
             elif isinstance(target, FileReadEntry):
                 if target.bytes_count is None and output:
                     target.bytes_count = len(output.encode("utf-8"))
-                if target.content_preview is None and preview:
-                    target.content_preview = preview
-            elif isinstance(target, (FileWriteEntry, FileEditEntry)):
-                # Write/edit results are usually a one-line "Updated" — no
-                # field worth surfacing. The result row is dropped.
-                pass
-            # Result fully absorbed; do not re-emit.
+                if target.content_preview is None and output:
+                    target.content_preview = output[:_FOLD_PREVIEW_MAX_CHARS]
+            # FileWriteEntry / FileEditEntry: result is usually a one-line
+            # "Updated …" — no field worth surfacing. Result row is dropped.
         return kept
 
     # ── access ───────────────────────────────────────────────────────────────

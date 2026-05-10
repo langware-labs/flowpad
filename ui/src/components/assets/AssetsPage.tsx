@@ -25,6 +25,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AssetFilter, AssetScope } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
+import { projectIdForPath } from './utils';
 import { ScopeFilterBar } from './ScopeFilterBar';
 import { AssetListView } from './AssetListView';
 import { BrowseableTree } from '@src/components/browseable-tree';
@@ -207,7 +208,10 @@ export function AssetsPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
-  const currentProjectId = dataContext.project?.id ?? null;
+  // Use the canonical synthetic project_id (uuid5 of mount_path) so the
+  // selection round-trips with what the indexer stamps on records and what
+  // the picker emits — independent of how dataContext bootstraps the Project.
+  const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
   const [assetFilter, setAssetFilter] = useState<AssetFilter>(() => ({
     ...DEFAULT_ASSET_FILTER,
     projectIds: currentProjectId ? [currentProjectId] : [],

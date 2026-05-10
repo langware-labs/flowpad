@@ -22,18 +22,7 @@ import {
 } from 'lucide-react';
 import type { ComponentType } from 'react';
 
-import type {
-  AgentSpawnEntry,
-  FileEditEntry,
-  FileReadEntry,
-  FileWriteEntry,
-  GenericEntry,
-  SearchEntry,
-  ShellCommandEntry,
-  TodoUpdateEntry,
-  ToolUseEntry,
-  WebFetchEntry,
-} from '@sdk';
+import type { GenericEntry } from '@sdk';
 
 interface OperationOneLinerProps {
   operation: GenericEntry;
@@ -59,115 +48,72 @@ function firstLine(text: string): string {
 function kindMeta(op: GenericEntry): KindMeta | null {
   switch (op.kind) {
     case 'file_write': {
-      const e = op as FileWriteEntry;
       const chips: string[] = [];
-      if (e.line_count != null) chips.push(`+${e.line_count} lines`);
-      if (e.is_new) chips.push('new');
-      return {
-        Icon: FileText,
-        iconClassName: 'text-emerald-500',
-        label: 'Write',
-        primary: basename(e.path),
-        chips,
-      };
+      if (op.line_count != null) chips.push(`+${op.line_count} lines`);
+      if (op.is_new) chips.push('new');
+      return { Icon: FileText, iconClassName: 'text-emerald-500', label: 'Write', primary: basename(op.path), chips };
     }
     case 'file_edit': {
-      const e = op as FileEditEntry;
       const chips: string[] = [];
-      if (e.hunks?.length) chips.push(`${e.hunks.length} hunk${e.hunks.length === 1 ? '' : 's'}`);
-      return {
-        Icon: Pencil,
-        iconClassName: 'text-amber-500',
-        label: 'Edit',
-        primary: basename(e.path),
-        chips,
-      };
+      if (op.hunks?.length) chips.push(`${op.hunks.length} hunk${op.hunks.length === 1 ? '' : 's'}`);
+      return { Icon: Pencil, iconClassName: 'text-amber-500', label: 'Edit', primary: basename(op.path), chips };
     }
     case 'file_read': {
-      const e = op as FileReadEntry;
       const chips: string[] = [];
-      if (e.start_line != null && e.end_line != null) chips.push(`${e.start_line}-${e.end_line}`);
-      if (e.bytes_count != null) chips.push(`${e.bytes_count}B`);
-      return {
-        Icon: FileText,
-        iconClassName: 'text-sky-500',
-        label: 'Read',
-        primary: basename(e.path),
-        chips,
-      };
+      if (op.start_line != null && op.end_line != null) chips.push(`${op.start_line}-${op.end_line}`);
+      if (op.bytes_count != null) chips.push(`${op.bytes_count}B`);
+      return { Icon: FileText, iconClassName: 'text-sky-500', label: 'Read', primary: basename(op.path), chips };
     }
     case 'shell_command': {
-      const e = op as ShellCommandEntry;
+      const failed = op.exit_code != null && op.exit_code !== 0;
       const chips: string[] = [];
-      if (e.exit_code != null && e.exit_code !== 0) chips.push(`exit ${e.exit_code}`);
-      if (e.duration_ms != null && e.duration_ms > 0) chips.push(`${(e.duration_ms / 1000).toFixed(1)}s`);
+      if (failed) chips.push(`exit ${op.exit_code}`);
+      if (op.duration_ms != null && op.duration_ms > 0) chips.push(`${(op.duration_ms / 1000).toFixed(1)}s`);
       return {
         Icon: Terminal,
-        iconClassName: e.exit_code != null && e.exit_code !== 0 ? 'text-red-500' : 'text-orange-500',
+        iconClassName: failed ? 'text-red-500' : 'text-orange-500',
         label: 'Shell',
-        primary: firstLine(e.command),
+        primary: firstLine(op.command),
         chips,
       };
     }
     case 'search': {
-      const e = op as SearchEntry;
       const chips: string[] = [];
-      if (e.match_count != null) chips.push(`${e.match_count} matches`);
-      if (e.path) chips.push(basename(e.path));
-      return {
-        Icon: Search,
-        iconClassName: 'text-purple-500',
-        label: e.search_kind || 'Search',
-        primary: e.query,
-        chips,
-      };
+      if (op.match_count != null) chips.push(`${op.match_count} matches`);
+      if (op.path) chips.push(basename(op.path));
+      return { Icon: Search, iconClassName: 'text-purple-500', label: op.search_kind || 'Search', primary: op.query, chips };
     }
     case 'web_fetch': {
-      const e = op as WebFetchEntry;
       let host = '';
-      if (e.url) {
-        try { host = new URL(e.url).host; } catch { host = e.url; }
+      if (op.url) {
+        try { host = new URL(op.url).host; } catch { host = op.url; }
       }
       return {
         Icon: Globe,
         iconClassName: 'text-blue-500',
         label: 'Web',
-        primary: host || (e.query ?? ''),
-        chips: e.status_code != null ? [`status ${e.status_code}`] : [],
+        primary: host || (op.query ?? ''),
+        chips: op.status_code != null ? [`status ${op.status_code}`] : [],
       };
     }
-    case 'todo_update': {
-      const e = op as TodoUpdateEntry;
+    case 'todo_update':
       return {
         Icon: ListChecks,
         iconClassName: 'text-cyan-500',
         label: 'Todos',
-        primary: `${e.items.length} item${e.items.length === 1 ? '' : 's'}`,
+        primary: `${op.items.length} item${op.items.length === 1 ? '' : 's'}`,
         chips: [],
       };
-    }
-    case 'agent_spawn': {
-      const e = op as AgentSpawnEntry;
+    case 'agent_spawn':
       return {
         Icon: Bot,
         iconClassName: 'text-fuchsia-500',
-        label: e.agent_type || 'Agent',
-        primary: e.description || firstLine(e.prompt ?? ''),
+        label: op.agent_type || 'Agent',
+        primary: op.description || firstLine(op.prompt ?? ''),
         chips: [],
       };
-    }
-    case 'tool_use': {
-      const e = op as ToolUseEntry;
-      // Catch-all bucket — render the raw tool name so MCP / unknown
-      // tools still show up identifiably.
-      return {
-        Icon: Terminal,
-        iconClassName: 'text-orange-400',
-        label: e.tool_name || 'tool',
-        primary: '',
-        chips: [],
-      };
-    }
+    case 'tool_use':
+      return { Icon: Terminal, iconClassName: 'text-orange-400', label: op.tool_name || 'tool', primary: '', chips: [] };
     default:
       return null;
   }
@@ -201,112 +147,66 @@ export function OperationOneLiner({ operation }: OperationOneLinerProps) {
  */
 export function OperationExpandedDetail({ operation }: OperationOneLinerProps) {
   switch (operation.kind) {
-    case 'file_write': {
-      const e = operation as FileWriteEntry;
-      if (!e.content) return null;
-      return (
-        <pre className="max-h-60 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-muted-foreground">
-          {e.content}
-        </pre>
-      );
-    }
-    case 'file_edit': {
-      const e = operation as FileEditEntry;
-      if (!e.hunks?.length && !e.change_summary) return null;
-      return (
-        <pre className="max-h-60 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-muted-foreground">
-          {e.change_summary ?? JSON.stringify(e.hunks, null, 2)}
-        </pre>
-      );
-    }
-    case 'file_read': {
-      const e = operation as FileReadEntry;
-      if (!e.content_preview) return null;
-      return (
-        <pre className="max-h-60 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-muted-foreground">
-          {e.content_preview}
-        </pre>
-      );
-    }
+    case 'file_write':
+      if (!operation.content) return null;
+      return <PreBlock>{operation.content}</PreBlock>;
+    case 'file_edit':
+      if (!operation.hunks?.length && !operation.change_summary) return null;
+      return <PreBlock>{operation.change_summary ?? JSON.stringify(operation.hunks, null, 2)}</PreBlock>;
+    case 'file_read':
+      if (!operation.content_preview) return null;
+      return <PreBlock>{operation.content_preview}</PreBlock>;
     case 'shell_command': {
-      const e = operation as ShellCommandEntry;
-      const cmd = e.command ?? '';
-      const out = e.stdout_preview ?? '';
-      const err = e.stderr_preview ?? '';
+      const out = operation.stdout_preview ?? '';
+      const err = operation.stderr_preview ?? '';
       return (
         <div className="space-y-1">
-          <pre className="overflow-auto whitespace-pre-wrap font-mono text-[10px] text-foreground/80">$ {cmd}</pre>
-          {out && (
-            <pre className="max-h-60 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-muted-foreground">{out}</pre>
-          )}
-          {err && (
-            <pre className="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-red-500">{err}</pre>
-          )}
+          <pre className="overflow-auto whitespace-pre-wrap font-mono text-[10px] text-foreground/80">$ {operation.command ?? ''}</pre>
+          {out && <PreBlock>{out}</PreBlock>}
+          {err && <pre className="max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-red-500">{err}</pre>}
         </div>
       );
     }
-    case 'search': {
-      const e = operation as SearchEntry;
-      if (!e.results_preview) return null;
-      return (
-        <pre className="max-h-60 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-muted-foreground">
-          {e.results_preview}
-        </pre>
-      );
-    }
-    case 'web_fetch': {
-      const e = operation as WebFetchEntry;
-      if (!e.result_preview && !e.prompt) return null;
+    case 'search':
+      if (!operation.results_preview) return null;
+      return <PreBlock>{operation.results_preview}</PreBlock>;
+    case 'web_fetch':
+      if (!operation.result_preview && !operation.prompt) return null;
       return (
         <div className="space-y-1">
-          {e.prompt && (
-            <pre className="whitespace-pre-wrap font-mono text-[10px] text-foreground/70">{e.prompt}</pre>
-          )}
-          {e.result_preview && (
-            <pre className="max-h-60 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-muted-foreground">
-              {e.result_preview}
-            </pre>
-          )}
+          {operation.prompt && <pre className="whitespace-pre-wrap font-mono text-[10px] text-foreground/70">{operation.prompt}</pre>}
+          {operation.result_preview && <PreBlock>{operation.result_preview}</PreBlock>}
         </div>
       );
-    }
-    case 'todo_update': {
-      const e = operation as TodoUpdateEntry;
-      if (!e.items.length) return null;
+    case 'todo_update':
+      if (!operation.items.length) return null;
       return (
         <ul className="space-y-0.5 text-[11px]">
-          {e.items.map((it, i) => {
-            const status = (it as { status?: string }).status ?? '';
-            const content = (it as { content?: string; activeForm?: string }).content
-              ?? (it as { activeForm?: string }).activeForm ?? '';
+          {operation.items.map((it, i) => {
+            const item = it as { status?: string; content?: string; activeForm?: string };
             return (
               <li key={i} className="flex items-center gap-2">
-                <span className="font-mono text-muted-foreground">[{status}]</span>
-                <span className="text-foreground/80">{content}</span>
+                <span className="font-mono text-muted-foreground">[{item.status ?? ''}]</span>
+                <span className="text-foreground/80">{item.content ?? item.activeForm ?? ''}</span>
               </li>
             );
           })}
         </ul>
       );
-    }
-    case 'agent_spawn': {
-      const e = operation as AgentSpawnEntry;
-      if (!e.prompt) return null;
-      return (
-        <pre className="max-h-60 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-muted-foreground">
-          {e.prompt}
-        </pre>
-      );
-    }
-    case 'tool_use': {
-      const e = operation as ToolUseEntry;
-      return (
-        <pre className="max-h-60 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-muted-foreground">
-          {JSON.stringify(e.tool_input, null, 2)}
-        </pre>
-      );
-    }
+    case 'agent_spawn':
+      if (!operation.prompt) return null;
+      return <PreBlock>{operation.prompt}</PreBlock>;
+    case 'tool_use':
+      return <PreBlock>{JSON.stringify(operation.tool_input, null, 2)}</PreBlock>;
     default:
       return null;
   }
+}
+
+function PreBlock({ children }: { children: React.ReactNode }) {
+  return (
+    <pre className="max-h-60 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-muted-foreground">
+      {children}
+    </pre>
+  );
 }

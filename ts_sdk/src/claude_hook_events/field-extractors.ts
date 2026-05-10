@@ -44,22 +44,31 @@ export function getTriggerLogDockPointer(
 /**
  * Compute a transcript dock pointer from hook event data.
  *
+ * Phase 9: prefers `session_id` directly (single-segment ref form matching
+ * `process.transcriptDockPointer`'s new shape). Falls back to parsing the
+ * legacy `transcript_path` for old payloads that don't carry session_id.
+ *
  * Returns null when:
- * - The event is SessionStart (transcript file not yet created)
- * - No transcript_path is present
- * - The path cannot be parsed
+ * - The event is SessionStart (transcript file not yet created on disk)
+ * - Neither session_id nor a parseable transcript_path is present
  */
 export function getTranscriptDockPointer(
   hookData: HookEventData,
   timestamp?: string,
 ): { ref: string; options: Record<string, string> } | null {
   if (hookData.hook_event_name === HookEventType.SESSION_START) return null;
-  if (!hookData.transcript_path) return null;
-  const parsed = parseTranscriptPath(hookData.transcript_path);
-  if (!parsed) return null;
   const options: Record<string, string> = {};
   if (timestamp) options.ts = timestamp;
-  return { ref: `${parsed.projectEncodedName}/${parsed.sessionId}`, options };
+  if (hookData.session_id) {
+    return { ref: hookData.session_id, options };
+  }
+  if (hookData.transcript_path) {
+    const parsed = parseTranscriptPath(hookData.transcript_path);
+    if (parsed) {
+      return { ref: `${parsed.projectEncodedName}/${parsed.sessionId}`, options };
+    }
+  }
+  return null;
 }
 
 function cropText(text: string, maxWords = 5): string {

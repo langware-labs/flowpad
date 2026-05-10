@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, Folder, Plus, RefreshCw } from 'lucide-react';
+import { FileText, Folder, Library, Plus, RefreshCw, User as UserIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import apiClient from '@sdk/client';
 import { fsStore, TypeId } from '@sdk';
@@ -168,6 +168,23 @@ function folderBrowseable(args: {
   };
 }
 
+/** Mirror of backend ``_apply_scope_filter`` for vault listing: a vault is
+ *  kept when its scope is in the active scope set, and (for project vaults)
+ *  its project_id is in the picker selection. Same predicate shape so the
+ *  vault tree and the records inside vaults stay consistent. */
+function keepVault(v: AssetTypeVault, filter: AssetFilter): boolean {
+  // scope='all' = {user, project}; scope='user' / scope='project' = singleton.
+  const allowsUser = filter.scope === 'all' || filter.scope === 'user';
+  const allowsProject = filter.scope === 'all' || filter.scope === 'project';
+  if (v.scope === 'user') return allowsUser;
+  if (v.scope === 'project') {
+    if (!allowsProject) return false;
+    if (filter.projectIds.length === 0) return true;
+    return v.project_id !== null && filter.projectIds.includes(v.project_id);
+  }
+  return false;
+}
+
 function findVaultForAbsPath(
   vaults: AssetTypeVault[],
   absPath: string,
@@ -208,9 +225,20 @@ export function markdownFolderRoot(
 ): BrowseableRoot {
   const vaults = type.vaults ?? [];
   const folderPageSize = deps.folderPageSize ?? 500;
+  const filter = deps.filter ?? DEFAULT_ASSET_FILTER;
 
-  const buildVaultNode = (v: AssetTypeVault): Browseable =>
-    folderBrowseable({
+  const vaultIcon = (v: AssetTypeVault): React.ReactNode => {
+    if (v.scope === 'user') {
+      return <UserIcon className="h-4 w-4 flex-shrink-0 text-muted-foreground" />;
+    }
+    if (v.scope === 'project') {
+      return <Library className="h-4 w-4 flex-shrink-0 text-muted-foreground" />;
+    }
+    return <Folder className="h-4 w-4 flex-shrink-0 text-muted-foreground" />;
+  };
+
+  const buildVaultNode = (v: AssetTypeVault): Browseable => ({
+    ...folderBrowseable({
       typeName: type.type_name,
       typeid: v.typeid,
       relPath: v.relPath,
@@ -218,18 +246,26 @@ export function markdownFolderRoot(
       label: v.label,
       kind: 'vault-root',
       folderPageSize,
-    });
+    }),
+    icon: vaultIcon(v),
+  });
+
+  const visibleVaults = vaults.filter((v) => keepVault(v, filter));
+  // Include filter signature so the tree refetches children when the user
+  // toggles scope/picker — otherwise children are cached against the stale
+  // visibleVaults from the previous expansion.
+  const filterSig = `${filter.scope}:${[...filter.projectIds].sort().join(',')}`;
 
   const root: BrowseableRoot = {
-    id: `asset-type:${type.type_name}`,
+    id: `asset-type:${type.type_name}:${filterSig}`,
     kind: 'root',
     label: type.label,
     icon: resolveAssetIcon(type.icon),
-    badge: <MarkdownCountBadge filter={deps.filter ?? DEFAULT_ASSET_FILTER} />,
-    hasChildren: vaults.length > 0,
+    badge: <MarkdownCountBadge filter={filter} />,
+    hasChildren: visibleVaults.length > 0,
     pointer: DockPointer.forAssetList(type.type_name),
     toolbar: rootToolbar(type, deps),
-    listChildren: async () => vaults.map(buildVaultNode),
+    listChildren: async () => visibleVaults.map(buildVaultNode),
     ownsPointer: (p) => {
       if (p.viewType !== ViewType.ASSETS) return false;
       // Own list/markdown, editor/markdown/..., and folder/markdown/...
