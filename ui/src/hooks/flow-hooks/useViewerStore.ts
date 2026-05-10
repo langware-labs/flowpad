@@ -80,7 +80,9 @@ function loadInitialTabs(): TabItem[] {
   if (!saved) return [];
   try {
     const parsed: TabItem[] = JSON.parse(saved);
-    return parsed.filter((tab) => tab.pinned); // Only restore pinned tabs
+    return parsed.filter(
+      (tab) => tab.pinned && tab.type !== 'overview' && Boolean(VIEWER_REGISTRY[tab.type as ViewType]),
+    ); // Only restore pinned tabs for registered viewers
   } catch {
     console.error('Invalid saved tab state in localStorage');
     return [];
@@ -120,9 +122,10 @@ export const useViewerStore = create<ViewerState>((set) => ({
 
       // Get title from registry
       const viewerMeta = VIEWER_REGISTRY[type as ViewType];
+      if (!viewerMeta) return {};
       const newTab: TabItem = {
         type,
-        title: viewerMeta?.title || type,
+        title: viewerMeta.title,
         pinned,
       };
 
