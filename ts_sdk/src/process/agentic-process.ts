@@ -76,7 +76,7 @@ export interface SpawnResult {
   /** Set in PTY mode */
   shell?: Shell;
   /** Set in both modes */
-  workerSessionId?: string;
+  workerSessionId?: string | null;
 }
 
 /**
@@ -142,6 +142,22 @@ interface HistoryResponse {
   use_worker_history: boolean;
 }
 
+export enum AgenticProcessEventName {
+  FirstPrompt = 'first_prompt',
+}
+
+export interface AgenticProcessReportEventResult {
+  accepted: boolean;
+  scheduled: boolean;
+  process_id: string;
+  worker_type?: string | null;
+  session_id: string | null;
+  event_name: AgenticProcessEventName;
+  event_data: Record<string, unknown>;
+  request_id?: string | null;
+  task_name?: string;
+}
+
 /**
  * Interface for AgenticProcess entity data
  */
@@ -166,6 +182,8 @@ export interface IAgenticProcess extends IEntity {
   visible?: boolean;
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
+  /** True when linked shell PTY OSC title events may update the display name */
+  pty_rename?: boolean;
   /**
    * Derived: true when the worker is ready for a new user prompt.
    * Computed server-side via ``is_ready_for_input``. Read-only on the wire.
@@ -634,6 +652,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Optional pinning index for tab ordering */
   favorite_index?: number | null;
 
+  /** True when linked shell PTY OSC title events may update the display name. */
+  pty_rename: boolean = true;
+
   /** Backend-owned lifecycle status. */
   private _status: ProcessStatus = ProcessStatus.NEW;
 
@@ -647,6 +668,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   private set status(value: ProcessStatus) {
     this._status = value;
+  }
+
+  get ptyRename(): boolean {
+    return this.pty_rename;
+  }
+
+  set ptyRename(value: boolean) {
+    this.pty_rename = value;
   }
 
   /** Transcript-derived worker status. Read-only outside this class. */
@@ -924,6 +953,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;
     this.sidecar_shell_id = entity.sidecar_shell_id;
+    this.pty_rename = entity.pty_rename ?? true;
     this.project_id = entity.project_id ?? null;
     this.collaboration_room_id = entity.collaboration_room_id ?? null;
     this.target_vfs_path = entity.target_vfs_path ?? null;
@@ -1143,6 +1173,21 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     );
     userFlowData.markReady();
     this.flowDataStream.ingest(userFlowData);
+  }
+
+  async reportEvent(
+    name: AgenticProcessEventName,
+    data: Record<string, unknown> = {},
+  ): Promise<AgenticProcessReportEventResult> {
+    const actionInfo = new ActionInfo('report_event', AgenticProcess.type, this.id, 'GET');
+    actionInfo.subpath = name;
+    const requestId =
+      globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    actionInfo.queryParameters = {
+      data: JSON.stringify(data),
+      request_id: requestId,
+    };
+    return dataManager.callAction<void, AgenticProcessReportEventResult>(actionInfo);
   }
 
   /**
@@ -1707,7 +1752,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     actionInfo.bodyParameters = options ?? {};
     const result = await dataManager.callAction<
       unknown,
-      { shell_id: string; pty_id: string; session_id: string; status?: string; shell: Record<string, unknown> } | null
+      { shell_id: string; pty_id: string; session_id: string | null; status?: string; shell: Record<string, unknown> } | null
     >(actionInfo);
     if (!result) throw new Error('Process could not be opened (process may be terminated)');
     if (result.status) {
