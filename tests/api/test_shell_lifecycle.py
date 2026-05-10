@@ -105,6 +105,52 @@ async def test_update_display(bootstrapped_client):
 
 
 @pytest.mark.asyncio
+async def test_update_display_pty_rename_gate_is_sticky(bootstrapped_client):
+    """Manual rename disables PTY title renames until explicitly re-enabled."""
+    create_resp = await bootstrapped_client.post(
+        "/api/v1/graph/shell",
+        json={"name": "Tab 1", "status": "created"},
+    )
+    assert create_resp.status_code == 200
+    entity_id = ApiResponse(**create_resp.json()).data["id"]
+
+    manual_resp = await bootstrapped_client.post(
+        f"/api/v1/graph/shell/{entity_id}/update-display",
+        json={"name": "Manual Name"},
+    )
+    assert manual_resp.status_code == 200, manual_resp.text
+    manual = ApiResponse(**manual_resp.json()).data
+    assert manual.get("name") == "Manual Name"
+    assert manual.get("pty_rename") is False
+    assert manual.get("user_renamed") is True
+
+    ignored_resp = await bootstrapped_client.post(
+        f"/api/v1/graph/shell/{entity_id}/update-display",
+        json={"name": "PTY Title", "is_pty": True},
+    )
+    assert ignored_resp.status_code == 200, ignored_resp.text
+    ignored = ApiResponse(**ignored_resp.json()).data
+    assert ignored.get("name") == "Manual Name"
+    assert ignored.get("pty_rename") is False
+
+    enable_resp = await bootstrapped_client.post(
+        f"/api/v1/graph/shell/{entity_id}/update-display",
+        json={"pty_rename": True},
+    )
+    assert enable_resp.status_code == 200, enable_resp.text
+    assert ApiResponse(**enable_resp.json()).data.get("pty_rename") is True
+
+    accepted_resp = await bootstrapped_client.post(
+        f"/api/v1/graph/shell/{entity_id}/update-display",
+        json={"name": "PTY Title", "is_pty": True},
+    )
+    assert accepted_resp.status_code == 200, accepted_resp.text
+    accepted = ApiResponse(**accepted_resp.json()).data
+    assert accepted.get("name") == "PTY Title"
+    assert accepted.get("pty_rename") is True
+
+
+@pytest.mark.asyncio
 async def test_list_shells_entity_query(bootstrapped_client):
     """list-shells returns only non-closed sessions via entity query."""
     # Create two sessions with status="created" (not "running") to avoid zombie detection

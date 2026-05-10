@@ -34,6 +34,28 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_TYPEID_NAME_RE = r"^[a-z][a-z0-9-]*-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+
+
+def allow_rename(agentic_process, name: str) -> bool:
+    """Return True when a PTY-originated title is allowed to rename the tab."""
+    import re
+
+    incoming = (name or "").strip()
+    if not incoming:
+        return False
+    if re.match(_TYPEID_NAME_RE, incoming, re.I):
+        return False
+
+    worker_type = str(getattr(agentic_process, "worker_type", "") or "").lower()
+    if worker_type in {"claude", "claude_code"}:
+        # Claude emits spinner/status titles such as "Claude Code"; these are
+        # not stable user-facing session names. Extend this list as needed.
+        if "Claude Code" in incoming:
+            return False
+
+    return True
+
 
 class Shell(Entity):
     """Entity representing a shell tab (PTY session).
@@ -60,7 +82,8 @@ class Shell(Entity):
     error_message: str | None = APIField(default=None, description="Error message when status=error")
     worker_pid: int | None = APIField(default=None, description="OS PID of the running worker process")
     worker_name: str | None = APIField(default=None, description="Worker executable name, e.g. 'claude'")
-    user_renamed: bool = APIField(default=False, description="True when user explicitly renamed this shell via /rename or the UI")
+    user_renamed: bool = APIField(default=False, description="True when the shell was explicitly renamed outside PTY title events")
+    pty_rename: bool = APIField(default=True, description="True when PTY OSC title events may update the display name")
     last_launch_cmd: dict | None = APIField(default=None, description="Serialized WorkerCLIOptions from the last launch() call")
 
     _api_visible: ClassVar[bool] = True
@@ -622,9 +645,10 @@ class Shell(Entity):
     # ── Display ───────────────────────────────────────────────────────────────
 
     async def rename(self, name: str) -> None:
-        """Set the tab display label. User rename wins over PTY OSC title escapes."""
+        """Set the tab display label from a manual API/UI rename."""
         self.name = name
         self.user_renamed = True
+        self.pty_rename = False
         self.last_active_at = datetime.now(timezone.utc).isoformat()
         await self.save()
         try:
@@ -633,6 +657,21 @@ class Shell(Entity):
                 record.sync_from_entity(self)
         except Exception:
             pass
+        try:
+            proc = await self._linked_agentic_process()
+            if proc:
+                proc.name = name
+                proc.pty_rename = False
+                await proc.save()
+        except Exception:
+            pass
+
+    async def _linked_agentic_process(self):
+        try:
+            from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+            return await AgenticProcess.get_by_prop("shell_id", self.id, "agentic_process")
+        except Exception:
+            return None
 
     # ── Class utilities ───────────────────────────────────────────────────────
 
@@ -693,6 +732,8 @@ class Shell(Entity):
             status=(record.status.value if hasattr(record.status, "value") else record.status) or ShellStatus.IDLE.value,
             compute_node_id=cn_id,
             compute_node_uname=record.data.get("compute_node_uname"),
+            user_renamed=bool(record.data.get("user_renamed", False)),
+            pty_rename=bool(record.data.get("pty_rename", True)),
         )
         await entity.save()
 
@@ -718,6 +759,8 @@ class Shell(Entity):
         self.created_at = record.data.get("created_at")
         self.last_active_at = record.data.get("last_active_at")
         self.compute_node_uname = record.data.get("compute_node_uname")
+        self.user_renamed = bool(record.data.get("user_renamed", False))
+        self.pty_rename = bool(record.data.get("pty_rename", True))
         status = record.status
         self.status = status.value if hasattr(status, "value") else (status or ShellStatus.IDLE.value)
 
@@ -808,32 +851,51 @@ class Shell(Entity):
         await self.set_env(**vars_dict)
         return ApiSuccessResponse(data={"vars": list(vars_dict.keys())})
 
-    # PTY title values that are generic spinner frames — never overwrite an existing name.
-    _PTY_NAME_BLOCKLIST: ClassVar[set[str]] = {"Claude Code"}
-
     @action.post(action_name="update-display")
     async def update_display(self) -> ApiResponse:
         """HTTP: Update display properties (name, tab_order).
 
-        POST body: {name?, tab_order?, is_pty?}
-        When is_pty=True the name came from a PTY OSC title escape — ignored
-        if the user already explicitly renamed this shell, or if the incoming
-        name is a generic spinner title and the shell already has a name.
+        POST body: {name?, tab_order?, pty_rename?, is_pty?}
+        When is_pty=True the name came from a PTY OSC title escape and is
+        accepted only when both the shell and linked process allow PTY renames
+        and allow_rename(process, name) passes. Manual renames make the
+        pty_rename flag false and sticky until explicitly re-enabled.
         """
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
 
         is_pty = bool(body.get("is_pty", False))
         changed = False
+        proc_changed = False
+        proc = None
+        pty_rename_in_body = "pty_rename" in body or "ptyRename" in body
+        if pty_rename_in_body or "name" in body:
+            proc = await self._linked_agentic_process()
+
+        if pty_rename_in_body:
+            self.pty_rename = bool(body.get("pty_rename", body.get("ptyRename")))
+            changed = True
+            if proc and getattr(proc, "pty_rename", None) != self.pty_rename:
+                proc.pty_rename = self.pty_rename
+                proc_changed = True
+
         if "name" in body:
-            incoming = body["name"]
-            is_blocked = is_pty and self.name and any(f in incoming for f in self._PTY_NAME_BLOCKLIST)
-            if is_pty and (self.user_renamed or is_blocked):
-                pass
+            incoming = str(body["name"]).strip()
+            proc_allows_pty = bool(getattr(proc, "pty_rename", True)) if proc else True
+            if is_pty and (
+                not self.pty_rename
+                or not proc_allows_pty
+                or not allow_rename(proc, incoming)
+            ):
+                logger.debug("[Shell.update_display] ignored PTY title for %s: %r", self.id, incoming)
             else:
                 self.name = incoming
                 if not is_pty:
                     self.user_renamed = True
+                    self.pty_rename = False
+                    if proc:
+                        proc.pty_rename = False
+                        proc_changed = True
                 changed = True
         if "tab_order" in body:
             self.tab_order = body["tab_order"]
@@ -853,11 +915,14 @@ class Shell(Entity):
             # survives shell deletion when the process is closed.
             if self.name and "name" in body:
                 try:
-                    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-                    proc = await AgenticProcess.get_by_prop("shell_id", self.id, "agentic_process")
                     if proc and proc.name != self.name:
                         proc.name = self.name
-                        await proc.save()
+                        proc_changed = True
+                except Exception:
+                    pass
+            if proc and proc_changed:
+                try:
+                    await proc.save()
                 except Exception:
                     pass
 

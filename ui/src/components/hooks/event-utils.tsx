@@ -70,6 +70,7 @@ export const HOOK_OP_ICONS: Record<string, LucideIcon> = {
 };
 
 export function getEventIcon(eventType: string, event?: TraceEvent): LucideIcon {
+  if (event?.error || event?.element_type === 'error') return CircleX;
   if (event?.warning) return AlertTriangle;
   if (event?.webhook_type === 'hook_op') {
     // Read the hook-op discriminator from canonical attributes (set by
@@ -126,6 +127,8 @@ export const EVENT_TYPE_COLORS: Record<string, string> = {
   SkillUsed: 'text-purple-500',
   UserMessage: 'text-blue-400',
   AssistantMessage: 'text-emerald-400',
+  error: 'text-red-500',
+  session_detect_failed: 'text-red-500',
 };
 
 export function getWebhookColor(webhookType?: string): string {
@@ -133,6 +136,7 @@ export function getWebhookColor(webhookType?: string): string {
 }
 
 export function getEventColor(event: TraceEvent): string {
+  if (event.error || event.element_type === 'error') return 'text-red-500';
   if (event.warning) return 'text-yellow-500';
   if (event.event_type.startsWith('SkillUsed:')) return 'text-purple-600';
   // hook_op: per-operation color first, then webhook fallback. Read the
@@ -186,6 +190,8 @@ export function getOneLiner(event: TraceEvent): string {
     if (candidate) return cropText(typeof candidate === 'string' ? candidate : JSON.stringify(candidate));
   }
   if (event.summary) return cropText(event.summary);
+  if (event.error) return cropText(event.error, 8);
+  if (typeof event.raw?.value === 'string' && event.raw.value) return cropText(event.raw.value, 8);
 
   // 2. Canonical FlowData attributes set by hook_to_flowdata.convert_hook_event:
   //    these flatten Claude raw_hook_data fields onto the wire so the renderer

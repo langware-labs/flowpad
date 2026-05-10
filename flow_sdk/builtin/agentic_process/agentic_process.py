@@ -26,6 +26,7 @@ from pydantic import SerializationInfo, model_serializer
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
 from flow_sdk.builtin.agentic_process.cli_drivers import (
     AgenticContext as _AgenticContext,
     WorkerDriver,
@@ -370,6 +371,7 @@ class AgenticProcess(Entity):
     )
     shell_id: str | None = APIField(default=None)
     sidecar_shell_id: str | None = APIField(default=None)
+    pty_rename: bool = APIField(default=True, description="True when linked shell PTY OSC title events may update the display name")
     visible: bool = APIField(default=False, description="Whether this process is visible in the tabs view")
     queue: dict | None = APIField(default=None)
     restart_required: bool = APIField(
@@ -588,7 +590,8 @@ class AgenticProcess(Entity):
             # rather than refusing or spawning under stale assumptions.
             await self.reap_if_orphaned()
             _bench("after reap_if_orphaned")
-            self.session_id = self.session_id or str(uuid4())
+            if not self.session_id and getattr(self.driver, "preassign_interactive_session_id", True):
+                self.session_id = str(uuid4())
             reattach_changed = False
             if visible is not None and self.visible != visible:
                 self.visible = visible
@@ -2171,6 +2174,116 @@ class AgenticProcess(Entity):
             await self.save()
         return ApiSuccessResponse()
 
+    @action.get(action_name="report_event")
+    async def report_event(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Report a client-side process event to the worker driver.
+
+        URL shape:
+        ``/agentic_process/{id}/report_event/{event_name}?data=<json>``.
+        The action schedules driver handling and returns immediately with a
+        debug payload so callers can inspect what the backend accepted.
+        """
+        request_info = get_current_request_info()
+        event_key = (request_info.sub_path or "").strip("/").split("/", 1)[0] if request_info else ""
+        if not event_key:
+            return ApiFailResponse(
+                message="report_event requires an event name subpath",
+                status_code=400,
+                data={"accepted": False, "process_id": self.id, "session_id": self.session_id},
+            )
+
+        try:
+            event_name = AgenticProcessEventName(event_key)
+        except ValueError:
+            return ApiFailResponse(
+                message=f"unknown report_event name: {event_key}",
+                status_code=400,
+                data={
+                    "accepted": False,
+                    "process_id": self.id,
+                    "session_id": self.session_id,
+                    "event_name": event_key,
+                },
+            )
+
+        params = request_info.request_parameters if request_info else {}
+        raw_data = params.get("data") if isinstance(params, dict) else None
+        if raw_data in (None, ""):
+            event_data: dict[str, Any] = {}
+        elif isinstance(raw_data, str):
+            try:
+                parsed = json.loads(raw_data)
+            except json.JSONDecodeError as exc:
+                return ApiFailResponse(
+                    message=f"report_event data must be JSON: {exc}",
+                    status_code=400,
+                    data={
+                        "accepted": False,
+                        "process_id": self.id,
+                        "session_id": self.session_id,
+                        "event_name": event_name.value,
+                    },
+                )
+            if not isinstance(parsed, dict):
+                return ApiFailResponse(
+                    message="report_event data must decode to an object",
+                    status_code=400,
+                    data={
+                        "accepted": False,
+                        "process_id": self.id,
+                        "session_id": self.session_id,
+                        "event_name": event_name.value,
+                    },
+                )
+            event_data = parsed
+        elif isinstance(raw_data, dict):
+            event_data = raw_data
+        else:
+            return ApiFailResponse(
+                message="report_event data must be a JSON object",
+                status_code=400,
+                data={
+                    "accepted": False,
+                    "process_id": self.id,
+                    "session_id": self.session_id,
+                    "event_name": event_name.value,
+                },
+            )
+
+        request_id = params.get("request_id") if isinstance(params, dict) else None
+        if not isinstance(request_id, str):
+            request_id = None
+        task_name = f"report-event-{self.id[:8]}-{event_name.value}"
+
+        async def _run_event() -> None:
+            try:
+                result = await self.driver.report_event(self, event_name, event_data)
+                logger.info(
+                    "AgenticProcess %s report_event %s result: %s",
+                    self.id,
+                    event_name.value,
+                    result,
+                )
+            except Exception:
+                logger.exception(
+                    "AgenticProcess %s report_event %s failed",
+                    self.id,
+                    event_name.value,
+                )
+
+        asyncio.create_task(_run_event(), name=task_name)
+        return ApiSuccessResponse(data={
+            "accepted": True,
+            "scheduled": True,
+            "process_id": self.id,
+            "worker_type": getattr(self.worker_type, "value", self.worker_type),
+            "session_id": self.session_id,
+            "event_name": event_name.value,
+            "event_data": event_data,
+            "request_id": request_id,
+            "task_name": task_name,
+        })
+
     # ── Timeout handling ──────────────────────────────────────────────────────
 
     async def _on_timeout(self) -> None:
@@ -2521,6 +2634,7 @@ class AgenticProcess(Entity):
             compute_node_id=str(cn.id),
             compute_node_uname=getattr(cn, "uname", None),
             name=session_name,
+            pty_rename=self.pty_rename,
             workdir=workdir,
             tab_order=tab_order,
             project_id=self.project_id,
