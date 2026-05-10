@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 import { OperationExpandedDetail, OperationOneLiner } from './OperationRow';
-import { formatDuration, formatEntryTime, formatNumber, operationFilterKey, workerIcon, workerLabel } from './transcript-utils';
+import { formatDuration, formatEntryTime, formatNumber, operationFilterKey, thinkingPreview, workerIcon, workerLabel } from './transcript-utils';
 import type { UnifiedEntry } from './types';
 
 interface Props {
