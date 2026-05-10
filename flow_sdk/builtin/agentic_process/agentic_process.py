@@ -767,6 +767,9 @@ class AgenticProcess(Entity):
             else:
                 logger.warning("AgenticProcess %s: Shell entity %s not found on exit", self.id, self.shell_id)
 
+            self.context_data = {
+                k: v for k, v in self.context_data.items() if k != "_shell_exit_pending"
+            }
             self.status = ProcessStatus.STOPPED.value
             await self.save()
             logger.info(
@@ -2660,8 +2663,10 @@ class AgenticProcess(Entity):
                     if not proc.shell_id:
                         return  # close() already handled it
                     if proc.context_data.get("_shell_exit_pending"):
-                        # exit() was called — shell entity stays alive, just clear the flag
+                        # exit() was called — shell entity stays alive while lifecycle stops.
                         proc.context_data = {k: v for k, v in proc.context_data.items() if k != "_shell_exit_pending"}
+                        proc.sidecar_shell_id = None
+                        proc.status = ProcessStatus.STOPPED.value
                         await proc.save()
                         return
                     proc.sidecar_shell_id = None

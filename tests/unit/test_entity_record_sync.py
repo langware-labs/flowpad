@@ -16,6 +16,7 @@ import pytest_asyncio
 import flow_sdk.db.drivers.db_driver as db_driver_mod
 from flow_sdk.db.drivers.db_driver import DBConfig
 from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
+from flow_sdk.fs_store.path_utils import canonical_posix_path
 
 
 @pytest_asyncio.fixture
@@ -103,7 +104,7 @@ class TestProjectAllocateId:
 
     def test_project_allocate_id_real_path(self):
         from flow_sdk.builtin.project import Project
-        expected = str(uuid.uuid5(uuid.NAMESPACE_DNS, "project:/home/user/code"))
+        expected = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{canonical_posix_path('/home/user/code')}"))
         result = Project.allocate_id({"real_path": "/home/user/code"})
         assert result == expected
 
@@ -190,5 +191,6 @@ class TestEntityRecordIdSync:
 
         # Query DB directly for project entities with this mount path
         all_projects = await Project.get_all(QueryFilter.parse({"type": "project"}))
-        matching = [p for p in all_projects if getattr(p, "fs_storage_mount_path", None) == mount_path]
+        canonical_mount_path = canonical_posix_path(mount_path)
+        matching = [p for p in all_projects if getattr(p, "fs_storage_mount_path", None) == canonical_mount_path]
         assert len(matching) == 1, f"Expected 1 entity, got {len(matching)}"

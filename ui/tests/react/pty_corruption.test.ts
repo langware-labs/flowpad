@@ -13,10 +13,17 @@
  *   PTY replay. Confirms liveText === '' after connect() with real WS data.
  */
 
-import { apiClient, ConnectionManager, dataManager, GRAPH_API_PREFIX, Shell, TypeId } from '@sdk';
+import { ActionInfo, apiClient, ConnectionManager, dataManager, GRAPH_API_PREFIX, Shell, TypeId } from '@sdk';
 import { v4 as uuidv4 } from 'uuid';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiTestSetup, get_local_compute_node, getTestSignupInfo } from '../utils/test-utils';
+
+async function sendPtyInputOverWS(computeNodeId: string, shellId: string, data: string): Promise<void> {
+  const action = new ActionInfo('terminal-command', 'compute_node', computeNodeId, 'POST');
+  action.subpath = 'input';
+  action.bodyParameters = { shell_id: shellId, data };
+  await dataManager.callActionOverWS(action);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Suite 1 — Unit tests (no backend, instant)
@@ -149,12 +156,7 @@ describe('PTY output corruption — integration test with real PTY', () => {
 
     // Let bash start, then send a newline to guarantee it emits a prompt
     await new Promise((resolve) => setTimeout(resolve, 400));
-    await apiClient
-      .post(`${GRAPH_API_PREFIX}/compute_node/${computeNode.id}/terminal-command/input`, {
-        shell_id: shellId,
-        data: '\n',
-      })
-      .catch(() => {});
+    await sendPtyInputOverWS(computeNode.id, shellId, '\n');
 
     // Wait for the echo + prompt to be stored with seq numbers on the server
     await new Promise((resolve) => setTimeout(resolve, 800));

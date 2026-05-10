@@ -9,11 +9,18 @@ from __future__ import annotations
 
 from typing import Any
 
+from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
+    FlowData,
+    FlowDataType,
+    FlowElementType,
+)
+
 from .._helpers import render_block
 from ..entry import EntryKind, TranscriptEntry
+from .tool_use import ToolUseEntry
 
 
-class ShellCommandEntry(TranscriptEntry):
+class ShellCommandEntry(ToolUseEntry):
     kind = EntryKind.SHELL_COMMAND
 
     def __init__(
@@ -30,7 +37,7 @@ class ShellCommandEntry(TranscriptEntry):
         tool_use_id: str = "",
         **base: Any,
     ) -> None:
-        super().__init__(**base)
+        TranscriptEntry.__init__(self, **base)
         self.command = command
         self.cwd = cwd
         self.exit_code = exit_code
@@ -40,6 +47,26 @@ class ShellCommandEntry(TranscriptEntry):
         self.timeout = timeout
         self.tool_name = tool_name
         self.tool_use_id = tool_use_id
+
+    def to_flow_data(self) -> list[FlowData]:
+        return [FlowData(
+            flow_value={
+                "tool_name": self.tool_name or "Bash",
+                "tool_use_id": self.tool_use_id,
+                "tool_call_id": self.tool_use_id,
+                "args": {"command": self.command},
+                "command": self.command,
+                "stdout": self.stdout_preview,
+                "exit_code": self.exit_code,
+            },
+            created_time=self.timestamp,
+            attributes={
+                "element-type": FlowElementType.TOOL_CALL,
+                "data-type": FlowDataType.OBJECT,
+                "tool-name": self.tool_name or "Bash",
+                "tool-use-id": self.tool_use_id,
+            },
+        )]
 
     def to_dict(self) -> dict:
         return {

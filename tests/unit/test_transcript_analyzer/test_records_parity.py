@@ -42,6 +42,13 @@ def test_id_set_matches_record_path_for_known_lines(claude_jsonl):
             # the Record side, so parity is undefined. Compare only entries
             # where the Record's ``entry_uuid`` resolved to a real value
             # from the JSONL line.
+            if raw.get("type") == "user":
+                content = (raw.get("message") or {}).get("content") or []
+                if any(isinstance(block, dict) and block.get("type") == "tool_result" for block in content):
+                    # Tool result rows are folded into the semantic operation
+                    # entry by AgentTranscript, so their own record id is not
+                    # expected to appear as a separate analyzer entry.
+                    continue
             if rec.entry_uuid:
                 record_ids.add(rec.id)
 

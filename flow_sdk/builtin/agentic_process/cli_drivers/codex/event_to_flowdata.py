@@ -96,12 +96,24 @@ def final_end_frame() -> FlowData:
 
 def _wrap_live(entry) -> FlowData:
     pe = ProcessEntry(transcript_entry=entry, observation_kind="live")
+    frames = entry.to_flow_data()
+    if frames:
+        fd = frames[0]
+        fd.process_entry = pe.to_dict()
+        fd.attributes.setdefault("element-type", _element_type_for_kind(entry.kind.value))
+        fd.attributes.setdefault("data-type", FlowDataType.OBJECT)
+        fd.attributes.setdefault("subtype", entry.kind.value)
+        fd.attributes.setdefault("observation-kind", "live")
+        return fd
+
     return FlowData(
         flow_value={},
         created_time=entry.timestamp or "",
         attributes={
             "element-type": _element_type_for_kind(entry.kind.value),
             "data-type": FlowDataType.OBJECT,
+            "subtype": entry.kind.value,
+            "observation-kind": "live",
         },
         process_entry=pe.to_dict(),
     )
