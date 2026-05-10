@@ -228,8 +228,8 @@ function SharedContextSection({
         visible: true,
         project_id: res.project_id ?? undefined,
         target_vfs_path: fmTypeId.toString(),
-        context_entities: [fmTypeId],
       });
+      process.addContextEntity(fmTypeId);
       await process.save([fmTypeId]);
 
       // Navigate first — the dock route loader subscribes to the entity by id
