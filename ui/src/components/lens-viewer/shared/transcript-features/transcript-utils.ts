@@ -2,10 +2,36 @@
  * Worker-agnostic transcript utilities — operate on `UnifiedEntry`.
  */
 
+import type { ComponentType } from 'react';
+import type { ProcessIconKey } from '@sdk';
+
+import { pickProcessIcon } from '../../../icons/process-icons';
 import type { UnifiedEntry } from './types';
 
 export { formatNumber, formatAgo, formatDuration, formatTime } from '../format-utils';
 import { formatTime } from '../format-utils';
+
+/** Display label for a worker key (`claude`, `codex`, …). */
+export function workerLabel(worker: string | undefined): string {
+  if (!worker) return 'Assistant';
+  const key = worker.toLowerCase();
+  if (key.startsWith('claude')) return 'Claude';
+  if (key.startsWith('codex')) return 'Codex';
+  // Capitalize unknown worker keys for a sensible default.
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+/** Resolve the worker logo SVG component from a raw worker key. */
+export function workerIcon(worker: string | undefined): ComponentType<{ className?: string }> {
+  const key: ProcessIconKey = ((): ProcessIconKey => {
+    if (!worker) return 'generic';
+    const w = worker.toLowerCase();
+    if (w.startsWith('claude')) return 'claude';
+    if (w.startsWith('codex')) return 'codex';
+    return 'generic';
+  })();
+  return pickProcessIcon(key);
+}
 
 export function resolveEntryTimestamp(entry: UnifiedEntry): string | null {
   return entry.timestamp || null;
@@ -13,38 +39,6 @@ export function resolveEntryTimestamp(entry: UnifiedEntry): string | null {
 
 export function formatEntryTime(entry: UnifiedEntry): string {
   return formatTime(resolveEntryTimestamp(entry));
-}
-
-/** Short summary for a tool call (collapsed view). Used by both modes. */
-export function getToolSummary(tool: { name: string; input: unknown }): string {
-  const input = tool.input as Record<string, unknown> | null | undefined;
-  if (!input) return tool.name;
-  if (tool.name === 'TaskCreate' || tool.name === 'TaskUpdate') {
-    const subject = input.subject as string | undefined;
-    if (subject) return `${tool.name}: ${subject}`;
-  }
-  return tool.name;
-}
-
-/** Extract unique file basenames from tool calls for header display. */
-export function getToolFileSummary(toolUses: { name: string; input: unknown }[]): string[] {
-  const files: string[] = [];
-  for (const tool of toolUses) {
-    const input = tool.input as Record<string, unknown> | null | undefined;
-    if (!input) continue;
-    const filePath = (input.file_path || input.notebook_path) as string | undefined;
-    if (filePath && typeof filePath === 'string') {
-      const basename = filePath.split('/').pop() || filePath;
-      if (!files.includes(basename)) files.push(basename);
-      continue;
-    }
-    const pattern = input.pattern as string | undefined;
-    if (pattern && typeof pattern === 'string' && (tool.name === 'Glob' || tool.name === 'Grep')) {
-      const short = pattern.length > 30 ? pattern.slice(0, 27) + '...' : pattern;
-      if (!files.includes(short)) files.push(short);
-    }
-  }
-  return files;
 }
 
 /** Pluck the assistant turn's body text (no tool calls). */

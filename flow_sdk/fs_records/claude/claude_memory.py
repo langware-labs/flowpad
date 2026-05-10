@@ -38,8 +38,14 @@ class ClaudeMemoryRecord(Record):
             name=path.stem,
             asset_type="memory",
             project_path=project_path,
-            project_encoded=project_encoded,
         )
+        # Translate the Claude transcript boundary identifier (encoded dir
+        # name + decoded cwd) into the canonical project_id. Stored only on
+        # the record so the indexer can stamp it onto the entity.
+        from flow_sdk.fs_records.worker_history import _project_id_for  # noqa: PLC0415
+        pid = _project_id_for(project_path or None, project_encoded or None)
+        if pid:
+            object.__setattr__(rec, "project_id", pid)
         object.__setattr__(rec, "_asset_ref", FSRef(path))
         return rec
 

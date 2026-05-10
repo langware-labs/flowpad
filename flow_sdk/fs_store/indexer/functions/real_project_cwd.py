@@ -26,19 +26,25 @@ async def real_project_cwd_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:
+    import uuid as _uuid
     from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
 
     out: list[FSRef] = []
     for node in nodes:
         for real in iter_claude_project_paths(include_temp=opts.include_temp):
             # Explicit scope override: entering a project subtree,
-            # regardless of the parent root's scope.
+            # regardless of the parent root's scope. project_id is derived
+            # from the project's mount path so descendants (skills, agents,
+            # workflows, …) inherit a stable foreign-key reference matching
+            # the Project entity's allocate_id.
+            pid = str(_uuid.uuid5(_uuid.NAMESPACE_DNS, f"project:{str(real)}"))
             out.append(
                 FSRef(
                     real,
                     record_type=RecordType.REAL_PROJECT_CWD,
                     parent=node,
                     scope="project",
+                    project_id=pid,
                 )
             )
     return out

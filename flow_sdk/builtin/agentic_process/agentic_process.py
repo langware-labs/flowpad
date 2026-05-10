@@ -344,7 +344,6 @@ class AgenticProcess(Entity):
     session_id: str | None = APIField(default=None)
     use_worker_history: bool = APIField(default=False)
     shell_mode: bool = APIField(default=False, description="False=direct PTY spawn (default), True=legacy zsh intermediary")
-    project_id: str | None = APIField(default=None)
     project_encoded_name: str | None = APIField(default=None)
     collaboration_room_id: str | None = APIField(
         default=None,

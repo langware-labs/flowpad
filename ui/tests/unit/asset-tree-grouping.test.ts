@@ -13,8 +13,8 @@ function rec(partial: Partial<SearchResult>): SearchResult {
     asset_ref: partial.asset_ref ?? '/p',
     created_at: '',
     modified_at: '',
-    project_encoded: partial.project_encoded,
-    project_encoded_name: partial.project_encoded_name,
+    project_id: partial.project_id,
+    project_name: partial.project_name,
   };
 }
 
@@ -36,10 +36,10 @@ describe('groupRecords', () => {
 
   it('splits user + multiple projects, User first then projects alpha', () => {
     const groups = groupRecords([
-      rec({ scope: 'project', project_encoded: 'p2', project_encoded_name: 'zeta-proj', name: 'r1' }),
+      rec({ scope: 'project', project_id: 'p2', project_name: 'zeta-proj', name: 'r1' }),
       rec({ scope: 'user', name: 'r2' }),
-      rec({ scope: 'project', project_encoded: 'p1', project_encoded_name: 'alpha-proj', name: 'r3' }),
-      rec({ scope: 'project', project_encoded: 'p1', project_encoded_name: 'alpha-proj', name: 'r4' }),
+      rec({ scope: 'project', project_id: 'p1', project_name: 'alpha-proj', name: 'r3' }),
+      rec({ scope: 'project', project_id: 'p1', project_name: 'alpha-proj', name: 'r4' }),
     ]);
     expect(groups.map((g) => g.label)).toEqual(['User', 'alpha-proj', 'zeta-proj']);
     expect(groups[1].records).toHaveLength(2);
@@ -57,9 +57,9 @@ describe('groupRecords', () => {
     expect(groups[0].records).toHaveLength(1);
   });
 
-  it('falls back to project_encoded as label when name is missing', () => {
+  it('falls back to project_id as label when name is missing', () => {
     const groups = groupRecords([
-      rec({ scope: 'project', project_encoded: 'p-uuid', name: 'r' }),
+      rec({ scope: 'project', project_id: 'p-uuid', name: 'r' }),
     ]);
     expect(groups[0].label).toBe('p-uuid');
   });

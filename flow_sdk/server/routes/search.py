@@ -59,11 +59,15 @@ async def _entity_asset_ref(ent) -> str:
 def _apply_scope_filter(entities: list, scope: str | None, project_ids: str | None) -> list:
     """Filter entities by scope and optional project IDs.
 
-    `scope` may be a single value (`user` / `project`) or a comma-separated set
-    (`user,project`). Comma-separated form means union: keep entities matching
-    any listed scope. When `project` is in the set and `project_ids` is given,
-    project-scoped entities are additionally restricted to those project IDs;
-    user-scoped entities are unaffected by `project_ids`.
+    `scope` may be a single value (`user` / `project` / `system`) or a
+    comma-separated set (`user,project`). Comma-separated form means union:
+    keep entities whose `scope` is in the listed set. When `project` is in the
+    set and `project_ids` is given, project-scoped entities are additionally
+    restricted to those project IDs; non-project-scoped entities are unaffected.
+
+    Entities without a populated `scope` field are dropped — by construction
+    the indexer stamps every record's scope from the FSRef walk, so an empty
+    value means an unindexed/legacy row that needs reindexing.
     """
     if not scope:
         return entities
@@ -76,15 +80,11 @@ def _apply_scope_filter(entities: list, scope: str | None, project_ids: str | No
 
     def _keep(e) -> bool:
         s = (getattr(e, "scope", None) or "")
-        if s == "user":
-            return "user" in scope_set
-        if s == "project":
-            if "project" not in scope_set:
-                return False
-            if not pid_set:
-                return True
-            return (getattr(e, "project_encoded", None) or getattr(e, "id", "")) in pid_set
-        return False
+        if s not in scope_set:
+            return False
+        if s == "project" and pid_set and (getattr(e, "project_id", None) or "") not in pid_set:
+            return False
+        return True
 
     return [e for e in entities if _keep(e)]
 
@@ -120,12 +120,13 @@ async def _entity_to_result(ent) -> dict:
         "snippet": getattr(ent, "_fts_snippet", None),
         "status": getattr(ent, "status", None) or "",
         "scope": getattr(ent, "scope", "") or "",
+        "project_id": getattr(ent, "project_id", None) or None,
         "asset_ref": await _entity_asset_ref(ent) or "",
         "created_at": str(getattr(ent, "created_date", "") or ""),
         "modified_at": str(getattr(ent, "updated_date", "") or ""),
     }
     # Extra fields for per-type column rendering
-    for field in ("uname", "title", "description", "file_path", "filename", "work_dir", "project_encoded", "project_encoded_name", "session_id", "asset_type", "parent_path", "vault_root"):
+    for field in ("uname", "title", "description", "file_path", "filename", "work_dir", "session_id", "asset_type", "parent_path", "vault_root"):
         val = getattr(ent, field, None)
         if val:
             result[field] = val
@@ -253,6 +254,25 @@ async def search_records(
     entities = entities[offset:]
 
     results = [await _entity_to_result(e) for e in entities]
+
+    # Resolve project_name for each unique project_id in one batched read so
+    # the UI can label per-project tree groups without a second round-trip.
+    pid_set = {r.get("project_id") for r in results if r.get("project_id")}
+    if pid_set:
+        try:
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+            from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+            pid_to_name: dict[str, str] = {}
+            for pid in pid_set:
+                proj = await Project.get_one(QueryFilter.parse({"id": pid}))
+                if proj is not None:
+                    pid_to_name[pid] = getattr(proj, "name", None) or pid
+            for r in results:
+                pid = r.get("project_id")
+                if pid and pid in pid_to_name:
+                    r["project_name"] = pid_to_name[pid]
+        except Exception:
+            pass
 
     return JSONResponse(content={
         "status": "SUCCESS",

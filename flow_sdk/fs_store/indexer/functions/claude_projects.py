@@ -29,6 +29,7 @@ async def claude_projects_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:
+    import uuid as _uuid
     out: list[FSRef] = []
     for node in nodes:
         projects_dir = Path(node.path) / ".claude" / "projects"
@@ -39,11 +40,18 @@ async def claude_projects_fn(
                 continue
             if not opts.include_temp and _is_temp_encoded(child.name):
                 continue
+            # Derive project_id from the decoded path so descendants inherit
+            # it via the FSRef parent chain. Matches Project.allocate_id's
+            # uuid5(DNS, "project:<mount_path>") so the id round-trips.
+            decoded = "/" + child.name.lstrip("-").replace("-", "/")
+            pid = str(_uuid.uuid5(_uuid.NAMESPACE_DNS, f"project:{decoded}"))
             out.append(
                 FSRef(
                     child,
                     record_type=RecordType.PROJECT,
                     parent=node,
+                    scope="project",
+                    project_id=pid,
                 )
             )
     return out

@@ -88,12 +88,17 @@ export function TranscriptViewer({ workerType, path, selectedEntryId, selectedTi
     if (initializedForRef.current === entries) return;
     initializedForRef.current = entries;
 
-    const toolNames = entries
-      .filter((e) => e.role === 'assistant' && e.toolUse)
-      .map((e) => e.toolUse!.name)
+    const toolKeys = entries
+      .filter((e) => e.role === 'operation' && e.operation)
+      .map((e) => {
+        const op = e.operation!;
+        return op.kind === 'tool_use'
+          ? (op as { tool_name: string }).tool_name || 'tool_use'
+          : op.kind;
+      })
       .filter(Boolean);
     const initial: Record<string, boolean> = {};
-    Array.from(new Set(toolNames)).forEach((n) => { initial[n] = true; });
+    Array.from(new Set(toolKeys)).forEach((n) => { initial[n] = true; });
     setToolFilters(initial);
 
     for (const entry of entries) {
@@ -282,17 +287,23 @@ export function TranscriptViewer({ workerType, path, selectedEntryId, selectedTi
         const haystack = (entry.text ?? '') + (entry.toolResult?.output ?? '');
         return haystack.toLowerCase().includes(query);
       }
+      if (entry.role === 'operation' && entry.operation) {
+        if (!showAssistant) return false;
+        const op = entry.operation;
+        const filterKey = op.kind === 'tool_use'
+          ? (op as { tool_name: string }).tool_name || 'tool_use'
+          : op.kind;
+        if (toolFilters[filterKey] === false) return false;
+        if (!query) return true;
+        // Search across kind, primary fields, and the original payload.
+        const haystack = filterKey + ' ' + JSON.stringify(op);
+        return haystack.toLowerCase().includes(query);
+      }
       if (entry.role === 'assistant') {
         if (!showAssistant) return false;
-        const tool = entry.toolUse;
-        if (!query) {
-          if (!tool) return true;
-          return toolFilters[tool.name] !== false;
-        }
+        if (!query) return true;
         const text = entry.text ?? '';
-        const toolMatch = tool && toolFilters[tool.name] !== false &&
-          (tool.name.toLowerCase().includes(query) || JSON.stringify(tool.input).toLowerCase().includes(query));
-        return !!toolMatch || text.toLowerCase().includes(query);
+        return text.toLowerCase().includes(query);
       }
       // System / meta / summary / unknown
       if (!showUser && !showAssistant) return false;
@@ -301,11 +312,14 @@ export function TranscriptViewer({ workerType, path, selectedEntryId, selectedTi
     });
   }, [entries, showUser, showAssistant, toolFilters, searchQuery]);
 
-  // Chat mode shows only user/assistant entries with visible content
+  // Chat mode shows user/assistant entries plus operation rows.
   const chatEntries = useMemo(
     () => filteredEntries.filter((e) => {
       if (e.role === 'assistant') {
-        return !!(e.text || e.thinking || e.toolUse);
+        return !!(e.text || e.thinking);
+      }
+      if (e.role === 'operation') {
+        return !!e.operation;
       }
       if (e.role === 'user') {
         return !!(e.text && e.text.trim().length);
@@ -320,12 +334,17 @@ export function TranscriptViewer({ workerType, path, selectedEntryId, selectedTi
   };
 
   const clearAllFilters = () => {
-    const toolNames = entries
-      .filter((e) => e.role === 'assistant' && e.toolUse)
-      .map((e) => e.toolUse!.name)
+    const toolKeys = entries
+      .filter((e) => e.role === 'operation' && e.operation)
+      .map((e) => {
+        const op = e.operation!;
+        return op.kind === 'tool_use'
+          ? (op as { tool_name: string }).tool_name || 'tool_use'
+          : op.kind;
+      })
       .filter(Boolean);
     const next: Record<string, boolean> = {};
-    Array.from(new Set(toolNames)).forEach((n) => { next[n] = true; });
+    Array.from(new Set(toolKeys)).forEach((n) => { next[n] = true; });
     setToolFilters(next);
     setShowUser(true);
     setShowAssistant(true);
@@ -333,12 +352,17 @@ export function TranscriptViewer({ workerType, path, selectedEntryId, selectedTi
   };
 
   const disableAllFilters = () => {
-    const toolNames = entries
-      .filter((e) => e.role === 'assistant' && e.toolUse)
-      .map((e) => e.toolUse!.name)
+    const toolKeys = entries
+      .filter((e) => e.role === 'operation' && e.operation)
+      .map((e) => {
+        const op = e.operation!;
+        return op.kind === 'tool_use'
+          ? (op as { tool_name: string }).tool_name || 'tool_use'
+          : op.kind;
+      })
       .filter(Boolean);
     const next: Record<string, boolean> = {};
-    Array.from(new Set(toolNames)).forEach((n) => { next[n] = false; });
+    Array.from(new Set(toolKeys)).forEach((n) => { next[n] = false; });
     setToolFilters(next);
     setShowUser(false);
     setShowAssistant(false);
@@ -542,13 +566,13 @@ export function TranscriptViewer({ workerType, path, selectedEntryId, selectedTi
 
       {viewMode === 'chat' ? (
         <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden">
-          {chatEntries.map((entry) => {
+          {chatEntries.map((entry, idx) => {
             const ts = resolveEntryTimestamp(entry);
             const isSelected = entry.id === resolvedEntryId;
             const isCurrent = entry.id === currentEntryId && !isSelected;
             return (
               <div
-                key={entry.id}
+                key={`${entry.id}:${idx}`}
                 ref={entry.id === pendingScrollId ? scrollTargetRef : undefined}
                 data-entry-ts={ts ?? undefined}
                 data-entry-uuid={entry.id}
@@ -616,13 +640,13 @@ export function TranscriptViewer({ workerType, path, selectedEntryId, selectedTi
           </div>
 
           <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden">
-            {filteredEntries.map((entry) => {
+            {filteredEntries.map((entry, idx) => {
               const ts = resolveEntryTimestamp(entry);
               const isSelected = entry.id === resolvedEntryId;
               const isCurrent = entry.id === currentEntryId && !isSelected;
               return (
                 <div
-                  key={entry.id}
+                  key={`${entry.id}:${idx}`}
                   ref={entry.id === pendingScrollId ? scrollTargetRef : undefined}
                   data-entry-ts={ts ?? undefined}
                   data-entry-uuid={entry.id}

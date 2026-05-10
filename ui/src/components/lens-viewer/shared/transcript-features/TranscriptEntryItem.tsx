@@ -4,7 +4,6 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
-  ExternalLink,
   Info,
   Scissors,
   Square,
@@ -14,7 +13,8 @@ import {
   Zap,
 } from 'lucide-react';
 
-import { formatDuration, formatEntryTime, formatNumber, getToolFileSummary } from './transcript-utils';
+import { OperationExpandedDetail, OperationOneLiner } from './OperationRow';
+import { formatDuration, formatEntryTime, formatNumber, workerIcon, workerLabel } from './transcript-utils';
 import type { UnifiedEntry } from './types';
 
 interface Props {
@@ -25,7 +25,6 @@ interface Props {
   onInfo: () => void;
   onInfoHover: () => void;
   onInfoHoverEnd: () => void;
-  onOpenTaskLink?: (activeForm?: string) => void;
 }
 
 export function TranscriptEntryItem({
@@ -36,7 +35,6 @@ export function TranscriptEntryItem({
   onInfo,
   onInfoHover,
   onInfoHoverEnd,
-  onOpenTaskLink,
 }: Props) {
   const timestamp = formatEntryTime(entry);
   // Sidechain entries get visual indent — same hierarchy hint as legacy.
@@ -107,12 +105,12 @@ export function TranscriptEntryItem({
     );
   }
 
-  // ── Assistant turn (text + thinking + tool_use + usage) ─────────────────────
-  if (entry.role === 'assistant') {
-    const tool = entry.toolUse;
-    if (tool && toolFilters && toolFilters[tool.name] === false) return null;
-    const fileSummary = tool ? getToolFileSummary([{ name: tool.name, input: tool.input }]) : [];
-    const totalTokens = (entry.usage?.input ?? 0) + (entry.usage?.output ?? 0);
+  // ── Operation row (file_write / shell / search / web_fetch / tool_use catch-all) ──
+  if (entry.role === 'operation' && entry.operation) {
+    const op = entry.operation;
+    // Filter chips key on the semantic kind (catch-all uses raw tool name).
+    const filterKey = op.kind === 'tool_use' ? (op as { tool_name: string }).tool_name : op.kind;
+    if (toolFilters && toolFilters[filterKey] === false) return null;
     return (
       <div className={`border-b border-border ${indentWrapperClass}`}>
         <div
@@ -128,19 +126,43 @@ export function TranscriptEntryItem({
             <ChevronRight className="mt-0.5 h-4 w-4 shrink-0" />
           )}
           {childMarker}
-          <Bot className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
+          <OperationOneLiner operation={op} />
+          <span className="shrink-0 text-[10px] text-muted-foreground">{timestamp}</span>
+          <InfoButton onInfo={onInfo} onInfoHover={onInfoHover} onInfoHoverEnd={onInfoHoverEnd} />
+        </div>
+        {isExpanded && (
+          <div className="ml-10 border-t border-border bg-muted/20 p-2">
+            <OperationExpandedDetail operation={op} />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Assistant text turn (+ optional usage) ─────────────────────────────────
+  if (entry.role === 'assistant') {
+    const totalTokens = (entry.usage?.input ?? 0) + (entry.usage?.output ?? 0);
+    const WorkerIcon = workerIcon(entry.worker);
+    return (
+      <div className={`border-b border-border ${indentWrapperClass}`}>
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={onToggle}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
+          className={`flex w-full min-w-0 cursor-pointer items-start gap-2 p-2 text-left hover:bg-muted/30 ${indentInnerClass}`}
+        >
+          {isExpanded ? (
+            <ChevronDown className="mt-0.5 h-4 w-4 shrink-0" />
+          ) : (
+            <ChevronRight className="mt-0.5 h-4 w-4 shrink-0" />
+          )}
+          {childMarker}
+          <WorkerIcon className="mt-0.5 h-4 w-4 shrink-0" />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-green-600">Assistant</span>
+              <span className="text-xs font-medium text-foreground/80">{workerLabel(entry.worker)}</span>
               <span className="text-[10px] text-muted-foreground">{timestamp}</span>
-              {tool && (
-                <span className="rounded bg-orange-500/10 px-1 text-[10px] text-orange-600">{tool.name}</span>
-              )}
-              {fileSummary.length > 0 && (
-                <span className="min-w-0 truncate font-mono text-[10px] text-muted-foreground">
-                  {fileSummary.join(', ')}
-                </span>
-              )}
               {entry.thinking && (
                 <span className="shrink-0 rounded bg-purple-500/10 px-1 text-[10px] text-purple-600">thinking</span>
               )}
@@ -152,7 +174,7 @@ export function TranscriptEntryItem({
               )}
             </div>
             <p className={`mt-0.5 break-all text-xs ${isExpanded ? '' : 'line-clamp-2'}`}>
-              {entry.text || (tool ? `${tool.name}(...)` : '(no text content)')}
+              {entry.text || '(no text content)'}
             </p>
           </div>
           <InfoButton onInfo={onInfo} onInfoHover={onInfoHover} onInfoHoverEnd={onInfoHoverEnd} />
@@ -160,33 +182,6 @@ export function TranscriptEntryItem({
 
         {isExpanded && (
           <div className="ml-10 space-y-2 border-t border-border bg-muted/20 p-2">
-            {tool && (
-              <div className="rounded border border-border bg-background p-2">
-                <div className="flex items-center gap-2">
-                  <Terminal className="h-3 w-3 text-orange-500" />
-                  <span className="font-mono text-xs font-medium">{tool.name}</span>
-                  {onOpenTaskLink && (tool.name === 'TaskCreate' || tool.name === 'TaskUpdate') && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const inp = (tool.input ?? {}) as { activeForm?: string };
-                        onOpenTaskLink(inp.activeForm);
-                      }}
-                      className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-primary hover:bg-muted"
-                      title="Open in tasks viewer"
-                    >
-                      <ExternalLink className="h-3 w-3" />
-                      Tasks
-                    </button>
-                  )}
-                </div>
-                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-muted-foreground">
-                  {JSON.stringify(tool.input, null, 2)}
-                </pre>
-              </div>
-            )}
-
             {entry.thinking && (
               <div className="rounded border border-purple-500/20 bg-purple-500/5 p-2">
                 <p className="text-[10px] font-medium text-purple-600">Thinking:</p>

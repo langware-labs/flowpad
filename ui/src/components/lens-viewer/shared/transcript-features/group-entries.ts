@@ -6,38 +6,51 @@ function baseId(id: string): string {
   return id.endsWith(':usage') ? id.slice(0, -':usage'.length) : id;
 }
 
+/** Set of semantic operation kinds that get their own row. */
+const OPERATION_KINDS = new Set<GenericEntry['kind']>([
+  'file_write', 'file_edit', 'file_read',
+  'shell_command', 'search', 'web_fetch',
+  'todo_update', 'agent_spawn', 'tool_use',
+]);
+
 /**
  * Project `GenericEntry[]` onto `UnifiedEntry[]` (one row per logical turn).
  *
- * Grouping rule: ONLY assistant-turn parts collapse — `assistant_message`
- * + `tool_use` + `token_usage` rows that share the same base id (the python
- * parser emits the token_usage row with id `<base>:usage`). Same-kind groups
- * for `user` (a `user_message` paired with a `tool_result` from the same line)
- * also collapse. Everything else is one row per source entry — even if two
- * meta lines share an id from the parser's `sessionId` fallback (queue-op,
- * ai-title, last-prompt, attachment do this and would otherwise collide).
+ * Grouping rule:
+ *   - Assistant text turns collapse with their adjacent `token_usage` row
+ *     (the python parser emits the token_usage row with id `<base>:usage`).
+ *   - Each semantic **operation** kind (file_write / shell_command / …) and
+ *     the catch-all `tool_use` are independent rows — never merged with the
+ *     surrounding assistant message.
+ *   - User rows pair with adjacent same-id `tool_result` rows when present
+ *     (catch-all path; semantic results are already folded server-side).
+ *   - Everything else is one row per source entry.
  *
- * Preserves source order. The shape is deliberately flat (no nested
- * `message.content[]`): the renderer reads `e.text`, `e.thinking`,
- * `e.toolUse`, etc. directly — no Claude-specific adapter.
+ * Preserves source order. The shape is deliberately flat: the renderer
+ * reads `e.text`, `e.operation`, `e.toolUse`, etc. directly.
  */
 export function groupEntriesByTurn(entries: GenericEntry[]): UnifiedEntry[] {
   const out: UnifiedEntry[] = [];
-  // Lookahead group: walk entries linearly; when we see an assistant turn
-  // anchor, eagerly collect its companion `token_usage` row that shares the
-  // same base id (the python parser always emits them adjacent). Same for a
-  // user row that's followed by its tool_result counterpart on the same id.
   let i = 0;
   while (i < entries.length) {
     const e = entries[i];
     const ebid = baseId(e.id);
 
-    if (e.kind === 'assistant_message' || e.kind === 'tool_use' || e.kind === 'exit_plan_mode' as unknown) {
+    // Operation rows are always their own row — no merge with neighbours.
+    if (OPERATION_KINDS.has(e.kind)) {
+      const projected = projectGroup([e]);
+      if (projected) out.push(projected);
+      i++;
+      continue;
+    }
+
+    if (e.kind === 'assistant_message') {
       const group: GenericEntry[] = [e];
-      // pull in any same-base-id companions immediately following
+      // pull in only the matching token_usage companion (semantic ops live
+      // in their own row now).
       let j = i + 1;
       while (j < entries.length && baseId(entries[j].id) === ebid &&
-             (entries[j].kind === 'token_usage' || entries[j].kind === 'tool_use' || entries[j].kind === 'assistant_message')) {
+             entries[j].kind === 'token_usage') {
         group.push(entries[j]);
         j++;
       }
@@ -61,8 +74,7 @@ export function groupEntriesByTurn(entries: GenericEntry[]): UnifiedEntry[] {
     }
     // Standalone token_usage (no immediate assistant anchor) → drop.
     if (e.kind === 'token_usage') { i++; continue; }
-    // Everything else (system, meta, summary, unknown): one row each, no
-    // grouping. This is what fixes the queue-operation/ai-title collision.
+    // Everything else (system, meta, summary, unknown): one row each.
     const projected = projectGroup([e]);
     if (projected) out.push(projected);
     i++;
@@ -78,21 +90,36 @@ function projectGroup(group: GenericEntry[]): UnifiedEntry | null {
     sessionId: anchor.session_id,
     parentId: anchor.parent_id ?? null,
     isSidechain: anchor.is_sidechain ?? false,
+    worker: anchor.worker,
     rawEntries: group,
   };
 
-  // Assistant turn — text and/or tool_use, plus optional token_usage
+  // Operation row (semantic kind or catch-all tool_use)
+  if (OPERATION_KINDS.has(anchor.kind)) {
+    const out: UnifiedEntry = {
+      ...base,
+      role: 'operation',
+      kind: anchor.kind,
+      operation: anchor,
+    };
+    if (anchor.kind === 'tool_use') {
+      out.toolUse = {
+        name: anchor.tool_name,
+        toolUseId: anchor.tool_use_id,
+        input: anchor.tool_input,
+      };
+    }
+    return out;
+  }
+
+  // Assistant text turn (+ optional adjacent token_usage)
   const am = group.find((g) => g.kind === 'assistant_message');
-  const tu = group.find((g) => g.kind === 'tool_use');
   const usage = group.find((g) => g.kind === 'token_usage');
-  if (am || tu) {
-    const out: UnifiedEntry = { ...base, role: 'assistant' };
-    if (am && am.kind === 'assistant_message') {
+  if (am) {
+    const out: UnifiedEntry = { ...base, role: 'assistant', kind: 'assistant_message' };
+    if (am.kind === 'assistant_message') {
       if (am.text) out.text = am.text;
       if (am.thinking) out.thinking = am.thinking;
-    }
-    if (tu && tu.kind === 'tool_use') {
-      out.toolUse = { name: tu.tool_name, toolUseId: tu.tool_use_id, input: tu.tool_input };
     }
     if (usage && usage.kind === 'token_usage') {
       out.usage = {
@@ -107,11 +134,11 @@ function projectGroup(group: GenericEntry[]): UnifiedEntry | null {
     return out;
   }
 
-  // User turn — text or tool_result
+  // User turn — text or tool_result (catch-all paired result)
   const um = group.find((g) => g.kind === 'user_message');
   const tr = group.find((g) => g.kind === 'tool_result');
   if (um || tr) {
-    const out: UnifiedEntry = { ...base, role: 'user' };
+    const out: UnifiedEntry = { ...base, role: 'user', kind: um ? 'user_message' : 'tool_result' };
     if (um && um.kind === 'user_message' && um.text) out.text = um.text;
     if (tr && tr.kind === 'tool_result') {
       out.toolResult = {
@@ -128,21 +155,17 @@ function projectGroup(group: GenericEntry[]): UnifiedEntry | null {
 
   // System / progress / hooks
   if (anchor.kind === 'system') {
-    return { ...base, role: 'system', subtype: anchor.subtype, payload: anchor.payload };
+    return { ...base, role: 'system', kind: 'system', subtype: anchor.subtype, payload: anchor.payload };
   }
-  // Summary
   if (anchor.kind === 'summary') {
-    return { ...base, role: 'summary', summary: anchor.summary_text };
+    return { ...base, role: 'summary', kind: 'summary', summary: anchor.summary_text };
   }
-  // Meta lines (file-history-snapshot, queue-operation, ai-title, attachment, …)
   if (anchor.kind === 'meta') {
-    return { ...base, role: 'meta', subtype: anchor.meta_kind, payload: anchor.payload };
+    return { ...base, role: 'meta', kind: 'meta', subtype: anchor.meta_kind, payload: anchor.payload };
   }
-  // Unknown
   if (anchor.kind === 'unknown') {
-    return { ...base, role: 'unknown', payload: anchor.raw_data };
+    return { ...base, role: 'unknown', kind: 'unknown', payload: anchor.raw_data };
   }
-  // Standalone token_usage with no parent assistant — drop (renders nowhere).
   return null;
 }
 
