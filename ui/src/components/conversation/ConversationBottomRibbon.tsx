@@ -29,11 +29,11 @@ export function ConversationBottomRibbon({
   showRuns = true,
   runsBadge,
 }: ConversationBottomRibbonProps) {
-  const tabs: RibbonTab[] = [];
+  // Order matches the drawer's tab strip: Context on the left, Runs on the right.
+  const tabs: RibbonTab[] = [{ id: 'context', icon: Layers, description: 'Context' }];
   if (showRuns) {
     tabs.push({ id: 'runs', icon: History, description: 'Runs', badge: runsBadge });
   }
-  tabs.push({ id: 'context', icon: Layers, description: 'Context' });
 
   return (
     <div className="flex items-center border-t bg-muted/30 px-2 py-1">
