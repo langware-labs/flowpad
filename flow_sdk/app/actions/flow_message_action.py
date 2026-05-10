@@ -1098,7 +1098,15 @@ async def derive_task() -> ApiResponse:
 
 
 async def handle_start_cc_from_transcript(fm_id: str, someone_typeid: str) -> ApiResponse:
-    """Spawn a Claude session pre-loaded with this message's transcript attachment."""
+    """Resolve transcript path + spawn info for a Claude session derived from this FM.
+
+    Spawning the AgenticProcess is intentionally left to the frontend
+    (mirrors `useMyProcess`'s pattern: ``AgenticProcess.spawn(..., { visible: true })``
+    + ``process.start({ instruction })``) so we get a real PTY-backed shell
+    the user can interact with — a backend-spawned ``visible=false`` worker
+    has no PTY to attach to and the dock's shell route falls back when
+    navigated to.
+    """
     fm = await FlowMessage.get_one({"id": fm_id})
     if not fm:
         return ApiFailResponse(message=f"FlowMessage not found: {fm_id}")
@@ -1114,36 +1122,11 @@ async def handle_start_cc_from_transcript(fm_id: str, someone_typeid: str) -> Ap
     transcript_path = transcript.local_path or transcript.data
     workdir, project_id = await _resolve_workdir_and_project_async(fm)
 
-    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-    from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
-
-    cli_opts = ClaudeCliOptions(
-        print_mode=True,
-        output_format="stream-json",
-        verbose=True,
-        permission_mode="bypassPermissions",
-    )
-    fm_typeid = TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm.id)
-    process = AgenticProcess(
-        cli_config=cli_opts.to_json(),
-        workdir=workdir,
-        visible=False,
-        project_id=project_id,
-        # Pin to the source FlowMessage so the Private Context query
-        # (`target_vfs_path = fm-<id>`) picks this session up immediately.
-        target_vfs_path=str(fm_typeid),
-        context_entities=[fm_typeid],
-    )
-    await process.save(someone_typeid)
-
-    instruction = (
-        f"Use the flow skill and provide a brief analysis of this Claude transcript at:\n"
-        f"{transcript_path}\n"
-    )
-    import asyncio
-    asyncio.create_task(process.prompt(instruction))
-
-    return ApiSuccessResponse(data={"process_id": process.id})
+    return ApiSuccessResponse(data={
+        "transcript_path": transcript_path,
+        "workdir": workdir,
+        "project_id": project_id,
+    })
 
 
 @action.post(action_name="start-cc-from-transcript", types=[BuiltinEntityType.FLOW_MESSAGE.value])
