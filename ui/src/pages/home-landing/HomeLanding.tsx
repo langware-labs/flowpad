@@ -39,7 +39,6 @@ import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { resolveConversationDockPointer } from '@src/navigation/conversation-route-resolver';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type React from 'react';
 import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
@@ -116,36 +115,19 @@ export function HomeLanding() {
       return;
     }
 
-    void (async () => {
-      if (convId) {
-        // Resolve project_id from the local Task (if any) for the dock pointer.
-        let projectId: string | null = null;
-        if (taskId) {
-          const { dataManager, Task, TypeId } = await import('@sdk');
-          const task = await dataManager
-            .getByTypeId<import('@sdk').Task>(new TypeId(Task.type, taskId))
-            .catch(() => null);
-          projectId = task?.project_id ?? null;
-        }
-        navigation.openDock(
-          resolveConversationDockPointer({
-            conversationId: convId,
-            taskId: taskId || null,
-            projectId,
-          }),
-        );
-        return;
-      }
+    if (convId) {
+      navigation.openDock(DockPointer.forConversation(convId));
+      return;
+    }
 
-      // Last resort: no convId in the deep link. If we have a taskId, open the
-      // tasks dock; otherwise stay on home and let the strip surface the share
-      // once inbox-fetch lands the FM. ``fmId`` is unused here but kept in the
-      // URL params for diagnostics / future fallback.
-      void fmId;
-      if (taskId) {
-        navigation.openDock(DockPointer.fromUrl('tasks', taskId));
-      }
-    })();
+    // Last resort: no convId in the deep link. If we have a taskId, open the
+    // tasks dock; otherwise stay on home and let the strip surface the share
+    // once inbox-fetch lands the FM. ``fmId`` is unused here but kept in the
+    // URL params for diagnostics / future fallback.
+    void fmId;
+    if (taskId) {
+      navigation.openDock(DockPointer.fromUrl('tasks', taskId));
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const { projects: claudeProjects, isLoading: isLoadingClaudeProjects } = useClaudeProjectList();

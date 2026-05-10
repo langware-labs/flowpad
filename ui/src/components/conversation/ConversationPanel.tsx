@@ -47,16 +47,17 @@ interface ConversationPanelProps {
  *   │  Bottom ribbon (toggle Context / Runs)             │
  *   └────────────────────────────────────────────────────┘
  *
- * The drawer is a real toggleable drawer — the bottom ribbon is the only
- * affordance for opening / closing it (no X inside the drawer, since the
- * ribbon icons are always visible and serve as the re-open path). Clicks on
- * the ribbon:
+ * The drawer is a real toggleable drawer — two affordances for closing it:
+ *   - the X button inside the drawer's tab strip (slides it shut to the right)
+ *   - clicking the currently-active tab on the bottom ribbon
+ * The ribbon icons are always visible regardless of drawer state, so the
+ * user can re-open the drawer at any time. Clicks on the ribbon:
  *   - drawer closed → open to the clicked tab
  *   - drawer open + clicking the active tab → close the drawer
  *   - drawer open + clicking a non-active tab → switch tab, drawer stays open
  *
- * Tabs (left → right): Context, Runs. Both are per-message — switching the
- * selected message wholesale-replaces both panels.
+ * Tabs (left → right) match the ribbon order: Context, Runs. Both are
+ * per-message — switching the selected message wholesale-replaces both panels.
  *
  * The conversation toolbar deliberately renders no chips. Project / spec /
  * shared-terminal affordances all live in the Context tab now, scoped to
@@ -192,6 +193,7 @@ export function ConversationPanel({
 
         <TabbedSideDrawer<ConversationSideTab>
           open={sideOpen}
+          onOpenChange={setSideOpen}
           activeTab={activeSideTab}
           onActiveTabChange={setActiveSideTab}
           tabs={tabs}

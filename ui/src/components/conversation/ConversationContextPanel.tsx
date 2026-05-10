@@ -21,6 +21,7 @@ import {
 import { toast } from 'sonner';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { fileAttachmentUrl } from './attachment-url';
 import { ICON_BY_TYPE } from './EntityChip';
 import { OpenInClaudeButton } from './OpenInClaudeButton';
 import { usePrivateContext } from './usePrivateContext';
@@ -103,6 +104,15 @@ export function ConversationContextPanel({
   const transcriptAttachment = attachments.find(isTranscriptAttachment);
   const typeIdAttachments = attachments.filter((a) => a.attachment_type === AttachmentType.TYPE_ID);
 
+  // Lift Private Context queries here so SharedContext can hide the
+  // "Start session" button once a transcript-derived session exists.
+  const projectIdLifted = task?.project_id ?? conversation?.project_id ?? null;
+  const { tasks: privateTasks, processes: privateProcesses } = usePrivateContext(
+    messageId || null,
+    projectIdLifted,
+  );
+  const hasTranscriptSession = privateProcesses.length > 0;
+
   // ── Shared Context: entity TypeIds (project pinned + per-message) ────
   const skipKeys = new Set<string>();
   if (messageId) skipKeys.add(new TypeId(FlowMessage.type, messageId).toString());
@@ -149,13 +159,14 @@ export function ConversationContextPanel({
         transcriptAttachment={transcriptAttachment ?? null}
         messageId={messageId}
         conversationId={conversationId}
+        hasTranscriptSession={hasTranscriptSession}
       />
 
       <PrivateContextSection
         flowMessage={flowMessage}
-        projectId={projectId ?? null}
         conversationId={conversationId}
-        transcriptAttachment={transcriptAttachment ?? null}
+        tasks={privateTasks}
+        processes={privateProcesses}
       />
     </div>
   );
@@ -170,6 +181,9 @@ interface SharedContextSectionProps {
   transcriptAttachment: Attachment | null;
   messageId: string;
   conversationId: string;
+  /** When true, "Start session" is suppressed — a session already exists in
+   *  Private Context and the user opens it from there instead. */
+  hasTranscriptSession: boolean;
 }
 
 function SharedContextSection({
@@ -177,6 +191,7 @@ function SharedContextSection({
   transcriptAttachment,
   messageId,
   conversationId,
+  hasTranscriptSession,
 }: SharedContextSectionProps) {
   const { navigation } = useDockNavigation();
   const containerInside = { type: Conversation.type, id: conversationId };
@@ -190,14 +205,22 @@ function SharedContextSection({
     try {
       const action = new ActionInfo('start-cc-from-transcript', 'flow_message', messageId, 'POST');
       const res = await dataManager.callAction<unknown, { process_id?: string }>(action);
-      if (res?.process_id) {
-        toast.success('Starting Claude session from transcript…');
-      } else {
-        toast.error('Failed to start Claude session');
+      if (!res?.process_id) {
+        toast.error('Failed to start session');
+        return;
+      }
+      // Open the new session immediately. The AgenticProcess entity is also
+      // delivered via the entity-query channel, populating the Private Context
+      // row with an "Open" action for next time.
+      const proc = await dataManager
+        .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, res.process_id))
+        .catch(() => null);
+      if (proc?.dockPointer) {
+        navigation.openDock(proc.dockPointer);
       }
     } catch (err) {
       console.error('[SharedContext] start-cc-from-transcript failed', err);
-      toast.error('Failed to start Claude session');
+      toast.error('Failed to start session');
     } finally {
       setStartingCc(false);
     }
@@ -226,6 +249,7 @@ function SharedContextSection({
               attachment={transcriptAttachment}
               startingCc={startingCc}
               onStartCc={handleStartCc}
+              hasTranscriptSession={hasTranscriptSession}
             />
           )}
         </ContextTable>
@@ -258,14 +282,32 @@ interface TranscriptRowProps {
   attachment: Attachment;
   startingCc: boolean;
   onStartCc: () => void;
+  hasTranscriptSession: boolean;
 }
 
-function TranscriptRow({ messageId, attachment, startingCc, onStartCc }: TranscriptRowProps) {
-  // The transcript URL is the FlowMessage attachment download endpoint;
-  // opening in a new tab gives the user the raw JSONL. The richer
-  // ClaudeTranscriptViewer requires a discoverable session-id, which an
-  // attached transcript doesn't have until "Start CC" creates a session.
-  const url = `/api/v1/graph/fs/flow_message/${messageId}/download/${attachment.data}`;
+function TranscriptRow({
+  messageId,
+  attachment,
+  startingCc,
+  onStartCc,
+  hasTranscriptSession,
+}: TranscriptRowProps) {
+  const { navigation } = useDockNavigation();
+  // Prefer the agent transcript viewer when we have a local filesystem path
+  // (server-populated on FILE attachments). Falls back to opening the raw
+  // JSONL via the attachment-download URL — no transcript-viewer rendering,
+  // but at least the user sees the bytes.
+  const localPath = attachment.local_path ?? null;
+  const downloadUrl = fileAttachmentUrl(messageId, attachment.data);
+
+  const handleView = () => {
+    if (localPath) {
+      navigation.openLens('claude', 'transcript-path', encodeURIComponent(localPath));
+    } else {
+      window.open(downloadUrl, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   return (
     <Row
       icon={ICON_BY_TYPE.conversation ?? ExternalLink}
@@ -273,23 +315,22 @@ function TranscriptRow({ messageId, attachment, startingCc, onStartCc }: Transcr
       name={attachment.data.split('/').pop() ?? attachment.data}
     >
       <RowAction
-        as="a"
-        href={url}
-        target="_blank"
-        rel="noreferrer"
-        title="Open the Claude Code transcript in a new tab"
+        onClick={handleView}
+        title={localPath ? 'Open in the transcript viewer' : 'Open the raw JSONL in a new tab'}
       >
         <Eye className="h-3 w-3" />
-        View CC session
+        View session
       </RowAction>
-      <RowAction
-        onClick={onStartCc}
-        disabled={startingCc}
-        title="Start a new Claude session pre-loaded with this transcript"
-      >
-        <PlayCircle className="h-3 w-3" />
-        {startingCc ? 'Starting…' : 'Start CC session'}
-      </RowAction>
+      {!hasTranscriptSession && (
+        <RowAction
+          onClick={onStartCc}
+          disabled={startingCc}
+          title="Start a new Claude session pre-loaded with this transcript"
+        >
+          <PlayCircle className="h-3 w-3" />
+          {startingCc ? 'Starting…' : 'Start session'}
+        </RowAction>
+      )}
     </Row>
   );
 }
@@ -300,19 +341,19 @@ function TranscriptRow({ messageId, attachment, startingCc, onStartCc }: Transcr
 
 interface PrivateContextSectionProps {
   flowMessage: FlowMessage;
-  projectId: string | null;
   conversationId: string;
-  transcriptAttachment: Attachment | null;
+  tasks: Task[];
+  processes: AgenticProcess[];
 }
 
 function PrivateContextSection({
   flowMessage,
-  projectId,
   conversationId,
+  tasks,
+  processes,
 }: PrivateContextSectionProps) {
   const { navigation } = useDockNavigation();
   const messageId = flowMessage.id ?? '';
-  const { tasks, processes } = usePrivateContext(messageId || null, projectId);
   const [adding, setAdding] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
 
@@ -398,7 +439,7 @@ function PrivateContextSection({
             <PrivateProcessRow
               key={p.id}
               process={p}
-              onView={() => {
+              onOpen={() => {
                 if (p.dockPointer) navigation.openDock(p.dockPointer);
               }}
             />
@@ -435,21 +476,21 @@ function PrivateTaskRow({
 
 function PrivateProcessRow({
   process,
-  onView,
+  onOpen,
 }: {
   process: AgenticProcess;
-  onView: () => void;
+  onOpen: () => void;
 }) {
   const Icon = ICON_BY_TYPE.agentic_process ?? ExternalLink;
   return (
     <Row
       icon={Icon}
-      type="CC Session"
+      type="Session"
       name={process.displayName ?? process.id ?? '(running)'}
     >
-      <RowAction onClick={onView} title="Open the CC session">
-        <Eye className="h-3 w-3" />
-        View
+      <RowAction onClick={onOpen} title="Open the session">
+        <ExternalLink className="h-3 w-3" />
+        Open
       </RowAction>
     </Row>
   );
