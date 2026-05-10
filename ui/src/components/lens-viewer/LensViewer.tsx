@@ -74,6 +74,21 @@ export function LensViewer() {
       }
       return <GenericTranscriptViewer workerType="codex" path={path} />;
     }
+    case 'claude/transcript-path': {
+      // Path-based variant of the claude transcript lens — used when the
+      // transcript is reachable via a known filesystem path (e.g. a
+      // `conversation.jsonl` file attached to a FlowMessage) rather than a
+      // discoverable session-id. ref is the URL-encoded absolute path.
+      const path = decodeURIComponent(lensParts.ref || '');
+      if (!path) {
+        return (
+          <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
+            <p>Invalid transcript ref: expected an absolute path</p>
+          </div>
+        );
+      }
+      return <GenericTranscriptViewer workerType="claude" path={path} />;
+    }
     case 'claude/tasks':
       return (
         <ClaudeTasksViewer

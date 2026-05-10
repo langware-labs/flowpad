@@ -2,7 +2,7 @@ import { cn } from '@src/lib/utils';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { X, type LucideIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { ComponentType, ReactNode, SVGProps } from 'react';
 
 /**
  * Shared right-side drawer shell. Consumed by surfaces that slide a panel in
@@ -107,6 +107,11 @@ export interface TabbedSideDrawerProps<TabId extends string = string>
   children: Partial<Record<TabId, ReactNode>>;
   /** Override the default tab-trigger testid prefix (see docstring). */
   tabTestIdPrefix?: string;
+  /** Icon for the close button. Defaults to `X` (dismiss). Pass e.g.
+   *  `PanelRightClose` for a "fold to the right" drawer affordance. */
+  closeIcon?: ComponentType<SVGProps<SVGSVGElement>>;
+  /** Tooltip / aria-label for the close button. Defaults to "Close". */
+  closeLabel?: string;
 }
 
 export function TabbedSideDrawer<TabId extends string>({
@@ -119,6 +124,8 @@ export function TabbedSideDrawer<TabId extends string>({
   onActiveTabChange,
   children,
   tabTestIdPrefix,
+  closeIcon: CloseIcon = X,
+  closeLabel = 'Close',
   'data-testid': dataTestId,
 }: TabbedSideDrawerProps<TabId>) {
   if (!open) return null;
@@ -170,10 +177,11 @@ export function TabbedSideDrawer<TabId extends string>({
             size="icon"
             className="ml-auto h-6 w-6"
             onClick={() => onOpenChange(false)}
-            aria-label="Close"
+            aria-label={closeLabel}
+            title={closeLabel}
             data-testid={dataTestId ? `${dataTestId}-close` : undefined}
           >
-            <X className="h-3.5 w-3.5" />
+            <CloseIcon className="h-3.5 w-3.5" />
           </Button>
         )}
       </div>
