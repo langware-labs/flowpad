@@ -130,7 +130,6 @@ class Trigger(Entity):
     enabled: bool = APIField(default=True)
     last_triggered: Optional[datetime] = APIField(None, description="Timestamp of last trigger match")
     counter: int = APIField(default=0, description="Counter incremented when trigger action is executed")
-    scope: str = APIField(default="system")
     hook_events: list[str] = APIField(default_factory=list)
     log_mode: str = APIField(default="activations")
     path: Optional[str] = APIField(None)
@@ -142,7 +141,6 @@ class Trigger(Entity):
     last_run: Optional[datetime] = APIField(None, description="Last scheduled run (schedule triggers only)")
     instruction: Optional[str] = APIField(None, description="Prompt sent to the agentic process when this trigger fires (schedule triggers only)")
     workdir: Optional[str] = APIField(None, description="Working directory for the spawned agentic process (schedule triggers only)")
-    project_id: Optional[str] = APIField(None, description="Owning project id (schedule triggers only)")
 
     _api_visible: ClassVar[bool] = True
     _unique: ClassVar[list[str]] = []

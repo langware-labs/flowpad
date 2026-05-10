@@ -8,9 +8,9 @@
  * those collapse back into a single `UnifiedEntry` for rendering.
  */
 
-import type { GenericEntry } from '@sdk';
+import type { EntryKind, GenericEntry } from '@sdk';
 
-export type UnifiedRole = 'user' | 'assistant' | 'system' | 'summary' | 'meta' | 'unknown';
+export type UnifiedRole = 'user' | 'assistant' | 'operation' | 'system' | 'summary' | 'meta' | 'unknown';
 
 export interface ToolUse {
   name: string;
@@ -46,13 +46,29 @@ export interface UnifiedEntry {
   isSidechain: boolean;
   /** Top-level role for filter / styling decisions. */
   role: UnifiedRole;
+  /**
+   * The kind of the anchor entry — exposed so per-kind renderers can
+   * dispatch directly without re-reading `rawEntries[0].kind`. Mirrors
+   * the canonical `EntryKind` union on the server side.
+   */
+  kind?: EntryKind;
+  /** Worker that produced the row (claude, codex, …). */
+  worker?: string;
 
   // Conversational content (user / assistant)
   text?: string;
   thinking?: string;
-  toolUse?: ToolUse;          // assistant turn that's a tool call
-  toolResult?: ToolResult;    // user turn that's a tool response
+  toolUse?: ToolUse;          // catch-all tool_use (no semantic kind)
+  toolResult?: ToolResult;    // user turn that's a tool response (catch-all)
   usage?: TokenUsage;         // assistant turn token accounting
+
+  /**
+   * The original semantic operation entry when `role === 'operation'`.
+   * Renderers should switch on `operation.kind` (file_write / file_edit /
+   * shell_command / …) and read fields directly off this object — no
+   * `tool_input` sniffing.
+   */
+  operation?: GenericEntry;
 
   // System / meta / summary content
   subtype?: string;           // SystemEntry.subtype, MetaEntry.meta_kind, etc.

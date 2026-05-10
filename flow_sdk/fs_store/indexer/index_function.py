@@ -339,6 +339,18 @@ class FSIndexer:
                 try:
                     records = await info.record_cls.from_fsref(ref)
                     for rec in records:
+                        # Stamp scope/project_id from the FSRef parent-chain so
+                        # the entity row in the DB carries the indexer's
+                        # walk-time knowledge. Single-point bridge for every
+                        # type — per-type from_fsref overrides don't have to
+                        # repeat this. Idempotent: the FSRef value is the
+                        # canonical truth.
+                        ref_scope = ref.scope
+                        if ref_scope is not None:
+                            object.__setattr__(rec, "scope", ref_scope)
+                        ref_pid = ref.project_id
+                        if ref_pid is not None:
+                            object.__setattr__(rec, "project_id", ref_pid)
                         await rec.sync_to_db(fts_batch=fts_batch, notify=False)
                         # Reflect any actually-saved id back into seen_ids in case
                         # from_fsref returns multiple records (rare) or a different id.

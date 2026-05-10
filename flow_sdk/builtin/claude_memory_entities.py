@@ -31,10 +31,6 @@ class Markdown(Entity):
     # These power the Obsidian-style Wiki folder tree in the UI.
     parent_path: str = APIField(default="")
     vault_root: str = APIField(default="")
-    # project_id stamped at index time (inherited from the project/system root
-    # FSRef). DocsCategory.tsx scopes its tree by this; without it system docs
-    # never show up in the project sidebar.
-    project_id: str | None = APIField(default=None)
     _api_visible: ClassVar[bool] = True
 
 
@@ -43,7 +39,6 @@ class Docs(Markdown):
     title: str = APIField(default="")
     tags: List[str] = APIField(default_factory=list)
     links: List[str] = APIField(default_factory=list)
-    scope: str = APIField(default="")
     _icon: ClassVar[str] = "BookOpen"
 
 
@@ -51,7 +46,6 @@ class ClaudeMemory(Markdown):
     type: str = APIField(default="claude_memory")
     asset_type: str = APIField(default="memory")
     project_path: str = APIField(default="")
-    project_encoded: str = APIField(default="")
     _api_visible: ClassVar[bool] = True
     _icon: ClassVar[str] = "Brain"
 
@@ -59,7 +53,6 @@ class ClaudeMemory(Markdown):
 class ClaudeRules(Markdown):
     type: str = APIField(default="claude_rules")
     asset_type: str = APIField(default="rule")
-    scope: str = APIField(default="user")
     _api_visible: ClassVar[bool] = True
     _icon: ClassVar[str] = "Shield"
 
@@ -74,7 +67,6 @@ class ClaudePlan(Markdown):
 class ClaudeMd(Markdown):
     type: str = APIField(default="claude_md")
     asset_type: str = APIField(default="claude_md")
-    scope: str = APIField(default="project")
     file_path: str = APIField(default="")
     filename: str = APIField(default="")
     _api_visible: ClassVar[bool] = True

@@ -40,9 +40,10 @@ export interface RecordGroup {
 
 /**
  * Bucket records by discovery source: scope='user' → "User"; scope='project'
- * → one bucket per `project_encoded_name` (fallback `project_encoded`).
- * Records with neither scope are dropped — they wouldn't pass the backend
- * filter anyway. Order is stable: User first, then projects alpha.
+ * → one bucket per `project_id`, labeled by `project_name` (fallback to the
+ * project_id UUID). Records with neither scope are dropped — they wouldn't
+ * pass the backend filter anyway. Order is stable: User first, then projects
+ * alpha by label.
  */
 export function groupRecords(results: SearchResult[]): RecordGroup[] {
   const userBucket: SearchResult[] = [];
@@ -53,8 +54,10 @@ export function groupRecords(results: SearchResult[]): RecordGroup[] {
       continue;
     }
     if (r.scope === 'project') {
-      const label = r.project_encoded_name || r.project_encoded || '(unknown project)';
-      const key = `project:${r.project_encoded || label}`;
+      const pid = r.project_id || '';
+      if (!pid) continue; // unindexed/legacy row — drop
+      const label = r.project_name || pid;
+      const key = `project:${pid}`;
       let bucket = projectBuckets.get(key);
       if (!bucket) {
         bucket = { label, records: [] };

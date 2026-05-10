@@ -8,30 +8,46 @@ Public surface:
 """
 
 from .entries import (
+    AgentSpawnEntry,
     AssistantMessageEntry,
     ExitPlanModeEntry,
+    FileEditEntry,
+    FileReadEntry,
+    FileWriteEntry,
     MetaEntry,
+    SearchEntry,
+    ShellCommandEntry,
     SummaryEntry,
     SystemEntry,
+    TodoUpdateEntry,
     ToolResultEntry,
     ToolUseEntry,
     UnknownEntry,
     UserMessageEntry,
+    WebFetchEntry,
 )
 from .entry import EntryKind, TranscriptEntry
 from .transcript import AgentTranscript
 
 __all__ = [
     "AgentTranscript",
+    "AgentSpawnEntry",
     "AssistantMessageEntry",
     "EntryKind",
     "ExitPlanModeEntry",
+    "FileEditEntry",
+    "FileReadEntry",
+    "FileWriteEntry",
     "MetaEntry",
+    "SearchEntry",
+    "ShellCommandEntry",
     "SummaryEntry",
     "SystemEntry",
+    "TodoUpdateEntry",
     "ToolResultEntry",
     "ToolUseEntry",
     "TranscriptEntry",
     "UnknownEntry",
     "UserMessageEntry",
+    "WebFetchEntry",
 ]

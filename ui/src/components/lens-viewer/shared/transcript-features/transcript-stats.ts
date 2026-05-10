@@ -14,6 +14,12 @@ export interface TranscriptStatsSummary {
 /**
  * Compute aggregate counts from a list of unified entries. Works for any
  * worker — relies only on the unified shape.
+ *
+ * `toolCounts` keys are SEMANTIC kinds (`file_write`, `shell_command`, …)
+ * for recognized operations, falling back to the raw `tool_name` for
+ * catch-all `tool_use` rows. This keeps the filter chips uniform across
+ * workers — claude `Bash` and codex `exec_command` both count as
+ * `shell_command`.
  */
 export function computeStats(entries: UnifiedEntry[]): TranscriptStatsSummary {
   let userMessages = 0;
@@ -28,10 +34,16 @@ export function computeStats(entries: UnifiedEntry[]): TranscriptStatsSummary {
     if (e.role === 'user' && (e.text?.trim().length ?? 0) > 0) userMessages++;
     if (e.role === 'assistant') {
       if (e.text?.trim().length || e.thinking?.trim().length) assistantMessages++;
-      if (e.toolUse) {
-        toolCalls++;
-        toolCounts[e.toolUse.name] = (toolCounts[e.toolUse.name] || 0) + 1;
-      }
+    }
+    if (e.role === 'operation' && e.operation) {
+      toolCalls++;
+      const op = e.operation;
+      // Catch-all `tool_use` keeps the raw tool name so MCP / unknown tools
+      // surface individually. Semantic kinds collapse onto their kind.
+      const key = op.kind === 'tool_use'
+        ? (op as { tool_name: string }).tool_name || 'tool_use'
+        : op.kind;
+      toolCounts[key] = (toolCounts[key] || 0) + 1;
     }
     if (e.timestamp) {
       const ms = new Date(e.timestamp).getTime();

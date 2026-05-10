@@ -51,7 +51,6 @@ class Shell(Entity):
     pty_pid: str | None = APIField(default=None, description="PTY session ID")
     compute_node_id: str | None = APIField(default=None, description="Owning compute node")
     compute_node_uname: str | None = APIField(default=None, description="Owning compute node uname")
-    project_id: str | None = APIField(default=None, description="Owning project")
     collaboration_room_id: str | None = APIField(
         default=None, description="CollaborationRoom this shell is shared into (null = not shared)"
     )

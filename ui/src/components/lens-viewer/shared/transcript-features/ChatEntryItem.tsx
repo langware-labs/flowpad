@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Bot, ChevronDown, ChevronRight, Minus, Plus, Terminal, User, Zap } from 'lucide-react';
+import { ChevronDown, ChevronRight, Minus, Plus, User, Zap } from 'lucide-react';
 
-import { formatEntryTime, formatNumber, getToolFileSummary } from './transcript-utils';
+import { OperationExpandedDetail, OperationOneLiner } from './OperationRow';
+import { formatEntryTime, formatNumber, workerIcon, workerLabel } from './transcript-utils';
 import type { UnifiedEntry } from './types';
 
 interface Props {
@@ -15,19 +16,9 @@ function needsTruncation(text: string): boolean {
   return text.split('\n').length > 3 || text.length > 280;
 }
 
-/** First non-empty line of a multiline string, for collapsed tool previews. */
-function firstLine(text: string): string {
-  return text.split('\n').find((l) => l.trim())?.trim() ?? '';
-}
-
-/** Shared 70%-wide truncated preview span used in collapsed tool rows. */
-function ToolPreview({ text }: { text: string }) {
-  return <span className="w-[70%] truncate font-mono text-[10px] text-muted-foreground">{text}</span>;
-}
-
 export function ChatEntryItem({ entry, toolFilters, isExpanded, onToggle }: Props) {
   const [showThinking, setShowThinking] = useState(false);
-  const [toolExpanded, setToolExpanded] = useState(false);
+  const [opExpanded, setOpExpanded] = useState(false);
   const timestamp = formatEntryTime(entry);
 
   // ── User turn (text body) ──────────────────────────────────────────────────
@@ -68,26 +59,68 @@ export function ChatEntryItem({ entry, toolFilters, isExpanded, onToggle }: Prop
     );
   }
 
-  // ── Assistant turn (text and/or tool_use) ─────────────────────────────────
+  // ── Operation row (file_write / shell / search / tool_use catch-all) ──────
+  if (entry.role === 'operation' && entry.operation) {
+    const op = entry.operation;
+    const filterKey = op.kind === 'tool_use' ? (op as { tool_name: string }).tool_name : op.kind;
+    if (toolFilters && toolFilters[filterKey] === false) return null;
+    const WorkerIcon = workerIcon(entry.worker);
+    return (
+      <div className="border-b border-border px-4 py-3">
+        <div className="flex items-start gap-2.5">
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-green-500/15">
+            <WorkerIcon className="h-3.5 w-3.5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="mb-1 flex items-center gap-2">
+              <span className="text-xs font-semibold text-foreground/80">{workerLabel(entry.worker)}</span>
+              <span className="text-[10px] text-muted-foreground">{timestamp}</span>
+              {entry.isSidechain && (
+                <span className="rounded bg-purple-500/10 px-1 text-[10px] text-purple-600">sidechain</span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpExpanded((v) => !v)}
+              className="flex w-full items-center gap-1.5 rounded border border-border bg-muted/30 px-2 py-1.5 text-left hover:bg-muted/50"
+            >
+              {opExpanded ? (
+                <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
+              )}
+              <OperationOneLiner operation={op} />
+            </button>
+            {opExpanded && (
+              <div className="mt-1 rounded border border-border bg-muted/30 p-2">
+                <OperationExpandedDetail operation={op} />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Assistant text turn (+ optional thinking + usage) ──────────────────────
   if (entry.role === 'assistant') {
     const text = entry.text ?? '';
     const thinking = entry.thinking ?? '';
-    const tool = entry.toolUse;
-    if (tool && toolFilters && toolFilters[tool.name] === false) return null;
 
     const canTruncate = needsTruncation(text);
     const isCollapsed = canTruncate && !isExpanded;
     const totalTokens = (entry.usage?.input ?? 0) + (entry.usage?.output ?? 0);
+    const WorkerIcon = workerIcon(entry.worker);
 
     return (
       <div className="border-b border-border px-4 py-3">
         <div className="flex items-start gap-2.5">
           <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-green-500/15">
-            <Bot className="h-3.5 w-3.5 text-green-600" />
+            <WorkerIcon className="h-3.5 w-3.5" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="mb-1 flex items-center gap-2">
-              <span className="text-xs font-semibold text-green-600">Claude</span>
+              <span className="text-xs font-semibold text-foreground/80">{workerLabel(entry.worker)}</span>
               <span className="text-[10px] text-muted-foreground">{timestamp}</span>
               {entry.isSidechain && (
                 <span className="rounded bg-purple-500/10 px-1 text-[10px] text-purple-600">sidechain</span>
@@ -135,17 +168,6 @@ export function ChatEntryItem({ entry, toolFilters, isExpanded, onToggle }: Prop
                 )}
               </div>
             )}
-
-            {tool && (
-              <div className="mt-2">
-                <ToolCard
-                  name={tool.name}
-                  input={tool.input}
-                  expanded={toolExpanded}
-                  onToggle={() => setToolExpanded((v) => !v)}
-                />
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -153,47 +175,4 @@ export function ChatEntryItem({ entry, toolFilters, isExpanded, onToggle }: Prop
   }
 
   return null;
-}
-
-function ToolCard({ name, input, expanded, onToggle }: { name: string; input: unknown; expanded: boolean; onToggle: () => void }) {
-  const inp = (input ?? {}) as Record<string, unknown>;
-  const fileParts = getToolFileSummary([{ name, input }]);
-  const agentType = name === 'Agent' ? (inp.subagent_type as string | undefined) : null;
-  const preview = name === 'Bash' && inp.command
-    ? firstLine(inp.command as string)
-    : name === 'Agent' && inp.description
-    ? firstLine(inp.description as string)
-    : null;
-  return (
-    <div className="rounded border border-border bg-muted/30">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left hover:bg-muted/50"
-      >
-        {expanded ? (
-          <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-        )}
-        <Terminal className="h-3 w-3 shrink-0 text-orange-500" />
-        <span className="font-mono text-[11px] font-medium">{name}</span>
-        {agentType && (
-          <span className="shrink-0 rounded bg-orange-500/10 px-1 font-mono text-[10px] text-orange-600">{agentType}</span>
-        )}
-        {preview ? (
-          <ToolPreview text={preview} />
-        ) : fileParts.length > 0 && (
-          <span className="min-w-0 truncate font-mono text-[10px] text-muted-foreground">{fileParts.join(', ')}</span>
-        )}
-      </button>
-      {expanded && (
-        <div className="border-t border-border px-2 pb-2 pt-1">
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-muted-foreground">
-            {JSON.stringify(input, null, 2)}
-          </pre>
-        </div>
-      )}
-    </div>
-  );
 }

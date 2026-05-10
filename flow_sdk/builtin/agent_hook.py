@@ -148,9 +148,6 @@ class AgentHook(Entity):
         None, description="VFS path to settings file, e.g., 'vfs://user/.claude/settings.json'"
     )
     entry_index: int = APIField(default=0, description="Index of the entry within the event's entries list")
-    project_id: Optional[str] = APIField(
-        None, description="Project ID for PROJECT/LOCAL scope hooks to determine settings.json location"
-    )
     hook_name: Optional[str] = APIField(
         None, description="Unique name for this hook within a settings file (used in flow_metadata.name)"
     )
