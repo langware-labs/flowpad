@@ -997,9 +997,12 @@ async def invitation_accept() -> ApiResponse:
 # source FlowMessage and renders them as soon as Claude saves them:
 #
 #   - `derive-task`: prompts Claude (via flow skill / MCP) to create a Task
-#     entity capturing the issue described in this message; the task stamps
-#     the FlowMessage TypeId on its `context_entities` so the frontend query
-#     finds it.
+#     entity capturing the issue described in this message. The spawning
+#     AgenticProcess pins `target_vfs_path = <fm typeid>` so the Private
+#     Context query surfaces a pending row immediately, and Claude is told to
+#     stamp both the FlowMessage TypeId and this AgenticProcess's TypeId on
+#     the new Task's `context_entities` so the frontend can pair the row to
+#     its result and enable the "Open" button when the Task is ready.
 #
 #   - `start-cc-from-transcript`: when the message has a `conversation.jsonl`
 #     FILE attachment, spawn a Claude session pre-loaded with that transcript
@@ -1056,12 +1059,12 @@ async def handle_derive_task(fm_id: str, someone_typeid: str) -> ApiResponse:
         workdir=workdir,
         visible=False,
         project_id=project_id,
-        # Don't pin target_vfs_path here — only transcript-derived sessions go
-        # in Private Context; this is the task-creation worker.
+        target_vfs_path=fm_typeid_str,
         context_entities=[TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm.id)],
     )
     await process.save(someone_typeid)
 
+    process_typeid_str = str(TypeId(type=BuiltinEntityType.AGENTIC_PROCESS.value, id=process.id))
     instruction = (
         "Use the flow skill / MCP to create a Task entity that captures the issue "
         "described in the FlowMessage with TypeId `" + fm_typeid_str + "`.\n\n"
@@ -1069,7 +1072,9 @@ async def handle_derive_task(fm_id: str, someone_typeid: str) -> ApiResponse:
         "- Title: a concise one-line summary of the issue.\n"
         "- Description: the relevant details, drawn from the message text and the parent "
         "conversation if helpful.\n"
-        "- context_entities: include `" + fm_typeid_str + "` so the task links back to its source.\n"
+        "- context_entities: include both `" + fm_typeid_str + "` (source FlowMessage) "
+        "and `" + process_typeid_str + "` (this spawning AgenticProcess) so the task "
+        "links back to its source and the frontend can pair it with this process.\n"
         "- Save the task using the flow MCP and exit when done."
     )
     # Fire-and-forget — the entity will be saved by Claude when it finishes.
