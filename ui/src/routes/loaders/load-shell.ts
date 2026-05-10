@@ -177,7 +177,7 @@ function handleCleanups(cleaned: CleanupRecord[]): void {
 
 function loadedToPointer(loaded: LoadedNext): string {
   return loaded.kind === 'process'
-    ? loaded.process.dockPointer.pointer
+    ? loaded.process.terminalDockPointer.pointer
     : loaded.shell.dockPointer.pointer;
 }
 

@@ -129,6 +129,7 @@ export function WorkflowLearningView({ workflow, runs }: WorkflowLearningViewPro
       <main className="min-w-0 flex-1">
         {activeProcess ? (
           <LearningRunDetail
+            workflow={workflow}
             process={activeProcess}
             memory={learning.memory}
             feedback={learning.feedback}

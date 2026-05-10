@@ -276,7 +276,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     if (visibleSessions.length === 0) return;
     if (hasActiveTab) return;
     const firstSession = visibleSessions[0];
-    const pointer = firstSession.agenticProcess?.dockPointer ?? firstSession.shell?.dockPointer;
+    const pointer = firstSession.agenticProcess?.terminalDockPointer ?? firstSession.shell?.dockPointer;
     if (pointer) navigation.openDockPointer(pointer);
   }, [hasActiveTab, visibleSessions, navigation]);
 
@@ -1135,14 +1135,14 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                   entry.project_cwd ?? undefined,
                   entry.project_id ?? undefined,
                 );
-                navigation.openDockPointer(process.dockPointer);
+                navigation.openDockPointer(process.terminalDockPointer);
               } else if (entry.worker_type === 'codex') {
                 const process = await AgenticProcess.fromCodexSession(
                   entry.worker_id,
                   entry.project_cwd ?? undefined,
                   entry.project_id ?? undefined,
                 );
-                navigation.openDockPointer(process.dockPointer);
+                navigation.openDockPointer(process.terminalDockPointer);
               }
             } catch (err) {
               console.error('[TabbedTerminal] Failed to open session from history:', err);

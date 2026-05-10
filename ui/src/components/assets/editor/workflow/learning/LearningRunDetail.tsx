@@ -1,12 +1,13 @@
-import { AgenticProcess } from '@sdk';
+import { TooltipProvider } from '@src/components/ui/tooltip';
+import { AgenticProcess, Workflow } from '@sdk';
 
-import { AnalysisSection } from './sections/AnalysisSection';
-import { FeedbackSection } from './sections/FeedbackSection';
-import { LogEntrySection } from './sections/LogEntrySection';
-import { MemorySection } from './sections/MemorySection';
-import { TraceSection } from './sections/TraceSection';
+import { AnnotatedTraceView } from './annotated-trace/AnnotatedTraceView';
+import { FeedbackBanner } from './sections/FeedbackBanner';
+import { MemoryBand } from './sections/MemoryBand';
+import { PastAttemptsBand } from './sections/PastAttemptsBand';
 
 interface LearningRunDetailProps {
+  workflow: Workflow;
   process: AgenticProcess;
   memory: string | null;
   feedback: string | null;
@@ -24,31 +25,54 @@ function fmtElapsed(start: unknown, end: unknown): string {
   return `${seconds}s`;
 }
 
-export function LearningRunDetail({ process, memory, feedback, learningLog }: LearningRunDetailProps) {
+/**
+ * The detail pane sticky stack (top-down):
+ *   1. Run header               — top: 0
+ *   2. Feedback banner (if any) — top: HEADER_H
+ *   3. Memory band              — top: HEADER_H + (FEEDBACK_H | 0)
+ *   4. Past-attempts band       — top: HEADER_H + (FEEDBACK_H | 0) + MEMORY_H
+ *   5. AnchoredSurface          — scrolls beneath
+ *
+ * Heights are computed from CSS classes (consistent across the app):
+ *   HEADER_H ≈ 52px (matches editor header height)
+ *   BAND_H   ≈ 32px (each)
+ *   FEEDBACK_H ≈ 32px (collapsed) — present only when surrender exists
+ */
+const HEADER_H = 52;
+const BAND_H = 32;
+
+export function LearningRunDetail({ workflow, process, memory, feedback, learningLog }: LearningRunDetailProps) {
   const status = String(process.status ?? '').toLowerCase();
   const startedRaw = (process as unknown as { created_date?: Date | string }).created_date;
-  const lastUpdatedRaw = (process as unknown as { last_updated_at?: Date | string; updated_date?: Date | string }).last_updated_at
+  const lastUpdatedRaw =
+    (process as unknown as { last_updated_at?: Date | string; updated_date?: Date | string }).last_updated_at
     ?? (process as unknown as { updated_date?: Date | string }).updated_date;
+
+  const hasFeedback = !!feedback?.trim();
+  const feedbackTop = HEADER_H;
+  const memoryTop = HEADER_H + (hasFeedback ? BAND_H : 0);
+  const pastTop = memoryTop + BAND_H;
+
   return (
-    <div className="flex h-full flex-col overflow-hidden" data-testid="learning-run-detail">
-      <header className="flex-shrink-0 border-b px-4 py-3">
-        <div className="flex items-baseline justify-between gap-2">
-          <div>
-            <div className="text-sm font-semibold text-foreground">Run · {process.id.slice(0, 8)}</div>
-            <div className="mt-0.5 text-[11px] text-muted-foreground">
-              {status} · {fmtElapsed(startedRaw, lastUpdatedRaw) || '—'}
-              {startedRaw ? ` · started ${new Date(startedRaw as string | Date).toLocaleString()}` : ''}
-            </div>
+    <TooltipProvider delayDuration={200}>
+      <div className="relative h-full overflow-y-auto" data-testid="learning-run-detail">
+        <header
+          className="z-40 border-b bg-background px-4 py-3"
+          style={{ position: 'sticky', top: 0, height: HEADER_H }}
+        >
+          <div className="text-sm font-semibold text-foreground">Run · {process.id.slice(0, 8)}</div>
+          <div className="mt-0.5 text-[11px] text-muted-foreground">
+            {status} · {fmtElapsed(startedRaw, lastUpdatedRaw) || '—'}
+            {startedRaw ? ` · started ${new Date(startedRaw as string | Date).toLocaleString()}` : ''}
           </div>
-        </div>
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <TraceSection process={process} />
-        <AnalysisSection process={process} />
-        <MemorySection memory={memory} />
-        <LogEntrySection learningLog={learningLog} processId={process.id} />
-        <FeedbackSection feedback={feedback} />
+        </header>
+
+        <FeedbackBanner feedback={feedback} stickyTop={feedbackTop} />
+        <MemoryBand memory={memory} stickyTop={memoryTop} />
+        <PastAttemptsBand learningLog={learningLog} stickyTop={pastTop} />
+
+        <AnnotatedTraceView workflow={workflow} process={process} />
       </div>
-    </div>
+    </TooltipProvider>
   );
 }

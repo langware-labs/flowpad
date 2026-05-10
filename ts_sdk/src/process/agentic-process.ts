@@ -545,8 +545,34 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return `<!-- <flow-do id="${instrId}"> -->\n${command}\n<!-- </flow-do> -->`;
   }
 
-  get dockPointer(): DockPointerData {
+  /**
+   * Live interactive terminal — `/dock/shell/agentic_process-<id>`.
+   * Use this when the user wants to attach to (or launch) the running PTY.
+   */
+  get terminalDockPointer(): DockPointerData {
     return new DockPointerData(ViewType.SHELL, this.typeId?.toString());
+  }
+
+  /**
+   * Read-only transcript — `/dock/lens/claude/transcript/<project>/<session>`.
+   * Falls back to the terminal pointer when session/project are not yet resolved
+   * (e.g., a fresh process before its first message lands on disk).
+   */
+  get transcriptDockPointer(): DockPointerData {
+    if (this.session_id && this.project_encoded_name) {
+      return new DockPointerData(ViewType.LENS, `claude/transcript/${this.project_encoded_name}/${this.session_id}`);
+    }
+    return this.terminalDockPointer;
+  }
+
+  /**
+   * Default dock pointer — the read-only transcript. Surfaces that historically
+   * meant "attach to terminal" should reference {@link terminalDockPointer}
+   * explicitly. The default is transcript because reading prior runs is the
+   * dominant gesture once a process has terminated.
+   */
+  get dockPointer(): DockPointerData {
+    return this.transcriptDockPointer;
   }
 
   /**
@@ -586,11 +612,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return restored ? 'generic-restore' : 'generic';
   }
 
+  /** @deprecated alias of {@link transcriptDockPointer} */
   get searchDockPointer(): DockPointerData {
-    if (this.session_id && this.project_encoded_name) {
-      return new DockPointerData(ViewType.LENS, `claude/transcript/${this.project_encoded_name}/${this.session_id}`);
-    }
-    return this.dockPointer;
+    return this.transcriptDockPointer;
   }
 
   /** Instruction content being executed */
