@@ -89,15 +89,27 @@ export function ConversationPanel({
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [mostRecentMessageId, setMostRecentMessageId] = useState<string | null>(null);
 
-  const showRuns = !!task;
-
   // Runs / Context are both per-message: switching the selected message
   // wholesale-replaces both panels. Falls back to the most recent message so
   // the drawer always shows something useful.
   const contextMessageId = selectedMessageId ?? mostRecentMessageId;
 
-  // Runs tab — Run entities triggered by the selected message's PROMPT.
-  const targetStr = task?.typeId ? task.typeId.toString() : '';
+  // Runs tab target — Backend stamps `target_vfs_path` on Run as either
+  // task.typeid (task-scoped scenarios A/B/C) or conversation.typeid
+  // (hub-direct). When this surface mounts us without a `task` prop but the
+  // underlying conversation IS task-bound (e.g. inbox view of a Scenario B
+  // help-task), fall back to the task linked from `conversation.context_entities`
+  // so the query still matches the backend-stamped target. Last fallback is
+  // the conversation's own typeid for genuinely task-less hub-direct convs.
+  const fallbackTaskTypeId = convEntity?.firstContextOfType?.('task') ?? null;
+  const targetStr = task?.typeId
+    ? task.typeId.toString()
+    : fallbackTaskTypeId
+      ? fallbackTaskTypeId.toString()
+      : convEntity?.typeId
+        ? convEntity.typeId.toString()
+        : '';
+  const showRuns = !!targetStr;
   const { runs } = useRunsForTarget(targetStr, {
     enabled: !!targetStr && !!contextMessageId,
     sourceFlowMessageId: contextMessageId,
