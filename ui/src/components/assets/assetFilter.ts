@@ -28,9 +28,6 @@ export interface AssetFilter {
   /** Folder filter: absolute parent_path. When set, list view narrows to files
    *  directly under that folder. Used by the Obsidian-style Wiki folder tree. */
   parentPath?: string;
-  /** Include SDK-shipped system-project entities. Off by default — the wiki
-   *  normally hides them unless the user flips the "Show system" checkbox. */
-  includeSystem?: boolean;
 }
 
 export const DEFAULT_ASSET_FILTER: AssetFilter = {
@@ -39,7 +36,6 @@ export const DEFAULT_ASSET_FILTER: AssetFilter = {
   projectIds: [],
   tags: [],
   filters: {},
-  includeSystem: false,
 };
 
 /**
@@ -71,9 +67,6 @@ export function applyFilterToParams(params: URLSearchParams, filter: AssetFilter
   }
   if (filter.parentPath) {
     params.set('parent_path', filter.parentPath);
-  }
-  if (filter.includeSystem) {
-    params.set('include_system', 'true');
   }
   for (const [k, v] of Object.entries(filter.filters)) {
     if (v) params.set(k, v);

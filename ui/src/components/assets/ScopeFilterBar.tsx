@@ -9,8 +9,6 @@ interface ScopeFilterBarProps {
   currentProjectId: string | null;
   onScopeChange: (scope: AssetScope) => void;
   onProjectIdsChange: (ids: string[]) => void;
-  includeSystem?: boolean;
-  onIncludeSystemChange?: (next: boolean) => void;
 }
 
 const SCOPES: { value: AssetScope; label: string }[] = [
@@ -32,8 +30,6 @@ export function ScopeFilterBar({
   currentProjectId,
   onScopeChange,
   onProjectIdsChange,
-  includeSystem = false,
-  onIncludeSystemChange,
 }: ScopeFilterBarProps): React.ReactElement {
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -87,20 +83,6 @@ export function ScopeFilterBar({
           </span>
         )}
       </button>
-      {onIncludeSystemChange && (
-        <label
-          className="ml-2 flex cursor-pointer items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          title="Show entities shipped in the Flowpad Assistant system project"
-        >
-          <input
-            type="checkbox"
-            className="h-3.5 w-3.5 rounded border-input"
-            checked={includeSystem}
-            onChange={(e) => onIncludeSystemChange(e.target.checked)}
-          />
-          Show system
-        </label>
-      )}
       <ProjectPickerModal
         open={pickerOpen}
         onOpenChange={setPickerOpen}

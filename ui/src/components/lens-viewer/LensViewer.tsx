@@ -1,11 +1,11 @@
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { dataContext } from '@sdk';
 import { useMemo } from 'react';
 import { CliLogViewer } from './CliLogViewer';
 import { ClaudeContextViewer } from './ClaudeContextViewer';
 import { ClaudeErrorsViewer } from './ClaudeErrorsViewer';
 import { ClaudeTasksViewer } from './ClaudeTasksViewer';
-import { ClaudeTranscriptViewer } from './claude-transcript-viewer';
 import { FsRecordsScannerViewer } from './FsRecordsScannerViewer';
 import { GenericTranscriptViewer } from './generic-transcript-viewer';
 import { HeartbeatEventsViewer } from './HeartbeatEventsViewer';
@@ -44,23 +44,35 @@ export function LensViewer() {
 
   switch (lensKey) {
     case 'claude/transcript': {
-      // ref format: {projectEncodedName}/{sessionId}
-      const lastSlash = lensParts.ref.lastIndexOf('/');
-      if (lastSlash < 0) {
+      // Two URL forms supported:
+      //   - legacy: {projectEncodedName}/{sessionId}  → resolve to ~/.claude/projects/<encoded>/<sid>.jsonl
+      //   - direct: {urlEncoded(absolutePath)}        → use the path as-is (matches codex/transcript form)
+      // Both feed GenericTranscriptViewer with worker_type="claude" so Claude
+      // and Codex flow through the same server-parsed pipeline.
+      const home = dataContext.bootstrapInfo?.desktop_info?.paths?.home;
+      const ref = lensParts.ref;
+      let path: string | null = null;
+      const decoded = (() => {
+        try { return decodeURIComponent(ref); } catch { return ref; }
+      })();
+      if (decoded.startsWith('/')) {
+        path = decoded;
+      } else {
+        const lastSlash = ref.lastIndexOf('/');
+        if (lastSlash >= 0 && home) {
+          const projectEncodedName = ref.substring(0, lastSlash);
+          const sessionId = ref.substring(lastSlash + 1);
+          path = `${home}/.claude/projects/${projectEncodedName}/${sessionId}.jsonl`;
+        }
+      }
+      if (!path) {
         return (
           <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
-            <p>Invalid transcript ref: expected projectEncodedName/sessionId</p>
+            <p>Invalid transcript ref: expected projectEncodedName/sessionId or absolute path</p>
           </div>
         );
       }
-      return (
-        <ClaudeTranscriptViewer
-          projectEncodedName={lensParts.ref.substring(0, lastSlash)}
-          sessionId={lensParts.ref.substring(lastSlash + 1)}
-          selectedEntryId={currentDock?.options?.transcript_entry_id}
-          selectedTimestamp={currentDock?.options?.ts}
-        />
-      );
+      return <GenericTranscriptViewer workerType="claude" path={path} />;
     }
     case 'codex/transcript': {
       // ref is the URL-encoded absolute path to the rollout JSONL.
