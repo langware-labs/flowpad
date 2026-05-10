@@ -3,7 +3,6 @@ import { AgenticProcess, FlowElementTypes } from '@sdk';
 import type { FlowData } from '@sdk';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { AskForAssistanceDialog } from './AskForAssistanceDialog';
-import { getCachedTabName, getSessionDisplayName } from './sessionTabUtils';
 
 // Bootstrap person-raised-hand icon (same as SendToExpertButton)
 const PersonRaisedHandIcon: React.FC<{ className?: string; size?: number }> = ({ className, size = 14 }) => (
@@ -65,6 +64,27 @@ function extractSessionText(
   return parts.join('');
 }
 
+function getProcessDisplayName(process: AgenticProcess, fallback: string): string {
+  if (process.context_data && typeof process.context_data === 'object') {
+    const displayName = (process.context_data as Record<string, unknown>).display_name;
+    if (typeof displayName === 'string' && displayName.trim().length > 0) {
+      return displayName.trim();
+    }
+  }
+
+  const processName = (process as { name?: string | null }).name;
+  if (typeof processName === 'string' && processName.trim().length > 0) {
+    return processName.trim();
+  }
+
+  if (process.instruction_content) {
+    const trimmed = process.instruction_content.replace(/<!--.*?-->/g, '').trim();
+    if (trimmed.length > 0) return trimmed.substring(0, 30);
+  }
+
+  return fallback;
+}
+
 interface AskForAssistanceButtonProps {
   process: AgenticProcess;
 }
@@ -83,8 +103,7 @@ export function AskForAssistanceButton({ process }: AskForAssistanceButtonProps)
         await entity.loadHistory({ force: true });
       }
       const items: readonly FlowData[] = (entity?.flowDataStream?.items as readonly FlowData[]) ?? [];
-      const tabName = getCachedTabName(process.id ?? '');
-      setSessionTitle(tabName ?? getSessionDisplayName(process, 'Session'));
+      setSessionTitle(getProcessDisplayName(process, 'Session'));
       setSessionContent(extractSessionText(items, process));
       setDialogOpen(true);
     } finally {

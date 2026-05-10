@@ -12,7 +12,7 @@ import { AgenticProcess, dataManager, Shell } from '@sdk';
 import { hasWorkerStarted, ProcessStatus, WorkerStatus } from '@sdk/process/agentic-types.js';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
-import { AskForAssistanceButton } from '@src/components/live-workflow/AskForAssistanceButton';
+import { AskForAssistanceButton } from './AskForAssistanceButton';
 import { AssetManagerButton } from '@src/components/asset-manager';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';

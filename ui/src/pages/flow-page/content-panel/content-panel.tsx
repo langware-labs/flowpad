@@ -12,7 +12,6 @@ import { ExecuteFlowView } from '@src/components/execute-flow-view';
 import { ExplorerView } from '@src/components/explorer-view';
 import { HooksManager } from '@src/components/hooks-manager';
 import { LensViewer } from '@src/components/lens-viewer';
-import { SessionViewer } from '@src/components/live-workflow';
 import { MachineOverview } from '@src/components/machine-overview/machine-overview';
 import { MarkdownViewer } from '@src/components/markdown-viewer';
 import { ProcessTerminal } from '@src/components/process-terminal';
@@ -452,13 +451,6 @@ export function ContentPanel() {
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
           >
             <LensViewer />
-          </TabsContent>
-
-          <TabsContent
-            value={ViewType.SESSION}
-            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
-          >
-            <SessionViewer />
           </TabsContent>
 
           <TabsContent

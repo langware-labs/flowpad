@@ -49,7 +49,6 @@ const secondaryNavItems = [
   { title: 'Hooks', icon: Webhook, viewType: ViewType.HOOKS },
   // { title: 'Environment', icon: Variable, viewType: ViewType.ENVIRONMENT },
   { title: 'Files', icon: FolderOpen, viewType: ViewType.EXPLORER },
-  // { title: 'Session', icon: MessagesSquare, viewType: ViewType.SESSION },
   // { title: 'Web App', icon: Globe, viewType: ViewType.WEB_APP },
   // { title: 'Connections', icon: LogIn, viewType: ViewType.CONNECTIONS },
   // { title: 'API Keys', icon: KeyRound, viewType: ViewType.API_KEYS },
