@@ -514,6 +514,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.get(action_name="session-transcript")
     async def _session_transcript(self): return await self._pty_session_transcript()
 
+    @action.get(action_name="session-transcript-raw")
+    async def _session_transcript_raw(self): return await self._pty_session_transcript_raw()
+
     @action.get(action_name="discovery")
     async def _discovery_action(self): return await self._pty_discovery_action()
 

@@ -543,6 +543,47 @@ class PtyActionsMixin:
 
         return ApiSuccessResponse(data=record.to_transcript_dicts())
 
+    async def _pty_session_transcript_raw(self) -> ApiResponse:
+        """Return raw JSONL bytes for a Claude session as a UTF-8 string.
+
+        The browser cannot fetch ``~/.claude/projects/.../<sid>.jsonl`` directly
+        (no static mount), so callers that need the *original* bytes (e.g. to
+        attach the transcript to an outbound share) ask us to read the file
+        server-side and return its content in the response payload.
+
+        Query params:
+          - session_id (required): The Claude session UUID
+          - project (optional): Absolute project path for O(1) lookup
+        """
+        from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+
+        request_info = get_current_request_info()
+        session_id = request_info.request.query_params.get("session_id")
+        if not session_id:
+            return ApiFailResponse(message="session_id query parameter required")
+
+        project = request_info.request.query_params.get("project")
+        kwargs = {}
+        if project:
+            kwargs["project"] = project
+
+        record = ClaudeSessionRecord.get(session_id, **kwargs)
+        if not record or not record.jsonl_path:
+            return ApiSuccessResponse(data={"content": "", "session_id": session_id, "jsonl_path": None})
+
+        from pathlib import Path as _Path
+        path = _Path(record.jsonl_path)
+        try:
+            content = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            return ApiFailResponse(message=f"failed to read transcript: {exc}")
+
+        return ApiSuccessResponse(data={
+            "content": content,
+            "session_id": session_id,
+            "jsonl_path": str(path),
+        })
+
     async def _pty_discovery_action(self) -> ApiResponse:
         """Run discovery on a record type and return the result.
 
