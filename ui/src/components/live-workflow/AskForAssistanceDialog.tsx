@@ -1,7 +1,6 @@
 /**
  * AskForAssistanceDialog - Send the current session to another user to ask for help.
- * Modelled on SendPlanNotificationDialog; uses spec_type='session' and pre-populates
- * content from the live session output.
+ * No-Spec task: context is delivered via the transcript-attachment checkbox, not a Spec body.
  */
 
 import { useEffect, useState } from 'react';
@@ -43,7 +42,6 @@ interface AskForAssistanceDialogProps {
   open: boolean;
   onClose: () => void;
   sessionTitle: string;
-  sessionContent: string;
   /** Active AgenticProcess id — stamped onto the sender's task as my_process_id, and resolved internally to a session_id when the transcript checkbox is on. */
   processId?: string;
   /** Project / cwd of the active session — used by ClaudeSessionRecord.discover for O(1) lookup. */
@@ -54,7 +52,6 @@ export function AskForAssistanceDialog({
   open,
   onClose,
   sessionTitle,
-  sessionContent,
   processId,
   projectPath,
 }: AskForAssistanceDialogProps) {
@@ -63,7 +60,6 @@ export function AskForAssistanceDialog({
   const [mode, setMode] = useState<DeliveryMode>(DeliveryMode.EMAIL);
   const [recipients, setRecipients] = useState<ConversationParticipant[]>([]);
   const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
   const [message, setMessage] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [senderName, setSenderName] = useState('');
@@ -82,7 +78,6 @@ export function AskForAssistanceDialog({
   useEffect(() => {
     if (open) {
       setTitle(sessionTitle);
-      setContent(sessionContent);
       setRecipients([]);
       setMessage('Hi,\nI need some help with this session.\nPlease take a look and let me know.\nThanks!');
       setFiles([]);
@@ -197,9 +192,9 @@ export function AskForAssistanceDialog({
 
       const result = await sendNotification({
         recipient_id: recipientId,
-        spec_title: title.trim(),
-        spec_content: content.trim(),
-        spec_type: 'session',
+        spec_title: '',
+        spec_content: '',
+        spec_type: 'request',
         task_title: title.trim(),
         task_id: null,
         message: message.trim() || null,
@@ -238,8 +233,8 @@ export function AskForAssistanceDialog({
     setError(null);
     try {
       const result = await createTaskBundle({
-        spec_title: title.trim(),
-        spec_content: content.trim(),
+        spec_title: '',
+        spec_content: '',
         task_title: title.trim(),
         message: message.trim() || null,
         team_space_id: null,
@@ -426,18 +421,6 @@ export function AskForAssistanceDialog({
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Title"
                 disabled={busy}
-              />
-            </div>
-
-            {/* Session content */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Session content</label>
-              <textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                rows={6}
-                disabled={busy}
-                className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
               />
             </div>
 

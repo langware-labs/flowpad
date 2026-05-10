@@ -4,9 +4,11 @@ import {
   Conversation,
   dataManager,
   FlowMessage,
+  ProcessStatus,
   Task,
   TypeId,
 } from '@sdk';
+import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
 import { ActionInfo } from '@sdk/models/ActionInfo';
 import { useEntity } from '@sdk/react/hooks';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
@@ -197,7 +199,6 @@ function SharedContextSection({
     try {
       // Backend resolves transcript path + workdir + project_id; spawn happens
       // here so we get a real PTY (visible:true) the user can interact with.
-      // Mirrors useMyProcess's "Open Claude Code" pattern, which works.
       const action = new ActionInfo('start-cc-from-transcript', 'flow_message', messageId, 'POST');
       const res = await dataManager.callAction<
         unknown,
@@ -212,23 +213,32 @@ function SharedContextSection({
       const instruction =
         'use flow skill and provide brief analysis of this claude transcript:\n' +
         res.transcript_path;
-      const { process } = await AgenticProcess.spawn(
-        {
-          permissionMode: 'bypassPermissions',
-          workdir: res.workdir || undefined,
-          projectId: res.project_id ?? undefined,
-          scope: [fmTypeId],
-        },
-        { instruction, visible: true },
-      );
-      // Pin to the source FlowMessage so the Private Context query
-      // (`target_vfs_path = fm-<id>`) finds this session.
-      if (process.target_vfs_path !== fmTypeId.toString()) {
-        process.target_vfs_path = fmTypeId.toString();
-        process.addContextEntity(fmTypeId);
-        await process.save([fmTypeId]).catch(() => null);
-      }
+
+      // Construct the entity with `target_vfs_path` set from the start so the
+      // Private Context query (`match: { target_vfs_path: fm-<id> }`) catches
+      // it on the CREATE event — without this the row only appears after a
+      // page refresh, since the entity-event router doesn't re-evaluate
+      // membership when a previously-non-matching entity flips into the
+      // filter on a later UPDATE. Same pattern WorkflowAssetEditor uses.
+      const cliOptions = new ClaudeCliOptions({ permission_mode: 'bypassPermissions' });
+      const process = new AgenticProcess({
+        cli_config: cliOptions.toJson(),
+        context_data: { project_id: res.project_id ?? undefined },
+        workdir: res.workdir || undefined,
+        visible: true,
+        project_id: res.project_id ?? undefined,
+        target_vfs_path: fmTypeId.toString(),
+        context_entities: [fmTypeId],
+      });
+      await process.save([fmTypeId]);
+
+      // Navigate first — the dock route loader subscribes to the entity by id
+      // and renders the terminal as soon as start() attaches the PTY.
       navigation.openDock(process.dockPointer);
+
+      // Attach the PTY + send the first turn. Errors here surface in the
+      // shell tab (the route is already showing it).
+      await process.start({ instruction });
     } catch (err) {
       console.error('[SharedContext] start-cc-from-transcript failed', err);
       toast.error('Failed to start session');
@@ -330,7 +340,7 @@ function TranscriptRow({
         title={localPath ? 'Open in the transcript viewer' : 'Open the raw JSONL in a new tab'}
       >
         <Eye className="h-3 w-3" />
-        View session
+        View
       </RowAction>
       {!hasTranscriptSession && (
         <RowAction
@@ -568,11 +578,12 @@ function PrivateProcessRow({
   );
 }
 
-// Single row representing a "derive task" headless run. While the worker is
-// in flight no Task exists yet, so Open is disabled and the row reads
-// "Deriving task…". Once Claude saves the Task (with this AgenticProcess's
-// TypeId in `context_entities`), `linkedTask` becomes defined, the row
-// adopts the Task's display name, and Open jumps to the Task view.
+// Single row representing a "derive task" headless run. The Task is
+// pre-created server-side (placeholder title from FM text), so `linkedTask`
+// is defined from the moment the row appears. The Open button is gated on the
+// AgenticProcess lifecycle: disabled while the Claude run is still ongoing
+// (NEW/STARTING/RUNNING/STOPPING), enabled once it lands in STOPPED/FAILED.
+// Click navigates to the (now refined) Task view.
 function PrivateDerivationRow({
   process,
   linkedTask,
@@ -583,18 +594,22 @@ function PrivateDerivationRow({
   onOpenTask: () => void;
 }) {
   const Icon = ICON_BY_TYPE.task ?? ExternalLink;
-  const ready = !!linkedTask;
-  const name = ready
-    ? linkedTask?.displayName ?? linkedTask?.id ?? '(unnamed)'
-    : process.displayName
-      ? `Deriving task… (${process.displayName})`
-      : 'Deriving task…';
+  const status = process.status;
+  const ready = status === ProcessStatus.STOPPED || status === ProcessStatus.FAILED;
+  const name =
+    linkedTask?.displayName ??
+    linkedTask?.id ??
+    (process.displayName ? `Deriving task… (${process.displayName})` : 'Deriving task…');
   return (
     <Row icon={Icon} type="Task" name={name}>
       <RowAction
         onClick={onOpenTask}
-        disabled={!ready}
-        title={ready ? `Open Task: ${linkedTask?.displayName ?? ''}` : 'Deriving with Claude…'}
+        disabled={!ready || !linkedTask}
+        title={
+          ready
+            ? `Open Task: ${linkedTask?.displayName ?? ''}`
+            : 'Deriving with Claude…'
+        }
       >
         <ExternalLink className="h-3 w-3" />
         Open
