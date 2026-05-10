@@ -12,10 +12,16 @@ import type {
   ToolbarAction,
 } from '@src/components/browseable-tree/types';
 import { parseAssetPointer } from './assetTypeRoot';
+import {
+  DEFAULT_ASSET_FILTER,
+  applyFilterToParams,
+} from '@src/components/assets/assetFilter';
+import type { AssetFilter } from '@src/components/assets/assetFilter';
 
 export interface MarkdownFolderRootDeps {
-  /** Reindex callback for the "Scan" toolbar button. */
-  indexType: (typeName: string) => Promise<{ indexed?: number } | void>;
+  /** Reindex callback for the "Scan" toolbar button. Forwards the active
+   *  filter so per-type scans honor the same scope. */
+  indexType: (typeName: string, filter?: AssetFilter) => Promise<{ indexed?: number } | void>;
   /** Called when the root-level "New" toolbar is clicked (falls back to the
    *  legacy flow which creates under .claude/docs). */
   onNew?: (typeName: string) => void;
@@ -23,6 +29,8 @@ export interface MarkdownFolderRootDeps {
   onScanComplete?: (typeName: string) => void;
   /** Max entries to fetch per folder from the filesystem. Default 500. */
   folderPageSize?: number;
+  /** Active filter — used by the count badge so it tracks scope/project. */
+  filter?: AssetFilter;
 }
 
 function resolveAssetIcon(iconName: string | null | undefined): React.ReactNode {
@@ -30,13 +38,24 @@ function resolveAssetIcon(iconName: string | null | undefined): React.ReactNode 
   return <Icon className="h-4 w-4 flex-shrink-0" />;
 }
 
-/** Count badge — reuses the existing `/search` count trick (limit=1). */
-function MarkdownCountBadge() {
+/** Count badge — reuses the existing `/search` count trick (limit=1).
+ *  Honors the active filter so the chip reflects what the user actually sees. */
+function MarkdownCountBadge({ filter }: { filter: AssetFilter }) {
   const [total, setTotal] = React.useState<number | null>(null);
+  const filterKey = React.useMemo(() => {
+    const p = new URLSearchParams();
+    applyFilterToParams(p, filter);
+    return p.toString();
+  }, [filter]);
   React.useEffect(() => {
     let cancelled = false;
+    const params = new URLSearchParams();
+    params.set('record_type', 'markdown');
+    params.set('offset', '0');
+    params.set('limit', '1');
+    applyFilterToParams(params, filter);
     apiClient
-      .get('/search?record_type=markdown&offset=0&limit=1')
+      .get(`/search?${params.toString()}`)
       .then((d: unknown) => {
         if (cancelled) return;
         const data = d as { total?: number } | null;
@@ -48,7 +67,8 @@ function MarkdownCountBadge() {
     return () => {
       cancelled = true;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterKey]);
   if (total === null || total === 0) return null;
   return (
     <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
@@ -65,7 +85,7 @@ function rootToolbar(type: AssetTypeInfo, deps: MarkdownFolderRootDeps): Toolbar
       icon: <RefreshCw />,
       label: 'Scan for changes',
       run: async () => {
-        await deps.indexType(type.type_name);
+        await deps.indexType(type.type_name, deps.filter);
         deps.onScanComplete?.(type.type_name);
       },
     },
@@ -205,7 +225,7 @@ export function markdownFolderRoot(
     kind: 'root',
     label: type.label,
     icon: resolveAssetIcon(type.icon),
-    badge: <MarkdownCountBadge />,
+    badge: <MarkdownCountBadge filter={deps.filter ?? DEFAULT_ASSET_FILTER} />,
     hasChildren: vaults.length > 0,
     pointer: DockPointer.forAssetList(type.type_name),
     toolbar: rootToolbar(type, deps),
