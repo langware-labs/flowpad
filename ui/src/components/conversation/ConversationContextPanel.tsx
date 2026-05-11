@@ -22,9 +22,11 @@ import {
 import { toast } from 'sonner';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { fileAttachmentUrl } from './attachment-url';
 import { ICON_BY_TYPE } from './EntityChip';
 import { usePrivateContext } from './usePrivateContext';
+import { useMyProcess } from './useMyProcess';
 
 interface ConversationContextPanelProps {
   flowMessage: FlowMessage | null;
@@ -91,7 +93,7 @@ export function ConversationContextPanel({
   task,
   conversation,
   conversationId,
-  ensureMapped: _ensureMapped,
+  ensureMapped,
 }: ConversationContextPanelProps) {
   // ⚠ All hook calls must come BEFORE the early-return. Skipping a hook on
   // the "no message" branch corrupts React's hook table — manifests as the
@@ -161,9 +163,11 @@ export function ConversationContextPanel({
 
       <PrivateContextSection
         flowMessage={flowMessage}
+        task={task}
         conversationId={conversationId}
         tasks={privateTasks}
         processes={privateProcesses}
+        ensureMapped={ensureMapped}
       />
     </div>
   );
@@ -378,16 +382,20 @@ function TranscriptRow({
 
 interface PrivateContextSectionProps {
   flowMessage: FlowMessage;
+  task: Task | null;
   conversationId: string;
   tasks: Task[];
   processes: AgenticProcess[];
+  ensureMapped?: (continuation: () => void | Promise<void>) => void;
 }
 
 function PrivateContextSection({
   flowMessage,
+  task,
   conversationId,
   tasks,
   processes,
+  ensureMapped,
 }: PrivateContextSectionProps) {
   const { navigation } = useDockNavigation();
   const messageId = flowMessage.id ?? '';
@@ -458,7 +466,9 @@ function PrivateContextSection({
     return tasks.filter((t) => !t.id || !pairedTaskIds.has(t.id));
   }, [tasks, linkedTaskByProcessId]);
 
+  const showSessionRow = !!task;
   const isEmpty =
+    !showSessionRow &&
     standaloneTasks.length === 0 &&
     derivationProcesses.length === 0 &&
     transcriptProcesses.length === 0;
@@ -502,6 +512,14 @@ function PrivateContextSection({
         <EmptyHint text="Nothing added yet. Use the + to add a task." />
       ) : (
         <ContextTable>
+          {task && (
+            <ClaudeSessionRow
+              task={task}
+              conversationId={conversationId}
+              senderName={task.sender_name ?? undefined}
+              ensureMapped={ensureMapped}
+            />
+          )}
           {standaloneTasks.map((t) => (
             <PrivateTaskRow
               key={t.id}
@@ -589,6 +607,73 @@ function PrivateProcessRow({
       <RowAction onClick={onOpen} title="Open the session">
         <ExternalLink className="h-3 w-3" />
         Open
+      </RowAction>
+    </Row>
+  );
+}
+
+/**
+ * Single row that flips between "Start in Claude" (no session yet) and the
+ * session entity (`task.my_process_id` is set). Click delegates to
+ * `useMyProcess.openOrStart` which:
+ *   - Resumes the existing AgenticProcess when `my_process_id` is set.
+ *   - Spawns a fresh one otherwise, injects the receiver-context prompt
+ *     built from spec / transcript / conversation / attachments
+ *     (`buildReceiverContextPrompt` in `useMyProcess.ts`) — same prompt
+ *     Scenario A used on the receiver — and stamps `task.my_process_id`
+ *     so the row immediately re-renders as the session entity.
+ */
+function ClaudeSessionRow({
+  task,
+  conversationId,
+  senderName,
+  ensureMapped,
+}: {
+  task: Task;
+  conversationId: string;
+  senderName?: string;
+  ensureMapped?: (continuation: () => void | Promise<void>) => void;
+}) {
+  const { isStartLabel, busy, openOrStart } = useMyProcess({ task, conversationId, senderName });
+  const { data: process } = useEntity<AgenticProcess>(
+    task.my_process_id ? new TypeId(AgenticProcess.type, task.my_process_id) : null,
+  );
+
+  const handleClick = () => {
+    const action = () => openOrStart();
+    if (ensureMapped) ensureMapped(action);
+    else void action();
+  };
+
+  if (isStartLabel) {
+    return (
+      <Row icon={ClaudeIcon} type="Session" name="Claude Code">
+        <RowAction
+          onClick={handleClick}
+          disabled={busy}
+          title="Start a Claude Code session pre-loaded with this conversation's context"
+        >
+          <PlayCircle className="h-3 w-3" />
+          {busy ? 'Starting…' : 'Start in Claude'}
+        </RowAction>
+      </Row>
+    );
+  }
+
+  const Icon = ICON_BY_TYPE.agentic_process ?? ClaudeIcon;
+  return (
+    <Row
+      icon={Icon}
+      type="Session"
+      name={process?.displayName ?? 'Claude Code session'}
+    >
+      <RowAction
+        onClick={handleClick}
+        disabled={busy}
+        title="Open the Claude Code session"
+      >
+        <ExternalLink className="h-3 w-3" />
+        {busy ? 'Opening…' : 'Open Claude Code'}
       </RowAction>
     </Row>
   );
