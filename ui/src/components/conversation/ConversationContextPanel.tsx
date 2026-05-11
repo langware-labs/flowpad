@@ -228,11 +228,12 @@ function SharedContextSection({
       // strip the TypeId prototype if we passed it through). The Private
       // Context query filters AgenticProcesses client-side on this — same
       // pattern Tasks already use.
-      // No `scope` here. Passing `scope: [fmTypeId]` made the spawn save go to
-      // POST /flow_message/<id>/agentic_process (a scoped sub-route) instead
-      // of the root POST /agentic_process. The dock route loader fetches via
-      // the root path; if the entity isn't there it throws and falls back to
-      // the user's existing my_process_id — that's the wrong-session symptom.
+      // Bullet-proof flow: spawn (PTY + instruction injected) + link to the
+      // FlowMessage. Deliberately NO auto-navigate — the dock route loader
+      // independently calls loadProcess → start(visible:true) on whatever id
+      // is in the URL, which races with the spawn and sends the user to
+      // their previous my_process_id when the loader bails. The row appears
+      // in Private Context; the user clicks Open there to view the session.
       const { process } = await AgenticProcess.spawn(
         {
           permissionMode: 'bypassPermissions',
@@ -241,15 +242,19 @@ function SharedContextSection({
         },
         { instruction, visible: true },
       );
-      navigation.openDock(process.dockPointer);
-      // Stamp the linkage AFTER navigating so the route loader's own
-      // start({visible:true}) runs cleanly. This save is a follow-up UPDATE,
-      // not part of the spawn critical path — failure here just means the
-      // row won't appear, but the session still opens.
       process.addContextEntity(fmTypeId);
-      void process.save().catch((err) => {
-        console.error('[SharedContext] linkage save failed', err);
+      await process.save();
+      // Diagnostic: verify the link persisted. If `contextEntities` doesn't
+      // contain the fm typeId after save, the server isn't accepting the
+      // update and the row will never appear.
+      const persisted = process.contextEntities?.some((t) => t.toString() === fmTypeId.toString());
+      console.log('[start-cc-from-transcript] spawned process', {
+        id: process.id,
+        project_id: process.project_id,
+        contextEntities: process.contextEntities?.map((t) => t.toString()),
+        linkPersisted: persisted,
       });
+      toast.success('Session started — open it from Private Context below.');
     } catch (err) {
       console.error('[SharedContext] start-cc-from-transcript failed', err);
       toast.error('Failed to start session');

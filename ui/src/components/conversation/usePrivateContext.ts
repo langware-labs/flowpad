@@ -64,17 +64,21 @@ export function usePrivateContext(
   }, [candidateTasks, fmKey]);
 
   // ── AgenticProcesses (transcript-derived sessions) ───────────────────
-  // Same scope-by-project + client-side filter approach as Tasks.
+  // Don't filter by `project_id` server-side: the backend resolves
+  // `conv.project_id` from its DB row, which can lag the frontend's local
+  // mapping — a freshly-mapped conversation may not yet have project_id
+  // synced server-side, so the spawned process gets `project_id=null` and
+  // a project-id filter would exclude it. Pull all AgenticProcesses and
+  // filter client-side on `contextEntities` containing the FlowMessage
+  // (same single-criterion approach Tasks use above).
   const processQuery = useMemo(() => {
-    const match: Record<string, unknown> = {};
-    if (projectId) match.project_id = projectId;
     return new QueryRequest({
       type: AgenticProcess.type,
       scope: [],
-      name: `private-context-processes:${flowMessageId ?? 'none'}:${projectId ?? 'noproj'}`,
-      query: new QueryFilter({ match }),
+      name: `private-context-processes:${flowMessageId ?? 'none'}`,
+      query: new QueryFilter({ match: {} as Record<string, unknown> }),
     });
-  }, [flowMessageId, projectId]);
+  }, [flowMessageId]);
   const { data: candidateProcesses = [] } = useEntitiesQuery<AgenticProcess>(processQuery, {
     enabled: !!flowMessageId,
   });
