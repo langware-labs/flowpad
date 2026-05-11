@@ -5,6 +5,7 @@ import {
   dataManager,
   FlowMessage,
   ProcessStatus,
+  Spec,
   Task,
   TypeId,
 } from '@sdk';
@@ -22,11 +23,10 @@ import {
 import { toast } from 'sonner';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { fileAttachmentUrl } from './attachment-url';
 import { ICON_BY_TYPE } from './EntityChip';
 import { usePrivateContext } from './usePrivateContext';
-import { useMyProcess } from './useMyProcess';
+import { buildReceiverContextPrompt } from './useMyProcess';
 
 interface ConversationContextPanelProps {
   flowMessage: FlowMessage | null;
@@ -159,15 +159,17 @@ export function ConversationContextPanel({
         messageId={messageId}
         conversationId={conversationId}
         hasTranscriptSession={hasTranscriptSession}
+        task={task}
+        flowMessage={flowMessage}
+        senderName={task?.sender_name ?? undefined}
+        ensureMapped={ensureMapped}
       />
 
       <PrivateContextSection
         flowMessage={flowMessage}
-        task={task}
         conversationId={conversationId}
         tasks={privateTasks}
         processes={privateProcesses}
-        ensureMapped={ensureMapped}
       />
     </div>
   );
@@ -185,6 +187,10 @@ interface SharedContextSectionProps {
   /** When true, "Start session" is suppressed — a session already exists in
    *  Private Context and the user opens it from there instead. */
   hasTranscriptSession: boolean;
+  task: Task | null;
+  flowMessage: FlowMessage | null;
+  senderName?: string;
+  ensureMapped?: (continuation: () => void | Promise<void>) => void;
 }
 
 function SharedContextSection({
@@ -193,6 +199,10 @@ function SharedContextSection({
   messageId,
   conversationId,
   hasTranscriptSession,
+  task,
+  flowMessage,
+  senderName,
+  ensureMapped,
 }: SharedContextSectionProps) {
   const { navigation } = useDockNavigation();
   const containerInside = { type: Conversation.type, id: conversationId };
@@ -200,6 +210,57 @@ function SharedContextSection({
 
   const isEmpty = sharedTypeIds.length === 0 && !transcriptAttachment;
 
+  // Identify the spec TypeId in shared context (if any). When present, the
+  // "Start session" action lives on the spec row; otherwise it lives on the
+  // transcript row. One-session-per-message either way — `hasTranscriptSession`
+  // hides the action once a session lands in Private Context.
+  const specTypeId = sharedTypeIds.find((t) => t.type === Spec.type) ?? null;
+
+  /**
+   * Unified Start session handler used by both the spec row and the transcript
+   * row. Spawns a visible (PTY) AgenticProcess pre-loaded with the receiver
+   * context prompt (spec content, transcript path, conversation messages,
+   * attachment paths, and context-entity metadata paths — see
+   * `buildReceiverContextPrompt`), links it to the current FlowMessage via
+   * `context_entities` so `usePrivateContext` picks it up, and notifies the
+   * user to open it from Private Context.
+   *
+   * No navigation: same pattern as the legacy `start-cc-from-transcript` flow
+   * — the dock route loader race that bug-comment in the old handler refers to
+   * is avoided by letting the user click Open in Private Context.
+   */
+  const handleStartSession = async () => {
+    if (!messageId || startingCc || !task || !flowMessage) return;
+    const workdir = task.project_root ?? undefined;
+    if (!workdir) {
+      toast.warning('Map this conversation to a local project first.');
+      return;
+    }
+    setStartingCc(true);
+    try {
+      const instruction = await buildReceiverContextPrompt(task, conversationId, senderName);
+      const { process } = await AgenticProcess.spawn(
+        {
+          permissionMode: 'bypassPermissions',
+          workdir,
+          projectId: task.project_id ?? undefined,
+        },
+        { instruction, visible: true },
+      );
+      process.addContextEntity(new TypeId(FlowMessage.type, messageId));
+      await process.save();
+      toast.success('Session started — open it from Private Context below.');
+    } catch (err) {
+      console.error('[SharedContext] start session failed', err);
+      toast.error('Failed to start session');
+    } finally {
+      setStartingCc(false);
+    }
+  };
+
+  // Legacy transcript-only fallback when there's no task to drive the
+  // receiver-context prompt (rare — project-scoped conversations). Uses the
+  // server-side `start-cc-from-transcript` action and a minimal instruction.
   const handleStartCc = async () => {
     if (!messageId || startingCc) return;
     setStartingCc(true);
@@ -274,22 +335,49 @@ function SharedContextSection({
         <EmptyHint text="Nothing shared on this message." />
       ) : (
         <ContextTable>
-          {sharedTypeIds.map((typeId) => (
-            <SharedEntityRow
-              key={typeId.toString()}
-              typeId={typeId}
-              onOpen={() => {
-                const ptr = dockPointerFor(typeId, containerInside);
-                if (ptr) navigation.openDock(ptr);
-              }}
-            />
-          ))}
+          {sharedTypeIds.map((typeId) => {
+            const isSpec = typeId.type === Spec.type;
+            // Start session lives on the spec row when a spec is present.
+            const handleStart =
+              isSpec && task && flowMessage && !hasTranscriptSession
+                ? () => {
+                    const action = () => handleStartSession();
+                    if (ensureMapped) ensureMapped(action);
+                    else void action();
+                  }
+                : undefined;
+            return (
+              <SharedEntityRow
+                key={typeId.toString()}
+                typeId={typeId}
+                onOpen={() => {
+                  const ptr = dockPointerFor(typeId, containerInside);
+                  if (ptr) navigation.openDock(ptr);
+                }}
+                onStartSession={handleStart}
+                starting={isSpec ? startingCc : false}
+              />
+            );
+          })}
           {transcriptAttachment && (
             <TranscriptRow
               messageId={messageId}
               attachment={transcriptAttachment}
               startingCc={startingCc}
-              onStartCc={handleStartCc}
+              // When a spec is present, the spec row owns Start session — so
+              // we hide it on the transcript row to avoid two buttons doing
+              // the same thing.
+              onStartCc={
+                specTypeId
+                  ? null
+                  : (task && flowMessage
+                      ? () => {
+                          const action = () => handleStartSession();
+                          if (ensureMapped) ensureMapped(action);
+                          else void action();
+                        }
+                      : handleStartCc)
+              }
               hasTranscriptSession={hasTranscriptSession}
             />
           )}
@@ -302,18 +390,39 @@ function SharedContextSection({
 interface SharedEntityRowProps {
   typeId: TypeId;
   onOpen: () => void;
+  /** When set, renders a "Start session" action alongside View. Currently
+   *  only the spec row uses this — clicking spawns a Claude Code session
+   *  pre-loaded with the receiver context prompt (see SharedContextSection
+   *  `handleStartSession`). */
+  onStartSession?: () => void;
+  starting?: boolean;
 }
 
-function SharedEntityRow({ typeId, onOpen }: SharedEntityRowProps) {
+function SharedEntityRow({ typeId, onOpen, onStartSession, starting }: SharedEntityRowProps) {
   const { data: entity } = useEntity(typeId);
   const name = entity?.displayName ?? typeId.id;
   const Icon = ICON_BY_TYPE[typeId.type] ?? ExternalLink;
+  // Spec rows say "View" (they open in the Milkdown editor — see
+  // DockPointer.forSpec → /dock/spec/<id>); everything else stays "Open".
+  const isSpec = typeId.type === Spec.type;
+  const primaryLabel = isSpec ? 'View' : 'Open';
+  const primaryIcon = isSpec ? <Eye className="h-3 w-3" /> : <ExternalLink className="h-3 w-3" />;
   return (
     <Row icon={Icon} type={humanType(typeId.type)} name={name}>
-      <RowAction onClick={onOpen} title={`Open ${humanType(typeId.type)}: ${name}`}>
-        <ExternalLink className="h-3 w-3" />
-        Open
+      <RowAction onClick={onOpen} title={`${primaryLabel} ${humanType(typeId.type)}: ${name}`}>
+        {primaryIcon}
+        {primaryLabel}
       </RowAction>
+      {onStartSession && (
+        <RowAction
+          onClick={onStartSession}
+          disabled={!!starting}
+          title="Start a Claude Code session pre-loaded with this spec and conversation context"
+        >
+          <PlayCircle className="h-3 w-3" />
+          {starting ? 'Starting…' : 'Start session'}
+        </RowAction>
+      )}
     </Row>
   );
 }
@@ -322,7 +431,9 @@ interface TranscriptRowProps {
   messageId: string;
   attachment: Attachment;
   startingCc: boolean;
-  onStartCc: () => void;
+  /** `null` suppresses the Start session button entirely (e.g. when a spec
+   *  row owns it instead). Otherwise rendered when `!hasTranscriptSession`. */
+  onStartCc: (() => void) | null;
   hasTranscriptSession: boolean;
 }
 
@@ -362,7 +473,7 @@ function TranscriptRow({
         <Eye className="h-3 w-3" />
         View
       </RowAction>
-      {!hasTranscriptSession && (
+      {!hasTranscriptSession && onStartCc && (
         <RowAction
           onClick={onStartCc}
           disabled={startingCc}
@@ -382,20 +493,16 @@ function TranscriptRow({
 
 interface PrivateContextSectionProps {
   flowMessage: FlowMessage;
-  task: Task | null;
   conversationId: string;
   tasks: Task[];
   processes: AgenticProcess[];
-  ensureMapped?: (continuation: () => void | Promise<void>) => void;
 }
 
 function PrivateContextSection({
   flowMessage,
-  task,
   conversationId,
   tasks,
   processes,
-  ensureMapped,
 }: PrivateContextSectionProps) {
   const { navigation } = useDockNavigation();
   const messageId = flowMessage.id ?? '';
@@ -466,9 +573,7 @@ function PrivateContextSection({
     return tasks.filter((t) => !t.id || !pairedTaskIds.has(t.id));
   }, [tasks, linkedTaskByProcessId]);
 
-  const showSessionRow = !!task;
   const isEmpty =
-    !showSessionRow &&
     standaloneTasks.length === 0 &&
     derivationProcesses.length === 0 &&
     transcriptProcesses.length === 0;
@@ -512,14 +617,6 @@ function PrivateContextSection({
         <EmptyHint text="Nothing added yet. Use the + to add a task." />
       ) : (
         <ContextTable>
-          {task && (
-            <ClaudeSessionRow
-              task={task}
-              conversationId={conversationId}
-              senderName={task.sender_name ?? undefined}
-              ensureMapped={ensureMapped}
-            />
-          )}
           {standaloneTasks.map((t) => (
             <PrivateTaskRow
               key={t.id}
@@ -555,8 +652,15 @@ function PrivateContextSection({
             <PrivateProcessRow
               key={p.id}
               process={p}
+              onView={() => {
+                // Transcript lens (read-only) — `transcriptDockPointer`
+                // routes to `/dock/lens/<worker>/transcript/<session_id>`.
+                if (p.transcriptDockPointer) navigation.openDock(p.transcriptDockPointer);
+              }}
               onOpen={() => {
-                if (p.dockPointer) navigation.openDock(p.dockPointer);
+                // Live PTY — `terminalDockPointer` routes to
+                // `/dock/shell/agentic_process-<id>`.
+                if (p.terminalDockPointer) navigation.openDock(p.terminalDockPointer);
               }}
             />
           ))}
@@ -592,92 +696,40 @@ function PrivateTaskRow({
 
 function PrivateProcessRow({
   process,
+  onView,
   onOpen,
 }: {
   process: AgenticProcess;
+  /** Read-only transcript view (lens). Disabled when there's no
+   *  `session_id` yet — nothing to read until the worker has produced one. */
+  onView: () => void;
+  /** Live PTY terminal. */
   onOpen: () => void;
 }) {
   const Icon = ICON_BY_TYPE.agentic_process ?? ExternalLink;
+  const hasSession = !!process.session_id;
   return (
     <Row
       icon={Icon}
       type="Session"
       name={process.displayName ?? process.id ?? '(running)'}
     >
-      <RowAction onClick={onOpen} title="Open the session">
-        <ExternalLink className="h-3 w-3" />
-        Open
-      </RowAction>
-    </Row>
-  );
-}
-
-/**
- * Single row that flips between "Start in Claude" (no session yet) and the
- * session entity (`task.my_process_id` is set). Click delegates to
- * `useMyProcess.openOrStart` which:
- *   - Resumes the existing AgenticProcess when `my_process_id` is set.
- *   - Spawns a fresh one otherwise, injects the receiver-context prompt
- *     built from spec / transcript / conversation / attachments
- *     (`buildReceiverContextPrompt` in `useMyProcess.ts`) — same prompt
- *     Scenario A used on the receiver — and stamps `task.my_process_id`
- *     so the row immediately re-renders as the session entity.
- */
-function ClaudeSessionRow({
-  task,
-  conversationId,
-  senderName,
-  ensureMapped,
-}: {
-  task: Task;
-  conversationId: string;
-  senderName?: string;
-  ensureMapped?: (continuation: () => void | Promise<void>) => void;
-}) {
-  const { isStartLabel, busy, openOrStart } = useMyProcess({ task, conversationId, senderName });
-  const { data: process } = useEntity<AgenticProcess>(
-    task.my_process_id ? new TypeId(AgenticProcess.type, task.my_process_id) : null,
-  );
-
-  const handleClick = () => {
-    const action = () => openOrStart();
-    if (ensureMapped) ensureMapped(action);
-    else void action();
-  };
-
-  if (isStartLabel) {
-    return (
-      <Row icon={ClaudeIcon} type="Session" name="Claude Code">
-        <RowAction
-          onClick={handleClick}
-          disabled={busy}
-          title="Start a Claude Code session pre-loaded with this conversation's context"
-        >
-          <PlayCircle className="h-3 w-3" />
-          {busy ? 'Starting…' : 'Start in Claude'}
-        </RowAction>
-      </Row>
-    );
-  }
-
-  const Icon = ICON_BY_TYPE.agentic_process ?? ClaudeIcon;
-  return (
-    <Row
-      icon={Icon}
-      type="Session"
-      name={process?.displayName ?? 'Claude Code session'}
-    >
       <RowAction
-        onClick={handleClick}
-        disabled={busy}
-        title="Open the Claude Code session"
+        onClick={onView}
+        disabled={!hasSession}
+        title={hasSession ? 'View the session transcript' : 'No transcript yet — the worker has not produced one'}
       >
+        <Eye className="h-3 w-3" />
+        View
+      </RowAction>
+      <RowAction onClick={onOpen} title="Open the live session in a terminal">
         <ExternalLink className="h-3 w-3" />
-        {busy ? 'Opening…' : 'Open Claude Code'}
+        Open session
       </RowAction>
     </Row>
   );
 }
+
 
 // Single row representing a "derive task" headless run. The Task is
 // pre-created server-side (placeholder title from FM text), so `linkedTask`

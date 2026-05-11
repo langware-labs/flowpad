@@ -1176,3 +1176,62 @@ async def start_cc_from_transcript() -> ApiResponse:
     except Exception as e:
         logger.error("[flow_message_action] start-cc-from-transcript error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Start CC failed: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# Approve & Execute draft persistence
+#
+# After the headless run completes, the new ``useApproveAndExecute`` hook calls
+# this action to persist the assistant reply as a draft ``FlowMessage`` on the
+# scoped conversation. Doing the construction server-side avoids the gap where
+# ``new FlowMessage().save()`` on the frontend drops the ``text`` field during
+# its first serialization, which the server then rejects.
+#
+# The wrap pattern ``Prompt response: "<text>"`` is the contract ``MessageBubble``
+# uses to italicise the quoted middle — the user edits the draft and the
+# pattern naturally breaks, falling through to plain rendering.
+# ---------------------------------------------------------------------------
+
+_PROMPT_RESPONSE_PREFIX = 'Prompt response: "'
+_PROMPT_RESPONSE_SUFFIX = '"'
+
+
+def _wrap_as_claude_quote(text: str) -> str:
+    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+    return f"{_PROMPT_RESPONSE_PREFIX}{escaped}{_PROMPT_RESPONSE_SUFFIX}"
+
+
+@action.post(action_name="save-prompt-response-draft", types=[BuiltinEntityType.CONVERSATION.value])
+async def save_prompt_response_draft() -> ApiResponse:
+    """Persist ``text`` as a draft FlowMessage on this conversation.
+
+    Body: ``{text: str}``. Returns ``{flow_message_id}`` of the saved draft.
+    Used by the Approve & Execute frontend hook.
+    """
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info")
+        if not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        conv_id = str(request_info.target_entity_typeid.id)
+        body = await request_info.get_post_data() or {}
+        text = (body.get("text") or "").strip()
+        if not text:
+            return ApiFailResponse(message="text is required")
+
+        sender_id, sender_name = await User.local_sender_identity()
+        fm = FlowMessage.model_validate({
+            "text": _wrap_as_claude_quote(text),
+            "attachment": [],
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+            "conversation_id": conv_id,
+            "is_draft": True,
+        })
+        fm.id = FlowMessage.allocate_id(fm.model_dump())
+        await fm.save(request_info.someone_typeid)
+        return ApiSuccessResponse(data={"flow_message_id": fm.id})
+    except Exception as e:
+        logger.error("[flow_message_action] save-prompt-response-draft error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
