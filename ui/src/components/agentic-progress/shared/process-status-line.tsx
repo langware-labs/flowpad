@@ -73,20 +73,23 @@ export function ProcessStatusLine({
   // Two distinct gates depending on worker mode:
   // - Interactive PTY (visible=true): clickable when the worker is ready for
   //   input — clicking just focuses the existing tab.
-  // - Headless (visible=false): clickable ONLY when the worker_status is
-  //   explicitly terminal-ready for the current turn (IDLE / COMPLETE /
-  //   INTERRUPTED), OR the lifecycle reached STOPPED / FAILED with a real
-  //   session to resume. We deliberately do NOT use ``isReadyForInput`` here
-  //   because its "no worker_status + no session_id → ready" special case
-  //   would briefly enable the icon for a freshly-spawned AP that hasn't
-  //   started its first turn. The rule the user sees:
-  //     New / spinning up / mid-turn → disabled
-  //     Turn finished                 → enabled
-  //     Next turn starts              → disabled again
+  // - Headless (visible=false): clickable ONLY when the worker has explicitly
+  //   reported COMPLETE / INTERRUPTED for a real turn, OR the lifecycle
+  //   reached STOPPED / FAILED with a session to resume. We exclude
+  //   `WorkerStatus.IDLE` deliberately — the Python side uses IDLE as the
+  //   *default* / "never ran" projection (see flow_sdk/.../agentic_process.py
+  //   `worker_status` fallback). Treating IDLE as "ready" would enable the
+  //   icon on a brand-new AP that hasn't started its first turn. The rule
+  //   the user sees:
+  //     New / IDLE / spinning up / mid-turn → disabled
+  //     Turn finished (COMPLETE)             → enabled
+  //     Next turn kicked off                 → disabled (executeInstruction
+  //                                             optimistically flips workerStatus
+  //                                             to WAITING immediately)
+  //     That next turn finishes              → enabled
   const worker = (process.workerStatus ?? process.worker_status) as WorkerStatus | undefined;
   const workerTurnDone =
     worker === WorkerStatus.COMPLETE ||
-    worker === WorkerStatus.IDLE ||
     worker === WorkerStatus.INTERRUPTED;
   const canResume =
     workerTurnDone ||
