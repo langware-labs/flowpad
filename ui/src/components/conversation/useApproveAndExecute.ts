@@ -2,19 +2,18 @@ import {
   AgenticProcess,
   Conversation,
   dataManager,
-  FlowMessage,
   isWorkerTerminal,
   ProcessStatus,
   TypeId,
 } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
+import { ActionInfo } from '@sdk/models/ActionInfo';
 import type { ITask } from '@sdk/entities/task';
 import type { FlowData } from '@sdk/flow_processing';
 import { FlowElementTypes } from '@sdk/flow_processing/flow-element-types';
 import { toast } from 'sonner';
 import { useProcessesForTarget } from '@src/components/entity-chat-panel';
 import { approveAndReload, buildMergedPrompt } from './prompt-building';
-import { useLocalUser } from './useLocalUser';
 
 interface UseApproveAndExecuteOptions {
   /** Task to scope the run to. Pass an inert task (`{id: '', metadata: {}}`)
@@ -26,14 +25,6 @@ interface UseApproveAndExecuteOptions {
 
 interface UseApproveAndExecuteResult {
   approveAndExecute: (messageId: string, attachmentIndex: number) => Promise<void>;
-}
-
-/** Wrap the agent reply so MessageBubble italicises it as `Prompt response: "…"`. */
-const AGENT_QUOTE_PREFIX = 'Prompt response: "';
-const AGENT_QUOTE_SUFFIX = '"';
-function wrapAsClaudeQuote(text: string): string {
-  const escaped = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-  return `${AGENT_QUOTE_PREFIX}${escaped}${AGENT_QUOTE_SUFFIX}`;
 }
 
 /** Concatenate the assistant CHAT text from a captured FlowData turn. */
@@ -105,27 +96,32 @@ async function captureTurn(
  * `visible=false` and call `executeInstruction(prompt)` which routes through
  * print mode in the existing entity.
  *
- * In both branches the assistant's reply is captured from the FlowData stream
- * and persisted as a draft FlowMessage wrapped as `Prompt response: "…"`. The
- * draft surfaces in `ConversationView` for the user to edit and send.
+ * In both branches the assistant's reply is captured from the FlowData stream,
+ * wrapped client-side as `Prompt response: "…"` (so `MessageBubble` italicises
+ * the quoted middle), and persisted as a draft FlowMessage via the unified
+ * `append-conversation` action with `is_draft=true`. The draft surfaces in
+ * `ConversationView` for the user to edit and send (and to optionally attach
+ * files / a PROMPT chip before sending).
  */
+/** Mirror of `MessageBubble.parseClaudeQuote`'s unescape (`\"` → `"`, `\\` → `\`).
+ *  Escape order is the inverse: `\` first, then `"`. Keep in sync with that file. */
+function wrapAsPromptResponse(text: string): string {
+  const escaped = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return `Prompt response: "${escaped}"`;
+}
 export function useApproveAndExecute(
   { task, conversationId }: UseApproveAndExecuteOptions,
 ): UseApproveAndExecuteResult {
   const useTaskScope = !!task.id;
-  const targetVfsPath = useTaskScope
-    ? new TypeId('task', task.id).toString()
-    : conversationId
-      ? new TypeId('conversation', conversationId).toString()
-      : '';
+  const targetVfsPath = conversationId
+    ? new TypeId('conversation', conversationId).toString()
+    : '';
 
-  // Hub-direct path needs `Conversation.project_id` to resolve a workdir.
   const { data: conversation } = useEntity<Conversation>(
-    !useTaskScope && conversationId ? new TypeId(Conversation.type, conversationId) : null,
+    conversationId ? new TypeId(Conversation.type, conversationId) : null,
   );
 
   const { processes } = useProcessesForTarget(targetVfsPath, { enabled: !!targetVfsPath });
-  const { localUser } = useLocalUser();
 
   const approveAndExecute = async (messageId: string, attachmentIndex: number) => {
     if (!messageId || !targetVfsPath) return;
@@ -184,17 +180,30 @@ export function useApproveAndExecute(
           runProcess.executeInstruction(promptText, { sync: false }),
         );
       } else {
-        // Fresh spawn — subscribe *before* triggering the turn so we don't
-        // miss early flow_data events.
+        // Fresh spawn. For task-bound A&E, fork from ``task.my_process_id``'s
+        // Claude session so the headless run inherits the original
+        // conversation's transcript — the receiver's prompt should be
+        // answered in the context of the prior messages, not from a blank
+        // session. Hub-direct conversations have no my_process_id; they
+        // spawn fresh.
+        let forkSessionId: string | undefined;
+        if (useTaskScope && task.my_process_id) {
+          const myProcess = await dataManager
+            .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, task.my_process_id))
+            .catch(() => null);
+          if (myProcess?.session_id) {
+            forkSessionId = myProcess.session_id;
+          }
+        }
+        // Stamp ``target_vfs_path`` in the same save so the Runs-panel's live
+        // entity query matches on first sight.
         const spawned = await AgenticProcess.spawn(
-          { workdir },
+          forkSessionId
+            ? { workdir, targetVfsPath, resumeSessionId: forkSessionId, forkSession: true }
+            : { workdir, targetVfsPath },
           { headless: true, visible: false },
         );
         runProcess = spawned.process;
-        if (runProcess.target_vfs_path !== targetVfsPath) {
-          runProcess.target_vfs_path = targetVfsPath;
-          await runProcess.save();
-        }
         captured = await captureTurn(runProcess, () =>
           runProcess.executeInstruction(promptText, { sync: false }),
         );
@@ -206,16 +215,16 @@ export function useApproveAndExecute(
     }
 
     const text = extractAssistantText(captured);
-    if (!text || !conversationId || !localUser) return;
+    if (!text || !conversationId) return;
 
     try {
-      await new FlowMessage({
-        text: wrapAsClaudeQuote(text),
+      const action = new ActionInfo('append-conversation', 'notification', null, 'POST');
+      action.bodyParameters = {
         conversation_id: conversationId,
-        is_draft: true,
-        sender_id: localUser.id,
-        sender_name: localUser.name,
-      }).save();
+        message: wrapAsPromptResponse(text),
+        is_draft: 'true',
+      };
+      await dataManager.callAction(action);
     } catch (err) {
       console.error('[approveAndExecute] saving draft failed', err);
     }
