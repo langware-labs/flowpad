@@ -7,23 +7,34 @@ discriminator and (for ``assistant``/``user``) on the inner content blocks.
 
 from __future__ import annotations
 
+from typing import Any
+
 from .._helpers import (
     extract_text,
     extract_thinking,
     first_block_of_type,
     flatten_tool_result,
+    truncate_file_content,
 )
 from ..entries import (
+    AgentSpawnEntry,
     AssistantMessageEntry,
     ExitPlanModeEntry,
+    FileEditEntry,
+    FileReadEntry,
+    FileWriteEntry,
     MetaEntry,
+    SearchEntry,
+    ShellCommandEntry,
     SummaryEntry,
     SystemEntry,
+    TodoUpdateEntry,
     TokenUsageEntry,
     ToolResultEntry,
     ToolUseEntry,
     UnknownEntry,
     UserMessageEntry,
+    WebFetchEntry,
 )
 from ..entry import TranscriptEntry
 
@@ -51,6 +62,7 @@ _META_TYPES = frozenset({
     "attachment",
     "permission-mode",
     "last-prompt",
+    "custom-title",
 })
 
 
@@ -131,17 +143,15 @@ class ClaudeParser:
         tool_block = first_block_of_type(content, "tool_use")
         if tool_block:
             tool_name = str(tool_block.get("name") or "")
-            tool_kwargs = dict(
+            tool_use_id = str(tool_block.get("id") or "")
+            tool_input = tool_block.get("input") or {}
+            main = self._build_semantic_tool_entry(
                 tool_name=tool_name,
-                tool_use_id=str(tool_block.get("id") or ""),
-                tool_input=tool_block.get("input") or {},
-                **envelope,
-                **base,
+                tool_use_id=tool_use_id,
+                tool_input=tool_input,
+                envelope=envelope,
+                base=base,
             )
-            if tool_name == "ExitPlanMode":
-                main: TranscriptEntry = ExitPlanModeEntry(**tool_kwargs)
-            else:
-                main = ToolUseEntry(**tool_kwargs)
         else:
             text = extract_text(content)
             thinking = extract_thinking(content)
@@ -169,20 +179,145 @@ class ClaudeParser:
         usage = message.get("usage")
         if not isinstance(usage, dict):
             return None
-        # Cached input may be reported as either ``cache_read_input_tokens``
-        # (read hit) or ``cache_creation_input_tokens`` (write). Prefer the
-        # read count when both are present (more meaningful for cost).
-        cached = usage.get("cache_read_input_tokens")
-        if cached is None:
-            cached = usage.get("cache_creation_input_tokens")
+        # Claude reports cache hits as ``cache_read_input_tokens`` (read hit)
+        # AND ``cache_creation_input_tokens`` (wrote a new cache block) on the
+        # same usage payload — both are meaningful for cost. Preserve them
+        # separately. ``cached_input_tokens`` stays as the legacy single-value
+        # summary (read preferred) for callers that haven't migrated.
+        cache_read = usage.get("cache_read_input_tokens")
+        cache_create = usage.get("cache_creation_input_tokens")
+        cached = cache_read if cache_read is not None else cache_create
         usage_base = {**base, "id": f"{base['id']}:usage"}
         return TokenUsageEntry(
             input_tokens=usage.get("input_tokens"),
             output_tokens=usage.get("output_tokens"),
             cached_input_tokens=cached,
+            cache_read_tokens=cache_read,
+            cache_creation_tokens=cache_create,
             model=model,
             **usage_base,
         )
+
+    def _build_semantic_tool_entry(
+        self,
+        *,
+        tool_name: str,
+        tool_use_id: str,
+        tool_input: dict,
+        envelope: dict,
+        base: dict,
+    ) -> TranscriptEntry:
+        """Map a Claude ``tool_use`` block onto a semantic entry kind.
+
+        Falls through to :class:`ToolUseEntry` for any tool not in the
+        recognized set — this keeps MCP tools (``mcp__*``) and unknown
+        bespoke tools rendering as the generic catch-all rather than
+        silently dropping fields.
+        """
+        common: dict[str, Any] = {
+            "tool_name": tool_name,
+            "tool_use_id": tool_use_id,
+            **envelope,
+            **base,
+        }
+        ti = tool_input if isinstance(tool_input, dict) else {}
+
+        if tool_name == "ExitPlanMode":
+            return ExitPlanModeEntry(tool_input=ti, **common)
+        if tool_name == "Write":
+            full_content = ti.get("content")
+            full_str = str(full_content) if full_content is not None else None
+            line_count = full_str.count("\n") + 1 if full_str else None
+            bytes_count = len(full_str.encode("utf-8")) if full_str else None
+            return FileWriteEntry(
+                path=str(ti.get("file_path") or ""),
+                content=truncate_file_content(full_str),
+                bytes_count=bytes_count,
+                line_count=line_count,
+                is_new=True,
+                **common,
+            )
+        if tool_name in ("Edit", "MultiEdit"):
+            hunks: list[dict] = []
+            if tool_name == "Edit":
+                if ti.get("old_string") is not None or ti.get("new_string") is not None:
+                    hunks.append({
+                        "old": str(ti.get("old_string") or ""),
+                        "new": str(ti.get("new_string") or ""),
+                        "replace_all": bool(ti.get("replace_all", False)),
+                    })
+            else:
+                edits = ti.get("edits") or []
+                if isinstance(edits, list):
+                    for ed in edits:
+                        if isinstance(ed, dict):
+                            hunks.append({
+                                "old": str(ed.get("old_string") or ""),
+                                "new": str(ed.get("new_string") or ""),
+                                "replace_all": bool(ed.get("replace_all", False)),
+                            })
+            return FileEditEntry(
+                path=str(ti.get("file_path") or ""),
+                hunks=hunks,
+                **common,
+            )
+        if tool_name == "NotebookEdit":
+            return FileEditEntry(
+                path=str(ti.get("notebook_path") or ti.get("file_path") or ""),
+                hunks=[],
+                change_summary=str(ti.get("new_source") or "") or None,
+                **common,
+            )
+        if tool_name in ("Read", "NotebookRead"):
+            offset = ti.get("offset")
+            limit = ti.get("limit")
+            start_line = int(offset) if isinstance(offset, (int, float)) else None
+            end_line: int | None = None
+            if start_line is not None and isinstance(limit, (int, float)):
+                end_line = start_line + int(limit)
+            return FileReadEntry(
+                path=str(ti.get("file_path") or ti.get("notebook_path") or ""),
+                start_line=start_line,
+                end_line=end_line,
+                **common,
+            )
+        if tool_name == "Bash":
+            timeout_raw = ti.get("timeout")
+            timeout_val = int(timeout_raw) if isinstance(timeout_raw, (int, float)) else None
+            return ShellCommandEntry(
+                command=str(ti.get("command") or ""),
+                timeout=timeout_val,
+                **common,
+            )
+        if tool_name in ("Glob", "Grep"):
+            return SearchEntry(
+                search_kind=tool_name.lower(),
+                query=str(ti.get("pattern") or ""),
+                path=str(ti.get("path") or "") or None,
+                **common,
+            )
+        if tool_name in ("WebFetch", "WebSearch"):
+            return WebFetchEntry(
+                url=str(ti.get("url") or "") or None,
+                query=str(ti.get("query") or "") or None,
+                prompt=str(ti.get("prompt") or "") or None,
+                **common,
+            )
+        if tool_name == "TodoWrite":
+            todos_raw = ti.get("todos")
+            items = todos_raw if isinstance(todos_raw, list) else []
+            return TodoUpdateEntry(
+                items=items,
+                **common,
+            )
+        if tool_name in ("Task", "Agent"):
+            return AgentSpawnEntry(
+                agent_type=str(ti.get("subagent_type") or ti.get("agent_type") or ""),
+                prompt=str(ti.get("prompt") or "") or None,
+                description=str(ti.get("description") or "") or None,
+                **common,
+            )
+        return ToolUseEntry(tool_input=ti, **common)
 
     def _parse_user(self, raw: dict, base: dict) -> TranscriptEntry:
         message = raw.get("message") or {}

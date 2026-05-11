@@ -25,7 +25,7 @@ export function useStandardTabNav() {
   const onTabClick = useCallback(
     (_targetKey: string, session: TerminalTab) => {
       touchMru(terminalTargetKey(session));
-      const pointer = session.agenticProcess?.dockPointer ?? session.shell?.dockPointer;
+      const pointer = session.agenticProcess?.terminalDockPointer ?? session.shell?.dockPointer;
       if (pointer) navigation.openDock(pointer);
     },
     [navigation, touchMru],
@@ -50,7 +50,7 @@ export function useStandardTabNav() {
   const onTabOpen = useCallback(
     (session: TerminalTab) => {
       touchMru(terminalTargetKey(session));
-      const pointer = session.agenticProcess?.dockPointer ?? session.shell?.dockPointer;
+      const pointer = session.agenticProcess?.terminalDockPointer ?? session.shell?.dockPointer;
       if (pointer) navigation.openDock(pointer);
     },
     [navigation, touchMru],

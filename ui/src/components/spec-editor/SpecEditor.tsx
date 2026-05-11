@@ -137,7 +137,7 @@ const PlanFileEditor: React.FC = () => {
         try {
           if (fs && isDirty) await fs.writeBack(filePath);
           void action();
-          navigation.openDock(agenticProcess.dockPointer);
+          navigation.openDock(agenticProcess.terminalDockPointer);
         } catch (error) {
           console.error('[SepcEditor] Error:', error);
         } finally {
@@ -152,7 +152,7 @@ const PlanFileEditor: React.FC = () => {
   // Cancel — discard dirty cache and navigate back
   const handleCancel = useCallback(() => {
     if (filePath && fs) fs.invalidate(filePath, 'content');
-    if (agenticProcess) navigation.openDock(agenticProcess.dockPointer);
+    if (agenticProcess) navigation.openDock(agenticProcess.terminalDockPointer);
   }, [filePath, fs, agenticProcess, navigation]);
 
   if (!filePath || !agenticProcess) {

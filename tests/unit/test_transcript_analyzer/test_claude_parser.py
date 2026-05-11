@@ -12,9 +12,8 @@ from flow_sdk.transcript_analyzer import (
     EntryKind,
     ExitPlanModeEntry,
     MetaEntry,
+    ShellCommandEntry,
     SystemEntry,
-    ToolResultEntry,
-    ToolUseEntry,
     UnknownEntry,
     UserMessageEntry,
 )
@@ -24,9 +23,10 @@ def test_parses_all_lines_with_one_warning_for_unknown(claude_jsonl):
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         t = AgentTranscript("claude", claude_jsonl)
-    # 12 raw lines; each assistant turn (1 assistant_message + 2 tool_use)
-    # also emits a synthetic TokenUsageEntry → 12 + 3 = 15 entries.
-    assert len(t) == 15
+    # 12 raw lines; Bash is parsed as shell_command and its tool_result is
+    # folded into that operation. Each assistant turn (assistant_message + 2
+    # tool_use) also emits a synthetic TokenUsageEntry → 12 - 1 + 3 = 14.
+    assert len(t) == 14
     # One synthetic unknown line at the end → exactly one warning.
     unknown_warnings = [w for w in caught if "unknown entry type" in str(w.message)]
     assert len(unknown_warnings) == 1
@@ -52,21 +52,21 @@ def test_entry_kind_breakdown(claude_jsonl):
     #   queue-operation → 5 META
     #   user text → 1 USER_MESSAGE
     #   assistant text → 1 ASSISTANT_MESSAGE
-    #   Bash + ExitPlanMode tool_use → 2 TOOL_USE
-    #   tool_result → 1 TOOL_RESULT
+    #   Bash tool_use + tool_result → 1 SHELL_COMMAND
+    #   ExitPlanMode tool_use → 1 TOOL_USE
     #   system:stop_hook_summary → 1 SYSTEM
     #   synthetic unknown → 1 UNKNOWN
     # Each assistant turn (assistant_message + 2 tool_use) carries usage
     # data that the parser splits out as a separate TokenUsageEntry → 3 token_usage.
     assert counts == {
-        "meta": 5,
-        "user_message": 1,
-        "assistant_message": 1,
-        "tool_use": 2,
-        "tool_result": 1,
-        "system": 1,
-        "unknown": 1,
-        "token_usage": 3,
+            "meta": 5,
+            "user_message": 1,
+            "assistant_message": 1,
+            "tool_use": 1,
+            "shell_command": 1,
+            "system": 1,
+            "unknown": 1,
+            "token_usage": 3,
     }
 
 
@@ -120,19 +120,18 @@ def test_filter_by_tool_name(claude_jsonl):
     t = AgentTranscript("claude", claude_jsonl)
     bashes = list(t.filter(tool_name="Bash"))
     assert len(bashes) == 1
-    assert isinstance(bashes[0], ToolUseEntry)
+    assert isinstance(bashes[0], ShellCommandEntry)
     assert bashes[0].tool_name == "Bash"
-    assert bashes[0].tool_input == {"command": "echo ok"}
+    assert bashes[0].command == "echo ok"
 
 
-def test_tool_result_entry_fields(claude_jsonl):
+def test_shell_command_folds_tool_result_fields(claude_jsonl):
     t = AgentTranscript("claude", claude_jsonl)
-    results = [e for e in t.entries if isinstance(e, ToolResultEntry)]
-    assert len(results) == 1
-    r = results[0]
-    assert r.tool_use_id == "toolu_sample_bash_001"
-    assert "ok" in r.tool_output
-    assert r.is_error is False
+    commands = [e for e in t.entries if isinstance(e, ShellCommandEntry)]
+    assert len(commands) == 1
+    cmd = commands[0]
+    assert cmd.tool_use_id == "toolu_sample_bash_001"
+    assert "ok" in (cmd.stdout_preview or "")
 
 
 def test_user_message_entry_fields(claude_jsonl):

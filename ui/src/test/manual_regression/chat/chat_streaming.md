@@ -2,7 +2,7 @@ test 1: Validate streaming execution and completion
 - navigate to {APP_URL}/
 - fill landing input with "streaming test"
 - press Enter
-- wait for URL to change to /dock/session/...
+- wait for URL to change to /dock/shell/...
 - click "New Session" button
 - validate instruction input is visible and status is IDLE
 - fill instruction input with "Explain how a computer works"

@@ -10,6 +10,19 @@ import json
 from typing import Any
 
 
+# Cap on file-write content stored on FileWriteEntry. Bounds the JSON
+# payload the server ships to the client and the heap footprint of the
+# parsed transcript. Full content is recoverable from disk via the file_path.
+_WRITE_CONTENT_MAX_CHARS = 16_000
+
+
+def truncate_file_content(content: str | None) -> str | None:
+    """Cap ``FileWriteEntry.content`` length so a 5MB Write doesn't bloat the wire."""
+    if content is None or len(content) <= _WRITE_CONTENT_MAX_CHARS:
+        return content
+    return content[:_WRITE_CONTENT_MAX_CHARS] + f"\n…[truncated, {len(content)} total chars]"
+
+
 def render_block(label: str, value: Any) -> list[str]:
     """Render a labeled multi-line block for ``to_string()`` output.
 
