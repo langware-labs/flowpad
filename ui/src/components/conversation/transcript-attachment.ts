@@ -24,15 +24,13 @@ async function fetchTranscriptText(
   sessionId: string,
   projectPath: string | undefined,
 ): Promise<string | null> {
-  const record = await ClaudeSessionRecord.discover(
+  // The browser can't read ~/.claude/projects/.../<sid>.jsonl directly (no
+  // static mount), so we ask the backend to read the file and return its
+  // bytes. Using fetch(jsonlPath) here would silently 404 every time.
+  return await ClaudeSessionRecord.fetchTranscriptRaw(
     sessionId,
     projectPath ? { project: projectPath } : undefined,
   );
-  const jsonlPath = record?.jsonl_path;
-  if (!jsonlPath) return null;
-  const res = await fetch(jsonlPath);
-  if (!res.ok) return null;
-  return await res.text();
 }
 
 /** True if the JSONL contains at least one user or assistant entry. */

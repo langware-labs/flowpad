@@ -62,16 +62,15 @@ function RunItem({ run, label }: { run: Run; label: string }) {
 
   const promptPreview = truncatePrompt(current.prompt_text ?? '') || label;
   const status = (current.status ?? RunStatus.RUNNING) as string;
-  // Block "Open in terminal" while the run is in flight: the underlying
-  // AgenticProcess is still ``visible: false`` (headless), and the terminal
-  // tab list filters by ``visible: true`` — clicking now navigates to a
-  // pointer the tab strip can't render until the run finishes and the user
-  // refreshes. Re-enable on terminal statuses.
+  // Block terminal attach while the print-mode worker owns the session. Once
+  // the run lands in a terminal status, explicit terminal navigation will start
+  // the process as visible via the shell route loader.
   const isRunning = status === RunStatus.RUNNING;
 
   const onOpenTerminal = () => {
     if (isRunning) return;
-    if (process?.terminalDockPointer) navigation.openDock(process.terminalDockPointer);
+    if (!process) return;
+    navigation.openDockPointer(process.terminalDockPointer);
   };
 
   const terminalTitle = isRunning
@@ -94,7 +93,7 @@ function RunItem({ run, label }: { run: Run; label: string }) {
         size="icon"
         className="h-5 w-5 flex-shrink-0 opacity-60 group-hover:opacity-100 disabled:opacity-30"
         title={terminalTitle}
-        disabled={isRunning || !process?.dockPointer}
+        disabled={isRunning || !process}
         onClick={onOpenTerminal}
       >
         <Terminal className="h-3 w-3" />

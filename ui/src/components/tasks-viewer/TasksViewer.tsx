@@ -117,8 +117,10 @@ export function TasksViewer() {
     return <div className="flex h-full items-center justify-center text-muted-foreground">Loading…</div>;
   }
 
-  // Shared tasks (sent via notification) show the SharedTaskView instead of the edit form
-  if (existingTask?.firstContextOfType?.('spec')) {
+  // Shared tasks (sent via notification) show the SharedTaskView instead of the edit form.
+  // Gate on shared_by_id (set by notification flow) rather than Spec presence — Scenarios B/C
+  // create no-Spec tasks where the recipient drives the work via PROMPT replies.
+  if (existingTask?.shared_by_id) {
     return <SharedTaskView task={existingTask} onClose={() => navigation.goBack()} />;
   }
 

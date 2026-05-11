@@ -83,6 +83,9 @@ class HeadlessRunScope:
                           back to ``target_vfs_path`` lookup. Tasks set this
                           from ``task.shared_process_id`` (Scenario C pre-fork);
                           conversations leave it None.
+      source_flow_message_id  FlowMessage whose PROMPT attachment was approved
+                          to trigger this run; stamped onto the Run row so the
+                          drawer can filter per message instead of per task.
       log_label           Prefix for log breadcrumbs.
     """
     target_typeid: TypeId
@@ -92,6 +95,7 @@ class HeadlessRunScope:
     process_context: list[TypeId]
     draft_context: list[TypeId]
     preferred_process_id: Optional[str] = None
+    source_flow_message_id: Optional[str] = None
     log_label: str = "run-headless"
 
 
@@ -245,13 +249,16 @@ async def _create_run(
     so each turn surfaces as its own row even though the underlying
     AgenticProcess is reused for Claude session continuity.
     """
-    run = Run.model_validate({
+    run_data: dict = {
         "target_vfs_path": str(scope.target_typeid),
         "process_id": process.id,
         "prompt_text": prompt_text,
         "status": RunStatus.RUNNING.value,
         "started_at": datetime.now(UTC).isoformat(),
-    })
+    }
+    if scope.source_flow_message_id:
+        run_data["source_flow_message_id"] = scope.source_flow_message_id
+    run = Run.model_validate(run_data)
     return await run.save(someone_typeid)
 
 
@@ -393,7 +400,6 @@ async def _run_turn_and_capture(
     finally:
         _PROMPT_WORKERS.pop(process.id, None)
         process.status = ProcessStatus.FAILED.value if errored else ProcessStatus.STOPPED.value
-        process.visible = True
         cli_cfg_next = dict(process.cli_config or {})
         cli_cfg_next.pop("print_mode", None)
         cli_cfg_next.pop("output_format", None)

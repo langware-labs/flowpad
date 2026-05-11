@@ -468,6 +468,7 @@ async def _send_hub_notification(
     spec_file_path: str,
     fm: Optional["FlowMessage"],
     task_title: str,
+    is_initial_share: bool = True,
 ) -> tuple[Optional[str], Optional[str]]:
     """POST notification to hub and upload the .flowmsg bundle.
 
@@ -503,7 +504,7 @@ async def _send_hub_notification(
             "spec_file_path": spec_file_path,
             "project_id": task_project_id or None,
             "project_name": task_project_name or None,
-            "is_initial_share": True,
+            "is_initial_share": is_initial_share,
         }, action="send")
     except HubError as e:
         # Hub returned non-2xx (e.g. 401 unauthorized) or transport error.
@@ -682,11 +683,15 @@ async def _share_via_bundle(
     spec_title: str = "",
     spec_type: str = "plan",
     plan_id: Optional[str] = None,
+    is_initial_share: bool = True,
 ) -> ApiResponse:
     """Shared sender-side delivery: Conversation+FM → bundle pack → hub upload → local notification.
 
     Both ``share_task`` (with Spec+Task) and ``conversation-start-bundle`` (no Task)
     converge here so there is exactly one delivery codepath.
+
+    ``is_initial_share`` is forwarded to the hub; when False, the hub skips the
+    Invitation row so the recipient sees no Accept button (Scenario C).
     """
     conv: Optional[Conversation] = None
     fm = None
@@ -749,6 +754,7 @@ async def _share_via_bundle(
         spec_file_path=spec_file_path,
         fm=fm,
         task_title=task_title,
+        is_initial_share=is_initial_share,
     )
 
     notification = await _save_local_notification(
@@ -799,6 +805,15 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     team_space_id = (body.get("team_space_id") or "").strip() or None
     sender_process_id = (body.get("sender_process_id") or "").strip() or None
     forked_process_id = (body.get("forked_process_id") or "").strip() or None
+    # Default True for back-compat (Scenarios A/B). Scenario C passes False so
+    # the hub skips Invitation creation — recipient already has access via the
+    # FlowMessage `grant_role`, and the "Accept" button on the strip would be
+    # spurious for an existing-collaborator share.
+    is_initial_share_raw = body.get("is_initial_share")
+    if isinstance(is_initial_share_raw, str):
+        is_initial_share = is_initial_share_raw.strip().lower() not in ("false", "0", "")
+    else:
+        is_initial_share = bool(is_initial_share_raw) if is_initial_share_raw is not None else True
 
     if not recipient_id:
         return ApiFailResponse(message="recipient_id is required")
@@ -866,6 +881,7 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         spec_title=spec_title,
         spec_type=spec_type,
         plan_id=plan_id,
+        is_initial_share=is_initial_share,
     )
 
 

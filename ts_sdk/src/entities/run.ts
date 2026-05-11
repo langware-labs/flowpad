@@ -15,6 +15,8 @@ export interface IRun extends IEntity {
   started_at?: string | null;
   ended_at?: string | null;
   draft_flow_message_id?: string | null;
+  /** FlowMessage whose PROMPT attachment was approved to trigger this Run. */
+  source_flow_message_id?: string | null;
 }
 
 @registerEntity
@@ -26,6 +28,7 @@ export class Run extends APIEntity<Run> implements IRun {
   started_at?: string | null;
   ended_at?: string | null;
   draft_flow_message_id?: string | null;
+  source_flow_message_id?: string | null;
   static type: string = 'run';
 
   constructor(entity: Partial<IRun> = {}) {
@@ -37,5 +40,6 @@ export class Run extends APIEntity<Run> implements IRun {
     this.started_at = entity.started_at;
     this.ended_at = entity.ended_at;
     this.draft_flow_message_id = entity.draft_flow_message_id;
+    this.source_flow_message_id = entity.source_flow_message_id;
   }
 }

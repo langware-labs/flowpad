@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@src/components/ui/select';
-import { resolveConversationDockPointer } from '@src/navigation/conversation-route-resolver';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { MessageSquarePlus, Pencil } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
@@ -90,7 +90,6 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
       const message = initialMessage.trim();
 
       let conversationId: string | null;
-      let projectIdForNav: string | null = null;
 
       if (hasEmailParticipant) {
         // Cross-user create routes through hub; require cloud login first so a
@@ -125,7 +124,6 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
           participants,
         });
         conversationId = result.conversation_id;
-        projectIdForNav = result.project_id;
       }
 
       if (hasFiles && conversationId) {
@@ -133,10 +131,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
       }
 
       if (conversationId) {
-        navigation.openDock(resolveConversationDockPointer({
-          conversationId,
-          projectId: projectIdForNav,
-        }));
+        navigation.openDock(DockPointer.forConversation(conversationId));
       }
       onClose();
     } catch (err: unknown) {
