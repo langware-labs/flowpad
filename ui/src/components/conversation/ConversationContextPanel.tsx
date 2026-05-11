@@ -259,6 +259,13 @@ function SharedContextSection({
       await proc.save();
       dataManager.notifyEntityChanged(proc);
 
+      // Wait one animation frame so React flushes the new Private Context
+      // row to the DOM before we change the dock route. Without this we race:
+      // `openTerminalDock` switches the main dock to /dock/shell/<proc-id>
+      // before the watched-query callback fires, and the user never sees
+      // "Open the existing session from Private Context" as the affordance.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
       await proc.start({ instruction });
       proc.openTerminalDock();
     } catch (err) {
@@ -424,14 +431,13 @@ function SharedEntityRow({ typeId, onOpen, onStartSession, starting }: SharedEnt
         {primaryIcon}
         {primaryLabel}
       </RowAction>
-      {onStartSession && (
+      {onStartSession && !starting && (
         <RowAction
           onClick={onStartSession}
-          disabled={!!starting}
           title="Start a Claude Code session pre-loaded with this spec and conversation context"
         >
           <PlayCircle className="h-3 w-3" />
-          {starting ? 'Starting…' : 'Start session'}
+          Start session
         </RowAction>
       )}
     </Row>
@@ -456,15 +462,20 @@ function TranscriptRow({
   hasTranscriptSession,
 }: TranscriptRowProps) {
   const { navigation } = useDockNavigation();
-  // Prefer the agent transcript viewer when we have a local filesystem path
-  // (server-populated on FILE attachments). Falls back to opening the raw
-  // JSONL via the attachment-download URL — no transcript-viewer rendering,
-  // but at least the user sees the bytes.
+  // ``attachment.local_path`` is synthesized at serialization time by
+  // ``flow_message.py::_serialize_with_local_paths`` from the local backend's
+  // ``tempfile.gettempdir()``. On macOS that's ``/var/folders/.../T/…`` and on
+  // Windows that's ``C:\Users\…\AppData\Local\Temp\…`` — both valid local paths
+  // for the backend that produced them. The download URL is the fallback when
+  // no local path is populated.
   const localPath = attachment.local_path ?? null;
   const downloadUrl = fileAttachmentUrl(messageId, attachment.data);
 
   const handleView = () => {
     if (localPath) {
+      // ``claude/transcript`` handles the absolute-path form via LensViewer's
+      // Form 2 branch (POSIX or Windows-style absolute paths are both
+      // forwarded to ``TranscriptViewer path={…}``).
       navigation.openLens('claude', 'transcript', encodeURIComponent(localPath));
     } else {
       window.open(downloadUrl, '_blank', 'noopener,noreferrer');
@@ -484,14 +495,13 @@ function TranscriptRow({
         <Eye className="h-3 w-3" />
         View
       </RowAction>
-      {!hasTranscriptSession && onStartCc && (
+      {!hasTranscriptSession && !startingCc && onStartCc && (
         <RowAction
           onClick={onStartCc}
-          disabled={startingCc}
           title="Start a new Claude session pre-loaded with this transcript"
         >
           <PlayCircle className="h-3 w-3" />
-          {startingCc ? 'Starting…' : 'Start session'}
+          Start session
         </RowAction>
       )}
     </Row>
