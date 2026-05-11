@@ -7,6 +7,7 @@ import { SessionsView } from '@src/components/sessions-view/sessions-view';
 import { BASE_PATH } from '@src/constants/basePath';
 import AgentRedirect from '@src/pages/agent-redirect';
 import FlowPage from '@src/pages/flow-page/flow-page';
+import KeychainApproval from '@src/pages/keychain-approval';
 import LandingPage from '@src/pages/landing-page/landing-page';
 import NotFound from '@src/pages/NotFound';
 import { createBrowserRouter, createRoutesFromElements, Navigate, Route, type ShouldRevalidateFunctionArgs } from 'react-router';
@@ -79,6 +80,10 @@ export const router = createBrowserRouter(
         {/* Connections route hidden until OAuth flow is fully implemented */}
         <Route path="hooks" element={<HooksView />} />
       </Route>
+
+      {/* Deep-link bridge: pops the SecretApprovalDialog when the
+          /auth/login_callback handler detects keychain access isn't approved. */}
+      <Route path="electron/keychain-approval" element={<KeychainApproval />} />
 
       {/* Global catch-all */}
       <Route path="*" element={<NotFound />} />
