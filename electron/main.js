@@ -6,7 +6,19 @@ const UvManager = require('./uv-manager');
 
 // Register flowpad:// as a custom protocol so the OS routes deep links here.
 // Must be called before app.whenReady().
-app.setAsDefaultProtocolClient('flowpad');
+//
+// Windows dev-mode pitfall: when Electron is launched via `electron .`,
+// process.defaultApp is true and the bare registration would point at
+// electron.exe with no script argument — the OS would later launch electron.exe
+// with the deep-link URL but Electron wouldn't know which app to start.
+// Pass the script path explicitly so the registry entry is
+//   "<electron.exe>" "<path/to/main.js>" "%1"
+// and the deep link arrives in process.argv as expected.
+if (process.defaultApp && process.argv.length >= 2) {
+  app.setAsDefaultProtocolClient('flowpad', process.execPath, [path.resolve(process.argv[1])]);
+} else {
+  app.setAsDefaultProtocolClient('flowpad');
+}
 
 // Enforce single-instance so Windows/Linux deep links reach the running app
 // via the 'second-instance' event rather than spawning a second process.
