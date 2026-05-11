@@ -147,10 +147,6 @@ let isQuitting = false;
 
 // Deep link that arrived before the window was ready to navigate.
 let pendingDeepLink = null;
-// Becomes true once startApp() has loaded the real UI (or a pending deep link).
-// Until then, even if mainWindow exists it's showing loading.html and the
-// backend may not be reachable, so deep-link navigations must be deferred.
-let startupComplete = false;
 
 /**
  * Convert a flowpad:// URL to the equivalent http://localhost:9007 URL and
@@ -168,14 +164,12 @@ function handleDeepLink(url) {
     const tail = `${parsed.search}${parsed.hash}`;
     const localUrl = typePart ? `${BACKEND_URL}/${typePart}${idPart}${tail}` : `${BACKEND_URL}${tail}`;
 
-    if (startupComplete && mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
       mainWindow.loadURL(localUrl);
     } else {
-      // Either the window doesn't exist yet, OR it exists but startup hasn't
-      // finished (loading.html showing / backend not ready). Defer to the
-      // pending-deep-link slot consumed at the end of startApp().
+      // Window not ready yet — apply after startup completes.
       pendingDeepLink = localUrl;
     }
   } catch (err) {
@@ -199,18 +193,6 @@ app.on('second-instance', (_event, argv) => {
     mainWindow.focus();
   }
 });
-
-// Windows / Linux COLD START: when the OS launches the app via a flowpad://
-// URL for the first time, the URL is in process.argv. There's no event for
-// this — we have to read it ourselves before app.whenReady fires startApp.
-// (On macOS this path is dead — the URL arrives via 'open-url' instead.)
-if (process.platform !== 'darwin') {
-  const argvDeepLink = process.argv.find(arg => arg.startsWith('flowpad://'));
-  if (argvDeepLink) {
-    log.info(`[deep-link] picked up from process.argv: ${argvDeepLink}`);
-    handleDeepLink(argvDeepLink);
-  }
-}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -387,9 +369,6 @@ async function startApp() {
   pendingDeepLink = null;
   log.info(`Loading UI from ${startUrl}`);
   mainWindow.loadURL(startUrl);
-  // From here on, deep links can be applied directly via mainWindow.loadURL —
-  // the backend is ready and the real UI (not loading.html) is being loaded.
-  startupComplete = true;
 
   // Electron wrapper auto-update
   setupElectronAutoUpdater();
