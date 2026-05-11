@@ -246,7 +246,7 @@ export class NavigationActions {
     if (!process) {
       return null;
     }
-    this.openDock(process.dockPointer, extraOptions);
+    this.openDock(process.terminalDockPointer, extraOptions);
     return process;
   }
 
@@ -262,7 +262,7 @@ export class NavigationActions {
   async openProcessTab(processId: string, options?: Record<string, string>): Promise<void> {
     const process = AgenticProcess.getByIdFromCache(processId) ?? (await AgenticProcess.getById(processId));
     if (!process) return;
-    this.openDock(process.dockPointer, options);
+    this.openDock(process.terminalDockPointer, options);
   }
 
   /** Open a plain Shell in a terminal tab. */
