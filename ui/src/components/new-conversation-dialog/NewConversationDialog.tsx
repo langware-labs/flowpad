@@ -4,7 +4,6 @@ import {
   cloudManager,
   createProjectConversation,
   getErrorMessagesFromAxios,
-  startBundleConversation,
 } from '@sdk';
 import { sendReply } from '@sdk/entities/notifications';
 import { useContext as useDataContext } from '@src/hooks/useContext';
@@ -115,26 +114,28 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
           setError(gate.error);
           return;
         }
-        // Bundle delivery — same path as share_task / AskForAssistance, just
-        // without a Task/Spec. Backend stamps project_id on the local
-        // Conversation at create time and includes it as remote_project_id in
-        // the bundle for the receiver's project-mapping flow.
-        const recipient = participants.find((p) => !!p.email || !!p.user_id);
-        const recipientId = recipient?.user_id || recipient?.email || '';
-        // ``message`` is sent as the initial-message body when there are no
-        // file attachments. With files, defer to the follow-up sendReply so
-        // attachments ride a single FormData call.
-        const result = await startBundleConversation({
-          recipient_id: recipientId,
-          participants,
-          message: hasFiles ? undefined : (message || undefined),
-          project_id: projectId || null,
-          sender_name: senderName.trim() || null,
-        });
-        conversationId = result.conversation_id ?? null;
-        if (!conversationId) {
-          throw new Error(result.email_error || 'Failed to start conversation');
+        // Standard share + invite pattern: create the conversation locally,
+        // ``conv.share(recipients)`` POSTs to the hub and sends one
+        // ``MembershipRequest`` per recipient via ``/members``. Recipients see
+        // a pending invitation in their UI; on accept their local backend
+        // ``conversation/<id>/join``s so they enter ``participants`` and start
+        // receiving WS fanout.
+        const recipientEmails = participants
+          .map((p) => (p.email || '').trim())
+          .filter((email): email is string => !!email && email.includes('@'));
+        if (recipientEmails.length === 0) {
+          throw new Error('At least one recipient email is required');
         }
+        const titleHint = participants.map((p) => p.name || p.email || 'unknown').join(', ');
+        const conv = new Conversation({ title: titleHint, participants });
+        await conv.save();
+        await conv.share(recipientEmails);
+        if (!hasFiles && message) {
+          // Initial message goes through the standard ``add_message`` path so
+          // the hub fanouts the FlowMessage to invited (post-accept) participants.
+          await conv.addMessage(message);
+        }
+        conversationId = conv.id;
       } else {
         const result = await createProjectConversation({
           project_id: projectId,

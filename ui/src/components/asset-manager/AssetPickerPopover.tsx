@@ -71,7 +71,7 @@ export function AssetPickerPopover({
       return (
         label.includes(q) ||
         d.typeid.toLowerCase().includes(q) ||
-        (d.posix_path ?? '').toLowerCase().includes(q)
+        (typeof d.posix_path === 'string' ? d.posix_path : '').toLowerCase().includes(q)
       );
     });
   }, [descriptors, filter, query]);

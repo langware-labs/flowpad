@@ -11,6 +11,19 @@
 
 ## Learnings
 
+### 2026-05-12 — Assets index + asset-picker-on-agents QA cycle (v0.2.21-fixes)
+
+**Real production bug — `ui/src/components/asset-manager/AssetManagerPopover.tsx:192-193`**
+Typing into the asset-manager list filter threw `TypeError: (d.posix_path ?? "").toLowerCase is not a function`, crashing the entire AgentAssetEditor + AssetsPage via the React error boundary. The `??` only coerces null/undefined; at least one `AssetDescriptor.posix_path` is a non-string at runtime (violates the SDK's `string | null` contract — likely a server-side producer drift). Fixed by coercing at the consumer with `typeof === 'string'` guards. Same defect class still exists at `AssetPickerPopover.tsx:74` (out-of-scope this cycle).
+
+**`browseable-chevron-asset-type:<type>` testids carry a filterSig suffix** — actual format is `browseable-chevron-asset-type:<type>:<scope>:<projectIds_joined>`. The bare literal selector never matches. Scenarios must use prefix-match: `[data-testid^="browseable-chevron-asset-type:<type>:"]`. Updated `wiki_folder_tree.md` and `agent_execution_asset_picker.md`. Pattern introduced in commit 1388c07 (per tester).
+
+**`project_dir` AND `user_dir` are BOTH read-only sources** in `READONLY_ASSET_SOURCES` (`ts_sdk/src/process/asset-descriptor.ts:52-57`). Writable sources are only `embedded` (private materialized copy) and `inline`. Test design implication: a fresh process has no editable skill rows because nothing is `embedded` yet — attaching a read-only skill *materializes* an `embedded` row for that typeid, and the detach button (gated by `attached && !readOnly` at `AssetManagerPopover.tsx:606`) renders on the embedded row. Scenarios that "pick the first non-read-only skill" pre-attach will always skip; pick any skill and assert the embedded row appears post-attach.
+
+**`assets_list_mode.md` described a phantom "Search-First UI"** — LayoutList/Network mode toggle + type pills never shipped. Actual UI is `BrowseableTree` (left) + `AssetListView` (right). Scenario fully rewritten this cycle.
+
+**MCP synthetic events do NOT trigger Radix close handlers** — `page.keyboard.press('Escape')` and dispatched pointerdown on document.body do not close a Radix Popover via MCP debugMcp. Validate Popover close behavior with a Playwright `.md.ts` instead.
+
 ### 2026-05-07 — Full QA cycle (all 8 phases) on v0.2.20-process-fixes
 
 **Claude rotates `Try "..."` placeholder text in empty prompt** — broke `tests/long_tests/test_clean_claude_pty_stress.py` and `ui/tests/long_tests/clean_claude_pty.test.ts`. Both invariant extractors now treat any `^Try\b.*"` content as empty prompt.

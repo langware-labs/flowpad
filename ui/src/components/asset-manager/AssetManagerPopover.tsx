@@ -189,8 +189,8 @@ export function AssetManagerPopover({
             label.includes(q) ||
             d.typeid.toLowerCase().includes(q) ||
             d.source.toLowerCase().includes(q) ||
-            (d.posix_path ?? '').toLowerCase().includes(q) ||
-            (d.source_dir ?? '').toLowerCase().includes(q)
+            (typeof d.posix_path === 'string' ? d.posix_path : '').toLowerCase().includes(q) ||
+            (typeof d.source_dir === 'string' ? d.source_dir : '').toLowerCase().includes(q)
           );
         })
       : descriptors;

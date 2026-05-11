@@ -1572,3 +1572,40 @@ The `redirect()` vs `replace()` asymmetry is verbatim in source — only line 22
 
 ### Fixed: no
 
+
+---
+
+## 2026-05-12 — agent_execution_asset_picker test 7 (list filter crash)
+
+### Scenario
+`ui/tests/manual_regression/assets/agent_execution_asset_picker.md` — test 7 "List filter narrows attached/listed rows".
+
+### Repro
+1. Navigate to `{APP_URL}/dock/assets/editor/agent/<any agent asset_ref>`.
+2. Click `data-testid="entity-execution-settings"` to open the Asset Manager popover.
+3. Type any non-empty string into `data-testid="asset-manager-list-filter"`.
+
+### Symptom
+Unhandled `TypeError: (d.posix_path ?? "").toLowerCase is not a function` at `AssetManagerPopover.tsx:192`. Error propagates through `RouterProvider → RootLayout`, hits the `RenderErrorBoundary`, and unmounts the entire `AgentAssetEditor` + `AssetsPage`. After the crash, `data-testid="asset-manager-popover"`, `agent-execution`, and the assets shell are gone from the DOM.
+
+### RCA (tester-supplied, confirmed via code read)
+`AssetManagerPopover.tsx:182-196` builds the filtered row list. Lines 192 and 193:
+```ts
+(d.posix_path ?? '').toLowerCase().includes(q) ||
+(d.source_dir ?? '').toLowerCase().includes(q)
+```
+The nullish-coalescing `??` only substitutes for `null`/`undefined`. The data set includes at least one `AssetDescriptor` whose `posix_path` is a non-string value (likely an object or array — common with FS records where `posix_path` may carry structured metadata). `.toLowerCase` is then undefined on that value, throwing the `TypeError`.
+
+### Fix area (informational, NOT a fix)
+Coerce to string before `.toLowerCase()`:
+```ts
+const posix = typeof d.posix_path === 'string' ? d.posix_path : '';
+const sourceDir = typeof d.source_dir === 'string' ? d.source_dir : '';
+return label.includes(q) || d.typeid.toLowerCase().includes(q) || d.source.toLowerCase().includes(q) || posix.toLowerCase().includes(q) || sourceDir.toLowerCase().includes(q);
+```
+Same coercion belongs around any other `.toLowerCase()` call that targets a descriptor's string-ish field if it's `string | undefined` at the type level but could be runtime non-string.
+
+### Confidence: HIGH
+Tester reproduced the crash live with a screenshot/log; line 192/193 is the only call site that matches the stack trace; coercion is the minimal-risk fix and matches the surrounding code that already guards via `??`.
+
+### Fixed: yes
