@@ -125,6 +125,19 @@ class Project(Entity):
             )
         return self
 
+    @staticmethod
+    def derive_id_for_path(path) -> str | None:
+        """Canonical project_id for a mount path.
+
+        Single source of truth for the synthetic id used everywhere: indexer
+        FSRefs, transcript boundaries, and ``allocate_id``. ``None`` when no
+        path is given.
+        """
+        if not path:
+            return None
+        import uuid
+        return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{canonical_posix_path(path)}"))
+
     @classmethod
     def allocate_id(cls, data: dict) -> str:
         """Deterministic UUID5 keyed on the project work directory.
@@ -142,7 +155,9 @@ class Project(Entity):
             if name and os.path.isabs(name):
                 mount_path = name
         if mount_path:
-            return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{canonical_posix_path(mount_path)}"))
+            pid = cls.derive_id_for_path(mount_path)
+            if pid:
+                return pid
         rid = data.get("id") or ""
         if rid and is_valid_uuid(rid):
             return rid
@@ -211,12 +226,12 @@ class Project(Entity):
         await proj.save()
         return proj
 
-    @property
-    def project_encoded_name(self) -> str | None:
-        """Encoded project path used to locate transcript files."""
-        if not self.fs_storage_mount_path:
-            return None
-        return str(self.fs_storage_mount_path).replace("/", "-")
+    # Phase 9: ``project_encoded_name`` property removed — it produced encoded
+    # paths that diverged from what Claude CLI actually wrote on disk for
+    # paths containing ``.``/``_``/``@``. Callers that need to reach a
+    # session JSONL should use
+    # ``flow_sdk.transcript_analyzer.resolver.resolve_session_jsonl(worker_type, session_id)``
+    # which globs and finds the actual file.
 
     @property
     def main_ref(self):

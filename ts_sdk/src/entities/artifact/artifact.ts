@@ -1,4 +1,4 @@
-import { APIEntity, registerEntity } from '../../APIEntity';
+import { APIEntity, isNonEmptyString, registerEntity } from '../../APIEntity';
 import { ArtifactTypeInfo, ArtifactTypeMetadata } from './artifact-type-info';
 import { ArtifactReferenceType, ArtifactRelationType, ArtifactType, CodebaseReferenceType } from './artifact-types';
 
@@ -38,7 +38,7 @@ export class CodeRef extends APIEntity<CodeRef> implements ICodeRef {
   protected validateStructure(): void {
     const errors: string[] = [];
 
-    if (!this.name || this.name.trim() === '') {
+    if (!isNonEmptyString(this.name)) {
       errors.push('name is required');
     }
 
@@ -113,7 +113,7 @@ export class Artifact extends CodeRef implements IArtifact {
    * ``artifact-04…2b`` id-tail. Defers to the chain when ``name`` is set.
    */
   override getDisplayName(): string | null {
-    if (this.name && this.name.trim()) return null;
+    if (isNonEmptyString(this.name)) return null;
     if (this.port) return `Port ${this.port}`;
     return null;
   }

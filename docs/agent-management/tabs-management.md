@@ -28,7 +28,7 @@ Relevant files:
 | New plain terminal | `/dock/shell/new_terminal` | Creates a new `Shell`, then redirects to `/dock/shell/shell-<shellId>`. |
 | Plain shell tab | `/dock/shell/shell-<shellId>` or `/dock/shell/<shellId>` | `loadShell(shellId)` starts or reattaches the `Shell` PTY and clears current process context. |
 | Claude/agentic terminal tab | `/dock/shell/agentic_process-<processId>` | `loadProcess(processId)` calls `process.start({ visible: true })`, resolves the linked `Shell`, and sets process and shell context. |
-| Live session viewer | `/dock/session/<processId>` | `main-loader.ts` sets `CurrentProcessTypeId`, active entity id, project context, and compute node. It does not open a PTY by itself. |
+| Legacy session URL | `/dock/session/<processId>` | `main-loader.ts` redirects to `/dock/shell/agentic_process-<processId>`. The old live-workflow viewer has been removed. |
 
 `AgenticProcess.dockPointer` currently returns a `ViewType.SHELL` pointer, so the standard terminal route for an agentic process is `/dock/shell/agentic_process-<processId>`. Do not document `/dock/agentic_process/:processId` as the normal terminal tab route, even though `ViewType.AGENTIC_PROCESS` still exists and `ContentPanel` has a `ProcessTerminal` branch for that view.
 
@@ -267,64 +267,6 @@ Important behavior:
 
 ---
 
-## SessionViewer
-
-**File:** `ui/src/components/live-workflow/SessionViewer.tsx`
-
-`SessionViewer` is the live conversation/FlowData view rendered at `/dock/session/:processId`. It is separate from the PTY terminal tab strip.
-
-Layout:
-
-```text
-SessionTabBar
-RunningArea
-InterferenceBox
-```
-
-### Session Tabs
-
-Session tabs are process tabs:
-
-```ts
-interface SessionTab {
-  id: string;                  // AgenticProcess id
-  name: string;
-  favorite_index?: number | null;
-}
-```
-
-On mount, `SessionViewer` queries up to 100 visible `AgenticProcess` entities scoped to the current project, ordered by `updated_at desc`. A module-level `sessionTabsCache` stores tabs per project id for the current browser session.
-
-Display names are resolved in this order:
-
-1. `process.context_data.display_name`
-2. First 30 characters of `process.instruction_content` after stripping comments
-3. Fallback such as `Session 3`
-
-### favorite_index
-
-`favorite_index` is persisted on the `AgenticProcess` via `PUT /api/v1/graph/agentic_process/:id` and controls left-to-right tab order.
-
-- If no tabs have `favorite_index`, fetched tabs keep `updated_at desc` order.
-- Once any tab has `favorite_index`, tabs sort by that value ascending, with `null` last.
-- New tabs get `favoriteMaxRef.current + 1000`.
-- Drag reorder assigns a midpoint between neighbors when possible.
-- Closing a tab sets `favorite_index: null` and `visible: false`.
-
-### SessionViewer Actions
-
-| Action | Current behavior |
-|--------|------------------|
-| Select tab | Sets `activeTabId`, persists `visible: true`, then calls `navigation.openShellProcess(processId)`. This navigates to the process terminal route, not just an in-place SessionViewer switch. |
-| Close tab | Removes the process id from local/cache state, persists `favorite_index: null` and `visible: false`. If closing the active process, current code calls `navigation.openSession(remaining[0].id)` for the first remaining id or `navigation.openShellView()` when none remain. |
-| Add tab | Calls `computeNode.createProcess({ projectId, workdir }, { visible: true })`, persists the next `favorite_index`, and opens the process terminal. |
-| Rename tab | Writes `context_data.display_name` on the `AgenticProcess` and saves it. |
-| Inject instruction | Calls `process.executeInstruction(content, { sync: false })` through `useSessionProcess()`. |
-
-`SessionActionButtons` exposes "Resume in terminal" when `process.session_id` is known. It uses `useResumeInTerminal()`, not a `resumeClaude` URL flag.
-
----
-
 ## Navigation Helpers
 
 **File:** `ui/src/navigation/NavigationActions.ts`
@@ -341,6 +283,4 @@ Terminal-related helpers currently mean:
 | `openClaudeSession(sessionId)` | Upserts an `AgenticProcess` for a Claude session id and navigates to its dock pointer. |
 | `openNewClaudeProcess(options?)` | Creates a visible process and returns ids; `TabbedTerminal` handles navigation through `onTabOpen`. |
 | `openNewShell(options?)` | Creates a `Shell`; navigates unless `skipNavigate: true`. |
-| `openSession(shellId, options?)` | Despite the name, this is shell-aware terminal navigation: it looks for a process whose `shell_id` matches, otherwise opens the plain shell. It is not the `/dock/session/:processId` SessionViewer helper. |
-
-`DockPointer.forSession(processId)` exists for `ViewType.SESSION`, but `NavigationActions` does not currently expose a dedicated wrapper for it.
+| `openSession(shellId, options?)` | Despite the name, this is shell-aware terminal navigation: it looks for a process whose `shell_id` matches, otherwise opens the plain shell. |

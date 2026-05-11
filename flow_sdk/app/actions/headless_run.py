@@ -400,7 +400,6 @@ async def _run_turn_and_capture(
     finally:
         _PROMPT_WORKERS.pop(process.id, None)
         process.status = ProcessStatus.FAILED.value if errored else ProcessStatus.STOPPED.value
-        process.visible = True
         cli_cfg_next = dict(process.cli_config or {})
         cli_cfg_next.pop("print_mode", None)
         cli_cfg_next.pop("output_format", None)

@@ -33,7 +33,11 @@ from typing import Any
 
 from ..entries import (
     AssistantMessageEntry,
+    FileEditEntry,
+    FileReadEntry,
+    FileWriteEntry,
     MetaEntry,
+    ShellCommandEntry,
     SummaryEntry,
     SystemEntry,
     TokenUsageEntry,
@@ -41,8 +45,15 @@ from ..entries import (
     ToolUseEntry,
     UnknownEntry,
     UserMessageEntry,
+    WebFetchEntry,
 )
 from ..entry import TranscriptEntry
+from .._helpers import truncate_file_content
+from ._apply_patch import (
+    add_op_to_content,
+    parse_apply_patch,
+    update_op_to_hunks,
+)
 
 
 class CodexParser:
@@ -341,13 +352,15 @@ class CodexParser:
             call_id = str(payload.get("call_id") or "")
             if call_id and tool_name:
                 self._call_tool_name[call_id] = tool_name
-            return [ToolUseEntry(
+            tool_use_id = call_id or str(eid or base["id"])
+            tool_input = self._safe_json(payload.get("arguments") or {}) or {}
+            return self._build_semantic_function_call(
                 tool_name=tool_name,
-                tool_use_id=call_id or str(eid or base["id"]),
-                tool_input=self._safe_json(payload.get("arguments") or {}) or {},
-                **envelope,
-                **base,
-            )]
+                tool_use_id=tool_use_id,
+                tool_input=tool_input if isinstance(tool_input, dict) else {"value": tool_input},
+                envelope=envelope,
+                base=base,
+            )
         if ptype == "function_call_output":
             call_id = str(payload.get("call_id") or "")
             output = payload.get("output")
@@ -370,13 +383,15 @@ class CodexParser:
             call_id = str(payload.get("call_id") or "")
             if call_id and tool_name:
                 self._call_tool_name[call_id] = tool_name
-            return [ToolUseEntry(
+            tool_use_id = call_id or str(eid or base["id"])
+            raw_input = payload.get("input") if "input" in payload else payload.get("arguments")
+            return self._build_semantic_custom_tool(
                 tool_name=tool_name,
-                tool_use_id=call_id or str(eid or base["id"]),
-                tool_input=self._safe_json(payload.get("input") or payload.get("arguments") or {}) or {},
-                **envelope,
-                **base,
-            )]
+                tool_use_id=tool_use_id,
+                raw_input=raw_input,
+                envelope=envelope,
+                base=base,
+            )
         if ptype == "custom_tool_call_output":
             call_id = str(payload.get("call_id") or "")
             output = payload.get("output")
@@ -406,9 +421,18 @@ class CodexParser:
             if thinking_parts:
                 thinking = "\n".join(thinking_parts)
             elif payload.get("encrypted_content"):
-                # Plain-text summary unavailable; mark explicitly so the
-                # rendered entry isn't a blank assistant_message block.
-                thinking = "[encrypted reasoning, content dropped]"
+                # No plaintext summary on this reasoning item. The codex
+                # CLI default for ``model_reasoning_summary`` is ``none``
+                # in many invocations — pass ``-c model_reasoning_summary=auto``
+                # (or set it in ~/.codex/config.toml) to populate the
+                # ``summary`` array on subsequent runs.
+                #
+                # ``encrypted_content`` is NOT encrypted reasoning text — it's
+                # a server-side opaque session token used to retain context
+                # across turns when zero-data-retention is enforced. We
+                # don't surface it because it's not human-readable and not
+                # meant to be.
+                thinking = "[no plaintext reasoning summary — set model_reasoning_summary=auto on the codex CLI to capture it]"
             else:
                 thinking = None
             return [AssistantMessageEntry(
@@ -420,19 +444,21 @@ class CodexParser:
             )]
         if ptype == "web_search_call":
             action = payload.get("action") or {}
-            tool_input: dict[str, Any] = {}
+            query: str | None = None
+            url: str | None = None
             if isinstance(action, dict):
-                if action.get("query"):
-                    tool_input["query"] = action["query"]
-                if action.get("queries"):
-                    tool_input["queries"] = action["queries"]
-                if action.get("type"):
-                    tool_input["action_type"] = action["type"]
+                q = action.get("query") or (action.get("queries") or [None])[0]
+                if isinstance(q, str) and q:
+                    query = q
+                if isinstance(action.get("url"), str):
+                    url = action.get("url")
             call_id = str(payload.get("call_id") or eid or base["id"])
-            return [ToolUseEntry(
+            self._call_tool_name[call_id] = "web_search"
+            return [WebFetchEntry(
+                url=url,
+                query=query,
                 tool_name="web_search",
                 tool_use_id=call_id,
-                tool_input=tool_input,
                 **envelope,
                 **base,
             )]
@@ -468,6 +494,141 @@ class CodexParser:
         return [MetaEntry(
             meta_kind=f"response_item:{ptype}",
             payload=payload,
+            **envelope,
+            **base,
+        )]
+
+    # Codex tool names — kept as constants so a typo doesn't silently route
+    # a recognized tool into the catch-all bucket.
+    _TOOL_EXEC = "exec_command"
+    _TOOL_READ = ("read_file", "view_file")
+    _TOOL_WRITE = "write_file"
+    _TOOL_APPLY_PATCH = "apply_patch"
+
+    # ── semantic dispatchers (rollout function_call + custom_tool_call) ────
+
+    def _build_semantic_function_call(
+        self,
+        *,
+        tool_name: str,
+        tool_use_id: str,
+        tool_input: dict,
+        envelope: dict[str, Any],
+        base: dict,
+    ) -> list[TranscriptEntry]:
+        """Map a codex ``function_call`` onto a semantic entry.
+
+        Falls through to :class:`ToolUseEntry` for tools the parser doesn't
+        recognize so MCP / bespoke tools keep rendering through the
+        catch-all path.
+        """
+        common: dict[str, Any] = {
+            "tool_name": tool_name,
+            "tool_use_id": tool_use_id,
+            **envelope,
+            **base,
+        }
+        ti = tool_input if isinstance(tool_input, dict) else {}
+
+        if tool_name == self._TOOL_EXEC:
+            return [ShellCommandEntry(
+                command=str(ti.get("cmd") or ti.get("command") or ""),
+                cwd=str(ti.get("workdir") or "") or None,
+                **common,
+            )]
+        if tool_name in self._TOOL_READ:
+            return [FileReadEntry(
+                path=str(ti.get("path") or ti.get("file_path") or ""),
+                **common,
+            )]
+        if tool_name == self._TOOL_WRITE:
+            full_str = str(ti.get("content")) if ti.get("content") is not None else None
+            line_count = full_str.count("\n") + 1 if full_str else None
+            bytes_count = len(full_str.encode("utf-8")) if full_str else None
+            return [FileWriteEntry(
+                path=str(ti.get("path") or ti.get("file_path") or ""),
+                content=truncate_file_content(full_str),
+                bytes_count=bytes_count,
+                line_count=line_count,
+                is_new=True,
+                **common,
+            )]
+        return [ToolUseEntry(tool_input=ti, **common)]
+
+    def _build_semantic_custom_tool(
+        self,
+        *,
+        tool_name: str,
+        tool_use_id: str,
+        raw_input: Any,
+        envelope: dict[str, Any],
+        base: dict,
+    ) -> list[TranscriptEntry]:
+        """Map a codex ``custom_tool_call`` onto semantic entries.
+
+        ``apply_patch`` is the load-bearing case: its ``input`` is a
+        unified-diff-ish text blob that may carry multiple file ops (Add,
+        Update, Delete). One semantic entry is emitted per file op so the
+        renderer shows e.g. five Add File rows for a five-file add.
+        """
+        if tool_name == self._TOOL_APPLY_PATCH and isinstance(raw_input, str):
+            ops = parse_apply_patch(raw_input)
+            entries: list[TranscriptEntry] = []
+            for idx, op in enumerate(ops):
+                # Synthesize a stable id per op so the row keys don't
+                # collide. Result-folding still pairs by the shared
+                # tool_use_id (codex returns one output for the whole
+                # call); the folder keys on tool_use_id, not row id.
+                op_id = base["id"] if idx == 0 else f"{base['id']}:patch{idx}"
+                op_base = {**base, "id": op_id}
+                if op.op == "add":
+                    full_content = add_op_to_content(op)
+                    line_count = full_content.count("\n") + 1 if full_content else None
+                    bytes_count = len(full_content.encode("utf-8")) if full_content else None
+                    entries.append(FileWriteEntry(
+                        path=op.path,
+                        content=truncate_file_content(full_content),
+                        bytes_count=bytes_count,
+                        line_count=line_count,
+                        is_new=True,
+                        tool_name=tool_name,
+                        tool_use_id=tool_use_id,
+                        **envelope,
+                        **op_base,
+                    ))
+                elif op.op == "update":
+                    entries.append(FileEditEntry(
+                        path=op.path,
+                        hunks=update_op_to_hunks(op),
+                        tool_name=tool_name,
+                        tool_use_id=tool_use_id,
+                        **envelope,
+                        **op_base,
+                    ))
+                elif op.op == "delete":
+                    # No FileDeleteEntry yet — represent as an Edit with a
+                    # marker change_summary so the row still renders with
+                    # the file path. Future kind: replace with
+                    # FileDeleteEntry once the renderer supports it.
+                    entries.append(FileEditEntry(
+                        path=op.path,
+                        hunks=[],
+                        change_summary="(file deleted)",
+                        tool_name=tool_name,
+                        tool_use_id=tool_use_id,
+                        **envelope,
+                        **op_base,
+                    ))
+            if entries:
+                return entries
+        # Unknown custom tool — drop into the catch-all.
+        ti = self._safe_json(raw_input) if raw_input is not None else {}
+        if not isinstance(ti, dict):
+            ti = {"value": ti}
+        return [ToolUseEntry(
+            tool_name=tool_name,
+            tool_use_id=tool_use_id,
+            tool_input=ti,
             **envelope,
             **base,
         )]

@@ -25,6 +25,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AssetFilter, AssetScope } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
+import { projectIdForPath } from './utils';
 import { ScopeFilterBar } from './ScopeFilterBar';
 import { AssetListView } from './AssetListView';
 import { BrowseableTree } from '@src/components/browseable-tree';
@@ -134,7 +135,7 @@ function buildFolderBreadcrumbs(
   return crumbs;
 }
 
-const HIDDEN_TYPES = new Set<string>([RecordType.ANNOTATION]);
+const HIDDEN_TYPES = new Set<string>([RecordType.ANNOTATION, RecordType.PROJECT]);
 
 const SIDEBAR_COLLAPSED_KEY = 'wiki:sidebar-collapsed';
 
@@ -207,7 +208,14 @@ export function AssetsPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
-  const [assetFilter, setAssetFilter] = useState<AssetFilter>(DEFAULT_ASSET_FILTER);
+  // Use the canonical synthetic project_id (uuid5 of mount_path) so the
+  // selection round-trips with what the indexer stamps on records and what
+  // the picker emits — independent of how dataContext bootstraps the Project.
+  const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
+  const [assetFilter, setAssetFilter] = useState<AssetFilter>(() => ({
+    ...DEFAULT_ASSET_FILTER,
+    projectIds: currentProjectId ? [currentProjectId] : [],
+  }));
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
@@ -223,8 +231,8 @@ export function AssetsPage() {
   }, []);
 
   const handleRebuildIndex = useCallback(() => {
-    void resetAndRescan();
-  }, [resetAndRescan]);
+    void resetAndRescan(assetFilter);
+  }, [resetAndRescan, assetFilter]);
 
   const handleSearchSubmit = useCallback(() => {
     const q = searchQuery.trim();
@@ -248,19 +256,11 @@ export function AssetsPage() {
   const toggleSidebar = useCallback(() => setSidebarCollapsed((c) => !c), []);
 
   const handleScopeChange = useCallback((scope: AssetScope) => {
-    setAssetFilter(prev => ({
-      ...prev,
-      scope,
-      projectIds: scope === 'project' ? prev.projectIds : [],
-    }));
+    setAssetFilter(prev => ({ ...prev, scope }));
   }, []);
 
   const handleProjectIdsChange = useCallback((ids: string[]) => {
     setAssetFilter(prev => ({ ...prev, projectIds: ids }));
-  }, []);
-
-  const handleIncludeSystemChange = useCallback((next: boolean) => {
-    setAssetFilter(prev => ({ ...prev, includeSystem: next }));
   }, []);
 
   const {
@@ -304,6 +304,7 @@ export function AssetsPage() {
             indexType,
             onNew: handleNew,
             onScanComplete: handleScanComplete,
+            filter: assetFilter,
           });
         }
         return assetTypeRoot(t, {
@@ -460,10 +461,9 @@ export function AssetsPage() {
           <ScopeFilterBar
             scope={assetFilter.scope}
             projectIds={assetFilter.projectIds}
+            currentProjectId={currentProjectId}
             onScopeChange={handleScopeChange}
             onProjectIdsChange={handleProjectIdsChange}
-            includeSystem={assetFilter.includeSystem ?? false}
-            onIncludeSystemChange={handleIncludeSystemChange}
           />
         </div>
       </div>

@@ -29,7 +29,6 @@ class CollaborationRoom(Entity):
     """Entity representing a collaboration room on a project."""
 
     type: str = APIField(default="collaboration_room")
-    project_id: str | None = APIField(default=None, description="Owning project id")
     host_name: str | None = APIField(default=None, description="Display name of the host")
     host_member_id: str | None = APIField(default=None, description="Stable member_id of the host")
     name: str | None = APIField(default=None, description="Optional human title for this room")

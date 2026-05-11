@@ -90,6 +90,21 @@ export function nextTerminalName(sessions: { name: string }[]): string {
   return `Tab ${n}`;
 }
 
+const TYPEID_TAB_NAME_RE =
+  /^[a-z][a-z0-9-]*-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function allowRename(agenticProcess: AgenticProcess | null | undefined, name: string): boolean {
+  const incoming = name.trim();
+  if (!incoming || TYPEID_TAB_NAME_RE.test(incoming)) return false;
+
+  const workerType = agenticProcess?.worker_type?.toLowerCase() ?? '';
+  if ((workerType === 'claude' || workerType === 'claude_code') && incoming.includes('Claude Code')) {
+    return false;
+  }
+
+  return true;
+}
+
 function timeAgo(date: Date | string | undefined | null): string {
   if (!date) return '—';
   const d = typeof date === 'string' ? new Date(date) : date;
@@ -276,7 +291,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     if (visibleSessions.length === 0) return;
     if (hasActiveTab) return;
     const firstSession = visibleSessions[0];
-    const pointer = firstSession.agenticProcess?.dockPointer ?? firstSession.shell?.dockPointer;
+    const pointer = firstSession.agenticProcess?.terminalDockPointer ?? firstSession.shell?.dockPointer;
     if (pointer) navigation.openDockPointer(pointer);
   }, [hasActiveTab, visibleSessions, navigation]);
 
@@ -592,37 +607,68 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     if (!shell) return;
 
     // Guard: reject TypeId-formatted strings (e.g. "claude-<uuid>", "shell-<uuid>")
-    if (/^[a-z][a-z0-9-]*-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(newName)) return;
+    if (TYPEID_TAB_NAME_RE.test(newName)) return;
+
+    const processForRename =
+      session.agenticProcess ??
+      (terminalProcessId(session) && contextAgenticProcess?.id === terminalProcessId(session)
+        ? contextAgenticProcess
+        : null);
 
     // PTY title changes must not override an explicit user rename.
-    // user_renamed is set by the backend when the user runs /rename in CC or
-    // renames via the UI dialog.
-    if (!injectRename && shell.user_renamed) return;
+    // pty_rename is the sticky backend-controlled gate; user_renamed remains
+    // only as a legacy fallback for stale cached entities.
+    const shellPtyRename = (shell as { pty_rename?: boolean }).pty_rename;
+    if (!injectRename && shellPtyRename === false) return;
+    if (!injectRename && shellPtyRename === undefined && shell.user_renamed) return;
+    if (!injectRename && !allowRename(processForRename, newName)) return;
 
     // The tab strip renders the copied TerminalTab name, so patch it directly;
     // Shell.updateDisplay updates the entity cache but does not notify terminalState.
     const previousName = session.name;
     if (previousName !== newName) updateTerminal(session, { name: newName });
 
+    const maybeInjectRename = () => {
+      if (
+        injectRename &&
+        terminalTargetKey(session) === activeTargetKey &&
+        contextAgenticProcess &&
+        isReadyForInput(contextAgenticProcess)
+      ) {
+        void shell.sendInput(`/rename ${newName}\r`);
+      }
+    };
+
     // Rule 5: skip backend call if only the terminalState copy was stale.
     if (shell.name !== newName) {
-      void shell.updateDisplay({ name: newName, is_pty: !injectRename }).catch((error) => {
-        if (previousName !== newName) updateTerminal(session, { name: previousName });
-        console.error('[TabbedTerminal] Failed to rename tab:', terminalTargetKey(session), error);
-      });
+      const previousPtyRename = shell.pty_rename;
+      const previousUserRenamed = shell.user_renamed;
+      if (injectRename) {
+        shell.pty_rename = false;
+        shell.user_renamed = true;
+      }
+      void shell
+        .updateDisplay({ name: newName, is_pty: !injectRename })
+        .then((updatedShell) => {
+          if (updatedShell.name !== newName) {
+            updateTerminal(session, { name: updatedShell.name ?? previousName });
+          } else {
+            maybeInjectRename();
+          }
+        })
+        .catch((error) => {
+          shell.pty_rename = previousPtyRename;
+          shell.user_renamed = previousUserRenamed;
+          if (previousName !== newName) updateTerminal(session, { name: previousName });
+          console.error('[TabbedTerminal] Failed to rename tab:', terminalTargetKey(session), error);
+        });
+      return;
     }
 
     // Inject /rename only when user-initiated AND the worker is ready for input,
     // never when the title came from xterm (PTY escape sequence), to avoid a loop
     // where Claude sets the title → we inject /rename → Claude sets the title again.
-    if (
-      injectRename &&
-      terminalTargetKey(session) === activeTargetKey &&
-      contextAgenticProcess &&
-      isReadyForInput(contextAgenticProcess)
-    ) {
-      void shell.sendInput(`/rename ${newName}\r`);
-    }
+    maybeInjectRename();
   };
 
   // Get display name for a session
@@ -1135,14 +1181,14 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                   entry.project_cwd ?? undefined,
                   entry.project_id ?? undefined,
                 );
-                navigation.openDockPointer(process.dockPointer);
+                navigation.openDockPointer(process.terminalDockPointer);
               } else if (entry.worker_type === 'codex') {
                 const process = await AgenticProcess.fromCodexSession(
                   entry.worker_id,
                   entry.project_cwd ?? undefined,
                   entry.project_id ?? undefined,
                 );
-                navigation.openDockPointer(process.dockPointer);
+                navigation.openDockPointer(process.terminalDockPointer);
               }
             } catch (err) {
               console.error('[TabbedTerminal] Failed to open session from history:', err);

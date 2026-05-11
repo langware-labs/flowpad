@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   AgenticProcess,
   Conversation,
   dataManager,
   FlowMessage,
+  ProcessStatus,
   Task,
   TypeId,
 } from '@sdk';
@@ -92,16 +93,12 @@ export function ConversationContextPanel({
   conversationId,
   ensureMapped: _ensureMapped,
 }: ConversationContextPanelProps) {
-  if (!flowMessage) {
-    return (
-      <div className="px-3 py-6 text-center text-[11px] text-muted-foreground">
-        Select a message to view its context.
-      </div>
-    );
-  }
-
-  const messageId = flowMessage.id ?? '';
-  const attachments: Attachment[] = flowMessage.attachment ?? [];
+  // ⚠ All hook calls must come BEFORE the early-return. Skipping a hook on
+  // the "no message" branch corrupts React's hook table — manifests as the
+  // "Expected static flag was missing" warning and stale state cascading
+  // into child queries (which can in turn open the wrong session).
+  const messageId = flowMessage?.id ?? '';
+  const attachments: Attachment[] = flowMessage?.attachment ?? [];
   const transcriptAttachment = attachments.find(isTranscriptAttachment);
   const typeIdAttachments = attachments.filter((a) => a.attachment_type === AttachmentType.TYPE_ID);
 
@@ -112,7 +109,18 @@ export function ConversationContextPanel({
     messageId || null,
     projectIdLifted,
   );
-  const hasTranscriptSession = privateProcesses.length > 0;
+  // Only visible (PTY-backed) sessions count as "transcript sessions" — invisible
+  // worker processes (e.g. derive-task) live in Private Context too but should
+  // not suppress the Shared Context "Start session" button.
+  const hasTranscriptSession = privateProcesses.some((p) => p.visible);
+
+  if (!flowMessage) {
+    return (
+      <div className="px-3 py-6 text-center text-[11px] text-muted-foreground">
+        Select a message to view its context.
+      </div>
+    );
+  }
 
   // ── Shared Context: entity TypeIds (project pinned + per-message) ────
   const skipKeys = new Set<string>();
@@ -194,7 +202,6 @@ function SharedContextSection({
     try {
       // Backend resolves transcript path + workdir + project_id; spawn happens
       // here so we get a real PTY (visible:true) the user can interact with.
-      // Mirrors useMyProcess's "Open Claude Code" pattern, which works.
       const action = new ActionInfo('start-cc-from-transcript', 'flow_message', messageId, 'POST');
       const res = await dataManager.callAction<
         unknown,
@@ -209,23 +216,40 @@ function SharedContextSection({
       const instruction =
         'use flow skill and provide brief analysis of this claude transcript:\n' +
         res.transcript_path;
+
+      // Use AgenticProcess.spawn — the same path useMyProcess uses for
+      // "Open Claude Code" (which works). Spawning manually then calling start()
+      // raced with the dock route loader's own loadProcess→start, causing the
+      // loader to throw and fall back to the user's existing my_process_id
+      // (the "wrong session opens" symptom).
+      //
+      // Linkage to the source FlowMessage goes through context_entities, added
+      // via the public API after spawn (the constructor's deepAssign would
+      // strip the TypeId prototype if we passed it through). The Private
+      // Context query filters AgenticProcesses client-side on this — same
+      // pattern Tasks already use.
+      // No `scope` here. Passing `scope: [fmTypeId]` made the spawn save go to
+      // POST /flow_message/<id>/agentic_process (a scoped sub-route) instead
+      // of the root POST /agentic_process. The dock route loader fetches via
+      // the root path; if the entity isn't there it throws and falls back to
+      // the user's existing my_process_id — that's the wrong-session symptom.
       const { process } = await AgenticProcess.spawn(
         {
           permissionMode: 'bypassPermissions',
           workdir: res.workdir || undefined,
           projectId: res.project_id ?? undefined,
-          scope: [fmTypeId],
         },
         { instruction, visible: true },
       );
-      // Pin to the source FlowMessage so the Private Context query
-      // (`target_vfs_path = fm-<id>`) finds this session.
-      if (process.target_vfs_path !== fmTypeId.toString()) {
-        process.target_vfs_path = fmTypeId.toString();
-        process.addContextEntity(fmTypeId);
-        await process.save([fmTypeId]).catch(() => null);
-      }
       navigation.openDock(process.dockPointer);
+      // Stamp the linkage AFTER navigating so the route loader's own
+      // start({visible:true}) runs cleanly. This save is a follow-up UPDATE,
+      // not part of the spawn critical path — failure here just means the
+      // row won't appear, but the session still opens.
+      process.addContextEntity(fmTypeId);
+      void process.save().catch((err) => {
+        console.error('[SharedContext] linkage save failed', err);
+      });
     } catch (err) {
       console.error('[SharedContext] start-cc-from-transcript failed', err);
       toast.error('Failed to start session');
@@ -327,7 +351,7 @@ function TranscriptRow({
         title={localPath ? 'Open in the transcript viewer' : 'Open the raw JSONL in a new tab'}
       >
         <Eye className="h-3 w-3" />
-        View session
+        View
       </RowAction>
       {!hasTranscriptSession && (
         <RowAction
@@ -387,7 +411,52 @@ function PrivateContextSection({
 
   const containerInside = { type: Conversation.type, id: conversationId };
 
-  const isEmpty = tasks.length === 0 && processes.length === 0;
+  // Split processes by role:
+  //   - derivation workers (visible=false) — each backs a "deriving task…" row
+  //     that becomes a fully-linked Task row once Claude saves the new Task.
+  //   - transcript sessions (visible=true) — interactive PTYs the user opens
+  //     directly via the existing PrivateProcessRow.
+  const { derivationProcesses, transcriptProcesses } = useMemo(() => {
+    const derivation: AgenticProcess[] = [];
+    const transcript: AgenticProcess[] = [];
+    for (const p of processes) {
+      if (p.visible) transcript.push(p);
+      else derivation.push(p);
+    }
+    return { derivationProcesses: derivation, transcriptProcesses: transcript };
+  }, [processes]);
+
+  // Pair each derivation process to the Task it produced (if any). Claude is
+  // instructed to add the spawning AgenticProcess's TypeId to the new Task's
+  // context_entities so we can match them here.
+  const linkedTaskByProcessId = useMemo(() => {
+    const map = new Map<string, Task>();
+    for (const p of derivationProcesses) {
+      if (!p.id) continue;
+      const procKey = new TypeId(AgenticProcess.type, p.id).toString();
+      const linked = tasks.find((t) =>
+        t.contextEntities?.some((tid) => tid.toString() === procKey),
+      );
+      if (linked) map.set(p.id, linked);
+    }
+    return map;
+  }, [derivationProcesses, tasks]);
+
+  // Tasks already represented by a paired derivation row are hidden from the
+  // standalone list to avoid showing the same derivation twice.
+  const standaloneTasks = useMemo(() => {
+    const pairedTaskIds = new Set(
+      Array.from(linkedTaskByProcessId.values())
+        .map((t) => t.id)
+        .filter((id): id is string => !!id),
+    );
+    return tasks.filter((t) => !t.id || !pairedTaskIds.has(t.id));
+  }, [tasks, linkedTaskByProcessId]);
+
+  const isEmpty =
+    standaloneTasks.length === 0 &&
+    derivationProcesses.length === 0 &&
+    transcriptProcesses.length === 0;
 
   return (
     <div>
@@ -428,7 +497,7 @@ function PrivateContextSection({
         <EmptyHint text="Nothing added yet. Use the + to add a task." />
       ) : (
         <ContextTable>
-          {tasks.map((t) => (
+          {standaloneTasks.map((t) => (
             <PrivateTaskRow
               key={t.id}
               task={t}
@@ -443,7 +512,23 @@ function PrivateContextSection({
               }}
             />
           ))}
-          {processes.map((p) => (
+          {derivationProcesses.map((p) => {
+            const linkedTask = p.id ? linkedTaskByProcessId.get(p.id) : undefined;
+            return (
+              <PrivateDerivationRow
+                key={p.id}
+                process={p}
+                linkedTask={linkedTask}
+                onOpenTask={() => {
+                  if (!linkedTask?.id) return;
+                  navigation.openDock(
+                    DockPointer.forTasks(linkedTask.id, { conversationId }),
+                  );
+                }}
+              />
+            );
+          })}
+          {transcriptProcesses.map((p) => (
             <PrivateProcessRow
               key={p.id}
               process={p}
@@ -497,6 +582,46 @@ function PrivateProcessRow({
       name={process.displayName ?? process.id ?? '(running)'}
     >
       <RowAction onClick={onOpen} title="Open the session">
+        <ExternalLink className="h-3 w-3" />
+        Open
+      </RowAction>
+    </Row>
+  );
+}
+
+// Single row representing a "derive task" headless run. The Task is
+// pre-created server-side (placeholder title from FM text), so `linkedTask`
+// is defined from the moment the row appears. The Open button is gated on the
+// AgenticProcess lifecycle: disabled while the Claude run is still ongoing
+// (NEW/STARTING/RUNNING/STOPPING), enabled once it lands in STOPPED/FAILED.
+// Click navigates to the (now refined) Task view.
+function PrivateDerivationRow({
+  process,
+  linkedTask,
+  onOpenTask,
+}: {
+  process: AgenticProcess;
+  linkedTask: Task | undefined;
+  onOpenTask: () => void;
+}) {
+  const Icon = ICON_BY_TYPE.task ?? ExternalLink;
+  const status = process.status;
+  const ready = status === ProcessStatus.STOPPED || status === ProcessStatus.FAILED;
+  const name =
+    linkedTask?.displayName ??
+    linkedTask?.id ??
+    (process.displayName ? `Deriving task… (${process.displayName})` : 'Deriving task…');
+  return (
+    <Row icon={Icon} type="Task" name={name}>
+      <RowAction
+        onClick={onOpenTask}
+        disabled={!ready || !linkedTask}
+        title={
+          ready
+            ? `Open Task: ${linkedTask?.displayName ?? ''}`
+            : 'Deriving with Claude…'
+        }
+      >
         <ExternalLink className="h-3 w-3" />
         Open
       </RowAction>

@@ -38,7 +38,6 @@ class ClaudeMemoryRecord(Record):
             name=path.stem,
             asset_type="memory",
             project_path=project_path,
-            project_encoded=project_encoded,
         )
         object.__setattr__(rec, "_asset_ref", FSRef(path))
         return rec
