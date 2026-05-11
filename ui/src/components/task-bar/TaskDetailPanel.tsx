@@ -12,7 +12,6 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { getPriorityColor, PRIORITY_CONFIG } from './constants';
 import { getAnalysisPath, getTaskTypeLabel, openAnalysisReport } from './task-utils';
 import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
-import { ConversationMode } from '@src/components/conversation/conversation-mode';
 
 interface TaskDetailPanelProps {
   task: Task;
@@ -161,7 +160,6 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
                 task={task}
                 conversationId={conversationTypeId.id}
                 variant="compact"
-                mode={ConversationMode.HEADLESS}
               />
             )}
           </>
