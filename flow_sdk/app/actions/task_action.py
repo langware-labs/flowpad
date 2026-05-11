@@ -27,11 +27,7 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse
 logger = logging.getLogger(__name__)
 
 
-def _scope_from_task(
-    task: Task,
-    project_id: Optional[str],
-    source_flow_message_id: Optional[str] = None,
-) -> HeadlessRunScope:
+def _scope_from_task(task: Task, project_id: Optional[str]) -> HeadlessRunScope:
     """Build a [task, conversation, spec, project] scope.
 
     Skips slots the task hasn't filled yet (e.g. no spec on a "request" task,
@@ -62,7 +58,6 @@ def _scope_from_task(
         process_context=process_ctx,
         draft_context=draft_ctx,
         preferred_process_id=task.shared_process_id,
-        source_flow_message_id=source_flow_message_id,
         log_label="run-headless",
     )
 
@@ -71,7 +66,6 @@ async def handle_run_headless(
     task_id: str,
     prompt_text: str,
     someone_typeid: str,
-    source_flow_message_id: Optional[str] = None,
 ) -> ApiResponse:
     """Run `prompt_text` headlessly on a task-bound AgenticProcess; result becomes a draft reply."""
     task = await Task.get_one({"id": task_id})
@@ -86,7 +80,7 @@ async def handle_run_headless(
         if project:
             project_id = project.id
 
-    scope = _scope_from_task(task, project_id, source_flow_message_id)
+    scope = _scope_from_task(task, project_id)
     return await run_scope(scope, prompt_text, someone_typeid)
 
 
@@ -101,12 +95,10 @@ async def run_headless() -> ApiResponse:
 
         body = await request_info.get_post_data() or {}
         prompt_text = (body.get("prompt") or "").strip()
-        source_fm_id = (body.get("source_flow_message_id") or "").strip() or None
         return await handle_run_headless(
             task_id=str(request_info.target_entity_typeid.id),
             prompt_text=prompt_text,
             someone_typeid=request_info.someone_typeid,
-            source_flow_message_id=source_fm_id,
         )
     except Exception as e:
         logger.error("[task_action] run-headless error: %s", e, exc_info=True)

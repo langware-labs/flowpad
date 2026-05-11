@@ -32,17 +32,13 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOpt
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
     ClaudeCLIStreamWorker,
 )
-from flow_sdk._compat import UTC
 from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
-from flow_sdk.builtin.run import Run, RunStatus
 from flow_sdk.builtin.user import User
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowElementType
 from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
-
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +68,7 @@ class HeadlessRunScope:
 
     Fields:
       target_typeid       Pinned to the spawned process as ``target_vfs_path``;
-                          surfaces the run in the entity's Runs drawer.
+                          surfaces the process in the entity's chat panel.
       conversation_id     Where the resulting draft FlowMessage lands.
       workdir             Claude ``--cwd``.
       project_id          Pinned to the spawned process as ``project_id``.
@@ -83,9 +79,6 @@ class HeadlessRunScope:
                           back to ``target_vfs_path`` lookup. Tasks set this
                           from ``task.shared_process_id`` (Scenario C pre-fork);
                           conversations leave it None.
-      source_flow_message_id  FlowMessage whose PROMPT attachment was approved
-                          to trigger this run; stamped onto the Run row so the
-                          drawer can filter per message instead of per task.
       log_label           Prefix for log breadcrumbs.
     """
     target_typeid: TypeId
@@ -95,7 +88,6 @@ class HeadlessRunScope:
     process_context: list[TypeId]
     draft_context: list[TypeId]
     preferred_process_id: Optional[str] = None
-    source_flow_message_id: Optional[str] = None
     log_label: str = "run-headless"
 
 
@@ -236,64 +228,11 @@ async def _save_draft_flow_message(
     return await fm.save(someone_typeid)
 
 
-async def _create_run(
-    *,
-    scope: HeadlessRunScope,
-    process: AgenticProcess,
-    prompt_text: str,
-    someone_typeid: str,
-) -> Run:
-    """Open a new Run row in RUNNING state.
-
-    One Run per Approve & Execute. The drawer queries Runs (not processes)
-    so each turn surfaces as its own row even though the underlying
-    AgenticProcess is reused for Claude session continuity.
-    """
-    run_data: dict = {
-        "target_vfs_path": str(scope.target_typeid),
-        "process_id": process.id,
-        "prompt_text": prompt_text,
-        "status": RunStatus.RUNNING.value,
-        "started_at": datetime.now(UTC).isoformat(),
-    }
-    if scope.source_flow_message_id:
-        run_data["source_flow_message_id"] = scope.source_flow_message_id
-    run = Run.model_validate(run_data)
-    return await run.save(someone_typeid)
-
-
-async def _finalize_run(
-    *,
-    run: Run,
-    errored: bool,
-    draft_fm_id: Optional[str],
-    someone_typeid: str,
-) -> None:
-    """Land the Run in a terminal status. Best-effort — never raises.
-
-    Fires an explicit ``notify_updated`` after save: ``save()``'s built-in
-    UPDATE notification doesn't always reach the entity-event channel that
-    ``useEntitiesQuery`` subscribes to (same reason ``materialize_flow_message``
-    re-fetches and notifies after its conversation update). Without this the
-    second run's spinner stays running until something else triggers a refetch.
-    """
-    try:
-        run.status = (RunStatus.FAILED if errored else RunStatus.STOPPED).value
-        run.ended_at = datetime.now(UTC).isoformat()
-        if draft_fm_id:
-            run.draft_flow_message_id = draft_fm_id
-        await run.save(someone_typeid)
-        await run.notify_updated()
-    except Exception:
-        logger.debug("[run] finalize save failed", exc_info=True)
-
-
 async def _run_turn_and_capture(
     *,
     process: AgenticProcess,
     prompt_text: str,
     scope: HeadlessRunScope,
-    run: Run,
     sender_id: Optional[str],
     sender_name: str,
     someone_typeid: str,
@@ -350,7 +289,7 @@ async def _run_turn_and_capture(
     # JSONL: the interactive one doesn't tail the file, so turns appended
     # here are invisible to the open xterm and the user is stuck looking at
     # a stale transcript until they reopen. Killing the shell now means the
-    # next time the user clicks "Open Shared Terminal" / the Runs row, a
+    # next time the user clicks "Open Shared Terminal", a
     # fresh ``claude --resume`` reads the up-to-date JSONL and renders the
     # new turn. (Not destructive — only the PTY view goes; the entity, the
     # session_id, and the transcript file are untouched.)
@@ -423,7 +362,6 @@ async def _run_turn_and_capture(
             logger.debug("[%s] terminal notify_updated failed", scope.log_label, exc_info=True)
 
     if errored:
-        await _finalize_run(run=run, errored=True, draft_fm_id=None, someone_typeid=someone_typeid)
         return
 
     text = _extract_assistant_text(captured)
@@ -448,19 +386,12 @@ async def _run_turn_and_capture(
             scope.log_label, scope.target_typeid, process.id, len(captured),
             process.session_id, is_resume, details,
         )
-        await _finalize_run(run=run, errored=False, draft_fm_id=None, someone_typeid=someone_typeid)
         return
-    draft = await _save_draft_flow_message(
+    await _save_draft_flow_message(
         scope=scope,
         text=text,
         sender_id=sender_id,
         sender_name=sender_name,
-        someone_typeid=someone_typeid,
-    )
-    await _finalize_run(
-        run=run,
-        errored=False,
-        draft_fm_id=draft.id if draft else None,
         someone_typeid=someone_typeid,
     )
 
@@ -471,8 +402,8 @@ async def run_scope(scope: HeadlessRunScope, prompt_text: str, someone_typeid: s
 
     Per-entity action handlers build a scope and call this. Returns immediately
     with ``{process_id}``; the run continues in the background and surfaces in
-    the UI via the standard process entity-update channels (Runs drawer) and
-    via the draft FlowMessage entity query (ConversationView).
+    the UI via the standard process entity-update channels and via the draft
+    FlowMessage entity query (ConversationView).
     """
     if not prompt_text:
         return ApiFailResponse(message="prompt is required")
@@ -484,20 +415,16 @@ async def run_scope(scope: HeadlessRunScope, prompt_text: str, someone_typeid: s
     sender_id, sender_name = await User.local_sender_identity()
 
     process = await _resolve_or_spawn_process(scope, someone_typeid)
-    run = await _create_run(
-        scope=scope, process=process, prompt_text=prompt_text, someone_typeid=someone_typeid,
-    )
 
     asyncio.create_task(
         _run_turn_and_capture(
             process=process,
             prompt_text=prompt_text,
             scope=scope,
-            run=run,
             sender_id=sender_id,
             sender_name=sender_name,
             someone_typeid=someone_typeid,
         ),
         name=f"{scope.log_label}-{scope.target_typeid.id[:8] if scope.target_typeid.id else '?'}",
     )
-    return ApiSuccessResponse(data={"process_id": process.id, "run_id": run.id})
+    return ApiSuccessResponse(data={"process_id": process.id})

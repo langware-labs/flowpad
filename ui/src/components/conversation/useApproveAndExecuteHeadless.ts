@@ -62,9 +62,9 @@ export function useApproveAndExecuteHeadless(
 
     try {
       if (useTaskScope) {
-        await runOnTask(promptText, messageId);
+        await runOnTask(promptText);
       } else {
-        await runOnConversation(promptText, messageId);
+        await runOnConversation(promptText);
       }
     } catch (err) {
       console.error('[useApproveAndExecuteHeadless] run-headless failed', err);
