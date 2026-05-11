@@ -51,9 +51,9 @@ class ToolUseEntry(TranscriptEntry):
     def to_dict(self) -> dict:
         return {
             **super().to_dict(),
-            "tool_name": self.tool_name,
-            "tool_use_id": self.tool_use_id,
-            "tool_input": self.tool_input,
+            "tool_name": getattr(self, "tool_name", ""),
+            "tool_use_id": getattr(self, "tool_use_id", ""),
+            "tool_input": getattr(self, "tool_input", {}),
         }
 
     def _body_lines(self) -> list[str]:
