@@ -168,9 +168,19 @@ class APIRequest(BaseModel):
             else:
                 none_scoped_pairs.append(original_pairs[i])
 
-        api_request.direct_resource_type = (
-            none_scoped_pairs[0][0] if none_scoped_pairs and is_entity_type(none_scoped_pairs[0][0]) else None
-        )
+        prospective_target_type = scoped_typeid_pairs[-1][0] if scoped_typeid_pairs else None
+        first_unscoped_segment = none_scoped_pairs[0][0] if none_scoped_pairs else None
+        if (
+            first_unscoped_segment
+            and is_entity_type(first_unscoped_segment)
+            and not (
+                prospective_target_type
+                and is_action(first_unscoped_segment, prospective_target_type)
+            )
+        ):
+            api_request.direct_resource_type = first_unscoped_segment
+        else:
+            api_request.direct_resource_type = None
 
         if scoped_typeid_pairs:
             target_pair = scoped_typeid_pairs.pop()

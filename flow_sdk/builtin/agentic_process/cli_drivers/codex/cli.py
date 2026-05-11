@@ -68,6 +68,17 @@ class CodexCliOptions(WorkerCLIOptions):
     # global timeout — keep this in sync if that limit is relaxed.
     DEFAULT_REASONING_EFFORT = "low"
 
+    # Reasoning summary capture defaults. Without these, codex rollouts
+    # carry only ``encrypted_content`` (an opaque server-side context-retention
+    # token) on each ``response_item.reasoning`` line, leaving the transcript
+    # analyzer unable to surface what the agent was thinking. With these set,
+    # the API returns plaintext markdown summaries in ``payload.summary[]``,
+    # which our codex parser at parsers/codex.py concatenates onto the
+    # ``AssistantMessageEntry.thinking`` field — matching the parity Claude's
+    # plaintext thinking blocks already provide.
+    DEFAULT_REASONING_SUMMARY = "auto"
+    DEFAULT_SHOW_RAW_REASONING = "true"
+
     def _build_worker_args(self) -> list[str]:
         import shlex
 
@@ -82,6 +93,9 @@ class CodexCliOptions(WorkerCLIOptions):
         # Cap reasoning effort low so a user's global xhigh setting in
         # ~/.codex/config.toml doesn't blow past the test timeout.
         args.append(f"-c model_reasoning_effort={shlex.quote(self.DEFAULT_REASONING_EFFORT)}")
+        # Capture plaintext reasoning summaries for transcript analysis.
+        args.append(f"-c model_reasoning_summary={shlex.quote(self.DEFAULT_REASONING_SUMMARY)}")
+        args.append(f"-c show_raw_agent_reasoning={shlex.quote(self.DEFAULT_SHOW_RAW_REASONING)}")
         if self.workdir:
             args.append(f"-C {shlex.quote(self.workdir)}")
         if self.model:
@@ -135,6 +149,8 @@ class CodexCliOptions(WorkerCLIOptions):
             argv.append("--ephemeral")
         argv.append("--json")
         argv.extend(["-c", f"model_reasoning_effort={self.DEFAULT_REASONING_EFFORT}"])
+        argv.extend(["-c", f"model_reasoning_summary={self.DEFAULT_REASONING_SUMMARY}"])
+        argv.extend(["-c", f"show_raw_agent_reasoning={self.DEFAULT_SHOW_RAW_REASONING}"])
         if self.workdir:
             argv.extend(["-C", self.workdir])
         if self.model:

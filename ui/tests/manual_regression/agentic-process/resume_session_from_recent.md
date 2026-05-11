@@ -8,7 +8,7 @@ test 1: Resume an existing Claude session from Recent / History navigates into a
 - validate the Info popover "Session ID" matches the claude_session record's id
 - validate the transcript lens (Open Transcript button) shows the prior conversation
 
-test 2: Notification / SessionActionButtons entry point reuses the same resume flow
+test 2: Notification / terminal toolbar entry point reuses the same resume flow
 - trigger an error notification that carries a session_id (e.g. via /dock/lens/claude/errors, clicking a row's "Open in terminal" affordance)
 - click the action button that maps to useResumeInTerminal / openClaudeSession
 - validate the dock navigates to /dock/shell/agentic_process-<id> for the same session

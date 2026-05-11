@@ -115,7 +115,7 @@ Both suites share these settings (see `playwright.config.ts` in each folder):
 |--------|---------|
 | `dismissSetupModal(page)` | Suppress the first-launch setup modal via localStorage |
 | `gotoLanding(page)` | Navigate to `/` and wait for the "Hey" heading |
-| `submitFromLanding(page, msg)` | Fill landing input, press Enter, wait for `/dock/session/` URL |
+| `submitFromLanding(page, msg)` | Fill landing input, press Enter, wait for `/dock/shell/` URL |
 | `ensureActiveSession(page)` | Click "New Session" if needed, wait for instruction input |
 | `sendInstruction(page, msg)` | Send instruction and wait for a new assistant response block |
 | `waitForDone(page)` | Wait for the `DONE` status text (exact match) |

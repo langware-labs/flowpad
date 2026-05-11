@@ -76,7 +76,7 @@ export interface SpawnResult {
   /** Set in PTY mode */
   shell?: Shell;
   /** Set in both modes */
-  workerSessionId?: string;
+  workerSessionId?: string | null;
 }
 
 /**
@@ -142,6 +142,22 @@ interface HistoryResponse {
   use_worker_history: boolean;
 }
 
+export enum AgenticProcessEventName {
+  FirstPrompt = 'first_prompt',
+}
+
+export interface AgenticProcessReportEventResult {
+  accepted: boolean;
+  scheduled: boolean;
+  process_id: string;
+  worker_type?: string | null;
+  session_id: string | null;
+  event_name: AgenticProcessEventName;
+  event_data: Record<string, unknown>;
+  request_id?: string | null;
+  task_name?: string;
+}
+
 /**
  * Interface for AgenticProcess entity data
  */
@@ -166,6 +182,8 @@ export interface IAgenticProcess extends IEntity {
   visible?: boolean;
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
+  /** True when linked shell PTY OSC title events may update the display name */
+  pty_rename?: boolean;
   /**
    * Derived: true when the worker is ready for a new user prompt.
    * Computed server-side via ``is_ready_for_input``. Read-only on the wire.
@@ -179,8 +197,6 @@ export interface IAgenticProcess extends IEntity {
   embedded_asset_refs?: TypeId[];
   /** Owning project ID */
   project_id?: string | null;
-  /** Encoded project path/name used for worker history and transcript lookup */
-  project_encoded_name?: string | null;
   /** CollaborationRoom this process was spawned in, if any */
   collaboration_room_id?: string | null;
   /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats (e.g. per-doc chat keyed on the file path). */
@@ -545,8 +561,38 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return `<!-- <flow-do id="${instrId}"> -->\n${command}\n<!-- </flow-do> -->`;
   }
 
-  get dockPointer(): DockPointerData {
+  /**
+   * Live interactive terminal — `/dock/shell/agentic_process-<id>`.
+   * Use this when the user wants to attach to (or launch) the running PTY.
+   */
+  get terminalDockPointer(): DockPointerData {
     return new DockPointerData(ViewType.SHELL, this.typeId?.toString());
+  }
+
+  /**
+   * Read-only transcript — `/dock/lens/<worker_type>/transcript/<session_id>`.
+   *
+   * Single-segment ref form. The server-side resolver
+   * (``flow_sdk.transcript_analyzer.resolver``) globs the actual on-disk JSONL
+   * from worker_type + session_id, so callers don't need to know any path
+   * encoding. Falls back to the terminal pointer when no session is attached
+   * yet (fresh process before first message).
+   */
+  get transcriptDockPointer(): DockPointerData {
+    if (!this.session_id) return this.terminalDockPointer;
+    const wt = (this.worker_type ?? 'claude').toLowerCase();
+    const worker = wt === 'codex' ? 'codex' : 'claude';
+    return new DockPointerData(ViewType.LENS, `${worker}/transcript/${this.session_id}`);
+  }
+
+  /**
+   * Default dock pointer — the read-only transcript. Surfaces that historically
+   * meant "attach to terminal" should reference {@link terminalDockPointer}
+   * explicitly. The default is transcript because reading prior runs is the
+   * dominant gesture once a process has terminated.
+   */
+  get dockPointer(): DockPointerData {
+    return this.transcriptDockPointer;
   }
 
   /**
@@ -586,11 +632,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return restored ? 'generic-restore' : 'generic';
   }
 
+  /** @deprecated alias of {@link transcriptDockPointer} */
   get searchDockPointer(): DockPointerData {
-    if (this.session_id && this.project_encoded_name) {
-      return new DockPointerData(ViewType.LENS, `claude/transcript/${this.project_encoded_name}/${this.session_id}`);
-    }
-    return this.dockPointer;
+    return this.transcriptDockPointer;
   }
 
   /** Instruction content being executed */
@@ -608,6 +652,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Optional pinning index for tab ordering */
   favorite_index?: number | null;
 
+  /** True when linked shell PTY OSC title events may update the display name. */
+  pty_rename: boolean = true;
+
   /** Backend-owned lifecycle status. */
   private _status: ProcessStatus = ProcessStatus.NEW;
 
@@ -623,6 +670,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this._status = value;
   }
 
+  get ptyRename(): boolean {
+    return this.pty_rename;
+  }
+
+  set ptyRename(value: boolean) {
+    this.pty_rename = value;
+  }
+
   /** Transcript-derived worker status. Read-only outside this class. */
   get workerStatus(): WorkerStatus {
     return this._workerStatus;
@@ -634,9 +689,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /** Worker session ID for resume capability */
   session_id?: string | null;
-
-  /** Encoded project path for transcript navigation */
-  project_encoded_name?: string | null;
 
   /** Whether worker manages its own history */
   use_worker_history?: boolean;
@@ -901,8 +953,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;
     this.sidecar_shell_id = entity.sidecar_shell_id;
+    this.pty_rename = entity.pty_rename ?? true;
     this.project_id = entity.project_id ?? null;
-    this.project_encoded_name = entity.project_encoded_name ?? null;
     this.collaboration_room_id = entity.collaboration_room_id ?? null;
     this.target_vfs_path = entity.target_vfs_path ?? null;
     this.exe_folder = entity.exe_folder ? FSRef.fromJson(entity.exe_folder) : null;
@@ -1121,6 +1173,21 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     );
     userFlowData.markReady();
     this.flowDataStream.ingest(userFlowData);
+  }
+
+  async reportEvent(
+    name: AgenticProcessEventName,
+    data: Record<string, unknown> = {},
+  ): Promise<AgenticProcessReportEventResult> {
+    const actionInfo = new ActionInfo('report_event', AgenticProcess.type, this.id, 'GET');
+    actionInfo.subpath = name;
+    const requestId =
+      globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    actionInfo.queryParameters = {
+      data: JSON.stringify(data),
+      request_id: requestId,
+    };
+    return dataManager.callAction<void, AgenticProcessReportEventResult>(actionInfo);
   }
 
   /**
@@ -1685,7 +1752,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     actionInfo.bodyParameters = options ?? {};
     const result = await dataManager.callAction<
       unknown,
-      { shell_id: string; pty_id: string; session_id: string; status?: string; shell: Record<string, unknown> } | null
+      { shell_id: string; pty_id: string; session_id: string | null; status?: string; shell: Record<string, unknown> } | null
     >(actionInfo);
     if (!result) throw new Error('Process could not be opened (process may be terminated)');
     if (result.status) {

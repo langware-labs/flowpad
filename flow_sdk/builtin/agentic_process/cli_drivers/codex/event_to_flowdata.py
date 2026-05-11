@@ -1,18 +1,9 @@
 """Convert Codex CLI ``codex exec --json`` events into FlowData.
 
-Mirrors ``claude_event_to_flowdata.convert_event`` for the Codex JSONL stream
-format. Each line of the stream is a JSON object discriminated by ``type``.
-
-Confirmed empirically against codex 0.118.0 — the events seen on a run are:
-
-    {"type":"thread.started","thread_id":"<uuid>"}
-    {"type":"turn.started"}
-    {"type":"item.started","item":{"id":"item_N","type":"agent_message"|"command_execution"|"file_change", ...}}
-    {"type":"item.completed","item":{...}}
-    {"type":"turn.completed","usage":{...}}
-
-This converter is intentionally separate from ``claude_event_to_flowdata`` so
-the Codex event taxonomy can evolve independently of Claude's stream-json.
+Stream events share the per-turn shape of Codex rollout JSONLs (the codex
+parser auto-detects stream-vs-rollout). We delegate parsing to ``CodexParser``
+and wrap each emitted ``TranscriptEntry`` in a
+``ProcessEntry(observation_kind='live')`` rideing on ``FlowData.process_entry``.
 
 Logger namespace: ``flow_sdk.builtin.agentic_process.cli_drivers.codex.event_to_flowdata``.
 """
@@ -28,36 +19,55 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowDataType,
     FlowElementType,
 )
+from flow_sdk.transcript_analyzer.parsers.codex import CodexParser
+from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
 logger = logging.getLogger(__name__)
 
 
-def convert_event(event: dict[str, Any]) -> list[FlowData]:
-    """Map a single codex JSON event to zero or more FlowData items.
+_parser = CodexParser()
+_line_index = 0
 
-    Unknown event types yield a defensive ``<flow-status subtype="unknown">``
-    so the wire stream stays continuous.
+
+_TOOL_USE_KINDS = frozenset({
+    "tool_use", "shell_command", "file_write", "file_edit", "file_read",
+    "search", "web_fetch", "todo_update", "agent_spawn", "exit_plan_mode",
+})
+
+
+def convert_event(event: dict[str, Any]) -> list[FlowData]:
+    """Map a single codex stream event to zero or more FlowData items.
+
+    Conversational events become FlowData carrying a typed ``process_entry``.
+    ``turn.completed`` ends the stream with a result frame + end frame.
     """
+    global _line_index
+
     etype = event.get("type")
 
-    if etype == "thread.started":
-        return [_status("thread-started", event.get("thread_id") or "")]
-    if etype == "turn.started":
-        return [_status("turn-started")]
     if etype == "turn.completed":
         return _convert_turn_completed(event)
-    if etype == "item.started":
-        return _convert_item(event.get("item") or {}, completed=False)
-    if etype == "item.completed":
-        return _convert_item(event.get("item") or {}, completed=True)
     if etype == "error":
         return [_error(_safe_dump(event))]
 
-    return [_status("unknown", _safe_dump(event))]
+    try:
+        entries = _parser.feed(event, _line_index)
+    except Exception:
+        logger.debug("codex_event_to_flowdata: parse failed", exc_info=True)
+        return [_status("parse-error", _safe_dump(event))]
+    finally:
+        _line_index += 1
+
+    if not entries:
+        # Non-conversational lines (thread.started, turn.started, item.started
+        # for partial-stream items) — surface a small status so the wire stream
+        # stays continuous but no process_entry is emitted.
+        return [_status(str(etype) or "unknown", _safe_dump(event))]
+
+    return [_wrap_live(e) for e in entries]
 
 
 def convert_line(line: str) -> list[FlowData]:
-    """Parse one JSON line and convert it. Empty/invalid lines yield []."""
     line = line.strip()
     if not line:
         return []
@@ -72,7 +82,6 @@ def convert_line(line: str) -> list[FlowData]:
 
 
 def final_end_frame() -> FlowData:
-    """The terminal ``<flow-end>`` frame. Emit after the subprocess settles."""
     return FlowData(
         flow_value="",
         attributes={
@@ -82,7 +91,44 @@ def final_end_frame() -> FlowData:
     )
 
 
-# ── Per-event converters ──────────────────────────────────────────────────────
+# ── Internals ─────────────────────────────────────────────────────────────────
+
+
+def _wrap_live(entry) -> FlowData:
+    pe = ProcessEntry(transcript_entry=entry, observation_kind="live")
+    frames = entry.to_flow_data()
+    if frames:
+        fd = frames[0]
+        fd.process_entry = pe.to_dict()
+        fd.attributes.setdefault("element-type", _element_type_for_kind(entry.kind.value))
+        fd.attributes.setdefault("data-type", FlowDataType.OBJECT)
+        fd.attributes.setdefault("subtype", entry.kind.value)
+        fd.attributes.setdefault("observation-kind", "live")
+        return fd
+
+    return FlowData(
+        flow_value={},
+        created_time=entry.timestamp or "",
+        attributes={
+            "element-type": _element_type_for_kind(entry.kind.value),
+            "data-type": FlowDataType.OBJECT,
+            "subtype": entry.kind.value,
+            "observation-kind": "live",
+        },
+        process_entry=pe.to_dict(),
+    )
+
+
+def _element_type_for_kind(kind: str) -> str:
+    if kind == "user_message":
+        return FlowElementType.USER_MESSAGE
+    if kind == "assistant_message":
+        return FlowElementType.CHAT
+    if kind in _TOOL_USE_KINDS:
+        return FlowElementType.TOOL_CALL
+    if kind == "tool_result":
+        return FlowElementType.TOOL_RESULT
+    return FlowElementType.STATUS
 
 
 def _convert_turn_completed(event: dict[str, Any]) -> list[FlowData]:
@@ -97,74 +143,6 @@ def _convert_turn_completed(event: dict[str, Any]) -> list[FlowData]:
         FlowData(flow_value={"usage": usage}, attributes=attrs),
         final_end_frame(),
     ]
-
-
-def _convert_item(item: dict[str, Any], *, completed: bool) -> list[FlowData]:
-    itype = item.get("type")
-
-    if itype == "agent_message":
-        # Only emit text once — when the message item completes — to avoid
-        # duplicate CHAT entries during partial-streaming interim events.
-        if not completed:
-            return []
-        text = item.get("text") or ""
-        if not text:
-            return []
-        return [FlowData(
-            flow_value=text,
-            attributes={
-                "element-type": FlowElementType.CHAT,
-                "data-type": FlowDataType.TEXT,
-                "role": "assistant",
-            },
-        )]
-
-    if itype == "command_execution":
-        cmd = item.get("command") or ""
-        out = item.get("aggregated_output") or ""
-        exit_code = item.get("exit_code")
-        if not completed:
-            return [FlowData(
-                flow_value={"command": cmd},
-                attributes={
-                    "element-type": FlowElementType.TOOL_CALL,
-                    "data-type": FlowDataType.OBJECT,
-                    "tool-name": "shell",
-                },
-            )]
-        return [FlowData(
-            flow_value={"command": cmd, "output": out, "exit_code": exit_code},
-            attributes={
-                "element-type": FlowElementType.TOOL_RESULT,
-                "data-type": FlowDataType.OBJECT,
-                "tool-name": "shell",
-            },
-        )]
-
-    if itype == "file_change":
-        changes = item.get("changes") or []
-        if not completed:
-            return [FlowData(
-                flow_value={"changes": changes},
-                attributes={
-                    "element-type": FlowElementType.TOOL_CALL,
-                    "data-type": FlowDataType.OBJECT,
-                    "tool-name": "file_change",
-                },
-            )]
-        return [FlowData(
-            flow_value={"changes": changes, "status": item.get("status")},
-            attributes={
-                "element-type": FlowElementType.TOOL_RESULT,
-                "data-type": FlowDataType.OBJECT,
-                "tool-name": "file_change",
-            },
-        )]
-
-    return [_status("item-unknown", _safe_dump(item))]
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 
 def _status(subtype: str, value: str = "") -> FlowData:

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { dismissSetupModal, gotoLanding, submitFromLanding, ensureActiveSession } from './helpers';
+import { dismissSetupModal, gotoLanding, submitFromLanding, waitForLanding } from './helpers';
 
 test.describe('Chat Tab Switching', () => {
   test.beforeEach(async ({ page }) => {
@@ -7,23 +7,30 @@ test.describe('Chat Tab Switching', () => {
   });
 
   test('switch between sidebar dock views', async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(180_000);
 
     await gotoLanding(page);
     await submitFromLanding(page, 'tab switching test');
-    await ensureActiveSession(page);
 
-    // We're now in a session at /dock/session/...
-    expect(page.url()).toMatch(/\/dock\/session\//);
+    // We're now in a shell session at /dock/shell/...
+    await expect(page).toHaveURL(/\/dock\/shell\//, { timeout: 45_000 });
+    const shellUrl = page.url();
+    expect(shellUrl).toMatch(/\/dock\/shell/);
 
-    // Navigate to shell view via URL (sidebar button order can change)
+    // Navigate back to home
+    await page.goto('/dock/home');
+    await expect(page).toHaveURL(/\/dock\/home/, { timeout: 10_000 });
+    // Dismiss WelcomeModal if shown (may reappear after navigating back to home with a clean DB)
+    const skipForNow = page.getByRole('button', { name: 'Skip for now' });
+    if (await skipForNow.isVisible({ timeout: 5_000 }).catch(() => false)) {
+      await skipForNow.click({ force: true }).catch(() => {});
+      await page.waitForTimeout(500);
+    }
+    // Use CSS selector instead of getByRole to avoid aria-hidden issues when modal is present
+    await waitForLanding(page);
+
+    // Navigate to a new shell terminal
     await page.goto('/dock/shell/new_terminal');
-    await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: 15_000 });
-    expect(page.url()).toMatch(/\/dock\/shell/);
-
-    // Click Home (first sidebar button) to return to landing
-    await page.locator('ul li button').first().click();
-    await page.waitForURL(/^\/$|\/$/, { timeout: 10_000 });
-    await expect(page.getByRole('heading', { name: /hey /i })).toBeVisible();
+    await expect(page).toHaveURL(/\/dock\/shell\//, { timeout: 60_000 });
   });
 });

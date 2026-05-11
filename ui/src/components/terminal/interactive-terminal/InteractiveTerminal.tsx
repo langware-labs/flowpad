@@ -2,7 +2,15 @@
 import '@src/styles/xterm.css';
 import '@xterm/xterm/css/xterm.css';
 
-import { dataContext, FlowDataSource, fsStore, ProcessStatus, Shell, type AgenticProcess } from '@sdk';
+import {
+  AgenticProcessEventName,
+  dataContext,
+  FlowDataSource,
+  fsStore,
+  ProcessStatus,
+  Shell,
+  type AgenticProcess,
+} from '@sdk';
 import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
 import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
@@ -214,6 +222,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const ptySyncSnapshot = usePtySyncSession(ptySyncRef.current);
 
   const shellRef = useRef<Shell | null>(null);
+  const firstPromptBufferRef = useRef('');
+  const firstPromptReportedRef = useRef(false);
 
   const sessionIdRef = useRef(sessionId);
 
@@ -235,6 +245,28 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   useEffect(() => {
     onWorkerSessionId?.(process?.session_id ?? null);
   }, [process?.session_id, onWorkerSessionId]);
+
+  useEffect(() => {
+    if (!process) return;
+    let disposed = false;
+    let unwatch: (() => Promise<void>) | null = null;
+    void process.watch().then((release) => {
+      if (disposed) {
+        void release();
+        return;
+      }
+      unwatch = release;
+    });
+    return () => {
+      disposed = true;
+      if (unwatch) void unwatch();
+    };
+  }, [process?.id]);
+
+  useEffect(() => {
+    firstPromptBufferRef.current = '';
+    firstPromptReportedRef.current = false;
+  }, [process?.id]);
   const [cellHeight, setCellHeight] = useState(0);
   const [traceFilters, setTraceFiltersState] = useState<TraceFilters>(() => loadTraceFilters());
   const [gutterExpanded, setGutterExpanded] = useState(false);
@@ -1079,6 +1111,44 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     };
   }, [shell, terminalReady]);
 
+  const reportFirstPromptIfNeeded = useCallback((prompt: string) => {
+    const submittedPrompt = prompt.trim();
+    if (!process || firstPromptReportedRef.current || !submittedPrompt) return;
+    firstPromptReportedRef.current = true;
+    void process
+      .reportEvent(AgenticProcessEventName.FirstPrompt, {
+        prompt: submittedPrompt,
+        sent_at: new Date().toISOString(),
+      })
+      .then((result) => {
+        console.debug('[InteractiveTerminal] first_prompt report_event accepted', result);
+      })
+      .catch((err: unknown) => {
+        firstPromptReportedRef.current = false;
+        console.warn('[InteractiveTerminal] first_prompt report_event failed', err);
+      });
+  }, [process]);
+
+  const collectFirstPromptInput = useCallback((data: string) => {
+    if (firstPromptReportedRef.current || !data || data.startsWith('\x1b')) return;
+    let buffer = firstPromptBufferRef.current;
+    for (const ch of data) {
+      if (ch === '\r' || ch === '\n') {
+        reportFirstPromptIfNeeded(buffer);
+        buffer = '';
+        continue;
+      }
+      if (ch === '\u007f' || ch === '\b') {
+        buffer = buffer.slice(0, -1);
+        continue;
+      }
+      if (ch >= ' ' && ch !== '\u007f') {
+        buffer += ch;
+      }
+    }
+    firstPromptBufferRef.current = buffer;
+  }, [reportFirstPromptIfNeeded]);
+
   // Input handler
   useEffect(() => {
     if (!sessionId || !terminalReady || !terminalRef.current) return;
@@ -1087,12 +1157,13 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     const disp = term.onData(async (data: string) => {
       // eslint-disable-next-line no-control-regex
       if (/^\x1b\[\?[0-9;]*c$/.test(data)) return;
+      collectFirstPromptInput(data);
       const shell = shellRef.current;
       if (shell?.connected) await shell.sendInput(data);
     });
 
     return () => disp.dispose();
-  }, [terminalReady, sessionId]);
+  }, [collectFirstPromptInput, terminalReady, sessionId]);
 
   // On session restart: clear terminal, reset pty-sync, and re-fit so the
   // resumed session starts on a clean, full-size canvas.

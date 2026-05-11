@@ -29,6 +29,10 @@ async def claude_projects_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.fs_records._claude_projects import decode_claude_project_dir
+    from flow_sdk.fs_store.scope import Scope
+
     out: list[FSRef] = []
     for node in nodes:
         projects_dir = Path(node.path) / ".claude" / "projects"
@@ -39,11 +43,14 @@ async def claude_projects_fn(
                 continue
             if not opts.include_temp and _is_temp_encoded(child.name):
                 continue
+            decoded = decode_claude_project_dir(child)
             out.append(
                 FSRef(
                     child,
                     record_type=RecordType.PROJECT,
                     parent=node,
+                    scope=Scope.PROJECT.value,
+                    project_id=Project.derive_id_for_path(decoded),
                 )
             )
     return out

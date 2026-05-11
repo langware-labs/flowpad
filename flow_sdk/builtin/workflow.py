@@ -27,7 +27,6 @@ class Workflow(Entity):
     asset_ref: str | None = APIField(
         default=None, description="VFS path to the workflow file (e.g., workflows/<uuid>/main.md)"
     )
-    project_id: str | None = APIField(default=None, description="ID of the parent project")
     tab_index: int | None = APIField(
         default=None, description="Tab index for UI display. null = not in tabs. 0 = first position."
     )

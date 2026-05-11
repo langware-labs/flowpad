@@ -10,7 +10,6 @@ Test 2: Same setup. Mutate the record name on disk and bump the asset's mtime
         is in the DB.
 """
 
-import uuid
 import tempfile
 from pathlib import Path
 
@@ -44,7 +43,9 @@ async def _isolate_record_state():
 
 def _project_entity_id(workdir: str) -> str:
     """Mirror Project.allocate_id() for a given mount path."""
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{workdir}"))
+    derived = Project.derive_id_for_path(workdir)
+    assert derived is not None
+    return derived
 
 
 @pytest.mark.asyncio

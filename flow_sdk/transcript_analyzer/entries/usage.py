@@ -29,6 +29,8 @@ class TokenUsageEntry(TranscriptEntry):
         input_tokens: int | None = None,
         output_tokens: int | None = None,
         cached_input_tokens: int | None = None,
+        cache_read_tokens: int | None = None,
+        cache_creation_tokens: int | None = None,
         reasoning_output_tokens: int | None = None,
         total_input_tokens: int | None = None,
         total_output_tokens: int | None = None,
@@ -38,7 +40,14 @@ class TokenUsageEntry(TranscriptEntry):
         super().__init__(**base)
         self.input_tokens = input_tokens
         self.output_tokens = output_tokens
+        # `cached_input_tokens` is the legacy single-value field (read OR
+        # creation, whichever was reported). Kept for back-compat.
+        # `cache_read_tokens` and `cache_creation_tokens` are the disaggregated
+        # form Claude actually emits — both are independently meaningful for
+        # cost dashboards (read = cheap hit; creation = wrote new prompt block).
         self.cached_input_tokens = cached_input_tokens
+        self.cache_read_tokens = cache_read_tokens
+        self.cache_creation_tokens = cache_creation_tokens
         self.reasoning_output_tokens = reasoning_output_tokens
         # ``total_*`` are codex-specific cumulative counters (per-turn vs
         # per-session). Claude's ``message.usage`` only carries per-turn
@@ -56,6 +65,8 @@ class TokenUsageEntry(TranscriptEntry):
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
             "cached_input_tokens": self.cached_input_tokens,
+            "cache_read_tokens": self.cache_read_tokens,
+            "cache_creation_tokens": self.cache_creation_tokens,
             "reasoning_output_tokens": self.reasoning_output_tokens,
             "total_input_tokens": self.total_input_tokens,
             "total_output_tokens": self.total_output_tokens,
@@ -68,7 +79,11 @@ class TokenUsageEntry(TranscriptEntry):
             parts.append(f"in={self.input_tokens}")
         if self.output_tokens is not None:
             parts.append(f"out={self.output_tokens}")
-        if self.cached_input_tokens is not None:
+        if self.cache_read_tokens is not None:
+            parts.append(f"cache_read={self.cache_read_tokens}")
+        if self.cache_creation_tokens is not None:
+            parts.append(f"cache_create={self.cache_creation_tokens}")
+        if self.cache_read_tokens is None and self.cache_creation_tokens is None and self.cached_input_tokens is not None:
             parts.append(f"cached={self.cached_input_tokens}")
         if self.reasoning_output_tokens is not None:
             parts.append(f"reasoning={self.reasoning_output_tokens}")

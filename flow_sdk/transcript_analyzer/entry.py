@@ -19,6 +19,17 @@ class EntryKind(str, Enum):
     ASSISTANT_MESSAGE = "assistant_message"
     TOOL_USE = "tool_use"
     TOOL_RESULT = "tool_result"
+    # Semantic operation kinds — the parser maps worker-specific tools onto
+    # these so the renderer never has to sniff input shapes. ``TOOL_USE`` is
+    # the catch-all bucket for anything not recognized.
+    FILE_WRITE = "file_write"
+    FILE_EDIT = "file_edit"
+    FILE_READ = "file_read"
+    SHELL_COMMAND = "shell_command"
+    SEARCH = "search"
+    WEB_FETCH = "web_fetch"
+    TODO_UPDATE = "todo_update"
+    AGENT_SPAWN = "agent_spawn"
     SYSTEM = "system"
     SUMMARY = "summary"
     META = "meta"
