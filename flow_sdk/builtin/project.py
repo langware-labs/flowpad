@@ -159,16 +159,22 @@ class Project(Entity):
     def allocate_id(cls, data: dict) -> str:
         """Return a stable id for this Project.
 
+        The canonical ``fs_storage_mount_path`` is the natural key, so the
+        path-derived uuid5 always wins when a path is supplied — clients
+        that pre-mint an optimistic uuid4 still resolve to the same row.
+
         Order of precedence:
-          1. ``data['id']`` if it's a valid uuid (caller pre-assigned —
-             ``from_record`` uses this to inject ``derive_id_for_path`` so the
-             entity id matches indexer-stamped record references).
-          2. Random uuid4 fallback. Pure ``allocate_id({})`` calls are opaque
-             and per-call random; deterministic ids are an explicit
-             ``derive_id_for_path`` opt-in by the caller.
+          1. uuid5 over canonical ``fs_storage_mount_path`` when supplied.
+          2. ``data['id']`` if it's a valid uuid (no path supplied).
+          3. Random uuid4 fallback.
         """
         import uuid
         from flow_sdk.fs_store.identifier import is_valid_uuid
+        mount_path = data.get("fs_storage_mount_path")
+        if mount_path:
+            derived = cls.derive_id_for_path(mount_path)
+            if derived:
+                return derived
         rid = data.get("id") or ""
         if rid and is_valid_uuid(rid):
             return rid
