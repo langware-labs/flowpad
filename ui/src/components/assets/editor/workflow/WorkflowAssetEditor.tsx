@@ -2,6 +2,7 @@ import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownE
 import { enableMcp, isMcpAvailable } from '@src/components/assets/utils';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
+import { WorkflowLearningView } from './learning/WorkflowLearningView';
 import {
   workflowRunStore,
   type ProcessEntry,
@@ -209,6 +210,23 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
     ),
   };
 
+  // Filter to terminal-status processes with an output_folder. These are the
+  // candidates the Learning view operates on (Analyze / Improve).
+  const terminalRuns = useMemo(
+    () =>
+      runHistory
+        .map((e) => e.process)
+        .filter((p) => {
+          const status = String(p.status ?? '').toLowerCase();
+          return (status === 'stopped' || status === 'failed') && !!p.output_folder;
+        }),
+    [runHistory],
+  );
+  const showLearningMode = terminalRuns.length > 0;
+  const learningPanel = showLearningMode ? (
+    <WorkflowLearningView workflow={resolvedWorkflow} runs={terminalRuns} />
+  ) : null;
+
   return (
     <>
       <MarkdownEditor
@@ -218,6 +236,8 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
         extraSideTabs={[runsTab]}
         activeSideTab={activeSideTab}
         onActiveSideTabChange={setActiveSideTab}
+        showLearningMode={showLearningMode}
+        learningPanel={learningPanel}
       />
 
       <AlertDialog open={showMcpModal} onOpenChange={setShowMcpModal}>

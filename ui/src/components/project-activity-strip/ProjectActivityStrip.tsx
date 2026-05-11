@@ -381,8 +381,7 @@ export function ProjectActivityStrip({
     try {
       const result = await uploadFlowMessage(file);
       if (result.task_id) {
-        const pointer = `task-${result.task_id}`;
-        navigation.openDock(DockPointer.fromUrl('tasks', pointer));
+        navigation.openDock(DockPointer.fromUrl('tasks', result.task_id));
       }
     } catch (err: unknown) {
       const axiosErr = err as { response?: { status?: number; data?: { data?: { conflicts?: UploadConflict[] } } } };
@@ -404,8 +403,7 @@ export function ProjectActivityStrip({
       setPendingFile(null);
       setUploadConflicts(null);
       if (result.task_id) {
-        const pointer = `task-${result.task_id}`;
-        navigation.openDock(DockPointer.fromUrl('tasks', pointer));
+        navigation.openDock(DockPointer.fromUrl('tasks', result.task_id));
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Upload failed.';

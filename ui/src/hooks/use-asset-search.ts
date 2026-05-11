@@ -20,7 +20,8 @@ export interface SearchResult {
   file_path?: string;
   filename?: string;
   work_dir?: string;
-  project_encoded?: string;
+  project_id?: string;
+  project_name?: string;
   asset_type?: string;
 }
 

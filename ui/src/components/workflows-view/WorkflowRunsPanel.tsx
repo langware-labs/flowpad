@@ -70,7 +70,7 @@ function WorkflowRunItem({
   const process = live ?? entry.process;
 
   const handleOpenInTerminal = () => {
-    navigation.openDock(process.dockPointer);
+    navigation.openDock(process.terminalDockPointer);
   };
 
   const handleOpenFolder = async () => {

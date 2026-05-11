@@ -25,8 +25,9 @@ def _write_fake_session(
     project_dir = home / ".claude" / "projects" / encoded_project
     project_dir.mkdir(parents=True, exist_ok=True)
     jsonl = project_dir / f"{session_id}.jsonl"
+    cwd = "/" + encoded_project.lstrip("-").replace("-", "/")
     jsonl.write_text(
-        f'{{"sessionId":"{session_id}","cwd":"/Users/alice/repo","type":"user"}}\n',
+        f'{{"sessionId":"{session_id}","cwd":"{cwd}","type":"user"}}\n',
         encoding="utf-8",
     )
     return jsonl

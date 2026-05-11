@@ -73,6 +73,8 @@ export interface SendNotificationParams {
   sender_process_id?: string | null;
   /** Pre-forked AgenticProcess id (Scenario C). Stamped on the new Task as `shared_process_id` so the recipient's first Approve & Execute reuses the existing fork instead of spawning a fresh process. */
   forked_process_id?: string | null;
+  /** When false, skips creating a hub-side Invitation (no "Accept" button on the recipient's strip). Use for shares to known collaborators where the FlowMessage `grant_role` is enough — e.g. Scenario C (PTY ask-for-assistance). Defaults to true (Scenarios A/B). */
+  is_initial_share?: boolean;
 }
 
 export async function sendNotification(params: SendNotificationParams): Promise<{ git_error?: string | null; sent?: boolean; email_error?: string | null }> {

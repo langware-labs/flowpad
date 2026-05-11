@@ -1,18 +1,34 @@
-"""Unified Pydantic model for hook event data."""
+"""Unified Pydantic model for hook event data.
+
+Phase 9 collapse: the 30+ optional flat fields that previously modeled every
+hook variant (tool_name / tool_input / tool_response / prompt / message / …)
+are gone. Two replacements:
+
+1. ``process_entry`` — typed conversational payload synthesized from the
+   raw hook by ``flow_sdk.transcript_analyzer.synthesizers.synth_process_entry``.
+   Read this for the canonical content. Same `id` as the corresponding
+   live-stream / JSONL observation, so cross-channel dedup just works.
+
+2. ``extra`` — the raw hook payload dict. Holds variant-specific fields
+   (worktree_path, task_subject, …) that aren't captured by ``process_entry``.
+   Use field_extractors helpers to read it.
+"""
 
 from __future__ import annotations
 
 from typing import Any, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class HookEventData(BaseModel):
-    """Provider-agnostic model for hook event data.
+    """Provider-agnostic hook event data.
 
-    Covers all Claude Code hook event types. This is the canonical
-    Pydantic model for hook event payloads.
+    Lifecycle envelope only. All conversational payload lives on
+    ``process_entry``; variant-specific lifecycle fields live on ``extra``.
     """
+
+    model_config = ConfigDict(extra="allow")
 
     hook_event_name: str
     session_id: Optional[str] = None
@@ -20,55 +36,18 @@ class HookEventData(BaseModel):
     cwd: Optional[str] = None
     permission_mode: Optional[str] = None
 
-    # Tool events (PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest)
+    # Legacy flat hook fields kept for trigger masks and older renderers.
     tool_name: Optional[str] = None
-    tool_input: Optional[dict[str, Any]] = None
-    tool_response: Optional[Any] = None
     tool_use_id: Optional[str] = None
-    error: Optional[str] = None
-    is_interrupt: Optional[bool] = None
-    permission_suggestions: Optional[list[dict[str, Any]]] = None
-
-    # UserPromptSubmit
+    tool_input: Optional[dict[str, Any]] = None
+    tool_response: Any = None
     prompt: Optional[str] = None
-
-    # Notification
     message: Optional[str] = None
-    title: Optional[str] = None
-    notification_type: Optional[str] = None
-
-    # SessionStart
-    source: Optional[str] = None
-    model: Optional[str] = None
-    agent_type: Optional[str] = None
-
-    # SessionEnd
-    reason: Optional[str] = None
-
-    # SubagentStart / SubagentStop
-    agent_id: Optional[str] = None
-    agent_transcript_path: Optional[str] = None
-    last_assistant_message: Optional[str] = None
-    stop_hook_active: Optional[bool] = None
-
-    # TeammateIdle / TaskCreated / TaskCompleted
-    teammate_name: Optional[str] = None
-    team_name: Optional[str] = None
-    task_id: Optional[str] = None
+    error: Optional[str] = None
+    stop_reason: Optional[str] = None
     task_subject: Optional[str] = None
-    task_description: Optional[str] = None
+    raw_hook_data: Optional[dict[str, Any]] = None
 
-    # ConfigChange / WorktreeCreate
-    file_path: Optional[str] = None
-    name: Optional[str] = None
-
-    # WorktreeRemove
-    worktree_path: Optional[str] = None
-
-    # PreCompact
-    trigger: Optional[str] = None
-    custom_instructions: Optional[str] = None
-
-    # Legacy
-    output: Optional[str] = None
-    usage: Optional[dict[str, int]] = None
+    # Phase 9 — typed conversational payload (synthesized) + raw spillover.
+    process_entry: Optional[dict] = None
+    extra: dict[str, Any] = {}

@@ -7,9 +7,24 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator
 
-from .entries import ExitPlanModeEntry, MetaEntry, ToolUseEntry, UserMessageEntry
+from .entries import (
+    ExitPlanModeEntry,
+    FileEditEntry,
+    FileReadEntry,
+    FileWriteEntry,
+    MetaEntry,
+    ShellCommandEntry,
+    ToolResultEntry,
+    ToolUseEntry,
+    UserMessageEntry,
+)
 from .entry import EntryKind, TranscriptEntry
 from .parsers import get_parser_class
+
+# Outputs longer than this are truncated when folded into a semantic call
+# entry. Keeps payloads bounded over the wire — the full output is still
+# available on the original ToolResultEntry when the catch-all path is used.
+_FOLD_PREVIEW_MAX_CHARS = 4000
 
 # User-message texts that are synthetic (Claude Code injects them on user
 # interrupts). They're "user" lines in the JSONL but the human didn't type
@@ -74,7 +89,69 @@ class AgentTranscript:
                     out.extend(self._parser.feed(raw, idx))
         except OSError as exc:
             logger.debug("AgentTranscript: read failed %s: %s", self.path, exc)
-        return out
+        return self._fold_tool_results(out)
+
+    @staticmethod
+    def _fold_tool_results(entries: list[TranscriptEntry]) -> list[TranscriptEntry]:
+        """Fold ``ToolResultEntry`` payloads into the matching semantic call.
+
+        Pairs by ``tool_use_id``. When a result matches a semantic kind
+        (``shell_command``, ``file_read``, ``file_write``, ``file_edit``)
+        the result is dropped from the timeline and its data folded into
+        the call entry — yielding one row per agent operation.
+
+        Catch-all ``ToolUseEntry`` results are left untouched so MCP /
+        unknown tool flows keep rendering their result row separately
+        (the renderer for those kinds doesn't know how to surface a
+        folded result yet).
+        """
+        # Index semantic call entries by tool_use_id. Multiple call rows
+        # can share an id (codex apply_patch with N file ops); fold into
+        # the first one only — the rest carry no result data.
+        call_index: dict[str, TranscriptEntry] = {}
+        for e in entries:
+            tuid = getattr(e, "tool_use_id", None)
+            if not tuid:
+                continue
+            kind = e.kind
+            if kind not in (
+                EntryKind.SHELL_COMMAND,
+                EntryKind.FILE_READ,
+                EntryKind.FILE_WRITE,
+                EntryKind.FILE_EDIT,
+            ):
+                continue
+            if tuid in call_index:
+                continue
+            call_index[tuid] = e
+
+        kept: list[TranscriptEntry] = []
+        for e in entries:
+            if not isinstance(e, ToolResultEntry):
+                kept.append(e)
+                continue
+            target = call_index.get(e.tool_use_id) if e.tool_use_id else None
+            if target is None:
+                # Result belongs to a catch-all tool_use (or has no
+                # paired call) — keep as standalone row.
+                kept.append(e)
+                continue
+            output = e.tool_output or ""
+            if isinstance(target, ShellCommandEntry):
+                if target.exit_code is None and e.exit_code is not None:
+                    target.exit_code = e.exit_code
+                if target.duration_ms is None and e.duration_ms is not None:
+                    target.duration_ms = e.duration_ms
+                if target.stdout_preview is None and output:
+                    target.stdout_preview = output[:_FOLD_PREVIEW_MAX_CHARS]
+            elif isinstance(target, FileReadEntry):
+                if target.bytes_count is None and output:
+                    target.bytes_count = len(output.encode("utf-8"))
+                if target.content_preview is None and output:
+                    target.content_preview = output[:_FOLD_PREVIEW_MAX_CHARS]
+            # FileWriteEntry / FileEditEntry: result is usually a one-line
+            # "Updated …" — no field worth surfacing. Result row is dropped.
+        return kept
 
     # ── access ───────────────────────────────────────────────────────────────
 
@@ -92,16 +169,18 @@ class AgentTranscript:
     ) -> Iterator[TranscriptEntry]:
         """Yield entries matching all provided filters.
 
-        ``tool_name`` only matches ``ToolUseEntry`` (and subclasses). Pass
-        both filters together to combine — they're AND-ed.
+        ``tool_name`` matches any parsed entry that carries a tool name,
+        including semantic operation entries such as ``shell_command``.
+        Pass both filters together to combine — they're AND-ed.
         """
         for e in self.entries:
             if kind is not None and e.kind is not kind:
                 continue
             if tool_name is not None:
-                if not isinstance(e, ToolUseEntry):
+                entry_tool_name = getattr(e, "tool_name", None)
+                if entry_tool_name is None:
                     continue
-                if e.tool_name != tool_name:
+                if entry_tool_name != tool_name:
                     continue
             yield e
 

@@ -338,7 +338,15 @@ class FSIndexer:
                 t_start = time.perf_counter()
                 try:
                     records = await info.record_cls.from_fsref(ref)
+                    # Walk-time scope/project_id from the FSRef parent-chain.
+                    # Loop-invariant — read once, stamp on each record.
+                    ref_scope = ref.scope
+                    ref_pid = ref.project_id
                     for rec in records:
+                        if ref_scope is not None:
+                            object.__setattr__(rec, "scope", ref_scope)
+                        if ref_pid is not None:
+                            object.__setattr__(rec, "project_id", ref_pid)
                         await rec.sync_to_db(fts_batch=fts_batch, notify=False)
                         # Reflect any actually-saved id back into seen_ids in case
                         # from_fsref returns multiple records (rare) or a different id.

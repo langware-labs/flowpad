@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useState, type MouseEvent, type ReactNode } from 'react';
 import { Pencil } from 'lucide-react';
 import type { FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
@@ -19,6 +19,10 @@ interface MessageBubbleProps {
   onApproveAndExecute?: (attachmentIndex: number) => void;
   /** Optional content rendered below the message body (e.g. attachment chips). */
   footer?: ReactNode;
+  /** Visual selection — drives the Context tab. */
+  isSelected?: boolean;
+  /** Click on the bubble fires this so the parent can mark it selected. */
+  onSelect?: () => void;
 }
 
 function avatarColor(role: ConversationMessage['role']): string {
@@ -69,6 +73,8 @@ export function MessageBubble({
   onEditName,
   onApproveAndExecute,
   footer,
+  isSelected,
+  onSelect,
 }: MessageBubbleProps) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
@@ -94,6 +100,7 @@ export function MessageBubble({
   const startEdit = () => {
     setEditValue(senderName);
     setEditing(true);
+    onSelect?.();
   };
 
   const commitEdit = () => {
@@ -109,8 +116,24 @@ export function MessageBubble({
   const initial = (displayName.trim()[0] ?? '?').toUpperCase();
   const time = formatTime(message.timestamp);
 
+  const handleBubbleClick = (e: MouseEvent<HTMLDivElement>) => {
+    if (!onSelect) return;
+    // Ignore clicks that originated on interactive children (buttons, links,
+    // inputs) so name-edit / Approve & Execute / attachment downloads keep
+    // their native behaviour without double-firing selection.
+    const target = e.target as HTMLElement;
+    if (target.closest('button, a, input, textarea, [role="menu"]')) return;
+    onSelect();
+  };
+
   return (
-    <div className="flex gap-2">
+    <div
+      className={`flex gap-2 rounded p-1 transition-colors ${
+        onSelect ? 'cursor-pointer' : ''
+      } ${isSelected ? 'ring-1 ring-ring/40 bg-muted/30' : ''}`}
+      onClick={handleBubbleClick}
+      data-testid={flowMessageId ? `message-bubble-${flowMessageId}` : undefined}
+    >
       <div
         className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white ${avatarColor(message.role)}`}
       >

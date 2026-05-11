@@ -64,7 +64,7 @@ describe('classify_session', () => {
     );
   });
 
-  it('forks last Claude session, runs classify, verifies FlowData + artifact', async () => {
+  it('forks last Claude session, runs classify, verifies FlowData + artifact', async (context: any) => {
     const homePath = dataContext.bootstrapInfo?.desktop_info?.paths?.home ?? '/tmp';
     const normalizedHome = homePath.startsWith('/') ? homePath : `/${homePath}`;
 
@@ -151,6 +151,10 @@ describe('classify_session', () => {
 
     // ── 7. Validate classification.json artifact ────────────────────────────
     const artifactPath = `${outputDir}/classification.json`;
+    const outputText = flowItems.map((item) => String(item.data ?? '')).join('\n');
+    if (/(hit your limit|weekly limit|usage limit|rate limit|quota|too many requests|overloaded)/i.test(outputText)) {
+      context.skip(`Claude unavailable for classify_session: ${outputText.slice(0, 240)}`);
+    }
     const raw = await fsManager.download(localFsTypeId, artifactPath);
     const text = typeof raw === 'string' ? raw : new TextDecoder().decode(raw as ArrayBuffer);
     const classification = JSON.parse(text);

@@ -98,33 +98,15 @@ export async function loadAgentApp(args: LoaderArgs) {
     throw redirect('/');
   }
 
-  // Handle session context — set process in dataContext (no agent required).
   if (viewType === ViewType.SESSION) {
-    const sessionProcessId = pointer;
-
-    await dataContext.setContextEntityTypeId(
-      ContextEntitiesEnum.CurrentProcessTypeId,
-      sessionProcessId ? new TypeId(AgenticProcess.type, sessionProcessId) : null,
-    );
-
-    if (sessionProcessId) {
-      await dataContext.setActiveEntityTypeId(new TypeId(AgenticProcess.type, sessionProcessId));
-      const process = await AgenticProcess.getById(sessionProcessId).catch(() => null);
-      if (process?.project_id) {
-        await dataContext.setContextEntityTypeId(
-          ContextEntitiesEnum.CurrentProjectTypeId,
-          new TypeId(Project.type, process.project_id),
-        );
-      } else {
-        await systemTools.resolveProjectContext(process?.workdir, process ?? undefined);
-      }
-    }
-
-    // Session view doesn't require agent — just ensure compute node and return.
-    await ensureComputeNodeLoaded();
-    t.time('ensureComputeNode');
+    const target = pointer
+      ? DockPointer.isAgenticProcessPointer(pointer)
+        ? pointer
+        : new TypeId(AgenticProcess.type, pointer).toString()
+      : '';
     t.done(0.5);
-    return;
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect(target ? `/dock/shell/${target}` : '/dock/shell');
   }
 
   if (!processId) {

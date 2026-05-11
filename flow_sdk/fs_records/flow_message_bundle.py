@@ -32,7 +32,7 @@ _FM_FIELDS = {"type", "id", "text", "instruction", "context_entities", "attachme
 _TASK_FIELDS = {"type", "id", "title", "description", "status", "task_type",
                 "priority", "shared_by_id",
                 "due_at", "start_date",
-                "project_id", "spec_type", "my_process_id",
+                "project_id", "spec_type",
                 "shared_process_id",
                 "context_entities",
                 "active_form", "analysis_json_path", "analysis_path", "artifacts",
@@ -44,10 +44,18 @@ _TASK_FIELDS = {"type", "id", "title", "description", "status", "task_type",
                 "sender_name", "session_id", "skill_name", "skill_path",
                 "skill_scope", "task_type_label", "team_space_id",
                 "worker_session_id"}
-# `project_root` is intentionally excluded — it's the sender's local filesystem
-# path and means nothing on the receiver's machine. Remote-project provenance
-# (`remote_project_id` / `remote_project_name`) lives on the Conversation, not
-# the Task — see flow_sdk/builtin/conversation.py.
+# `project_root` and `my_process_id` are intentionally excluded — both are
+# sender-side values that mean nothing on the receiver. ``project_root`` is
+# the sender's local FS path; ``my_process_id`` is the AgenticProcess id
+# of the sender's authoring session. The receiver allocates their own local
+# my_process_id the first time they click "Start Claude Code" — and that
+# spawn path injects the conversation+spec context as the first instruction,
+# which is the whole point of receiving a shared task. Shipping the sender's
+# id would short-circuit that flow into an "open existing" branch that
+# attaches to a stub of the sender's process locally, with no instruction
+# injected. Remote-project provenance (`remote_project_id` /
+# `remote_project_name`) lives on the Conversation, not the Task — see
+# flow_sdk/builtin/conversation.py.
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
@@ -480,13 +488,18 @@ async def unpack_bundle(
                             # Strip sender-local fields that are meaningless on the
                             # receiver: `project_root` is the sender's filesystem
                             # path; `project_name` mirrors the sender's local
-                            # Project name. Remote provenance now lives on the
-                            # Conversation (see CONVERSATION branch below), not the
-                            # Task — so we don't propagate `project_id` /
-                            # `project_name` onto the receiver's task either.
+                            # Project name; `my_process_id` is the sender's
+                            # AgenticProcess id (defense in depth — the pack side
+                            # also drops it from `_TASK_FIELDS`, but we re-strip
+                            # here so older bundles on the hub and senders running
+                            # stale code can't leak it through). Remote provenance
+                            # now lives on the Conversation (see CONVERSATION
+                            # branch below), not the Task — so we don't propagate
+                            # `project_id` / `project_name` onto the receiver's
+                            # task either.
                             task_payload = {
                                 k: v for k, v in task_data.items()
-                                if k not in ("project_root", "project_name")
+                                if k not in ("project_root", "project_name", "my_process_id")
                             }
                             task_payload.update({
                                 "id": task_id,

@@ -7,7 +7,8 @@ import { ProcessStatusLine } from '@src/components/agentic-progress/shared/proce
  * Contract exercised by this file:
  *
  *   The Open-in-Terminal button is enabled iff
- *     status == RUNNING && workerStatus ∈ {IDLE, COMPLETE, INTERRUPTED}
+ *     visible interactive worker: status == RUNNING && workerStatus ∈ {IDLE, COMPLETE, INTERRUPTED}
+ *     headless CLI worker: process has a session and is STOPPED or FAILED
  *
  *   Label text comes from workerStatusConfig when running, processStatusConfig otherwise.
  */
@@ -49,10 +50,10 @@ describe('ProcessStatusLine — Open-in-Terminal gate', () => {
     expect(screen.queryByTestId('process-status-line-open-terminal')).toBeNull();
   });
 
-  it('is enabled when ready_for_input (RUNNING + IDLE, no session)', () => {
+  it('is enabled when an interactive worker is ready_for_input', () => {
     render(
       <ProcessStatusLine
-        process={makeProcess({ workerStatus: WorkerStatus.IDLE, session_id: null })}
+        process={makeProcess({ workerStatus: WorkerStatus.IDLE, session_id: null, visible: true })}
         onOpenInTerminal={() => {}}
       />,
     );
@@ -60,10 +61,21 @@ describe('ProcessStatusLine — Open-in-Terminal gate', () => {
     expect(btn.disabled).toBe(false);
   });
 
-  it('is enabled when worker is COMPLETE and process is RUNNING', () => {
+  it('is enabled when an interactive worker is COMPLETE and process is RUNNING', () => {
     render(
       <ProcessStatusLine
-        process={makeProcess({ workerStatus: WorkerStatus.COMPLETE })}
+        process={makeProcess({ workerStatus: WorkerStatus.COMPLETE, visible: true })}
+        onOpenInTerminal={() => {}}
+      />,
+    );
+    const btn = screen.getByTestId('process-status-line-open-terminal') as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+  });
+
+  it('is enabled when a headless worker can resume from a saved session', () => {
+    render(
+      <ProcessStatusLine
+        process={makeProcess({ status: ProcessStatus.STOPPED, workerStatus: WorkerStatus.COMPLETE })}
         onOpenInTerminal={() => {}}
       />,
     );
@@ -74,7 +86,7 @@ describe('ProcessStatusLine — Open-in-Terminal gate', () => {
   it('is disabled while the worker is mid-turn (THINKING)', () => {
     render(
       <ProcessStatusLine
-        process={makeProcess({ workerStatus: WorkerStatus.THINKING })}
+        process={makeProcess({ workerStatus: WorkerStatus.THINKING, visible: true })}
         onOpenInTerminal={() => {}}
       />,
     );
@@ -97,7 +109,7 @@ describe('ProcessStatusLine — Open-in-Terminal gate', () => {
     const spy = vi.fn();
     render(
       <ProcessStatusLine
-        process={makeProcess({ workerStatus: WorkerStatus.COMPLETE })}
+        process={makeProcess({ workerStatus: WorkerStatus.COMPLETE, visible: true })}
         onOpenInTerminal={spy}
       />,
     );

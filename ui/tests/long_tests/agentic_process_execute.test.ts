@@ -32,6 +32,10 @@ function chatContent(outputs: FlowData[]): string {
     .join('');
 }
 
+function isClaudeUnavailable(content: string): boolean {
+  return /(hit your limit|weekly limit|usage limit|rate limit|quota|too many requests|overloaded)/i.test(content);
+}
+
 async function collectOutput(proc: AgenticProcess, timeoutMs: number): Promise<FlowData[]> {
   const outputs: FlowData[] = [];
   await Promise.race([
@@ -56,7 +60,7 @@ describe('AgenticProcess.executeInstruction — single turn', () => {
     await apiTestSetup(getTestSignupInfo(), ctx.task.name);
   });
 
-  it('executeInstruction("Say hola") → chat output contains "hola"', async () => {
+  it('executeInstruction("Say hola") → chat output contains "hola"', async (context: any) => {
     const workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap-execute-test-'));
     const proc = await new AgenticProcess({ workdir }).save([]);
     await proc.watch();
@@ -70,6 +74,9 @@ describe('AgenticProcess.executeInstruction — single turn', () => {
     console.log('[agentic_process_execute] element types:', outputs.map((o) => o.elementType).join(', '));
     console.log('[agentic_process_execute] chat content:', content);
 
+    if (isClaudeUnavailable(content)) {
+      context.skip(`Claude unavailable for executeInstruction test: ${content.slice(0, 240)}`);
+    }
     expect(outputs.length, 'Expected at least one FlowData item').toBeGreaterThan(0);
     expect(content.toLowerCase(), 'Expected "hola" in chat output').toContain('hola');
   }, 200_000);
@@ -84,7 +91,7 @@ describe('AgenticProcess.executeInstruction — multi-turn', () => {
     await apiTestSetup(getTestSignupInfo(), ctx.task.name);
   });
 
-  it('two sequential executeInstruction calls both produce "hola"', async () => {
+  it('two sequential executeInstruction calls both produce "hola"', async (context: any) => {
     const workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap-multiturn-test-'));
     const proc = await new AgenticProcess({ workdir }).save([]);
     await proc.watch();
@@ -96,6 +103,9 @@ describe('AgenticProcess.executeInstruction — multi-turn', () => {
 
     const turn1Content = chatContent(turn1Outputs);
     console.log('[agentic_process_execute] turn1 content:', turn1Content);
+    if (isClaudeUnavailable(turn1Content)) {
+      context.skip(`Claude unavailable for multi-turn executeInstruction test: ${turn1Content.slice(0, 240)}`);
+    }
     expect(turn1Content.toLowerCase(), 'Turn 1 should contain "hola"').toContain('hola');
 
     // Turn 2 — capture stream position, then executeInstruction resets _completed,
@@ -111,6 +121,9 @@ describe('AgenticProcess.executeInstruction — multi-turn', () => {
     const turn2Items = allOutputs2.slice(afterTurn1Count);
     const turn2Content = chatContent(turn2Items);
     console.log('[agentic_process_execute] turn2 content:', turn2Content);
+    if (isClaudeUnavailable(turn2Content)) {
+      context.skip(`Claude unavailable for multi-turn executeInstruction test: ${turn2Content.slice(0, 240)}`);
+    }
     expect(turn2Content.toLowerCase(), 'Turn 2 should contain "hola"').toContain('hola');
   }, 240_000);
 });

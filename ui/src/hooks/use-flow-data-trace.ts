@@ -52,14 +52,14 @@ export function useFlowDataTrace(
   }, [process?.id]);
 
   const flowData = useAgenticProcessStream(process);
-  const sessionId = process?.session_id ?? '';
+  const sessionId = process?.session_id ?? process?.id ?? '';
 
   const events = useMemo<TraceEvent[]>(() => {
-    if (!sessionId || flowData.length === 0) return EMPTY;
+    if (!process || flowData.length === 0) return EMPTY;
     const mapped = flowData.map((fd) => mapFlowDataToTraceEvent(fd, sessionId));
     mapped.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
     return mapped;
-  }, [flowData, sessionId]);
+  }, [flowData, process, sessionId]);
 
   const counts = useMemo(() => {
     let h = 0;

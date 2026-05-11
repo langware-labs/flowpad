@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Archive, CheckSquare, RefreshCw } from 'lucide-react';
 import { Conversation, FlowMessage, QueryRequest, Task, TypeId } from '@sdk';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { resolveConversationDockPointer } from '@src/navigation/conversation-route-resolver';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import {
@@ -38,10 +38,13 @@ interface ConversationListRowProps {
   isFocused: boolean;
   onArchive: (messageId: string) => void;
   onToggleRead: (messageId: string, isRead: boolean) => void;
+  /** Reports whether this row will actually render so the parent can decide
+   *  whether to show the "No conversations" empty state. */
+  onVisibilityChange: (convId: string, visible: boolean) => void;
   refSetter: (el: HTMLDivElement | null) => void;
 }
 
-function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, refSetter }: ConversationListRowProps) {
+function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, onVisibilityChange, refSetter }: ConversationListRowProps) {
   const { navigation } = useDockNavigation();
   const taskTypeId = useMemo(
     () => conv.firstContextOfType?.('task') ?? null,
@@ -58,15 +61,23 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, refSett
   );
   const { data: latestMessage } = useEntity<FlowMessage>(latestTypeId);
 
-  // Hide archived rows: "Archive all" flips is_archived on every FlowMessage,
-  // so when the latest message is archived we treat the conversation as
-  // archived too. Without this the row keeps rendering and looks unchanged.
-  if (latestMessage?.is_archived) return null;
-  // Hide rows whose latest FlowMessage couldn't be loaded — usually means the
-  // bundle hasn't been pulled yet (we'd just render an empty "Unknown" row
-  // and 404 in the network tab). The auto inbox-fetch on mount will pull the
-  // bundle and the row will materialise on the next entity update.
-  if (latest && !latestMessage) return null;
+  // Hide archived rows ("Archive all" flips is_archived on every FlowMessage)
+  // and rows whose latest FlowMessage hasn't materialised yet (bundle pending).
+  const isHidden =
+    !!latestMessage?.is_archived || (!!latest && !latestMessage);
+
+  const convId = conv.id ?? '';
+  // useLayoutEffect (not useEffect) so the parent's `visibleIds` state is
+  // updated before the browser paints — otherwise a row that ends up visible
+  // could briefly co-render with the "No conversations" empty state on the
+  // first frame.
+  useLayoutEffect(() => {
+    if (!convId) return;
+    onVisibilityChange(convId, !isHidden);
+    return () => onVisibilityChange(convId, false);
+  }, [convId, isHidden, onVisibilityChange]);
+
+  if (isHidden) return null;
 
   const sender = latestMessage?.sender_name?.trim() || 'Unknown';
   const count = pointers.length;
@@ -78,13 +89,7 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, refSett
 
   const handleClick = () => {
     if (!conv.id) return;
-    navigation.openDock(
-      resolveConversationDockPointer({
-        conversationId: conv.id,
-        taskId: conv.task_id ?? null,
-        projectId: conv.project_id ?? null,
-      }),
-    );
+    navigation.openDock(DockPointer.forConversation(conv.id));
   };
 
   return (
@@ -146,7 +151,11 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, refSett
 
 export function InboxView() {
   const [fetching, setFetching] = useState(false);
-  const [visibleCount, setVisibleCount] = useState<number | null>(null);
+  // Set of conv ids whose row currently chose to render. Driven by row-level
+  // `onVisibilityChange` callbacks so the header badge and empty-state both
+  // reflect exactly what the user sees (rows hide themselves when their latest
+  // FlowMessage is archived or hasn't materialised yet).
+  const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
   const rowRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const { navigation, currentDock } = useDockNavigation();
   const { setUnreadCount } = useInboxStore();
@@ -164,11 +173,23 @@ export function InboxView() {
     return list;
   }, [conversations]);
 
-  // Keep the unread badge in sync AND compute the visible-conversation count
-  // from the same source (`listInboxMessages` already filters out archived
-  // FlowMessages server-side). The header count needs to reflect what the
-  // user actually sees: after "Archive all" the conversation entities still
-  // exist locally but every row hides itself, so we can't use sorted.length.
+  const handleRowVisibility = useCallback((convId: string, visible: boolean) => {
+    setVisibleIds((prev) => {
+      const has = prev.has(convId);
+      if (visible === has) return prev;
+      const next = new Set(prev);
+      if (visible) next.add(convId);
+      else next.delete(convId);
+      return next;
+    });
+  }, []);
+
+  const visibleCount = visibleIds.size;
+
+  // Unread badge for the sidebar pip is driven server-side (`inbox-list`
+  // returns received non-archived FMs only). Decoupled from the visible-row
+  // count above because that one needs to follow self-sent rows the server
+  // filter excludes.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -177,12 +198,8 @@ export function InboxView() {
         const msgs = await listInboxMessages();
         if (cancelled) return;
         setUnreadCount(msgs.filter((m) => !m.is_read).length);
-        const visibleConvs = new Set(
-          msgs.map((m) => m.conversation_id).filter((id): id is string => !!id),
-        );
-        setVisibleCount(visibleConvs.size);
       } catch {
-        // non-fatal — leave visibleCount as-is.
+        // non-fatal — leave the badge as-is.
       }
     })();
     return () => { cancelled = true; };
@@ -238,7 +255,7 @@ export function InboxView() {
       <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold">Inbox</span>
-          {visibleCount !== null && visibleCount > 0 && (
+          {visibleCount > 0 && (
             <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
               {visibleCount}
             </span>
@@ -250,7 +267,7 @@ export function InboxView() {
             size="sm"
             className="h-7 text-xs"
             onClick={() => void handleMarkAllRead()}
-            disabled={isLoading || (visibleCount ?? 0) === 0}
+            disabled={isLoading || visibleCount === 0}
           >
             Mark all read
           </Button>
@@ -259,7 +276,7 @@ export function InboxView() {
             size="sm"
             className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
             onClick={() => void handleArchiveAll()}
-            disabled={isLoading || (visibleCount ?? 0) === 0}
+            disabled={isLoading || visibleCount === 0}
           >
             Archive all
           </Button>
@@ -281,7 +298,7 @@ export function InboxView() {
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">Loading…</div>
         )}
 
-        {!isLoading && (visibleCount ?? sorted.length) === 0 && (
+        {!isLoading && visibleCount === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <span className="text-sm">No conversations</span>
             <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
@@ -299,6 +316,7 @@ export function InboxView() {
               isFocused={false}
               onArchive={handleArchive}
               onToggleRead={handleToggleRead}
+              onVisibilityChange={handleRowVisibility}
               refSetter={(el) => {
                 if (conv.id) rowRefs.current.set(conv.id, el);
               }}

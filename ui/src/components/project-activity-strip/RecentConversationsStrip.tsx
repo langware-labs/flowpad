@@ -118,7 +118,9 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
     setUploadConflicts(null);
     try {
       const result = await uploadFlowMessage(file);
-      if (result.task_id) {
+      if (result.conversation_id) {
+        navigation.openDock(DockPointer.forConversation(result.conversation_id));
+      } else if (result.task_id) {
         navigation.openDock(DockPointer.forTasks(result.task_id));
       }
       void refetch();
@@ -141,7 +143,9 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
       const result = await uploadFlowMessage(pendingFile, { overwrite: true });
       setPendingFile(null);
       setUploadConflicts(null);
-      if (result.task_id) {
+      if (result.conversation_id) {
+        navigation.openDock(DockPointer.forConversation(result.conversation_id));
+      } else if (result.task_id) {
         navigation.openDock(DockPointer.forTasks(result.task_id));
       }
       void refetch();
