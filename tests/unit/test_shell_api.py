@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 
-from flow_sdk.builtin.shell import Shell
+from flow_sdk.builtin.shell import Shell, allow_rename
 from flow_sdk.fs_store.record import (
     get_default_records_data_root,
     get_default_records_root,
@@ -307,11 +307,26 @@ async def test_output_returns_empty_iterator_when_no_pty():
 
 @pytest.mark.asyncio
 async def test_rename_sets_name_and_user_renamed():
-    """rename() updates shell.name and sets user_renamed=True."""
+    """rename() updates shell.name and disables future PTY title renames."""
     shell = _shell()
     await shell.rename("My Tab")
     assert shell.name == "My Tab"
     assert shell.user_renamed is True
+    assert shell.pty_rename is False
+
+
+def test_allow_rename_rejects_claude_spinner_title():
+    """Claude spinner/status titles should not become tab names."""
+    proc = MagicMock(worker_type="claude_code")
+    assert allow_rename(proc, "Claude Code") is False
+    assert allow_rename(proc, "Working - Claude Code") is False
+    assert allow_rename(proc, "Implement auth flow") is True
+
+
+def test_allow_rename_rejects_typeid_values():
+    """TypeId-shaped titles are routing keys, not user-facing names."""
+    proc = MagicMock(worker_type="codex")
+    assert allow_rename(proc, "shell-123e4567-e89b-42d3-a456-426614174000") is False
 
 
 @pytest.mark.asyncio

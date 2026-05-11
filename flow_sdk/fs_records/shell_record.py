@@ -60,6 +60,8 @@ class ShellRecord(Record):
         kwargs.setdefault("agentic_process_id", None)
         kwargs.setdefault("workdir", None)
         kwargs.setdefault("name", None)
+        kwargs.setdefault("pty_rename", True)
+        kwargs.setdefault("user_renamed", False)
         kwargs.setdefault("tab_order", 0)
         kwargs.setdefault("entity_id", None)
         kwargs.setdefault("created_at", datetime.now(timezone.utc).isoformat())
@@ -114,5 +116,4 @@ class ShellRecord(Record):
             dirty.add(k)
         self.save()
         return True
-
 

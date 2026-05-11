@@ -246,7 +246,7 @@ export class NavigationActions {
     if (!process) {
       return null;
     }
-    this.openDock(process.dockPointer, extraOptions);
+    this.openDock(process.terminalDockPointer, extraOptions);
     return process;
   }
 
@@ -262,7 +262,7 @@ export class NavigationActions {
   async openProcessTab(processId: string, options?: Record<string, string>): Promise<void> {
     const process = AgenticProcess.getByIdFromCache(processId) ?? (await AgenticProcess.getById(processId));
     if (!process) return;
-    this.openDock(process.dockPointer, options);
+    this.openDock(process.terminalDockPointer, options);
   }
 
   /** Open a plain Shell in a terminal tab. */
@@ -275,12 +275,12 @@ export class NavigationActions {
   /**
    * Open (or create) an AgenticProcess for a Claude CLI session UUID and navigate to it.
    * Uses AgenticProcess.open() which calls upsertSessionProcess — finds existing or creates
-   * without starting a PTY. Then navigates to process.dockPointer.
+   * without starting a PTY. Then navigates to process.terminalDockPointer.
    */
   async openClaudeSession(sessionId: string): Promise<AgenticProcess | null> {
     try {
       const process = await AgenticProcess.fromClaudeSession(sessionId);
-      this.openDock(process.dockPointer);
+      this.openDock(process.terminalDockPointer);
       return process;
     } catch (err) {
       console.error('[NavigationActions.openClaudeSession]', err);
@@ -327,7 +327,7 @@ export class NavigationActions {
       return {
         processId: agenticProcess.id,
         shellId: agenticProcess.shell_id ?? null,
-        dockPointer: agenticProcess.dockPointer,
+        dockPointer: agenticProcess.terminalDockPointer,
       };
     } catch (error) {
       console.error('[NavigationActions] Error creating AgenticProcess:', error);

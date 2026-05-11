@@ -75,7 +75,7 @@ export interface ViewerMeta {
   canAddAsTab: boolean;
 }
 
-export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
+export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   [ViewType.HOME]: {
     title: 'Home',
     iconName: 'Home',
@@ -230,12 +230,8 @@ export const VIEWER_REGISTRY: Record<ViewType, ViewerMeta> = {
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
-  [ViewType.SESSION]: {
-    title: 'Session',
-    iconName: 'Zap',
-    tabLocation: 'dedicated',
-    canAddAsTab: false,
-  },
+  // ViewType.SESSION removed — legacy /dock/session URLs redirect to
+  // /dock/shell/<agentic_process>. The old live-workflow viewer is gone.
   [ViewType.TASKS]: {
     title: 'Tasks',
     iconName: 'CheckSquare',

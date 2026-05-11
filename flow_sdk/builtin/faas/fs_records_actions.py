@@ -35,6 +35,79 @@ class FsRecordsActionsMixin:
             return str(display_name)
         return getattr(ent, "name", None) or getattr(ent, "title", "") or ""
 
+    async def _resolve_scoped_roots(
+        self,
+        scope_set: set[str],
+        project_id_list: list[str],
+    ):
+        """Translate a (scope, project_ids) pair into a narrowed `roots` tuple
+        for the indexer, or ``None`` to use the indexer's default roots.
+
+        - ``scope`` may contain ``user`` and/or ``project``.
+        - ``project_ids`` is the list of project entity IDs to walk.
+
+        Mapping:
+          - empty scope, empty projects   → None (use default_roots())
+          - {"user"}                      → (USER_HOME_FOLDER,)
+          - {"project"} + project_ids     → one REAL_PROJECT_CWD per project
+          - {"user","project"} + ids      → USER_HOME + per-project roots
+          - {"project"} + no ids          → None (UI guarantees ids when scoped)
+
+        Returns ``ApiFailResponse`` on a per-project resolution error.
+        """
+        from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.roots import default_roots  # noqa: PLC0415
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+        if not scope_set and not project_id_list:
+            return None
+
+        roots: list[FSRef] = []
+
+        if "user" in scope_set:
+            for r in default_roots():
+                if r.record_type == RecordType.USER_HOME_FOLDER:
+                    roots.append(r)
+                    break
+
+        if "project" in scope_set or (not scope_set and project_id_list):
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+            from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+            from pathlib import Path as _Path  # noqa: PLC0415
+            for pid in project_id_list:
+                proj = await Project.get_one(QueryFilter.parse({"id": pid}))
+                if proj is None:
+                    return ApiFailResponse(
+                        message=f"Project '{pid}' not found",
+                        status_code=404,
+                    )
+                mount = getattr(proj, "fs_storage_mount_path", None)
+                if not mount:
+                    return ApiFailResponse(
+                        message=f"Project '{pid}' has no fs_storage_mount_path",
+                        status_code=400,
+                    )
+                mount_path = _Path(str(mount))
+                if not mount_path.is_dir():
+                    return ApiFailResponse(
+                        message=f"Project mount path '{mount}' is not a directory",
+                        status_code=400,
+                    )
+                roots.append(
+                    FSRef(
+                        mount_path,
+                        record_type=RecordType.REAL_PROJECT_CWD,
+                        scope="project",
+                        project_id=pid,
+                    )
+                )
+
+        if not roots:
+            # E.g. scope={"project"} with empty project_ids — fall back to defaults
+            # rather than walking nothing.
+            return None
+        return tuple(roots)
+
     @staticmethod
     async def _resolve_asset_ref(ent) -> str:
         """Resolve the on-disk asset_ref for an entity, with a record-level fallback."""
@@ -170,6 +243,17 @@ class FsRecordsActionsMixin:
         limit_per_type_raw = qp.get("limit_per_type", "").strip()
         limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
 
+        # Scope/project filter for the indexer walk. `scope` may be a single
+        # value or comma-separated set; `project_ids` is comma-separated UUIDs.
+        # Translates into a narrowed `roots` tuple below.
+        scope_raw = qp.get("scope", "").strip()
+        scope_set = {s.strip() for s in scope_raw.split(",") if s.strip()}
+        project_ids_raw = qp.get("project_ids", "").strip()
+        project_id_list = [p.strip() for p in project_ids_raw.split(",") if p.strip()]
+        scoped_roots = await self._resolve_scoped_roots(scope_set, project_id_list)
+        if isinstance(scoped_roots, ApiFailResponse):
+            return scoped_roots
+
         # Type filter + validation
         types_filter: list[RecordType] | None = None
         if filter_type:
@@ -244,6 +328,7 @@ class FsRecordsActionsMixin:
                 limit_per_type=limit_per_type,
                 on_progress=emit,
                 verbose=False,
+                roots=scoped_roots,
             ))
             scan_ms = round((time.perf_counter() - t0) * 1000, 1)
         finally:
@@ -413,7 +498,16 @@ class FsRecordsActionsMixin:
         limit_types = int(limit_types_raw) if limit_types_raw.isdigit() else None
         limit_per_type_raw = qp.get("limit_per_type", "").strip()
         limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
+        # Legacy single-project param (kept for back-compat) and the new
+        # comma-separated `project_ids` + `scope` pair.
         project_id = qp.get("project_id", "").strip() or None
+        scope_raw = qp.get("scope", "").strip()
+        scope_set = {s.strip() for s in scope_raw.split(",") if s.strip()}
+        project_ids_raw = qp.get("project_ids", "").strip()
+        project_id_list = [p.strip() for p in project_ids_raw.split(",") if p.strip()]
+        # Honor legacy single project_id when the new params aren't supplied.
+        if not project_id_list and project_id:
+            project_id_list = [project_id]
         orphan_action_raw = qp.get("orphan_action", "").strip().lower()
         try:
             orphan_action = (
@@ -428,39 +522,11 @@ class FsRecordsActionsMixin:
                 status_code=400,
             )
 
-        # Resolve project_id → single REAL_PROJECT_CWD root via the project's
-        # fs_storage_mount_path. This restricts the walker to that subtree only.
-        custom_roots: tuple[FSRef, ...] | None = None
-        if project_id:
-            from flow_sdk.builtin.project import Project  # noqa: PLC0415
-            from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
-            from pathlib import Path as _Path  # noqa: PLC0415
-            proj = await Project.get_one(QueryFilter.parse({"id": project_id}))
-            if proj is None:
-                return ApiFailResponse(
-                    message=f"Project '{project_id}' not found",
-                    status_code=404,
-                )
-            mount = getattr(proj, "fs_storage_mount_path", None)
-            if not mount:
-                return ApiFailResponse(
-                    message=f"Project '{project_id}' has no fs_storage_mount_path",
-                    status_code=400,
-                )
-            mount_path = _Path(str(mount))
-            if not mount_path.is_dir():
-                return ApiFailResponse(
-                    message=f"Project mount path '{mount}' is not a directory",
-                    status_code=400,
-                )
-            custom_roots = (
-                FSRef(
-                    mount_path,
-                    record_type=RecordType.REAL_PROJECT_CWD,
-                    scope="project",
-                    project_id=project_id,
-                ),
-            )
+        # Resolve scope + project_ids → narrowed roots. When neither is set,
+        # fall back to the indexer's default_roots() (full walk).
+        custom_roots = await self._resolve_scoped_roots(scope_set, project_id_list)
+        if isinstance(custom_roots, ApiFailResponse):
+            return custom_roots
 
         # Type filter + validation
         types_filter: list[RecordType] | None = None
@@ -568,6 +634,11 @@ class FsRecordsActionsMixin:
                     flow_data=activity.make_flow_data(None),
                 )
 
+        # Single-project shortcut: when narrowed to exactly one project,
+        # also pass project_id so the indexer can short-circuit non-project
+        # work paths.
+        effective_project_id = project_id_list[0] if len(project_id_list) == 1 else None
+
         try:
             result = await get_shared_indexer().index(IndexerOptions(
                 types=types_filter,
@@ -576,7 +647,7 @@ class FsRecordsActionsMixin:
                 verbose=False,
                 roots=custom_roots,
                 force=force,
-                project_id=project_id,
+                project_id=effective_project_id,
                 orphan_action=orphan_action,
             ))
         finally:

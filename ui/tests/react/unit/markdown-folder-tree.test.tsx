@@ -60,7 +60,13 @@ const VAULT: AssetTypeVault = {
   relPath: 'Users/shlom/docs',
   absPath: '/Users/shlom/docs',
   label: 'User docs',
+  scope: 'user',
+  project_id: null,
 };
+
+function chevronTestId(node: { id: string }): string {
+  return `browseable-chevron-${node.id}`;
+}
 
 describe('markdownFolderRoot adapter', () => {
   beforeEach(() => {
@@ -77,7 +83,7 @@ describe('markdownFolderRoot adapter', () => {
       render(<BrowseableTree roots={[root]} activePointer={null} />);
 
       // Expand the Markdown root
-      await user.click(screen.getByTestId('browseable-chevron-asset-type:markdown'));
+      await user.click(screen.getByTestId(chevronTestId(root)));
       await waitFor(() => expect(screen.getByText('User docs')).toBeInTheDocument());
     });
 
@@ -89,7 +95,7 @@ describe('markdownFolderRoot adapter', () => {
       });
       render(<BrowseableTree roots={[root]} activePointer={null} />);
       // The root has hasChildren = (vaults.length > 0) → false when empty
-      expect(screen.queryByTestId('browseable-chevron-asset-type:markdown')).not.toBeInTheDocument();
+      expect(screen.queryByTestId(chevronTestId(root))).not.toBeInTheDocument();
     });
   });
 
@@ -107,7 +113,7 @@ describe('markdownFolderRoot adapter', () => {
       });
       render(<BrowseableTree roots={[root]} activePointer={null} />);
 
-      await user.click(screen.getByTestId('browseable-chevron-asset-type:markdown'));
+      await user.click(screen.getByTestId(chevronTestId(root)));
       await waitFor(() => expect(screen.getByText('User docs')).toBeInTheDocument());
       await user.click(screen.getByTestId('browseable-chevron-md-folder:compute_node-@local:/Users/shlom/docs'));
 
@@ -133,7 +139,7 @@ describe('markdownFolderRoot adapter', () => {
         indexType: vi.fn(),
       });
       render(<BrowseableTree roots={[root]} activePointer={null} />);
-      await user.click(screen.getByTestId('browseable-chevron-asset-type:markdown'));
+      await user.click(screen.getByTestId(chevronTestId(root)));
       await waitFor(() => screen.getByText('User docs'));
       await user.click(screen.getByTestId('browseable-chevron-md-folder:compute_node-@local:/Users/shlom/docs'));
 
@@ -157,7 +163,7 @@ describe('markdownFolderRoot adapter', () => {
       const user = userEvent.setup();
       const root = markdownFolderRoot(makeType([VAULT]), { indexType: vi.fn() });
       render(<BrowseableTree roots={[root]} activePointer={null} />);
-      await user.click(screen.getByTestId('browseable-chevron-asset-type:markdown'));
+      await user.click(screen.getByTestId(chevronTestId(root)));
       await waitFor(() => screen.getByText('User docs'));
       await user.click(screen.getByTestId('browseable-chevron-md-folder:compute_node-@local:/Users/shlom/docs'));
 
@@ -187,7 +193,7 @@ describe('markdownFolderRoot adapter', () => {
       const user = userEvent.setup();
       const root = markdownFolderRoot(makeType([VAULT]), { indexType: vi.fn() });
       render(<BrowseableTree roots={[root]} activePointer={null} />);
-      await user.click(screen.getByTestId('browseable-chevron-asset-type:markdown'));
+      await user.click(screen.getByTestId(chevronTestId(root)));
       await waitFor(() => screen.getByText('User docs'));
       await user.click(screen.getByTestId('browseable-chevron-md-folder:compute_node-@local:/Users/shlom/docs'));
       await waitFor(() => expect(screen.getByText('Empty')).toBeInTheDocument());
@@ -203,7 +209,7 @@ describe('markdownFolderRoot adapter', () => {
       const onNavigate = vi.fn();
       const root = markdownFolderRoot(makeType([VAULT]), { indexType: vi.fn() });
       render(<BrowseableTree roots={[root]} activePointer={null} onNavigate={onNavigate} />);
-      await user.click(screen.getByTestId('browseable-chevron-asset-type:markdown'));
+      await user.click(screen.getByTestId(chevronTestId(root)));
       await waitFor(() => screen.getByText('User docs'));
       // Click the vault row text
       await user.click(screen.getByText('User docs'));
@@ -219,7 +225,7 @@ describe('markdownFolderRoot adapter', () => {
       const onNavigate = vi.fn();
       const root = markdownFolderRoot(makeType([VAULT]), { indexType: vi.fn() });
       render(<BrowseableTree roots={[root]} activePointer={null} onNavigate={onNavigate} />);
-      await user.click(screen.getByTestId('browseable-chevron-asset-type:markdown'));
+      await user.click(screen.getByTestId(chevronTestId(root)));
       await waitFor(() => screen.getByText('User docs'));
       await user.click(screen.getByTestId('browseable-chevron-md-folder:compute_node-@local:/Users/shlom/docs'));
       await waitFor(() => screen.getByText('readme.md'));
@@ -337,7 +343,7 @@ describe('markdownFolderRoot adapter', () => {
       render(<BrowseableTree roots={[root]} activePointer={null} />);
       const scanBtn = screen.getByTestId('browseable-toolbar-scan:markdown');
       await user.click(scanBtn);
-      await waitFor(() => expect(indexType).toHaveBeenCalledWith('markdown'));
+      await waitFor(() => expect(indexType).toHaveBeenCalledWith('markdown', undefined));
       await waitFor(() => expect(onScanComplete).toHaveBeenCalledWith('markdown'));
     });
 

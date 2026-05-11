@@ -14,7 +14,7 @@ import { useConversation } from './useConversation';
  * landing target for inbox clicks and the email "view task" deep-link.
  *
  * Self-contained pointer resolution — matches the convention used by every
- * other dock tab (TasksViewer, LensViewer, SessionViewer, …): read
+ * other dock tab (TasksViewer, LensViewer, …): read
  * `currentDock` directly, parse the pointer's first segment as the entity id,
  * and treat anything else as "no entity". Safe against the all-tabs-mounted
  * issue where a hidden tab would otherwise see another route's pointer.

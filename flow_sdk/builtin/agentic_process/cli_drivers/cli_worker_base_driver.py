@@ -43,6 +43,7 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
     from flow_sdk.fs_records.agent_status import WorkerStatus
     from flow_sdk.responses.response import ApiResponse
 
@@ -303,6 +304,7 @@ class WorkerDriver(Protocol):
     """
 
     name: str  # wire id: "claude" | "codex"
+    preassign_interactive_session_id: bool
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
@@ -322,6 +324,19 @@ class WorkerDriver(Protocol):
         """Headless one-shot turn: spawn the worker, capture session_id onto
         ``process``, manage lifecycle. Returns an ApiResponse the caller can
         send back over HTTP."""
+        ...
+
+    async def report_event(
+        self,
+        process: "AgenticProcess",
+        name: "AgenticProcessEventName",
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Handle a client-reported process event.
+
+        Drivers decide which events matter. Unknown or unsupported events
+        should return a debug payload rather than raising.
+        """
         ...
 
     # ── Transcript discovery ─────────────────────────────────────────────────

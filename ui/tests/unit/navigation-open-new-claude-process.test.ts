@@ -14,6 +14,7 @@ describe('NavigationActions.openNewClaudeProcess', () => {
       id: 'process-123',
       shell_id: null,
       dockPointer: new DockPointerData(ViewType.SHELL, 'agentic_process-process-123'),
+      terminalDockPointer: new DockPointerData(ViewType.SHELL, 'agentic_process-process-123'),
       start: startSpy,
     });
 

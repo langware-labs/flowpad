@@ -1,4 +1,4 @@
-import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
@@ -64,8 +64,8 @@ export class CollaborationRoom
    * use it.
    */
   override getDisplayName(): string | null {
-    if (this.name && this.name.trim()) return null;
-    const host = this.host_name?.trim() || 'Anonymous';
+    if (isNonEmptyString(this.name)) return null;
+    const host = isNonEmptyString(this.host_name) ? this.host_name.trim() : 'Anonymous';
     const when = this.started_at ? new Date(this.started_at) : new Date();
     if (!Number.isNaN(when.getTime())) {
       return CollaborationRoom.defaultName(host, when);

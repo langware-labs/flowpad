@@ -29,7 +29,6 @@ class Conversation(Entity):
     """
 
     type: str = APIField(default="conversation")
-    project_id: Optional[str] = APIField(None, description="ID of the local Project this conversation is filed under, or None when unmapped")
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
     message_count: int = APIField(0)

@@ -13,8 +13,7 @@ import { useEntitiesQuery } from '@sdk/react/hooks';
  * Items the local user has explicitly added to a FlowMessage's "private
  * context" — Tasks Claude derived headlessly, CC sessions started from a
  * transcript, etc. Linkage is stored as the source FlowMessage TypeId in the
- * new entity's `context_entities` (Tasks) or as `target_vfs_path` (AgenticProcess
- * sessions started from this message's transcript).
+ * new entity's `context_entities`.
  */
 export interface PrivateContextItems {
   tasks: Task[];
@@ -22,59 +21,70 @@ export interface PrivateContextItems {
 }
 
 /**
- * Resolves Private Context entities for a FlowMessage:
+ * Resolves Private Context entities for a FlowMessage. Both queries use the
+ * same shape: scope by `project_id` to keep the candidate set small, then
+ * filter client-side to those whose `contextEntities` reference the
+ * FlowMessage. Backend has no `$CONTAINS` operator on list fields, and a
+ * post-spawn UPDATE that flips an entity into a backend filter doesn't
+ * reliably re-add it to live query results — client-side filtering avoids
+ * both limitations.
  *
- * - **Tasks**: query Tasks for the conversation's project, then filter
- *   client-side to those whose `contextEntities` reference the FlowMessage.
- *   (Backend has no `$CONTAINS` operator on list fields today; the project
- *   scope keeps the candidate set small enough for client-side filtering.)
- *
- * - **AgenticProcesses**: query directly by `target_vfs_path = <fm typeid>` —
- *   the "Start CC from transcript" handler stamps that field, so this picks up
- *   exactly the sessions started from this message.
+ * `useEntitiesQuery` dereferences `.query` on its first arg, so the request
+ * must always be a real `QueryRequest`. We gate execution via the `enabled`
+ * flag and return safe placeholders when there's no flow-message id.
  */
 export function usePrivateContext(
   flowMessageId: string | null,
   projectId?: string | null,
 ): PrivateContextItems {
+  const fmKey = flowMessageId
+    ? new TypeId(FlowMessage.type, flowMessageId).toString()
+    : '';
+
   // ── Tasks ────────────────────────────────────────────────────────────
   const tasksQuery = useMemo(() => {
-    if (!flowMessageId) return null;
     const match: Record<string, unknown> = {};
     if (projectId) match.project_id = projectId;
     return new QueryRequest({
       type: Task.type,
       scope: [],
-      name: `private-context-tasks:${flowMessageId}:${projectId ?? 'noproj'}`,
+      name: `private-context-tasks:${flowMessageId ?? 'none'}:${projectId ?? 'noproj'}`,
       query: new QueryFilter({ match }),
     });
   }, [flowMessageId, projectId]);
-  const { data: candidateTasks = [] } = useEntitiesQuery<Task>(tasksQuery as QueryRequest, {
-    enabled: !!tasksQuery,
+  const { data: candidateTasks = [] } = useEntitiesQuery<Task>(tasksQuery, {
+    enabled: !!flowMessageId,
   });
 
   const tasks = useMemo(() => {
-    if (!flowMessageId) return [] as Task[];
-    const fmKey = new TypeId(FlowMessage.type, flowMessageId).toString();
+    if (!fmKey) return [] as Task[];
     return candidateTasks.filter((t) =>
       t.contextEntities?.some((tid) => tid.toString() === fmKey),
     );
-  }, [candidateTasks, flowMessageId]);
+  }, [candidateTasks, fmKey]);
 
-  // ── AgenticProcesses (transcript-derived CC sessions) ────────────────
-  const fmKey = flowMessageId ? new TypeId(FlowMessage.type, flowMessageId).toString() : '';
+  // ── AgenticProcesses (transcript-derived sessions) ───────────────────
+  // Same scope-by-project + client-side filter approach as Tasks.
   const processQuery = useMemo(() => {
-    if (!fmKey) return null;
+    const match: Record<string, unknown> = {};
+    if (projectId) match.project_id = projectId;
     return new QueryRequest({
       type: AgenticProcess.type,
       scope: [],
-      name: `private-context-processes:${fmKey}`,
-      query: new QueryFilter({ match: { target_vfs_path: fmKey } as Record<string, unknown> }),
+      name: `private-context-processes:${flowMessageId ?? 'none'}:${projectId ?? 'noproj'}`,
+      query: new QueryFilter({ match }),
     });
-  }, [fmKey]);
-  const { data: processes = [] } = useEntitiesQuery<AgenticProcess>(processQuery as QueryRequest, {
-    enabled: !!processQuery,
+  }, [flowMessageId, projectId]);
+  const { data: candidateProcesses = [] } = useEntitiesQuery<AgenticProcess>(processQuery, {
+    enabled: !!flowMessageId,
   });
+
+  const processes = useMemo(() => {
+    if (!fmKey) return [] as AgenticProcess[];
+    return candidateProcesses.filter((p) =>
+      p.contextEntities?.some((tid) => tid.toString() === fmKey),
+    );
+  }, [candidateProcesses, fmKey]);
 
   return { tasks, processes };
 }

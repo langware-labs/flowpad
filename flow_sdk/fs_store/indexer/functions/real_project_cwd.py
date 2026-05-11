@@ -26,19 +26,20 @@ async def real_project_cwd_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:
+    from flow_sdk.builtin.project import Project
     from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
+    from flow_sdk.fs_store.scope import Scope
 
     out: list[FSRef] = []
     for node in nodes:
         for real in iter_claude_project_paths(include_temp=opts.include_temp):
-            # Explicit scope override: entering a project subtree,
-            # regardless of the parent root's scope.
             out.append(
                 FSRef(
                     real,
                     record_type=RecordType.REAL_PROJECT_CWD,
                     parent=node,
-                    scope="project",
+                    scope=Scope.PROJECT.value,
+                    project_id=Project.derive_id_for_path(real),
                 )
             )
     return out

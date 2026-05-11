@@ -227,6 +227,7 @@ async def test_open_registers_on_exit_so_status_updates(bootstrapped_client):
         assert ApiResponse(**open_resp.json()).status == "SUCCESS", (
             ApiResponse(**open_resp.json()).message
         )
+        shell_id = ApiResponse(**open_resp.json()).data["shell_id"]
 
         await bootstrapped_client.post(f"/api/v1/graph/shell/{shell_id}/close")
 

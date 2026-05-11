@@ -530,14 +530,6 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Create dock pointer for live session view
-   * @param processId - Process ID for the session
-   */
-  static forSession(processId: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.SESSION, processId, undefined, layout);
-  }
-
-  /**
    * Create dock pointer for the record search view
    * @param query - Optional search query string
    * @param filters - Optional filter options

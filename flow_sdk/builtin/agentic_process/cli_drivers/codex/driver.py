@@ -13,8 +13,9 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
+from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
     WorkerDriver,
@@ -24,16 +25,24 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
     codex_transcript_path_for_process,
     load_session_history as _codex_load_session_history,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_detection import (
+    detect_session,
+)
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.status import codex_tail_status
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker import (
     CodexCLIStreamWorker,
+)
+from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
+    FlowData,
+    FlowDataSource,
+    FlowDataType,
+    FlowElementType,
 )
 from flow_sdk.fs_records.agent_status import WorkerStatus
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-    from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
     from flow_sdk.responses.response import ApiResponse
 
 logger = logging.getLogger(__name__)
@@ -43,6 +52,7 @@ class CodexDriver:
     """Vendor glue for OpenAI Codex. Implements the ``WorkerDriver`` Protocol."""
 
     name = "codex"
+    preassign_interactive_session_id = False
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
@@ -169,6 +179,79 @@ class CodexDriver:
         asyncio.create_task(_run_turn(), name=f"codex-{process.id[:8]}")
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})
 
+    async def report_event(
+        self,
+        process: "AgenticProcess",
+        name: AgenticProcessEventName,
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        if name != AgenticProcessEventName.FIRST_PROMPT:
+            return {
+                "handled": False,
+                "worker": self.name,
+                "event_name": name.value,
+                "session_id": process.session_id,
+                "reason": "unsupported_event",
+            }
+        return await self._handle_first_prompt(process, data)
+
+    async def _handle_first_prompt(
+        self,
+        process: "AgenticProcess",
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        prompt = data.get("prompt")
+        if not isinstance(prompt, str) or not prompt.strip():
+            message = "Codex session detection failed: first_prompt event did not include a prompt."
+            await _emit_detection_error(process, message)
+            return {
+                "handled": True,
+                "worker": self.name,
+                "event_name": AgenticProcessEventName.FIRST_PROMPT.value,
+                "status": "error",
+                "session_id": process.session_id,
+                "reason": "missing_prompt",
+            }
+
+        detected = await detect_session(
+            process.workdir,
+            prompt,
+            sent_at=data.get("sent_at") if isinstance(data.get("sent_at"), str) else None,
+            created_after=process.created_date,
+        )
+        if not detected:
+            message = (
+                "Codex session detection failed: no unique rollout matched "
+                "the process workdir and first prompt."
+            )
+            await _emit_detection_error(process, message)
+            return {
+                "handled": True,
+                "worker": self.name,
+                "event_name": AgenticProcessEventName.FIRST_PROMPT.value,
+                "status": "not_found",
+                "session_id": process.session_id,
+                "reason": "no_unique_match",
+            }
+
+        process.session_id = detected.session_id
+        await process.save()
+        try:
+            await process.notify_updated()
+        except Exception:
+            logger.debug("CodexDriver.first_prompt: notify_updated failed", exc_info=True)
+
+        return {
+            "handled": True,
+            "worker": self.name,
+            "event_name": AgenticProcessEventName.FIRST_PROMPT.value,
+            "status": "detected",
+            "session_id": detected.session_id,
+            "transcript_path": detected.path,
+            "cwd": detected.cwd,
+            "timestamp": detected.timestamp,
+        }
+
     # ── Transcript discovery ─────────────────────────────────────────────────
 
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
@@ -243,3 +326,21 @@ class CodexDriver:
         if not sessions_root.is_dir():
             return set()
         return {p.name for p in sessions_root.rglob("rollout-*.jsonl")}
+
+
+async def _emit_detection_error(process: "AgenticProcess", message: str) -> None:
+    flow_data = FlowData(
+        flow_value=message,
+        attributes={
+            "element-type": FlowElementType.ERROR,
+            "data-type": FlowDataType.TEXT,
+            "source": FlowDataSource.WEBSOCKET,
+            "error": message,
+            "subtype": "session_detect_failed",
+            "event-name": AgenticProcessEventName.FIRST_PROMPT.value,
+        },
+    )
+    try:
+        await process.emit_flow_data(flow_data.model_dump())
+    except Exception:
+        logger.debug("CodexDriver.first_prompt: emit detection error failed", exc_info=True)

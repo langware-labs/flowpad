@@ -11,7 +11,7 @@ import {
 } from '@src/components/ui/dropdown-menu';
 import { Loader2, Pin, PinOff, Plus } from 'lucide-react';
 import { useCallback } from 'react';
-import type { OpenerDescriptor } from './tab_opener_types';
+import type { OpenerDescriptor, OpenerId } from './tab_opener_types';
 import { usePinnedOpeners } from './usePinnedOpeners';
 
 interface Props {
@@ -23,23 +23,33 @@ function dockerNodeName(node: ComputeNode): string {
   return (node as { uname?: string }).uname?.replace(/^docker-/, '') ?? node.id;
 }
 
-export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) {
-  const { pinned, isPinned, togglePin, shouldAutoPinNext } = usePinnedOpeners();
-
+export function getInlineOpeners(
+  openers: OpenerDescriptor[],
+  pinned: OpenerId[],
+  lastOpened: OpenerId | null,
+): OpenerDescriptor[] {
   const byId = new Map(openers.map((o) => [o.id, o]));
-  const availableOpeners = openers.filter((o) => o.available);
   const pinnedInOrder = pinned.map((id) => byId.get(id)).filter((o): o is OpenerDescriptor => !!o && o.available);
+  const recentOpener = lastOpened && !pinned.includes(lastOpened) ? byId.get(lastOpened) : null;
+  return recentOpener?.available ? [...pinnedInOrder, recentOpener] : pinnedInOrder;
+}
+
+export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) {
+  const { pinned, lastOpened, isPinned, togglePin, rememberOpened } = usePinnedOpeners();
+
+  const availableOpeners = openers.filter((o) => o.available);
+  const inlineOpeners = getInlineOpeners(openers, pinned, lastOpened);
 
   const activate = useCallback(
     (opener: OpenerDescriptor, dockerNode?: ComputeNode) => {
-      if (shouldAutoPinNext) togglePin(opener.id);
+      rememberOpened(opener.id);
       if (opener.id === 'docker' && dockerNode && opener.onDockerNodeSelect) {
         opener.onDockerNodeSelect(dockerNode);
       } else {
         opener.onActivate();
       }
     },
-    [shouldAutoPinNext, togglePin],
+    [rememberOpened],
   );
 
   const renderInline = (opener: OpenerDescriptor) => {
@@ -188,7 +198,7 @@ export function TerminalOpenerToolbar({ openers, isTabCreationPending }: Props) 
 
   return (
     <div className="flex shrink-0 items-center gap-1 border-l px-1" data-testid="terminal-tab-end-toolbar">
-      {pinnedInOrder.map(renderInline)}
+      {inlineOpeners.map(renderInline)}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button

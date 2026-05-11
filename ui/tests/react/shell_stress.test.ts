@@ -10,7 +10,7 @@
  *   reset + re-attach), and rapid reconnects.
  */
 
-import { apiClient, ConnectionManager, dataManager, GRAPH_API_PREFIX, Shell, TypeId } from '@sdk';
+import { ActionInfo, apiClient, ConnectionManager, dataManager, GRAPH_API_PREFIX, Shell, TypeId } from '@sdk';
 import { v4 as uuidv4 } from 'uuid';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiTestSetup, get_local_compute_node, getTestSignupInfo } from '../utils/test-utils';
@@ -36,12 +36,10 @@ async function openShellRaw(computeNode: { id: string; typeId?: TypeId }, shellI
 
 /** Send a newline to ensure bash emits a prompt. */
 async function sendNewline(computeNodeId: string, shellId: string): Promise<void> {
-  await apiClient
-    .post(`${GRAPH_API_PREFIX}/compute_node/${computeNodeId}/terminal-command/input`, {
-      shell_id: shellId,
-      data: '\n',
-    })
-    .catch(() => {});
+  const action = new ActionInfo('terminal-command', 'compute_node', computeNodeId, 'POST');
+  action.subpath = 'input';
+  action.bodyParameters = { shell_id: shellId, data: '\n' };
+  await dataManager.callActionOverWS(action);
 }
 
 /** Close PTY via API. */
