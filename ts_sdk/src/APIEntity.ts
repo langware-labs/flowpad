@@ -587,6 +587,26 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return entity;
   }
 
+  /**
+   * Push this entity to the hub via the standard graph action
+   * ``POST /api/v1/graph/<type>/<id>/share``. The local backend's
+   * ``share`` action handler forwards the create to the hub using the
+   * stored cloud credentials. On success, ``remote`` is flipped.
+   */
+  public async share(): Promise<T> {
+    const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
+    info.bodyParameters = this.toJSON();
+    await dataManager.callAction<unknown, unknown>(info);
+    (this as any).remote = true;
+    return this as unknown as T;
+  }
+
+  /**
+   * True when this entity has a hub-side counterpart at the same id. Mirrors
+   * the Python ``Entity.remote`` field; flipped to ``true`` by ``share()``.
+   */
+  remote?: boolean;
+
   public async delete(): Promise<void> {
     console.log(
       `🗑️ [APIEntity.delete] Starting deletion of ${this.typeId.type}:${this.typeId.id} (${this.constructor.name})`,

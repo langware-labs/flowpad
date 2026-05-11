@@ -7,4 +7,5 @@ from . import task_receive_action
 from . import task_action
 from . import conversation_action
 from . import flow_message_action
+from . import share_action
 from . import wiki_action

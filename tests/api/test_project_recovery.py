@@ -75,11 +75,14 @@ async def test_recover_by_path_phase2_materializes_claude_folder(
     recovered = await Project.recover_by_path(str(real_path))
     assert recovered is not None
     # The materialized Project entity uses the path-based deterministic id
-    # (Project.allocate_id), even though the underlying ClaudeProjectFsRecord
-    # carries the encoded-name id.
-    expected_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{real_path}"))
+    # (Project.derive_id_for_path → uuid5 over the canonical posix path).
+    # The canonical form resolves macOS ``/var/folders/...`` symlinks to
+    # ``/private/var/folders/...``, so the test must canonicalize too.
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
+    canonical = canonical_posix_path(str(real_path))
+    expected_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{canonical}"))
     assert recovered.id == expected_id
-    assert recovered.fs_storage_mount_path == str(real_path)
+    assert recovered.fs_storage_mount_path == canonical
 
     # And a follow-up lookup must hit phase 1 now (existing exact match).
     again = await Project.recover_by_path(str(real_path))
@@ -91,12 +94,14 @@ async def test_recover_by_path_phase2_materializes_claude_folder(
 async def test_recover_by_path_phase3_constructs_fresh_project(bootstrapped_client, tmp_path):
     """Phase 3: no existing Project, no Claude folder → fresh Project entity created."""
     # Use an absolute path that no project owns; isolate from any pre-seeded data.
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
     fresh = str(tmp_path / "phase3-fresh-only")
+    canonical = canonical_posix_path(fresh)
     recovered = await Project.recover_by_path(fresh)
     assert recovered is not None
-    expected_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{fresh}"))
+    expected_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{canonical}"))
     assert recovered.id == expected_id
-    assert recovered.fs_storage_mount_path == fresh
+    assert recovered.fs_storage_mount_path == canonical
 
 
 # ---------------------------------------------------------------------------

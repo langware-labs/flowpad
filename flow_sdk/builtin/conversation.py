@@ -47,36 +47,43 @@ class Conversation(Entity):
     # ``conv.first_context_of_type('task')`` to read it back.
     _api_visible: ClassVar[bool] = True
 
-    async def add_message(self, text: str, *, echo: bool = False, sender_name: Optional[str] = None) -> dict:
-        """Post a message to this conversation via the hub WebSocket bridge.
-
-        Requires the conversation to be hub-mirrored (``self.remote`` /
-        ``share()``). When ``echo=True`` the hub also creates a
-        ``"Received: <text>"`` reply on the same conversation — useful for
-        single-user round-trip tests.
-
-        Returns the hub's response dict (typically the created FlowMessage).
+    async def share(self) -> "Conversation":
+        """Generic Entity.share() with one Conversation-specific step: ensure
+        the calling user is in ``participants`` so the hub's ``_fanout_message``
+        actually reaches anyone. The hub's ``EntityField`` accepts inbound
+        participants on create even though it hides them from GET responses.
         """
-        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+
+        if not self.participants:
+            creds = load_credentials()
+            user = (creds.user if creds else None) or {}
+            if user.get("id"):
+                self.participants = [{"user_id": user["id"], "name": user.get("name") or ""}]
+        return await super().share()
+
+    async def add_message(self, text: str, *, sender_name: Optional[str] = None) -> dict:
+        """Append a FlowMessage to this conversation on the hub.
+
+        Hits ``POST <hub>/api/v1/graph/conversation/<id>/add_message`` via the
+        standard cloud client — same path the Python tests use directly. Returns
+        the response ``data`` (the persisted FlowMessage).
+        """
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
 
         if not self.id:
             raise RuntimeError("Conversation.id is required")
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            raise RuntimeError("Cloud login required before add_message()")
         body: dict = {"text": text}
         if sender_name:
             body["sender_name"] = sender_name
-        if echo:
-            body["echo"] = True
-        return await hub_ws_bridge.manager.send_request(
-            {
-                "message_type": "rest_api_msg",
-                "method": "POST",
-                "scope": [],
-                "target_typeid": {"type": "conversation", "id": self.id},
-                "action": "add_message",
-                "body": body,
-            },
-            timeout=10.0,
-        )
+        path = build_hub_url(self, action="add_message")
+        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+            return await client.post(path, body)
 
 
     @property
