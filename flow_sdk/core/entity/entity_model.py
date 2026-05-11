@@ -714,6 +714,50 @@ class Entity(DBEntity):
         await blob_index_entity.save(self.embedded_storage)
         # logging.info(f"Saved blob index for {self.typeid} with fields: {blob_index_entity._blob_index.fields.keys()} on \n {self.storage.vfs_root_path}")
 
+    def cloud_watch(self) -> "CloudWatch":
+        """Async-context stream of hub events scoped to this entity.
+
+        See ``flow_sdk.cloud_client.events.CloudWatch`` for the full API.
+        Matches events whose ``entity_id`` *or* ``parent_id`` equals
+        ``self.id`` — i.e., "events about me" + "events about my children".
+        """
+        from flow_sdk.cloud_client.events import CloudWatch  # noqa: PLC0415
+
+        if not self.id:
+            raise RuntimeError("cloud_watch requires entity.id; save first")
+        return CloudWatch(self.id)
+
+    async def share(self: EntityType) -> EntityType:
+        """Create this entity on the hub (POST /api/v1/graph/<type>).
+
+        Generic, type-agnostic: the body is this entity's serialized dump,
+        the URL is constructed via ``build_hub_url(self.type)``, auth is
+        taken from the stored hub credentials. Returns ``self`` after
+        flipping the ``remote`` field when the subclass declares one.
+
+        Raises ``RuntimeError`` if not cloud-logged-in or the hub rejects.
+        """
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            raise RuntimeError("Cloud login required before share()")
+
+        # Body = entity dump, excluding fields the hub will reject or set itself.
+        body = self.model_dump(mode="json", exclude_none=True, exclude={"context_entities"})
+
+        path = build_hub_url(self.get_type())
+        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+            resp = await client.post(path, body)
+
+        # ``remote`` is opt-in per subclass. Flip it when present so callers
+        # can branch on it. Subclasses without the field stay unchanged.
+        if "remote" in type(self).model_fields:
+            self.remote = True
+        return self
+
     async def save(self: EntityType, owner: DBEntity | TypeId | types.NoneType = None, notify: bool = True) -> EntityType:
         user_id = owner
         if isinstance(owner, Entity):

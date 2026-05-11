@@ -1,8 +1,8 @@
 import { useState, type MouseEvent, type ReactNode } from 'react';
-import { Pencil } from 'lucide-react';
+import { Pencil, Check, CheckCheck } from 'lucide-react';
 import type { FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
-import { AttachmentType } from '@sdk/entities/flow-message';
+import { AttachmentType, type DeliveryStatus } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
 import { MessageChips } from './chips/MessageChips';
 import { PromptApprovalRow } from './PromptApprovalRow';
@@ -23,6 +23,42 @@ interface MessageBubbleProps {
   isSelected?: boolean;
   /** Click on the bubble fires this so the parent can mark it selected. */
   onSelect?: () => void;
+  /** Parent conversation's `message_status_visible` flag. When false, the
+   *  receipt indicator is hidden on the sender side regardless of the
+   *  underlying ``delivery_status``. Defaults to true. */
+  conversationStatusVisible?: boolean;
+}
+
+/**
+ * Three-state delivery receipt indicator (WhatsApp-style):
+ *   created   → ✓        single check, muted
+ *   delivered → ✓✓       double check, muted
+ *   received  → ✓✓ blue  double check, accent color
+ */
+function DeliveryReceipt({ status }: { status: DeliveryStatus | undefined }) {
+  if (!status) return null;
+  if (status === 'created') {
+    return (
+      <span title="Sent" className="inline-flex items-center text-muted-foreground/70">
+        <Check className="h-3 w-3" strokeWidth={2.5} />
+      </span>
+    );
+  }
+  if (status === 'delivered') {
+    return (
+      <span title="Delivered" className="inline-flex items-center text-muted-foreground/70">
+        <CheckCheck className="h-3 w-3" strokeWidth={2.5} />
+      </span>
+    );
+  }
+  if (status === 'received') {
+    return (
+      <span title="Read" className="inline-flex items-center text-sky-500">
+        <CheckCheck className="h-3 w-3" strokeWidth={2.5} />
+      </span>
+    );
+  }
+  return null;
 }
 
 function avatarColor(role: ConversationMessage['role']): string {
@@ -75,12 +111,15 @@ export function MessageBubble({
   footer,
   isSelected,
   onSelect,
+  conversationStatusVisible = true,
 }: MessageBubbleProps) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const { localUser } = useLocalUser();
 
   const isFromOther = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id !== localUser.id);
+  const isOutgoing = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id === localUser.id);
+  const showReceipt = isOutgoing && conversationStatusVisible && !flowMessage?.is_draft;
   // Show the prompt row for ANY message that has a PROMPT attachment so the
   // sender sees the same preview the receiver does. Approve & Execute is
   // wired only when it's the other user's still-unapproved prompt — once
@@ -166,6 +205,7 @@ export function MessageBubble({
             </button>
           )}
           {time && <span className="text-[10px] text-muted-foreground">{time}</span>}
+          {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} />}
           <MessageChips flowMessageId={flowMessageId} />
         </div>
         {message.content && message.content !== PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT && (() => {
