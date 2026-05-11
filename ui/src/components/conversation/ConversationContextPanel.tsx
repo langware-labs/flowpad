@@ -221,15 +221,17 @@ function SharedContextSection({
    * Unified Start session handler used by both the spec row and the transcript
    * row. Basic primitive flow per `docs/agent-management/agentic-process.md`:
    *
-   *   1. `new AgenticProcess({ cli_config, context_data, workdir, visible:true })`
-   *   2. `.save()` — persists the entity so it has an id.
-   *   3. `addContextEntity(FlowMessage TypeId)` + `.save()` — this is the "add
-   *      to Private Context" step. `usePrivateContext` filters AgenticProcesses
-   *      by `contextEntities` containing the FlowMessage, so the row appears
-   *      below as soon as this save lands.
-   *   4. `dataManager.notifyEntityChanged(proc)` — nudges watched queries so
+   *   1. `new AgenticProcess({ ..., context_entities: [FM TypeId string] })`
+   *      — set the FlowMessage linkage up-front so the very first save persists
+   *      it (the constructor's `fromWire` path moves it into `_context_entities`
+   *      before any save runs).
+   *   2. `.save()` — persists the entity *with* the FlowMessage linkage so
+   *      `usePrivateContext`'s `contextEntities` filter immediately sees it.
+   *   3. `dataManager.notifyEntityChanged(proc)` — nudges watched queries so
    *      the new entity shows up in `useEntitiesQuery` without waiting for the
-   *      backend WS UPDATE round-trip (the reactivity gap the user hit).
+   *      backend WS UPDATE round-trip.
+   *   4. Wait one animation frame — gives React time to flush the new Private
+   *      Context row to the DOM before we change the dock route.
    *   5. `.start({ instruction })` — opens the PTY and injects the receiver
    *      context prompt (spec content if present, transcript path, conversation
    *      messages, attachment paths, context-entity metadata paths).
@@ -246,17 +248,26 @@ function SharedContextSection({
     try {
       const instruction = await buildReceiverContextPrompt(task, conversationId, senderName);
 
+      // Set `context_entities` up-front in the constructor — the APIEntity
+      // base (APIEntity.ts:339-345 `fromWire` path) moves wire-shaped
+      // context_entities into the private `_context_entities` slot before the
+      // first save, so a single .save() persists the FlowMessage linkage along
+      // with the rest of the entity. The previous two-save approach
+      // (`new+save` → `addContextEntity` → `save`) didn't survive page reload
+      // — the second save's dirty-tracking failed to include `_context_entities`
+      // in the patch, leaving the FlowMessage linkage local-only.
+      const fmTypeIdString = new TypeId(FlowMessage.type, messageId).toString();
       const cliConfig = new ClaudeCliOptions({ permission_mode: 'bypassPermissions' });
       const proc = await new AgenticProcess({
         cli_config: cliConfig.toJson(),
         context_data: { project_id: task.project_id ?? undefined },
         workdir,
         visible: true,
+        context_entities: [fmTypeIdString],
       }).save();
 
-      // Add to Private Context BEFORE start so the row appears immediately.
-      proc.addContextEntity(new TypeId(FlowMessage.type, messageId));
-      await proc.save();
+      // Nudge watched queries so `usePrivateContext` sees the new entity
+      // without waiting for the backend WS UPDATE round-trip.
       dataManager.notifyEntityChanged(proc);
 
       // Wait one animation frame so React flushes the new Private Context
