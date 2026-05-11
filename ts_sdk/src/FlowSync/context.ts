@@ -294,6 +294,7 @@ class DataContext extends EventEmitter {
     runInAction(() => {
       this.workdir = path;
     });
+    defineGlobal('workdir', path);
     this.emit(ContextEventType.CONTEXT_CHANGED);
   }
 

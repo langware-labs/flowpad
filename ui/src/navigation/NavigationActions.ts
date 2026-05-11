@@ -89,7 +89,8 @@ export class NavigationActions {
       const baseUrl = stripDockPortion(currentPath);
       if (currentUrl === baseUrl || pendingDockNavigationUrl === baseUrl) return;
       this.markPendingNavigation(baseUrl);
-      void this.navigate(baseUrl);
+      window.history.pushState(null, '', baseUrl);
+      window.dispatchEvent(new PopStateEvent('popstate'));
       return;
     }
 
@@ -120,7 +121,8 @@ export class NavigationActions {
     const url = basePath && fullUrl.startsWith(basePath) ? fullUrl.substring(basePath.length) : fullUrl;
 
     this.markPendingNavigation(fullUrl);
-    void this.navigate(url);
+    window.history.pushState(null, '', url);
+    window.dispatchEvent(new PopStateEvent('popstate'));
   }
 
   /**

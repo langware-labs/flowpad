@@ -569,6 +569,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return new DockPointerData(ViewType.SHELL, this.typeId?.toString());
   }
 
+  openTerminalDock(extraOptions?: Record<string, string>): void {
+    const nav = (window as any).navigation as
+      | { openDock: (pointer: DockPointerData, extraOptions?: Record<string, string>) => void }
+      | undefined;
+    nav?.openDock(this.terminalDockPointer, extraOptions);
+  }
+
   /**
    * Read-only transcript — `/dock/lens/<worker_type>/transcript/<session_id>`.
    *
@@ -792,6 +799,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (!this.shell_id) return undefined;
     const entity = dataManager.getByTypeIdFromCache(new TypeId('shell', this.shell_id)) as any;
     return entity?.ptyConnection;
+  }
+
+  async printPty(): Promise<void> {
+    const sh = await this.shell();
+    sh?.printPty();
   }
 
   // ── Line / trigger event surface ──────────────────────────────────────────
