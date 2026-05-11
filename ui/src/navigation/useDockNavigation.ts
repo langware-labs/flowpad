@@ -1,4 +1,5 @@
 import { Layout } from '@sdk';
+import { defineGlobal } from '@sdk/utils';
 import { useMemo } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { DockPointer } from './DockPointer';
@@ -65,7 +66,11 @@ export function useDockNavigation(): UseDockNavigationReturn {
   }, [location.pathname, params.viewType, params.pointer, searchParams]);
 
   // Create navigation instance with currentDock so openDock() can deduplicate
-  const navigation = useMemo(() => new NavigationActions(navigate, currentDock), [navigate, currentDock]);
+  const navigation = useMemo(() => {
+    const actions = new NavigationActions(navigate, currentDock);
+    defineGlobal('navigation', actions);
+    return actions;
+  }, [navigate, currentDock]);
 
   const isDockUrl = currentDock !== null;
 

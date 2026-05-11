@@ -112,7 +112,6 @@ async def test_process_exit_keeps_shell():
 
     mock_shell = MagicMock()
     mock_shell.tab_order = 3
-    mock_shell.terminate_worker = AsyncMock()
     mock_shell.stop = AsyncMock()
     mock_shell.close = AsyncMock()
 
@@ -122,9 +121,8 @@ async def test_process_exit_keeps_shell():
         result = await process.exit()
 
     assert isinstance(result, ApiSuccessResponse)
-    mock_shell.stop.assert_awaited_once()
+    mock_shell.stop.assert_awaited_once()  # stop() now handles worker termination internally
     mock_shell.close.assert_not_awaited()
-    mock_shell.terminate_worker.assert_awaited_once()
     # shell_id still set — shell entity is alive
     assert process.shell_id == "shell-1"
 
@@ -176,7 +174,6 @@ async def test_process_restart_preserves_shell_id():
 
     mock_shell = MagicMock()
     mock_shell.tab_order = 1
-    mock_shell.terminate_worker = AsyncMock()
     mock_shell.stop = AsyncMock()
 
     from flow_sdk.responses.response import ApiSuccessResponse
