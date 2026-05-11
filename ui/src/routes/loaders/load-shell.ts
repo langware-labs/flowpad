@@ -243,9 +243,15 @@ async function routeProcessPointer(processId: string): Promise<void> {
       throw replace('/dock/shell');
     }
     const fallbackPointer = loadedToPointer(next.loaded);
+    const requestedProc = AgenticProcess.getByIdFromCache<AgenticProcess>(processId);
+    const requestedName = requestedProc?.name ?? requestedProc?.displayName ?? `${processId.slice(0, 8)}…`;
+    const fallbackName =
+      next.loaded.kind === 'process'
+        ? next.loaded.process.name ?? next.loaded.process.displayName ?? fallbackPointer
+        : next.loaded.shell.name ?? fallbackPointer;
     toast({
-      title: 'Opened a different terminal',
-      description: `Couldn't load ${processId.slice(0, 8)}… (${directCleanup.title}) — opened ${fallbackPointer} instead.`,
+      title: `Terminal "${requestedName}" not found`,
+      description: `${directCleanup.title} — opened "${fallbackName}" instead.`,
       variant: 'destructive',
     });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
