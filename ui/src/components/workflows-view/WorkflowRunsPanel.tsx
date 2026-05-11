@@ -70,10 +70,6 @@ function WorkflowRunItem({
   const process = live ?? entry.process;
 
   const handleOpenInTerminal = () => {
-    console.log('[WorkflowRunsPanel] open terminal', {
-      processId: process.id,
-      terminalDockPointer: process.terminalDockPointer,
-    });
     navigation.openDock(process.terminalDockPointer);
   };
 
