@@ -16,6 +16,7 @@ export enum EntryKind {
   SYSTEM = 'system',
   SUMMARY = 'summary',
   META = 'meta',
+  TOKEN_USAGE = 'token_usage',
   UNKNOWN = 'unknown',
 }
 
@@ -27,6 +28,8 @@ export interface TranscriptEntryBase {
   parent_id?: string | null;
   is_sidechain?: boolean;
   raw_data?: Record<string, unknown> | null;
+  entry_id?: string | null;
+  model?: string | null;
 }
 
 /**
@@ -45,6 +48,8 @@ export class TranscriptEntry {
   parent_id: string | null;
   is_sidechain: boolean;
   raw_data: Record<string, unknown> | null;
+  entry_id: string | null;
+  model: string | null;
 
   constructor(base: TranscriptEntryBase) {
     this.id = base.id;
@@ -54,5 +59,7 @@ export class TranscriptEntry {
     this.parent_id = base.parent_id ?? null;
     this.is_sidechain = base.is_sidechain ?? false;
     this.raw_data = base.raw_data ?? null;
+    this.entry_id = base.entry_id ?? null;
+    this.model = base.model ?? null;
   }
 }

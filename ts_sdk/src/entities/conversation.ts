@@ -49,9 +49,11 @@ export interface IConversation extends IEntity {
   message_count?: number;
   message_ids?: string | null;  // JSON-encoded RawConversationPointer[]
   participants?: ConversationParticipant[];
-  /** Per-conversation read-receipt visibility. When false, the hub suppresses
-   *  `delivered` / `received` UPDATE frames to the original sender (co-recipients
-   *  still see them). */
+  /**
+   * Per-conversation read-receipt visibility. When false, the hub suppresses
+   * `delivered` / `received` UPDATE frames to the original sender (co-recipients
+   * still see them). Mirrors the hub-side flag added in Phase 1.
+   */
   message_status_visible?: boolean;
   // NOTE: task_id moved into context_entities. Use conv.firstContextOfType('task').
   // NOTE: data_path is derived from the canonical records-data path on the

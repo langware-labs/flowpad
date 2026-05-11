@@ -90,12 +90,19 @@ export function useProcessAssets(
   }, [process, enabled]);
 
   // Re-fetch when the process identity changes (or the hook becomes enabled).
-  // Synthetic-mode (process === null) re-renders pick up updated agents/skills
-  // via the refs above; an explicit ``refresh()`` call (e.g. from popover
-  // open) flushes them into ``descriptors``.
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Synthetic-mode flush: when there's no process, the descriptor list is
+  // derived from the agent + skill entity queries above. Those queries finish
+  // *after* the initial refresh() runs, so without this effect the popover
+  // would render "no assets" until the user toggled it. Re-flush whenever the
+  // counts change so newly-loaded entities surface immediately.
+  useEffect(() => {
+    if (!enabled || process) return;
+    void refresh();
+  }, [enabled, process, agents.length, skills.length, refresh]);
 
   return { descriptors, isLoading, refresh };
 }

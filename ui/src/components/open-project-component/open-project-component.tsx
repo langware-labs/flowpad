@@ -609,9 +609,12 @@ export function OpenProjectComponent({
 
     for (const p of flowpadProjects) {
       const path = p.fs_storage_mount_path;
-      // Skip blank, temp, internal, and session/record-path entities
+      // Skip blank, internal, and session/record-path entities. Note: the
+      // historical `/tmp/` exclusion was removed as part of the project
+      // consolidation (Path A, 2026-05-09) — `/tmp` is a perfectly valid
+      // user-chosen mount path, and the indexer-driven auto-adopt now
+      // surfaces those folders as legitimate Projects.
       if (!path || !p.name) continue;
-      if (/^\/tmp\/|^\/private\/tmp\//.test(path)) continue;
       if (/[/\\](\.flow|flow\/sessions|flow\/records)[/\\]/.test(path)) continue;
       upsert({
         id: `flowpad:${p.id}`,

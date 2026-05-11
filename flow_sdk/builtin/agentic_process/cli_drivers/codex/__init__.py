@@ -14,8 +14,11 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex.event_to_flowdata import
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
     codex_transcript_path_for_process,
+    find_latest_codex_session_jsonl,
     find_codex_session_jsonl,
     load_session_history,
+    load_transcript_history,
+    read_codex_rollout_meta,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.status import codex_tail_status
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker import (
@@ -33,6 +36,9 @@ __all__ = [
     "convert_event",
     "convert_line",
     "final_end_frame",
+    "find_latest_codex_session_jsonl",
     "find_codex_session_jsonl",
     "load_session_history",
+    "load_transcript_history",
+    "read_codex_rollout_meta",
 ]

@@ -1,4 +1,5 @@
 import type { GenericEntry, ParsedTranscript } from './entries';
+import { TranscriptFormat, TranscriptSource } from '../../transcript-analyzer';
 
 /**
  * Validate and cast the server response to a `ParsedTranscript`.
@@ -41,6 +42,12 @@ export function parseTranscriptResponse(json: unknown): ParsedTranscript {
     worker_type: String(obj.worker_type ?? ''),
     session_id: String(obj.session_id ?? ''),
     path: String(obj.path ?? ''),
+    transcript_format: Object.values(TranscriptFormat).includes(obj.transcript_format as TranscriptFormat)
+      ? obj.transcript_format as TranscriptFormat
+      : null,
+    transcript_source: Object.values(TranscriptSource).includes(obj.transcript_source as TranscriptSource)
+      ? obj.transcript_source as TranscriptSource
+      : null,
     header: (obj.header as ParsedTranscript['header']) ?? {},
     entries,
   };

@@ -178,6 +178,8 @@ export function ConversationView({
     const handle = setTimeout(() => {
       candidates.forEach((id) => ackedRef.current.add(id));
       void markFlowMessagesReceived(candidates).catch(() => {
+        // Network/hub failure shouldn't crash the UI. Reset our tracker so
+        // the next pointer change will retry.
         candidates.forEach((id) => ackedRef.current.delete(id));
       });
     }, 250);

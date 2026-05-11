@@ -1,10 +1,10 @@
 import '@src/styles/highlightjs.css';
 import { trackEvent } from '@src/utils/analytics';
-import { config, dataContext, navigator } from '@sdk';
+import { cloudManager, config, dataContext, navigator } from '@sdk';
 import { useAuth, useGlobalEvents, useWarnings } from '@sdk/react/hooks';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Toaster as Sonner } from 'sonner';
+import { Toaster as Sonner, toast } from 'sonner';
 import { Toaster } from '@src/components/ui/toaster';
 import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { useEffect, useRef, useState } from 'react';
@@ -12,6 +12,7 @@ import { DesktopSetupModal, DESKTOP_SETUP_REASON_AUTH_FAILURE } from '@src/compo
 import SecretApprovalDialog from '@src/components/secret-approval-dialog';
 import { initNotificationListener } from '@src/store/use-notification-store';
 import { SnifferProvider } from '@src/contexts/SnifferContext';
+import { FloatingChatProvider } from '@src/components/floating-chat';
 import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
 import { useBrowserContextReporter } from '@src/hooks/use-browser-context-reporter';
 import { useUiCommandListener } from '@src/hooks/use-ui-command-listener';
@@ -82,73 +83,14 @@ const DesktopSetupModalHandler = () => {
   );
 };
 
-// Simple error display component for bootstrap failures
-// Uses error.type: 'config' | 'network' | 'server' set by navigator.error()
-const BootstrapError = ({ message }: { message?: string }) => (
-  <div
-    style={{
-      display: 'flex',
-      minHeight: '100vh',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: '#f9fafb',
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-    }}
-  >
-    <div
-      style={{
-        width: '100%',
-        maxWidth: '28rem',
-        borderRadius: '0.5rem',
-        background: 'white',
-        padding: '2rem',
-        textAlign: 'center',
-        boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
-      }}
-    >
-      <div
-        style={{
-          margin: '0 auto 1rem',
-          display: 'flex',
-          height: '4rem',
-          width: '4rem',
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderRadius: '50%',
-          background: '#fed7aa',
-          fontSize: '2rem',
-        }}
-      >
-        ⚠️
-      </div>
-      <h1 style={{ marginBottom: '0.5rem', fontSize: '1.5rem', fontWeight: 'bold', color: '#111827' }}>
-        Connection Error
-      </h1>
-      <p style={{ marginBottom: '0.5rem', color: '#4b5563' }}>
-        {message || 'The FlowPad backend server is not responding.'}
-      </p>
-      <button
-        onClick={() => window.location.reload()}
-        style={{
-          padding: '0.5rem 1rem',
-          background: '#3b82f6',
-          color: 'white',
-          border: 'none',
-          borderRadius: '0.375rem',
-          cursor: 'pointer',
-          fontSize: '0.875rem',
-          marginTop: '1rem',
-        }}
-      >
-        Retry Connection
-      </button>
-    </div>
-  </div>
-);
+// Bootstrap-error UX is handled by the router's root `errorElement`
+// (`<ErrorScreen/>` in `router.tsx`). The root loader (`loadRoot`) re-throws
+// service-unavailable / network / config errors before any React tree mounts,
+// so a parallel inline error UI here is no longer needed.
 
 // Component that handles auth logic
 const AppContent = ({ children }: { children: React.ReactNode }) => {
-  const { user, someone, error } = useAuth();
+  const { user, someone } = useAuth();
   const analyticsTrackingRef = useRef(false);
 
   const GlobalEvents = () => {
@@ -186,17 +128,31 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
     });
   }, [someone, user]);
 
-  // Handle auth errors - log them for debugging
   useEffect(() => {
-    if (error) {
-      console.log('Auth error:', error);
-    }
-  }, [error]);
+    const handleHubClientError = (msg: Record<string, unknown>) => {
+      const method = String(msg.method ?? '').trim();
+      const path = String(msg.path ?? '').trim();
+      const status = String(msg.status_code ?? '').trim();
+      const message = String(msg.message ?? 'Hub client error');
+      const suppressedCount = Number(msg.suppressed_count ?? 0);
 
-  // Show error screen if bootstrap failed
-  if (error) {
-    return <BootstrapError message={error.message} />;
-  }
+      if (suppressedCount > 0) {
+        toast.warning('Hub errors suppressed', {
+          description: `${suppressedCount} hub errors were suppressed in the current window.`,
+        });
+        return;
+      }
+
+      toast.error('Hub client error', {
+        description: `${method} ${path} -> ${status}: ${message}`.trim(),
+      });
+    };
+
+    cloudManager.on('hub_client_error', handleHubClientError);
+    return () => {
+      cloudManager.off('hub_client_error', handleHubClientError);
+    };
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -208,7 +164,9 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <DesktopSetupModalHandler />
         <SecretApprovalDialog />
         <SnifferProvider>
-          {children}
+          <FloatingChatProvider>
+            {children}
+          </FloatingChatProvider>
         </SnifferProvider>
       </TooltipProvider>
     </QueryClientProvider>

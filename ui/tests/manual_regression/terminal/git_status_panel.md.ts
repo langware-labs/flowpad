@@ -116,11 +116,11 @@ test.describe('Git Status Panel', () => {
     const mlAuto = activePanel.locator('.border-t .ml-auto');
     await expect(mlAuto).toBeVisible({ timeout: 15_000 });
 
-    // Right section has 5 buttons: Shell(0), Git(1), Prompts(2), Queue(3), Files(4)
-    await expect(mlAuto.locator('button').nth(1)).toBeVisible({ timeout: 5_000 });
+    // Right section has 4 buttons: Git(0), Prompts(1), Files(2), Dir(3)
+    await expect(mlAuto.locator("button").nth(0)).toBeVisible({ timeout: 5_000 });
 
     // Validate all 5 buttons are present
-    await expect(mlAuto.locator('button')).toHaveCount(5, { timeout: 5_000 });
+    await expect(mlAuto.locator('button')).toHaveCount(4, { timeout: 5_000 });
   });
 
   // ---------------------------------------------------------------------------
@@ -133,7 +133,7 @@ test.describe('Git Status Panel', () => {
 
     const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
     const mlAuto = activePanel.locator('.border-t .ml-auto');
-    const gitBtn = mlAuto.locator('button').nth(1);
+    const gitBtn = mlAuto.locator("button").nth(0);
     await gitBtn.click();
 
     // Side window should appear (w-80 flex-col border-l)
@@ -165,7 +165,7 @@ test.describe('Git Status Panel', () => {
     await gotoAgenticProcess(page);
 
     const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-    await activePanel.locator('.border-t .ml-auto button').nth(1).click();
+    await activePanel.locator('.border-t .ml-auto button').nth(0).click();
 
     const sideWindow = getSideWindow(page);
     await expect(sideWindow).toBeVisible({ timeout: 5_000 });
@@ -196,7 +196,7 @@ test.describe('Git Status Panel', () => {
     await gotoAgenticProcess(page);
 
     const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-    await activePanel.locator('.border-t .ml-auto button').nth(1).click();
+    await activePanel.locator('.border-t .ml-auto button').nth(0).click();
 
     const sideWindow = getSideWindow(page);
     await expect(sideWindow).toBeVisible({ timeout: 5_000 });
@@ -237,7 +237,7 @@ test.describe('Git Status Panel', () => {
     await gotoAgenticProcess(page);
 
     const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-    await activePanel.locator('.border-t .ml-auto button').nth(1).click();
+    await activePanel.locator('.border-t .ml-auto button').nth(0).click();
 
     const sideWindow = getSideWindow(page);
     await expect(sideWindow).toBeVisible({ timeout: 5_000 });
@@ -261,7 +261,7 @@ test.describe('Git Status Panel', () => {
     const mlAuto = activePanel.locator('.border-t .ml-auto');
 
     // Open Git (index 1)
-    await mlAuto.locator('button').nth(1).click();
+    await mlAuto.locator("button").nth(0).click();
     const sideWindow = getSideWindow(page);
     await expect(sideWindow).toBeVisible({ timeout: 5_000 });
     // Use tab strip + exact match to avoid strict-mode violation (other elements contain 'Git')
@@ -269,7 +269,7 @@ test.describe('Git Status Panel', () => {
     await expect(tabStripA.getByText('Git', { exact: true })).toBeVisible({ timeout: 3_000 });
 
     // Open Prompts (index 3) — adds a second tab
-    await mlAuto.locator('button').nth(2).click();
+    await mlAuto.locator("button").nth(1).click();
     await expect(tabStripA.getByText('Prompts', { exact: true })).toBeVisible({ timeout: 3_000 });
 
     // Both tabs should be visible in the tab strip (reuse tabStripA)

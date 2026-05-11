@@ -27,6 +27,7 @@ from .entries import (
     WebFetchEntry,
 )
 from .entry import EntryKind, TranscriptEntry
+from .formats import TranscriptDescriptor, TranscriptFormat, TranscriptSource
 from .process_entry import ObservationKind, ProcessEntry
 from .transcript import AgentTranscript
 
@@ -40,17 +41,20 @@ __all__ = [
     "FileReadEntry",
     "FileWriteEntry",
     "MetaEntry",
+    "ObservationKind",
+    "ProcessEntry",
     "SearchEntry",
     "ShellCommandEntry",
     "SummaryEntry",
     "SystemEntry",
     "TodoUpdateEntry",
-    "ObservationKind",
-    "ProcessEntry",
     "ToolResultEntry",
     "ToolUseEntry",
     "TokenUsageEntry",
+    "TranscriptDescriptor",
     "TranscriptEntry",
+    "TranscriptFormat",
+    "TranscriptSource",
     "UnknownEntry",
     "UserMessageEntry",
     "WebFetchEntry",

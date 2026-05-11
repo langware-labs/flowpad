@@ -25,9 +25,13 @@ import {
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useProcessAssets } from './useProcessAssets';
-import { useAssetTypes, type AssetTypeInfo } from '@src/hooks/use-asset-types';
-import { lucideByName } from '@src/lib/lucide-by-name';
-import { ICON_BY_TYPE } from '@src/components/conversation/EntityChip';
+import { useAssetTypes } from '@src/hooks/use-asset-types';
+import {
+  basename as _basename,
+  displayLabelForTypeid as _displayLabelForTypeid,
+  makeIconForType,
+  parseTypeid as _parseTypeid,
+} from './asset-row-helpers';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ArrowLeft, ArrowDownAZ, Boxes, Folder, FolderOpen, FolderPlus, Lock, Plus, Search, X, type LucideIcon } from 'lucide-react';
@@ -166,17 +170,7 @@ export function AssetManagerPopover({
     return () => { cancelled = true; };
   }, [descriptors]);
 
-  const iconForType = useCallback(
-    (typeName: string): LucideIcon => {
-      const ti = assetTypes.find((t: AssetTypeInfo) => t.type_name === typeName);
-      // Prefer lucide-by-name from the assets/types API; fall back to the chat
-      // EntityChip icon registry (kept in sync) when the API hasn't loaded yet.
-      const fromApi = ti?.icon ? lucideByName(ti.icon) : null;
-      if (fromApi) return fromApi;
-      return ICON_BY_TYPE[typeName] ?? lucideByName(null);
-    },
-    [assetTypes],
-  );
+  const iconForType = useMemo(() => makeIconForType(assetTypes), [assetTypes]);
 
   const attachedSet = useMemo(() => new Set(attachedRefs), [attachedRefs]);
 
@@ -464,18 +458,6 @@ export function AssetManagerPopover({
 
 // ── Row components ────────────────────────────────────────────────────────────
 
-function _parseTypeid(typeid: string): { type: string; id: string } {
-  const dash = typeid.indexOf('-');
-  if (dash < 0) return { type: typeid, id: '' };
-  return { type: typeid.slice(0, dash), id: typeid.slice(dash + 1) };
-}
-
-function _basename(path: string): string {
-  const trimmed = path.replace(/\/+$/, '');
-  const slash = trimmed.lastIndexOf('/');
-  return slash >= 0 ? trimmed.slice(slash + 1) : trimmed;
-}
-
 function DirRow({
   path,
   onRemove,
@@ -537,21 +519,6 @@ function ProjectPickRow({
       </div>
     </button>
   );
-}
-
-/**
- * Resolve a descriptor's typeid string to the cached entity's ``displayName``.
- * Falls back to the raw typeid when the entity isn't in cache or the typeid
- * isn't well-formed.
- */
-function _displayLabelForTypeid(typeid: string): string {
-  if (!isTypeId(typeid)) return typeid;
-  try {
-    const entity = dataManager.getByTypeIdFromCache(new TypeId(typeid));
-    return entity?.displayName ?? typeid;
-  } catch {
-    return typeid;
-  }
 }
 
 interface RowSharedProps {

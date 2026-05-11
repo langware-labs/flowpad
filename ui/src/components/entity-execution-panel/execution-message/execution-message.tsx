@@ -4,7 +4,7 @@ import { MarkdownView } from '@src/components/markdown-view';
 import { cn } from '@src/lib/utils';
 import React, { useMemo } from 'react';
 
-interface ChatMessageProps {
+interface ExecutionMessageProps {
   flowData: FlowData;
   isUser: boolean;
   animateIn?: boolean;
@@ -12,12 +12,12 @@ interface ChatMessageProps {
   className?: string;
 }
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ flowData, isUser, animateIn = false, className }) => {
+const ExecutionMessage: React.FC<ExecutionMessageProps> = ({ flowData, isUser, animateIn = false, className }) => {
   // Determine if this message type should stream
   // Must check both elementType AND dataType since useDataStreamText only supports string data
-  const chatMessageTypes: string[] = [FlowElementTypes.TEXT, FlowElementTypes.CHAT, FlowElementTypes.USER_MESSAGE];
+  const messageTypes: string[] = [FlowElementTypes.TEXT, FlowElementTypes.CHAT, FlowElementTypes.USER_MESSAGE];
   const shouldStream =
-    flowData && chatMessageTypes.includes(flowData.elementType) && !isUser && flowData.dataType === FlowDataType.String;
+    flowData && messageTypes.includes(flowData.elementType) && !isUser && flowData.dataType === FlowDataType.String;
 
   // Use hook for streaming updates - hook handles event subscription internally
   const streamState = useDataStreamText(shouldStream ? flowData : null);
@@ -57,7 +57,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ flowData, isUser, animateIn =
         (animateIn || isStreaming) && 'animate-fade-in opacity-0',
         className,
       )}
-      data-testid="chat-message"
+      data-testid="execution-message"
     >
       {/* Terminal-style label */}
       <div className="mb-1 flex items-center gap-2">
@@ -91,4 +91,4 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ flowData, isUser, animateIn =
   );
 };
 
-export default ChatMessage;
+export default ExecutionMessage;

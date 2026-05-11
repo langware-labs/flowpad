@@ -14,7 +14,10 @@ from flow_sdk.fs_store.indexer.index_function import (
     OrphanAction,
     PerTypeIndexResult,
     ProgressCallback,
-    ProgressEvent,
+)
+from flow_sdk.fs_store.indexer.progress_table import (
+    IndexProgressTable,
+    TypeProgressRow,
 )
 from flow_sdk.fs_store.indexer.roots import default_roots
 
@@ -23,10 +26,11 @@ __all__ = [
     "IndexerFunc",
     "IndexerOptions",
     "IndexResult",
+    "IndexProgressTable",
     "OrphanAction",
     "PerTypeIndexResult",
     "ProgressCallback",
-    "ProgressEvent",
+    "TypeProgressRow",
     "INDEXABLE_TYPES",
     "build_default_indexer",
     "get_shared_indexer",

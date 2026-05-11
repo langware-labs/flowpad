@@ -105,7 +105,7 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       if (bootstrapInfo.user) {
         user = new User(bootstrapInfo.user);
         user.markAsExpanded();
-        await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentUserTypeId, user.typeId);
+        await dataContext.setContextEntityTypeId(ContextEntitiesEnum.LocalUserTypeId, user.typeId);
         trackUserToSentry(user);
         void ConnectionManager.getInstance().connect();
       }

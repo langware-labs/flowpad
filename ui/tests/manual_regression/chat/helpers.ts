@@ -6,9 +6,13 @@ import { type Page, expect } from '@playwright/test';
  * We set it before navigating so it never appears, and also try to dismiss if it still does.
  */
 export async function dismissSetupModal(page: Page) {
-  // Pre-set localStorage to suppress the modal before page loads
+  // Pre-set localStorage to suppress the modal before page loads.
+  // Also pre-mark the index/discover Welcome modal as approved so its Radix
+  // overlay does not intercept pointer events on home-landing buttons after
+  // a fresh DB clear (the modal opens when scanInfo.never_indexed=true).
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
+    localStorage.setItem('flowpad-index-approved', '1');
   });
 }
 

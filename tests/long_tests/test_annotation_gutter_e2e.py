@@ -47,6 +47,7 @@ async def _query_annotations(client, session_id: str) -> list[dict]:
     return [a for a in annotations if a.get("session_id") == session_id]
 
 
+@pytest.mark.skip(reason="sniffer is off")
 @pytest.mark.asyncio
 # do not increase timeout without approval
 @pytest.mark.timeout(30)

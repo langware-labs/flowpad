@@ -50,7 +50,9 @@ def build_default_indexer() -> FSIndexer:
     from flow_sdk.fs_store.indexer.functions.spec import spec_project_fn
     from flow_sdk.fs_store.indexer.functions.skill import skill_fn
     from flow_sdk.fs_store.indexer.functions.agent import agent_fn
-    from flow_sdk.fs_store.indexer.functions.workflow import workflow_fn
+    from flow_sdk.fs_store.indexer.functions.workflow import (
+        workflow_fn, workflow_frontmatter_fn,
+    )
     from flow_sdk.fs_store.indexer.functions.claude_command import command_fn
     from flow_sdk.fs_store.indexer.functions.claude_memory import claude_memory_fn
     from flow_sdk.fs_store.indexer.functions.markdown import (
@@ -116,6 +118,7 @@ def build_default_indexer() -> FSIndexer:
 
     # FOLDER (transient scaffold emitted by project_folder_walker_fn) expanders
     idx.add_function(RecordType.FOLDER, markdown_in_folder_fn)
+    idx.add_function(RecordType.FOLDER, workflow_frontmatter_fn)
     idx.add_function(RecordType.CWD_ROOT, claude_hook_fn)
 
     return idx

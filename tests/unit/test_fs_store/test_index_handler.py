@@ -40,9 +40,9 @@ class _Handler(FsRecordsActionsMixin):
         self.typeid = "test-compute-node"
         self._activity: InProcessActivity | None = None
 
-    def _start_activity(self, job_name: str, total: int = 0, timeout_seconds: int = 600):
+    def _start_activity(self, job_name: str, timeout_seconds: int = 600):
         self._activity = InProcessActivity(
-            job_name=job_name, entity_id=self.typeid, total=total,
+            job_name=job_name, entity_id=self.typeid,
             timeout_seconds=timeout_seconds,
         )
         return self._activity
@@ -164,27 +164,31 @@ async def test_index_handler_rebuild_clears_first(
 # do not increase timeout without approval
 @pytest.mark.timeout(30)
 @pytest.mark.asyncio
-@pytest.mark.skip(
-    reason="Requires seeded CLAUDE_SESSION data inside the test instance "
-    "sandbox (claude_home). With an empty sandbox the indexer finds zero "
-    "sessions, only emits the start event, and the ≥2-event assertion fails."
-)
-async def test_index_handler_emits_progress_events(
+async def test_index_handler_emits_table_snapshots(
     captured_progress, clean_target_types,
 ):
+    """Index emits at least the initial + terminal IndexProgressTable snapshots."""
     h = _Handler()
     await h._handle_fs_records_index(
-        FakeRequestInfo({"type": str(RecordType.CLAUDE_SESSION)})
+        FakeRequestInfo({"type": str(RecordType.CLAUDE_RULES)})
     )
 
-    assert len(captured_progress) >= 2
-    sub_events = [
-        e for e in captured_progress
-        if e.get("attributes", {}).get("sub_activity_name") == "claude_session"
+    snapshots = [
+        ev["attributes"] for ev in captured_progress
+        if ev.get("element_type") == "progress_report"
+        and ev.get("attributes", {}).get("job_name") == "index"
     ]
-    job_events = [
-        e for e in captured_progress
-        if e.get("attributes", {}).get("sub_activity_name") is None
-    ]
-    assert sub_events, "no sub-activity event for claude_session found"
-    assert job_events, "no job-level progress event found"
+    assert len(snapshots) >= 2, (
+        f"expected ≥2 snapshots (initial + terminal), got {len(snapshots)}"
+    )
+
+    for s in snapshots:
+        assert isinstance(s.get("rows"), list)
+        assert isinstance(s.get("done"), int)
+        assert isinstance(s.get("total"), int)
+        for row in s["rows"]:
+            assert row["done"] <= row["total"]
+
+    final = snapshots[-1]
+    assert final["text"] == "complete"
+    assert final["current"] is None

@@ -70,19 +70,13 @@ export function ProcessStatusLine({
   const styles = sizeStyles[size];
 
   const status = process.status as ProcessStatus | undefined;
-  // Two distinct gates depending on worker mode:
-  // - Interactive PTY (visible=true): clickable when the worker is ready for
-  //   input — clicking just focuses the existing tab.
-  // - Headless (visible=false): clickable only after the run reached a
-  //   terminal lifecycle state (STOPPED/FAILED) — clicking spawns a fresh
-  //   PTY that resumes the saved session. While NEW/STARTING/RUNNING the
-  //   button stays disabled so the user can't try to attach to a print-mode
-  //   subprocess that has no PTY.
+  // Running processes are openable whenever the shared readiness predicate
+  // says they can accept input. Completed headless runs with a session can
+  // also be resumed into a terminal.
   const canResume =
     !!process.session_id &&
     (status === ProcessStatus.STOPPED || status === ProcessStatus.FAILED);
-  const canOpenTerminal =
-    mode === WorkerMode.Interactive ? ready : canResume;
+  const canOpenTerminal = ready || canResume;
 
   const iconSpinning =
     label === 'Running' ||

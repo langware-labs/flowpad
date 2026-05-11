@@ -125,13 +125,14 @@
 | sniffer_shared_state_single_backend_call.md | 1 | no | no | - |
 | sniffer_spa_navigation_preserves_state.md | 1 | no | no | - |
 
-## terminal (25 scenarios)
+## terminal (26 scenarios)
 | Scenario | Tests | Playwright | Fast Path | Skip |
 |----------|-------|------------|-----------|------|
 | ctrlc_doesnt_copy_in_shell_tab.md | 1 | yes | no | - |
 | flow_shell_tab_location.md | 1 | no | no | - |
 | git_status_panel.md | 1 | yes | no | - |
 | in_claude_ctrlv_does_not_paste.md | 1 | yes | no | - |
+| interactive_tabs_project_filtering_matrix.md | 50 | no | no | - |
 | multiple_terminal_tabs.md | 1 | yes | no | - |
 | navigate_to_shell.md | 1 | yes | no | - |
 | prompt_index_panel.md | 1 | yes | no | - |

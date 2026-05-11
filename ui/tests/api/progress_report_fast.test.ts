@@ -1,8 +1,8 @@
 /**
  * Fast progress_report WebSocket event tests.
  *
- * Tests both sub-activity (per-record) and job-level (per-type) progress_report
- * events using minimal record counts (3 records) so they run quickly.
+ * Every progress_report event is an IndexProgressTable snapshot. There are no
+ * per-entity events and no separate sub-activity/job-level event shapes.
  *
  * Requires a running backend at localhost:9007.
  */
@@ -12,6 +12,24 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
 const CN_FS_BASE = `${GRAPH_API_PREFIX}/${ComputeNode.type}/@local/fs-records`;
+
+interface TypeProgressRow {
+  type_name: string;
+  done: number;
+  total: number;
+  errors: number;
+  skipped: number;
+}
+
+interface IndexProgressTable {
+  job_name: 'scan' | 'index';
+  rows: TypeProgressRow[];
+  current: string | null;
+  done: number;
+  total: number;
+  text: string | null;
+  ts: string;
+}
 
 async function waitForConnection(manager: ConnectionManager) {
   await new Promise<void>((resolve, reject) => {
@@ -28,10 +46,6 @@ async function waitForConnection(manager: ConnectionManager) {
   });
 }
 
-// Track every skill created in this suite so afterEach can DELETE them. The
-// dev backend (FLOWPAD_DEV=true) materializes skills under the user's real
-// ``~/.claude/skills/<name>/SKILL.md`` — leaving them behind pollutes every
-// asset-manager popover for every future process. Tests must clean up.
 const _createdSkillIds: string[] = [];
 
 async function createSkill(name: string): Promise<string> {
@@ -45,23 +59,18 @@ async function createSkill(name: string): Promise<string> {
   return id;
 }
 
-/** Collect progress_report events during an operation and settle for settleMs. */
 async function collectProgressDuring(
   manager: ConnectionManager,
   operation: () => Promise<unknown>,
   settleMs = 500,
-) {
-  const subActivity: Array<Record<string, unknown>> = [];
-  const jobLevel: Array<Record<string, unknown>> = [];
+): Promise<IndexProgressTable[]> {
+  const tables: IndexProgressTable[] = [];
 
   const handler = (_typeId: unknown, flowData: Record<string, unknown>) => {
     if (flowData?.element_type !== 'progress_report') return;
-    const attrs = flowData?.attributes as Record<string, unknown>;
-    if (attrs?.sub_activity_name != null) {
-      subActivity.push(attrs);
-    } else {
-      jobLevel.push(attrs);
-    }
+    const attrs = flowData?.attributes as Partial<IndexProgressTable> | undefined;
+    if (!attrs?.job_name || !Array.isArray(attrs.rows)) return;
+    tables.push(attrs as IndexProgressTable);
   };
 
   manager.on('on_flow_data', handler);
@@ -72,7 +81,31 @@ async function collectProgressDuring(
     manager.off('on_flow_data', handler);
   }
 
-  return { subActivity, jobLevel };
+  return tables;
+}
+
+function assertTableShape(table: IndexProgressTable, jobName: 'scan' | 'index') {
+  expect(table.job_name).toBe(jobName);
+  expect(Array.isArray(table.rows)).toBe(true);
+  expect(typeof table.done).toBe('number');
+  expect(typeof table.total).toBe('number');
+  expect(table.current === null || typeof table.current === 'string').toBe(true);
+  expect(table.text === null || table.text === 'complete').toBe(true);
+  expect(typeof table.ts).toBe('string');
+
+  for (const row of table.rows) {
+    expect(typeof row.type_name).toBe('string');
+    expect(typeof row.done).toBe('number');
+    expect(typeof row.total).toBe('number');
+    expect(typeof row.errors).toBe('number');
+    expect(typeof row.skipped).toBe('number');
+    expect(row.done).toBeGreaterThanOrEqual(0);
+    expect(row.total).toBeGreaterThanOrEqual(0);
+  }
+}
+
+function findRow(table: IndexProgressTable, typeName: string) {
+  return table.rows.find((row) => row.type_name === typeName);
 }
 
 describe('progress_report fast tests', () => {
@@ -87,113 +120,76 @@ describe('progress_report fast tests', () => {
       const id = _createdSkillIds.pop()!;
       try {
         await apiClient.delete(`${CN_FS_BASE}/skill/${id}`);
-      } catch { /* ignore — best effort */ }
+      } catch { /* best effort */ }
     }
   });
 
-  it('aggregate scan emits sub-activity and job-level progress_report events', async () => {
+  it('aggregate scan emits IndexProgressTable snapshots', async () => {
     const manager = ConnectionManager.getInstance();
     await waitForConnection(manager);
 
-    // Create 3 skill records
     for (let i = 0; i < 3; i++) {
       await createSkill(`fast-scan-${Date.now()}-${i}`);
     }
 
-    const { subActivity, jobLevel } = await collectProgressDuring(manager, () =>
+    const tables = await collectProgressDuring(manager, () =>
       apiClient.get(`${CN_FS_BASE}/scan?trigger=manual&limit_types=5`),
     );
 
-    // Must have at least one sub-activity event
-    expect(subActivity.length).toBeGreaterThan(0);
-
-    // Validate sub-activity shape
-    for (const attrs of subActivity) {
-      expect(attrs.job_name).toBe('scan');
-      expect(typeof attrs.sub_activity_name).toBe('string');
-      expect(typeof attrs.done).toBe('number');
-      expect(typeof attrs.total).toBe('number');
-      expect(typeof attrs.skipped).toBe('number');
-      expect(typeof attrs.errors).toBe('number');
-      expect(attrs.done as number).toBeGreaterThan(0);
-      expect(attrs.total as number).toBeGreaterThan(0);
+    expect(tables.length).toBeGreaterThan(0);
+    for (const table of tables) {
+      assertTableShape(table, 'scan');
+      expect(table.total).toBe(0);
     }
-
-    // Must have at least one job-level event
-    expect(jobLevel.length).toBeGreaterThan(0);
-
-    // Validate job-level shape
-    for (const attrs of jobLevel) {
-      expect(attrs.job_name).toBe('scan');
-      expect(attrs.sub_activity_name).toBeNull();
-      expect(typeof attrs.done).toBe('number');
-      expect(typeof attrs.total).toBe('number');
-    }
+    const final = tables[tables.length - 1];
+    expect(final.text).toBe('complete');
+    expect(final.current).toBeNull();
   }, 30000);
 
-  it('aggregate index emits sub-activity and job-level progress_report events', async () => {
+  it('aggregate index emits IndexProgressTable snapshots', async () => {
     const manager = ConnectionManager.getInstance();
     await waitForConnection(manager);
 
-    // Create 3 skill records
     for (let i = 0; i < 3; i++) {
       await createSkill(`fast-index-${Date.now()}-${i}`);
     }
 
-    const { subActivity, jobLevel } = await collectProgressDuring(manager, () =>
-      apiClient.post(`${CN_FS_BASE}/index?limit_types=5`),
+    const tables = await collectProgressDuring(manager, () =>
+      apiClient.post(`${CN_FS_BASE}/index?limit_types=5&limit_per_type=20`),
     );
 
-    // Must have at least one sub-activity event
-    expect(subActivity.length).toBeGreaterThan(0);
-
-    // Validate sub-activity shape
-    for (const attrs of subActivity) {
-      expect(attrs.job_name).toBe('index');
-      expect(typeof attrs.sub_activity_name).toBe('string');
-      expect(typeof attrs.done).toBe('number');
-      expect(typeof attrs.total).toBe('number');
-      expect(typeof attrs.skipped).toBe('number');
-      expect(typeof attrs.errors).toBe('number');
+    expect(tables.length).toBeGreaterThan(0);
+    for (const table of tables) {
+      assertTableShape(table, 'index');
+      for (const row of table.rows) {
+        expect(row.done).toBeLessThanOrEqual(row.total);
+      }
     }
-
-    // Must have at least one job-level event
-    expect(jobLevel.length).toBeGreaterThan(0);
-
-    // Validate job-level shape
-    for (const attrs of jobLevel) {
-      expect(attrs.job_name).toBe('index');
-      expect(attrs.sub_activity_name).toBeNull();
-      expect(typeof attrs.done).toBe('number');
-      expect(typeof attrs.total).toBe('number');
-    }
+    const final = tables[tables.length - 1];
+    expect(final.text).toBe('complete');
+    expect(final.current).toBeNull();
   }, 30000);
 
-  it('sub-activity and job-level events are interleaved during scan', async () => {
+  it('scan table done values are monotonic', async () => {
     const manager = ConnectionManager.getInstance();
     await waitForConnection(manager);
 
-    // Create 3 records
     for (let i = 0; i < 3; i++) {
-      await createSkill(`interleave-${Date.now()}-${i}`);
+      await createSkill(`monotonic-scan-${Date.now()}-${i}`);
     }
 
-    // Scan only the skill type — guarantees the 3 records we just created produce events
-    const { subActivity, jobLevel } = await collectProgressDuring(manager, () =>
+    const tables = await collectProgressDuring(manager, () =>
       apiClient.get(`${CN_FS_BASE}/scan?trigger=manual&type=skill`),
     );
 
-    expect(subActivity.length).toBeGreaterThan(0);
-    expect(jobLevel.length).toBeGreaterThan(0);
-
-    // Job-level done values must be non-decreasing
-    const doneSeq = jobLevel.map((a) => a.done as number);
+    expect(tables.length).toBeGreaterThan(0);
+    const doneSeq = tables.map((table) => table.done);
     for (let i = 1; i < doneSeq.length; i++) {
       expect(doneSeq[i]).toBeGreaterThanOrEqual(doneSeq[i - 1]);
     }
   }, 30000);
 
-  it('per-type scan (?type=skill) emits progress_report events', async () => {
+  it('per-type scan (?type=skill) completes the skill row', async () => {
     const manager = ConnectionManager.getInstance();
     await waitForConnection(manager);
 
@@ -201,20 +197,21 @@ describe('progress_report fast tests', () => {
       await createSkill(`per-type-s-${Date.now()}-${i}`);
     }
 
-    const { subActivity, jobLevel } = await collectProgressDuring(manager, () =>
+    const tables = await collectProgressDuring(manager, () =>
       apiClient.get(`${CN_FS_BASE}/scan?type=skill&trigger=manual`),
     );
 
-    expect(subActivity.length).toBeGreaterThan(0);
-    const lastSub = subActivity[subActivity.length - 1];
-    expect(lastSub.sub_activity_name).toBe('skill');
-    expect(lastSub.done).toBe(lastSub.total);
-
-    expect(jobLevel.length).toBeGreaterThan(0);
-    expect(jobLevel[0].job_name).toBe('scan');
+    expect(tables.length).toBeGreaterThan(0);
+    const final = tables[tables.length - 1];
+    assertTableShape(final, 'scan');
+    expect(final.text).toBe('complete');
+    const skill = findRow(final, 'skill');
+    expect(skill).toBeDefined();
+    expect(skill!.done).toBeGreaterThanOrEqual(3);
+    expect(skill!.done).toBe(skill!.total);
   }, 30000);
 
-  it('per-type index (?type=skill) emits progress_report events', async () => {
+  it('per-type index (?type=skill) completes the skill row', async () => {
     const manager = ConnectionManager.getInstance();
     await waitForConnection(manager);
 
@@ -222,16 +219,17 @@ describe('progress_report fast tests', () => {
       await createSkill(`per-type-i-${Date.now()}-${i}`);
     }
 
-    const { subActivity, jobLevel } = await collectProgressDuring(manager, () =>
+    const tables = await collectProgressDuring(manager, () =>
       apiClient.post(`${CN_FS_BASE}/index?type=skill`),
     );
 
-    expect(subActivity.length).toBeGreaterThan(0);
-    const lastSub = subActivity[subActivity.length - 1];
-    expect(lastSub.sub_activity_name).toBe('skill');
-    expect(lastSub.done).toBe(lastSub.total);
-
-    expect(jobLevel.length).toBeGreaterThan(0);
-    expect(jobLevel[0].job_name).toBe('index');
+    expect(tables.length).toBeGreaterThan(0);
+    const final = tables[tables.length - 1];
+    assertTableShape(final, 'index');
+    expect(final.text).toBe('complete');
+    const skill = findRow(final, 'skill');
+    expect(skill).toBeDefined();
+    expect(skill!.total).toBeGreaterThanOrEqual(3);
+    expect(skill!.done).toBe(skill!.total);
   }, 30000);
 });

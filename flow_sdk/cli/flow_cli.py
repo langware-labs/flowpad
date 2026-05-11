@@ -943,6 +943,9 @@ app.add_typer(schema_app, name="schema")
 from flow_sdk.cli.commands.record_cmd import record_app
 app.add_typer(record_app, name="record")
 
+from flow_sdk.cli.commands.workflow_cmd import workflow_app
+app.add_typer(workflow_app, name="workflow")
+
 
 @log_app.callback(invoke_without_command=True)
 def log_show(

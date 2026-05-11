@@ -123,7 +123,6 @@ async def _start_notification_scanner() -> None:
 
 async def _start_cloud_ws_listener() -> None:
     """Start the outbound authenticated hub WebSocket listener when logged in."""
-    import logging as _logging
     try:
         from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge
         from flow_sdk.cloud_client.ws_client import hub_ws_manager
@@ -133,7 +132,7 @@ async def _start_cloud_ws_listener() -> None:
         hub_ws_bridge.install()
         await hub_ws_manager.start()
     except Exception as e:
-        _logging.getLogger(__name__).info("Cloud WS listener: failed to start (%s)", e)
+        logging.getLogger(__name__).info("Cloud WS listener: failed to start (%s)", e)
 
 
 async def _shutdown_extras():

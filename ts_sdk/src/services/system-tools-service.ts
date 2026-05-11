@@ -11,10 +11,19 @@ import { connectionManager } from '../websocket';
 
 const ACTION = 'desktop-db';
 const FS_RECORDS_BASE = '/graph/compute_node/@local/fs-records';
-const SCAN_SKIP_TYPES = new Set(['claude_debug_log']);
 
 export interface IndexTypeResult {
   indexed: number;
+}
+
+/** Returned by `systemTools.discoverByPath()`. */
+export interface DiscoverByPathResult {
+  type: string;
+  id: string;
+  asset_ref: string;
+  name?: string;
+  /** Other fields per the record's `meta_dict()` shape — caller should typecast as needed. */
+  [key: string]: unknown;
 }
 
 export interface DatabasePaths {
@@ -82,32 +91,33 @@ export interface LastScanResult {
   scan_ms: number;
 }
 
-/** Per-step progress for multi-step activities (scan / index). */
-export interface ActivityProgress {
-  // Orchestration-level (set by resetAndRescan phases)
+/** One row of the per-type progress table. */
+export interface TypeProgressRow {
+  type_name: string;
+  done: number;
   total: number;
-  done: string[];
+  errors: number;
+  skipped: number;
+}
+
+/**
+ * Snapshot of the indexer's per-type progress, mirrored from the backend's
+ * ``IndexProgressTable``. Each WS event carries a complete snapshot — the
+ * frontend just replaces its local copy.
+ *
+ * For ``index`` jobs ``total`` is the grand total of all rows (known up
+ * front from the inner scan) so the UI can show ``A/B (x%)``. For ``scan``
+ * jobs ``total`` is 0 (unknown — discovery IS the count); the UI shows
+ * count-only.
+ */
+export interface IndexProgressTable {
+  job_name: SystemActivity;
+  rows: TypeProgressRow[];
   current: string | null;
-  pending: string[];
-  counts?: Record<string, number>;
-
-  // Sub-activity level (progress_report with sub_activity_name set)
-  /** Records processed within the current type. */
-  recordsDone?: number;
-  /** Total records in the current type. */
-  recordsTotal?: number;
-  /** Records skipped within the current type. */
-  recordsSkipped?: number;
-  /** Record errors within the current type. */
-  recordsErrors?: number;
-
-  // Job level (progress_report with sub_activity_name=null)
-  /** Number of types completed (from job-level WS event). */
-  jobDone?: number;
-  /** Total number of types (from job-level WS event). */
-  jobTotal?: number;
-  /** Optional status text from job-level WS event. */
-  jobText?: string;
+  done: number;
+  total: number;
+  text: string | null;
+  ts: string;
 }
 
 /**
@@ -115,7 +125,7 @@ export interface ActivityProgress {
  *
  * Extends EventEmitter and maintains reactive state:
  *   - `currentActivity` — which activity is running (null = idle)
- *   - `activityProgress` — per-step progress for scan/index activities
+ *   - `progressTable` — latest IndexProgressTable snapshot from the backend
  *   - `scanInfo` — mirrors dataManager.scanInfo, updated automatically
  *
  * Emits `'state_changed'` whenever any of the above fields change.
@@ -124,7 +134,7 @@ export interface ActivityProgress {
 export class SystemToolsService extends EventEmitter {
   private readonly base: string;
   private _progressEmitPending = false;
-  /** ms since epoch of the most recent WS progress event (any stage). */
+  /** ms since epoch of the most recent WS progress event. */
   private _lastProgressAt = 0;
   /** Active idle-watchdog handle. */
   private _idleWatchdog: ReturnType<typeof setTimeout> | null = null;
@@ -132,7 +142,7 @@ export class SystemToolsService extends EventEmitter {
   private static readonly _IDLE_TIMEOUT_MS = 5000;
 
   currentActivity: SystemActivity | null = null;
-  activityProgress: ActivityProgress | null = null;
+  progressTable: IndexProgressTable | null = null;
   scanInfo: ScanInfo | null = null;
   lastScanResult: LastScanResult | null = null;
 
@@ -147,76 +157,32 @@ export class SystemToolsService extends EventEmitter {
       this.scanInfo = info;
       this.emit('state_changed');
     });
-    // Subscribe to progress_report flow_data events from backend scan/index operations
+    // Subscribe to progress_report flow_data events. Each event is a complete
+    // IndexProgressTable snapshot — replace state wholesale, no merging.
     connectionManager.on('on_flow_data', (_typeId: unknown, flowData: Record<string, unknown>) => {
       if (flowData?.element_type !== 'progress_report') return;
-      const attrs = flowData?.attributes as Record<string, unknown> | undefined;
-      if (!attrs) return;
+      const attrs = flowData?.attributes as IndexProgressTable | undefined;
+      if (!attrs?.job_name) return;
 
-      const jobName = attrs.job_name as SystemActivity | undefined;
-      if (!jobName) return;
-
-      // Note arrival time so the idle watchdog can detect a missing
-      // completion event (WS dropped the final batch).
       this._lastProgressAt = Date.now();
       this._armIdleWatchdog();
 
-      // Auto-initialize if state was lost (e.g. page refresh while job was running).
-      // Seed `total` only from a job-level event (sub_activity_name=null) — otherwise
-      // sub_total (records-within-a-type) would leak in as the orchestration total.
-      if (!this.activityProgress || this.currentActivity !== jobName) {
-        const isJobLevel = attrs.sub_activity_name == null;
-        this.currentActivity = jobName;
-        this.activityProgress = {
-          total: isJobLevel ? (attrs.total as number) ?? 0 : 0,
-          done: [],
-          current: null,
-          pending: [],
-          jobDone: isJobLevel ? (attrs.done as number) : undefined,
-          jobTotal: isJobLevel ? (attrs.total as number) : undefined,
-        };
-        this.emit('state_changed');
+      this.currentActivity = attrs.job_name;
+      this.progressTable = attrs;
+
+      // Terminal event: text="complete" is the authoritative signal that the
+      // job is done. Brief delay lets a scan→index transition (in
+      // resetAndRescan) flip currentActivity before we clear.
+      if (attrs.text === 'complete') {
+        const finishedJob = attrs.job_name;
+        setTimeout(() => {
+          if (this.currentActivity === finishedJob) {
+            this._setActivity(null);
+            void dataManager.refreshScanInfo();
+          }
+        }, 500);
       }
 
-      if (attrs.sub_activity_name != null) {
-        // Sub-activity event: per-record progress within a type
-        const subName = attrs.sub_activity_name as string;
-        const prev = this.activityProgress.current;
-        const newDone =
-          prev && prev !== subName
-            ? [...this.activityProgress.done, prev]
-            : this.activityProgress.done;
-        this.activityProgress = {
-          ...this.activityProgress,
-          current: subName,
-          done: newDone,
-          recordsDone: attrs.done as number,
-          recordsTotal: attrs.total as number,
-          recordsSkipped: attrs.skipped as number,
-          recordsErrors: attrs.errors as number,
-        };
-      } else {
-        // Job-level event: number of types completed
-        const jobDone = attrs.done as number;
-        const jobTotal = attrs.total as number;
-        this.activityProgress = {
-          ...this.activityProgress,
-          jobDone,
-          jobTotal,
-          jobText: attrs.text as string | undefined,
-        };
-        // Auto-clear when the job reports completion. A short delay lets a
-        // normal scan→index transition (resetAndRescan) call _setActivity('index')
-        // first, in which case currentActivity will no longer match and we skip.
-        if (jobTotal > 0 && jobDone >= jobTotal) {
-          setTimeout(() => {
-            if (this.currentActivity === jobName) {
-              this._setActivity(null);
-              void dataManager.refreshScanInfo();
-            }
-          }, 500);
-        }
-      }
       this._emitProgressThrottled();
     });
   }
@@ -265,10 +231,10 @@ export class SystemToolsService extends EventEmitter {
     }, 16);
   }
 
-  private _setActivity(activity: SystemActivity | null, progress?: ActivityProgress | null): void {
+  private _setActivity(activity: SystemActivity | null): void {
     this.currentActivity = activity;
-    this.activityProgress = progress ?? null;
     if (activity == null) {
+      this.progressTable = null;
       this._clearIdleWatchdog();
     } else {
       // Treat the explicit phase change as a recent "event" so the watchdog
@@ -352,41 +318,22 @@ export class SystemToolsService extends EventEmitter {
    * Fetch the in-flight scan/index activity from the backend and re-seed state.
    *
    * Called after a page refresh so the rebuild-index progress modal can reopen
-   * mid-job. Returns the active job_name (or null) so callers can decide whether
-   * to auto-open their progress UI.
+   * mid-job. Backend returns the latest IndexProgressTable plus
+   * ``started_at``, or null when idle.
    */
   async refreshActivityStatus(): Promise<SystemActivity | null> {
     try {
-      const data = await apiClient.get<{
-        job_name: SystemActivity;
-        done: number;
-        total: number;
-        sub_activity_name: string | null;
-        sub_done: number;
-        sub_total: number;
-        sub_skipped: number;
-        sub_errors: number;
-      } | null>(`${FS_RECORDS_BASE}/activity-status`);
+      const data = await apiClient.get<
+        (IndexProgressTable & { started_at: string }) | null
+      >(`${FS_RECORDS_BASE}/activity-status`);
 
       if (!data) {
-        // No activity running — clear any stale local state
         if (this.currentActivity !== null) this._setActivity(null);
         return null;
       }
 
       this.currentActivity = data.job_name;
-      this.activityProgress = {
-        total: data.total ?? 0,
-        done: [],
-        current: data.sub_activity_name,
-        pending: [],
-        jobDone: data.done,
-        jobTotal: data.total,
-        recordsDone: data.sub_activity_name ? data.sub_done : undefined,
-        recordsTotal: data.sub_activity_name ? data.sub_total : undefined,
-        recordsSkipped: data.sub_activity_name ? data.sub_skipped : undefined,
-        recordsErrors: data.sub_activity_name ? data.sub_errors : undefined,
-      };
+      this.progressTable = data;
       this.emit('state_changed');
       return data.job_name;
     } catch {
@@ -396,33 +343,39 @@ export class SystemToolsService extends EventEmitter {
 
   // ---- scan index (fs-records) ---------------------------------------------
 
-  /**
-   * Index a single record type into the entity DB / FTS.
-   *
-   * Optional `scopeOpts` narrows the indexer walk to match the user's active
-   * scope filter:
-   *   - `scope='user'`              → walk USER_HOME only.
-   *   - `scope='project'`           → walk the listed project mounts only.
-   *   - `scope='user,project'`      → walk USER_HOME + listed project mounts.
-   *   - omitted                     → backend default (all roots).
-   */
-  async indexType(
-    typeName: string,
-    scopeOpts?: { scope?: string; projectIds?: string[] },
-  ): Promise<IndexTypeResult> {
-    const qs = new URLSearchParams({ type: typeName });
-    if (scopeOpts?.scope) qs.set('scope', scopeOpts.scope);
-    if (scopeOpts?.projectIds && scopeOpts.projectIds.length > 0) {
-      qs.set('project_ids', scopeOpts.projectIds.join(','));
-    }
+  /** Index a single record type into the entity DB / FTS. */
+  async indexType(typeName: string): Promise<IndexTypeResult> {
     const res = await apiClient.post<IndexTypeResult>(
-      `${FS_RECORDS_BASE}/index?${qs.toString()}`,
+      `${FS_RECORDS_BASE}/index?type=${encodeURIComponent(typeName)}`,
     );
     void dataManager.refreshScanInfo();
     return res as unknown as IndexTypeResult;
   }
 
-  /** Sequentially index the supplied types, emitting per-step 'index' activity updates. */
+  /**
+   * Discover-or-recover a single record by absolute path.
+   *
+   * POSTs to `/fs-records/{type}/discover?path=...`. The backend scans
+   * just this one file (not the whole type), syncs it to the entity DB
+   * if missing, and returns the entity metadata.
+   *
+   * Used by `useEntityByPath` to recover when the bulk list query misses
+   * (file just created, or backend hasn't auto-scanned yet).
+   *
+   * Throws if the path doesn't exist on disk or doesn't match the type's
+   * discovery rules — caller should treat that as a terminal "not found"
+   * state, not a transient error.
+   */
+  async discoverByPath(typeName: string, path: string): Promise<DiscoverByPathResult> {
+    const url =
+      `${FS_RECORDS_BASE}/${encodeURIComponent(typeName)}` +
+      `/discover?path=${encodeURIComponent(path)}`;
+    const res = await apiClient.post<DiscoverByPathResult>(url);
+    void dataManager.refreshScanInfo();
+    return res as unknown as DiscoverByPathResult;
+  }
+
+  /** Sequentially index the supplied types. Each per-type call drives its own backend progressTable snapshots. */
   async indexTypes(
     types: string[],
     onProgress?: (done: string[], current: string, pending: string[]) => void,
@@ -431,17 +384,11 @@ export class SystemToolsService extends EventEmitter {
     const done: string[] = [];
     const pending = [...types];
 
-    this._setActivity('index', { total: types.length, done: [], current: null, pending: [...pending] });
+    this._setActivity('index');
 
     try {
       for (const typeName of types) {
         pending.splice(pending.indexOf(typeName), 1);
-        this._setActivity('index', {
-          total: types.length,
-          done: [...done],
-          current: typeName,
-          pending: [...pending],
-        });
         onProgress?.(done, typeName, [...pending]);
         try {
           const res = await this.indexType(typeName);
@@ -451,7 +398,6 @@ export class SystemToolsService extends EventEmitter {
         }
         done.push(typeName);
       }
-      this._setActivity('index', { total: types.length, done: [...types], current: null, pending: [] });
       void dataManager.refreshScanInfo();
     } finally {
       this._setActivity(null);
@@ -479,64 +425,31 @@ export class SystemToolsService extends EventEmitter {
    * Compound reset + rescan:
    *   1. Archive (DB + records snapshot)
    *   2. Clear index (FTS + entity records)
-   *   3. Aggregate scan (backend streams progress_report WS events per record/type)
-   *   4. Aggregate index (backend streams progress_report WS events per record/type)
+   *   3. Aggregate scan — backend streams IndexProgressTable snapshots
+   *   4. Aggregate index — backend streams IndexProgressTable snapshots
    *
-   * WS progress_report events drive the activityProgress.current / done / records fields.
+   * Each phase's backend WS feed drives ``progressTable`` directly; we just
+   * flag the local ``currentActivity`` so the footer label phases through
+   * Archiving → Clearing → Scanning → Indexing.
    */
-  async resetAndRescan(scopeOpts?: { scope?: string; projectIds?: string[] }): Promise<void> {
+  async resetAndRescan(): Promise<void> {
     let capturedScanResult: LastScanResult | null = null;
-    const scoped =
-      !!scopeOpts?.scope ||
-      (scopeOpts?.projectIds !== undefined && scopeOpts.projectIds.length > 0);
-    const scopeQuery = (() => {
-      const qs = new URLSearchParams();
-      if (scopeOpts?.scope) qs.set('scope', scopeOpts.scope);
-      if (scopeOpts?.projectIds && scopeOpts.projectIds.length > 0) {
-        qs.set('project_ids', scopeOpts.projectIds.join(','));
-      }
-      return qs.toString();
-    })();
-    const appendScope = (url: string): string => {
-      if (!scopeQuery) return url;
-      return url.includes('?') ? `${url}&${scopeQuery}` : `${url}?${scopeQuery}`;
-    };
     try {
-      // 1. Archive (always — cheap snapshot, useful regardless of scope)
       this._setActivity('archive');
       await apiClient.post<ArchiveResult>(`${this.base}/archive`);
 
-      // 2. Clear index — skip when scoped (would wipe rows outside the scope).
-      //    For scoped rebuilds, the indexer overwrites the affected rows in step 5.
-      if (!scoped) {
-        this._setActivity('clear');
-        await apiClient.post<ClearIndexResult>(`${this.base}/clear-index`, {});
-        void dataManager.refreshScanInfo();
-      }
+      this._setActivity('clear');
+      await apiClient.post<ClearIndexResult>(`${this.base}/clear-index`, {});
+      void dataManager.refreshScanInfo();
 
-      // 3. Fetch registered types to seed the pending list (so UI shows names before WS events)
-      const typesData = await apiClient.get<{ types: string[] }>(FS_RECORDS_BASE);
-      const types = ((typesData as unknown as { types: string[] }).types ?? []).filter(
-        (t) => !SCAN_SKIP_TYPES.has(t),
-      );
-
-      // 4. Aggregate scan — WS progress_report events drive current/done/records progress
-      this._setActivity('scan', {
-        total: types.length, done: [], current: null, pending: [...types],
-        jobDone: 0, jobTotal: types.length,
-      });
-      const scanData = await apiClient.get(appendScope(`${FS_RECORDS_BASE}/scan?trigger=manual`));
+      this._setActivity('scan');
+      const scanData = await apiClient.get(`${FS_RECORDS_BASE}/scan?trigger=manual`);
       const scanResult = scanData as unknown as LastScanResult;
       if (scanResult?.types) capturedScanResult = scanResult;
 
-      // 5. Aggregate index — WS progress_report events drive current/done/records progress
-      this._setActivity('index', {
-        total: types.length, done: [], current: null, pending: [...types],
-        jobDone: 0, jobTotal: types.length,
-      });
-      await apiClient.post(appendScope(`${FS_RECORDS_BASE}/index`));
+      this._setActivity('index');
+      await apiClient.post(`${FS_RECORDS_BASE}/index`);
     } finally {
-      // Set lastScanResult before clearing activity so the state_changed event carries both
       if (capturedScanResult) this.lastScanResult = capturedScanResult;
       this._setActivity(null);
       void dataManager.refreshScanInfo();
