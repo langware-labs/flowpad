@@ -147,6 +147,10 @@ let isQuitting = false;
 
 // Deep link that arrived before the window was ready to navigate.
 let pendingDeepLink = null;
+// Becomes true once startApp() has loaded the real UI (or a pending deep link).
+// Until then, even if mainWindow exists it's showing loading.html and the
+// backend may not be reachable, so deep-link navigations must be deferred.
+let startupComplete = false;
 
 /**
  * Convert a flowpad:// URL to the equivalent http://localhost:9007 URL and
@@ -164,12 +168,14 @@ function handleDeepLink(url) {
     const tail = `${parsed.search}${parsed.hash}`;
     const localUrl = typePart ? `${BACKEND_URL}/${typePart}${idPart}${tail}` : `${BACKEND_URL}${tail}`;
 
-    if (mainWindow && !mainWindow.isDestroyed()) {
+    if (startupComplete && mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
       mainWindow.loadURL(localUrl);
     } else {
-      // Window not ready yet — apply after startup completes.
+      // Either the window doesn't exist yet, OR it exists but startup hasn't
+      // finished (loading.html showing / backend not ready). Defer to the
+      // pending-deep-link slot consumed at the end of startApp().
       pendingDeepLink = localUrl;
     }
   } catch (err) {
@@ -269,6 +275,7 @@ function sendStatus(message) {
 }
 
 async function startApp() {
+  startupComplete = false;
   createWindow();
 
   // Wait for the loading page to finish loading so IPC listeners are ready
@@ -368,6 +375,9 @@ async function startApp() {
   pendingDeepLink = null;
   log.info(`Loading UI from ${startUrl}`);
   mainWindow.loadURL(startUrl);
+  // From here on, deep links can be applied directly via mainWindow.loadURL —
+  // the backend is ready and the real UI (not loading.html) is being loaded.
+  startupComplete = true;
 
   // Electron wrapper auto-update
   setupElectronAutoUpdater();
