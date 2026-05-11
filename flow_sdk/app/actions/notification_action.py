@@ -967,6 +967,7 @@ def _build_reply_flow_message(
     sender_id: Optional[str],
     sender_name: str,
     is_draft: bool = False,
+    context_entities: Optional[list[str]] = None,
 ) -> "FlowMessage":
     """Build (but do not save) the FlowMessage entity for a conversation reply.
 
@@ -981,6 +982,17 @@ def _build_reply_flow_message(
     if task_id:
         context.append(TypeId(type=BuiltinEntityType.TASK.value, id=task_id))
     context.append(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv_id))
+    if context_entities:
+        seen = {str(ce) for ce in context}
+        for raw in context_entities:
+            s = (raw or "").strip()
+            if not s or s in seen:
+                continue
+            try:
+                context.append(TypeId(s))
+                seen.add(s)
+            except ValueError:
+                continue
 
     reply_fm = FlowMessage.model_validate({
         "text": message,
@@ -1202,6 +1214,11 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     uploaded_files_preview = body.get("files") or []
     if not isinstance(uploaded_files_preview, list):
         uploaded_files_preview = [uploaded_files_preview]
+    context_entities = body.get("context_entities") or []
+    if isinstance(context_entities, str):
+        context_entities = [context_entities]
+    elif not isinstance(context_entities, list):
+        context_entities = []
 
     if not task_id and not conversation_id:
         return ApiFailResponse(message="task_id or conversation_id is required")
@@ -1245,6 +1262,7 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         sender_id=sender_id,
         sender_name=sender_name,
         is_draft=is_draft,
+        context_entities=context_entities,
     )
 
     if uploaded_files:

@@ -7,6 +7,8 @@ export interface SendReplyExtras {
   promptText?: string;
   /** Files to attach as PROMPT attachments (each stored under prompt/<filename>). */
   promptFiles?: File[];
+  /** Additional TypeId strings to attach as context entities on the FlowMessage (deduped against task/conversation). */
+  contextEntities?: string[];
 }
 
 export interface SendReplyTarget {
@@ -33,6 +35,7 @@ export async function sendReply(
 
   const action = new ActionInfo('append-conversation', 'notification', null, 'POST');
   const hasFiles = (files && files.length > 0) || (extras?.promptFiles && extras.promptFiles.length > 0);
+  const ctxEntities = (extras?.contextEntities ?? []).filter(Boolean);
   if (hasFiles) {
     const form = new FormData();
     if (taskId) form.append('task_id', taskId);
@@ -45,12 +48,16 @@ export async function sendReply(
     for (const file of extras?.promptFiles ?? []) {
       form.append('prompt_files', file, file.name);
     }
+    for (const ce of ctxEntities) {
+      form.append('context_entities', ce);
+    }
     action.bodyParameters = form;
   } else {
-    const body: Record<string, string> = { message };
+    const body: Record<string, unknown> = { message };
     if (taskId) body.task_id = taskId;
     if (conversationId) body.conversation_id = conversationId;
     if (extras?.promptText) body.prompt_text = extras.promptText;
+    if (ctxEntities.length > 0) body.context_entities = ctxEntities;
     action.bodyParameters = body;
   }
   await dataManager.callAction(action);
