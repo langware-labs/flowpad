@@ -13,14 +13,25 @@ the sender on each broadcast, so the two clients naturally alternate:
 
 Stops when STOP_AT is reached on either side.
 
+This test exercises the *standard hub invitation pattern* end-to-end — no
+``start_guest_conversation`` shortcut:
+
+    1. alice creates a Conversation on the hub via plain ``POST /graph/conversation``.
+    2. alice invites bob via ``POST /graph/conversation/<id>/members`` with a
+       ``MembershipRequest`` targeting the Conversation with role ``member``.
+    3. bob discovers the invitation via ``GET /graph/invitation/pending``.
+    4. bob accepts via ``GET /api/v1/members/accept?invitation-id=<id>`` —
+       grants bob ``member`` role on the conversation.
+    5. bob calls ``POST /graph/conversation/<id>/join`` — appends himself to
+       ``participants`` so ``_fanout_message`` can deliver to his WS.
+
 Credentials come from the two project ``.env.local`` files (alice ←
-flowpad-oss; bob ← flowpad-app), matching the two-instance manual
-scenario.
+flowpad-oss; bob ← flowpad-app).
 
 The flow_sdk hub WebSocket manager loads credentials from the keyring
 singleton, so it doesn't support two simultaneous identities in a single
-process. This test uses the SDK for HTTP (``FlowpadClient``) but a raw
-``websockets.connect()`` for the per-token WS subscription.
+process. This test uses HTTP via ``httpx`` and per-token raw
+``websockets.connect()`` for each identity's WS subscription.
 """
 from __future__ import annotations
 
@@ -71,7 +82,7 @@ def _make_ws_url(hub_base_url: str) -> str:
 
 @pytest.mark.asyncio
 async def test_two_client_loop(hub_base_url):
-    """Alice + Bob ping-pong increment loop, STOP_AT=20."""
+    """Alice + Bob ping-pong increment loop using the standard invite pattern, STOP_AT=20."""
     oss_env = _read_env_local(REPO_OSS)
     app_env = _read_env_local(REPO_APP)
     alice_email = oss_env.get("FLOWPAD_CLOUD_USER_EMAIL")
@@ -89,32 +100,89 @@ async def test_two_client_loop(hub_base_url):
     headers_a = {"Authorization": f"Bearer {alice_tok}", "Content-Type": "application/json"}
     headers_b = {"Authorization": f"Bearer {bob_tok}", "Content-Type": "application/json"}
 
-    # Setup: alice creates a project + a guest conversation with bob (both end
-    # up in ``participants``, which is what hub fanout iterates).
     async with httpx.AsyncClient(timeout=5.0) as h:
+        # 1) alice creates the Conversation directly on the hub (standard share path).
+        # Participants is intentionally left empty here — both alice and bob
+        # enter ``participants`` explicitly via ``join()`` so the test exercises
+        # the canonical "everyone joins" pattern, not the EntityField-on-create
+        # shortcut.
+        title = f"loop-{int(time.time())}"
         r = await h.post(
-            f"{hub_base_url}/api/v1/graph/project",
+            f"{hub_base_url}/api/v1/graph/conversation",
             headers=headers_a,
-            json={"name": f"loop-{int(time.time())}"},
-        )
-        r.raise_for_status()
-        proj_id = r.json()["data"]["id"]
-
-        r = await h.post(
-            f"{hub_base_url}/api/v1/graph/project/{proj_id}/start_guest_conversation",
-            headers=headers_a,
-            json={"text": "init", "receiver_address": bob_id, "receiver_address_type": "id"},
+            json={"title": title},
         )
         r.raise_for_status()
         conv_id = r.json()["data"]["id"]
-    print(f"project={proj_id[:8]}  conv={conv_id[:8]}")
+        print(f"share: conv={conv_id[:8]}  title={title}")
+
+        # 1b) alice joins her own conversation. The creator automatically holds
+        # ``owner`` on the entity (via the standard graph-create role grant),
+        # which satisfies ``join``'s role gate.
+        r = await h.post(
+            f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/join",
+            headers=headers_a,
+            json={},
+        )
+        r.raise_for_status()
+        print(f"join: alice is now a participant")
+
+        # 2) alice invites bob via the canonical /members endpoint.
+        members_url = f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/members"
+        r = await h.post(
+            members_url,
+            headers=headers_a,
+            json={
+                "recipient_email": bob_email,
+                "invitation_targets": [
+                    {"typeid": f"conversation-{conv_id}", "role": "member"},
+                ],
+            },
+        )
+        r.raise_for_status()
+        print(f"invite: sent to {bob_email}")
+
+        # 3) bob lists pending invitations (filtered by his email).
+        r = await h.get(
+            f"{hub_base_url}/api/v1/graph/invitation/pending",
+            headers=headers_b,
+        )
+        r.raise_for_status()
+        pending = r.json()["data"] or []
+        # Pick the most recent invitation that matches this conversation's
+        # InvitedThrough edge. Since pending may include older invites from
+        # prior runs, we just take the first matching by recipient_email.
+        matching = [inv for inv in pending if inv.get("recipient_email") == bob_email]
+        assert matching, f"bob's pending invitations list is empty; got {pending}"
+        # Newest first; the just-created invite should be at the top.
+        matching.sort(key=lambda x: x.get("created_date") or "", reverse=True)
+        invitation_id = matching[0]["id"]
+        print(f"pending: bob has {len(matching)} invitation(s); accepting {invitation_id[:8]}")
+
+        # 4) bob accepts via the canonical /graph/members/accept endpoint.
+        r = await h.get(
+            f"{hub_base_url}/api/v1/graph/members/accept",
+            headers=headers_b,
+            params={"invitation-id": invitation_id},
+        )
+        r.raise_for_status()
+        print(f"accept: ok ({r.json().get('message','')[:80]})")
+
+        # 5) bob joins → adds himself to participants so fanout reaches him.
+        r = await h.post(
+            f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/join",
+            headers=headers_b,
+            json={},
+        )
+        r.raise_for_status()
+        print(f"join: bob is now a participant")
 
     log: list[tuple[float, str, str, int]] = []   # (t, who, kind, n)
     done = asyncio.Event()
     ready = {"alice": asyncio.Event(), "bob": asyncio.Event()}
 
     async def loop(name: str, token: str, my_user_id: str):
-        """The identical loop both clients run: rx number → tx number+1.
+        """Identical loop both clients run: rx number → tx number+1.
 
         Skips messages we sent ourselves (the hub fans out to all participants
         including the sender on this build, so we have to filter client-side).
@@ -139,8 +207,6 @@ async def test_two_client_loop(hub_base_url):
                     if etype != "flow_message":
                         continue
                     data = msg.get("data") or {}
-                    # Only act on someone else's messages — never on our own
-                    # echoes (the hub fans both ways on this build).
                     if (data.get("sender_id") or "") == my_user_id:
                         continue
                     text = (data.get("text") or "").strip()
@@ -167,7 +233,6 @@ async def test_two_client_loop(hub_base_url):
     alice_task = asyncio.create_task(loop("alice", alice_tok, alice_id))
     bob_task = asyncio.create_task(loop("bob", bob_tok, bob_id))
 
-    # Wait for both WS connections to be open before igniting.
     await asyncio.wait_for(asyncio.gather(ready["alice"].wait(), ready["bob"].wait()), timeout=5.0)
     await asyncio.sleep(0.1)   # tiny grace period after the WS upgrade
 
@@ -193,13 +258,11 @@ async def test_two_client_loop(hub_base_url):
                 t.cancel()
         await asyncio.gather(alice_task, bob_task, return_exceptions=True)
 
-    # Pretty-print the timeline.
     print()
     print(f"{'dt_ms':>8}  {'who':>5}  {'kind':>6}  {'n':>3}")
     for t, name, kind, n in log:
         print(f"{(t-t0)*1000:>8.1f}  {name:>5}  {kind:>6}  {n:>3}")
 
-    # Assertions: we reached STOP_AT, and each side rx-ed only the "other-sender" half.
     nums_rx_a = sorted({n for _, name, k, n in log if name == "alice" and k == "rx"})
     nums_rx_b = sorted({n for _, name, k, n in log if name == "bob" and k == "rx"})
     print(f"\nalice rx: {nums_rx_a}")
@@ -208,6 +271,5 @@ async def test_two_client_loop(hub_base_url):
     assert max(nums_rx_a + nums_rx_b, default=0) >= STOP_AT, (
         f"didn't reach {STOP_AT}; max rx={max(nums_rx_a + nums_rx_b, default=0)}"
     )
-    # alice sees only bob's sends → even numbers; bob sees only alice's → odd numbers.
     assert all(n % 2 == 0 for n in nums_rx_a), f"alice received non-even numbers: {nums_rx_a}"
     assert all(n % 2 == 1 for n in nums_rx_b), f"bob received non-odd numbers: {nums_rx_b}"

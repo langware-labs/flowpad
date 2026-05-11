@@ -47,20 +47,48 @@ class Conversation(Entity):
     # ``conv.first_context_of_type('task')`` to read it back.
     _api_visible: ClassVar[bool] = True
 
-    async def share(self) -> "Conversation":
-        """Generic Entity.share() with one Conversation-specific step: ensure
-        the calling user is in ``participants`` so the hub's ``_fanout_message``
-        actually reaches anyone. The hub's ``EntityField`` accepts inbound
-        participants on create even though it hides them from GET responses.
+    async def share(self, recipients: Optional[List[str]] = None) -> "Conversation":
+        """Push to hub + invite recipients via the standard hub pattern.
+
+        Without ``recipients``: equivalent to ``Entity.share()`` — POSTs to
+        ``/graph/conversation`` so the hub-side row exists; the caller then
+        has ``owner`` role.
+
+        With ``recipients`` (list of email strings): after the create, the
+        caller joins the conversation (so they enter ``participants``), then
+        one ``MembershipRequest`` per recipient is sent via the canonical
+        ``POST /graph/conversation/<id>/members`` endpoint, targeting this
+        Conversation with role ``member``. Each recipient discovers the
+        invitation via ``GET /graph/invitation/pending``, accepts via
+        ``GET /graph/members/accept``, and then ``POST /graph/conversation/<id>/join``
+        themselves (wired in ``flow_message_action.handle_invitation_accept``).
         """
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
 
-        if not self.participants:
-            creds = load_credentials()
-            user = (creds.user if creds else None) or {}
-            if user.get("id"):
-                self.participants = [{"user_id": user["id"], "name": user.get("name") or ""}]
-        return await super().share()
+        await super().share()
+        if not recipients:
+            return self
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            raise RuntimeError("Cloud login required")
+        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+            # Caller joins so the creator enters ``participants``.
+            await client.post(f"/graph/conversation/{self.id}/join", {})
+            # One invitation per recipient.
+            for email in recipients:
+                if not email or not isinstance(email, str):
+                    continue
+                await client.post(
+                    f"/graph/conversation/{self.id}/members",
+                    {
+                        "recipient_email": email,
+                        "invitation_targets": [
+                            {"typeid": f"conversation-{self.id}", "role": "member"},
+                        ],
+                    },
+                )
+        return self
 
     async def add_message(self, text: str, *, sender_name: Optional[str] = None) -> dict:
         """Append a FlowMessage to this conversation on the hub.

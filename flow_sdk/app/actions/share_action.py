@@ -50,7 +50,17 @@ async def share_entity() -> ApiSuccessResponse:
     sanitized["id"] = target.id
     entity = entity_model.model_validate(sanitized)
 
-    await entity.share()
+    # Optional ``recipients`` (list of email strings): the entity's ``share``
+    # implementation forwards each to ``POST /graph/<type>/<id>/members`` as a
+    # standard ``MembershipRequest`` — see ``Conversation.share``.
+    recipients = body.get("recipients")
+    if recipients is not None and not isinstance(recipients, list):
+        raise HTTPException(status_code=400, detail="share: 'recipients' must be a list")
+
+    if recipients and isinstance(entity, Conversation):
+        await entity.share(recipients=recipients)
+    else:
+        await entity.share()
     return ApiSuccessResponse(data=entity)
 
 

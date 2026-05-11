@@ -1,15 +1,15 @@
 test 1: Folder tree renders markdown vault roots on expand
 - [browser] navigate to {APP_URL}/dock/assets/list/markdown
 - [browser] wait for page to load
-- [browser] validate the element with data-testid="browseable-chevron-asset-type:markdown" is visible
-- [browser] click the element with data-testid="browseable-chevron-asset-type:markdown"
+- [browser] validate the element with data-testid starts with "browseable-chevron-asset-type:markdown:" is visible
+- [browser] click the element with data-testid starts with "browseable-chevron-asset-type:markdown:"
 - [browser] wait for a tree treeitem at aria-level 2 to appear
 - [browser] validate at least one element with label matching "User docs", "Project docs", or "Workspace docs" is visible
 
 test 2: Clicking a folder navigates to folder URL and shows breadcrumb
 - [browser] navigate to {APP_URL}/dock/assets/list/markdown
 - [browser] wait for page to load
-- [browser] click the element with data-testid="browseable-chevron-asset-type:markdown"
+- [browser] click the element with data-testid starts with "browseable-chevron-asset-type:markdown:"
 - [browser] wait for a treeitem at aria-level 2 to appear
 - [browser] click the first vault-root row (e.g. "User docs" or "Project docs (...)")
 - [browser] wait for navigation
@@ -19,7 +19,7 @@ test 2: Clicking a folder navigates to folder URL and shows breadcrumb
 test 3: Clicking a subfolder deepens the URL and narrows the list
 - [browser] navigate to {APP_URL}/dock/assets/list/markdown
 - [browser] wait for page to load
-- [browser] click the element with data-testid="browseable-chevron-asset-type:markdown"
+- [browser] click the element with data-testid starts with "browseable-chevron-asset-type:markdown:"
 - [browser] wait for a treeitem at aria-level 2 to appear
 - [browser] click the first vault-root row
 - [browser] validate the URL contains "/dock/assets/folder/markdown/"
@@ -33,7 +33,7 @@ test 3: Clicking a subfolder deepens the URL and narrows the list
 test 4: Clear button returns to the full markdown list
 - [browser] navigate to {APP_URL}/dock/assets/list/markdown
 - [browser] wait for page to load
-- [browser] click the element with data-testid="browseable-chevron-asset-type:markdown"
+- [browser] click the element with data-testid starts with "browseable-chevron-asset-type:markdown:"
 - [browser] click the first vault-root row
 - [browser] validate the element with data-testid="asset-list-breadcrumb-clear" is visible
 - [browser] click the element with data-testid="asset-list-breadcrumb-clear"
@@ -44,7 +44,7 @@ test 4: Clear button returns to the full markdown list
 test 5: Clicking a markdown file opens the editor while keeping the tree visible
 - [browser] navigate to {APP_URL}/dock/assets/list/markdown
 - [browser] wait for page to load
-- [browser] click the element with data-testid="browseable-chevron-asset-type:markdown"
+- [browser] click the element with data-testid starts with "browseable-chevron-asset-type:markdown:"
 - [browser] click the first vault-root row
 - [browser] locate any file row (a treeitem whose label ends with ".md")
 - [browser] click the file row
@@ -63,7 +63,7 @@ test 6: Deep-link to a markdown file auto-expands ancestors
 
 test 7: Deep-link to a folder auto-expands and shows breadcrumb
 - [browser] navigate to {APP_URL}/dock/assets/list/markdown
-- [browser] click the element with data-testid="browseable-chevron-asset-type:markdown"
+- [browser] click the element with data-testid starts with "browseable-chevron-asset-type:markdown:"
 - [browser] click any vault row then any subfolder row to compute a target URL (copy from the address bar)
 - [browser] navigate to that folder URL in a new tab
 - [browser] wait for page to load
@@ -72,7 +72,7 @@ test 7: Deep-link to a folder auto-expands and shows breadcrumb
 
 test 8: Sidebar collapse works in folder mode and preserves URL
 - [browser] navigate to {APP_URL}/dock/assets/list/markdown
-- [browser] click the element with data-testid="browseable-chevron-asset-type:markdown"
+- [browser] click the element with data-testid starts with "browseable-chevron-asset-type:markdown:"
 - [browser] click the first vault-root row
 - [browser] locate the button with aria-label="Hide wiki tree"
 - [browser] click the Hide button
@@ -85,8 +85,8 @@ test 9: Scan toolbar action on the Markdown root triggers reindex
 - [browser] navigate to {APP_URL}/dock/assets/list/markdown
 - [browser] wait for page to load
 - [browser] hover over the Markdown treeitem at aria-level 1
-- [browser] validate the element with data-testid="browseable-toolbar-scan:markdown" is visible
-- [browser] click the element with data-testid="browseable-toolbar-scan:markdown"
+- [browser] validate an element whose data-testid starts with "browseable-toolbar-scan:markdown" is visible
+- [browser] click the first element whose data-testid starts with "browseable-toolbar-scan:markdown"
 - [browser] validate the network request to POST /api/v1/graph/compute_node/@local/fs-records/index?type=markdown is made (inspect dev tools Network tab)
 - [browser] validate no console errors were logged
 
@@ -94,22 +94,22 @@ test 10: New markdown toolbar action opens the creation dialog
 - [browser] navigate to {APP_URL}/dock/assets/list/markdown
 - [browser] wait for page to load
 - [browser] hover over the Markdown treeitem at aria-level 1
-- [browser] validate the element with data-testid="browseable-toolbar-new:markdown" is visible
-- [browser] click the element with data-testid="browseable-toolbar-new:markdown"
+- [browser] validate an element whose data-testid starts with "browseable-toolbar-new:markdown" is visible
+- [browser] click the first element whose data-testid starts with "browseable-toolbar-new:markdown"
 - [browser] validate a dialog opens with title "New markdown"
 - [browser] press Escape to dismiss
 
 test 11: Multiple vault roots all appear
 - [browser] navigate to {APP_URL}/dock/assets/list/markdown
 - [browser] wait for page to load
-- [browser] click the element with data-testid="browseable-chevron-asset-type:markdown"
+- [browser] click the element with data-testid starts with "browseable-chevron-asset-type:markdown:"
 - [browser] count the treeitems at aria-level 2 that are vault roots
 - [browser] validate the count is >= 1 (user environments typically show at least "Workspace docs" or "Project docs (...)")
 
 test 12: Empty vault expansion shows empty state
 - [browser] prerequisite: a markdown vault exists with no .md files (FLOWPAD_DOC_DIRS pointing at a temp empty dir for repeatability)
 - [browser] navigate to {APP_URL}/dock/assets/list/markdown
-- [browser] click the element with data-testid="browseable-chevron-asset-type:markdown"
+- [browser] click the element with data-testid starts with "browseable-chevron-asset-type:markdown:"
 - [browser] click the chevron of the empty vault row
 - [browser] validate the text "Empty" is visible under that vault row
 
@@ -123,7 +123,7 @@ test 13: Unknown folder deep-link shows empty list and breadcrumb without crashi
 test 14: Flat list regression for non-markdown types
 - [browser] navigate to {APP_URL}/dock/assets/list/skill
 - [browser] wait for page to load
-- [browser] click the element with data-testid="browseable-chevron-asset-type:skill"
+- [browser] click the element with data-testid starts with "browseable-chevron-asset-type:skill:"
 - [browser] validate at least one asset leaf appears as a direct child (flat list, NOT nested folders)
 - [browser] click the first skill leaf
 - [browser] validate the URL contains "/dock/assets/editor/skill/"
@@ -137,7 +137,7 @@ test 15: parent_path filter does not leak into flat mode
 test 16: Switching from folder to list mode preserves scope filter
 - [browser] navigate to {APP_URL}/dock/assets/list/markdown
 - [browser] change scope to "User" in the header ScopeFilterBar
-- [browser] click the element with data-testid="browseable-chevron-asset-type:markdown"
+- [browser] click the element with data-testid starts with "browseable-chevron-asset-type:markdown:"
 - [browser] click the first vault row
 - [browser] validate the URL contains "/dock/assets/folder/markdown/"
 - [browser] validate the header ScopeFilterBar still shows "User" selected

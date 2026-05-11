@@ -763,8 +763,17 @@ class Entity(DBEntity):
         if not creds or not creds.api_key:
             raise RuntimeError("Cloud login required before share()")
 
-        # Body = entity dump, excluding fields the hub will reject or set itself.
-        body = self.model_dump(mode="json", exclude_none=True, exclude={"context_entities"})
+        # Body = entity dump, excluding:
+        #  - ``context_entities``  — local-only chip projection, not on hub schema
+        #  - ``created_by`` / ``updated_by`` — local user ids do not resolve on
+        #    the hub; the hub stamps these from the auth token. Leaving them in
+        #    triggers the hub's role-lookup with an unknown user → 404.
+        #  - ``created_date`` / ``updated_date`` — hub stamps timestamps itself.
+        body = self.model_dump(
+            mode="json",
+            exclude_none=True,
+            exclude={"context_entities", "created_by", "updated_by", "created_date", "updated_date"},
+        )
 
         path = build_hub_url(self.get_type())
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:

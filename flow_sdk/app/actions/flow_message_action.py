@@ -970,6 +970,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
 
     accept_url = f"{base}/api/v1/graph/members/accept"
     linked_fm_id: Optional[str] = None
+    linked_conv_id: Optional[str] = None
     try:
         from flow_sdk.cloud_client import ApiConfig, FlowpadClient
 
@@ -984,24 +985,48 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             return ApiFailResponse(
                 message=f"Accept failed ({resp.status_code}): {resp.text[:200]}"
             )
-        # Bundle-flow shares always grant access via an InvitedThrough
-        # relationship to a FlowMessage, so the hub returns
-        # ``data='flow_message-<uuid>'``. Strip the prefix to get the FM id
-        # for the targeted bundle download below.
+        # The accept response carries the chosen target's typeid. Two shapes:
+        #  - FlowMessage  → legacy bundle flow; we'll download + unpack below.
+        #  - Conversation → direct-share invite flow; we call ``join`` so the
+        #    caller enters ``Conversation.participants`` (which is what hub
+        #    fanout walks). Without that join, accept grants the ``member``
+        #    role but realtime delivery never reaches us.
         try:
             target = (resp.json() or {}).get("data")
             fm_prefix = f"{BuiltinEntityType.FLOW_MESSAGE.value}-"
-            if isinstance(target, str) and target.startswith(fm_prefix):
-                linked_fm_id = target[len(fm_prefix):]
+            conv_prefix = f"{BuiltinEntityType.CONVERSATION.value}-"
+            if isinstance(target, str):
+                if target.startswith(fm_prefix):
+                    linked_fm_id = target[len(fm_prefix):]
+                elif target.startswith(conv_prefix):
+                    linked_conv_id = target[len(conv_prefix):]
             elif isinstance(target, dict):
                 t_type = (target.get("type") or "").strip()
                 t_id = (target.get("id") or target.get("identifier") or "").strip()
                 if t_type == BuiltinEntityType.FLOW_MESSAGE.value and t_id:
                     linked_fm_id = t_id
+                elif t_type == BuiltinEntityType.CONVERSATION.value and t_id:
+                    linked_conv_id = t_id
         except Exception as parse_err:
             logger.warning("[invitation-accept] could not parse target typeid: %s", parse_err)
     except Exception as e:
         return ApiFailResponse(message=f"Accept transport error: {e}")
+
+    # Conversation target → join the hub-side conversation so we enter
+    # ``participants`` and start receiving WS fanout. The hub fires
+    # ``_fanout_self_update`` after the join; bob's hub WS bridge sees it and
+    # materializes the local Conversation via ``_handle_conversation_op``.
+    if linked_conv_id:
+        try:
+            from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+            from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+
+            creds = load_credentials()
+            if creds and creds.api_key:
+                async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+                    await client.post(f"/graph/conversation/{linked_conv_id}/join", {})
+        except Exception as e:
+            logger.warning("[invitation-accept] hub join failed for conversation %s: %s", linked_conv_id, e, exc_info=True)
 
     # Mark local invitation as accepted (best-effort).
     try:
@@ -1029,6 +1054,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     return ApiSuccessResponse(data={
         "invitation_id": inv_id,
         "flow_message_id": linked_fm_id,
+        "conversation_id": linked_conv_id,
         "bundle_unpacked": bundle_unpacked,
     })
 

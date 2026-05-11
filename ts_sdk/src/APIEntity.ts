@@ -592,10 +592,15 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * ``POST /api/v1/graph/<type>/<id>/share``. The local backend's
    * ``share`` action handler forwards the create to the hub using the
    * stored cloud credentials. On success, ``remote`` is flipped.
+   *
+   * When ``recipients`` is provided (list of email strings) and the entity
+   * is a Conversation, each recipient is invited via the standard
+   * ``MembershipRequest`` pattern (one ``POST /graph/conversation/<id>/members``
+   * per recipient). See ``Conversation.share`` on the Python side.
    */
-  public async share(): Promise<T> {
+  public async share(recipients?: string[]): Promise<T> {
     const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
-    info.bodyParameters = this.toJSON();
+    info.bodyParameters = { ...this.toJSON(), ...(recipients ? { recipients } : {}) };
     await dataManager.callAction<unknown, unknown>(info);
     (this as any).remote = true;
     return this as unknown as T;
