@@ -85,9 +85,20 @@ export function usePrivateContext(
 
   const processes = useMemo(() => {
     if (!fmKey) return [] as AgenticProcess[];
-    return candidateProcesses.filter((p) =>
+    const filtered = candidateProcesses.filter((p) =>
       p.contextEntities?.some((tid) => tid.toString() === fmKey),
     );
+    console.log('[usePrivateContext] process filter:', {
+      fmKey,
+      candidateCount: candidateProcesses.length,
+      candidates: candidateProcesses.map((p) => ({
+        id: p.id,
+        visible: p.visible,
+        contextEntities: p.contextEntities?.map((t) => t.toString()),
+      })),
+      matchedCount: filtered.length,
+    });
+    return filtered;
   }, [candidateProcesses, fmKey]);
 
   return { tasks, processes };
