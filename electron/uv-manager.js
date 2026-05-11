@@ -10,6 +10,34 @@ const IS_WIN = process.platform === 'win32';
 const IS_MAC = process.platform === 'darwin';
 const PATH_SEP = IS_WIN ? ';' : ':';
 
+/**
+ * Decide whether to spawn `cmd` through cmd.exe on Windows.
+ *
+ * shell:true is the broadly-compatible default — cmd.exe handles PATHEXT,
+ * App Exec aliases, and uv shims that some AV/AppLocker setups refuse to
+ * launch via direct CreateProcess (manifests as "spawn UNKNOWN").
+ *
+ * The one case where shell:true breaks is an .exe path containing whitespace:
+ * cmd.exe splits on the space, so `C:\Users\avi tal\.local\bin\flow.exe`
+ * becomes `C:\Users\avi`. For that case only, fall back to shell:false and
+ * let Node's CreateProcess handle the path natively.
+ */
+function needsShellOnWin(cmd) {
+  if (!IS_WIN) return false;
+  if (!/[\\/]/.test(cmd)) return true;                      // bare name → PATH lookup needs shell
+  if (/\.exe$/i.test(cmd) && /\s/.test(cmd)) return false;  // .exe with space → bypass cmd.exe
+  return true;
+}
+
+/**
+ * Quote a Windows command path for safe inclusion in a cmd.exe command line
+ * (only relevant when shell:true is in use). For bare names with no spaces
+ * this is a no-op.
+ */
+function quoteWinCmd(cmd) {
+  return /\s/.test(cmd) ? `"${cmd}"` : cmd;
+}
+
 // PyPI package name — `uv tool install flowpad`
 const PYPI_PACKAGE = 'flowpad';
 
@@ -41,6 +69,47 @@ class UvManager {
     this.log = log;
     this.isShuttingDown = false;
     this._flowBin = null;
+    // Set to true when the uv-generated flow.exe shim is blocked by Windows
+    // Device Guard / WDAC. We then route every flow invocation through
+    // `uv tool run --from flowpad flow ...` instead, which doesn't go
+    // through the unsigned shim.
+    this._useUvToolRun = false;
+    this._probedShim = false;
+  }
+
+  /**
+   * Build the spawn command for invoking the flow CLI. When the uv shim
+   * is blocked by Device Guard we route through `uv tool run` which
+   * launches the venv's signed python directly.
+   */
+  _flowCmd(args) {
+    if (this._useUvToolRun) {
+      return { cmd: 'uv', args: ['tool', 'run', '--from', PYPI_PACKAGE, 'flow', ...args] };
+    }
+    return { cmd: this._flowBin, args };
+  }
+
+  /**
+   * Probe the flow shim once. On Windows machines with Device Guard / WDAC,
+   * `uv tool install` writes an unsigned shim that's blocked from executing.
+   * If we detect that here, swap to the `uv tool run` fallback for the rest
+   * of this session. No-op on non-Windows.
+   */
+  async _probeFlowBinOnce() {
+    if (this._probedShim || !IS_WIN || !this._flowBin) return;
+    this._probedShim = true;
+    try {
+      await this._run(this._flowBin, ['--help'], { timeout: 10000 });
+    } catch (err) {
+      const stderr = (err.stderr || err.message || '').toString();
+      if (/Device Guard|Application Control|blocked by your organization/i.test(stderr)) {
+        this.log.warn(
+          '[uv] flow shim blocked by Windows Device Guard — falling back to `uv tool run`'
+        );
+        this._useUvToolRun = true;
+      }
+      // Other failures will surface naturally on the real call below.
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -128,12 +197,14 @@ class UvManager {
       ...options.env,
     };
     this.log.info(`[uv] Running: ${cmd} ${args.join(' ')}`);
+    const useShell = needsShellOnWin(cmd);
+    const cmdToRun = useShell ? quoteWinCmd(cmd) : cmd;
     try {
-      const { stdout, stderr } = await execFileAsync(cmd, args, {
+      const { stdout, stderr } = await execFileAsync(cmdToRun, args, {
         env,
         timeout: options.timeout || 60000,
         cwd: options.cwd || os.homedir(),
-        shell: IS_WIN,               // needed for .cmd wrappers & App Exec links
+        shell: useShell,             // shell only when bare-name or .cmd/.bat
         windowsHide: true,            // don't flash a console window
       });
       if (stdout.trim()) this.log.info(`[uv] ${stdout.trim()}`);
@@ -499,6 +570,10 @@ class UvManager {
       this.isShuttingDown = false;
       this.log.info('[uv] Starting backend via flow start...');
 
+      // On Windows, probe whether the uv shim is blocked by Device Guard.
+      // If so, _useUvToolRun gets set and _flowCmd() routes around it.
+      await this._probeFlowBinOnce();
+
       // Ensure port 9007 is free before starting
       await this.ensurePortFree(9007);
 
@@ -531,12 +606,18 @@ class UvManager {
         env.LANG = process.env.LANG || 'en_US.UTF-8';
       }
 
-      const child = spawn(this._flowBin, ['start'], {
+      // shell:true on Windows breaks paths with spaces (e.g.
+      // "C:\Users\avi tal\…\flow.exe" gets split on the space). Use shell
+      // only when actually needed — see needsShellOnWin().
+      const { cmd: flowCmd, args: flowArgs } = this._flowCmd(['start']);
+      const useShell = needsShellOnWin(flowCmd);
+      const cmdToRun = useShell ? quoteWinCmd(flowCmd) : flowCmd;
+      const child = spawn(cmdToRun, flowArgs, {
         env,
         cwd: os.homedir(),
         detached: false,
         stdio: ['ignore', 'pipe', 'pipe'],
-        shell: IS_WIN,       // needed for .cmd wrappers on Windows
+        shell: useShell,
         windowsHide: true,   // don't flash a console window
       });
 
@@ -628,9 +709,11 @@ class UvManager {
    * Run `flow stop`. Swallows errors.
    */
   async _flowStop() {
-    const cmd = this._flowBin || 'flow';
+    const { cmd, args } = this._flowBin
+      ? this._flowCmd(['stop'])
+      : { cmd: 'flow', args: ['stop'] };
     try {
-      await this._run(cmd, ['stop'], { timeout: 10000 });
+      await this._run(cmd, args, { timeout: 10000 });
       this.log.info('[uv] flow stop completed');
     } catch (error) {
       this.log.warn(`[uv] flow stop failed: ${error.message}`);
@@ -751,7 +834,8 @@ class UvManager {
    */
   async _getUpgradeInfo() {
     try {
-      const { stdout } = await this._run(this._flowBin, ['upgrade', '--info'], { timeout: 15000 });
+      const { cmd, args } = this._flowCmd(['upgrade', '--info']);
+      const { stdout } = await this._run(cmd, args, { timeout: 15000 });
       return JSON.parse(stdout);
     } catch (err) {
       this.log.warn(`[uv] _getUpgradeInfo failed: ${err.message}`);

@@ -89,7 +89,7 @@
   "nsis": {
     "oneClick": false,
     "allowToChangeInstallationDirectory": true,
-    "artifactName": "${productName} Setup.${ext}",
+    "artifactName": "${productName}-Setup.${ext}",
     "installerIcon": "resources/icons/icon.ico",
     "uninstallerIcon": "resources/icons/icon.ico",
     "installerHeaderIcon": "resources/icons/icon.ico",
@@ -118,5 +118,11 @@
       }
     ]
   },
-  "publish": null
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "langware-labs",
+      "repo": "flowpad"
+    }
+  ]
 }
